@@ -55,12 +55,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injHeaderState
   , injLedgerConfig
   , injLedgerState
-  , injProtocolInfo
+  , injMaintainForgeState
   , injProtocolClientInfo
+  , injProtocolInfo
   , injQuery
   , injTopLevelConfig
   ) where
 
+import           Data.Bifunctor
 import qualified Data.ByteString as Strict
 import           Data.SOP.Strict
 import           Data.Type.Equality
@@ -332,6 +334,16 @@ projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
 injForgeState :: proxy b -> ForgeState b -> ForgeState (HardForkBlock '[b])
 injForgeState _ = PerEraForgeState . (:* Nil) . WrapForgeState
 
+injMaintainForgeState :: forall m b. Functor m
+                      => MaintainForgeState m b
+                      -> MaintainForgeState m (HardForkBlock '[b])
+injMaintainForgeState maintainForgeState = MaintainForgeState {
+      initForgeState   = injForgeState (Proxy @b)
+                       $ initForgeState maintainForgeState
+    , updateForgeState = updateForgeState maintainForgeState
+                       . projUpdateForgeState
+    }
+
 injHashInfo :: (SingleEraBlock b, FromRawHash b)
             => HashInfo (HeaderHash b)
             -> HashInfo (HeaderHash (HardForkBlock '[b]))
@@ -399,8 +411,8 @@ injEnvelopeErr =
     . Z
     . WrapEnvelopeErr
 
-projUpdateForgeState :: forall b m.
-                        Update m (ForgeState (HardForkBlock '[b]))
+projUpdateForgeState :: forall b m. Functor m
+                     => Update m (ForgeState (HardForkBlock '[b]))
                      -> Update m (ForgeState b)
 projUpdateForgeState = liftUpdate get set
   where
@@ -411,25 +423,31 @@ projUpdateForgeState = liftUpdate get set
     set = const . injForgeState (Proxy @b)
 
 -- TODO generalise this function to no longer require the equality constraints
-injProtocolInfo :: forall b.
-                   ( SingleEraBlock b
+injProtocolInfo :: forall m b.
+                   ( Functor m
+                   , SingleEraBlock b
                    , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
                    , PartialLedgerConfig b ~ LedgerConfig b
                    )
                 => SystemStart
-                -> ProtocolInfo b
-                -> ProtocolInfo (HardForkBlock '[b])
+                -> ProtocolInfo m b
+                -> ProtocolInfo m (HardForkBlock '[b])
 injProtocolInfo systemStart ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig         = injTopLevelConfig pInfoConfig
-    , pInfoInitForgeState = injForgeState
-                              (Proxy @b)
-                              pInfoInitForgeState
-    , pInfoInitLedger     = injExtLedgerState
-                              systemStart
-                              pInfoInitLedger
+      pInfoConfig      = injTopLevelConfig
+                           pInfoConfig
+    , pInfoInitLedger  = injExtLedgerState
+                           systemStart
+                           pInfoInitLedger
+    , pInfoLeaderCreds = bimap (injCanBeLeader (Proxy @b)) injMaintainForgeState <$>
+                           pInfoLeaderCreds
     }
 
 injProtocolClientInfo :: ProtocolClientInfo b -> ProtocolClientInfo (HardForkBlock '[b])
 injProtocolClientInfo ProtocolClientInfo{..} = ProtocolClientInfo {
       pClientInfoCodecConfig = injCodecConfig pClientInfoCodecConfig
     }
+
+injCanBeLeader :: proxy b
+               -> CanBeLeader (BlockProtocol b)
+               -> CanBeLeader (BlockProtocol (HardForkBlock '[b]))
+injCanBeLeader _ proof = Comp (Just (WrapCanBeLeader proof)) :* Nil

@@ -10,6 +10,7 @@ import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -22,30 +23,36 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
-protocolInfoMockPBFT :: PBftParams
+protocolInfoMockPBFT :: Monad m
+                     => PBftParams
                      -> HardFork.EraParams
                      -> CoreNodeId
-                     -> ProtocolInfo MockPBftBlock
+                     -> ProtocolInfo m MockPBftBlock
 protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftConfig {
-                 pbftParams   = params
-               , pbftIsLeader = PBftIsALeader PBftIsLeader {
-                     pbftCoreNodeId = nid
-                   , pbftSignKey    = signKey nid
-                     -- For Mock PBFT, we use our key as the genesis key.
-                   , pbftDlgCert    = (verKey nid, verKey nid)
-                   }
-               }
+                pbftParams = params
+              }
           , configLedger = SimpleLedgerConfig ledgerView eraParams
           , configBlock  = SimpleBlockConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoInitForgeState  = ()
+      , pInfoLeaderCreds = Just (
+            canBeLeader
+          , defaultMaintainForgeState
+          )
       }
   where
+    canBeLeader :: PBftIsLeader PBftMockCrypto
+    canBeLeader = PBftIsLeader {
+          pbftCoreNodeId = nid
+        , pbftSignKey    = signKey nid
+          -- For Mock PBFT, we use our key as the genesis key.
+        , pbftDlgCert    = (verKey nid, verKey nid)
+        }
+
     ledgerView :: PBftLedgerView PBftMockCrypto
     ledgerView = PBftLedgerView $
         Bimap.fromList [ (verKey n, verKey n)

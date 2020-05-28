@@ -255,6 +255,8 @@ deriving via LiftNS WrapLedgerErr     xs instance CanHardFork xs => Show (OneEra
 deriving via LiftNS WrapValidationErr xs instance CanHardFork xs => Eq   (OneEraValidationErr xs)
 deriving via LiftNS WrapValidationErr xs instance CanHardFork xs => Show (OneEraValidationErr xs)
 
+deriving via LiftNP WrapForgeState    xs instance CanHardFork xs => Show (PerEraForgeState xs)
+
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Eq   (MismatchEraInfo xs)
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Show (MismatchEraInfo xs)
 

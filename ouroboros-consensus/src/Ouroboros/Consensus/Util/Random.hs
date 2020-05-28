@@ -1,7 +1,13 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Util.Random (
       -- * Producing values in MonadRandom
@@ -14,24 +20,27 @@ module Ouroboros.Consensus.Util.Random (
       -- * Adding DRNG to a monad stack
     , ChaChaT -- opaque
     , runChaChaT
-      -- * Run MonadRandom computations
-    , RunMonadRandom (..)
-    , runMonadRandomIO
+    , simMonadRandom
       -- * Convenience re-exports
     , MonadRandom (..)
+    , MonadTrans(..)
     , ChaChaDRG
     )
     where
 
 import           Codec.Serialise (Serialise)
-import           Control.Monad.State
+import           Control.Monad.Reader
+import           Control.Monad.Trans (MonadTrans (..))
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
                      drgNewTest, randomBytesGenerate, withDRG)
 import           Data.List (genericLength)
+import           Data.Tuple (swap)
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadSTM
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom
@@ -63,12 +72,19 @@ nullSeed = Seed (0,0,0,0,0)
   Adding DRNG to a monad stack
 -------------------------------------------------------------------------------}
 
--- | Add DRNG to a monad stack
-newtype ChaChaT m a = ChaChaT { unChaChaT :: StateT ChaChaDRG m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+deriving via OnlyCheckIsWHNF "ChaChaDRG" ChaChaDRG
+         instance NoUnexpectedThunks ChaChaDRG
 
-instance Monad m => MonadRandom (ChaChaT m) where
-  getRandomBytes = ChaChaT . state . randomBytesGenerate
+-- | Add DRNG to a monad stack
+newtype ChaChaT m a = ChaChaT (ReaderT (StrictTVar m ChaChaDRG) m a)
+  deriving (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask)
+
+instance MonadTrans ChaChaT where
+  lift = ChaChaT . lift
+
+instance MonadSTM m => MonadRandom (ChaChaT m) where
+  getRandomBytes n = ChaChaT $ ReaderT $ \varPRNG ->
+      atomically $ updateTVar varPRNG $ swap . randomBytesGenerate n
 
 instance MonadSTM m => MonadSTM (ChaChaT m) where
   type STM (ChaChaT m) = STM m
@@ -77,22 +93,12 @@ instance MonadSTM m => MonadSTM (ChaChaT m) where
 -- | Run the 'MonadPseudoRandomT' monad
 --
 -- This is the analogue of cryptonite's 'withDRG'.
-runChaChaT :: ChaChaT m a -> ChaChaDRG -> m (a, ChaChaDRG)
-runChaChaT = runStateT  . unChaChaT
+runChaChaT :: MonadSTM m => ChaChaT m a -> ChaChaDRG -> m (a, ChaChaDRG)
+runChaChaT ma prng = do
+    varPRNG <- newTVarM prng
+    a       <- simMonadRandom varPRNG ma
+    prng'   <- atomically $ readTVar varPRNG
+    return (a, prng')
 
-{-------------------------------------------------------------------------------
-  Run MonadRandom computations
--------------------------------------------------------------------------------}
-
-newtype RunMonadRandom m = RunMonadRandom
-  { runMonadRandom :: forall a. MonadSTM m
-                   => (forall n. (MonadRandom n, MonadSTM n, STM m ~ STM n)
-                              => (forall x. m x -> n x)
-                              -- escape hatch, for testing
-                              -> n a)
-                   -> m a
-  }
-
--- | Use the 'MonadRandom' instance for 'IO'.
-runMonadRandomIO :: RunMonadRandom IO
-runMonadRandomIO = RunMonadRandom $ \f -> f id
+simMonadRandom :: StrictTVar m ChaChaDRG -> ChaChaT m a -> m a
+simMonadRandom varPRNG (ChaChaT ma) = runReaderT ma varPRNG

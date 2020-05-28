@@ -18,6 +18,7 @@ module Test.ThreadNet.RealPBFT (
 
 import           Control.Monad.Except (runExceptT)
 import           Data.Coerce (coerce)
+import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
@@ -610,14 +611,14 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pbftIsLeader $ configConsensus $ pInfoConfig protInfo of
-      PBftIsALeader isLeader ->
+    case pInfoLeaderCreds protInfo of
+      Just (isLeader, _) ->
           coreNodeId === pbftCoreNodeId isLeader
-      _ ->
+      Nothing ->
           counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
           property False
   where
-    protInfo :: ProtocolInfo ByronBlock
+    protInfo :: ProtocolInfo Identity ByronBlock
     protInfo = mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
 
     params :: PBftParams
@@ -1235,26 +1236,18 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 mkRekeyUpd
   :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo ByronBlock
+  -> ProtocolInfo (ChaChaT m) ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (TestNodeInitialization ByronBlock)
+  -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pbftIsLeader configConsensus of
-    PBftIsNotALeader       -> Nothing
-    PBftIsALeader isLeader ->
+  case pInfoLeaderCreds of
+    Nothing              -> Nothing
+    Just (isLeader, mfs) ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
           isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
-          pInfo' = pInfo
-            { pInfoConfig = TopLevelConfig {
-                  configConsensus = configConsensus
-                    { pbftIsLeader = PBftIsALeader isLeader'
-                    }
-                , configLedger = configLedger
-                , configBlock  = configBlock
-                }
-            }
+          pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just TestNodeInitialization
@@ -1262,10 +1255,10 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
         , tniProtocolInfo = pInfo'
         }
   where
-    ProtocolInfo{pInfoConfig = TopLevelConfig{ configConsensus
-                                             , configLedger
-                                             , configBlock
-                                             }} = pInfo
+    ProtocolInfo{
+        pInfoConfig = TopLevelConfig{configBlock}
+      , pInfoLeaderCreds
+      } = pInfo
 
 -- | The secret key for a node index
 --

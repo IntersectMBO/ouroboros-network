@@ -257,10 +257,10 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
 
 mkProtocolRealTPraos
-  :: forall c. Crypto c
+  :: forall m c. (MonadRandom m, TPraosCrypto c)
   => ShelleyGenesis c
   -> CoreNode c
-  -> ProtocolInfo (ShelleyBlock c)
+  -> ProtocolInfo m (ShelleyBlock c)
 mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
     protocolInfoShelley genesis protVer (Just credentials)
   where

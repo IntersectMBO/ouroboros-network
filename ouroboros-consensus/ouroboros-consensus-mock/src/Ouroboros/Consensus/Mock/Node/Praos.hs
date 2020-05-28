@@ -14,6 +14,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -21,21 +22,21 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 type MockPraosBlock = SimplePraosBlock SimpleMockCrypto PraosMockCrypto
 
-protocolInfoPraos :: NumCoreNodes
+protocolInfoPraos :: Monad m
+                  => NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams
-                  -> ProtocolInfo MockPraosBlock
+                  -> ProtocolInfo m MockPraosBlock
 protocolInfoPraos numCoreNodes nid params eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PraosConfig {
                 praosParams       = params
-              , praosNodeId       = CoreId nid
               , praosSignKeyVRF   = signKeyVRF nid
               , praosInitialEta   = 0
               , praosInitialStake = genesisStakeDist addrDist
@@ -48,9 +49,17 @@ protocolInfoPraos numCoreNodes nid params eraParams =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState []
           }
-      , pInfoInitForgeState = PraosKeyAvailable $ SignKeyMockKES
-           (fst $ verKeys Map.! nid)   -- key ID
-           0                           -- KES initial slot
+      , pInfoLeaderCreds = Just (
+            nid
+          , MaintainForgeState {
+                initForgeState =
+                  PraosKey $
+                    SignKeyMockKES
+                      (fst $ verKeys Map.! nid)   -- key ID
+                      0                           -- KES initial slot
+              , updateForgeState = evolveKey
+              }
+          )
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF

@@ -4,10 +4,13 @@
 {-# LANGUAGE DuplicateRecordFields    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , protocolClientInfoShelley
@@ -22,6 +25,7 @@ module Ouroboros.Consensus.Shelley.Node (
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Reader (runReader)
+import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -56,6 +60,7 @@ import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
+import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Scripts as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
@@ -113,16 +118,16 @@ initialFundsPseudoTxIn addr =
     castHash (Crypto.UnsafeHash h) = Crypto.UnsafeHash h
 
 protocolInfoShelley
-  :: forall c.
-     ShelleyGenesis c
+  :: forall m c. (MonadRandom m, TPraosCrypto c)
+  => ShelleyGenesis c
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials c)
-  -> ProtocolInfo (ShelleyBlock c)
+  -> ProtocolInfo m (ShelleyBlock c)
 protocolInfoShelley genesis protVer mbCredentials =
     ProtocolInfo {
-        pInfoConfig         = topLevelConfig
-      , pInfoInitForgeState = initForgeState
-      , pInfoInitLedger     = initExtLedgerState
+        pInfoConfig      = topLevelConfig
+      , pInfoInitLedger  = initExtLedgerState
+      , pInfoLeaderCreds = mkLeaderCreds <$> mbCredentials
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
@@ -133,10 +138,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))
-    consensusConfig = TPraosConfig {
-        tpraosParams
-      , tpraosIsCoreNodeOrNot
-      }
+    consensusConfig = TPraosConfig tpraosParams
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo
@@ -159,12 +161,26 @@ protocolInfoShelley genesis protVer mbCredentials =
       , tpraosNetworkId         = sgNetworkId         genesis
       }
 
-    initForgeState :: ForgeState (ShelleyBlock c)
-    tpraosIsCoreNodeOrNot :: TPraosIsCoreNodeOrNot c
-    (initForgeState, tpraosIsCoreNodeOrNot) = case mbCredentials of
-      Nothing -> (TPraosNoKey, TPraosIsNotACoreNode)
-      Just (TPraosLeaderCredentials key isACoreNode) ->
-        (TPraosKeyAvailable key, TPraosIsACoreNode isACoreNode)
+    mkLeaderCreds :: TPraosLeaderCredentials c
+                  -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
+    mkLeaderCreds (TPraosLeaderCredentials key isACoreNode) = (
+          isACoreNode
+        , MaintainForgeState {
+              initForgeState   = TPraosForgeState key
+            , updateForgeState = evolveKey isACoreNode
+            }
+        )
+
+    evolveKey :: TPraosIsCoreNode c
+              -> Update m (TPraosForgeState c) -> SlotNo -> m ()
+    evolveKey TPraosIsCoreNode{..} upd curSlot =
+        evolveKESKeyIfNecessary upd (SL.KESPeriod kesEvolution)
+      where
+        TPraosParams{..} = tpraosParams
+
+        kesPeriodNat = fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
+        SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+        kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
 
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig = ShelleyConfig {

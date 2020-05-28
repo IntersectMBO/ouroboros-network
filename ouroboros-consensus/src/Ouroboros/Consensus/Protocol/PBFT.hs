@@ -20,7 +20,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftFields(..)
   , PBftParams(..)
   , PBftIsLeader(..)
-  , PBftIsLeaderOrNot(..)
   , pbftWindowSize
     -- * Forging
   , forgePBftFields
@@ -231,15 +230,9 @@ data PBftIsLeader c = PBftIsLeader {
 instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
  -- use generic instance
 
-data PBftIsLeaderOrNot c
-  = PBftIsALeader !(PBftIsLeader c)
-  | PBftIsNotALeader
-  deriving (Generic, NoUnexpectedThunks)
-
 -- | (Static) node configuration
 data instance ConsensusConfig (PBft c) = PBftConfig {
-      pbftParams   :: !PBftParams
-    , pbftIsLeader :: !(PBftIsLeaderOrNot c)
+      pbftParams :: !PBftParams
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -272,27 +265,20 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type LedgerView     (PBft c) = PBftLedgerView c
   type IsLeader       (PBft c) = PBftIsLeader   c
   type ConsensusState (PBft c) = PBftState      c
+  type CanBeLeader    (PBft c) = PBftIsLeader   c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIfCanBeLeader PBftConfig{pbftIsLeader} =
-      case pbftIsLeader of
-        PBftIsALeader{}  -> True
-        PBftIsNotALeader -> False
-
-  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (Ticked (SlotNo n) _l) _cs =
-      case pbftIsLeader of
-        PBftIsNotALeader                           -> return Nothing
-
-        -- We are the slot leader based on our node index, and the current
-        -- slot number. Our node index depends which genesis key has delegated
-        -- to us, see 'genesisKeyCoreNodeId'.
-        PBftIsALeader credentials
-          | n `mod` numCoreNodes == i -> return (Just credentials)
-          | otherwise                 -> return Nothing
-          where
-            PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
-            PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
+  checkIsLeader PBftConfig{pbftParams} credentials (Ticked (SlotNo n) _l) _cs =
+      -- We are the slot leader based on our node index, and the current
+      -- slot number. Our node index depends which genesis key has delegated
+      -- to us, see 'genesisKeyCoreNodeId'.
+      return $ if n `mod` numCoreNodes == i
+                 then Just credentials
+                 else Nothing
+    where
+      PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
+      PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
   updateConsensusState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =
       case toValidate of

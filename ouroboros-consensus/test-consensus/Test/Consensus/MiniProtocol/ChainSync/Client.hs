@@ -172,10 +172,6 @@ isSuffixOf fragment chain =
   Infastructure to run a Chain Sync test
 -------------------------------------------------------------------------------}
 
--- | Chain Sync Client
-clientId :: CoreNodeId
-clientId = CoreNodeId 0
-
 -- | Chain Sync Server
 serverId :: CoreNodeId
 serverId = CoreNodeId 1
@@ -292,7 +288,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
         client = chainSyncClient
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
-                   (nodeCfg clientId)
+                   nodeCfg
                    chainDbView
                    ()
 
@@ -314,7 +310,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
           atomically $ do
             (chain, ledger) <- readTVar varClientState
             writeTVar varClientState $
-              updateClientState (nodeCfg clientId) chain ledger chainUpdates
+              updateClientState nodeCfg chain ledger chainUpdates
 
         -- Server
         whenJust (Map.lookup tick serverUpdates) $ \chainUpdates ->
@@ -388,14 +384,13 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 20
 
-    nodeCfg :: CoreNodeId -> TopLevelConfig TestBlock
-    nodeCfg coreNodeId = TopLevelConfig {
+    nodeCfg :: TopLevelConfig TestBlock
+    nodeCfg = TopLevelConfig {
         configConsensus = BftConfig
           { bftParams   = BftParams
-            { bftSecurityParam = securityParam
-            , bftNumNodes      = numCoreNodes
-            }
-          , bftNodeId   = fromCoreNodeId coreNodeId
+                            { bftSecurityParam = securityParam
+                            , bftNumNodes      = numCoreNodes
+                            }
           , bftSignKey  = SignKeyMockDSIGN 0
           , bftVerKeys  = Map.fromList
                           [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)

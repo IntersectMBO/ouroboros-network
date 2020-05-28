@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosParams(..)
   , PraosForgeState(..)
   , forgePraosFields
+  , evolveKey
     -- * Tags
   , PraosCrypto(..)
   , PraosStandardCrypto
@@ -41,7 +42,6 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Control.Monad.Identity (runIdentity)
-import           Crypto.Random (MonadRandom)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -71,7 +71,7 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -120,57 +120,54 @@ praosValidateView getFields hdr =
 -------------------------------------------------------------------------------}
 
 data PraosForgeState c =
-    -- | The KES key is available
-    PraosKeyAvailable !(SignKeyKES (PraosKES c))
-
-    -- | The KES key is being evolved by another thread
-    --
-    -- Any thread that sees this value should back off and retry.
-  | PraosKeyEvolving
+    -- | The KES key
+    PraosKey !(SignKeyKES (PraosKES c))
   deriving (Generic)
+
+deriving instance PraosCrypto c => Show (PraosForgeState c)
 
 -- We override 'showTypeOf' to make sure to show @c@
 instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosForgeState c))
 
-forgePraosFields :: ( MonadRandom m
+evolveKey :: (Monad m, PraosCrypto c)
+          => Update m (PraosForgeState c) -> SlotNo -> m ()
+evolveKey upd slotNo = runUpdate_ upd $ \(PraosKey oldKey) -> do
+    let newKey = fromMaybe (error "evolveKey: updateKES failed") $
+                 updateKES () oldKey kesPeriod
+    return $ PraosKey newKey
+  where
+   kesPeriod :: Period
+   kesPeriod = fromIntegral $ unSlotNo slotNo
+
+forgePraosFields :: ( Monad m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => ConsensusConfig (Praos c)
-                 -> Update m (PraosForgeState c)
+                 -> PraosForgeState c
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
-forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
-    -- For the mock implementation, we consider the KES period to be the slot.
-    -- In reality, there will be some kind of constant slotsPerPeriod factor.
-    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
-    let kesPeriod :: Period
-        kesPeriod = fromIntegral $ unSlotNo praosProofSlot
-
-    oldKey <- runUpdate updateState $ \case
-      PraosKeyEvolving ->
-        -- Another thread is currently evolving the key; wait
-        Nothing
-      PraosKeyAvailable oldKey ->
-        return (PraosKeyEvolving, oldKey)
-
-    -- Evolve the key
-    let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
-                 updateKES () oldKey kesPeriod
-    runUpdate updateState $ \_ -> return (PraosKeyAvailable newKey, ())
-
-    let signedFields = PraosExtraFields {
-          praosCreator = praosLeader
-        , praosRho     = praosProofRho
-        , praosY       = praosProofY
-        }
-        signature = signedKES () kesPeriod (mkToSign signedFields) newKey
+forgePraosFields PraosConfig{..} (PraosKey key) PraosProof{..} mkToSign = do
     return $ PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields
       }
+  where
+    signedFields = PraosExtraFields {
+        praosCreator = praosLeader
+      , praosRho     = praosProofRho
+      , praosY       = praosProofY
+      }
+
+    signature = signedKES () kesPeriod (mkToSign signedFields) key
+
+    -- For the mock implementation, we consider the KES period to be the slot.
+    -- In reality, there will be some kind of constant slotsPerPeriod factor.
+    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
+    kesPeriod :: Period
+    kesPeriod = fromIntegral $ unSlotNo praosProofSlot
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -244,7 +241,6 @@ data instance ConsensusConfig (Praos c) = PraosConfig
   { praosParams       :: !PraosParams
   , praosInitialEta   :: !Natural
   , praosInitialStake :: !StakeDist
-  , praosNodeId       :: !NodeId
   , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
   , praosVerKeys      :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
   }
@@ -261,27 +257,21 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type ValidationErr  (Praos c) = PraosValidationError c
   type ValidateView   (Praos c) = PraosValidateView    c
   type ConsensusState (Praos c) = [BlockInfo c]
+  type CanBeLeader    (Praos c) = CoreNodeId
 
-  checkIfCanBeLeader PraosConfig{praosNodeId} =
-    case praosNodeId of
-        CoreId{}  -> True
-        RelayId{} -> False  -- Relays are never leaders
-
-  checkIsLeader cfg@PraosConfig{..} (Ticked slot _u) cs =
-    case praosNodeId of
-        RelayId _  -> return Nothing
-        CoreId nid -> do
-          let (rho', y', t) = rhoYT cfg cs slot nid
-          rho <- evalCertified () rho' praosSignKeyVRF
-          y   <- evalCertified () y'   praosSignKeyVRF
-          return $ if fromIntegral (certifiedNatural y) < t
-              then Just PraosProof {
-                       praosProofRho  = rho
-                     , praosProofY    = y
-                     , praosLeader    = nid
-                     , praosProofSlot = slot
-                     }
-              else Nothing
+  checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) cs = do
+      rho <- evalCertified () rho' praosSignKeyVRF
+      y   <- evalCertified () y'   praosSignKeyVRF
+      return $ if fromIntegral (certifiedNatural y) < t
+          then Just PraosProof {
+                   praosProofRho  = rho
+                 , praosProofY    = y
+                 , praosLeader    = nid
+                 , praosProofSlot = slot
+                 }
+          else Nothing
+    where
+      (rho', y', t) = rhoYT cfg cs slot nid
 
   updateConsensusState cfg@PraosConfig{..}
                        (Ticked _ sd)

@@ -215,13 +215,13 @@ instance CanForge DualByronBlock where
 forgeDualByronBlock
   :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig DualByronBlock
-  -> Update m (ForgeState DualByronBlock)
+  -> ForgeState DualByronBlock
   -> BlockNo                            -- ^ Current block number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
   -> m DualByronBlock
-forgeDualByronBlock cfg updateState curBlockNo tickedLedger txs isLeader = do
+forgeDualByronBlock cfg () curBlockNo tickedLedger txs isLeader = do
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -231,7 +231,7 @@ forgeDualByronBlock cfg updateState curBlockNo tickedLedger txs isLeader = do
 
     main <- forgeByronBlock
               (dualTopLevelConfigMain cfg)
-              updateState
+              ()
               curBlockNo
               (Ticked {
                    tickedSlotNo      = curSlotNo

@@ -120,6 +120,9 @@ class ( Show (ConsensusState p)
   -- | Evidence that a node is the leader
   type family IsLeader p :: *
 
+  -- | Evidence that we /can/ be a leader
+  type family CanBeLeader p :: *
+
   -- | Projection of the ledger state the Ouroboros protocol needs access to
   --
   -- The 'LedgerView' is a summary of the state of the ledger that the consensus
@@ -176,12 +179,10 @@ class ( Show (ConsensusState p)
   -- | Check if a node is the leader
   checkIsLeader :: MonadRandom m
                 => ConsensusConfig    p
+                -> CanBeLeader        p
                 -> Ticked (LedgerView p)
                 -> ConsensusState     p
                 -> m (Maybe (IsLeader p))
-
-  -- | Check if a node is configured such that it can be a leader.
-  checkIfCanBeLeader :: ConsensusConfig p -> Bool
 
   -- | Apply a header
   updateConsensusState :: HasCallStack

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
@@ -66,5 +67,8 @@ instance TPraosCrypto TPraosStandardCrypto
 -- valid.
 data HotKey c = HotKey !Period !(SignKeyKES (KES c))
   deriving Generic
+
+instance Show (HotKey c) where
+  show _ = "<HotKey>"
 
 instance TPraosCrypto c => NoUnexpectedThunks (HotKey c)

@@ -175,13 +175,17 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "DB tip: " ++ condense chainDbTipPoint
   where
+    protocolInfo :: ProtocolInfo IO Byron.ByronBlock
+    protocolInfo = protocolInfoByron
+      genesisConfig
+      (Just $ PBftSignatureThreshold 0.22) -- PBFT signature threshold
+      (CC.Update.ProtocolVersion 1 0 0)
+      (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano SL") 2)
+      Nothing
+
     ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } =
-      protocolInfoByron
-        genesisConfig
-        (Just $ PBftSignatureThreshold 0.22) -- PBFT signature threshold
-        (CC.Update.ProtocolVersion 1 0 0)
-        (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano SL") 2)
-        Nothing
+      protocolInfo
+
 
     tracer
       | verbose   = contramap show debugTracer

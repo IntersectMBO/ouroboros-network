@@ -10,6 +10,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -17,17 +18,18 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
-protocolInfoPraosRule :: NumCoreNodes
+protocolInfoPraosRule :: Monad m
+                      => NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
                       -> HardFork.EraParams
                       -> LeaderSchedule
-                      -> ProtocolInfo MockPraosRuleBlock
+                      -> ProtocolInfo m MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
@@ -39,7 +41,6 @@ protocolInfoPraosRule numCoreNodes
               wlsConfigSchedule = schedule
             , wlsConfigP        = PraosConfig
                 { praosParams       = params
-                , praosNodeId       = CoreId nid
                 , praosSignKeyVRF   = NeverUsedSignKeyVRF
                 , praosInitialEta   = 0
                 , praosInitialStake = genesisStakeDist addrDist
@@ -54,7 +55,10 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoInitForgeState = ()
+    , pInfoLeaderCreds = Just (
+          ()
+        , defaultMaintainForgeState
+        )
     }
   where
     addrDist = mkAddrDist numCoreNodes

@@ -12,7 +12,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Forge (
   ) where
 
 import           Crypto.Random (MonadRandom)
-import           Data.Coerce
 import           Data.Functor.Product
 import           Data.SOP.Strict
 
@@ -51,7 +50,7 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
           hsequence $
           hcpure (Proxy @CanForge) (fn_4 matchedForgeBlock)
             `hap` (distribTopLevelConfig ei cfg)
-            `hap` (distribUpdateForgeState updateForgeState)
+            `hap` (getPerEraForgeState updateForgeState)
             `hap` (partition_NS (map (getOneEraGenTx . getHardForkGenTx) txs))
             `hap` (State.tip matched)
     where
@@ -64,37 +63,18 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
       matchedForgeBlock
         :: forall m blk. (MonadRandom m, CanForge blk)
         => TopLevelConfig blk
-        -> (Update m :.: WrapForgeState) blk
+        -> WrapForgeState blk
         -> ([] :.: GenTx) blk
         -> Product WrapIsLeader LedgerState blk
         -> m blk
       matchedForgeBlock matchedCfg
-                        (Comp matchedForgeState)
+                        matchedForgeState
                         (Comp matchedTxs)
                         (Pair matchedIsLeader matchedLedgerState) =
           forgeBlock
             matchedCfg
-            (coerceUpdate matchedForgeState)
+            (unwrapForgeState matchedForgeState)
             blockNo
             (Ticked tickedSlotNo matchedLedgerState)
             matchedTxs
             (unwrapIsLeader matchedIsLeader)
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-distribUpdateForgeState
-  :: forall xs m. SListI xs
-  => Update m (ForgeState (HardForkBlock xs))
-  -> NP (Update m :.: WrapForgeState) xs
-distribUpdateForgeState updateAll = hliftA (Comp . mkSingleEraUpdate) lenses_NP
-  where
-    mkSingleEraUpdate
-      :: Lens WrapForgeState xs blk
-      -> Update m (WrapForgeState blk)
-    mkSingleEraUpdate Lens { getter, setter } =
-        liftUpdate
-          (getter . coerce)
-          (coerce . setter)
-          updateAll

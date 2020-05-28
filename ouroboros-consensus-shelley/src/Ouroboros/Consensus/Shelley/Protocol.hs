@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosParams (..)
   , TPraosProof (..)
   , TPraosIsCoreNode (..)
-  , TPraosIsCoreNodeOrNot (..)
   , mkShelleyGlobals
     -- * Crypto
   , Crypto
@@ -35,7 +34,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
 
 import           Control.Monad.Reader (runReader)
 import           Control.Monad.Trans.Except (except)
-import           Crypto.Random (MonadRandom)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
@@ -186,11 +184,6 @@ data TPraosParams = TPraosParams {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-data TPraosIsCoreNodeOrNot c
-  = TPraosIsACoreNode !(TPraosIsCoreNode c)
-  | TPraosIsNotACoreNode
-  deriving (Generic, NoUnexpectedThunks)
-
 data TPraosIsCoreNode c = TPraosIsCoreNode {
       -- | Certificate delegating rights from the stake pool cold key (or
       -- genesis stakeholder delegate cold key) to the online KES key.
@@ -216,8 +209,7 @@ instance TPraosCrypto c => NoUnexpectedThunks (TPraosProof c)
 
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
-      tpraosParams          :: !TPraosParams
-    , tpraosIsCoreNodeOrNot :: !(TPraosIsCoreNodeOrNot c)
+      tpraosParams :: !TPraosParams
     }
   deriving (Generic)
 
@@ -250,22 +242,61 @@ instance TPraosCrypto c => ChainSelection (TPraos c) where
 instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ConsensusState  (TPraos c) = TPraosState c
   type IsLeader        (TPraos c) = TPraosProof c
+  type CanBeLeader     (TPraos c) = TPraosIsCoreNode c
   type LedgerView      (TPraos c) = SL.LedgerView c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
   type ValidateView    (TPraos c) = TPraosValidateView c
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIfCanBeLeader TPraosConfig{tpraosIsCoreNodeOrNot} =
-    case tpraosIsCoreNodeOrNot of
-      TPraosIsACoreNode{}  -> True
-      TPraosIsNotACoreNode -> False
+  checkIsLeader cfg@TPraosConfig{..} icn (Ticked slot lv) cs = do
+      rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
+      y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
+      -- First, check whether we're in the overlay schedule
+      return $ case Map.lookup slot (SL.lvOverlaySched lv) of
+        Nothing
+          | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
+          , hasValidOCert icn
+            -- Slot isn't in the overlay schedule, so we're in Praos
+          -> Just TPraosProof {
+               tpraosEta        = coerce rho
+             , tpraosLeader     = coerce y
+             , tpraosIsCoreNode = icn
+             }
+          | otherwise
+          -> Nothing
 
-  checkIsLeader cfg@TPraosConfig{..} (Ticked slot lv) cs =
-    case tpraosIsCoreNodeOrNot of
-      TPraosIsNotACoreNode          -> return Nothing
-      TPraosIsACoreNode isACoreNode -> go isACoreNode
+       -- This is a non-active slot; nobody may produce a block
+        Just SL.NonActiveSlot -> Nothing
+
+       -- The given genesis key has authority to produce a block in this
+        -- slot. Check whether we're its delegate.
+        Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
+            Just dlgHash
+              | SL.coerceKeyRole dlgHash == vkhCold
+              , hasValidOCert icn
+              -> Just TPraosProof {
+                  tpraosEta        = coerce rho
+                  -- Note that this leader value is not checked for slots in
+                  -- the overlay schedule, so we could set it to whatever we
+                  -- want. We evaluate it as normal for simplicity's sake.
+                , tpraosLeader     = coerce y
+                , tpraosIsCoreNode = icn
+                }
+            _ -> Nothing
+          where
+            SL.GenDelegs dlgMap = SL.lvGenDelegs lv
     where
+      TPraosIsCoreNode {
+          tpraosIsCoreNodeColdVerKey
+        , tpraosIsCoreNodeSignKeyVRF
+        } = icn
+
+      prtclState = State.currentPRTCLState cs
+      eta0       = prtclStateEta0 prtclState
+      vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
+      rho'       = SL.mkSeed SL.seedEta slot eta0
+      y'         = SL.mkSeed SL.seedL   slot eta0
 
       -- | Check whether we have an operational certificate valid for the
       -- current KES period.
@@ -278,54 +309,6 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
           -- The current KES period
           kesPeriod = fromIntegral $
             unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
-
-      go :: MonadRandom m => TPraosIsCoreNode c -> m (Maybe (TPraosProof c))
-      go icn = do
-        let TPraosIsCoreNode {
-                tpraosIsCoreNodeColdVerKey
-              , tpraosIsCoreNodeSignKeyVRF
-              } = icn
-            prtclState = State.currentPRTCLState cs
-            eta0       = prtclStateEta0 prtclState
-            vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
-            rho'       = SL.mkSeed SL.seedEta slot eta0
-            y'         = SL.mkSeed SL.seedL   slot eta0
-        rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
-        y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
-        -- First, check whether we're in the overlay schedule
-        return $ case Map.lookup slot (SL.lvOverlaySched lv) of
-          Nothing
-            | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
-            , hasValidOCert icn
-              -- Slot isn't in the overlay schedule, so we're in Praos
-            -> Just TPraosProof {
-                 tpraosEta        = coerce rho
-               , tpraosLeader     = coerce y
-               , tpraosIsCoreNode = icn
-               }
-            | otherwise
-            -> Nothing
-
-          -- This is a non-active slot; nobody may produce a block
-          Just SL.NonActiveSlot -> Nothing
-
-          -- The given genesis key has authority to produce a block in this
-          -- slot. Check whether we're its delegate.
-          Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-              Just dlgHash
-                | SL.coerceKeyRole dlgHash == vkhCold
-                , hasValidOCert icn
-                -> Just TPraosProof {
-                    tpraosEta        = coerce rho
-                    -- Note that this leader value is not checked for slots in
-                    -- the overlay schedule, so we could set it to whatever we
-                    -- want. We evaluate it as normal for simplicity's sake.
-                  , tpraosLeader     = coerce y
-                  , tpraosIsCoreNode = icn
-                  }
-              _ -> Nothing
-            where
-              SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 
   updateConsensusState TPraosConfig{..} (Ticked _ lv) b cs = do
       newCS <- except . flip runReader shelleyGlobals $

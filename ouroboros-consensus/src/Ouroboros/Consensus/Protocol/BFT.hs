@@ -119,7 +119,6 @@ data BftParams = BftParams {
 -- | (Static) node configuration
 data instance ConsensusConfig (Bft c) = BftConfig {
       bftParams  :: !BftParams
-    , bftNodeId  :: !NodeId
     , bftSignKey :: !(SignKeyDSIGN (BftDSIGN c))
     , bftVerKeys :: !(Map NodeId (VerKeyDSIGN (BftDSIGN c)))
     }
@@ -134,21 +133,14 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
   type LedgerView     (Bft c) = ()
   type IsLeader       (Bft c) = ()
   type ConsensusState (Bft c) = ()
+  type CanBeLeader    (Bft c) = CoreNodeId
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIfCanBeLeader BftConfig{bftNodeId} =
-      case bftNodeId of
-        CoreId{}  -> True
-        RelayId{} -> False  -- Relays are never leaders
-
-  checkIsLeader BftConfig{..} (Ticked (SlotNo n) _l) _cs = do
-      return $ case bftNodeId of
-                 RelayId _ -> Nothing
-                 CoreId (CoreNodeId i) ->
-                   if n `mod` numCoreNodes == i
-                     then Just ()
-                     else Nothing
+  checkIsLeader BftConfig{..} (CoreNodeId i) (Ticked (SlotNo n) _l) _cs = do
+      return $ if n `mod` numCoreNodes == i
+                 then Just ()
+                 else Nothing
     where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes

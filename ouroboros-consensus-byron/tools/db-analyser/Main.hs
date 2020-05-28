@@ -331,13 +331,16 @@ openGenesis configFile onMainNet = do
 -------------------------------------------------------------------------------}
 
 mkByronTopLevelConfig :: Genesis.Config -> TopLevelConfig ByronBlock
-mkByronTopLevelConfig genesisConfig = pInfoConfig $
-    protocolInfoByron
-      genesisConfig
-      Nothing
-      (Update.ProtocolVersion 1 0 0)
-      (Update.SoftwareVersion (Update.ApplicationName "db-analyse") 2)
-      Nothing
+mkByronTopLevelConfig genesisConfig = pInfoConfig protocolInfo
+  where
+    protocolInfo :: ProtocolInfo IO ByronBlock
+    protocolInfo =
+      protocolInfoByron
+        genesisConfig
+        Nothing
+        (Update.ProtocolVersion 1 0 0)
+        (Update.SoftwareVersion (Update.ApplicationName "db-analyse") 2)
+        Nothing
 
 {-------------------------------------------------------------------------------
   Interface with the ImmDB

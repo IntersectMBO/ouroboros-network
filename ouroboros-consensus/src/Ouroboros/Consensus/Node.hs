@@ -60,6 +60,7 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -72,7 +73,6 @@ import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
@@ -115,7 +115,7 @@ data RunNodeArgs blk = RunNodeArgs {
     , rnDatabasePath :: FilePath
 
       -- | Protocol info
-    , rnProtocolInfo :: ProtocolInfo blk
+    , rnProtocolInfo :: ProtocolInfo IO blk
 
       -- | Customise the 'ChainDbArgs'
     , rnCustomiseChainDbArgs :: ChainDbArgs IO blk -> ChainDbArgs IO blk
@@ -184,21 +184,20 @@ run runargs@RunNodeArgs{..} =
           customiseChainDbArgs')
         ChainDB.closeDB
 
-      btime <- hardForkBlockchainTime
-                 registry
-                 (blockchainTimeTracer rnTraceConsensus)
-                 (defaultSystemTime $ getSystemStart (configBlock cfg))
-                 (configLedger cfg)
-                 (ledgerState <$> ChainDB.getCurrentLedger chainDB)
-
-      let nodeArgs = rnCustomiseNodeArgs $
-            mkNodeArgs
-              registry
-              cfg
-              initForgeState
-              rnTraceConsensus
-              btime
-              chainDB
+      btime      <- hardForkBlockchainTime
+                      registry
+                      (blockchainTimeTracer rnTraceConsensus)
+                      (defaultSystemTime $ getSystemStart (configBlock cfg))
+                      (configLedger cfg)
+                      (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+      nodeArgs   <- rnCustomiseNodeArgs <$>
+                      mkNodeArgs
+                        registry
+                        cfg
+                        leaderCreds
+                        rnTraceConsensus
+                        btime
+                        chainDB
       nodeKernel <- initNodeKernel nodeArgs
       rnNodeKernelHook registry nodeKernel
 
@@ -217,9 +216,9 @@ run runargs@RunNodeArgs{..} =
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
-      { pInfoConfig         = cfg
-      , pInfoInitLedger     = initLedger
-      , pInfoInitForgeState = initForgeState
+      { pInfoConfig      = cfg
+      , pInfoInitLedger  = initLedger
+      , pInfoLeaderCreds = leaderCreds
       } = rnProtocolInfo
 
     codecConfig :: CodecConfig blk
@@ -404,32 +403,27 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> ForgeState blk
+  -> Maybe (CanBeLeader (BlockProtocol blk), MaintainForgeState IO blk)
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
-  -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
-mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
-    { tracers
-    , registry
-    , cfg
-    , initForgeState
-    , btime
-    , chainDB
-    , initChainDB             = nodeInitChainDB
-    , blockProduction
-    , blockFetchSize          = nodeBlockFetchSize
-    , blockMatchesHeader      = nodeBlockMatchesHeader
-    , maxTxCapacityOverride   = NoMaxTxCapacityOverride
-    , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
-    , miniProtocolParameters  = defaultMiniProtocolParameters
-    }
-  where
-    blockProduction
-      | checkIfCanBeLeader (configConsensus cfg)
-      = Just BlockProduction
-               { produceBlock       = \_lift' -> forgeBlock cfg
-               , runMonadRandomDict = runMonadRandomIO
-               }
-      | otherwise
-      = Nothing
+  -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
+mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
+    blockProduction <-
+      case mIsLeader of
+        Just (proof, mfs) -> Just <$> blockProductionIO cfg proof mfs
+        Nothing           -> return Nothing
+    return NodeArgs
+      { tracers
+      , registry
+      , cfg
+      , btime
+      , chainDB
+      , blockProduction
+      , initChainDB             = nodeInitChainDB
+      , blockFetchSize          = nodeBlockFetchSize
+      , blockMatchesHeader      = nodeBlockMatchesHeader
+      , maxTxCapacityOverride   = NoMaxTxCapacityOverride
+      , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+      , miniProtocolParameters  = defaultMiniProtocolParameters
+      }

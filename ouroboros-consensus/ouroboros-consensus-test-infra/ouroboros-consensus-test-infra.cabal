@@ -50,7 +50,6 @@ library
                        Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
-                       Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Roundtrip

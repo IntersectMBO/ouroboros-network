@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
   , castProtocolClientInfo
   ) where
 
+import           Data.Bifunctor
 import           Data.Coerce
 import           Data.Word
 
@@ -43,10 +44,12 @@ enumCoreNodes (NumCoreNodes numNodes) =
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the specified protocol.
-data ProtocolInfo b = ProtocolInfo {
-        pInfoConfig         :: TopLevelConfig b
-      , pInfoInitForgeState :: ForgeState     b
-      , pInfoInitLedger     :: ExtLedgerState b -- ^ Genesis ledger state
+data ProtocolInfo m b = ProtocolInfo {
+        pInfoConfig      :: TopLevelConfig b
+      , pInfoInitLedger  :: ExtLedgerState b -- ^ At genesis
+      , pInfoLeaderCreds :: Maybe ( CanBeLeader (BlockProtocol b)
+                                  , MaintainForgeState m b
+                                  )
       }
 
 -- | Data required by clients of a node running the specified protocol.
@@ -63,17 +66,18 @@ castProtocolInfo
                  (ConsensusConfig (BlockProtocol blk'))
      , Coercible (BlockConfig blk) (BlockConfig blk')
      , Coercible (LedgerState blk) (LedgerState blk')
-     , LedgerConfig blk ~ LedgerConfig blk'
      , ConsensusState (BlockProtocol blk) ~ ConsensusState (BlockProtocol blk')
-     , TipInfo blk ~ TipInfo blk'
-     , ForgeState blk ~ ForgeState blk'
+     , CanBeLeader    (BlockProtocol blk) ~ CanBeLeader    (BlockProtocol blk')
+     , LedgerConfig blk ~ LedgerConfig blk'
+     , TipInfo      blk ~ TipInfo      blk'
+     , ForgeState   blk ~ ForgeState   blk'
      )
-  => ProtocolInfo blk
-  -> ProtocolInfo blk'
+  => ProtocolInfo m blk
+  -> ProtocolInfo m blk'
 castProtocolInfo ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig         = castTopLevelConfig pInfoConfig
-    , pInfoInitForgeState = pInfoInitForgeState
-    , pInfoInitLedger     = castExtLedgerState pInfoInitLedger
+      pInfoConfig      = castTopLevelConfig     pInfoConfig
+    , pInfoInitLedger  = castExtLedgerState     pInfoInitLedger
+    , pInfoLeaderCreds = second castMaintainForgeState <$> pInfoLeaderCreds
     }
 
 castProtocolClientInfo :: Coercible (CodecConfig blk) (CodecConfig blk')

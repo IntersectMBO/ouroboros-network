@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -112,7 +113,6 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import qualified Test.Util.LogicalClock as LogicalClock
-import           Test.Util.Random
 import           Test.Util.Tracer
 import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
 import qualified Test.Util.WrappedClock as WrappedClock
@@ -137,26 +137,26 @@ data ForgeEbbEnv blk = ForgeEbbEnv
 -- will restart and use 'tnaRekeyM' to compute its new 'ProtocolInfo'.
 type RekeyM m blk =
      CoreNodeId
-  -> ProtocolInfo blk
+  -> ProtocolInfo (ChaChaT m) blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
      -- ^ Which epoch the slot is in
-  -> m (TestNodeInitialization blk)
+  -> m (TestNodeInitialization m blk)
      -- ^ 'tniProtocolInfo' should include new delegation cert/operational key,
      -- and 'tniCrucialTxs' should include the new delegation certificate
      -- transaction
 
 -- | Data used when starting/restarting a node
-data TestNodeInitialization blk = TestNodeInitialization
+data TestNodeInitialization m blk = TestNodeInitialization
   { tniCrucialTxs   :: [GenTx blk]
     -- ^ these transactions are added immediately and repeatedly (whenever the
     -- 'ledgerTipSlot' changes)
-  , tniProtocolInfo :: ProtocolInfo blk
+  , tniProtocolInfo :: ProtocolInfo (ChaChaT m) blk
   }
 
 plainTestNodeInitialization
-  :: ProtocolInfo blk -> TestNodeInitialization blk
+  :: ProtocolInfo (ChaChaT m) blk -> TestNodeInitialization m blk
 plainTestNodeInitialization pInfo = TestNodeInitialization
     { tniCrucialTxs   = []
     , tniProtocolInfo = pInfo
@@ -167,7 +167,7 @@ plainTestNodeInitialization pInfo = TestNodeInitialization
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
   { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , tnaJoinPlan     :: NodeJoinPlan
-  , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization blk
+  , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization m blk
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaRNG          :: ChaChaDRG
@@ -430,7 +430,10 @@ runThreadNetwork ThreadNetworkArgs
           where
             NodeRestarts m = nodeRestarts
 
-        loop :: SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
+        loop :: SlotNo
+             -> ProtocolInfo (ChaChaT m) blk
+             -> NodeRestart
+             -> Map SlotNo NodeRestart -> m ()
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
@@ -545,16 +548,16 @@ runThreadNetwork ThreadNetworkArgs
                    => ResourceRegistry m
                    -> WrappedClock m
                    -> TopLevelConfig blk
-                   -> RunMonadRandom m
+                   -> StrictTVar m ChaChaDRG
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer registry clock cfg runMonadRandomDict getExtLedger mempool =
+    forkTxProducer registry clock cfg varRNG getExtLedger mempool =
       void $ WrappedClock.onSlotChange registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
-          testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
+        txs    <- simMonadRandom varRNG $
+                    testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
     mkArgs :: WrappedClock m
@@ -642,7 +645,7 @@ runThreadNetwork ThreadNetworkArgs
       -> StrictTVar m ChaChaDRG
       -> WrappedClock m
       -> ResourceRegistry m
-      -> ProtocolInfo blk
+      -> ProtocolInfo (ChaChaT m) blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -672,77 +675,78 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      let blockProduction :: BlockProduction m blk
-          blockProduction = BlockProduction {
-              produceBlock       = \lift' upd currentBno tickedLdgSt txs prf -> do
-                let currentSlot = tickedSlotNo tickedLdgSt
+      let (canBeLeader, maintainForgeState) =
+            case pInfoLeaderCreds of
+              Nothing    -> error "runThreadNetwork: cannot produce blocks"
+              Just creds -> creds
 
-                -- the typical behavior, which doesn't add a Just-In-Time EBB
-                let forgeWithoutEBB =
-                      forgeBlock pInfoConfig upd
-                        currentBno tickedLdgSt txs prf
+      blockProduction <- blockProductionIOLike pInfoConfig canBeLeader maintainForgeState varRNG $
+         \upd currentBno tickedLdgSt txs prf -> do
+            let currentSlot = tickedSlotNo tickedLdgSt
 
-                case mbForgeEbbEnv of
-                  Nothing          -> forgeWithoutEBB
-                  Just forgeEbbEnv -> do
-                    let ebbSlot :: SlotNo
-                        ebbSlot =
-                            SlotNo $ denom * div numer denom
-                          where
-                            SlotNo numer    = currentSlot
-                            EpochSize denom = epochSize
+            -- the typical behavior, which doesn't add a Just-In-Time EBB
+            let forgeWithoutEBB =
+                  forgeBlock pInfoConfig upd
+                    currentBno tickedLdgSt txs prf
 
-                    let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
-                    let mSlot = pointSlot p
-                    if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
-                      -- the EBB is needed
-                      --
-                      -- The EBB shares its BlockNo with its predecessor (if
-                      -- there is one)
-                      let ebbBno = case currentBno of
-                            -- We assume this invariant:
-                            --
-                            -- If forging of EBBs is enabled then the node
-                            -- initialization is responsible for producing any
-                            -- proper non-EBB blocks with block number 0.
-                            --
-                            -- So this case is unreachable.
-                            0 -> error "Error, only node initialization can forge non-EBB with block number 0."
-                            n -> pred n
-                      let ebb = forgeEBB forgeEbbEnv pInfoConfig
-                                  ebbSlot ebbBno (pointHash p)
+            case mbForgeEbbEnv of
+              Nothing          -> forgeWithoutEBB
+              Just forgeEbbEnv -> do
+                let ebbSlot :: SlotNo
+                    ebbSlot =
+                        SlotNo $ denom * div numer denom
+                      where
+                        SlotNo numer    = currentSlot
+                        EpochSize denom = epochSize
 
-                      -- fail if the EBB is invalid
-                      -- if it is valid, we retick to the /same/ slot
-                      let apply = applyLedgerBlock (configLedger pInfoConfig)
-                      tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
-                        Left e   -> Exn.throw $ JitEbbError @blk e
-                        Right st -> pure $ applyChainTick
-                                            (configLedger pInfoConfig)
-                                            currentSlot
-                                            st
+                let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
+                let mSlot = pointSlot p
+                if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
+                  -- the EBB is needed
+                  --
+                  -- The EBB shares its BlockNo with its predecessor (if
+                  -- there is one)
+                  let ebbBno = case currentBno of
+                        -- We assume this invariant:
+                        --
+                        -- If forging of EBBs is enabled then the node
+                        -- initialization is responsible for producing any
+                        -- proper non-EBB blocks with block number 0.
+                        --
+                        -- So this case is unreachable.
+                        0 -> error "Error, only node initialization can forge non-EBB with block number 0."
+                        n -> pred n
+                  let ebb = forgeEBB forgeEbbEnv pInfoConfig
+                              ebbSlot ebbBno (pointHash p)
 
-                      -- forge the block usings the ledger state that includes
-                      -- the EBB
-                      blk <- forgeBlock pInfoConfig upd
-                        currentBno tickedLdgSt' txs prf
+                  -- fail if the EBB is invalid
+                  -- if it is valid, we retick to the /same/ slot
+                  let apply = applyLedgerBlock (configLedger pInfoConfig)
+                  tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
+                    Left e   -> Exn.throw $ JitEbbError @blk e
+                    Right st -> pure $ applyChainTick
+                                        (configLedger pInfoConfig)
+                                        currentSlot
+                                        st
 
-                      -- /if the new block is valid/, add the EBB to the
-                      -- ChainDB
-                      --
-                      -- If the new block is invalid, then adding the EBB would
-                      -- be premature in some scenarios.
-                      case Exc.runExcept $ apply blk tickedLdgSt' of
-                        -- ASSUMPTION: If it's invalid with the EBB,
-                        -- it will be invalid without the EBB.
-                        Left{}  -> forgeWithoutEBB
-                        Right{} -> do
-                          -- TODO: We assume this succeeds; failure modes?
-                          void $ lift' $ ChainDB.addBlock chainDB ebb
-                          pure blk
+                  -- forge the block usings the ledger state that includes
+                  -- the EBB
+                  blk <- forgeBlock pInfoConfig upd
+                    currentBno tickedLdgSt' txs prf
 
-            , runMonadRandomDict = runMonadRandomWithTVar varRNG
-            }
+                  -- /if the new block is valid/, add the EBB to the
+                  -- ChainDB
+                  --
+                  -- If the new block is invalid, then adding the EBB would
+                  -- be premature in some scenarios.
+                  case Exc.runExcept $ apply blk tickedLdgSt' of
+                    -- ASSUMPTION: If it's invalid with the EBB,
+                    -- it will be invalid without the EBB.
+                    Left{}  -> forgeWithoutEBB
+                    Right{} -> do
+                      -- TODO: We assume this succeeds; failure modes?
+                      void $ lift $ ChainDB.addBlock chainDB ebb
+                      pure blk
 
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
@@ -763,7 +767,6 @@ runThreadNetwork ThreadNetworkArgs
             { tracers
             , registry
             , cfg                     = pInfoConfig
-            , initForgeState          = pInfoInitForgeState
             , btime
             , chainDB
             , initChainDB             = nodeInitChainDB
@@ -826,7 +829,7 @@ runThreadNetwork ThreadNetworkArgs
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        (runMonadRandomWithTVar varRNG)
+        varRNG
         (ChainDB.getCurrentLedger chainDB)
         mempool
 
@@ -1235,6 +1238,7 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
+  , Show (ForgeState blk)
   , ShowQuery (Query blk)
   )
 

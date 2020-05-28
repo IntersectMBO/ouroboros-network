@@ -387,12 +387,11 @@ testInitExtLedger = ExtLedgerState {
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
       configConsensus = BftConfig {
-          bftParams   = BftParams { bftSecurityParam = k
-                                  , bftNumNodes      = numCoreNodes
-                                  }
-        , bftNodeId   = CoreId (CoreNodeId 0)
-        , bftSignKey  = SignKeyMockDSIGN 0
-        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+          bftParams  = BftParams { bftSecurityParam = k
+                                 , bftNumNodes      = numCoreNodes
+                                 }
+        , bftSignKey = SignKeyMockDSIGN 0
+        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = eraParams
     , configBlock  = TestBlockConfig numCoreNodes

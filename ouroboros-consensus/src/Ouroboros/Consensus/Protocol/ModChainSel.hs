@@ -43,11 +43,11 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
       => ConsensusProtocol (ModChainSel p s) where
     type ConsensusState (ModChainSel p s) = ConsensusState p
     type IsLeader       (ModChainSel p s) = IsLeader       p
+    type CanBeLeader    (ModChainSel p s) = CanBeLeader    p
     type LedgerView     (ModChainSel p s) = LedgerView     p
     type ValidationErr  (ModChainSel p s) = ValidationErr  p
     type ValidateView   (ModChainSel p s) = ValidateView   p
 
-    checkIfCanBeLeader    = checkIfCanBeLeader    . mcsConfigP
     checkIsLeader         = checkIsLeader         . mcsConfigP
     updateConsensusState  = updateConsensusState  . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP

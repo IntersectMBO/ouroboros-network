@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 
@@ -33,7 +34,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
-import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
+import           Control.Monad.IOSim (SimM, runSimOrThrow, setCurrentTime)
 
 import           Cardano.Slotting.Slot
 
@@ -165,10 +166,10 @@ instance Arbitrary TestConfig where
   Configuring tests for a specific block type
 -------------------------------------------------------------------------------}
 
-data TestConfigBlock blk = TestConfigBlock
+data TestConfigBlock m blk = TestConfigBlock
   { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
-  , nodeInfo    :: CoreNodeId -> TestNodeInitialization blk
-  , rekeying    :: Maybe (Rekeying blk)
+  , nodeInfo    :: CoreNodeId -> TestNodeInitialization m blk
+  , rekeying    :: Maybe (Rekeying m blk)
   , txGenExtra  :: TxGenExtra blk
   }
 
@@ -177,7 +178,7 @@ data TestConfigBlock blk = TestConfigBlock
 -- This is the conceptual interface demanded from the test-specific logic. It
 -- is used to define 'tnaRekeyM', which the test infrastructure invokes per the
 -- 'NodeRestarts' schedule.
-data Rekeying blk = forall opKey. Rekeying
+data Rekeying m blk = forall opKey. Rekeying
   { rekeyOracle
       :: CoreNodeId -> SlotNo -> Maybe SlotNo
     -- ^ The first /nominal/ slot after the given slot, assuming the given core
@@ -186,10 +187,10 @@ data Rekeying blk = forall opKey. Rekeying
     -- IE the first slot that will result in a block successfully being forged
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
-         ProtocolInfo blk
+         ProtocolInfo (ChaChaT m) blk
       -> EpochNo
       -> opKey
-      -> Maybe (TestNodeInitialization blk)
+      -> Maybe (TestNodeInitialization m blk)
      -- ^ new config and any corresponding delegation certificate transactions
      --
      -- The epoch number is the one required to create a Byron redeleg cert.
@@ -219,7 +220,7 @@ runTestNetwork ::
   -> EpochSize
   -- ^ Temporary: until we start testing the hard fork combinator, we just
   -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
-  -> TestConfigBlock blk
+  -> (forall m. IOLike m => TestConfigBlock m blk)
   -> TestOutput blk
 runTestNetwork
   TestConfig
@@ -232,12 +233,30 @@ runTestNetwork
     , initSeed
     }
   epochSize
-  TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra}
-  = runSimOrThrow $ do
-
-    setCurrentTime dawnOfTime
-
-    let tna = ThreadNetworkArgs
+  cfg
+  = runSimOrThrow (go cfg)
+  where
+    go :: forall s. TestConfigBlock (SimM s) blk -> SimM s (TestOutput blk)
+    go TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra} = do
+        setCurrentTime dawnOfTime
+        case rekeying of
+          Nothing -> runThreadNetwork tna
+          Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
+            rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
+            runThreadNetwork tna
+              { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
+                  Nothing -> pure $ plainTestNodeInitialization pInfo
+                  Just s' -> do
+                    x <- atomically $ do
+                      x :< xs <- readTVar rekeyVar
+                      x <$ writeTVar rekeyVar xs
+                    eno <- mkEno s'
+                    pure $ case rekeyUpd pInfo eno x of
+                      Nothing  -> plainTestNodeInitialization pInfo
+                      Just tni -> tni
+              }
+      where
+        tna = ThreadNetworkArgs
           { tnaForgeEbbEnv    = forgeEbbEnv
           , tnaJoinPlan       = nodeJoinPlan
           , tnaNodeInfo       = nodeInfo
@@ -252,22 +271,6 @@ runTestNetwork
           , tnaTxGenExtra     = txGenExtra
           }
 
-    case rekeying of
-      Nothing                                -> runThreadNetwork tna
-      Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
-        rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
-        runThreadNetwork tna
-          { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
-              Nothing -> pure $ plainTestNodeInitialization pInfo
-              Just s' -> do
-                x <- atomically $ do
-                  x :< xs <- readTVar rekeyVar
-                  x <$ writeTVar rekeyVar xs
-                eno <- mkEno s'
-                pure $ case rekeyUpd pInfo eno x of
-                  Nothing  -> plainTestNodeInitialization pInfo
-                  Just tni -> tni
-          }
 
 {-------------------------------------------------------------------------------
   Test properties

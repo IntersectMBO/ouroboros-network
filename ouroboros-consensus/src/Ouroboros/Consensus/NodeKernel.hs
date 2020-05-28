@@ -59,15 +59,14 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
@@ -101,43 +100,6 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getTracers             :: Tracers m remotePeer localPeer blk
     }
 
--- | Callbacks required to produce blocks
-data BlockProduction m blk = BlockProduction {
-      -- | Produce a block
-      --
-      -- The function is passed the contents of the mempool; this is a set of
-      -- transactions that is guaranteed to be consistent with the ledger state
-      -- (also provided as an argument) and with each other (when applied in
-      -- order). In principle /all/ of them could be included in the block (up
-      -- to maximum block size).
-      --
-      -- Note that this function is not run in @m@, but in some monad @n@
-      -- which only has the ability to produce random number and access to the
-      -- 'ForgeState'.
-      produceBlock :: forall n. MonadRandom n
-                   => (forall a. m a -> n a)
-                   -- Lift actions into @n@
-                   --
-                   -- This allows block production to execute arbitrary side
-                   -- effects; this is primarily useful for tests.
-
-                   -> Update n (ForgeState blk)
-                   -> BlockNo               -- Current block number
-                   -> TickedLedgerState blk -- Current ledger state
-                   -> [GenTx blk]           -- Contents of the mempool
-                   -> IsLeader (BlockProtocol blk) -- Proof we are leader
-                   -> n blk
-
-      -- | How to run a computation requiring 'MonadRandom'.
-      --
-      -- When @m = IO@, this can be 'runMonadRandomIO', because the
-      -- 'MonadRandom' instance for 'IO' can be used.
-      --
-      -- In the tests, we can simulate a 'MonadRandom' by keeping track of a
-      -- DRG in a 'TVar'.
-    , runMonadRandomDict :: RunMonadRandom m
-    }
-
 -- | The maximum transaction capacity of a block is computed by taking the max
 -- block size from the protocol parameters in the current ledger state and
 -- subtracting the size of the header.
@@ -158,7 +120,6 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
-    , initForgeState          :: ForgeState blk
     , btime                   :: BlockchainTime m
     , chainDB                 :: ChainDB m blk
     , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
@@ -233,7 +194,6 @@ data InternalState m remotePeer localPeer blk = IS {
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
-    , varForgeState       :: StrictTVar m (ForgeState blk)
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -249,15 +209,14 @@ initInternalState
     -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             initForgeState, mempoolCapacityOverride } = do
-    varCandidates  <- newTVarM mempty
-    varForgeState  <- newTVarM initForgeState
-    mempool        <- openMempool registry
-                                  (chainDBLedgerInterface chainDB)
-                                  (configLedger cfg)
-                                  mempoolCapacityOverride
-                                  (mempoolTracer tracers)
-                                  txInBlockSize
+                             mempoolCapacityOverride } = do
+    varCandidates <- newTVarM mempty
+    mempool       <- openMempool registry
+                                 (chainDBLedgerInterface chainDB)
+                                 (configLedger cfg)
+                                 mempoolCapacityOverride
+                                 (mempoolTracer tracers)
+                                 txInBlockSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -344,8 +303,6 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
     void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
       withEarlyExit_ . go
   where
-    RunMonadRandom{..} = runMonadRandomDict
-
     go :: SlotNo -> WithEarlyExit m ()
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
@@ -404,12 +361,11 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
 
         -- Check if we are the leader
         proof <- do
-          mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
-            runMonadRandom $ \_lift' ->
-              checkIsLeader
-                (configConsensus cfg)
-                (protocolLedgerView (configLedger cfg) <$> ticked)
-                (headerStateConsensus (headerState extLedger))
+          mIsLeader <- lift $
+            getLeaderProof
+              (forgeStateTracer tracers)
+              (protocolLedgerView (configLedger cfg) <$> ticked)
+              (headerStateConsensus (headerState extLedger))
           case mIsLeader of
             Just p  -> return p
             Nothing -> do
@@ -435,10 +391,8 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
                               (computeMaxTxCapacity ticked)
 
         -- Actually produce the block
-        newBlock <- lift $ runMonadRandom $ \lift' ->
+        newBlock <- lift $
           produceBlock
-            lift'
-            (updateFromTVar (castStrictTVar varForgeState))
             bcBlockNo
             ticked
             txs

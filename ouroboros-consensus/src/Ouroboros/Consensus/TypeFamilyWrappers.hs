@@ -16,6 +16,7 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapConsensusState(..)
   , WrapChainSelConfig(..)
   , WrapIsLeader(..)
+  , WrapCanBeLeader(..)
   , WrapValidationErr(..)
   , WrapValidateView(..)
   , WrapSelectView(..)
@@ -44,12 +45,13 @@ newtype WrapForgeState   blk = WrapForgeState   { unwrapForgeState   :: ForgeSta
   Consensus based
 -------------------------------------------------------------------------------}
 
-newtype WrapConsensusState  blk = WrapConsensusState  { unwrapConsensusState  :: ConsensusState         (BlockProtocol blk) }
-newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig         (BlockProtocol blk) }
-newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader               (BlockProtocol blk) }
-newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr          (BlockProtocol blk) }
-newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView           (BlockProtocol blk) }
-newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView             (BlockProtocol blk) }
+newtype WrapConsensusState  blk = WrapConsensusState  { unwrapConsensusState  :: ConsensusState (BlockProtocol blk) }
+newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig (BlockProtocol blk) }
+newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader       (BlockProtocol blk) }
+newtype WrapCanBeLeader     blk = WrapCanBeLeader     { unwrapCanBeLeader     :: CanBeLeader    (BlockProtocol blk) }
+newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr  (BlockProtocol blk) }
+newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView   (BlockProtocol blk) }
+newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView     (BlockProtocol blk) }
 
 {-------------------------------------------------------------------------------
   Instances
@@ -75,6 +77,8 @@ deriving instance NoUnexpectedThunks (LedgerError blk)              => NoUnexpec
 deriving instance NoUnexpectedThunks (ForgeState blk)               => NoUnexpectedThunks (WrapForgeState blk)
 
 deriving instance Show               (ApplyTxErr blk)               => Show               (WrapApplyTxErr blk)
+
+deriving instance Show               (ForgeState blk)               => Show               (WrapForgeState blk)
 
 {-------------------------------------------------------------------------------
   .. consensus based

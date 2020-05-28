@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     -- * Re-exports to keep 'Protocol.State' an internal module
     HardForkConsensusState
+  , HardForkCanBeLeader
   , HardForkValidationErr(..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
   , HardForkLedgerView
@@ -35,7 +36,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkEraLedgerView (..), HardForkLedgerView,
                      mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.State
-                     (HardForkConsensusState, HardForkValidationErr)
+                     (HardForkCanBeLeader, HardForkConsensusState,
+                     HardForkValidationErr)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
 
 {-------------------------------------------------------------------------------
@@ -46,6 +48,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   type ConsensusState (HardForkProtocol xs) = HardForkConsensusState xs
   type ValidationErr  (HardForkProtocol xs) = HardForkValidationErr  xs
   type LedgerView     (HardForkProtocol xs) = HardForkLedgerView     xs
+  type CanBeLeader    (HardForkProtocol xs) = HardForkCanBeLeader    xs
   type IsLeader       (HardForkProtocol xs) = OneEraIsLeader         xs
   type ValidateView   (HardForkProtocol xs) = OneEraValidateView     xs
 
@@ -58,19 +61,6 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   --
   -- Straight-forward extensions
   --
-
-  -- We can be a leader if we can be a leader in /any/ era
-  checkIfCanBeLeader =
-        or
-      . hcollapse
-      . hcmap proxySingle (K . aux)
-      . getPerEraConsensusConfig
-      . hardForkConsensusConfigPerEra
-    where
-      aux :: forall blk. SingleEraBlock blk
-          => WrapPartialConsensusConfig blk -> Bool
-      aux = partialCheckIfCanBeLeader (Proxy @(BlockProtocol blk))
-          . unwrapPartialConsensusConfig
 
   -- Security parameter must be equal across /all/ eras
   protocolSecurityParam = hardForkConsensusConfigK
