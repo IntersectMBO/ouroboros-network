@@ -121,9 +121,11 @@ testSkeleton ArbitraryChain{..} q =
 eventSlotToEpoch :: ArbitraryChain -> Property
 eventSlotToEpoch chain@ArbitraryChain{..} =
     testSkeleton chain (HF.slotToEpoch eventTimeSlot) $
-      \(epochNo, epochSlot) -> conjoin [
-          epochNo   === eventTimeEpochNo
-        , epochSlot === eventTimeEpochSlot
+      \(epochNo, epochSlot, slotsLeft) -> conjoin [
+          epochNo               === eventTimeEpochNo
+        , epochSlot             === eventTimeEpochSlot
+        , epochSlot + slotsLeft === (unEpochSize . HF.eraEpochSize $
+                                       eventEraParams arbitraryEvent)
         ]
   where
     EventTime{..} = eventTime arbitraryEvent

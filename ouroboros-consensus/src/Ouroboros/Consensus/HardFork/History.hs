@@ -974,30 +974,36 @@ slotToWallclock absSlot = do
   Conversion between slots and epochs
 -------------------------------------------------------------------------------}
 
--- | Translate 'SlotNo' to its corresponding 'EpochNo'
---
--- Additionally returns the relative slot within this epoch.
-slotToEpoch :: SlotNo -> Qry (EpochNo, Word64)
-slotToEpoch absSlot = do
+-- | Convert 'SlotNo' to 'EpochNo' and the relative slot within the epoch
+slotToEpoch' :: SlotNo -> Qry (EpochNo, Word64)
+slotToEpoch' absSlot = do
     relSlot   <- QAbsToRelSlot   absSlot
     epochSlot <- QRelSlotToEpoch relSlot
     absEpoch  <- QRelToAbsEpoch  epochSlot
-    let slotInEpoch = getSlotInEpoch (snd epochSlot)
-    return (
-        absEpoch
-      , slotInEpoch
-      )
+    return (absEpoch, getSlotInEpoch (snd epochSlot))
+
+-- | Translate 'SlotNo' to its corresponding 'EpochNo'
+--
+-- Additionally returns the relative slot within this epoch and how many
+-- slots are left in this slot.
+slotToEpoch :: SlotNo -> Qry (EpochNo, Word64, Word64)
+slotToEpoch absSlot = do
+    (absEpoch, slotInEpoch) <- slotToEpoch' absSlot
+    epochSize <- QEpochSize absEpoch
+    return (absEpoch, slotInEpoch, unEpochSize epochSize - slotInEpoch)
+
+epochToSlot' :: EpochNo -> Qry SlotNo
+epochToSlot' absEpoch = do
+    relEpoch  <- QAbsToRelEpoch  absEpoch
+    slotInEra <- QRelEpochToSlot relEpoch
+    absSlot   <- QRelToAbsSlot   (slotInEra, TimeInSlot 0)
+    return absSlot
 
 -- | Translate 'EpochNo' to the 'SlotNo' of the first slot in that epoch
 --
 -- Additionally returns the size of the epoch.
 epochToSlot :: EpochNo -> Qry (SlotNo, EpochSize)
-epochToSlot absEpoch = do
-    relEpoch  <- QAbsToRelEpoch  absEpoch
-    slotInEra <- QRelEpochToSlot relEpoch
-    absSlot   <- QRelToAbsSlot   (slotInEra, TimeInSlot 0)
-    epochSize <- QEpochSize      absEpoch
-    return (absSlot, epochSize)
+epochToSlot absEpoch = (,) <$> epochToSlot' absEpoch <*> QEpochSize absEpoch
 
 {-------------------------------------------------------------------------------
   Caching the summary
@@ -1063,9 +1069,11 @@ summaryToEpochInfo =
   where
     go :: RunWithCachedSummary xs m -> EpochInfo (STM m)
     go run = EpochInfo {
-          epochInfoSize_  = \e -> cachedRunQueryThrow run (snd <$> epochToSlot e)
-        , epochInfoFirst_ = \e -> cachedRunQueryThrow run (fst <$> epochToSlot e)
-        , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch s)
+          epochInfoSize_  = \e -> cachedRunQueryThrow run (QEpochSize   e)
+        , epochInfoFirst_ = \e -> cachedRunQueryThrow run (epochToSlot' e)
+        , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch' s)
+
+        --((\(e, _, _) -> e) <$> slotToEpoch s)
         }
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
@@ -1074,9 +1082,9 @@ summaryToEpochInfo =
 -- error as a /pure/ exception. Such an exception would indicate a bug.
 snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize_  = \e -> runQueryPure' (snd <$> epochToSlot e)
-    , epochInfoFirst_ = \e -> runQueryPure' (fst <$> epochToSlot e)
-    , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch s)
+      epochInfoSize_  = \e -> runQueryPure' (QEpochSize   e)
+    , epochInfoFirst_ = \e -> runQueryPure' (epochToSlot' e)
+    , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch' s)
     }
   where
     runQueryPure' :: Qry a -> Identity a

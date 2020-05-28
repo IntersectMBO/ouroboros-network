@@ -97,16 +97,23 @@ roundtripSlotWallclock s@ArbitrarySummary{beforeHorizonSlot = slot} =
 roundtripSlotEpoch :: ArbitrarySummary -> Property
 roundtripSlotEpoch s@ArbitrarySummary{beforeHorizonSlot = slot} =
     noPastHorizonException s $ do
-      (epoch ,  inEpoch  ) <- HF.slotToEpoch slot
-      (slot' , _epochSize) <- HF.epochToSlot epoch
-      return $ HF.addSlots inEpoch slot' === slot
+      (epoch , inEpoch, slotsLeft) <- HF.slotToEpoch slot
+      (slot' , epochSize)          <- HF.epochToSlot epoch
+      return $ conjoin [
+          HF.addSlots inEpoch slot' === slot
+        , inEpoch + slotsLeft       === unEpochSize epochSize
+        ]
 
 roundtripEpochSlot :: ArbitrarySummary -> Property
 roundtripEpochSlot s@ArbitrarySummary{beforeHorizonEpoch = epoch} =
     noPastHorizonException s $ do
-      (slot  , _epochSize) <- HF.epochToSlot epoch
-      (epoch',  inEpoch  ) <- HF.slotToEpoch slot
-      return $ epoch' === epoch .&&. inEpoch === 0
+      (slot  , epochSize)          <- HF.epochToSlot epoch
+      (epoch', inEpoch, slotsLeft) <- HF.slotToEpoch slot
+      return $ conjoin [
+          epoch'              === epoch
+        , inEpoch             === 0
+        , inEpoch + slotsLeft === unEpochSize epochSize
+        ]
 
 reportsPastHorizon :: ArbitrarySummary -> Property
 reportsPastHorizon s@ArbitrarySummary{..} = conjoin [
