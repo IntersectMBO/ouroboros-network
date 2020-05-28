@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -42,6 +44,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , mismatchOneEra
     -- * Utility
   , oneEraBlockHeader
+  , getSameValue
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -49,11 +52,13 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
+import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.SOP.Strict hiding (shift)
 import           Data.Void
 import           Data.Word
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -63,6 +68,8 @@ import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (allEqual)
+import           Ouroboros.Consensus.Util.Assert
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -138,6 +145,22 @@ oneEraBlockHeader =
       OneEraHeader
     . hcmap proxySingle (getHeader . unI)
     . getOneEraBlock
+
+getSameValue
+  :: forall xs a. (IsNonEmpty xs, Eq a, SListI xs, HasCallStack)
+  => NP (K a) xs
+  -> a
+getSameValue values =
+    case isNonEmpty (Proxy @xs) of
+      ProofNonEmpty _ ->
+        assertWithMsg allEqualCheck (unK (hd values))
+  where
+    allEqualCheck :: Either String ()
+    allEqualCheck
+        | allEqual (hcollapse values)
+        = return ()
+        | otherwise
+        = throwError "differing values across hard fork"
 
 {-------------------------------------------------------------------------------
   HasHeader instance for OneEraHeader

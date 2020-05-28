@@ -22,6 +22,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
 import           Data.SOP.Strict
+import           Data.Word (Word32)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -91,6 +92,22 @@ instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
   blockSlot      =            blockSlot     . getHardForkHeader
   blockNo        =            blockNo       . getHardForkHeader
   blockInvariant = const True
+
+
+{-------------------------------------------------------------------------------
+  ConvertRawHash
+-------------------------------------------------------------------------------}
+
+instance CanHardFork xs => ConvertRawHash (HardForkBlock xs) where
+  toRawHash   _ = getOneEraHash
+  fromRawHash _ = OneEraHash
+  hashSize    _ = getSameValue hashSizes
+    where
+      hashSizes :: NP (K Word32) xs
+      hashSizes = hcpure proxySingle hashSizeOne
+
+      hashSizeOne :: forall blk. SingleEraBlock blk => K Word32 blk
+      hashSizeOne = K $ hashSize (Proxy @blk)
 
 {-------------------------------------------------------------------------------
   HasAnnTip

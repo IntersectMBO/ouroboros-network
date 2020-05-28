@@ -261,10 +261,10 @@ instance SingleEraBlock b => CanForge (DegenFork b) where
 instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk
 
-instance ConvertRawHash b => ConvertRawHash (DegenFork b) where
-  toRawHash   _ = getOneEraHash
-  fromRawHash _ = OneEraHash
-  hashSize    _ = hashSize (Proxy @b)
+instance SingleEraBlock b => ConvertRawHash (DegenFork b) where
+  toRawHash   _ = toRawHash   (Proxy @(HardForkBlock '[b]))
+  fromRawHash _ = fromRawHash (Proxy @(HardForkBlock '[b]))
+  hashSize    _ = hashSize    (Proxy @(HardForkBlock '[b]))
 
 {-------------------------------------------------------------------------------
   RunNode instance
