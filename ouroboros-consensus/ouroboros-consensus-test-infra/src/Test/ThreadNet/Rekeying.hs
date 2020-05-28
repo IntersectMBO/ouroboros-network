@@ -32,13 +32,14 @@ data Rekeying m blk = forall opKey. Rekeying
     -- IE the first slot that will result in a block successfully being forged
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
-         ProtocolInfo (ChaChaT m) blk
-      -> EpochNo
+         CoreNodeId
+      -> ProtocolInfo (ChaChaT m) blk
+      -> SlotNo
       -> opKey
       -> Maybe (TestNodeInitialization m blk)
      -- ^ new config and any corresponding delegation certificate transactions
      --
-     -- The epoch number is the one required to create a Byron redeleg cert.
+     -- The slot number is the one given by 'rekeyOracle'.
      --
      -- The 'TestNodeInitialization' includes the new 'ProtocolInfo' used when
      -- the node completes restarting.
@@ -51,13 +52,12 @@ data Rekeying m blk = forall opKey. Rekeying
 fromRekeyingToRekeyM :: IOLike m => Rekeying m blk -> m (RekeyM m blk)
 fromRekeyingToRekeyM Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} = do
     rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
-    pure $ \cid pInfo s mkEno -> case rekeyOracle cid s of
+    pure $ \cid pInfo s -> case rekeyOracle cid s of
       Nothing -> pure $ plainTestNodeInitialization pInfo
       Just s' -> do
         x <- atomically $ do
           x :< xs <- readTVar rekeyVar
           x <$ writeTVar rekeyVar xs
-        eno <- mkEno s'
-        pure $ case rekeyUpd pInfo eno x of
+        pure $ case rekeyUpd pInfo s' x of
           Nothing  -> plainTestNodeInitialization pInfo
           Just tni -> tni

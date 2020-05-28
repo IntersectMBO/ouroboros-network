@@ -52,7 +52,6 @@ import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
 
-import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -142,8 +141,6 @@ type RekeyM m blk =
   -> ProtocolInfo (ChaChaT m) blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
-  -> (SlotNo -> m EpochNo)
-     -- ^ Which epoch the slot is in
   -> m (TestNodeInitialization m blk)
      -- ^ 'tniProtocolInfo' should include new delegation cert/operational key,
      -- and 'tniCrucialTxs' should include the new delegation certificate
@@ -394,9 +391,6 @@ runThreadNetwork ThreadNetworkArgs
   where
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
-    epochInfo :: EpochInfo m
-    epochInfo = fixedSizeEpochInfo epochSize
-
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
@@ -448,7 +442,7 @@ runThreadNetwork ThreadNetworkArgs
             -- the node is restarting because it just rekeyed
             tni' <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
+                rekeyM coreNodeId pInfo s
               _                        ->
                   pure $ plainTestNodeInitialization pInfo
             let TestNodeInitialization
