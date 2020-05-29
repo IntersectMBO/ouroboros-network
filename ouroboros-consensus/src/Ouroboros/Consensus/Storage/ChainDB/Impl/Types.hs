@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , getBlockToAdd
     -- * Trace types
   , TraceEvent (..)
+  , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceReaderEvent (..)
   , TraceCopyToImmDBEvent (..)
@@ -62,12 +63,14 @@ import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
 import           Data.Void (Void)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+import           Cardano.Slotting.Slot (EpochNo)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
@@ -502,6 +505,33 @@ data TraceOpenEvent blk =
   | OpenedLgrDB
   deriving (Generic, Eq, Show)
 
+-- | Information about the new tip of the current chain.
+--
+-- NOTE: the fields of this record are intentionally lazy to prevent the
+-- forcing of this information in case it doesn't have to be traced. However,
+-- this means that the tracer processing this message /must not/ hold on to
+-- it, otherwise it leaks memory.
+data NewTipInfo blk = NewTipInfo {
+      newTipPoint       :: RealPoint blk
+      -- ^ The new tip of the current chain.
+    , newTipEpoch       :: EpochNo
+      -- ^ The epoch of the new tip.
+    , newTipSlotInEpoch :: Word64
+      -- ^ The slot in the epoch, i.e., the relative slot number, of the new
+      -- tip.
+    , newTipTrigger     :: RealPoint blk
+      -- ^ The new tip of the current chain ('newTipPoint') is the result of
+      -- performing chain selection for a /trigger/ block ('newTipTrigger').
+      -- In most cases, we add a new block to the tip of the current chain, in
+      -- which case the new tip /is/ the trigger block.
+      --
+      -- However, this is not always the case. For example, with our current
+      -- chain being A and having a disconnected C lying around, adding B will
+      -- result in A -> B -> C as the new chain. The trigger B /= the new tip
+      -- C.
+    }
+  deriving (Eq, Show, Generic)
+
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk =
     -- | A block with a 'BlockNo' more than @k@ back than the current tip was
@@ -537,25 +567,19 @@ data TraceAddBlockEvent blk =
     -- it.
   | StoreButDontChange (RealPoint blk)
 
-    -- | The new block (the 'Point') fits onto the current chain (first
+    -- | The new block fits onto the current chain (first
     -- fragment) and we have successfully used it to extend our (new) current
     -- chain (second fragment).
-    --
-    -- Note that the new block isn't necessarily the tip of the new current
-    -- chain, as the new block might be the missing link between newer blocks
-    -- that come after it. For example, with our current chain being A and
-    -- having a disconnect C lying around, adding B will result in A -> B -> C
-    -- as the new chain.
   | AddedToCurrentChain
-      (RealPoint blk)
+      (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
 
-    -- | The new block (the 'Point') fits onto some fork and we have switched
-    -- to that fork (second fragment), as it is preferable to our (previous)
-    -- current chain (first fragment).
+    -- | The new block fits onto some fork and we have switched to that fork
+    -- (second fragment), as it is preferable to our (previous) current chain
+    -- (first fragment).
   | SwitchedToAFork
-      (RealPoint blk)
+      (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
 

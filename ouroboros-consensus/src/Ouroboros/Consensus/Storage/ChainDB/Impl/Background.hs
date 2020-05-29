@@ -59,6 +59,8 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
@@ -80,7 +82,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 launchBgTasks
-  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+  :: forall m blk.
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
@@ -507,7 +514,12 @@ dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 -- | Read blocks from 'cdbBlocksToAdd' and add them synchronously to the
 -- ChainDB.
 addBlockRunner
-  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+  :: ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     , HasCallStack
+     )
   => ChainDbEnv m blk
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do

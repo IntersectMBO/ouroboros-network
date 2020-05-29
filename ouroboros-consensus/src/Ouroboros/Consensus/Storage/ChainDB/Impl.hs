@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , openDB
     -- * Trace types
   , TraceEvent (..)
+  , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceReaderEvent (..)
   , TraceCopyToImmDBEvent (..)
@@ -38,7 +39,9 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, castPoint)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, Header)
+import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
+import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
@@ -68,7 +71,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 withDB
   :: forall m blk a.
-     (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     , ConvertRawHash blk
+     )
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
   -> m a
@@ -76,14 +84,24 @@ withDB args = bracket (fst <$> openDBInternal args True) API.closeDB
 
 openDB
   :: forall m blk.
-     (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     , ConvertRawHash blk
+     )
   => ChainDbArgs m blk
   -> m (ChainDB m blk)
 openDB args = fst <$> openDBInternal args True
 
 openDBInternal
   :: forall m blk.
-     (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     , ConvertRawHash blk
+     )
   => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)

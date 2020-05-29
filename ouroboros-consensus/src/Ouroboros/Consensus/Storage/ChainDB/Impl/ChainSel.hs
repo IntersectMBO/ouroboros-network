@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Operations involving chain selection: the initial chain selection and
@@ -33,6 +34,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust, mapMaybe)
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
@@ -46,10 +48,13 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
+import           Ouroboros.Consensus.HardFork.Abstract
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -229,6 +234,8 @@ addBlockSync
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -333,7 +340,12 @@ olderThanK hdr isEBB immBlockNo
     bNo = blockNo hdr
 
 chainSelectionForFutureBlocks
-  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+  :: ( IOLike m
+     , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
+     , HasCallStack
+     )
   => ChainDbEnv m blk -> BlockCache blk -> m ()
 chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
     -- Get 'cdbFutureBlocks' and empty the map in the TVar. It will be
@@ -387,6 +399,8 @@ chainSelectionForBlock
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
+     , ConfigSupportsNode blk
+     , HasHardForkHistory blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -532,7 +546,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               Nothing                 ->
                 return curTip
               Just validatedChainDiff ->
-                switchTo validatedChainDiff (AddedToCurrentChain p)
+                switchTo validatedChainDiff AddedToCurrentChain
       where
         chainSelEnv = mkChainSelEnv curChainAndLedger
         curChain    = VF.validatedFragment curChainAndLedger
@@ -579,12 +593,43 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               Nothing                 ->
                 return curTip
               Just validatedChainDiff ->
-                switchTo validatedChainDiff (SwitchedToAFork p)
+                switchTo validatedChainDiff SwitchedToAFork
       where
         chainSelEnv = mkChainSelEnv curChainAndLedger
         curChain    = VF.validatedFragment curChainAndLedger
         curTip      = castPoint $ AF.headPoint curChain
         i           = AF.castAnchor $ anchor curChain
+
+    -- | Create a 'NewTipInfo' corresponding to the tip of the given ledger.
+    mkNewTipInfo :: LgrDB.LedgerDB blk -> NewTipInfo blk
+    mkNewTipInfo newLedgerDB =
+        NewTipInfo {
+            newTipPoint       = tipPoint
+          , newTipEpoch       = tipEpoch
+          , newTipSlotInEpoch = tipSlotInEpoch
+          , newTipTrigger     = p
+          }
+      where
+        cfg :: TopLevelConfig blk
+        cfg = cdbTopLevelConfig
+
+        ledger :: LedgerState blk
+        ledger = ledgerState (LgrDB.ledgerDbCurrent newLedgerDB)
+
+        summary :: History.Summary (HardForkIndices blk)
+        summary = hardForkSummary
+                    -- TODO we shouldn't need to be aware of time here
+                    (getSystemStart (configBlock cfg))
+                    (configLedger cfg)
+                    ledger
+
+        (tipPoint, (tipEpoch, tipSlotInEpoch)) =
+          case pointToWithOriginRealPoint
+                 (ledgerTipPoint' (Proxy @blk) ledger) of
+            Origin -> error "cannot have switched to an empty chain"
+            At tip ->
+              let query = History.slotToEpoch' (realPointSlot tip)
+              in (tip, History.runQueryPure query summary)
 
     -- | Try to apply the given 'ChainDiff' on the current chain fragment. The
     -- 'LgrDB.LedgerDB' is updated in the same transaction.
@@ -601,12 +646,13 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
       :: HasCallStack
       => ValidatedChainDiff blk (LgrDB.LedgerDB blk)
          -- ^ Chain and ledger to switch to
-      -> (    AnchoredFragment (Header blk)
+      -> (    NewTipInfo blk
+           -> AnchoredFragment (Header blk)
            -> AnchoredFragment (Header blk)
            -> TraceAddBlockEvent blk
          )
-         -- ^ Given the previous chain and the new chain, return the event
-         -- to trace when we switched to the new chain.
+         -- ^ Given the 'NewTipInfo', the previous chain, and the new chain,
+         -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
     switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
         (curChain, newChain) <- atomically $ do
@@ -630,7 +676,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
               return (curChain, newChain)
 
-        trace $ mkTraceEvent curChain newChain
+        trace $ mkTraceEvent (mkNewTipInfo newLedger) curChain newChain
         traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain
