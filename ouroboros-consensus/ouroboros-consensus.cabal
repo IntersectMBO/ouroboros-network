@@ -79,6 +79,13 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Util.Tails
                        Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                        Ouroboros.Consensus.HardFork.History
+                       Ouroboros.Consensus.HardFork.History.Caching
+                       Ouroboros.Consensus.HardFork.History.EpochInfo
+                       Ouroboros.Consensus.HardFork.History.EraParams
+                       Ouroboros.Consensus.HardFork.History.Qry
+                       Ouroboros.Consensus.HardFork.History.ShiftTime
+                       Ouroboros.Consensus.HardFork.History.Summary
+                       Ouroboros.Consensus.HardFork.History.Util
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual
