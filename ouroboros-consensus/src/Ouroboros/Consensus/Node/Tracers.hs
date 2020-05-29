@@ -190,7 +190,7 @@ data TraceForgeEvent blk
   -- This should only happen rarely and should be logged with warning severity.
   --
   -- Records why we cannot lead.
-  | TraceNotCannotLead SlotNo (CannotLead (BlockProtocol blk))
+  | TraceNodeCannotLead SlotNo (CannotLead (BlockProtocol blk))
 
   -- | Leadership check failed: we were unable to get the ledger state
   -- for the point of the block we want to connect to
