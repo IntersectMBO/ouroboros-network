@@ -6,8 +6,6 @@ module Ouroboros.Consensus.HardFork.Abstract (
   , neverForksHardForkSummary
   ) where
 
-import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
-                     (SystemStart)
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -48,8 +46,7 @@ class HasHardForkHistory blk where
   -- ledgers, then the 'LedgerConfig' here must indeed already contain timing
   -- information, and so this function becomes little more than a projection
   -- (indeed, in this case the 'LedgerState' should be irrelevant).
-  hardForkSummary :: SystemStart
-                  -> LedgerConfig blk
+  hardForkSummary :: LedgerConfig blk
                   -> LedgerState blk
                   -> HardFork.Summary (HardForkIndices blk)
 
@@ -62,9 +59,8 @@ class HasHardForkHistory blk where
 -- we can run them as independent ledgers (in addition to being run with the
 -- hard fork combinator).
 neverForksHardForkSummary :: (LedgerConfig blk -> HardFork.EraParams)
-                          -> SystemStart
                           -> LedgerConfig blk
                           -> LedgerState blk
                           -> HardFork.Summary '[blk]
-neverForksHardForkSummary getParams start cfg _st =
-    HardFork.neverForksSummary start (getParams cfg)
+neverForksHardForkSummary getParams cfg _st =
+    HardFork.neverForksSummary (getParams cfg)

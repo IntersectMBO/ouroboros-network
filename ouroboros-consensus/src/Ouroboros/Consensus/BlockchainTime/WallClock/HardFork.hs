@@ -10,7 +10,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
 
 import           Control.Monad
 import           Control.Tracer
-import           Data.Time (NominalDiffTime, UTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Void
 import           GHC.Stack
 
@@ -42,7 +42,7 @@ hardForkBlockchainTime registry
                        cfg
                        getLedgerState = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
-    waitUntilSystemStart tracer time
+    systemTimeWait
 
     (_now, firstSlot, firstDelay) <- getCurrentSlot' tracer time run
     slotVar <- newTVarM firstSlot
@@ -54,7 +54,7 @@ hardForkBlockchainTime registry
       }
   where
     summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
-    summarize st = hardForkSummary systemTimeStart cfg st
+    summarize st = hardForkSummary cfg st
 
     loop :: HF.RunWithCachedSummary xs m
          -> StrictTVar m CurrentSlot
@@ -71,7 +71,7 @@ hardForkBlockchainTime registry
            atomically $ writeTVar slotVar newSlot
            go newSlot newDelay
 
-    checkValidClockChange :: UTCTime -> (CurrentSlot, CurrentSlot) -> m ()
+    checkValidClockChange :: RelativeTime -> (CurrentSlot, CurrentSlot) -> m ()
     checkValidClockChange now = \case
         (CurrentSlotUnknown, CurrentSlot _) ->
           -- Unknown-to-known typically happens when syncing catches up far
@@ -100,7 +100,7 @@ getCurrentSlot' :: forall m xs. IOLike m
                 => Tracer m TraceBlockchainTimeEvent
                 -> SystemTime m
                 -> HF.RunWithCachedSummary xs m
-                -> m (UTCTime, CurrentSlot, NominalDiffTime)
+                -> m (RelativeTime, CurrentSlot, NominalDiffTime)
 getCurrentSlot' tracer SystemTime{..} run = do
     now   <- systemTimeCurrent
     mSlot <- atomically $ HF.cachedRunQuery run $ HF.wallclockToSlot now

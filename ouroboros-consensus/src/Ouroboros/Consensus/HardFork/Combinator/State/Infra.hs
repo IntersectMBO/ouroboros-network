@@ -58,7 +58,6 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..))
@@ -161,9 +160,9 @@ getSnapshot NoSnapshot      = Nothing
   Initialization
 -------------------------------------------------------------------------------}
 
-initHardForkState :: SystemStart -> f x -> HardForkState f (x ': xs)
-initHardForkState start st = HardForkState $ TZ $ Current {
-      currentStart = History.initBound start
+initHardForkState :: f x -> HardForkState f (x ': xs)
+initHardForkState st = HardForkState $ TZ $ Current {
+      currentStart = History.initBound
     , currentState = st
     }
 

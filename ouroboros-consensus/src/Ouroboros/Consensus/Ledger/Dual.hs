@@ -428,9 +428,8 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
 instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   type HardForkIndices (DualBlock m a) = HardForkIndices m
 
-  hardForkSummary start cfg state =
+  hardForkSummary cfg state =
       hardForkSummary
-        start
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 

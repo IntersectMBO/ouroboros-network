@@ -1,17 +1,22 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE KindSignatures     #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeOperators      #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Consensus.HardFork.History.Summary (
+    -- * RelativeTime
+    RelativeTime(..)
+  , addRelTime
+  , diffRelTime
     -- * Bounds
-    Bound(..)
+  , Bound(..)
   , initBound
   , mkUpperBound
   , slotToEpochBound
@@ -43,7 +48,7 @@ import           Control.Exception (Exception)
 import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
-import           Data.Time
+import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -63,18 +68,18 @@ import           Ouroboros.Consensus.HardFork.History.Util
 
 -- | Detailed information about the time bounds of an era
 data Bound = Bound {
-      boundTime  :: !UTCTime
+      boundTime  :: !RelativeTime
     , boundSlot  :: !SlotNo
     , boundEpoch :: !EpochNo
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise)
 
-initBound :: SystemStart -> Bound
-initBound (SystemStart start) = Bound {
-      boundTime  = start
-    , boundSlot  = SlotNo 0
-    , boundEpoch = EpochNo 0
+initBound :: Bound
+initBound = Bound {
+      boundTime  = RelativeTime 0
+    , boundSlot  = SlotNo       0
+    , boundEpoch = EpochNo      0
     }
 
 -- | Version of 'mkUpperBound' when the upper bound may not be known
@@ -93,7 +98,7 @@ mkUpperBound :: EraParams
              -> EpochNo  -- ^ Upper bound
              -> Bound
 mkUpperBound EraParams{..} lo hiEpoch = Bound {
-      boundTime  = addUTCTime inEraTime  $ boundTime lo
+      boundTime  = addRelTime inEraTime  $ boundTime lo
     , boundSlot  = addSlots   inEraSlots $ boundSlot lo
     , boundEpoch = hiEpoch
     }
@@ -206,9 +211,9 @@ instance Exception PastHorizonException
 -------------------------------------------------------------------------------}
 
 -- | 'Summary' for a ledger that never forks
-neverForksSummary :: SystemStart -> EraParams -> Summary '[x]
-neverForksSummary start params = Summary $ NonEmptyOne $ EraSummary {
-      eraStart  = initBound start
+neverForksSummary :: EraParams -> Summary '[x]
+neverForksSummary params = Summary $ NonEmptyOne $ EraSummary {
+      eraStart  = initBound
     , eraEnd    = EraUnbounded
     , eraParams = params
     }
@@ -302,13 +307,12 @@ transitionsUnknown = Transitions AtMostNil
 -- 'minimumPossibleSlotNo' is not zero (e.g., some ledgers might set it to 1),
 -- the maximum number of blocks (aka filled slots) in an epoch is just 1 (or
 -- more) less than the other epochs.
-summarize :: SystemStart
-          -> WithOrigin SlotNo -- ^ Slot at the tip of the ledger
+summarize :: WithOrigin SlotNo -- ^ Slot at the tip of the ledger
           -> Shape       xs
           -> Transitions xs
           -> Summary     xs
-summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
-    Summary $ go (initBound systemStart) shape transitions
+summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
+    Summary $ go initBound shape transitions
   where
     go :: Bound                          -- Lower bound for current era
        -> Exactly  (x ': xs) EraParams   -- params for all eras
@@ -455,7 +459,7 @@ invariantSummary = \(Summary summary) ->
                 , " (INV-1b)"
                 ]
 
-            unless (boundTime curEnd == addUTCTime timeInEra (boundTime curStart)) $
+            unless (boundTime curEnd == addRelTime timeInEra (boundTime curStart)) $
               throwError $ mconcat [
                   "Invalid final boundTime in "
                 , show curSummary

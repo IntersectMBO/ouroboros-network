@@ -71,7 +71,6 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Block.Forge
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -223,12 +222,12 @@ projLedgerState =
     . getHardForkState
     . getHardForkLedgerState
 
-injLedgerState :: SystemStart -> LedgerState b -> LedgerState (HardForkBlock '[b])
-injLedgerState systemStart =
+injLedgerState :: LedgerState b -> LedgerState (HardForkBlock '[b])
+injLedgerState =
       HardForkLedgerState
     . HardForkState
     . Telescope.TZ
-    . State.Current (History.initBound systemStart)
+    . State.Current History.initBound
 
 projLedgerView :: proxy b
                -> LedgerView (BlockProtocol (HardForkBlock '[b]))
@@ -245,28 +244,24 @@ projConsensusState =
     . Telescope.fromTZ
     . getHardForkState
 
-injConsensusState :: SystemStart
-                  -> ConsensusState (BlockProtocol b)
+injConsensusState :: ConsensusState (BlockProtocol b)
                   -> ConsensusState (BlockProtocol (HardForkBlock '[b]))
-injConsensusState systemStart =
+injConsensusState =
       HardForkState
     . Telescope.TZ
-    . State.Current (History.initBound systemStart)
+    . State.Current History.initBound
     . WrapConsensusState
 
-projHeaderState :: HeaderState (HardForkBlock '[b])
-                -> HeaderState b
+projHeaderState :: HeaderState (HardForkBlock '[b]) -> HeaderState b
 projHeaderState HeaderState{..} = HeaderState {
       headerStateConsensus = projConsensusState headerStateConsensus
     , headerStateTips      = projAnnTip <$> headerStateTips
     , headerStateAnchor    = projAnnTip <$> headerStateAnchor
     }
 
-injHeaderState :: SystemStart
-               -> HeaderState b
-               -> HeaderState (HardForkBlock '[b])
-injHeaderState systemStart HeaderState{..} = HeaderState {
-      headerStateConsensus = injConsensusState systemStart headerStateConsensus
+injHeaderState :: HeaderState b -> HeaderState (HardForkBlock '[b])
+injHeaderState HeaderState{..} = HeaderState {
+      headerStateConsensus = injConsensusState headerStateConsensus
     , headerStateTips      = injAnnTip <$> headerStateTips
     , headerStateAnchor    = injAnnTip <$> headerStateAnchor
     }
@@ -277,12 +272,10 @@ projExtLedgerState ExtLedgerState{..} = ExtLedgerState {
     , headerState = projHeaderState headerState
     }
 
-injExtLedgerState :: SystemStart
-                  -> ExtLedgerState b
-                  -> ExtLedgerState (HardForkBlock '[b])
-injExtLedgerState systemStart ExtLedgerState{..} = ExtLedgerState {
-      ledgerState = injLedgerState systemStart ledgerState
-    , headerState = injHeaderState systemStart headerState
+injExtLedgerState :: ExtLedgerState b -> ExtLedgerState (HardForkBlock '[b])
+injExtLedgerState ExtLedgerState{..} = ExtLedgerState {
+      ledgerState = injLedgerState ledgerState
+    , headerState = injHeaderState headerState
     }
 
 projTopLevelConfig :: forall b. SingleEraBlock b
@@ -407,14 +400,11 @@ injProtocolInfo :: forall m b.
                    , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
                    , PartialLedgerConfig b ~ LedgerConfig b
                    )
-                => SystemStart
-                -> ProtocolInfo m b
-                -> ProtocolInfo m (HardForkBlock '[b])
-injProtocolInfo systemStart ProtocolInfo {..} = ProtocolInfo {
+                => ProtocolInfo m b -> ProtocolInfo m (HardForkBlock '[b])
+injProtocolInfo ProtocolInfo {..} = ProtocolInfo {
       pInfoConfig      = injTopLevelConfig
                            pInfoConfig
     , pInfoInitLedger  = injExtLedgerState
-                           systemStart
                            pInfoInitLedger
     , pInfoLeaderCreds = bimap (injCanBeLeader (Proxy @b)) injMaintainForgeState <$>
                            pInfoLeaderCreds

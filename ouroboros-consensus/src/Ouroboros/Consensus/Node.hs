@@ -158,11 +158,16 @@ run runargs@RunNodeArgs{..} =
     withDBChecks runargs $ \lastShutDownWasClean ->
     withRegistry $ \registry -> do
 
+      let systemTime :: SystemTime IO
+          systemTime = defaultSystemTime
+                         (getSystemStart (configBlock cfg))
+                         (blockchainTimeTracer rnTraceConsensus)
+
       let inFuture :: CheckInFuture IO blk
           inFuture = InFuture.reference
                        (configLedger cfg)
                        rnMaxClockSkew
-                       (defaultSystemTime $ getSystemStart (configBlock cfg))
+                       systemTime
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
@@ -187,7 +192,7 @@ run runargs@RunNodeArgs{..} =
       btime      <- hardForkBlockchainTime
                       registry
                       (blockchainTimeTracer rnTraceConsensus)
-                      (defaultSystemTime $ getSystemStart (configBlock cfg))
+                      systemTime
                       (configLedger cfg)
                       (ledgerState <$> ChainDB.getCurrentLedger chainDB)
       nodeArgs   <- rnCustomiseNodeArgs <$>

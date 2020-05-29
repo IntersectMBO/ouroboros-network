@@ -21,7 +21,7 @@ import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
 import           Data.Foldable (asum, toList)
-import           Data.Time
+import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Stack
 
@@ -126,13 +126,13 @@ data Qry :: * -> * where
 
   -- Convert from absolute to era-relative
 
-  QAbsToRelTime  :: UTCTime -> Qry TimeInEra
-  QAbsToRelSlot  :: SlotNo  -> Qry SlotInEra
-  QAbsToRelEpoch :: EpochNo -> Qry EpochInEra
+  QAbsToRelTime  :: RelativeTime -> Qry TimeInEra
+  QAbsToRelSlot  :: SlotNo       -> Qry SlotInEra
+  QAbsToRelEpoch :: EpochNo      -> Qry EpochInEra
 
   -- Convert from era-relative to absolute
 
-  QRelToAbsTime  :: TimeInEra                 -> Qry UTCTime
+  QRelToAbsTime  :: TimeInEra                 -> Qry RelativeTime
   QRelToAbsSlot  :: (SlotInEra, TimeInSlot)   -> Qry SlotNo
   QRelToAbsEpoch :: (EpochInEra, SlotInEpoch) -> Qry EpochNo
 
@@ -192,7 +192,7 @@ evalQryInEra EraSummary{..} = go
 
     go (QAbsToRelTime t) = do
         guard (t >= boundTime eraStart)
-        return $ TimeInEra (t `diffUTCTime` boundTime eraStart)
+        return $ TimeInEra (t `diffRelTime` boundTime eraStart)
     go (QAbsToRelSlot s) = do
         guard (s >= boundSlot eraStart)
         return $ SlotInEra (countSlots s (boundSlot eraStart))
@@ -206,7 +206,7 @@ evalQryInEra EraSummary{..} = go
     -- as inclusive.
 
     go (QRelToAbsTime t) = do
-        let absTime = getTimeInEra t `addUTCTime` boundTime eraStart
+        let absTime = getTimeInEra t `addRelTime` boundTime eraStart
         guardEnd $ \end -> absTime <= boundTime end
         return absTime
     go (QRelToAbsSlot (s, t)) = do
@@ -277,7 +277,7 @@ runQueryPure q = either throw id . runQuery q
 -- | Translate 'UTCTime' to 'SlotNo'
 --
 -- Additionally returns the time spent and time left in this slot.
-wallclockToSlot :: UTCTime -> Qry (SlotNo, NominalDiffTime, NominalDiffTime)
+wallclockToSlot :: RelativeTime -> Qry (SlotNo, NominalDiffTime, NominalDiffTime)
 wallclockToSlot absTime = do
     relTime <- QAbsToRelTime  absTime
     relSlot <- QRelTimeToSlot relTime
@@ -293,7 +293,7 @@ wallclockToSlot absTime = do
 -- | Translate 'SlotNo' to the 'UTCTime' at the start of that slot
 --
 -- Additionally returns the length of the slot.
-slotToWallclock :: SlotNo -> Qry (UTCTime, SlotLength)
+slotToWallclock :: SlotNo -> Qry (RelativeTime, SlotLength)
 slotToWallclock absSlot = do
     relSlot <- QAbsToRelSlot  absSlot
     relTime <- QRelSlotToTime relSlot

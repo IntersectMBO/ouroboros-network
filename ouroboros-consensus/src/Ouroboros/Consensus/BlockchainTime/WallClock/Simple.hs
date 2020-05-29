@@ -12,11 +12,10 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Simple (
 import           Control.Monad
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
-import           Data.Time (NominalDiffTime, UTCTime, diffUTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Void
 
 import           Cardano.Slotting.Slot
-import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block (SlotNo)
 
@@ -33,12 +32,11 @@ import           Ouroboros.Consensus.Util.Time
 -- block until the start time has come.
 simpleBlockchainTime :: forall m. IOLike m
                      => ResourceRegistry m
-                     -> Tracer m TraceBlockchainTimeEvent
                      -> SystemTime m
                      -> SlotLength
                      -> m (BlockchainTime m)
-simpleBlockchainTime registry tracer time slotLen = do
-    waitUntilSystemStart tracer time
+simpleBlockchainTime registry time slotLen = do
+    systemTimeWait time
 
     -- Fork thread that continuously updates the current slot
     firstSlot <- fst <$> getWallClockSlot time slotLen
@@ -68,24 +66,15 @@ simpleBlockchainTime registry tracer time slotLen = do
   Pure calculations
 -------------------------------------------------------------------------------}
 
-slotFromUTCTime :: SystemStart
-                -> SlotLength
-                -> UTCTime
-                -> (SlotNo, NominalDiffTime)
-slotFromUTCTime (SystemStart start) slotLen now =
-    first SlotNo $ relTime `divMod'` getSlotLength slotLen
-  where
-    relTime :: NominalDiffTime
-    relTime = now `diffUTCTime` start
+slotFromUTCTime :: SlotLength -> RelativeTime -> (SlotNo, NominalDiffTime)
+slotFromUTCTime slotLen (RelativeTime now) =
+    first SlotNo $ now `divMod'` getSlotLength slotLen
 
-delayUntilNextSlot :: SystemStart
-                   -> SlotLength
-                   -> UTCTime
-                   -> NominalDiffTime
-delayUntilNextSlot start slotLen now =
+delayUntilNextSlot :: SlotLength -> RelativeTime -> NominalDiffTime
+delayUntilNextSlot slotLen now =
     getSlotLength slotLen - timeSpent
   where
-    (_curSlot, timeSpent) = slotFromUTCTime start slotLen now
+    (_curSlot, timeSpent) = slotFromUTCTime slotLen now
 
 {-------------------------------------------------------------------------------
   Stateful wrappers around the pure calculations
@@ -97,7 +86,7 @@ getWallClockSlot :: IOLike m
                  -> SlotLength
                  -> m (SlotNo, NominalDiffTime)
 getWallClockSlot SystemTime{..} slotLen =
-    slotFromUTCTime systemTimeStart slotLen <$> systemTimeCurrent
+    slotFromUTCTime slotLen <$> systemTimeCurrent
 
 -- | Wait until the next slot
 --
@@ -115,7 +104,7 @@ waitUntilNextSlot :: IOLike m
 waitUntilNextSlot time@SystemTime{..} slotLen oldCurrent = do
     now <- systemTimeCurrent
 
-    let delay = delayUntilNextSlot systemTimeStart slotLen now
+    let delay = delayUntilNextSlot slotLen now
     threadDelay (nominalDelay delay)
 
     -- At this point we expect to be in 'nextSlot', but the actual now-current

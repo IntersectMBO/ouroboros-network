@@ -19,11 +19,9 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Time (dawnOfTime)
 
 import           Test.Consensus.HardFork.Infra
 
@@ -79,7 +77,7 @@ roundtripWallclockSlot s@ArbitrarySummary{beforeHorizonTime = time} =
       (slot , inSlot, timeLeft) <- HF.wallclockToSlot time
       (time', slotLen) <- HF.slotToWallclock slot
       return $ conjoin [
-           addUTCTime inSlot time' === time
+           addRelTime inSlot time' === time
          , inSlot + timeLeft       === getSlotLength slotLen
          ]
 
@@ -139,25 +137,23 @@ reportsPastHorizon s@ArbitrarySummary{..} = conjoin [
 -------------------------------------------------------------------------------}
 
 data ArbitrarySummary = forall xs. ArbitrarySummary {
-      arbitrarySummaryStart :: SystemStart
-    , arbitrarySummary      :: HF.Summary xs
-    , beforeHorizonTime     :: UTCTime
-    , beforeHorizonSlot     :: SlotNo
-    , beforeHorizonEpoch    :: EpochNo
-    , mPastHorizonTime      :: Maybe UTCTime
-    , mPastHorizonSlot      :: Maybe SlotNo
-    , mPastHorizonEpoch     :: Maybe EpochNo
+      arbitrarySummary   :: HF.Summary xs
+    , beforeHorizonTime  :: RelativeTime
+    , beforeHorizonSlot  :: SlotNo
+    , beforeHorizonEpoch :: EpochNo
+    , mPastHorizonTime   :: Maybe RelativeTime
+    , mPastHorizonSlot   :: Maybe SlotNo
+    , mPastHorizonEpoch  :: Maybe EpochNo
     }
 
 deriving instance Show ArbitrarySummary
 
 instance Arbitrary ArbitrarySummary where
   arbitrary = chooseEras $ \is@(Eras _) -> do
-      start   <- SystemStart <$> arbitrary
-      summary <- HF.Summary  <$> erasUnfoldAtMost
-                                   genEraSummary
-                                   is
-                                   (HF.initBound start)
+      summary <- HF.Summary <$> erasUnfoldAtMost
+                                  genEraSummary
+                                  is
+                                  HF.initBound
 
       let summaryStart :: HF.Bound
           mSummaryEnd  :: HF.EraEnd
@@ -172,7 +168,7 @@ instance Arbitrary ArbitrarySummary where
 
           let beforeHorizonSlot  :: SlotNo
               beforeHorizonEpoch :: EpochNo
-              beforeHorizonTime  :: UTCTime
+              beforeHorizonTime  :: RelativeTime
 
               beforeHorizonSlot  = HF.addSlots
                                      beforeHorizonSlots
@@ -180,13 +176,12 @@ instance Arbitrary ArbitrarySummary where
               beforeHorizonEpoch = HF.addEpochs
                                      beforeHorizonEpochs
                                      (HF.boundEpoch summaryStart)
-              beforeHorizonTime  = addUTCTime
+              beforeHorizonTime  = addRelTime
                                      (realToFrac (beforeHorizonSeconds :: Double))
                                      (HF.boundTime summaryStart)
 
           return ArbitrarySummary{
-                arbitrarySummaryStart = start
-              , arbitrarySummary      = summary
+                arbitrarySummary      = summary
               , beforeHorizonTime
               , beforeHorizonSlot
               , beforeHorizonEpoch
@@ -205,7 +200,7 @@ instance Arbitrary ArbitrarySummary where
                                 (HF.boundEpoch summaryStart)
 
               summaryTimeSpan :: NominalDiffTime
-              summaryTimeSpan = diffUTCTime
+              summaryTimeSpan = diffRelTime
                                   (HF.boundTime summaryEnd)
                                   (HF.boundTime summaryStart)
 
@@ -221,7 +216,7 @@ instance Arbitrary ArbitrarySummary where
 
           let beforeHorizonSlot  :: SlotNo
               beforeHorizonEpoch :: EpochNo
-              beforeHorizonTime  :: UTCTime
+              beforeHorizonTime  :: RelativeTime
 
               beforeHorizonSlot  = HF.addSlots
                                      beforeHorizonSlots
@@ -229,7 +224,7 @@ instance Arbitrary ArbitrarySummary where
               beforeHorizonEpoch = HF.addEpochs
                                      beforeHorizonEpochs
                                      (HF.boundEpoch summaryStart)
-              beforeHorizonTime  = addUTCTime
+              beforeHorizonTime  = addRelTime
                                      (realToFrac beforeHorizonSeconds)
                                      (HF.boundTime summaryStart)
 
@@ -241,7 +236,7 @@ instance Arbitrary ArbitrarySummary where
 
           let pastHorizonSlot  :: SlotNo
               pastHorizonEpoch :: EpochNo
-              pastHorizonTime  :: UTCTime
+              pastHorizonTime  :: RelativeTime
 
               pastHorizonSlot  = HF.addSlots
                                     pastHorizonSlots
@@ -249,13 +244,12 @@ instance Arbitrary ArbitrarySummary where
               pastHorizonEpoch = HF.addEpochs
                                     pastHorizonEpochs
                                     (HF.boundEpoch summaryEnd)
-              pastHorizonTime  = addUTCTime
+              pastHorizonTime  = addRelTime
                                     (realToFrac pastHorizonSeconds)
                                     (HF.boundTime summaryEnd)
 
           return ArbitrarySummary{
-                arbitrarySummaryStart = start
-              , arbitrarySummary      = summary
+                arbitrarySummary      = summary
               , beforeHorizonTime
               , beforeHorizonSlot
               , beforeHorizonEpoch
@@ -276,13 +270,8 @@ instance Arbitrary ArbitrarySummary where
           return $ HF.mkEraEnd params lo startOfNextEra
 
   shrink summary@ArbitrarySummary{..} = concat [
-        -- Simplify the system start
-        [ resetArbitrarySummaryStart summary
-        | getSystemStart arbitrarySummaryStart /= dawnOfTime
-        ]
-
         -- Reduce before-horizon slot
-      , [ summary { beforeHorizonSlot = SlotNo s }
+        [ summary { beforeHorizonSlot = SlotNo s }
         | s <- shrink (unSlotNo beforeHorizonSlot)
         ]
 
@@ -292,9 +281,9 @@ instance Arbitrary ArbitrarySummary where
         ]
 
         -- Reduce before-horizon time
-      , [ summary { beforeHorizonTime = t }
-        | t <- shrink beforeHorizonTime
-        , t >= getSystemStart arbitrarySummaryStart
+      , [ summary { beforeHorizonTime = RelativeTime t }
+        | t <- shrink (getRelativeTime beforeHorizonTime)
+        , t >= 0
         ]
 
         -- Drop an era /provided/ this doesn't cause of any of the before
@@ -306,30 +295,3 @@ instance Arbitrary ArbitrarySummary where
         , beforeHorizonTime  < HF.boundTime  (HF.eraStart lastEra)
         ]
       ]
-
-{-------------------------------------------------------------------------------
-  Shifting time
--------------------------------------------------------------------------------}
-
-instance ShiftTime ArbitrarySummary where
-  shiftTime delta ArbitrarySummary{..} = ArbitrarySummary {
-      arbitrarySummaryStart = shiftTime delta arbitrarySummaryStart
-    , arbitrarySummary      = shiftTime delta arbitrarySummary
-    , beforeHorizonTime     = shiftTime delta beforeHorizonTime
-    , beforeHorizonSlot
-    , beforeHorizonEpoch
-    , mPastHorizonTime      = shiftTime delta <$> mPastHorizonTime
-    , mPastHorizonSlot
-    , mPastHorizonEpoch
-    }
-
--- | Reset the system start (during shrinking)
---
--- Since this brings the system start /back/, we don't care about the past
--- horizon values. 'EpochNo' and 'SlotNo' are also unaffected.
-resetArbitrarySummaryStart :: ArbitrarySummary -> ArbitrarySummary
-resetArbitrarySummaryStart summary@ArbitrarySummary{..} =
-    shiftTime (negate ahead) summary
-  where
-    ahead :: NominalDiffTime
-    ahead = diffUTCTime (getSystemStart arbitrarySummaryStart) dawnOfTime

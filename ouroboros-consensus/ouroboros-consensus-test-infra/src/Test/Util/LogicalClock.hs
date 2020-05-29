@@ -30,7 +30,7 @@ module Test.Util.LogicalClock (
 import           Control.Exception (Exception)
 import           Control.Monad
 import           Control.Tracer
-import           Data.Time (NominalDiffTime, addUTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Word
 import           GHC.Stack
 import           System.Random (Random)
@@ -44,8 +44,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
-
-import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   API
@@ -200,10 +198,11 @@ newWithDelay registry (NumTicks numTicks) tickLen = do
         getCurrentTick = Tick <$> readTVar current
       , waitUntilDone  = readMVar done
       , mockSystemTime = BTime.SystemTime {
-            BTime.systemTimeStart   = BTime.SystemStart dawnOfTime
-          , BTime.systemTimeCurrent = do
+            BTime.systemTimeCurrent = do
               tick <- atomically $ readTVar current
-              return $ addUTCTime (fromIntegral tick * tickLen) dawnOfTime
+              return $ BTime.RelativeTime $ fromIntegral tick * tickLen
+          , BTime.systemTimeWait =
+              return ()
           }
       }
 

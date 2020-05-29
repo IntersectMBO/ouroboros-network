@@ -169,7 +169,7 @@ instance SingleEraBlock b => UpdateLedger (DegenFork b)
 instance SingleEraBlock b => HasHardForkHistory (DegenFork b) where
   type HardForkIndices (DegenFork b) = '[b]
 
-  hardForkSummary start cfg (DLgr lgr) = hardForkSummary start cfg lgr
+  hardForkSummary cfg (DLgr lgr) = hardForkSummary cfg lgr
 
 instance SingleEraBlock b => HasAnnTip (DegenFork b) where
   type TipInfo (DegenFork b) = TipInfo (HardForkBlock '[b])
@@ -355,15 +355,9 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
       injHeaderHash <$>
         nodeDecodeHeaderHash (Proxy @b)
   nodeDecodeLedgerState cfg =
-      (DLgr . injLedgerState (getSystemStart (configBlock cfg))) <$>
-        nodeDecodeLedgerState cfg'
-    where
-      cfg' = projCfg cfg
+      (DLgr . injLedgerState) <$> nodeDecodeLedgerState (projCfg cfg)
   nodeDecodeConsensusState cfg =
-      injConsensusState (getSystemStart (configBlock cfg)) <$>
-        nodeDecodeConsensusState cfg'
-    where
-      cfg' = projCfg cfg
+      injConsensusState <$> nodeDecodeConsensusState (projCfg cfg)
   nodeDecodeApplyTxError _ =
       injApplyTxErr <$>
         nodeDecodeApplyTxError (Proxy @b)

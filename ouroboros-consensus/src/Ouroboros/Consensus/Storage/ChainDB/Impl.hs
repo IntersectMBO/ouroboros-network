@@ -39,7 +39,6 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, castPoint)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, Header)
-import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -73,7 +72,6 @@ withDB
   :: forall m blk a.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      )
@@ -86,7 +84,6 @@ openDB
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      )
@@ -98,7 +95,6 @@ openDBInternal
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      )
