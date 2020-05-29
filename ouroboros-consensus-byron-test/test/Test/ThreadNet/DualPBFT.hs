@@ -92,6 +92,7 @@ prop_convergence setup = withMaxSuccess 10 $
       , pgaFixedSchedule          = setupSchedule setup
       , pgaSecurityParam          = setupSecurityParam setup
       , pgaTestConfig             = cfg
+      , pgaCustomLabelling        = const id
       }
       (setupTestOutput setup)
   where

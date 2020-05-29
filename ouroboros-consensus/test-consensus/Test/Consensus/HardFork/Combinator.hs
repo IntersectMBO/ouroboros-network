@@ -29,6 +29,7 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
 
 import           Ouroboros.Network.Block
+import qualified Ouroboros.Network.MockChain.Chain as Mock
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -60,6 +61,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Test.ThreadNet.General
+import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
@@ -141,7 +143,23 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         , pgaFixedSchedule          = Just leaderSchedule
         , pgaSecurityParam          = k
         , pgaTestConfig             = testConfig
+        , pgaCustomLabelling        = customLabelling
         }
+
+    customLabelling :: TestOutput TestBlock -> Property -> Property
+    customLabelling TestOutput{..} =
+          tabulate "length A" (map (show . chainLen isA) $ Map.elems testOutputNodes)
+        . tabulate "length B" (map (show . chainLen isB) $ Map.elems testOutputNodes)
+      where
+        isA, isB :: TestBlock -> Bool
+        isA (HardForkBlock (OneEraBlock blk)) = index_NS blk == 0
+        isB (HardForkBlock (OneEraBlock blk)) = index_NS blk == 1
+
+        chainLen ::  (TestBlock -> Bool) -> NodeOutput TestBlock -> Int
+        chainLen p NodeOutput{..} =
+              length
+            . filter p
+            $ Mock.chainToList nodeOutputFinalChain
 
     testConfig :: TestConfig
     testConfig = TestConfig {
@@ -243,6 +261,8 @@ prop_simple_hfc_convergence TestSetup{..} = once $
     -- 'singleEraParams', but now that both 'HardForkLedgerConfig' and
     -- 'HardForkConsensusConfig' have the full shape, we might be able to
     -- get rid of that method.
+    --
+    -- TODO: We should vary at which point we submit the transition tx.
     ledgerConfigA :: CoreNodeId -> PartialLedgerConfig BlockA
     ledgerConfigA _nid = LCfgA {
           lcfgA_eraParams   = eraParamsA

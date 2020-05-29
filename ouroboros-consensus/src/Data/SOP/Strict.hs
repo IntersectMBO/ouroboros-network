@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
@@ -25,6 +26,7 @@ module Data.SOP.Strict (
     -- * NS
   , NS(..)
   , unZ
+  , index_NS
     -- * Injections
   , Injection
   , injections
@@ -114,6 +116,13 @@ type instance Same       NS   = NS
 unZ :: NS f '[x] -> f x
 unZ (Z x) = x
 unZ (S x) = case x of {}
+
+index_NS :: forall f xs . NS f xs -> Int
+index_NS = go 0
+  where
+    go :: forall ys . Int -> NS f ys -> Int
+    go !acc (Z _) = acc
+    go !acc (S x) = go (acc + 1) x
 
 expand_NS :: SListI xs => (forall x. f x) -> NS f xs -> NP f xs
 expand_NS = cexpand_NS (Proxy @Top)
