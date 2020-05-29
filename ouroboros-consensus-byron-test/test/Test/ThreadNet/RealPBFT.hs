@@ -739,6 +739,7 @@ prop_simple_real_pbft_convergence produceEBBs k
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
       , pgaSecurityParam          = k
       , pgaTestConfig             = testConfig
+      , pgaCustomLabelling        = const id
       }
       testOutput .&&.
     prop_pvu .&&.

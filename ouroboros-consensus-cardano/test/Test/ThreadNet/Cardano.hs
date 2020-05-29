@@ -71,6 +71,7 @@ prop_simple_cardano_convergence k d
       , pgaFixedSchedule          = Nothing
       , pgaSecurityParam          = k
       , pgaTestConfig             = testConfig
+      , pgaCustomLabelling        = const id
       }
       testOutput
   where
