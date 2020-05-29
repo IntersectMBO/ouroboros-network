@@ -341,6 +341,80 @@ data PropGeneralArgs blk = PropGeneralArgs
 --
 -- * No blocks are unduly rejected (see 'pgaExpectedBlockRejection').
 --
+-- Those properties are currently checked under several assumptions. If the
+-- nodes violate any of these assumptions, the tests will fail. The following
+-- are the most primary assumptions.
+--
+-- Late Join Assumption: TODO! Only Ouroboros Genesis is designed to have nodes
+-- join with "empty" (or even "stale") chains, so we do not strictly have a
+-- spec for how the net should handle such a join under general circumstances.
+-- (Note that we have not implemented Genesis yet.) For now, we make stop-gap
+-- assumptions.
+--
+--   * Stop-Gap Assumption 0: Nodes join at the onset of a slot.
+--
+--   * Stop-Gap Assumption 1: A node joins with the "empty" chain (eg this
+--     effectively includes the epoch 0 EBB for Byron).
+--
+--   * Stop-Gap Assumption 2: If a node leads a slot, then, at the slot onset,
+--     its block production thread wins the race against the ChainSync and
+--     BlockFetch client threads.
+--
+--   * Stop-Gap Assumption 3: If the old nodes (ie those that had joined in
+--     previous slots) have a chain of greater than k blocks, then their
+--     ChainSync client will throw ForkTooDeep :: ChainSyncClientException when
+--     a new node joins. If any have such a chain, they all do, by the
+--     Synchrony Assumption (see below). Thus all MiniProtocol clients on all
+--     old nodes that share an edge with the new node in the topology will
+--     disconnect from the new node until *exactly* the onset of the next slot.
+--
+-- Synchrony Assumption: Every (longest) chain diffuses to all other nodes
+-- before the onset of the next slot.
+--
+--   * Corollary: Every node should have already selected one of the longest
+--     chains in the net by the onset of each slot.
+--
+--   * Exception to the Corollary: A node cannot select such a chain if every
+--     path between it and every recent leader is temporarily shutdown due to a
+--     non-fatal MiniProtocol exception (such as ForkTooDeep discussed above).
+--
+-- Joining Leader Assumption: By Stop-Gap Assumption 2, a node that leads the
+-- slot in which it joins forges a block atop the "empty" chain (ie origin or
+-- else the epoch 0 EBB). Such a unary chain will be immediately discarded
+-- unless there is no longer chain in the net.
+--
+--   * Remark: Under the current assumptions, that is the only way the selected
+--     chains in the (P)BFT tests can diverge: if a node joins a net in which
+--     the longest chain has only 1 block then it will introduce another
+--     longest chain. As soon as any node forges a chain with 2 blocks, all
+--     existing nodes will select that chain and will remain in consensus
+--     thereafter. Once that happens, a node that joins in a later slot will
+--     initially have the empty chain and might forge and briefly select its
+--     own 1 block chain, but it also will have selected the single longest
+--     chain by the end of the slot.
+--
+--   * Remark: Thus the (P)BFT tests only ever rollback to the "empty" chain,
+--     and this will rollback at most 1 non-EBB block.
+--
+-- Online Assumption: Nodes are always online. In particular, a node always
+-- forges a block at the onset of a slot it leads.
+--
+--   * Clarification: The test suite currently anticipates only two situations
+--     in which a node will be unable to forge a valid block:
+--     PBftExceededSignThreshold and PBftNotGenesisDelegate. If the node fails
+--     to forge for any other reason, the tests will fail.
+--
+--   * Remark: Recall that a node leading the slot it joins usually wastes its
+--     leadership by immediately forging a chain with 1 non-EBB block.
+--
+-- The above assumptions provide the (P)BFT tests enough information to predict
+-- the net's behavior in each slot, except for identifiable cases in which that
+-- behavior ultimately depends on how a node happens to select one among
+-- multiple longest chains; see the PBFT reference simulator
+-- "Test.ThreadNet.Ref.PBFT".
+--
+-- Specific tests make additional assumptions, eg the @RealPBFT@ tests make
+-- assumptions about delegation certificates, update proposals, etc.
 prop_general ::
   forall blk.
      ( Condense blk
