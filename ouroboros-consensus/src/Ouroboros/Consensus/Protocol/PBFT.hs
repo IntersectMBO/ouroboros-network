@@ -32,7 +32,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
     -- * Type instances
   , ConsensusConfig(..)
     -- * Exported for testing
-  , PBftValidationErr(..)
+  , PBftCannotLead(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))

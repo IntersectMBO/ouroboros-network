@@ -135,15 +135,15 @@ prop_simple_hfc_convergence TestSetup{..} = once $
 
     args :: PropGeneralArgs TestBlock
     args = PropGeneralArgs {
-          pgaBlockProperty          = const $ property True
-        , pgaCountTxs               = fromIntegral . length . extractTxs
-        , pgaExpectedBlockRejection = const False
-        , pgaFirstBlockNo           = BlockNo 0
-        , pgaFixedMaxForkLength     = Nothing
-        , pgaFixedSchedule          = Just leaderSchedule
-        , pgaSecurityParam          = k
-        , pgaTestConfig             = testConfig
-        , pgaCustomLabelling        = customLabelling
+          pgaBlockProperty      = const $ property True
+        , pgaCountTxs           = fromIntegral . length . extractTxs
+        , pgaExpectedCannotLead = noExpectedCannotLeads
+        , pgaFirstBlockNo       = BlockNo 0
+        , pgaFixedMaxForkLength = Nothing
+        , pgaFixedSchedule      = Just leaderSchedule
+        , pgaSecurityParam      = k
+        , pgaTestConfig         = testConfig
+        , pgaCustomLabelling    = customLabelling
         }
 
     customLabelling :: TestOutput TestBlock -> Property -> Property

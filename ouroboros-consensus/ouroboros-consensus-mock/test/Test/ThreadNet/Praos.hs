@@ -97,15 +97,15 @@ prop_simple_praos_convergence
   testConfig@TestConfig{numCoreNodes} =
     counterexample (tracesToDot testOutputNodes) $
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = prop_validSimpleBlock
-      , pgaCountTxs               = countSimpleGenTxs
-      , pgaExpectedBlockRejection = const False
-      , pgaFirstBlockNo           = 0
-      , pgaFixedMaxForkLength     = Nothing
-      , pgaFixedSchedule          = Nothing
-      , pgaSecurityParam          = praosSecurityParam
-      , pgaTestConfig             = testConfig
-      , pgaCustomLabelling        = const id
+      { pgaBlockProperty      = prop_validSimpleBlock
+      , pgaCountTxs           = countSimpleGenTxs
+      , pgaExpectedCannotLead = noExpectedCannotLeads
+      , pgaFirstBlockNo       = 0
+      , pgaFixedMaxForkLength = Nothing
+      , pgaFixedSchedule      = Nothing
+      , pgaSecurityParam      = praosSecurityParam
+      , pgaTestConfig         = testConfig
+      , pgaCustomLabelling    = const id
       }
       testOutput
   where

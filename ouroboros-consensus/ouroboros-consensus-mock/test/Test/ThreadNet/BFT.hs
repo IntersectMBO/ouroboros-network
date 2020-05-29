@@ -78,16 +78,16 @@ prop_simple_bft_convergence :: SecurityParam
 prop_simple_bft_convergence k
   testConfig@TestConfig{numCoreNodes, numSlots, slotLength} =
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = prop_validSimpleBlock
-      , pgaCountTxs               = countSimpleGenTxs
-      , pgaExpectedBlockRejection = const False
-      , pgaFirstBlockNo           = 0
-      , pgaFixedMaxForkLength     = Nothing
-      , pgaFixedSchedule          =
+      { pgaBlockProperty      = prop_validSimpleBlock
+      , pgaCountTxs           = countSimpleGenTxs
+      , pgaExpectedCannotLead = noExpectedCannotLeads
+      , pgaFirstBlockNo       = 0
+      , pgaFixedMaxForkLength = Nothing
+      , pgaFixedSchedule      =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam          = k
-      , pgaTestConfig             = testConfig
-      , pgaCustomLabelling        = const id
+      , pgaSecurityParam      = k
+      , pgaTestConfig         = testConfig
+      , pgaCustomLabelling    = const id
       }
       testOutput
   where
