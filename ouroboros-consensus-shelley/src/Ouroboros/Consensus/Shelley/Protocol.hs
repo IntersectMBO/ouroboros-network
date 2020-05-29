@@ -37,6 +37,7 @@ import           Control.Monad.Trans.Except (except)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -243,6 +244,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ConsensusState  (TPraos c) = TPraosState c
   type IsLeader        (TPraos c) = TPraosProof c
   type CanBeLeader     (TPraos c) = TPraosIsCoreNode c
+  type CannotLead      (TPraos c) = Void -- TODO: We should check if key is OK
   type LedgerView      (TPraos c) = SL.LedgerView c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
   type ValidateView    (TPraos c) = TPraosValidateView c
@@ -258,16 +260,16 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
           , hasValidOCert icn
             -- Slot isn't in the overlay schedule, so we're in Praos
-          -> Just TPraosProof {
+          -> IsLeader TPraosProof {
                tpraosEta        = coerce rho
              , tpraosLeader     = coerce y
              , tpraosIsCoreNode = icn
              }
           | otherwise
-          -> Nothing
+          -> NotLeader
 
        -- This is a non-active slot; nobody may produce a block
-        Just SL.NonActiveSlot -> Nothing
+        Just SL.NonActiveSlot -> NotLeader
 
        -- The given genesis key has authority to produce a block in this
         -- slot. Check whether we're its delegate.
@@ -275,7 +277,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
             Just dlgHash
               | SL.coerceKeyRole dlgHash == vkhCold
               , hasValidOCert icn
-              -> Just TPraosProof {
+              -> IsLeader TPraosProof {
                   tpraosEta        = coerce rho
                   -- Note that this leader value is not checked for slots in
                   -- the overlay schedule, so we could set it to whatever we
@@ -283,7 +285,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
                 , tpraosLeader     = coerce y
                 , tpraosIsCoreNode = icn
                 }
-            _ -> Nothing
+            _ -> NotLeader
           where
             SL.GenDelegs dlgMap = SL.lvGenDelegs lv
     where

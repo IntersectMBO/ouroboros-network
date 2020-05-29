@@ -69,6 +69,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   type ValidationErr  (HardForkProtocol xs) = HardForkValidationErr  xs
   type LedgerView     (HardForkProtocol xs) = HardForkLedgerView     xs
   type CanBeLeader    (HardForkProtocol xs) = HardForkCanBeLeader    xs
+  type CannotLead     (HardForkProtocol xs) = HardForkCannotLead     xs
   type IsLeader       (HardForkProtocol xs) = HardForkIsLeader       xs
   type ValidateView   (HardForkProtocol xs) = OneEraValidateView     xs
 
@@ -131,6 +132,9 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
 -- | We are a leader if we have a proof from one of the eras
 type HardForkIsLeader xs = OneEraIsLeader xs
 
+-- | If we fail to lead, it's because one of the eras tried but failed
+type HardForkCannotLead xs = OneEraCannotLead xs
+
 -- | CanBeLeader instance for 'HardForkProtocol'
 --
 -- We allow an optional 'CanBeLeader' proof /per era/, to make it possible to
@@ -142,9 +146,9 @@ check :: forall m xs. (MonadRandom m, CanHardFork xs)
       -> HardForkCanBeLeader xs
       -> Ticked (HardForkLedgerView xs)
       -> HardForkConsensusState xs
-      -> m (Maybe (HardForkIsLeader xs))
+      -> m (LeaderCheck (HardForkProtocol xs))
 check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
-      fmap aux
+      fmap distrib
     . hsequence'
     . State.tip
     . State.align
@@ -155,30 +159,41 @@ check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
 
-    aux :: NS (Maybe :.: WrapIsLeader) xs -> Maybe (OneEraIsLeader xs)
-    aux ns = hcollapse (hzipWith (K .: injectProof) injections ns)
+    distrib :: NS WrapLeaderCheck xs -> LeaderCheck (HardForkProtocol xs)
+    distrib = hcollapse . hzipWith3 inj injections injections
+
+    inj :: Injection WrapIsLeader   xs blk
+        -> Injection WrapCannotLead xs blk
+        -> WrapLeaderCheck blk
+        -> K (LeaderCheck (HardForkProtocol xs)) blk
+    inj injIsLeader injCannotLead (WrapLeaderCheck leaderCheck) = K $
+        case leaderCheck of
+          NotLeader    -> NotLeader
+          IsLeader   p -> IsLeader $ OneEraIsLeader . unK $
+                            apFn injIsLeader (WrapIsLeader p)
+          CannotLead e -> CannotLead $ OneEraCannotLead . unK $
+                            apFn injCannotLead (WrapCannotLead e)
 
 checkOne :: (MonadRandom m, SingleEraBlock blk)
          => EpochInfo Identity
          -> SlotNo
-         -> WrapPartialConsensusConfig     blk
-         -> (Maybe :.: WrapCanBeLeader)    blk
-         -> HardForkEraLedgerView          blk
-         -> WrapConsensusState             blk
-         -> (m :.: Maybe :.: WrapIsLeader) blk
+         -> WrapPartialConsensusConfig  blk
+         -> (Maybe :.: WrapCanBeLeader) blk
+         -> HardForkEraLedgerView       blk
+         -> WrapConsensusState          blk
+         -> (m :.: WrapLeaderCheck)     blk
 checkOne ei slot cfg (Comp mCanBeLeader)
          HardForkEraLedgerView{..}
-         (WrapConsensusState consensusState) = Comp . fmap Comp $
+         (WrapConsensusState consensusState) = Comp $ WrapLeaderCheck <$>
      case mCanBeLeader of
        Nothing ->
-         return Nothing
+         return NotLeader
        Just canBeLeader ->
-         fmap (fmap WrapIsLeader) $
-           checkIsLeader
-             (completeConsensusConfig' ei cfg)
-             (unwrapCanBeLeader canBeLeader)
-             (Ticked slot hardForkEraLedgerView)
-             consensusState
+         checkIsLeader
+           (completeConsensusConfig' ei cfg)
+           (unwrapCanBeLeader canBeLeader)
+           (Ticked slot hardForkEraLedgerView)
+           consensusState
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward
@@ -297,11 +312,6 @@ injectValidationErr inj =
     . unK
     . apFn inj
     . WrapValidationErr
-
-injectProof :: Injection WrapIsLeader xs blk
-            -> (:.:) Maybe WrapIsLeader blk
-            -> Maybe (OneEraIsLeader xs)
-injectProof inj (Comp pf) = (OneEraIsLeader . unK . apFn inj) <$> pf
 
 {-------------------------------------------------------------------------------
   Instances

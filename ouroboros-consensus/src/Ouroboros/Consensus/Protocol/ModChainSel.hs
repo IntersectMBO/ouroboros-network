@@ -44,11 +44,15 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     type ConsensusState (ModChainSel p s) = ConsensusState p
     type IsLeader       (ModChainSel p s) = IsLeader       p
     type CanBeLeader    (ModChainSel p s) = CanBeLeader    p
+    type CannotLead     (ModChainSel p s) = CannotLead     p
     type LedgerView     (ModChainSel p s) = LedgerView     p
     type ValidationErr  (ModChainSel p s) = ValidationErr  p
     type ValidateView   (ModChainSel p s) = ValidateView   p
 
-    checkIsLeader         = checkIsLeader         . mcsConfigP
+    checkIsLeader cfg canBeLeader ledgerView consensusState =
+      castLeaderCheck <$>
+        checkIsLeader (mcsConfigP cfg) canBeLeader ledgerView consensusState
+
     updateConsensusState  = updateConsensusState  . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP
 

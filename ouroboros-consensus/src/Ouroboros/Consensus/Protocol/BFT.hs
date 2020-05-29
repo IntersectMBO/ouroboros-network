@@ -36,6 +36,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
+import           Data.Void
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
@@ -134,13 +135,14 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
   type IsLeader       (Bft c) = ()
   type ConsensusState (Bft c) = ()
   type CanBeLeader    (Bft c) = CoreNodeId
+  type CannotLead     (Bft c) = Void
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
   checkIsLeader BftConfig{..} (CoreNodeId i) (Ticked (SlotNo n) _l) _cs = do
       return $ if n `mod` numCoreNodes == i
-                 then Just ()
-                 else Nothing
+                 then IsLeader ()
+                 else NotLeader
     where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes

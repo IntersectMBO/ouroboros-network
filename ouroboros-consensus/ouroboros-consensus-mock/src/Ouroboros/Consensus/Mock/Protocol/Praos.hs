@@ -46,6 +46,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
+import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
@@ -258,18 +259,19 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type ValidateView   (Praos c) = PraosValidateView    c
   type ConsensusState (Praos c) = [BlockInfo c]
   type CanBeLeader    (Praos c) = CoreNodeId
+  type CannotLead     (Praos c) = Void
 
   checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) cs = do
       rho <- evalCertified () rho' praosSignKeyVRF
       y   <- evalCertified () y'   praosSignKeyVRF
       return $ if fromIntegral (certifiedNatural y) < t
-          then Just PraosProof {
+          then IsLeader PraosProof {
                    praosProofRho  = rho
                  , praosProofY    = y
                  , praosLeader    = nid
                  , praosProofSlot = slot
                  }
-          else Nothing
+          else NotLeader
     where
       (rho', y', t) = rhoYT cfg cs slot nid
 

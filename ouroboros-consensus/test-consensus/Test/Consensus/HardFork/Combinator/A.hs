@@ -88,13 +88,14 @@ instance ConsensusProtocol ProtocolA where
   type LedgerView     ProtocolA = ()
   type IsLeader       ProtocolA = ()
   type CanBeLeader    ProtocolA = ()
+  type CannotLead     ProtocolA = Void
   type ValidateView   ProtocolA = ()
   type ValidationErr  ProtocolA = Void
 
   checkIsLeader CfgA{..} () (Ticked slot _) _ =
       return $ if slot `Set.member` cfgA_leadInSlots
-                 then Just ()
-                 else Nothing
+                 then IsLeader ()
+                 else NotLeader
 
   protocolSecurityParam = cfgA_k
   updateConsensusState  = \_ _ _ _ -> return ()

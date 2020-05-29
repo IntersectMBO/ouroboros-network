@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -369,10 +370,11 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
               (protocolLedgerView (configLedger cfg) <$> ticked)
               (headerStateConsensus (headerState extLedger))
           case mIsLeader of
-            Just p  -> return p
-            Nothing -> do
-              trace $ TraceNodeNotLeader currentSlot
-              exitEarly
+            IsLeader   p -> return p
+            CannotLead e -> do trace $ TraceNotCannotLead currentSlot e
+                               exitEarly
+            NotLeader    -> do trace $ TraceNodeNotLeader currentSlot
+                               exitEarly
 
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot

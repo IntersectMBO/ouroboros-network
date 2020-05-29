@@ -44,6 +44,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
+import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -266,6 +267,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type IsLeader       (PBft c) = PBftIsLeader   c
   type ConsensusState (PBft c) = PBftState      c
   type CanBeLeader    (PBft c) = PBftIsLeader   c
+  type CannotLead     (PBft c) = Void -- TODO!
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
@@ -274,8 +276,8 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
       return $ if n `mod` numCoreNodes == i
-                 then Just credentials
-                 else Nothing
+                 then IsLeader credentials
+                 else NotLeader
     where
       PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams

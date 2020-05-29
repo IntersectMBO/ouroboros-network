@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
@@ -184,6 +185,13 @@ data TraceForgeEvent blk
   -- We record the current slot number
   | TraceNodeNotLeader SlotNo
 
+  -- | We did the leadership check and concluded that we should lead, but cannot
+  --
+  -- This should only happen rarely and should be logged with warning severity.
+  --
+  -- Records why we cannot lead.
+  | TraceNotCannotLead SlotNo (CannotLead (BlockProtocol blk))
+
   -- | Leadership check failed: we were unable to get the ledger state
   -- for the point of the block we want to connect to
   --
@@ -269,5 +277,12 @@ data TraceForgeEvent blk
   -- validation and the ledger validation. This is a serious error!
   | TraceForgedInvalidBlock SlotNo blk (InvalidBlockReason blk)
 
-deriving instance (LedgerSupportsProtocol blk, Eq   blk, Eq   (GenTx blk)) => Eq   (TraceForgeEvent blk)
-deriving instance (LedgerSupportsProtocol blk, Show blk, Show (GenTx blk)) => Show (TraceForgeEvent blk)
+deriving instance ( LedgerSupportsProtocol blk
+                  , Eq blk
+                  , Eq (GenTx blk)
+                  , Eq (CannotLead (BlockProtocol blk))
+                  ) => Eq (TraceForgeEvent blk)
+deriving instance ( LedgerSupportsProtocol blk
+                  , Show blk
+                  , Show (GenTx blk)
+                  ) => Show (TraceForgeEvent blk)
