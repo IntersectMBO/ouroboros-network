@@ -13,6 +13,7 @@
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.State (
     HardForkConsensusState
+  , HardForkIsLeader
   , HardForkCanBeLeader
   , HardForkValidationErr(..)
     -- * Update the state
@@ -57,6 +58,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 -------------------------------------------------------------------------------}
 
 type HardForkConsensusState xs = HardForkState WrapConsensusState xs
+type HardForkIsLeader       xs = OneEraIsLeader xs
 
 -- | CanBeLeader instance for 'HardForkProtocol'
 --
@@ -84,7 +86,7 @@ check :: forall m xs. (MonadRandom m, CanHardFork xs)
       -> HardForkCanBeLeader xs
       -> Ticked (HardForkLedgerView xs)
       -> HardForkConsensusState xs
-      -> m (Maybe (OneEraIsLeader xs))
+      -> m (Maybe (HardForkIsLeader xs))
 check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
       fmap aux
     . hsequence'

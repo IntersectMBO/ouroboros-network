@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     -- * Re-exports to keep 'Protocol.State' an internal module
     HardForkConsensusState
+  , HardForkIsLeader
   , HardForkCanBeLeader
   , HardForkValidationErr(..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
@@ -37,7 +38,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.State
                      (HardForkCanBeLeader, HardForkConsensusState,
-                     HardForkValidationErr)
+                     HardForkIsLeader, HardForkValidationErr)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
 
 {-------------------------------------------------------------------------------
@@ -49,7 +50,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   type ValidationErr  (HardForkProtocol xs) = HardForkValidationErr  xs
   type LedgerView     (HardForkProtocol xs) = HardForkLedgerView     xs
   type CanBeLeader    (HardForkProtocol xs) = HardForkCanBeLeader    xs
-  type IsLeader       (HardForkProtocol xs) = OneEraIsLeader         xs
+  type IsLeader       (HardForkProtocol xs) = HardForkIsLeader       xs
   type ValidateView   (HardForkProtocol xs) = OneEraValidateView     xs
 
   -- Operations on the state
