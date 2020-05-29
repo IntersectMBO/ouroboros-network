@@ -434,7 +434,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- We successfully produced /and/ adopted a block
         trace $ TraceAdoptedBlock currentSlot newBlock txs
 
-    trace :: TraceForgeEvent blk (GenTx blk) -> WithEarlyExit m ()
+    trace :: TraceForgeEvent blk -> WithEarlyExit m ()
     trace = lift . traceWith (forgeTracer tracers)
 
     -- Compute maximum block transaction capacity
@@ -486,7 +486,7 @@ mkCurrentBlockContext
      -- ^ the current chain fragment
      --
      -- Recall that the anchor point is the tip of the ImmDB.
-  -> Either (TraceForgeEvent blk (GenTx blk)) (BlockContext blk)
+  -> Either (TraceForgeEvent blk) (BlockContext blk)
      -- ^ the event records the cause of the failure
 mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->
