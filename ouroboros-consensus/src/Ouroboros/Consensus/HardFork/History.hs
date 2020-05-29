@@ -52,7 +52,9 @@ module Ouroboros.Consensus.HardFork.History (
   , wallclockToSlot
   , slotToWallclock
   , slotToEpoch
+  , slotToEpoch'
   , epochToSlot
+  , epochToSlot'
     -- * Support for 'EpochInfo'
   , summaryToEpochInfo
   , snapshotEpochInfo
