@@ -235,8 +235,8 @@ instance RunNode DualByronBlock where
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
 
   -- Envelope
-  nodeEncodeAnnTip = \_p -> nodeEncodeAnnTip pb . castAnnTip
-  nodeDecodeAnnTip = \_p -> castAnnTip <$> nodeDecodeAnnTip pb
+  nodeEncodeAnnTip = \cfg -> nodeEncodeAnnTip (dualCodecConfigMain cfg) . castAnnTip
+  nodeDecodeAnnTip = \cfg -> castAnnTip <$> nodeDecodeAnnTip (dualCodecConfigMain cfg)
 
   -- For now the size of the block is just an estimate, and so we just reuse
   -- the estimate from the concrete header.
@@ -253,48 +253,49 @@ instance RunNode DualByronBlock where
   nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb
 
   -- Encoders
-  nodeEncodeBlockWithInfo  = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
-  nodeEncodeHeader         = \cfg version ->
+  nodeEncodeBlockWithInfo  = \_ -> encodeDualBlockWithInfo encodeByronBlockWithInfo
+  nodeEncodeHeader         = \ccfg version ->
                                   nodeEncodeHeader
-                                    (dualCodecConfigMain cfg)
+                                    (dualCodecConfigMain ccfg)
                                     (castSerialisationVersion version)
                                 . dualHeaderMain
-  nodeEncodeWrappedHeader  = \cfg version ->
+  nodeEncodeWrappedHeader  = \ccfg version ->
                                   nodeEncodeWrappedHeader
-                                    (dualCodecConfigMain cfg)
+                                    (dualCodecConfigMain ccfg)
                                     (castSerialisationAcrossNetwork version)
                                 . dualWrappedMain
-  nodeEncodeLedgerState    = const $ encodeDualLedgerState encodeByronLedgerState
-  nodeEncodeApplyTxError   = const $ encodeDualGenTxErr encodeByronApplyTxError
-  nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
-  nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
-  nodeEncodeGenTxId        = encodeDualGenTxId encodeByronGenTxId
-  nodeEncodeConsensusState = \_cfg -> encodeByronConsensusState
-  nodeEncodeQuery          = \case {}
-  nodeEncodeResult         = \case {}
+  nodeEncodeLedgerState    = \_ -> encodeDualLedgerState encodeByronLedgerState
+  nodeEncodeApplyTxError   = \_ -> encodeDualGenTxErr encodeByronApplyTxError
+  nodeEncodeHeaderHash     = \_ -> encodeByronHeaderHash
+  nodeEncodeGenTx          = \_ -> encodeDualGenTx   encodeByronGenTx
+  nodeEncodeGenTxId        = \_ -> encodeDualGenTxId encodeByronGenTxId
+  nodeEncodeConsensusState = \_ -> encodeByronConsensusState
+  nodeEncodeQuery          = \_ -> \case {}
+  nodeEncodeResult         = \_ -> \case {}
 
   -- Decoders
-  nodeDecodeBlock          = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
-  nodeDecodeHeader         = \cfg version ->
+  nodeDecodeBlock          = decodeDualBlock . decodeByronBlock . extractEpochSlots
+  nodeDecodeHeader         = \ccfg version ->
                                (DualHeader .) <$>
                                  nodeDecodeHeader
-                                   (dualCodecConfigMain cfg)
+                                   (dualCodecConfigMain ccfg)
                                    (castSerialisationVersion version)
-  nodeDecodeWrappedHeader  = \cfg version ->
+  nodeDecodeWrappedHeader  = \ccfg version ->
                                rewrapMain <$>
                                  nodeDecodeWrappedHeader
-                                   (dualCodecConfigMain cfg)
+                                   (dualCodecConfigMain ccfg)
                                    (castSerialisationAcrossNetwork version)
-  nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
-  nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
-  nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
-  nodeDecodeLedgerState    = const $ decodeDualLedgerState decodeByronLedgerState
-  nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
-  nodeDecodeConsensusState = \cfg ->
-                                let k = configSecurityParam cfg
+  nodeDecodeGenTx          = \_ -> decodeDualGenTx   decodeByronGenTx
+  nodeDecodeGenTxId        = \_ -> decodeDualGenTxId decodeByronGenTxId
+  nodeDecodeHeaderHash     = \_ -> decodeByronHeaderHash
+  nodeDecodeLedgerState    = \_ -> decodeDualLedgerState decodeByronLedgerState
+  nodeDecodeApplyTxError   = \_ -> decodeDualGenTxErr    decodeByronApplyTxError
+  nodeDecodeConsensusState = \ccfg ->
+                                let k = getByronSecurityParam
+                                      $ dualCodecConfigMain ccfg
                                 in decodeByronConsensusState k
-  nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"
-  nodeDecodeResult         = \case {}
+  nodeDecodeQuery          = \_ -> error "DualByron.nodeDecodeQuery"
+  nodeDecodeResult         = \_ -> \case {}
 
 extractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
 extractEpochSlots = getByronEpochSlots . dualCodecConfigMain

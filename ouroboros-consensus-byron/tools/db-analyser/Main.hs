@@ -359,10 +359,10 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
 
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
-          immDecodeHash     = nodeDecodeHeaderHash    pb
+          immDecodeHash     = nodeDecodeHeaderHash    ccfg
         , immDecodeBlock    = nodeDecodeBlock         ccfg
         , immDecodeHeader   = nodeDecodeHeader        ccfg SerialisedToDisk
-        , immEncodeHash     = nodeEncodeHeaderHash    pb
+        , immEncodeHash     = nodeEncodeHeaderHash    ccfg
         , immEncodeBlock    = nodeEncodeBlockWithInfo ccfg
         , immChunkInfo      = chunkInfo
         , immValidation     = ValidateMostRecentChunk

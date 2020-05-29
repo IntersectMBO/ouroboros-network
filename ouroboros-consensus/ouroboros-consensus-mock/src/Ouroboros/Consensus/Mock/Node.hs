@@ -6,19 +6,16 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node () where
+module Ouroboros.Consensus.Mock.Node (
+    CodecConfig (..)
+  ) where
 
 import           Codec.Serialise (Serialise, decode, encode)
-import           Data.Time.Calendar (fromGregorian)
-import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -39,20 +36,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
-instance RunMockBlock SimpleMockCrypto ext
-      => ConfigSupportsNode (SimpleBlock SimpleMockCrypto ext) where
-
-  -- | No additional codec information is required for simple blocks
-  data CodecConfig (SimpleBlock SimpleMockCrypto ext) = SimpleCodecConfig
-
-  getCodecConfig = const SimpleCodecConfig
-  getSystemStart = const $ SystemStart dummyDate
-    where
-      --  This doesn't matter much
-      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
-  getNetworkMagic    = const $ NetworkMagic 0x0000ffff
-  getProtocolMagicId = mockProtocolMagicId
-
 instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with
@@ -68,28 +51,28 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeCheckIntegrity        = \_ _ -> True
 
-  nodeEncodeBlockWithInfo   = const simpleBlockBinaryInfo
+  nodeEncodeBlockWithInfo   = \_   -> simpleBlockBinaryInfo
   nodeEncodeHeader          = \_ _ -> encode
   nodeEncodeWrappedHeader   = \_ _ -> encode
-  nodeEncodeGenTx           =       encode
-  nodeEncodeGenTxId         =       encode
-  nodeEncodeHeaderHash      = const encode
-  nodeEncodeLedgerState     = const encode
+  nodeEncodeGenTx           = \_   -> encode
+  nodeEncodeGenTxId         = \_   -> encode
+  nodeEncodeHeaderHash      = \_   -> encode
+  nodeEncodeLedgerState     = \_   -> encode
   nodeEncodeConsensusState  = mockEncodeConsensusState
-  nodeEncodeApplyTxError    = const encode
-  nodeEncodeAnnTip          = const $ defaultEncodeAnnTip encode
-  nodeEncodeQuery           = \case {}
-  nodeEncodeResult          = \case {}
+  nodeEncodeApplyTxError    = \_   -> encode
+  nodeEncodeAnnTip          = \_   -> defaultEncodeAnnTip encode
+  nodeEncodeQuery           = \_   -> \case {}
+  nodeEncodeResult          = \_   -> \case {}
 
-  nodeDecodeBlock           = const (const <$> decode)
+  nodeDecodeBlock           = \_   -> (const <$> decode)
   nodeDecodeHeader          = \_ _ -> (const <$> decode)
   nodeDecodeWrappedHeader   = \_ _ -> decode
-  nodeDecodeGenTx           =       decode
-  nodeDecodeGenTxId         =       decode
-  nodeDecodeHeaderHash      = const decode
-  nodeDecodeLedgerState     = const decode
+  nodeDecodeGenTx           = \_   -> decode
+  nodeDecodeGenTxId         = \_   -> decode
+  nodeDecodeHeaderHash      = \_   -> decode
+  nodeDecodeLedgerState     = \_   -> decode
   nodeDecodeConsensusState  = mockDecodeConsensusState
-  nodeDecodeApplyTxError    = const decode
-  nodeDecodeAnnTip          = const $ defaultDecodeAnnTip decode
-  nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
-  nodeDecodeResult          = \case {}
+  nodeDecodeApplyTxError    = \_   -> decode
+  nodeDecodeAnnTip          = \_   -> defaultDecodeAnnTip decode
+  nodeDecodeQuery           = \_   -> error "Mock.nodeDecodeQuery"
+  nodeDecodeResult          = \_   -> \case {}

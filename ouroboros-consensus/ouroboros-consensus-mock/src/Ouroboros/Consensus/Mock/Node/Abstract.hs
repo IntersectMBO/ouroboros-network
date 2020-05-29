@@ -1,24 +1,33 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.Abstract (
-    RunMockBlock(..)
+    CodecConfig(..)
+  , RunMockBlock(..)
   , constructMockProtocolMagicId
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Data.Hashable (hash)
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..))
 import           GHC.Stack
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Network.Magic (NetworkMagic (..))
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+
 
 -- | Protocol specific functionality required to run consensus with mock blocks
 class MockProtocolSpecific c ext => RunMockBlock c ext where
@@ -26,10 +35,10 @@ class MockProtocolSpecific c ext => RunMockBlock c ext where
     :: BlockConfig (SimpleBlock c ext)
     -> ProtocolMagicId
   mockEncodeConsensusState
-    :: TopLevelConfig (SimpleBlock c ext)
+    :: CodecConfig (SimpleBlock c ext)
     -> ConsensusState (BlockProtocol (SimpleBlock c ext)) -> Encoding
   mockDecodeConsensusState
-    :: TopLevelConfig (SimpleBlock c ext)
+    :: CodecConfig (SimpleBlock c ext)
     -> Decoder s (ConsensusState (BlockProtocol (SimpleBlock c ext)))
 
 -- | Construct protocol magic ID depending on where in the code this is called
@@ -39,3 +48,17 @@ class MockProtocolSpecific c ext => RunMockBlock c ext where
 constructMockProtocolMagicId :: HasCallStack => ProtocolMagicId
 constructMockProtocolMagicId =
     ProtocolMagicId $ fromIntegral $ hash (prettyCallStack callStack)
+
+instance RunMockBlock c ext
+      => ConfigSupportsNode (SimpleBlock c ext) where
+
+  -- | Only the 'SecurityParam' is required for simple blocks
+  newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+
+  getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
+  getSystemStart = const $ SystemStart dummyDate
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+  getNetworkMagic    = const $ NetworkMagic 0x0000ffff
+  getProtocolMagicId = mockProtocolMagicId

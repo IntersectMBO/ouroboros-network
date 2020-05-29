@@ -220,6 +220,7 @@ data ProtocolClient blk p where
 
   ProtocolClientRealPBFT
     :: EpochSlots
+    -> SecurityParam
     -> ProtocolClient
          ByronBlock
          ProtocolRealPBFT
@@ -248,8 +249,8 @@ runProtocolClient ProtocolClientCardano{}    = Dict
 
 -- | Data required by clients of a node running the specified protocol.
 protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
-protocolClientInfo (ProtocolClientRealPBFT epochSlots) =
-    protocolClientInfoByron epochSlots
+protocolClientInfo (ProtocolClientRealPBFT epochSlots secParam) =
+    protocolClientInfoByron epochSlots secParam
 
 protocolClientInfo ProtocolClientRealTPraos =
     protocolClientInfoShelley

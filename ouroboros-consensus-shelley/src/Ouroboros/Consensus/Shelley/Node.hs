@@ -6,7 +6,6 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -29,7 +28,6 @@ import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
@@ -360,28 +358,28 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
 
   nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
 
-  nodeEncodeBlockWithInfo  = \_cfg -> encodeShelleyBlockWithInfo
-  nodeEncodeHeader         = \_cfg _version -> encodeShelleyHeader
-  nodeEncodeWrappedHeader  = \_cfg _version -> encode
-  nodeEncodeGenTx          = toCBOR
-  nodeEncodeGenTxId        = toCBOR
-  nodeEncodeHeaderHash     = \Proxy -> toCBOR
-  nodeEncodeLedgerState    = const encodeShelleyLedgerState
-  nodeEncodeConsensusState = \_cfg -> toCBOR
-  nodeEncodeApplyTxError   = \Proxy -> toCBOR
-  nodeEncodeAnnTip         = \Proxy -> encodeShelleyAnnTip
-  nodeEncodeQuery          = encodeShelleyQuery
-  nodeEncodeResult         = encodeShelleyResult
+  nodeEncodeBlockWithInfo  = \_   -> encodeShelleyBlockWithInfo
+  nodeEncodeHeader         = \_ _ -> encodeShelleyHeader
+  nodeEncodeWrappedHeader  = \_ _ -> encode
+  nodeEncodeGenTx          = \_   -> toCBOR
+  nodeEncodeGenTxId        = \_   -> toCBOR
+  nodeEncodeHeaderHash     = \_   -> toCBOR
+  nodeEncodeLedgerState    = \_   -> encodeShelleyLedgerState
+  nodeEncodeConsensusState = \_   -> toCBOR
+  nodeEncodeApplyTxError   = \_   -> toCBOR
+  nodeEncodeAnnTip         = \_   -> encodeShelleyAnnTip
+  nodeEncodeQuery          = \_   -> encodeShelleyQuery
+  nodeEncodeResult         = \_   -> encodeShelleyResult
 
-  nodeDecodeBlock          = \_cfg -> decodeShelleyBlock
-  nodeDecodeHeader         = \_cfg _version -> decodeShelleyHeader
-  nodeDecodeWrappedHeader  = \_cfg _version -> decode
-  nodeDecodeGenTx          = fromCBOR
-  nodeDecodeGenTxId        = fromCBOR
-  nodeDecodeHeaderHash     = \Proxy -> fromCBOR
-  nodeDecodeLedgerState    = const decodeShelleyLedgerState
-  nodeDecodeConsensusState = \_cfg -> fromCBOR
-  nodeDecodeApplyTxError   = \Proxy -> fromCBOR
-  nodeDecodeAnnTip         = \Proxy -> decodeShelleyAnnTip
-  nodeDecodeQuery          = decodeShelleyQuery
-  nodeDecodeResult         = decodeShelleyResult
+  nodeDecodeBlock          = \_   -> decodeShelleyBlock
+  nodeDecodeHeader         = \_ _ -> decodeShelleyHeader
+  nodeDecodeWrappedHeader  = \_ _ -> decode
+  nodeDecodeGenTx          = \_   -> fromCBOR
+  nodeDecodeGenTxId        = \_   -> fromCBOR
+  nodeDecodeHeaderHash     = \_   -> fromCBOR
+  nodeDecodeLedgerState    = \_   -> decodeShelleyLedgerState
+  nodeDecodeConsensusState = \_   -> fromCBOR
+  nodeDecodeApplyTxError   = \_   -> fromCBOR
+  nodeDecodeAnnTip         = \_   -> decodeShelleyAnnTip
+  nodeDecodeQuery          = \_   -> decodeShelleyQuery
+  nodeDecodeResult         = \_   -> decodeShelleyResult

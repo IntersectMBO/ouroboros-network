@@ -578,19 +578,19 @@ runThreadNetwork ThreadNetworkArgs
       invalidTracer addTracer
       nodeDBs _coreNodeId = ChainDbArgs
         { -- Decoders
-          cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
+          cdbDecodeHash           = nodeDecodeHeaderHash     ccfg
         , cdbDecodeBlock          = nodeDecodeBlock          ccfg
         , cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
-        , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
-        , cdbDecodeConsensusState = nodeDecodeConsensusState cfg
-        , cdbDecodeAnnTip         = nodeDecodeAnnTip         (Proxy @blk)
+        , cdbDecodeLedger         = nodeDecodeLedgerState    ccfg
+        , cdbDecodeConsensusState = nodeDecodeConsensusState ccfg
+        , cdbDecodeAnnTip         = nodeDecodeAnnTip         ccfg
           -- Encoders
-        , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
+        , cdbEncodeHash           = nodeEncodeHeaderHash     ccfg
         , cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
         , cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
-        , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
-        , cdbEncodeConsensusState = nodeEncodeConsensusState cfg
-        , cdbEncodeAnnTip         = nodeEncodeAnnTip         (Proxy @blk)
+        , cdbEncodeLedger         = nodeEncodeLedgerState    ccfg
+        , cdbEncodeConsensusState = nodeEncodeConsensusState ccfg
+        , cdbEncodeAnnTip         = nodeEncodeAnnTip         ccfg
           -- HasFS instances
         , cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
         , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)

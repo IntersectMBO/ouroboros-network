@@ -48,6 +48,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -152,10 +153,15 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             -> (PBftIsLeader PBftByronCrypto, MaintainForgeState m ByronBlock)
     mkCreds cred = (mkPBftIsLeader cred, defaultMaintainForgeState)
 
-protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
-protocolClientInfoByron epochSlots =
+protocolClientInfoByron :: EpochSlots
+                        -> SecurityParam
+                        -> ProtocolClientInfo ByronBlock
+protocolClientInfoByron epochSlots securityParam  =
     ProtocolClientInfo {
-      pClientInfoCodecConfig = ByronCodecConfig epochSlots
+      pClientInfoCodecConfig = ByronCodecConfig {
+          getByronEpochSlots    = epochSlots
+        , getByronSecurityParam = securityParam
+        }
     }
 
 byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
@@ -189,13 +195,15 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
 
 instance ConfigSupportsNode ByronBlock where
 
-  newtype CodecConfig ByronBlock = ByronCodecConfig {
-        getByronEpochSlots :: EpochSlots
+  data CodecConfig ByronBlock = ByronCodecConfig {
+        getByronEpochSlots    :: !EpochSlots
+      , getByronSecurityParam :: !SecurityParam
       }
 
-  getCodecConfig =
-      ByronCodecConfig
-    . byronEpochSlots
+  getCodecConfig bcfg = ByronCodecConfig {
+      getByronEpochSlots    = byronEpochSlots bcfg
+    , getByronSecurityParam = genesisSecurityParam (byronGenesisConfig bcfg)
+    }
 
   getSystemStart =
       SystemStart
@@ -248,30 +256,28 @@ instance RunNode ByronBlock where
     = Nothing
 
 
-  nodeEncodeBlockWithInfo   = const encodeByronBlockWithInfo
-  nodeEncodeHeader          = \_cfg -> encodeByronHeader
-  nodeEncodeWrappedHeader   = \_cfg -> encodeWrappedByronHeader
-  nodeEncodeGenTx           = encodeByronGenTx
-  nodeEncodeGenTxId         = encodeByronGenTxId
-  nodeEncodeHeaderHash      = const encodeByronHeaderHash
-  nodeEncodeLedgerState     = const encodeByronLedgerState
-  nodeEncodeConsensusState  = \_cfg -> encodeByronConsensusState
-  nodeEncodeApplyTxError    = const encodeByronApplyTxError
-  nodeEncodeAnnTip          = const encodeByronAnnTip
-  nodeEncodeQuery           = encodeByronQuery
-  nodeEncodeResult          = encodeByronResult
+  nodeEncodeBlockWithInfo   = \_    -> encodeByronBlockWithInfo
+  nodeEncodeHeader          = \_    -> encodeByronHeader
+  nodeEncodeWrappedHeader   = \_    -> encodeWrappedByronHeader
+  nodeEncodeGenTx           = \_    -> encodeByronGenTx
+  nodeEncodeGenTxId         = \_    -> encodeByronGenTxId
+  nodeEncodeHeaderHash      = \_    -> encodeByronHeaderHash
+  nodeEncodeLedgerState     = \_    -> encodeByronLedgerState
+  nodeEncodeConsensusState  = \_    -> encodeByronConsensusState
+  nodeEncodeApplyTxError    = \_    -> encodeByronApplyTxError
+  nodeEncodeAnnTip          = \_    -> encodeByronAnnTip
+  nodeEncodeQuery           = \_    -> encodeByronQuery
+  nodeEncodeResult          = \_    -> encodeByronResult
 
-  nodeDecodeBlock           = decodeByronBlock . getByronEpochSlots
-  nodeDecodeHeader          = \ cfg -> decodeByronHeader (getByronEpochSlots cfg)
-  nodeDecodeWrappedHeader   = \_cfg -> decodeWrappedByronHeader
-  nodeDecodeGenTx           = decodeByronGenTx
-  nodeDecodeGenTxId         = decodeByronGenTxId
-  nodeDecodeHeaderHash      = const decodeByronHeaderHash
-  nodeDecodeLedgerState     = const decodeByronLedgerState
-  nodeDecodeConsensusState  = \cfg ->
-                                 let k = configSecurityParam cfg
-                                 in decodeByronConsensusState k
-  nodeDecodeApplyTxError    = const decodeByronApplyTxError
-  nodeDecodeAnnTip          = const decodeByronAnnTip
-  nodeDecodeQuery           = decodeByronQuery
-  nodeDecodeResult          = decodeByronResult
+  nodeDecodeBlock           = \ccfg -> decodeByronBlock  (getByronEpochSlots ccfg)
+  nodeDecodeHeader          = \ccfg -> decodeByronHeader (getByronEpochSlots ccfg)
+  nodeDecodeWrappedHeader   = \_    -> decodeWrappedByronHeader
+  nodeDecodeGenTx           = \_    -> decodeByronGenTx
+  nodeDecodeGenTxId         = \_    -> decodeByronGenTxId
+  nodeDecodeHeaderHash      = \_    -> decodeByronHeaderHash
+  nodeDecodeLedgerState     = \_    -> decodeByronLedgerState
+  nodeDecodeConsensusState  = \ccfg -> decodeByronConsensusState (getByronSecurityParam ccfg)
+  nodeDecodeApplyTxError    = \_    -> decodeByronApplyTxError
+  nodeDecodeAnnTip          = \_    -> decodeByronAnnTip
+  nodeDecodeQuery           = \_    -> decodeByronQuery
+  nodeDecodeResult          = \_    -> decodeByronResult

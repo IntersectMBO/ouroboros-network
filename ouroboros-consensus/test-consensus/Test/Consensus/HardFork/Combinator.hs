@@ -312,21 +312,21 @@ instance RunNode TestBlock where
   nodeEncodeBlockWithInfo   = \_   -> encodeHardForkBlockWithInfo
   nodeEncodeBlock           = \_   -> encode
   nodeEncodeHeader          = \_ _ -> encode
-  nodeEncodeGenTx           =         encode . fromNS (Proxy @GenTx)
-  nodeEncodeGenTxId         =         encode . fromNS (Proxy @WrapGenTxId)
-  nodeEncodeHeaderHash      = \_ ->   encode
-  nodeEncodeLedgerState     = \_ ->   encode . fromTelescope' (Proxy @LedgerState)
-  nodeEncodeConsensusState  = \_ ->   encode . fromTelescope' (Proxy @WrapConsensusState)
-  nodeEncodeApplyTxError    = \_ ->   encode . Match.mismatchTwo . mustBeMismatch
-  nodeEncodeAnnTip          = \_ ->   encode
+  nodeEncodeGenTx           = \_   -> encode . fromNS (Proxy @GenTx)
+  nodeEncodeGenTxId         = \_   -> encode . fromNS (Proxy @WrapGenTxId)
+  nodeEncodeHeaderHash      = \_   -> encode
+  nodeEncodeLedgerState     = \_   -> encode . fromTelescope' (Proxy @LedgerState)
+  nodeEncodeConsensusState  = \_   -> encode . fromTelescope' (Proxy @WrapConsensusState)
+  nodeEncodeApplyTxError    = \_   -> encode . Match.mismatchTwo . mustBeMismatch
+  nodeEncodeAnnTip          = \_   -> encode
   nodeEncodeWrappedHeader   = \_ _ -> encode
-  nodeEncodeQuery           = absurd . thereIsNoQuery
-  nodeEncodeResult          = absurd . thereIsNoQuery
+  nodeEncodeQuery           = \_   -> absurd . thereIsNoQuery
+  nodeEncodeResult          = \_   -> absurd . thereIsNoQuery
 
   nodeDecodeHeader          = \_ _ -> const                                    <$> decode
   nodeDecodeBlock           = \_   -> const                                    <$> decode
-  nodeDecodeGenTx           =         toNS (Proxy @GenTx)                      <$> decode
-  nodeDecodeGenTxId         =         toNS (Proxy @WrapGenTxId)                <$> decode
+  nodeDecodeGenTx           = \_   -> toNS (Proxy @GenTx)                      <$> decode
+  nodeDecodeGenTxId         = \_   -> toNS (Proxy @WrapGenTxId)                <$> decode
   nodeDecodeLedgerState     = \_   -> toTelescope' (Proxy @LedgerState)        <$> decode
   nodeDecodeConsensusState  = \_   -> toTelescope' (Proxy @WrapConsensusState) <$> decode
   nodeDecodeApplyTxError    = \_   -> (fromMismatch . Match.mkMismatchTwo)     <$> decode
@@ -334,7 +334,7 @@ instance RunNode TestBlock where
   nodeDecodeAnnTip          = \_   -> decode
   nodeDecodeWrappedHeader   = \_ _ -> decode
   nodeDecodeQuery           = fail "there are no queries to be decoded"
-  nodeDecodeResult          = absurd . thereIsNoQuery
+  nodeDecodeResult          = \_   -> absurd . thereIsNoQuery
 
 {-------------------------------------------------------------------------------
   Serialisation
