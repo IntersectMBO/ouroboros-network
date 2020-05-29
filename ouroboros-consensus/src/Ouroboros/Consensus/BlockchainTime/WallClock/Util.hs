@@ -9,15 +9,13 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
   ) where
 
 import           Control.Exception (Exception)
-import           Data.Time (NominalDiffTime)
+import           Data.Time (NominalDiffTime, UTCTime)
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.HardFork.History (PastHorizonException,
-                     RelativeTime)
-
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
                      (SystemStart)
+import           Ouroboros.Consensus.HardFork.History (PastHorizonException)
 
 {-------------------------------------------------------------------------------
   Tracing
@@ -43,7 +41,7 @@ data TraceBlockchainTimeEvent =
     -- bounds between which we /can/ do conversions. The distance between the
     -- current time and the upper bound should rapidly decrease with consecutive
     -- 'TraceCurrentSlotUnknown' messages during syncing.
-  | TraceCurrentSlotUnknown RelativeTime PastHorizonException
+  | TraceCurrentSlotUnknown UTCTime PastHorizonException
   deriving (Show)
 
 {-------------------------------------------------------------------------------
@@ -54,7 +52,7 @@ data SystemClockMovedBackException =
     -- | The system clock got moved back so far that the slot number decreased
     --
     -- We record the the slot number before and after the change.
-    SystemClockMovedBack RelativeTime SlotNo SlotNo
+    SystemClockMovedBack SlotNo SlotNo
   deriving (Show)
 
 instance Exception SystemClockMovedBackException

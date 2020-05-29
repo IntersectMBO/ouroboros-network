@@ -11,6 +11,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
   , addRelTime
   , diffRelTime
   , toRelativeTime
+  , fromRelativeTime
     -- * Get current time (as 'RelativeTime')
   , SystemTime(..)
     -- * Slot length
@@ -27,7 +28,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
 import           Codec.Serialise
 import           Control.Exception (assert)
 import           Data.Fixed
-import           Data.Time (NominalDiffTime, UTCTime, diffUTCTime)
+import           Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
@@ -62,6 +63,9 @@ diffRelTime (RelativeTime t) (RelativeTime t') = t - t'
 toRelativeTime :: SystemStart -> UTCTime -> RelativeTime
 toRelativeTime (SystemStart t) t' = assert (t' >= t) $
                                       RelativeTime (diffUTCTime t' t)
+
+fromRelativeTime :: SystemStart -> RelativeTime -> UTCTime
+fromRelativeTime (SystemStart t) (RelativeTime t') = addUTCTime t' t
 
 {-------------------------------------------------------------------------------
   Get current time (as RelativeTime)
@@ -129,12 +133,12 @@ slotLengthToMillisec = conv . getSlotLength
 -------------------------------------------------------------------------------}
 
 instance Serialise RelativeTime where
-  encode = encode . toSeconds . getRelativeTime
+  encode = encode . toPico . getRelativeTime
     where
-      toSeconds :: NominalDiffTime -> Pico
-      toSeconds = realToFrac
+      toPico :: NominalDiffTime -> Pico
+      toPico = realToFrac
 
-  decode = (RelativeTime . fromSeconds) <$> decode
+  decode = (RelativeTime . fromPico) <$> decode
     where
-      fromSeconds :: Pico -> NominalDiffTime
-      fromSeconds = realToFrac
+      fromPico :: Pico -> NominalDiffTime
+      fromPico = realToFrac

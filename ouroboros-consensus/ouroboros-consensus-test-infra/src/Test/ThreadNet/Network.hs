@@ -113,6 +113,7 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import qualified Test.Util.LogicalClock as LogicalClock
+import           Test.Util.Time
 import           Test.Util.Tracer
 import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
 import qualified Test.Util.WrappedClock as WrappedClock
@@ -756,10 +757,17 @@ runThreadNetwork ThreadNetworkArgs
 
       btime <- LogicalClock.hardForkBlockchainTime
                  registry
-                 (blockchainTimeTracer tracers)
+                 (contramap
+                    (\(t, e) ->
+                       TraceCurrentSlotUnknown
+                         -- We don't really have a SystemStart in the tests
+                         (fromRelativeTime (SystemStart dawnOfTime) t)
+                         e)
+                    (blockchainTimeTracer tracers))
                  (unwrapLogicalClock clock)
                  (configLedger pInfoConfig)
-                 (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+                 (ledgerState <$>
+                    ChainDB.getCurrentLedger chainDB)
 
       let nodeArgs = NodeArgs
             { tracers

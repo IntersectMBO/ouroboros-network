@@ -239,7 +239,7 @@ prop_delayClockShift schedule =
     checkException before after e
       | Just (ExceptionInLinkedThread _ e') <- fromException e =
           checkException before after e'
-      | Just (SystemClockMovedBack _ before' after') <- fromException e =
+      | Just (SystemClockMovedBack before' after') <- fromException e =
           counterexample ("Got expected exception " ++ show e) $
           conjoin [
               before' === before

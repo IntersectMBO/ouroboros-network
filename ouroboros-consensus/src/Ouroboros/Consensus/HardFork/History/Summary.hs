@@ -11,12 +11,8 @@
 {-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Consensus.HardFork.History.Summary (
-    -- * RelativeTime
-    RelativeTime(..)
-  , addRelTime
-  , diffRelTime
     -- * Bounds
-  , Bound(..)
+    Bound(..)
   , initBound
   , mkUpperBound
   , slotToEpochBound

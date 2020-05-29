@@ -39,6 +39,7 @@ import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.History (PastHorizonException)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -151,7 +152,7 @@ blockUntilTick clock tick = atomically $ do
 -- to time.
 hardForkBlockchainTime :: (IOLike m, HasHardForkHistory blk, HasCallStack)
                        => ResourceRegistry m
-                       -> Tracer m BTime.TraceBlockchainTimeEvent
+                       -> Tracer m (BTime.RelativeTime, PastHorizonException)
                        -> LogicalClock m
                        -> LedgerConfig blk
                        -> STM m (LedgerState blk)

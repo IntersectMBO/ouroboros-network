@@ -121,7 +121,7 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
     }
   where
     checkFragment :: HF.Summary (HardForkIndices blk)
-                  -> HF.RelativeTime
+                  -> RelativeTime
                   -> AnchoredFragment (Header blk)
                   -> (AnchoredFragment (Header blk), [InFuture blk])
     checkFragment summary now = go
