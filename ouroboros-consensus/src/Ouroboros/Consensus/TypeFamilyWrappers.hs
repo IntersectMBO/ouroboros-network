@@ -16,6 +16,8 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapConsensusState(..)
   , WrapChainSelConfig(..)
   , WrapIsLeader(..)
+  , WrapCannotLead(..)
+  , WrapLeaderCheck(..)
   , WrapCanBeLeader(..)
   , WrapValidationErr(..)
   , WrapValidateView(..)
@@ -50,6 +52,8 @@ newtype WrapForgeState   blk = WrapForgeState   { unwrapForgeState   :: ForgeSta
 newtype WrapConsensusState  blk = WrapConsensusState  { unwrapConsensusState  :: ConsensusState (BlockProtocol blk) }
 newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig (BlockProtocol blk) }
 newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader       (BlockProtocol blk) }
+newtype WrapCannotLead      blk = WrapCannotLead      { unwrapCannotLead      :: CannotLead     (BlockProtocol blk) }
+newtype WrapLeaderCheck     blk = WrapLeaderCheck     { unwrapLeaderCheck     :: LeaderCheck    (BlockProtocol blk) }
 newtype WrapCanBeLeader     blk = WrapCanBeLeader     { unwrapCanBeLeader     :: CanBeLeader    (BlockProtocol blk) }
 newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr  (BlockProtocol blk) }
 newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView   (BlockProtocol blk) }
@@ -97,6 +101,8 @@ deriving instance NoUnexpectedThunks (ValidationErr  (BlockProtocol blk)) => NoU
 deriving instance Show               (SelectView     (BlockProtocol blk)) => Show               (WrapSelectView blk)
 
 deriving instance NoUnexpectedThunks (ChainSelConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainSelConfig blk)
+
+deriving instance Show               (CannotLead     (BlockProtocol blk)) => Show               (WrapCannotLead blk)
 
 {-------------------------------------------------------------------------------
   Serialise instances

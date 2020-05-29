@@ -28,7 +28,7 @@ data BlockProduction m blk = BlockProduction {
       getLeaderProof :: Tracer m (ForgeState blk)
                      -> Ticked (LedgerView (BlockProtocol blk))
                      -> ConsensusState     (BlockProtocol blk)
-                     -> m (Maybe (IsLeader (BlockProtocol blk)))
+                     -> m (LeaderCheck     (BlockProtocol blk))
 
       -- | Produce a block
       --
@@ -124,7 +124,7 @@ defaultGetLeaderProof :: ( MonadRandom m
                       -> Update m (ForgeState blk)
                       -> Ticked (LedgerView (BlockProtocol blk))
                       -> ConsensusState     (BlockProtocol blk)
-                      -> m (Maybe (IsLeader (BlockProtocol blk)))
+                      -> m (LeaderCheck     (BlockProtocol blk))
 defaultGetLeaderProof cfg proof mfs upd lgrSt consensusSt = do
     updateForgeState mfs upd (tickedSlotNo lgrSt)
     checkIsLeader

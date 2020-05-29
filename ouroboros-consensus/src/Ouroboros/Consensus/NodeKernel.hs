@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -369,10 +370,11 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
               (protocolLedgerView (configLedger cfg) <$> ticked)
               (headerStateConsensus (headerState extLedger))
           case mIsLeader of
-            Just p  -> return p
-            Nothing -> do
-              trace $ TraceNodeNotLeader currentSlot
-              exitEarly
+            IsLeader   p -> return p
+            CannotLead e -> do trace $ TraceNotCannotLead currentSlot e
+                               exitEarly
+            NotLeader    -> do trace $ TraceNodeNotLeader currentSlot
+                               exitEarly
 
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot
@@ -434,7 +436,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- We successfully produced /and/ adopted a block
         trace $ TraceAdoptedBlock currentSlot newBlock txs
 
-    trace :: TraceForgeEvent blk (GenTx blk) -> WithEarlyExit m ()
+    trace :: TraceForgeEvent blk -> WithEarlyExit m ()
     trace = lift . traceWith (forgeTracer tracers)
 
     -- Compute maximum block transaction capacity
@@ -486,7 +488,7 @@ mkCurrentBlockContext
      -- ^ the current chain fragment
      --
      -- Recall that the anchor point is the tip of the ImmDB.
-  -> Either (TraceForgeEvent blk (GenTx blk)) (BlockContext blk)
+  -> Either (TraceForgeEvent blk) (BlockContext blk)
      -- ^ the event records the cause of the failure
 mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->

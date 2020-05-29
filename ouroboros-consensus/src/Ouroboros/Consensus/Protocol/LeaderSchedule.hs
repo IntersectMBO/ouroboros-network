@@ -20,6 +20,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
+import           Data.Void
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -94,16 +95,17 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type IsLeader       (WithLeaderSchedule p) = ()
   type ValidateView   (WithLeaderSchedule p) = ()
   type CanBeLeader    (WithLeaderSchedule p) = ()
+  type CannotLead     (WithLeaderSchedule p) = Void
 
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP
 
   checkIsLeader WLSConfig{..} () (Ticked slot _) _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
-        Nothing                           -> Nothing
+        Nothing -> error $ "WithLeaderSchedule: missing slot " ++ show slot
         Just nids
-            | wlsConfigNodeId `elem` nids -> Just ()
-            | otherwise                   -> Nothing
+            | wlsConfigNodeId `elem` nids -> IsLeader ()
+            | otherwise                   -> NotLeader
 
   updateConsensusState _ _ _ _ = return ()
   rewindConsensusState _ _ _ _ = Just ()

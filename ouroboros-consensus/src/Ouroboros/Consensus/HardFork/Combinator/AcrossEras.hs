@@ -37,6 +37,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , OneEraValidateView(..)
   , OneEraSelectView(..)
   , OneEraIsLeader(..)
+  , OneEraCannotLead(..)
   , OneEraGenTx(..)
   , OneEraGenTxId(..)
   , OneEraApplyTxErr(..)
@@ -107,6 +108,7 @@ newtype OneEraLedgerError   xs = OneEraLedgerError   { getOneEraLedgerError   ::
 newtype OneEraValidateView  xs = OneEraValidateView  { getOneEraValidateView  :: NS WrapValidateView  xs }
 newtype OneEraSelectView    xs = OneEraSelectView    { getOneEraSelectView    :: NS WrapSelectView    xs }
 newtype OneEraIsLeader      xs = OneEraIsLeader      { getOneEraIsLeader      :: NS WrapIsLeader      xs }
+newtype OneEraCannotLead    xs = OneEraCannotLead    { getOneEraCannotLead    :: NS WrapCannotLead    xs }
 newtype OneEraGenTx         xs = OneEraGenTx         { getOneEraGenTx         :: NS GenTx             xs }
 newtype OneEraGenTxId       xs = OneEraGenTxId       { getOneEraGenTxId       :: NS WrapGenTxId       xs }
 newtype OneEraApplyTxErr    xs = OneEraApplyTxErr    { getOneEraApplyTxErr    :: NS WrapApplyTxErr    xs }
@@ -297,6 +299,7 @@ deriving via LiftNS GenTx          xs instance CanHardFork xs => Show (OneEraGen
 deriving via LiftNS WrapGenTxId    xs instance CanHardFork xs => Show (OneEraGenTxId    xs)
 deriving via LiftNS WrapApplyTxErr xs instance CanHardFork xs => Show (OneEraApplyTxErr xs)
 deriving via LiftNS WrapSelectView xs instance CanHardFork xs => Show (OneEraSelectView xs)
+deriving via LiftNS WrapCannotLead xs instance CanHardFork xs => Show (OneEraCannotLead xs)
 
 {-------------------------------------------------------------------------------
   Serialise support

@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Ouroboros.Consensus.Node.Tracers
   ( -- * All tracers of a node bundled together
@@ -28,6 +30,7 @@ import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
@@ -53,7 +56,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , txOutboundTracer              :: f (TraceLabelPeer remotePeer (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk)))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
-  , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
+  , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
 
     -- | Called on every slot with the possibly updated 'ForgeState'
@@ -162,7 +165,7 @@ showTracers tr = Tracers
 -- >          +--- TraceForgedInvalidBlock
 -- >          |
 -- >  TraceAdoptedBlock
-data TraceForgeEvent blk tx
+data TraceForgeEvent blk
   -- | Start of the leadership check
   --
   -- We record the current slot number.
@@ -181,6 +184,13 @@ data TraceForgeEvent blk tx
   --
   -- We record the current slot number
   | TraceNodeNotLeader SlotNo
+
+  -- | We did the leadership check and concluded that we should lead, but cannot
+  --
+  -- This should only happen rarely and should be logged with warning severity.
+  --
+  -- Records why we cannot lead.
+  | TraceNotCannotLead SlotNo (CannotLead (BlockProtocol blk))
 
   -- | Leadership check failed: we were unable to get the ledger state
   -- for the point of the block we want to connect to
@@ -254,7 +264,7 @@ data TraceForgeEvent blk tx
 
   -- | We adopted the block we produced, we also trace the transactions
   -- that were adopted.
-  | TraceAdoptedBlock SlotNo blk [tx]
+  | TraceAdoptedBlock SlotNo blk [GenTx blk]
 
   -- | We did not adopt the block we produced, but the block was valid. We
   -- must have adopted a block that another leader of the same slot produced
@@ -266,4 +276,13 @@ data TraceForgeEvent blk tx
   -- ChainDB. This means there is an inconsistency between the mempool
   -- validation and the ledger validation. This is a serious error!
   | TraceForgedInvalidBlock SlotNo blk (InvalidBlockReason blk)
-  deriving (Eq, Show)
+
+deriving instance ( LedgerSupportsProtocol blk
+                  , Eq blk
+                  , Eq (GenTx blk)
+                  , Eq (CannotLead (BlockProtocol blk))
+                  ) => Eq (TraceForgeEvent blk)
+deriving instance ( LedgerSupportsProtocol blk
+                  , Show blk
+                  , Show (GenTx blk)
+                  ) => Show (TraceForgeEvent blk)

@@ -7,6 +7,9 @@ module Ouroboros.Consensus.Protocol.Abstract (
     ConsensusProtocol(..)
   , ChainSelection(..)
   , ConsensusConfig
+    -- * LeaderCheck
+  , LeaderCheck(..)
+  , castLeaderCheck
     -- * Convenience re-exports
   , SecurityParam(..)
   ) where
@@ -106,6 +109,7 @@ class ( NoUnexpectedThunks (ChainSelConfig p)
 class ( Show (ConsensusState p)
       , Show (ValidationErr  p)
       , Show (LedgerView     p)
+      , Show (CannotLead     p)
       , Eq   (ConsensusState p)
       , Eq   (ValidationErr  p)
       , NoUnexpectedThunks (ConsensusConfig p)
@@ -120,11 +124,17 @@ class ( Show (ConsensusState p)
   -- come in (more precisely, new /headers/), and subject to rollback.
   type family ConsensusState p :: *
 
-  -- | Evidence that a node is the leader
+  -- | Evidence that a node /is/ the leader
   type family IsLeader p :: *
 
   -- | Evidence that we /can/ be a leader
   type family CanBeLeader p :: *
+
+  -- | Information about why we /cannot/ lead, although we are a leader
+  --
+  -- This should happen only rarely. An example might be that our hot key
+  -- does not (yet/anymore) match the delegation state.
+  type family CannotLead p :: *
 
   -- | Projection of the ledger state the Ouroboros protocol needs access to
   --
@@ -185,7 +195,7 @@ class ( Show (ConsensusState p)
                 -> CanBeLeader        p
                 -> Ticked (LedgerView p)
                 -> ConsensusState     p
-                -> m (Maybe (IsLeader p))
+                -> m (LeaderCheck     p)
 
   -- | Apply a header
   updateConsensusState :: HasCallStack
@@ -228,3 +238,25 @@ class ( Show (ConsensusState p)
                        -> SecurityParam
                        -> Point hdr      -- ^ Point to rewind to
                        -> ConsensusState p -> Maybe (ConsensusState p)
+
+{-------------------------------------------------------------------------------
+  Result of 'checkIsLeader'
+-------------------------------------------------------------------------------}
+
+data LeaderCheck p =
+    -- | We are not a leader in this slot
+    NotLeader
+
+    -- | We are a leader in this slot
+  | IsLeader (IsLeader p)
+
+    -- | We are a leader in this slot, but we cannot lead.
+  | CannotLead (CannotLead p)
+
+castLeaderCheck :: ( IsLeader   p ~ IsLeader   p'
+                   , CannotLead p ~ CannotLead p'
+                   )
+                => LeaderCheck p -> LeaderCheck p'
+castLeaderCheck NotLeader      = NotLeader
+castLeaderCheck (IsLeader   p) = IsLeader   p
+castLeaderCheck (CannotLead e) = CannotLead e
