@@ -11,34 +11,13 @@ with pkgs;
 let
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
+  # NOTE: due to some cabal limitation,
+  #  you have to remove all `source-repository-package` entries from cabal.project
+  #  after entering nix-shell for cabal to use nix provided dependencies for them.
   shell = ouroborosNetworkHaskellPackages.shellFor {
     name = "cabal-dev-shell";
 
-    # If shellFor local packages selection is wrong,
-    # then list all local packages then include source-repository-package that cabal complains about:
-    packages = ps: with ps; [
-       ouroboros-network
-       ouroboros-consensus
-       typed-protocols
-       typed-protocols-examples
-       Win32-network
-       network-mux
-       ouroboros-network-framework
-       ouroboros-network
-       ouroboros-network-testing
-       ouroboros-consensus
-       ouroboros-consensus-byron
-       ouroboros-consensus-byron-test
-       ouroboros-consensus-byronspec
-       ouroboros-consensus-cardano
-       ouroboros-consensus-mock
-       ouroboros-consensus-shelley
-       ouroboros-consensus-shelley-test
-       ouroboros-consensus-test-infra
-       io-sim
-       io-sim-classes
-       ntp-client
-    ];
+    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
 
     # These programs will be available inside the nix-shell.
     buildInputs = (with haskellPackages; [
