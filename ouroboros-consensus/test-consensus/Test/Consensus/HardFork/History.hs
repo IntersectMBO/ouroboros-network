@@ -27,7 +27,6 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util (nTimes)
 import           Ouroboros.Consensus.Util.Counting
@@ -35,14 +34,13 @@ import           Ouroboros.Consensus.Util.Counting
 import           Test.Consensus.HardFork.Infra
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
-import           Test.Util.Time (dawnOfTime)
 
 -- | Tests for 'summarize'
 --
 -- General approach:
 --
 -- * Generate a chain of events
--- * Each event records its own 'UTCTime', 'SlotNo', and 'EpochNo'
+-- * Each event records its own 'RelativeTime', 'SlotNo', and 'EpochNo'
 -- * We then construct a 'HF.Summary' from a /prefix/ of this chain
 -- * We then pick an arbitrary event from the (full) chain:
 --   a. If that event is on the prefix of the chain, or within the safe zone, we
@@ -144,7 +142,7 @@ eventSlotToWallclock :: ArbitraryChain -> Property
 eventSlotToWallclock chain@ArbitraryChain{..} =
     testSkeleton chain (HF.slotToWallclock eventTimeSlot) $
       \(time, _slotLen) -> conjoin [
-          time === eventTimeUTC
+          time === eventTimeRelative
         ]
   where
     EventTime{..} = eventTime arbitraryEvent
@@ -161,8 +159,8 @@ eventWallclockToSlot chain@ArbitraryChain{..} =
   where
     EventTime{..} = eventTime arbitraryEvent
 
-    time :: UTCTime
-    time = addUTCTime diff eventTimeUTC
+    time :: RelativeTime
+    time = addRelTime diff eventTimeRelative
 
     diff :: NominalDiffTime
     diff = arbitraryDiffTime arbitraryParams
@@ -172,8 +170,7 @@ eventWallclockToSlot chain@ArbitraryChain{..} =
 -------------------------------------------------------------------------------}
 
 data ArbitraryParams xs = ArbitraryParams {
-      arbitraryChainStart  :: SystemStart
-    , arbitraryChainEvents :: [Event]
+      arbitraryChainEvents :: [Event]
     , arbitraryChainEras   :: Eras     xs
     , arbitraryChainShape  :: HF.Shape xs
 
@@ -288,7 +285,6 @@ mkArbitraryChain params@ArbitraryParams{..} = ArbitraryChain {
 
     summary :: HF.Summary xs
     summary = HF.summarize
-                arbitraryChainStart
                 (snd <$> chainTip chain)
                 arbitraryChainShape
                 transitions
@@ -318,15 +314,13 @@ deriving instance Show ArbitraryChain
 
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
-      start  <- SystemStart <$> arbitrary
       shape  <- HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
-      events <- genEvents start eras shape `suchThat` (not . null)
+      events <- genEvents eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
       rawIx  <- choose (0, length events - 1)
       diff   <- genDiffTime $ HF.eraSlotLength (eventEraParams (events !! rawIx))
       return $ mkArbitraryChain $ ArbitraryParams {
-          arbitraryChainStart  = start
-        , arbitraryChainEvents = events
+          arbitraryChainEvents = events
         , arbitraryChainEras   = eras
         , arbitraryChainShape  = shape
         , arbitraryRawEventIx  = rawIx
@@ -351,14 +345,9 @@ instance Arbitrary ArbitraryChain where
           s' :: Double
           s' = fromIntegral $ slotLengthToSec s
 
-  shrink c@ArbitraryChain{..} = concat [
-        -- Simplify the system start
-        [ resetArbitraryChainStart c
-        | getSystemStart arbitraryChainStart /= dawnOfTime
-        ]
-
+  shrink ArbitraryChain{..} = concat [
         -- Pick an earlier event
-      , [ mkArbitraryChain $ arbitraryParams { arbitraryRawEventIx = rawIx' }
+        [ mkArbitraryChain $ arbitraryParams { arbitraryRawEventIx = rawIx' }
         | rawIx' <- shrink arbitraryRawEventIx
         ]
 
@@ -412,16 +401,16 @@ data EventTime = EventTime {
       eventTimeSlot      :: SlotNo
     , eventTimeEpochNo   :: EpochNo
     , eventTimeEpochSlot :: Word64
-    , eventTimeUTC       :: UTCTime
+    , eventTimeRelative  :: RelativeTime
     }
   deriving (Show)
 
-initEventTime :: SystemStart -> EventTime
-initEventTime (SystemStart start) = EventTime {
+initEventTime :: EventTime
+initEventTime = EventTime {
       eventTimeSlot      = SlotNo  0
     , eventTimeEpochNo   = EpochNo 0
     , eventTimeEpochSlot = 0
-    , eventTimeUTC       = start
+    , eventTimeRelative  = RelativeTime 0
     }
 
 -- | Next time slot
@@ -430,7 +419,8 @@ stepEventTime HF.EraParams{..} EventTime{..} = EventTime{
       eventTimeSlot      = succ eventTimeSlot
     , eventTimeEpochNo   = epoch'
     , eventTimeEpochSlot = relSlot'
-    , eventTimeUTC       = addUTCTime (getSlotLength eraSlotLength) eventTimeUTC
+    , eventTimeRelative  = addRelTime (getSlotLength eraSlotLength) $
+                             eventTimeRelative
     }
   where
     epoch'   :: EpochNo
@@ -559,10 +549,10 @@ stepTime typ Time{..} =
     reachedNextEra :: EpochNo -> Bool
     reachedNextEra e = eventTimeEpochNo timeEvent' == e
 
-genEvents :: SystemStart -> Eras xs -> HF.Shape xs -> Gen [Event]
-genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
+genEvents :: Eras xs -> HF.Shape xs -> Gen [Event]
+genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
     go sz Time {
-        timeEvent   = initEventTime start
+        timeEvent   = initEventTime
       , timeNextEra = Nothing
       , timeEras    = exactlyZip eras shape
       }
@@ -720,41 +710,3 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
     pred' :: Word64 -> Word64
     pred' 0 = 0
     pred' n = pred n
-
-{-------------------------------------------------------------------------------
-  Shifting time
--------------------------------------------------------------------------------}
-
-instance ShiftTime (ArbitraryParams xs) where
-  shiftTime delta ArbitraryParams{..} = ArbitraryParams {
-        arbitraryChainStart  = shiftTime delta arbitraryChainStart
-      , arbitraryChainEvents = shiftTime delta arbitraryChainEvents
-      , arbitraryChainEras
-      , arbitraryChainShape
-      , arbitraryChainSplit
-      , arbitraryRawEventIx
-      , arbitraryDiffTime
-      }
-
-instance ShiftTime ArbitraryChain where
-  shiftTime delta ArbitraryChain{..} = mkArbitraryChain $
-                                         shiftTime delta arbitraryParams
-
-instance ShiftTime (Chain xs) where
-  shiftTime delta (Chain chain) = Chain $ shiftTime delta <$> chain
-
-instance ShiftTime Event where
-  shiftTime delta e = e { eventTime = shiftTime delta (eventTime e) }
-
-instance ShiftTime EventTime where
-  shiftTime delta t = t { eventTimeUTC = shiftTime delta (eventTimeUTC t) }
-
--- | Reset chain start
-resetArbitraryChainStart :: ArbitraryChain -> ArbitraryChain
-resetArbitraryChainStart chain@ArbitraryChain{..} =
-    shiftTime (negate ahead) chain
-  where
-    ArbitraryParams{..} = arbitraryParams
-
-    ahead :: NominalDiffTime
-    ahead = diffUTCTime (getSystemStart arbitraryChainStart) dawnOfTime

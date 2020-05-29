@@ -39,6 +39,7 @@ library
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
+                       Ouroboros.Consensus.BlockchainTime.WallClock.Default
                        Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
                        Ouroboros.Consensus.BlockchainTime.WallClock.Simple
                        Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -79,6 +80,12 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Util.Tails
                        Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                        Ouroboros.Consensus.HardFork.History
+                       Ouroboros.Consensus.HardFork.History.Caching
+                       Ouroboros.Consensus.HardFork.History.EpochInfo
+                       Ouroboros.Consensus.HardFork.History.EraParams
+                       Ouroboros.Consensus.HardFork.History.Qry
+                       Ouroboros.Consensus.HardFork.History.Summary
+                       Ouroboros.Consensus.HardFork.History.Util
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual

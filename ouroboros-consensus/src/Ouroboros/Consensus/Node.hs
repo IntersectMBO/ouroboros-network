@@ -35,7 +35,7 @@ module Ouroboros.Consensus.Node
 
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Proxy (Proxy (..))
@@ -51,7 +51,7 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime hiding (SystemStart (..))
+import           Ouroboros.Consensus.BlockchainTime hiding (getSystemStart)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
@@ -158,11 +158,19 @@ run runargs@RunNodeArgs{..} =
     withDBChecks runargs $ \lastShutDownWasClean ->
     withRegistry $ \registry -> do
 
-      let inFuture :: CheckInFuture IO blk
+      let systemStart :: SystemStart
+          systemStart = getSystemStart (configBlock cfg)
+
+          systemTime :: SystemTime IO
+          systemTime = defaultSystemTime
+                         systemStart
+                         (blockchainTimeTracer rnTraceConsensus)
+
+          inFuture :: CheckInFuture IO blk
           inFuture = InFuture.reference
                        (configLedger cfg)
                        rnMaxClockSkew
-                       (defaultSystemTime $ getSystemStart (configBlock cfg))
+                       systemTime
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
@@ -186,10 +194,16 @@ run runargs@RunNodeArgs{..} =
 
       btime      <- hardForkBlockchainTime
                       registry
-                      (blockchainTimeTracer rnTraceConsensus)
-                      (defaultSystemTime $ getSystemStart (configBlock cfg))
+                      (contramap
+                         (\(t, ex) ->
+                              TraceCurrentSlotUnknown
+                                (fromRelativeTime systemStart t)
+                                ex)
+                         (blockchainTimeTracer rnTraceConsensus))
+                      systemTime
                       (configLedger cfg)
-                      (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+                      (ledgerState <$>
+                         ChainDB.getCurrentLedger chainDB)
       nodeArgs   <- rnCustomiseNodeArgs <$>
                       mkNodeArgs
                         registry

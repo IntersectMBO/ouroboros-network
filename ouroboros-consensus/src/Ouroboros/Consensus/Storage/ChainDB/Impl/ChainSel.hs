@@ -48,7 +48,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
@@ -234,7 +233,6 @@ addBlockSync
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , HasCallStack
      )
@@ -342,7 +340,6 @@ olderThanK hdr isEBB immBlockNo
 chainSelectionForFutureBlocks
   :: ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , HasCallStack
      )
@@ -399,7 +396,6 @@ chainSelectionForBlock
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , HasCallStack
      )
@@ -618,8 +614,6 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
         summary :: History.Summary (HardForkIndices blk)
         summary = hardForkSummary
-                    -- TODO we shouldn't need to be aware of time here
-                    (getSystemStart (configBlock cfg))
                     (configLedger cfg)
                     ledger
 

@@ -10,7 +10,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
 
 import           Control.Monad
 import           Control.Tracer
-import           Data.Time (NominalDiffTime, UTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Void
 import           GHC.Stack
 
@@ -31,7 +31,8 @@ hardForkBlockchainTime :: forall m blk.
                           , HasCallStack
                           )
                        => ResourceRegistry m
-                       -> Tracer m TraceBlockchainTimeEvent
+                       -> Tracer m (RelativeTime, HF.PastHorizonException)
+                       -- ^ Tracer used when current slot is unknown
                        -> SystemTime m
                        -> LedgerConfig blk
                        -> STM m (LedgerState blk)
@@ -42,9 +43,9 @@ hardForkBlockchainTime registry
                        cfg
                        getLedgerState = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
-    waitUntilSystemStart tracer time
+    systemTimeWait
 
-    (_now, firstSlot, firstDelay) <- getCurrentSlot' tracer time run
+    (firstSlot, firstDelay) <- getCurrentSlot' tracer time run
     slotVar <- newTVarM firstSlot
     void $ forkLinkedThread registry "hardForkBlockchainTime" $
              loop run slotVar firstSlot firstDelay
@@ -54,7 +55,7 @@ hardForkBlockchainTime registry
       }
   where
     summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
-    summarize st = hardForkSummary systemTimeStart cfg st
+    summarize st = hardForkSummary cfg st
 
     loop :: HF.RunWithCachedSummary xs m
          -> StrictTVar m CurrentSlot
@@ -66,13 +67,13 @@ hardForkBlockchainTime registry
         go :: CurrentSlot -> NominalDiffTime -> m Void
         go prevSlot delay = do
            threadDelay (nominalDelay delay)
-           (now, newSlot, newDelay) <- getCurrentSlot' tracer time run
-           checkValidClockChange now (prevSlot, newSlot)
+           (newSlot, newDelay) <- getCurrentSlot' tracer time run
+           checkValidClockChange (prevSlot, newSlot)
            atomically $ writeTVar slotVar newSlot
            go newSlot newDelay
 
-    checkValidClockChange :: UTCTime -> (CurrentSlot, CurrentSlot) -> m ()
-    checkValidClockChange now = \case
+    checkValidClockChange :: (CurrentSlot, CurrentSlot) -> m ()
+    checkValidClockChange = \case
         (CurrentSlotUnknown, CurrentSlot _) ->
           -- Unknown-to-known typically happens when syncing catches up far
           -- enough that we can now know what the current slot is.
@@ -89,18 +90,18 @@ hardForkBlockchainTime registry
           -- user's system clock was adjusted (say by an NTP process).
           | m <  n    -> return ()
           | m == n    -> return ()
-          | otherwise -> throwM $ SystemClockMovedBack now m n
+          | otherwise -> throwM $ SystemClockMovedBack m n
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
--- | Get current time, current slot, and delay until next slot
+-- | Get current slot, and delay until next slot
 getCurrentSlot' :: forall m xs. IOLike m
-                => Tracer m TraceBlockchainTimeEvent
+                => Tracer m (RelativeTime, HF.PastHorizonException)
                 -> SystemTime m
                 -> HF.RunWithCachedSummary xs m
-                -> m (UTCTime, CurrentSlot, NominalDiffTime)
+                -> m (CurrentSlot, NominalDiffTime)
 getCurrentSlot' tracer SystemTime{..} run = do
     now   <- systemTimeCurrent
     mSlot <- atomically $ HF.cachedRunQuery run $ HF.wallclockToSlot now
@@ -124,7 +125,7 @@ getCurrentSlot' tracer SystemTime{..} run = do
         -- (NOTE: We could reduce this delay but I don't think it would change
         -- very much, and it would increase the frequency of the trace messages
         -- and incur computational overhead.)
-        traceWith tracer $ TraceCurrentSlotUnknown now ex
-        return (now, CurrentSlotUnknown, 60)
+        traceWith tracer (now, ex)
+        return (CurrentSlotUnknown, 60)
       Right (slot, _inSlot, timeLeft) -> do
-        return (now, CurrentSlot slot, timeLeft)
+        return (CurrentSlot slot, timeLeft)

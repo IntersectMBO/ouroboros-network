@@ -6,21 +6,16 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
     TraceBlockchainTimeEvent(..)
     -- * Exceptions
   , SystemClockMovedBackException(..)
-    -- * Support for defining 'BlockchainTime' instances
-  , waitUntilSystemStart
   ) where
 
 import           Control.Exception (Exception)
-import           Control.Monad
-import           Control.Tracer
-import           Data.Time (NominalDiffTime, UTCTime, diffUTCTime)
+import           Data.Time (NominalDiffTime, UTCTime)
 
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Time
+                     (SystemStart)
+import           Ouroboros.Consensus.HardFork.History (PastHorizonException)
 
 {-------------------------------------------------------------------------------
   Tracing
@@ -46,7 +41,7 @@ data TraceBlockchainTimeEvent =
     -- bounds between which we /can/ do conversions. The distance between the
     -- current time and the upper bound should rapidly decrease with consecutive
     -- 'TraceCurrentSlotUnknown' messages during syncing.
-  | TraceCurrentSlotUnknown UTCTime HardFork.PastHorizonException
+  | TraceCurrentSlotUnknown UTCTime PastHorizonException
   deriving (Show)
 
 {-------------------------------------------------------------------------------
@@ -56,25 +51,8 @@ data TraceBlockchainTimeEvent =
 data SystemClockMovedBackException =
     -- | The system clock got moved back so far that the slot number decreased
     --
-    -- We record the time at which we discovered the clock change, the slot
-    -- number before the clock change, and the slot number after the change.
-    SystemClockMovedBack UTCTime SlotNo SlotNo
+    -- We record the the slot number before and after the change.
+    SystemClockMovedBack SlotNo SlotNo
   deriving (Show)
 
 instance Exception SystemClockMovedBackException
-
-{-------------------------------------------------------------------------------
-  Wait for system start
--------------------------------------------------------------------------------}
-
--- | Wait until system start if necessary
-waitUntilSystemStart :: MonadDelay m
-                     => Tracer m TraceBlockchainTimeEvent
-                     -> SystemTime m
-                     -> m ()
-waitUntilSystemStart tracer SystemTime{..} = do
-    now <- systemTimeCurrent
-    when (getSystemStart systemTimeStart > now) $ do
-      let delay = getSystemStart systemTimeStart `diffUTCTime` now
-      traceWith tracer $ TraceStartTimeInTheFuture systemTimeStart delay
-      threadDelay (nominalDelay delay)

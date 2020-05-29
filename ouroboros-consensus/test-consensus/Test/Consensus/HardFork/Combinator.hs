@@ -190,11 +190,9 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         , pInfoInitLedger = ExtLedgerState {
               ledgerState = HardForkLedgerState $
                               initHardForkState
-                                (SystemStart dawnOfTime)
                                 initLedgerState
             , headerState = genesisHeaderState $
                               initHardForkState
-                                (SystemStart dawnOfTime)
                                 (WrapConsensusState initConsensusState)
             }
         , pInfoLeaderCreds = Just (

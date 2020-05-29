@@ -180,10 +180,8 @@ instance CanHardFork xs => UpdateLedger (HardForkBlock xs)
 instance CanHardFork xs => HasHardForkHistory (HardForkBlock xs) where
   type HardForkIndices (HardForkBlock xs) = xs
 
-  -- We can ignore the system start, because the 'SystemStart' of the first
-  -- era is already known from the 'Bound's embedded in the 'HardForkState'.
-  hardForkSummary _start cfg = State.reconstructSummaryLedger cfg
-                             . getHardForkLedgerState
+  hardForkSummary cfg = State.reconstructSummaryLedger cfg
+                      . getHardForkLedgerState
 
 {-------------------------------------------------------------------------------
   HeaderValidation

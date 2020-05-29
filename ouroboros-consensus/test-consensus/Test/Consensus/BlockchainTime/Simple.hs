@@ -86,7 +86,7 @@ prop_delayNextSlot TestDelayIO{..} =
     test :: IO ()
     test = do
         tdioStart  <- pickSystemStart
-        let time = defaultSystemTime tdioStart
+        let time = defaultSystemTime tdioStart nullTracer
         atStart    <- fst <$> getWallClockSlot  time tdioSlotLen
         nextSlot   <-         waitUntilNextSlot time tdioSlotLen atStart
         afterDelay <- fst <$> getWallClockSlot  time tdioSlotLen
@@ -239,7 +239,7 @@ prop_delayClockShift schedule =
     checkException before after e
       | Just (ExceptionInLinkedThread _ e') <- fromException e =
           checkException before after e'
-      | Just (SystemClockMovedBack _ before' after') <- fromException e =
+      | Just (SystemClockMovedBack before' after') <- fromException e =
           counterexample ("Got expected exception " ++ show e) $
           conjoin [
               before' === before
@@ -267,8 +267,7 @@ testOverrideDelay systemStart slotLength numSlots = do
     result <- withRegistry $ \registry -> do
       time <- simpleBlockchainTime
                 registry
-                nullTracer
-                (defaultSystemTime systemStart)
+                (defaultSystemTime systemStart nullTracer)
                 slotLength
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-

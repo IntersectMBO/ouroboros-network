@@ -81,7 +81,6 @@ prop_simple_cardano_convergence k d
             { forgeEbbEnv = Nothing
             , nodeInfo    = \(CoreNodeId nid) -> plainTestNodeInitialization $
                 castProtocolInfo $ injProtocolInfo
-                  (sgSystemStart genesisConfig)
                   (mkProtocolRealTPraos
                     genesisConfig
                     (coreNodes !! fromIntegral nid))

@@ -80,12 +80,10 @@ import           Test.QuickCheck
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Crypto.ProtocolMagic (ProtocolMagicId (..))
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -94,7 +92,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -120,7 +117,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   TestBlock
@@ -598,15 +594,6 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
       , eraSafeZone   =
           HardFork.SafeZone (maxRollbacks k * 2) HardFork.NoLowerBound
       }
-
--- TODO get rid of this when we can
-instance ConfigSupportsNode TestBlock where
-  data CodecConfig TestBlock = TestBlockCodecConfig
-
-  getCodecConfig     _ = TestBlockCodecConfig
-  getSystemStart     _ = SystemStart dawnOfTime
-  getNetworkMagic    _ = NetworkMagic 0
-  getProtocolMagicId _ = ProtocolMagicId 0
 
 {-------------------------------------------------------------------------------
   Corruption

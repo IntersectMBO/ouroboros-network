@@ -32,7 +32,6 @@ import           Data.SOP.Strict hiding (shape)
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util ((.:))
@@ -63,10 +62,8 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 -- that this is possible but it helps with the unary hardfork case, and it may
 -- in general help with binary compatibility.
 recover :: forall g f xs. CanHardFork xs
-        => SystemStart
-        -> Telescope (Past g) f xs
-        -> HardForkState_ g f xs
-recover systemStart =
+        => Telescope (Past g) f xs -> HardForkState_ g f xs
+recover =
     case isNonEmpty (Proxy @xs) of
       ProofNonEmpty _ ->
           HardForkState
@@ -75,7 +72,7 @@ recover systemStart =
             recoverCurrent
         . Telescope.scanl
             (InPairs.hpure $ ScanNext $ const $ K . pastEnd)
-            (K (History.initBound systemStart))
+            (K History.initBound)
   where
     recoverCurrent :: Product (K History.Bound) f blk -> Current f blk
     recoverCurrent (Pair (K prevEnd) st) = Current {

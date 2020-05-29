@@ -76,7 +76,6 @@ import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
@@ -272,8 +271,6 @@ type TestConstraints blk =
   , Show                     (Header  blk)
   , Serialise                (Header  blk)
   , ConvertRawHash                    blk
-    -- TODO these two constraints should be removed when possible
-  , ConfigSupportsNode                blk
   , HasHardForkHistory                blk
   )
 
@@ -311,7 +308,7 @@ data ChainDBEnv m blk = ChainDBEnv
   }
 
 open
-  :: (IOLike m , TestConstraints blk)
+  :: (IOLike m, TestConstraints blk)
   => ChainDbArgs m blk -> m (ChainDBState m blk)
 open args = do
     (chainDB, internal) <- openDBInternal args False
@@ -321,7 +318,7 @@ open args = do
 
 -- PRECONDITION: the ChainDB is closed
 reopen
-  :: (IOLike m , TestConstraints blk)
+  :: (IOLike m, TestConstraints blk)
   => ChainDBEnv m blk -> m ()
 reopen ChainDBEnv { varDB, args } = do
     chainDBState <- open args

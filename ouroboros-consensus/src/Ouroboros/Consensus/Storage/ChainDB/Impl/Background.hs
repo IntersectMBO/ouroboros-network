@@ -59,7 +59,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -85,7 +84,6 @@ launchBgTasks
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      )
   => ChainDbEnv m blk
@@ -516,7 +514,6 @@ dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 addBlockRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
-     , ConfigSupportsNode blk
      , HasHardForkHistory blk
      , HasCallStack
      )

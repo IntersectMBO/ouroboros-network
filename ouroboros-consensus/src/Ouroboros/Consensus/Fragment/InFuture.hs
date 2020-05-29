@@ -23,11 +23,10 @@ module Ouroboros.Consensus.Fragment.InFuture (
   ) where
 
 import           Data.Bifunctor
-import           Data.Time (NominalDiffTime, diffUTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
@@ -116,13 +115,13 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
         -- summary can be used to check all of the blocks in the fragment
         return $
           checkFragment
-            (hardForkSummary systemTimeStart cfg (VF.validatedLedger validated))
+            (hardForkSummary cfg (VF.validatedLedger validated))
             now
             (VF.validatedFragment validated)
     }
   where
     checkFragment :: HF.Summary (HardForkIndices blk)
-                  -> UTCTime
+                  -> RelativeTime
                   -> AnchoredFragment (Header blk)
                   -> (AnchoredFragment (Header blk), [InFuture blk])
     checkFragment summary now = go
@@ -144,10 +143,10 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
                 else
                   (hs :> h, [])
 
-        inFuture :: Header blk -> UTCTime -> InFuture blk
+        inFuture :: Header blk -> RelativeTime -> InFuture blk
         inFuture hdr hdrTime = InFuture {
               inFutureHeader           = hdr
-            , inFutureExceedsClockSkew = (hdrTime `diffUTCTime` now)
+            , inFutureExceedsClockSkew = (hdrTime `diffRelTime` now)
                                        > clockSkew
             }
 
