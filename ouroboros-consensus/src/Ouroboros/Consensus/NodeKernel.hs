@@ -371,7 +371,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
               (headerStateConsensus (headerState extLedger))
           case mIsLeader of
             IsLeader   p -> return p
-            CannotLead e -> do trace $ TraceNotCannotLead currentSlot e
+            CannotLead e -> do trace $ TraceNodeCannotLead currentSlot e
                                exitEarly
             NotLeader    -> do trace $ TraceNodeNotLeader currentSlot
                                exitEarly
