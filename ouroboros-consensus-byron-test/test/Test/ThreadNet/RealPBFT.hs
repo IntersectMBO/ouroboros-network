@@ -580,6 +580,28 @@ tests = testGroup "RealPBFT" $
             , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
             }
+    , testProperty "HeaderProtocolError prevents JIT EBB emission" $
+          -- "extra" EBB generated in anticipation of a block that ends up
+          -- being PBftExceededSignThreshold
+          --
+          -- PR 1942 reduced the input of blockProduction from ExtLedgerState
+          -- to just LedgerState, but that does not provide enough information
+          -- to fully anticipate the block's invalidity, since it excludes
+          -- protocol-level validation
+          --
+          -- Remark: this particular repro involves a peculiar phenomenon
+          -- apparent for k=8 n=3 in which the nodes' steady-state behavior
+          -- involves a regularly occurring 'PBftExceededSignThreshold'
+          once $
+          prop_simple_real_pbft_convergence ProduceEBBs SecurityParam {maxRollbacks = 8} TestConfig
+          { numCoreNodes = NumCoreNodes 3
+          , numSlots     = NumSlots 81
+          , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 2}),(CoreNodeId 1,SlotNo {unSlotNo = 6}),(CoreNodeId 2,SlotNo {unSlotNo = 9})])
+          , nodeRestarts = noRestarts
+          , nodeTopology = meshNodeTopology (NumCoreNodes 3)
+          , slotLength   = slotLengthFromSec 20
+          , initSeed     = Seed {getSeed = (7952153859682074489,1209195599086387203,1003230838846108849,16300282375150619951,13414350229958775450)}
+          }
     , testProperty "simple convergence" $
           \produceEBBs ->
           -- TODO k > 1 as a workaround for Issue #1511.

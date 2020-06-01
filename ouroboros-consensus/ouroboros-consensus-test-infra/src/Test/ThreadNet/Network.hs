@@ -732,19 +732,12 @@ runThreadNetwork ThreadNetworkArgs
                   blk <- forgeBlock pInfoConfig upd
                     currentBno tickedLdgSt' txs prf
 
-                  -- /if the new block is valid/, add the EBB to the
-                  -- ChainDB
-                  --
-                  -- If the new block is invalid, then adding the EBB would
-                  -- be premature in some scenarios.
-                  case Exc.runExcept $ apply blk tickedLdgSt' of
-                    -- ASSUMPTION: If it's invalid with the EBB,
-                    -- it will be invalid without the EBB.
-                    Left{}  -> forgeWithoutEBB
-                    Right{} -> do
-                      -- TODO: We assume this succeeds; failure modes?
-                      void $ lift $ ChainDB.addBlock chainDB ebb
-                      pure blk
+                  -- If the EBB or the subsequent block is invalid, then the
+                  -- ChainDB will reject it as invalid, and
+                  -- 'Test.ThreadNet.General.prop_general' will eventually fail
+                  -- because of a block rejection.
+                  void $ lift $ ChainDB.addBlock chainDB ebb
+                  pure blk
 
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
