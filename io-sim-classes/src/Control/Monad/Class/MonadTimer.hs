@@ -1,13 +1,17 @@
-{-# LANGUAGE CPP               #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE CPP                #-}
+{-# LANGUAGE DefaultSignatures  #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Control.Monad.Class.MonadTimer (
     MonadDelay(..)
   , MonadTimer(..)
   , TimeoutState(..)
+
+  , diffTimeToMicrosecondsAsInt
+  , microsecondsAsIntToDiffTime
   ) where
 
 import qualified Control.Concurrent as IO
@@ -121,13 +125,15 @@ defaultRegisterDelay d = do
 instance MonadDelay IO where
   threadDelay = go
     where
+      go :: DiffTime -> IO ()
       go d | d > maxDelay = do
         IO.threadDelay (diffTimeToMicrosecondsAsInt d)
         go (d - maxDelay)
       go d = do
         IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
-      maxDelay = fromIntegral (maxBound :: Int)
+      maxDelay :: DiffTime
+      maxDelay = microsecondsAsIntToDiffTime maxBound
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
 instance MonadTimer IO where
@@ -201,7 +207,8 @@ instance MonadTimer IO where
       | otherwise =
         defaultRegisterDelay d
     where
-      maxDelay = fromIntegral (maxBound :: Int)
+      maxDelay :: DiffTime
+      maxDelay = microsecondsAsIntToDiffTime maxBound
 
   timeout = IO.timeout . diffTimeToMicrosecondsAsInt
 
@@ -209,11 +216,14 @@ instance MonadTimer IO where
 diffTimeToMicrosecondsAsInt :: DiffTime -> Int
 diffTimeToMicrosecondsAsInt d =
     let usec :: Integer
-        usec = diffTimeToPicoseconds d `div` 1000000 in
+        usec = diffTimeToPicoseconds d `div` 1_000_000 in
     -- Can only represent usec times that fit within an Int, which on 32bit
     -- systems means 2^31 usec, which is only ~35 minutes.
     assert (usec <= fromIntegral (maxBound :: Int)) $
     fromIntegral usec
+
+microsecondsAsIntToDiffTime :: Int -> DiffTime
+microsecondsAsIntToDiffTime = (/ 1_000_000) . fromIntegral
 
 --
 -- Lift to ReaderT

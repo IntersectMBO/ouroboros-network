@@ -68,3 +68,17 @@ library
 
   if flag(checktvarinvariant)
     cpp-options: -DCHECK_TVAR_INVARIANT
+
+test-suite test-io-sim-classes
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:       Test.MonadTimer
+  default-language:    Haskell2010
+  build-depends:       base,
+                       io-sim-classes,
+
+                       QuickCheck,
+                       tasty,
+                       tasty-quickcheck
+  
