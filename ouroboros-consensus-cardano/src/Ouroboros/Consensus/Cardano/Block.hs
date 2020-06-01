@@ -5,6 +5,7 @@ module Ouroboros.Consensus.Cardano.Block (
     CardanoBlock
   ) where
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -35,9 +36,12 @@ instance TPraosCrypto c => HasPartialConsensusConfig (TPraos c)
 instance TPraosCrypto c => HasPartialLedgerConfig (ShelleyBlock c)
   -- Use defaults
 
-instance TPraosCrypto c => SingleEraBlock (ShelleyBlock c) where
-  singleEraParams _ = shelleyLedgerEraParams
+instance TPraosCrypto c => NoHardForks (ShelleyBlock c) where
+  getEraParams               = shelleyLedgerEraParams . configLedger
+  toPartialLedgerConfig    _ = id
+  toPartialConsensusConfig _ = id
 
+instance TPraosCrypto c => SingleEraBlock (ShelleyBlock c) where
   -- Don't transition
   singleEraTransition _cfg _st = Nothing
 

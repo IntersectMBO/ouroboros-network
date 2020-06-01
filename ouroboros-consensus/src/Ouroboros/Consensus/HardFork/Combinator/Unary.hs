@@ -158,25 +158,21 @@ projCodecConfig = hd . getPerEraCodecConfig . hardForkCodecConfigPerEra
 injCodecConfig :: CodecConfig b -> CodecConfig (HardForkBlock '[b])
 injCodecConfig = HardForkCodecConfig . PerEraCodecConfig . (:* Nil)
 
+-- | Project 'LedgerConfig'
+--
+-- The 'EpochInfo' should be easy to construct, since we are dealing with a
+-- single era (see 'fixedSizeEpochInfo').
 projLedgerConfig :: forall b. SingleEraBlock b
-                 => LedgerConfig (HardForkBlock '[b])
-                 -> (EpochInfo Identity, LedgerConfig b)
-projLedgerConfig =
-      complete
+                 => EpochInfo Identity
+                 -> LedgerConfig (HardForkBlock '[b]) -> LedgerConfig b
+projLedgerConfig ei =
+      completeLedgerConfig (Proxy @b) ei
     . unwrapPartialLedgerConfig
     . hd
     . getPerEraLedgerConfig
     . hardForkLedgerConfigPerEra
-  where
-    complete :: PartialLedgerConfig b -> (EpochInfo Identity, LedgerConfig b)
-    complete cfg = (ei, completeLedgerConfig (Proxy @b) ei cfg)
-      where
-        ei :: EpochInfo Identity
-        ei = fixedSizeEpochInfo $
-               History.eraEpochSize (singleEraParams (Proxy @b) cfg)
 
--- TODO generalise this function to no longer require this constraint
-injLedgerConfig :: PartialLedgerConfig b ~ LedgerConfig b
+injLedgerConfig :: forall b. NoHardForks b
                 => SecurityParam
                 -> History.EraParams
                 -> LedgerConfig b
@@ -184,7 +180,9 @@ injLedgerConfig :: PartialLedgerConfig b ~ LedgerConfig b
 injLedgerConfig k eraParams cfg = HardForkLedgerConfig {
       hardForkLedgerConfigK      = k
     , hardForkLedgerConfigShape  = History.singletonShape eraParams
-    , hardForkLedgerConfigPerEra = PerEraLedgerConfig (WrapPartialLedgerConfig cfg :* Nil)
+    , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+           WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @b) cfg )
+        :* Nil
     }
 
 projConsensusConfig :: forall b. SingleEraBlock b
@@ -198,19 +196,16 @@ projConsensusConfig ei =
     . getPerEraConsensusConfig
     . hardForkConsensusConfigPerEra
 
-injConsensusConfig :: forall b.
-                      ( SingleEraBlock b
-                        -- TODO generalise this function to no longer require
-                        -- this constraint
-                      , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
-                      )
+injConsensusConfig :: forall b. NoHardForks b
                    => History.EraParams
                    -> ConsensusConfig (BlockProtocol b)
                    -> ConsensusConfig (BlockProtocol (HardForkBlock '[b]))
 injConsensusConfig eraParams cfg = HardForkConsensusConfig {
       hardForkConsensusConfigK      = protocolSecurityParam cfg
     , hardForkConsensusConfigShape  = History.singletonShape eraParams
-    , hardForkConsensusConfigPerEra = PerEraConsensusConfig (WrapPartialConsensusConfig cfg :* Nil)
+    , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+           WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @b) cfg)
+        :* Nil
     }
 
 projLedgerState :: LedgerState (HardForkBlock '[b]) -> LedgerState b
@@ -280,19 +275,21 @@ projTopLevelConfig :: forall b. SingleEraBlock b
                    => TopLevelConfig (HardForkBlock '[b]) -> TopLevelConfig b
 projTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
       configConsensus  = projConsensusConfig ei configConsensus
-    , configLedger     = configLedger'
-    , configBlock      = projBlockConfig configBlock
+    , configLedger     = projLedgerConfig    ei configLedger
+    , configBlock      = projBlockConfig        configBlock
     }
   where
-    (ei, configLedger') = projLedgerConfig configLedger
+    ei :: EpochInfo Identity
+    ei = fixedSizeEpochInfo
+       . History.eraEpochSize
+       . unK . hd
+       . History.getShape
+       . hardForkLedgerConfigShape
+       $ configLedger
 
-injTopLevelConfig :: forall b.
-                     ( SingleEraBlock b
-                     , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
-                     , PartialLedgerConfig b ~ LedgerConfig b
-                     )
+injTopLevelConfig :: forall b. NoHardForks b
                   => TopLevelConfig b -> TopLevelConfig (HardForkBlock '[b])
-injTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
+injTopLevelConfig cfg@TopLevelConfig{..} = TopLevelConfig{
       configConsensus = injConsensusConfig eraParams configConsensus
     , configLedger    = injLedgerConfig
                           (protocolSecurityParam configConsensus)
@@ -301,7 +298,7 @@ injTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
     , configBlock     = injBlockConfig configBlock
     }
   where
-    eraParams = singleEraParams (Proxy @b) configLedger
+    eraParams = getEraParams cfg
 
 projForgeState :: proxy b -> ForgeState (HardForkBlock '[b]) -> ForgeState b
 projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
@@ -391,13 +388,7 @@ projUpdateForgeState = liftUpdate get set
     set :: ForgeState b -> PerEraForgeState '[b] -> PerEraForgeState '[b]
     set = const . injForgeState (Proxy @b)
 
--- TODO generalise this function to no longer require the equality constraints
-injProtocolInfo :: forall m b.
-                   ( Functor m
-                   , SingleEraBlock b
-                   , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
-                   , PartialLedgerConfig b ~ LedgerConfig b
-                   )
+injProtocolInfo :: forall m b. (Functor m, NoHardForks b)
                 => ProtocolInfo m b -> ProtocolInfo m (HardForkBlock '[b])
 injProtocolInfo ProtocolInfo {..} = ProtocolInfo {
       pInfoConfig      = injTopLevelConfig

@@ -10,18 +10,21 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Util.SOP (
+module Ouroboros.Consensus.Util.SOP (
     -- * Minor variations on standard SOP operators
     sequence_NS'
   , map_NP'
   , partition_NS
   , Lens(..)
   , lenses_NP
+  , npToSListI
+  , allComposeShowK
     -- * Type-level non-empty lists
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
   ) where
 
+import           Data.SOP.Dict
 import           Data.SOP.Strict
 
 {-------------------------------------------------------------------------------
@@ -86,6 +89,22 @@ lenses_NP = go sList
           getter = getter l . tl
         , setter = \a' (a :* as) -> a :* setter l a' as
         }
+
+-- | Conjure up an 'SListI' constraint from an 'NP'
+npToSListI :: NP a xs -> (SListI xs => r) -> r
+npToSListI = sListToSListI . npToSList
+  where
+    sListToSListI :: SList xs -> (SListI xs => r) -> r
+    sListToSListI SNil  k = k
+    sListToSListI SCons k = k
+
+    npToSList :: NP a xs -> SList xs
+    npToSList Nil       = SNil
+    npToSList (_ :* xs) = sListToSListI (npToSList xs) SCons
+
+allComposeShowK :: (SListI xs, Show a)
+                => Proxy xs -> Proxy a -> Dict (All (Compose Show (K a))) xs
+allComposeShowK _ _ = all_NP $ hpure Dict
 
 {-------------------------------------------------------------------------------
   Type-level non-empty lists

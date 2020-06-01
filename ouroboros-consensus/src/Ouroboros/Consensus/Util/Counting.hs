@@ -14,7 +14,7 @@
 --
 -- Intended for unqualified import.
 module Ouroboros.Consensus.Util.Counting (
-    Exactly(..)
+    Exactly
   , AtMost(..)
   , NonEmpty(..)
     -- * Working with 'Exactly'
@@ -27,7 +27,6 @@ module Ouroboros.Consensus.Util.Counting (
   , exactlyWeaken
   , exactlyWeakenNonEmpty
   , exactlyReplicate
-  , exactlyFromNP
     -- * Working with 'AtMost'
   , atMostOne
   , atMostInit
@@ -42,14 +41,13 @@ module Ouroboros.Consensus.Util.Counting (
 import qualified Data.Foldable as Foldable
 import           Data.SOP.Strict
 
+import           Ouroboros.Consensus.Util.SOP
+
 {-------------------------------------------------------------------------------
   Types
 -------------------------------------------------------------------------------}
 
--- | Exactly one value for each type level index
-data Exactly :: [*] -> * -> * where
-  ExactlyNil  :: Exactly '[] a
-  ExactlyCons :: !a -> !(Exactly xs a) -> Exactly (x ': xs) a
+type Exactly xs a = NP (K a) xs
 
 -- | At most one value for each type level index
 data AtMost :: [*] -> * -> * where
@@ -61,13 +59,8 @@ data NonEmpty :: [*] -> * -> * where
   NonEmptyOne  :: !a -> NonEmpty (x ': xs) a
   NonEmptyCons :: !a -> !(NonEmpty xs a) -> NonEmpty (x ': xs) a
 
-deriving instance Show a => Show (Exactly        xs a)
-deriving instance Show a => Show (AtMost         xs a)
+deriving instance Show a => Show (AtMost   xs a)
 deriving instance Show a => Show (NonEmpty xs a)
-
-deriving instance Functor     (Exactly xs)
-deriving instance Foldable    (Exactly xs)
-deriving instance Traversable (Exactly xs)
 
 deriving instance Functor     (AtMost xs)
 deriving instance Foldable    (AtMost xs)
@@ -83,50 +76,48 @@ deriving instance Traversable (NonEmpty xs)
 
 -- | Singleton
 exactlyOne :: a -> Exactly '[x] a
-exactlyOne a = ExactlyCons a ExactlyNil
+exactlyOne a = K a :* Nil
 
 -- | From a pair
 exactlyTwo :: a -> a -> Exactly '[x, y] a
-exactlyTwo a1 a2 = ExactlyCons a1 $ ExactlyCons a2 $ ExactlyNil
+exactlyTwo a1 a2 = K a1 :* K a2 :* Nil
 
 -- | Analogue of 'head'
 exactlyHead :: Exactly (x ': xs) a -> a
-exactlyHead (ExactlyCons a _) = a
+exactlyHead = unK . hd
 
 -- | Analogue of 'tail'
 exactlyTail :: Exactly (x ': xs) a -> Exactly xs a
-exactlyTail (ExactlyCons _ as) = as
+exactlyTail = tl
 
 -- | Analogue of 'zip'
 exactlyZip :: Exactly xs a -> Exactly xs b -> Exactly xs (a, b)
-exactlyZip = go
-  where
-    go :: Exactly xs a -> Exactly xs b -> Exactly xs (a, b)
-    go ExactlyNil         ExactlyNil         = ExactlyNil
-    go (ExactlyCons a as) (ExactlyCons b bs) = ExactlyCons (a, b) $ go as bs
+exactlyZip np np' =
+    npToSListI np $
+      hzipWith (\(K x) (K y) -> K (x, y)) np np'
 
 -- | Analogue of 'zip' where the length of second argument is unknown
 exactlyZipFoldable :: Foldable t => Exactly xs a -> t b -> AtMost xs (a, b)
 exactlyZipFoldable = \as bs -> go as (Foldable.toList bs)
   where
     go :: Exactly xs a -> [b] -> AtMost xs (a, b)
-    go _          []             = AtMostNil
-    go ExactlyNil _              = AtMostNil
-    go (ExactlyCons a as) (b:bs) = AtMostCons (a, b) $ go as bs
+    go _           []     = AtMostNil
+    go Nil         _      = AtMostNil
+    go (K a :* as) (b:bs) = AtMostCons (a, b) $ go as bs
 
 exactlyWeaken :: Exactly xs a -> AtMost xs a
 exactlyWeaken = go
   where
     go :: Exactly xs a -> AtMost xs a
-    go ExactlyNil         = AtMostNil
-    go (ExactlyCons x xs) = AtMostCons x (go xs)
+    go Nil         = AtMostNil
+    go (K x :* xs) = AtMostCons x (go xs)
 
 exactlyWeakenNonEmpty :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
 exactlyWeakenNonEmpty = go
   where
     go :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
-    go (ExactlyCons x ExactlyNil)       = NonEmptyOne x
-    go (ExactlyCons x xs@ExactlyCons{}) = NonEmptyCons x (go xs)
+    go (K x :* Nil)         = NonEmptyOne x
+    go (K x :* xs@(_ :* _)) = NonEmptyCons x (go xs)
 
 -- | Analogue of 'replicate'
 --
@@ -135,15 +126,8 @@ exactlyReplicate :: forall a r. Word -> a -> (forall xs. Exactly xs a -> r) -> r
 exactlyReplicate = go
   where
     go :: Word -> a -> (forall xs. Exactly xs a -> r) -> r
-    go 0 _ k = k ExactlyNil
-    go n a k = go (n - 1) a $ \xs -> k (ExactlyCons a xs)
-
-exactlyFromNP :: NP (K a) xs -> Exactly xs a
-exactlyFromNP = go
-  where
-    go :: NP (K a) xs -> Exactly xs a
-    go Nil         = ExactlyNil
-    go (K x :* xs) = ExactlyCons x (go xs)
+    go 0 _ k = k Nil
+    go n a k = go (n - 1) a $ \xs -> k (K a :* xs)
 
 {-------------------------------------------------------------------------------
   Working with 'AtMost'

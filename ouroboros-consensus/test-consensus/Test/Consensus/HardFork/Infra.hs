@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 -- | Infrastructure shared by the various 'HardFork' tests
@@ -25,7 +26,8 @@ module Test.Consensus.HardFork.Infra (
   ) where
 
 import           Control.Monad.Except
-import           Control.Monad.State
+import           Data.SOP.Dict (Dict (..))
+import           Data.SOP.Strict
 import           Data.Word
 import           Test.QuickCheck
 
@@ -34,6 +36,7 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
 
 import           Test.Util.QuickCheck
 
@@ -71,7 +74,11 @@ data Eras :: [*] -> * where
     -- We guarantee to have at least one era
     Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
 
-deriving instance Show (Eras xs)
+instance Show (Eras xs) where
+  show (Eras np) =
+      npToSListI np $
+        case allComposeShowK (Proxy @xs) (Proxy @Era) of
+          Dict -> show np
 
 chooseEras :: (forall xs. Eras xs -> Gen r) -> Gen r
 chooseEras k = do
@@ -79,19 +86,23 @@ chooseEras k = do
     exactlyReplicate n () $ k . renumber
   where
     renumber :: Exactly xs () -> Eras xs
-    renumber ExactlyNil      = error "renumber: empty list of eras"
-    renumber e@ExactlyCons{} = Eras $ go 0 e
+    renumber Nil        = error "renumber: empty list of eras"
+    renumber e@(_ :* _) = Eras $ go 0 e
       where
         go :: Word64 -> Exactly (x ': xs) () -> Exactly (x ': xs) Era
-        go n (ExactlyCons () ExactlyNil) =
-            ExactlyCons (Era n True)  ExactlyNil
-        go n (ExactlyCons () e'@ExactlyCons{}) =
-            ExactlyCons (Era n False) (go (n + 1) e')
+        go n (K () :* Nil)         = K (Era n True)  :* Nil
+        go n (K () :* e'@(_ :* _)) = K (Era n False) :* go (n + 1) e'
 
-erasMapStateM :: Monad m
+erasMapStateM :: forall m s a xs. Monad m
               => (Era -> s -> m (a, s))
               -> Eras xs -> s -> m (Exactly xs a)
-erasMapStateM f (Eras eras) = evalStateT (traverse (StateT . f) eras)
+erasMapStateM f (Eras eras) = go eras
+  where
+    go :: Exactly xs' Era -> s -> m (Exactly xs' a)
+    go Nil         _ = return Nil
+    go (K x :* xs) s = do
+        (a, s') <- f x s
+        (K a :*) <$> go xs s'
 
 erasUnfoldAtMost :: forall m xs a. Monad m
                  => (Era -> HF.Bound -> m (a, HF.EraEnd))
@@ -102,14 +113,14 @@ erasUnfoldAtMost f (Eras eras) = go eras
           Exactly (x ': xs') Era
        -> HF.Bound
        -> m (NonEmpty (x ': xs') a)
-    go (ExactlyCons e es) s = do
+    go (K e :* es) s = do
         (a, ms) <- f e s
         case ms of
           HF.EraUnbounded -> return $ NonEmptyOne a
           HF.EraEnd s'    ->
             case es of
-              ExactlyCons{} -> NonEmptyCons a <$> go es s'
-              ExactlyNil    -> return $ NonEmptyOne a
+              _ :* _ -> NonEmptyCons a <$> go es s'
+              Nil    -> return $ NonEmptyOne a
 
 {-------------------------------------------------------------------------------
   Era-specific generators

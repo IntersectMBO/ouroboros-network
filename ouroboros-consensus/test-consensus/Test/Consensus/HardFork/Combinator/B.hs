@@ -48,7 +48,6 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
-import           Ouroboros.Consensus.HardFork.History (EraParams (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -164,7 +163,7 @@ data instance LedgerState BlockB = LgrB {
     }
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
 
-type instance LedgerCfg (LedgerState BlockB) = EraParams
+type instance LedgerCfg (LedgerState BlockB) = ()
 
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
@@ -236,7 +235,6 @@ instance ConvertRawHash BlockB where
 
 instance SingleEraBlock BlockB where
   singleEraInfo _     = SingleEraInfo "B"
-  singleEraParams _   = id
   singleEraTransition = \_ _ -> Nothing
 
 instance HasTxs BlockB where

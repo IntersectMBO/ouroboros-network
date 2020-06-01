@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -249,6 +250,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       return $ mkForecast
                  (translateLedgerView hardForkEraTranslation)
                  cfgs
+                 (History.getShape hardForkLedgerConfigShape)
                  (getHardForkState f)
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -258,15 +260,16 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       mkForecast :: All SingleEraBlock xs'
                  => InPairs TranslateEraLedgerView                                    xs'
                  -> NP WrapPartialLedgerConfig                                        xs'
+                 -> NP (K EraParams)                                                  xs'
                  -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
                  -> Forecast (HardForkLedgerView                                      xs')
-      mkForecast PNil _ (TZ (Current start (Comp f))) =
+      mkForecast PNil _ _ (TZ (Current start (Comp f))) =
           forecastFinalEra start f
-      mkForecast (PCons g _) (cfg :* cfg' :* _) (TZ (Current start f)) =
-          forecastNotFinal g cfg cfg' start (unComp f)
-      mkForecast (PCons _ gs) (_ :* cfgs') (TS past f) =
-          shiftView past <$> mkForecast gs cfgs' f
-      mkForecast PNil _ (TS _ f) =
+      mkForecast (PCons g _) (cfg :* cfg' :* _) (ps :* _) (TZ (Current start f)) =
+          forecastNotFinal g cfg cfg' ps start (unComp f)
+      mkForecast (PCons _ gs) (_ :* cfgs') (_ :* pps) (TS past f) =
+          shiftView past <$> mkForecast gs cfgs' pps f
+      mkForecast PNil _ _ (TS _ f) =
           case f of {}
 
       shiftView :: Past g blk
@@ -278,7 +281,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           . getHardForkState
 
       -- We're in the final era. No translation required
-      forecastFinalEra :: History.Bound
+      forecastFinalEra :: Bound
                        -> Forecast (HardForkEraLedgerView blk)
                        -> Forecast (HardForkLedgerView '[blk])
       forecastFinalEra start f =
@@ -307,10 +310,11 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
                        => TranslateEraLedgerView blk blk'
                        -> WrapPartialLedgerConfig blk
                        -> WrapPartialLedgerConfig blk'
-                       -> History.Bound     -- Forecast era start
+                       -> K EraParams blk -- Era params in the forecast era
+                       -> Bound           -- Forecast era start
                        -> Forecast (HardForkEraLedgerView blk)
                        -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
-      forecastNotFinal g pcfg pcfg' start f =
+      forecastNotFinal g pcfg pcfg' (K eraParams) start f =
           Forecast (forecastAt f) $ \slot ->
             translateIf slot <$> forecastFor f slot
         where
@@ -326,10 +330,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           translateIf slot view = HardForkState $
             case hardForkEraTransition view of
               TransitionAt tip epoch ->
-                let end = History.mkUpperBound
-                            (singleEraParams' pcfg)
-                            start
-                            epoch
+                let end = History.mkUpperBound eraParams start epoch
                 in if slot >= History.boundSlot end then
                      let view' :: HardForkEraLedgerView blk'
                          view' = HardForkEraLedgerView {

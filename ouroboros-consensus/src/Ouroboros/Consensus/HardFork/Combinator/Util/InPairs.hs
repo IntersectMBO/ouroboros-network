@@ -28,7 +28,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
 
 import           Data.SOP.Strict hiding (hcmap, hcpure, hmap, hpure)
 
-import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
+import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   InPairs

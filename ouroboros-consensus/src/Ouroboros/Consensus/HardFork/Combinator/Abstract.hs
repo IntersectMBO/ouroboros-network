@@ -16,10 +16,12 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract (
     -- * SingleEraBlock
   , SingleEraBlock(..)
   , proxySingle
-  , singleEraParams'
   , singleEraTransition'
     -- * CanHardFork
   , CanHardFork(..)
+    -- * Blocks without transitions
+  , NoHardForks(..)
+  , noHardForksEpochInfo
     -- * Re-exports
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
@@ -33,17 +35,21 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.History (EraParams)
+import           Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
 
 {-------------------------------------------------------------------------------
   Era info
@@ -83,14 +89,6 @@ class ( LedgerSupportsProtocol blk
       , Show blk
       , Show (Header blk)
       ) => SingleEraBlock blk where
-  -- | Era parameters
-  --
-  -- The era parameters must be static (cannot depend on the ledger state).
-  --
-  -- Since we ne need this to construct the 'HardForkSummary' (and hence the
-  -- 'EpochInfo', this takes the /partial/ config, not the full config
-  -- (or we'd end up in a catch-22).
-  singleEraParams     :: proxy blk -> PartialLedgerConfig blk -> EraParams
 
   -- | Era transition
   --
@@ -107,10 +105,6 @@ class ( LedgerSupportsProtocol blk
 proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy
 
-singleEraParams' :: forall blk. SingleEraBlock blk
-                 => WrapPartialLedgerConfig blk -> EraParams
-singleEraParams' = singleEraParams (Proxy @blk) . unwrapPartialLedgerConfig
-
 singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
                      -> LedgerState blk -> Maybe EpochNo
@@ -125,3 +119,32 @@ class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs wher
 
 instance SingleEraBlock blk => CanHardFork '[blk] where
   hardForkEraTranslation = trivialEraTranslation
+
+{-------------------------------------------------------------------------------
+  Blocks that don't /have/ any transitions
+-------------------------------------------------------------------------------}
+
+class SingleEraBlock blk => NoHardForks blk where
+  -- | Extract 'EraParams' from the top-level config
+  --
+  -- The HFC itself does not care about this, as it must be given the full shape
+  -- across /all/ eras.
+  getEraParams :: TopLevelConfig blk -> EraParams
+
+  -- | Construct partial consensus config from full consensus config
+  --
+  -- NOTE: This is basically just losing 'EpochInfo', but that is constant
+  -- anyway when we are dealing with a single era.
+  toPartialConsensusConfig :: proxy blk
+                           -> ConsensusConfig (BlockProtocol blk)
+                           -> PartialConsensusConfig (BlockProtocol blk)
+
+  -- | Construct partial ledger config from full ledger config
+  --
+  -- See also 'toPartialConsensusConfig'
+  toPartialLedgerConfig :: proxy blk
+                        -> LedgerConfig blk -> PartialLedgerConfig blk
+
+noHardForksEpochInfo :: NoHardForks blk
+                     => TopLevelConfig blk -> EpochInfo Identity
+noHardForksEpochInfo = fixedSizeEpochInfo . History.eraEpochSize . getEraParams

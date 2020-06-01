@@ -255,16 +255,10 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         , cfgB_leadInSlots = leaderScheduleFor nid leaderSchedule
         }
 
-    -- TODO: the only reason for 'lcfgA_eraParams' is to support
-    -- 'singleEraParams', but now that both 'HardForkLedgerConfig' and
-    -- 'HardForkConsensusConfig' have the full shape, we might be able to
-    -- get rid of that method.
-    --
     -- TODO: We should vary at which point we submit the transition tx.
     ledgerConfigA :: CoreNodeId -> PartialLedgerConfig BlockA
     ledgerConfigA _nid = LCfgA {
-          lcfgA_eraParams   = eraParamsA
-        , lcfgA_k           = k
+          lcfgA_k           = k
         , lcfgA_systemStart = SystemStart dawnOfTime -- required for RunNode
         , lcfgA_forgeTxs    = Map.fromList [
               (SlotNo 2, [TxA (TxIdA 0) InitiateAtoB])
@@ -272,7 +266,7 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         }
 
     ledgerConfigB :: CoreNodeId -> LedgerConfig BlockB
-    ledgerConfigB _nid = eraParamsB
+    ledgerConfigB _nid = ()
 
     blockConfigA :: CoreNodeId -> BlockConfig BlockA
     blockConfigA _ = BCfgA
@@ -305,8 +299,9 @@ instance RunNode TestBlock where
 
   nodeImmDbChunkInfo        = simpleChunkInfo
                             . eraEpochSize
-                            . lcfgA_eraParams
-                            . firstEraLedgerConfig
+                            . unK . hd
+                            . History.getShape
+                            . hardForkLedgerConfigShape
                             . configLedger
 
   nodeEncodeBlockWithInfo   = \_   -> encodeHardForkBlockWithInfo
@@ -403,13 +398,6 @@ thereIsNoQuery qry = getHardForkQuery qry $ \Refl -> go
 
     goB :: Query BlockB result -> Void
     goB q = case q of {}
-
-firstEraLedgerConfig :: LedgerConfig TestBlock -> PartialLedgerConfig BlockA
-firstEraLedgerConfig =
-      unwrapPartialLedgerConfig
-    . hd
-    . getPerEraLedgerConfig
-    . hardForkLedgerConfigPerEra
 
 {-------------------------------------------------------------------------------
   Serialisation auxiliary
