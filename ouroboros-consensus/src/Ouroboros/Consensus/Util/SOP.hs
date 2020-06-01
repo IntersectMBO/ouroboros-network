@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Util.SOP (
+module Ouroboros.Consensus.Util.SOP (
     -- * Minor variations on standard SOP operators
     sequence_NS'
   , map_NP'

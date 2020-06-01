@@ -76,7 +76,6 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
                        Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                        Ouroboros.Consensus.HardFork.Combinator.Util.Match
-                       Ouroboros.Consensus.HardFork.Combinator.Util.SOP
                        Ouroboros.Consensus.HardFork.Combinator.Util.Tails
                        Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                        Ouroboros.Consensus.HardFork.History
@@ -147,6 +146,7 @@ library
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
                        Ouroboros.Consensus.Util.Singletons
+                       Ouroboros.Consensus.Util.SOP
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Time
                        Ouroboros.Consensus.Util.TraceSize

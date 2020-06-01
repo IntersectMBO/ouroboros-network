@@ -38,7 +38,8 @@ import           Data.Void
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      allNoUnexpectedThunks)
 
-import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP ()
+import           Ouroboros.Consensus.Util.SOP ()
+
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope

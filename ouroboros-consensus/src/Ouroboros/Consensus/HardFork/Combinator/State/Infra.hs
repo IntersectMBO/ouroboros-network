@@ -64,6 +64,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -73,7 +74,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Extend (..), Retract (..), Telescope (..))
