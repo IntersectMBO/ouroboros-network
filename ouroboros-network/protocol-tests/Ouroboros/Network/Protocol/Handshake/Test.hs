@@ -6,16 +6,13 @@
 
 module Ouroboros.Network.Protocol.Handshake.Test where
 
-import           Control.Monad.ST (runST)
-
-import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (nub)
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (isJust)
 import qualified Data.Map as Map
 import           GHC.Generics
 
@@ -37,7 +34,6 @@ import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Driver.Simple ( runConnectedPeers
                                                  , runConnectedPeersAsymmetric
                                                  )
@@ -46,17 +42,10 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Client
 import           Ouroboros.Network.Protocol.Handshake.Server
 import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Direct
 
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Term     as CBOR
-import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Write    as CBOR
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise     as CBOR
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
