@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Block.Abstract (
     BlockProtocol
     -- * Configuration
   , BlockConfig
+  , HasCodecConfig(..)
     -- * Working with headers
   , GetHeader(..)
   , headerHash
@@ -45,6 +46,15 @@ type family BlockProtocol blk :: *
 
 -- | Static configuration required to work with this type of blocks
 data family BlockConfig blk :: *
+
+class HasCodecConfig blk where
+  -- | Static configuration required for serialisation and deserialisation of
+  -- types pertaining to this type of block.
+  --
+  -- Data family instead of type family to get better type inference.
+  data family CodecConfig blk :: *
+
+  getCodecConfig :: BlockConfig blk -> CodecConfig blk
 
 {-------------------------------------------------------------------------------
   Link block to its header

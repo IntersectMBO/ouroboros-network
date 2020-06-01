@@ -8,6 +8,7 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     BlockConfig(..)
+  , CodecConfig(..)
   , byronGenesisHash
   , byronProtocolMagicId
   , byronProtocolMagic
@@ -24,8 +25,10 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.SecurityParam
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 
 -- | Extended configuration we need for Byron
 data instance BlockConfig ByronBlock = ByronConfig {
@@ -57,3 +60,14 @@ byronProtocolMagic = CC.Genesis.configProtocolMagic . byronGenesisConfig
 
 byronEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
 byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig
+
+instance HasCodecConfig ByronBlock where
+  data CodecConfig ByronBlock = ByronCodecConfig {
+        getByronEpochSlots    :: !CC.Slot.EpochSlots
+      , getByronSecurityParam :: !SecurityParam
+      }
+
+  getCodecConfig bcfg = ByronCodecConfig {
+      getByronEpochSlots    = byronEpochSlots bcfg
+    , getByronSecurityParam = genesisSecurityParam (byronGenesisConfig bcfg)
+    }

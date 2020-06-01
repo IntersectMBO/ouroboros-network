@@ -72,7 +72,6 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Block.Forge
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -93,7 +92,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Forge ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
-import           Ouroboros.Consensus.HardFork.Combinator.Node
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
                      (HardForkEraLedgerView (..))

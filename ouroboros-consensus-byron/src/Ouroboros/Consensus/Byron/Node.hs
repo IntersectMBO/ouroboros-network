@@ -22,8 +22,6 @@ module Ouroboros.Consensus.Byron.Node (
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
   , mkPBftIsLeader
-    -- * Type family instances
-  , CodecConfig(..)
     -- * For testing
   , plcCoreNodeId
   ) where
@@ -194,17 +192,6 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
 -------------------------------------------------------------------------------}
 
 instance ConfigSupportsNode ByronBlock where
-
-  data CodecConfig ByronBlock = ByronCodecConfig {
-        getByronEpochSlots    :: !EpochSlots
-      , getByronSecurityParam :: !SecurityParam
-      }
-
-  getCodecConfig bcfg = ByronCodecConfig {
-      getByronEpochSlots    = byronEpochSlots bcfg
-    , getByronSecurityParam = genesisSecurityParam (byronGenesisConfig bcfg)
-    }
-
   getSystemStart =
       SystemStart
     . Genesis.gdStartTime

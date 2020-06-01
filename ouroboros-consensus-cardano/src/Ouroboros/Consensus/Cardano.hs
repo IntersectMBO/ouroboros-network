@@ -39,7 +39,6 @@ import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SupportsNode
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run

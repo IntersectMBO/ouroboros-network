@@ -13,7 +13,6 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , protocolClientInfoShelley
-  , CodecConfig (..)
   , ShelleyGenesis (..)
   , initialFundsPseudoTxIn
   , ShelleyGenesisStaking (..)
@@ -325,11 +324,6 @@ protocolClientInfoShelley =
 -------------------------------------------------------------------------------}
 
 instance ConfigSupportsNode (ShelleyBlock c) where
-
-  -- | No particular codec configuration is needed for Shelley
-  data CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
-
-  getCodecConfig     = const ShelleyCodecConfig
   getSystemStart     = shelleySystemStart
   getNetworkMagic    = shelleyNetworkMagic
   getProtocolMagicId = shelleyProtocolMagicId
