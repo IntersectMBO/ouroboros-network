@@ -17,6 +17,7 @@ import           Data.Foldable (toList)
 import           Data.Function (on)
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, fromMaybe)
+import           Data.SOP.Strict hiding (shape, shift)
 import           Data.Time
 import           Data.Word
 
@@ -471,7 +472,7 @@ chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
     shift _ AtMostNil =
         -- No more transitions on the chain
         AtMostNil
-    shift (ExactlyCons era ExactlyNil) (AtMostCons transition AtMostNil) =
+    shift (K era :* Nil) (AtMostCons transition AtMostNil) =
         -- case (i)
         case transition of
           Nothing -> AtMostNil
@@ -481,12 +482,12 @@ chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
                        , " in final era "
                        , show era
                        ]
-    shift (ExactlyCons _ ExactlyCons{}) (AtMostCons transition AtMostNil) =
+    shift (_ :* (_ :* _)) (AtMostCons transition AtMostNil) =
         -- case (ii)
         case transition of
           Nothing -> AtMostNil
           Just t  -> AtMostCons t AtMostNil
-    shift (ExactlyCons era eras@(ExactlyCons{})) (AtMostCons transition ts) =
+    shift (K era :* eras@(_ :* _)) (AtMostCons transition ts) =
         -- case (iii)
         case transition of
           Nothing -> error $ concat [
@@ -532,9 +533,9 @@ stepTime typ Time{..} =
     case (typ, timeNextEra, exactlyTail timeEras) of
       (Tick, Nothing, _) ->
         Time timeEvent' Nothing timeEras
-      (Tick, Just e, timeEras'@ExactlyCons{}) | reachedNextEra e ->
+      (Tick, Just e, timeEras'@(_ :* _)) | reachedNextEra e ->
         Time timeEvent' Nothing timeEras'
-      (Tick, Just e, ExactlyNil) | reachedNextEra e ->
+      (Tick, Just e, Nil) | reachedNextEra e ->
         error "stepTime: unexpected confirmation in final era"
       (Tick, Just e, _) -> -- not (reachedNextEra e)
         Time timeEvent' (Just e) timeEras
@@ -583,7 +584,7 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
           | Just _ <- timeNextEra =
               -- We already generated a transition
               Nothing
-          | ExactlyNil <- exactlyTail timeEras =
+          | Nil <- exactlyTail timeEras =
               -- We are in the final era
               Nothing
           | Nothing <- mNextLo =
@@ -634,18 +635,18 @@ activeSafeZone (HF.Shape shape) (Chain chain) (HF.Transitions transitions) =
        -> AtMost        xs  EpochNo
        -> (Maybe EpochNo, HF.SafeZone)
     -- The chain is empty; the era parameters of the first era are active
-    go (ExactlyCons ps _) AtMostNil _ =
+    go (K ps :* _) AtMostNil _ =
         (Nothing, HF.eraSafeZone ps)
     -- No transition is yet known for the last era on the chain
-    go (ExactlyCons ps _) (AtMostCons _ AtMostNil) AtMostNil =
+    go (K ps :* _) (AtMostCons _ AtMostNil) AtMostNil =
         (Nothing, HF.eraSafeZone ps)
     -- Transition /is/ known for the last era on the chain
-    go (ExactlyCons _ pss) (AtMostCons _ AtMostNil) (AtMostCons t AtMostNil) =
+    go (_ :* pss) (AtMostCons _ AtMostNil) (AtMostCons t AtMostNil) =
         (Just t, HF.eraSafeZone (exactlyHead pss))
     -- Find the last era on chain
-    go (ExactlyCons _ pss) (AtMostCons _ ess@AtMostCons{}) AtMostNil =
+    go (_ :* pss) (AtMostCons _ ess@AtMostCons{}) AtMostNil =
         go pss ess AtMostNil
-    go (ExactlyCons _ pss) (AtMostCons _ ess) (AtMostCons _ ts) =
+    go (_ :* pss) (AtMostCons _ ess) (AtMostCons _ ts) =
         go pss ess ts
 
 -- | Return the events within and outside of the safe zone

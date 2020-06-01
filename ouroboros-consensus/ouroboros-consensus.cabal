@@ -395,6 +395,7 @@ test-suite test-consensus
                      , QuickCheck
                      , quickcheck-state-machine
                      , serialise
+                     , sop-core
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
