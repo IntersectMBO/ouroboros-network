@@ -37,7 +37,6 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Driver.Simple
                    (runConnectedPeersPipelined)
 
