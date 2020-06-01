@@ -585,9 +585,6 @@ agreeOnError f (ma, mb) =
   For now we just require 'Serialise' for the auxiliary block.
 -------------------------------------------------------------------------------}
 
--- | The binary info just refers to the main block
---
--- This is sufficient, because we never need just the header of the auxiliary.
 encodeDualBlock :: (Bridge m a, Serialise a)
                 => (m -> Encoding)
                 -> DualBlock m a -> Encoding
@@ -693,6 +690,9 @@ decodeDualLedgerState decodeMain = do
       <*> decode
       <*> decode
 
+-- | The binary info just refers to the main block
+--
+-- This is sufficient, because we never need just the header of the auxiliary.
 dualBinaryBlockInfo :: (m -> BinaryBlockInfo)
                     -> DualBlock m a -> BinaryBlockInfo
 dualBinaryBlockInfo mainGetBinaryBlockInfo DualBlock{..} =

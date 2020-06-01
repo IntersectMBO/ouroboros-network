@@ -16,7 +16,6 @@ module Ouroboros.Consensus.HardFork.Combinator.HasBlockBody (
     -- * HFC support
   , SerialiseHeaderBody(..)
   , Body(..)
-  , encodeHardForkBlock
   , hardForkBlockBinaryBlockInfo
   , toSerialiseOneHeader
   , toSerialiseOneBody
@@ -152,10 +151,8 @@ instance ( CanHardFork xs
         Nothing  -> fail "SerialiseHeaderBody: header/body mismatch"
         Just blk -> return $ SerialiseHeaderBody blk
 
--- | Encode a hard fork block
+-- | 'BinaryBlockInfo' for 'HardForkBlock'
 --
--- NOTE: This uses 'SerialiseHeaderBody' to serialise the header and body
--- separately, and then 'SerialiseOne' to encode the header and the body.
 -- This function is only useable if that serialisation strategy is used
 -- consistently. See 'toSerialiseOneHeader' and friends. Typically used with
 --
@@ -164,21 +161,6 @@ instance ( CanHardFork xs
 -- >
 -- > deriving via SerialiseOne Header SomeEras
 -- >          instance Serialise (Header SomeBlock)
---
-encodeHardForkBlock
-  :: ( CanHardFork xs
-     , All HasBlockBody xs
-     , All (Compose Serialise Header) xs
-     , All (Compose Serialise Body) xs
-     )
-  => HardForkBlock xs
-  -> Encoding
-encodeHardForkBlock = encode . SerialiseHeaderBody
-
--- | Return the 'BinaryBlockInfo' of a 'HardForkBlock'.
---
--- NOTE: This function is only useable if the 'SerialiseHeaderBody'
--- serialisation strategy is used.
 --
 -- TODO: The way this is currently defined is not very efficient; this is not
 -- a big deal right now as this is currently only used for tests.
