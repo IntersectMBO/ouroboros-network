@@ -58,6 +58,7 @@ import           System.Process (createPipe)
 
 import           Test.Mux.ReqResp
 
+import           Network.Mux
 import qualified Network.Mux.Compat as Compat
 import           Network.Mux.Codec
 import           Network.Mux.Channel
@@ -82,19 +83,19 @@ tests =
     ]
   ]
 
-defaultMiniProtocolLimits :: Compat.MiniProtocolLimits
+defaultMiniProtocolLimits :: MiniProtocolLimits
 defaultMiniProtocolLimits =
-    Compat.MiniProtocolLimits {
-      Compat.maximumIngressQueue = defaultMiniProtocolLimit
+    MiniProtocolLimits {
+      maximumIngressQueue = defaultMiniProtocolLimit
     }
 
 defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
-smallMiniProtocolLimits :: Compat.MiniProtocolLimits
+smallMiniProtocolLimits :: MiniProtocolLimits
 smallMiniProtocolLimits =
-    Compat.MiniProtocolLimits {
-      Compat.maximumIngressQueue = smallMiniProtocolLimit
+    MiniProtocolLimits {
+      maximumIngressQueue = smallMiniProtocolLimit
     }
 
 smallMiniProtocolLimit :: Int
@@ -774,21 +775,21 @@ prop_demux_sdu a = do
         -- To trigger Compat.MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
-        let server_mps = Compat.MuxApplication
-                           [ Compat.MuxMiniProtocol {
-                               Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                               Compat.miniProtocolLimits = smallMiniProtocolLimits,
-                               Compat.miniProtocolRun    = Compat.ResponderProtocolOnly (serverRsp stopVar)
-                             }
-                           ]
+        let server_mps = MiniProtocolInfo {
+                           miniProtocolNum = MiniProtocolNum 2,
+                           miniProtocolDir = ResponderDirectionOnly,
+                           miniProtocolLimits = smallMiniProtocolLimits
+                         }
 
-        (client_w, said) <- plainServer server_mps
+        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
         setup state client_w
 
         writeSdu client_w $! unDummyPayload sdu
 
         atomically $! putTMVar stopVar $ unDummyPayload sdu
 
+        _ <- atomically waitServerRes
+        stopMux mux
         res <- wait said
         case res of
             Left e  ->
@@ -800,21 +801,20 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Compat.MuxApplication
-                           [ Compat.MuxMiniProtocol {
-                               Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                               Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Compat.miniProtocolRun    = Compat.ResponderProtocolOnly (serverRsp stopVar)
-                             }
-                           ]
+        let server_mps = MiniProtocolInfo {
+                            miniProtocolNum = MiniProtocolNum 2,
+                            miniProtocolDir = ResponderDirectionOnly,
+                            miniProtocolLimits = defaultMiniProtocolLimits
+                          }
 
-        (client_w, said) <- plainServer server_mps
+        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
         setup state client_w
-
         atomically $! putTMVar stopVar $! unDummyPayload sdu
         writeSdu client_w $ unDummyPayload sdu
 
+        _ <- atomically waitServerRes
+        stopMux mux
         res <- wait said
         case res of
             Left e  ->
@@ -828,15 +828,13 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let serverApp  = Compat.MuxApplication
-                           [ Compat.MuxMiniProtocol {
-                               Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                               Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Compat.miniProtocolRun    = Compat.ResponderProtocolOnly (serverRsp stopVar)
-                             }
-                           ]
+        let server_mps = MiniProtocolInfo {
+                            miniProtocolNum = MiniProtocolNum 2,
+                            miniProtocolDir = ResponderDirectionOnly,
+                            miniProtocolLimits = defaultMiniProtocolLimits
+                          }
 
-        (client_w, said) <- plainServer serverApp
+        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
         setup state client_w
         atomically $ writeTBQueue client_w $
@@ -847,6 +845,8 @@ prop_demux_sdu a = do
         -- having the responder succed after reading 0 bytes.
         atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
 
+        _ <- atomically waitServerRes
+        stopMux mux
         res <- wait said
         case res of
             Left e  ->
@@ -855,16 +855,19 @@ prop_demux_sdu a = do
                     Nothing -> return $ property False
             Right _ -> return $ property False
 
-    plainServer serverApp = do
+    plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
         let serverBearer = queuesAsMuxBearer serverTracer server_w server_r 1280
             serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
-        said <- async $ try $ Compat.muxStart serverTracer serverApp serverBearer
+        serverMux <- newMux $ MiniProtocolBundle [serverApp]
+        serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
+                 StartEagerly server_mp
 
-        return (server_r, said)
+        said <- async $ try $ runMux serverTracer serverMux serverBearer
+        return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
