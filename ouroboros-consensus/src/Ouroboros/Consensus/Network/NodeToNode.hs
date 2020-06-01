@@ -193,38 +193,38 @@ defaultCodecs cfg version = Codecs {
         codecChainSync
           (wrapCBORinCBOR   (nodeEncodeHeader cfg (serialisedNodeToNode version)))
           (unwrapCBORinCBOR (nodeDecodeHeader cfg (serialisedNodeToNode version)))
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (encodeTip   (nodeEncodeHeaderHash cfg))
+          (decodeTip   (nodeDecodeHeaderHash cfg))
 
     , cChainSyncCodecSerialised =
         codecChainSyncSerialised'
           (nodeEncodeWrappedHeader cfg (SerialisedNodeToNode version))
           (nodeDecodeWrappedHeader cfg (SerialisedNodeToNode version))
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (encodeTip   (nodeEncodeHeaderHash cfg))
+          (decodeTip   (nodeDecodeHeaderHash cfg))
 
     , cBlockFetchCodec =
         codecBlockFetch
           (wrapCBORinCBOR   (nodeEncodeBlock cfg))
           (unwrapCBORinCBOR (nodeDecodeBlock cfg))
-          (nodeEncodeHeaderHash (Proxy @blk))
-          (nodeDecodeHeaderHash (Proxy @blk))
+          (nodeEncodeHeaderHash cfg)
+          (nodeDecodeHeaderHash cfg)
 
     , cBlockFetchCodecSerialised =
         codecBlockFetchSerialised
-          (nodeEncodeHeaderHash (Proxy @blk))
-          (nodeDecodeHeaderHash (Proxy @blk))
+          (nodeEncodeHeaderHash cfg)
+          (nodeDecodeHeaderHash cfg)
 
     , cTxSubmissionCodec =
         codecTxSubmission
-          nodeEncodeGenTxId
-          nodeDecodeGenTxId
-          nodeEncodeGenTx
-          nodeDecodeGenTx
+          (nodeEncodeGenTxId cfg)
+          (nodeDecodeGenTxId cfg)
+          (nodeEncodeGenTx   cfg)
+          (nodeDecodeGenTx   cfg)
     }
 
 -- | Identity codecs used in tests.

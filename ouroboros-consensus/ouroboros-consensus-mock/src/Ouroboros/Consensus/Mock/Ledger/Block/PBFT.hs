@@ -30,7 +30,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -105,8 +104,8 @@ instance ( SimpleCrypto c
          ) => RunMockBlock c (SimplePBftExt c c') where
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const S.encodePBftState
-  mockDecodeConsensusState = \cfg -> let k = configSecurityParam cfg
-                                     in S.decodePBftState k (pbftWindowSize k)
+  mockDecodeConsensusState = \(SimpleCodecConfig k) ->
+                               S.decodePBftState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)

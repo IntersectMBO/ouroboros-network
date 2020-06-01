@@ -312,26 +312,26 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
       nodeEncodeHeader (projCodecConfig cfg) (castSerialisationVersion version) (projHeader hdr)
   nodeEncodeWrappedHeader (DCCfg cfg) version (Serialised hdr) =
       nodeEncodeWrappedHeader (projCodecConfig cfg) (castSerialisationAcrossNetwork version) (Serialised hdr)
-  nodeEncodeGenTx (DTx tx) =
-      nodeEncodeGenTx (projGenTx tx)
-  nodeEncodeGenTxId (DTxId tid) =
-      nodeEncodeGenTxId (projGenTxId tid)
-  nodeEncodeHeaderHash _ hash =
-      nodeEncodeHeaderHash (Proxy @b) (projHeaderHash hash)
-  nodeEncodeLedgerState cfg (DLgr lgr) =
-      nodeEncodeLedgerState (projCfg cfg) (projLedgerState lgr)
-  nodeEncodeConsensusState cfg st =
-      nodeEncodeConsensusState (projCfg cfg) (projConsensusState st)
-  nodeEncodeApplyTxError _ err =
-      nodeEncodeApplyTxError (Proxy @b) (projApplyTxErr err)
-  nodeEncodeAnnTip _ tip =
-      nodeEncodeAnnTip (Proxy @b) (projAnnTip (castAnnTip tip))
-  nodeEncodeQuery (DQry qry) =
-      projQuery qry $ \_pf qry' -> nodeEncodeQuery qry'
-  nodeEncodeResult (DQry qry) mResult =
+  nodeEncodeGenTx (DCCfg cfg) (DTx tx) =
+      nodeEncodeGenTx (projCodecConfig cfg) (projGenTx tx)
+  nodeEncodeGenTxId (DCCfg cfg) (DTxId tid) =
+      nodeEncodeGenTxId (projCodecConfig cfg) (projGenTxId tid)
+  nodeEncodeHeaderHash (DCCfg cfg) hash =
+      nodeEncodeHeaderHash (projCodecConfig cfg) (projHeaderHash hash)
+  nodeEncodeLedgerState (DCCfg cfg) (DLgr lgr) =
+      nodeEncodeLedgerState (projCodecConfig cfg) (projLedgerState lgr)
+  nodeEncodeConsensusState (DCCfg cfg) st =
+      nodeEncodeConsensusState (projCodecConfig cfg) (projConsensusState st)
+  nodeEncodeApplyTxError (DCCfg cfg) err =
+      nodeEncodeApplyTxError (projCodecConfig cfg) (projApplyTxErr err)
+  nodeEncodeAnnTip (DCCfg cfg) tip =
+      nodeEncodeAnnTip (projCodecConfig cfg) (projAnnTip (castAnnTip tip))
+  nodeEncodeQuery (DCCfg cfg) (DQry qry) =
+      projQuery qry $ \_pf qry' -> nodeEncodeQuery (projCodecConfig cfg) qry'
+  nodeEncodeResult (DCCfg cfg) (DQry qry) mResult =
       projQuery qry $ \Refl qry' ->
         case mResult of
-          Right result -> nodeEncodeResult qry' result
+          Right result -> nodeEncodeResult (projCodecConfig cfg) qry' result
           Left  err    -> absurd $ mismatchOneEra err
 
   -- Decoders
@@ -345,28 +345,28 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
   nodeDecodeWrappedHeader (DCCfg cfg) version =
       (\(Serialised hdr) -> Serialised hdr) <$>
         nodeDecodeWrappedHeader (projCodecConfig cfg) (castSerialisationAcrossNetwork version)
-  nodeDecodeGenTx =
+  nodeDecodeGenTx (DCCfg cfg) =
       (DTx . injGenTx) <$>
-        nodeDecodeGenTx
-  nodeDecodeGenTxId =
+        nodeDecodeGenTx (projCodecConfig cfg)
+  nodeDecodeGenTxId (DCCfg cfg) =
       (DTxId . injGenTxId) <$>
-        nodeDecodeGenTxId
-  nodeDecodeHeaderHash _ =
+        nodeDecodeGenTxId (projCodecConfig cfg)
+  nodeDecodeHeaderHash (DCCfg cfg) =
       injHeaderHash <$>
-        nodeDecodeHeaderHash (Proxy @b)
-  nodeDecodeLedgerState cfg =
-      (DLgr . injLedgerState) <$> nodeDecodeLedgerState (projCfg cfg)
-  nodeDecodeConsensusState cfg =
-      injConsensusState <$> nodeDecodeConsensusState (projCfg cfg)
-  nodeDecodeApplyTxError _ =
+        nodeDecodeHeaderHash (projCodecConfig cfg)
+  nodeDecodeLedgerState (DCCfg cfg) =
+      (DLgr . injLedgerState) <$> nodeDecodeLedgerState (projCodecConfig cfg)
+  nodeDecodeConsensusState (DCCfg cfg) =
+      injConsensusState <$> nodeDecodeConsensusState (projCodecConfig cfg)
+  nodeDecodeApplyTxError (DCCfg cfg) =
       injApplyTxErr <$>
-        nodeDecodeApplyTxError (Proxy @b)
-  nodeDecodeAnnTip _ =
+        nodeDecodeApplyTxError (projCodecConfig cfg)
+  nodeDecodeAnnTip (DCCfg cfg) =
       (castAnnTip . injAnnTip) <$>
-        nodeDecodeAnnTip (Proxy @b)
-  nodeDecodeQuery =
+        nodeDecodeAnnTip (projCodecConfig cfg)
+  nodeDecodeQuery (DCCfg cfg) =
       (\(Some qry) -> Some (DQry $ injQuery qry)) <$>
-        nodeDecodeQuery
-  nodeDecodeResult (DQry qry) =
+        nodeDecodeQuery (projCodecConfig cfg)
+  nodeDecodeResult (DCCfg cfg) (DQry qry) =
       projQuery qry $ \Refl qry' ->
-        Right <$> nodeDecodeResult qry'
+        Right <$> nodeDecodeResult (projCodecConfig cfg) qry'

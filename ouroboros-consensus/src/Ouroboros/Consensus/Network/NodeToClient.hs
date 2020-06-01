@@ -34,7 +34,6 @@ module Ouroboros.Consensus.Network.NodeToClient (
 
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
 import           Ouroboros.Network.Block
@@ -150,29 +149,29 @@ defaultCodecs :: forall m blk. (RunNode blk, MonadST m)
               => CodecConfig         blk
               -> NodeToClientVersion blk
               -> DefaultCodecs blk m
-defaultCodecs _cfg _version = Codecs {
+defaultCodecs cfg _version = Codecs {
       cChainSyncCodec =
         codecChainSyncSerialised
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (encodeTip   (nodeEncodeHeaderHash cfg))
+          (decodeTip   (nodeDecodeHeaderHash cfg))
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
-          nodeEncodeGenTx
-          nodeDecodeGenTx
-          (nodeEncodeApplyTxError (Proxy @blk))
-          (nodeDecodeApplyTxError (Proxy @blk))
+          (nodeEncodeGenTx        cfg)
+          (nodeDecodeGenTx        cfg)
+          (nodeEncodeApplyTxError cfg)
+          (nodeDecodeApplyTxError cfg)
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          nodeEncodeQuery
-          nodeDecodeQuery
-          nodeEncodeResult
-          nodeDecodeResult
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (nodeEncodeQuery  cfg)
+          (nodeDecodeQuery  cfg)
+          (nodeEncodeResult cfg)
+          (nodeDecodeResult cfg)
     }
 
 
@@ -188,26 +187,26 @@ clientCodecs cfg _version = Codecs {
         codecChainSync
           (wrapCBORinCBOR   (nodeEncodeBlock cfg))
           (unwrapCBORinCBOR (nodeDecodeBlock cfg))
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (encodeTip   (nodeEncodeHeaderHash cfg))
+          (decodeTip   (nodeDecodeHeaderHash cfg))
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
-          nodeEncodeGenTx
-          nodeDecodeGenTx
-          (nodeEncodeApplyTxError (Proxy @blk))
-          (nodeDecodeApplyTxError (Proxy @blk))
+          (nodeEncodeGenTx        cfg)
+          (nodeDecodeGenTx        cfg)
+          (nodeEncodeApplyTxError cfg)
+          (nodeDecodeApplyTxError cfg)
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
-          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
-          nodeEncodeQuery
-          nodeDecodeQuery
-          nodeEncodeResult
-          nodeDecodeResult
+          (encodePoint (nodeEncodeHeaderHash cfg))
+          (decodePoint (nodeDecodeHeaderHash cfg))
+          (nodeEncodeQuery  cfg)
+          (nodeDecodeQuery  cfg)
+          (nodeEncodeResult cfg)
+          (nodeDecodeResult cfg)
     }
 
 

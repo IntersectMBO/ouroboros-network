@@ -130,30 +130,30 @@ class ( LedgerSupportsProtocol    blk
   nodeEncodeWrappedHeader  :: CodecConfig blk
                            -> SerialisationAcrossNetwork blk
                            -> Serialised (Header blk) -> Encoding
-  nodeEncodeGenTx          :: GenTx  blk -> Encoding
-  nodeEncodeGenTxId        :: GenTxId blk -> Encoding
-  nodeEncodeHeaderHash     :: Proxy blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState    :: TopLevelConfig blk -> LedgerState blk -> Encoding
-  nodeEncodeConsensusState :: TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
-  nodeEncodeApplyTxError   :: Proxy blk -> ApplyTxErr blk -> Encoding
-  nodeEncodeAnnTip         :: Proxy blk -> AnnTip blk -> Encoding
-  nodeEncodeQuery          :: Query blk result -> Encoding
-  nodeEncodeResult         :: Query blk result -> result -> Encoding
+  nodeEncodeGenTx          :: CodecConfig blk -> GenTx blk -> Encoding
+  nodeEncodeGenTxId        :: CodecConfig blk -> GenTxId blk -> Encoding
+  nodeEncodeHeaderHash     :: CodecConfig blk -> HeaderHash blk -> Encoding
+  nodeEncodeLedgerState    :: CodecConfig blk -> LedgerState blk -> Encoding
+  nodeEncodeConsensusState :: CodecConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
+  nodeEncodeApplyTxError   :: CodecConfig blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeAnnTip         :: CodecConfig blk -> AnnTip blk -> Encoding
+  nodeEncodeQuery          :: CodecConfig blk -> Query blk result -> Encoding
+  nodeEncodeResult         :: CodecConfig blk -> Query blk result -> result -> Encoding
 
   -- Decoders
-  nodeDecodeHeader         :: forall s. CodecConfig blk
+  nodeDecodeHeader         :: CodecConfig blk
                            -> SerialisationVersion blk
-                           -> Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeWrappedHeader  :: forall s. CodecConfig blk
+                           -> forall s. Decoder s (Lazy.ByteString -> Header blk)
+  nodeDecodeWrappedHeader  :: CodecConfig blk
                            -> SerialisationAcrossNetwork blk
-                           -> Decoder s (Serialised (Header blk))
-  nodeDecodeBlock          :: forall s. CodecConfig blk -> Decoder s (Lazy.ByteString -> blk)
-  nodeDecodeGenTx          :: forall s. Decoder s (GenTx blk)
-  nodeDecodeGenTxId        :: forall s. Decoder s (GenTxId blk)
-  nodeDecodeHeaderHash     :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState    :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
-  nodeDecodeConsensusState :: forall s. TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
-  nodeDecodeApplyTxError   :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
-  nodeDecodeAnnTip         :: forall s. Proxy blk -> Decoder s (AnnTip blk)
-  nodeDecodeQuery          :: forall s. Decoder s (Some (Query blk))
-  nodeDecodeResult         :: Query blk result -> forall s. Decoder s result
+                           -> forall s. Decoder s (Serialised (Header blk))
+  nodeDecodeBlock          :: CodecConfig blk -> forall s. Decoder s (Lazy.ByteString -> blk)
+  nodeDecodeGenTx          :: CodecConfig blk -> forall s. Decoder s (GenTx blk)
+  nodeDecodeGenTxId        :: CodecConfig blk -> forall s. Decoder s (GenTxId blk)
+  nodeDecodeHeaderHash     :: CodecConfig blk -> forall s. Decoder s (HeaderHash blk)
+  nodeDecodeLedgerState    :: CodecConfig blk -> forall s. Decoder s (LedgerState blk)
+  nodeDecodeConsensusState :: CodecConfig blk -> forall s. Decoder s (ConsensusState (BlockProtocol blk))
+  nodeDecodeApplyTxError   :: CodecConfig blk -> forall s. Decoder s (ApplyTxErr blk)
+  nodeDecodeAnnTip         :: CodecConfig blk -> forall s. Decoder s (AnnTip blk)
+  nodeDecodeQuery          :: CodecConfig blk -> forall s. Decoder s (Some (Query blk))
+  nodeDecodeResult         :: CodecConfig blk -> Query blk result -> forall s. Decoder s result
