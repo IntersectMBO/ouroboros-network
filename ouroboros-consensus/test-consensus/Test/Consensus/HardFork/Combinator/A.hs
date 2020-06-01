@@ -55,7 +55,6 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
-import           Ouroboros.Consensus.HardFork.History (EraParams (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -176,8 +175,7 @@ data instance LedgerState BlockA = LgrA {
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
 
 data PartialLedgerConfigA = LCfgA {
-      lcfgA_eraParams   :: EraParams
-    , lcfgA_k           :: SecurityParam
+      lcfgA_k           :: SecurityParam
     , lcfgA_systemStart :: SystemStart
     , lcfgA_forgeTxs    :: Map SlotNo [GenTx BlockA]
     }
@@ -292,7 +290,6 @@ instance ConvertRawHash BlockA where
 
 instance SingleEraBlock BlockA where
   singleEraInfo _     = SingleEraInfo "A"
-  singleEraParams _   = lcfgA_eraParams
   singleEraTransition = \cfg st -> do
       (confirmedInSlot, transition) <- lgrA_transition st
       let confirmationDepth =

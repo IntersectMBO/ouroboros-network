@@ -257,7 +257,7 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 -- something like @'[Byron, Shelley, Goguen]@ and are then also used by the
 -- hard fork combinator (most likely this will be a list of block types, since
 -- most of consensus is indexed by block types).
-newtype Shape xs = Shape (Exactly xs EraParams)
+newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
 
 instance Show (Shape xs) where

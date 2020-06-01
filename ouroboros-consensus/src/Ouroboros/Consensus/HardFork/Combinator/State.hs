@@ -141,18 +141,23 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
                                         -> I $ howExtend f cfg cfg' t cur)
         $ translate
         )
-        (hcmap proxySingle (fn . whenExtend) cfgs)
+        (hczipWith
+           proxySingle
+           (fn .: whenExtend)
+           cfgs
+           (History.getShape hardForkLedgerConfigShape))
     $ st
   where
     -- Return the end of this era if we should transition to the next
     whenExtend :: SingleEraBlock              blk
                => WrapPartialLedgerConfig     blk
+               -> K History.EraParams         blk
                -> Current LedgerState         blk
                -> (Maybe :.: K History.Bound) blk
-    whenExtend pcfg cur = Comp $ K <$> do
+    whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
         transition <- singleEraTransition' pcfg (currentState cur)
         let endBound = History.mkUpperBound
-                         (singleEraParams' pcfg)
+                         eraParams
                          (currentStart cur)
                          transition
         guard (slot >= History.boundSlot endBound)
