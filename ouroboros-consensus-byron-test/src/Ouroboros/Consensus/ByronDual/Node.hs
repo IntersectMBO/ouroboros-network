@@ -248,12 +248,13 @@ instance RunNode DualByronBlock where
   nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
 
   -- The header is just the concrete header, so we can just reuse the Byron def
-  nodeAddHeaderEnvelope = \_ -> nodeAddHeaderEnvelope pb
+  nodeAddHeaderEnvelope  = \_ -> nodeAddHeaderEnvelope pb
+  nodeGetBinaryBlockInfo = dualBinaryBlockInfo nodeGetBinaryBlockInfo
 
   nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb
 
   -- Encoders
-  nodeEncodeBlockWithInfo  = \_ -> encodeDualBlockWithInfo encodeByronBlockWithInfo
+  nodeEncodeBlock          = \_ -> encodeDualBlock encodeByronBlock
   nodeEncodeHeader         = \ccfg version ->
                                   nodeEncodeHeader
                                     (dualCodecConfigMain ccfg)

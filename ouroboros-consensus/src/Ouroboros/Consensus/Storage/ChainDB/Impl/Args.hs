@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (BinaryInfo (..), ChunkInfo)
+                     (BinaryBlockInfo (..), ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -57,7 +57,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
 
       -- Encoders
     , cdbEncodeHash           :: HeaderHash blk -> Encoding
-    , cdbEncodeBlock          :: blk -> BinaryInfo Encoding
+    , cdbEncodeBlock          :: blk -> Encoding
     , cdbEncodeHeader         :: Header blk -> Encoding
       -- ^ The returned encoding must include the header envelope
       -- ('cdbAddHdrEnv').
@@ -87,6 +87,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
     , cdbCheckIntegrity       :: blk -> Bool
     , cdbGenesis              :: m (ExtLedgerState blk)
     , cdbCheckInFuture        :: CheckInFuture m blk
+    , cdbGetBinaryBlockInfo   :: blk -> BinaryBlockInfo
     , cdbAddHdrEnv            :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
@@ -187,30 +188,32 @@ fromChainDbArgs :: ChainDbArgs m blk
                    )
 fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
-          immDecodeHash       = cdbDecodeHash
-        , immDecodeBlock      = cdbDecodeBlock
-        , immDecodeHeader     = cdbDecodeHeader
-        , immEncodeHash       = cdbEncodeHash
-        , immEncodeBlock      = cdbEncodeBlock
-        , immChunkInfo        = cdbChunkInfo
-        , immValidation       = cdbImmValidation
-        , immCheckIntegrity   = cdbCheckIntegrity
-        , immHasFS            = cdbHasFSImmDb
-        , immTracer           = contramap TraceImmDBEvent cdbTracer
-        , immAddHdrEnv        = cdbAddHdrEnv
-        , immCacheConfig      = cdbImmDbCacheConfig
-        , immRegistry         = cdbRegistry
+          immDecodeHash         = cdbDecodeHash
+        , immDecodeBlock        = cdbDecodeBlock
+        , immDecodeHeader       = cdbDecodeHeader
+        , immEncodeHash         = cdbEncodeHash
+        , immEncodeBlock        = cdbEncodeBlock
+        , immGetBinaryBlockInfo = cdbGetBinaryBlockInfo
+        , immChunkInfo          = cdbChunkInfo
+        , immValidation         = cdbImmValidation
+        , immCheckIntegrity     = cdbCheckIntegrity
+        , immHasFS              = cdbHasFSImmDb
+        , immTracer             = contramap TraceImmDBEvent cdbTracer
+        , immAddHdrEnv          = cdbAddHdrEnv
+        , immCacheConfig        = cdbImmDbCacheConfig
+        , immRegistry           = cdbRegistry
         }
     , VolDB.VolDbArgs {
-          volHasFS            = cdbHasFSVolDb
-        , volCheckIntegrity   = cdbCheckIntegrity
-        , volBlocksPerFile    = cdbBlocksPerFile
-        , volDecodeHeader     = cdbDecodeHeader
-        , volDecodeBlock      = cdbDecodeBlock
-        , volEncodeBlock      = cdbEncodeBlock
-        , volAddHdrEnv        = cdbAddHdrEnv
-        , volValidation       = cdbVolValidation
-        , volTracer           = contramap TraceVolDBEvent cdbTracer
+          volHasFS              = cdbHasFSVolDb
+        , volCheckIntegrity     = cdbCheckIntegrity
+        , volBlocksPerFile      = cdbBlocksPerFile
+        , volDecodeHeader       = cdbDecodeHeader
+        , volDecodeBlock        = cdbDecodeBlock
+        , volEncodeBlock        = cdbEncodeBlock
+        , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
+        , volAddHdrEnv          = cdbAddHdrEnv
+        , volValidation         = cdbVolValidation
+        , volTracer             = contramap TraceVolDBEvent cdbTracer
         }
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig       = cdbTopLevelConfig
@@ -283,6 +286,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbCheckIntegrity       = immCheckIntegrity
     , cdbGenesis              = lgrGenesis
     , cdbCheckInFuture        = cdbsCheckInFuture
+    , cdbGetBinaryBlockInfo   = immGetBinaryBlockInfo
     , cdbAddHdrEnv            = immAddHdrEnv
     , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc

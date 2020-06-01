@@ -23,7 +23,6 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine
 
 import           Prelude hiding (elem, notElem)
 
-import           Codec.CBOR.Write (toBuilder)
 import           Codec.Serialise (decode)
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
@@ -223,8 +222,8 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
       GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
       GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
       GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
-      AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
-      AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
+      AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b)
+      AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b)
       Stream              s e    -> iter            =<< stream                 db registry allComponents s e
       StreamAll                  -> IterResults     <$> streamAll              db
       IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
@@ -314,8 +313,8 @@ runPure = \case
     GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
     GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
     GetBlockOrEBBComponent s h -> ok MbAllComponents $ queryE   (getBlockOrEBBComponentModel allComponents s h)
-    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
-    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
+    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b))
+    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b))
     Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
     StreamAll                  -> ok IterResults     $ query    (streamAllModel allComponents)
     IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
@@ -655,12 +654,16 @@ generateCmd Model {..} = At <$> frequency
     genRandomBound = (,) <$> arbitrary <*> (TestHeaderHash <$> arbitrary)
 
     genBlockInThePast :: Gen TestBlock
-    genBlockInThePast =
-      elements $ map (testBlockFromBinaryInfo . snd) $ catMaybes (dbmRegular dbModel)
+    genBlockInThePast = elements
+        [ testBlockFromLazyByteString bytes
+        | (_, bytes, _) <- catMaybes (dbmRegular dbModel)
+        ]
 
     genEBBInThePast :: Gen TestBlock
-    genEBBInThePast =
-      elements $ map (testBlockFromBinaryInfo . snd) $ Map.elems (dbmEBBs dbModel)
+    genEBBInThePast = elements
+        [ testBlockFromLazyByteString bytes
+        | (_, bytes, _) <- Map.elems (dbmEBBs dbModel)
+        ]
 
     genBound = frequency
       [ (1,
@@ -1161,7 +1164,7 @@ instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
 instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
 instance ToExpr r => ToExpr (S.WithOrigin r)
-instance ToExpr b => ToExpr (BinaryInfo b)
+instance ToExpr BinaryBlockInfo
 instance ToExpr hash => ToExpr (InSlot hash)
 instance ToExpr (DBModel Hash)
 
@@ -1215,7 +1218,10 @@ test cacheConfig chunkInfo cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
-        parser = chunkFileParser hasFS (const <$> decode) getBinaryInfo
+        parser = chunkFileParser
+                   hasFS
+                   (const <$> decode)
+                   testBlockBinaryBlockInfo
                    testBlockIsValid
     withRegistry $ \registry -> do
       let args = ImmutableDbArgs
@@ -1261,8 +1267,6 @@ test cacheConfig chunkInfo cmds = do
 
       return (hist, prop)
   where
-    getBinaryInfo = void . testBlockToBinaryInfo
-
     openHandlesProp fs model
         | openHandles <= maxExpectedOpenHandles
         = property True

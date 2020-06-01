@@ -1502,7 +1502,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
 
       -- Encoders
     , cdbEncodeHash           = encode
-    , cdbEncodeBlock          = testBlockToBinaryInfo
+    , cdbEncodeBlock          = encode
     , cdbEncodeHeader         = encode
     , cdbEncodeLedger         = encode
     , cdbEncodeConsensusState = encode
@@ -1534,6 +1534,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
                                   (readTVar varCurSlot)
                                   maxClockSkew
     , cdbAddHdrEnv            = \_ _ -> id
+    , cdbGetBinaryBlockInfo   = testBlockBinaryBlockInfo
     , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
 
     -- Misc

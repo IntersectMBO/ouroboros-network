@@ -45,8 +45,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.IteratorResult (..)
   , ImmDB.ValidationPolicy (..)
   , ImmDB.ImmutableDBError
-  , ImmDB.BinaryInfo (..)
-  , ImmDB.HashInfo (..)
+  , BinaryBlockInfo (..)
+  , HashInfo (..)
   , Index.CacheConfig (..)
     -- * Re-exports of aspects of 'ChunkInfo'
   , ChunkInfo
@@ -105,8 +105,8 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS,
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..), ImmutableDB, TipInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..),
+                     ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -115,14 +115,15 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
-      immDB     :: !(ImmutableDB (HeaderHash blk) m)
-    , decHeader :: !(forall s. Decoder s (Lazy.ByteString -> Header blk))
-    , decBlock  :: !(forall s. Decoder s (Lazy.ByteString -> blk))
+      immDB              :: !(ImmutableDB (HeaderHash blk) m)
+    , decHeader          :: !(forall s. Decoder s (Lazy.ByteString -> Header blk))
+    , decBlock           :: !(forall s. Decoder s (Lazy.ByteString -> blk))
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock  :: !(blk -> BinaryInfo Encoding)
-    , chunkInfo :: !ChunkInfo
-    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , encBlock           :: !(blk -> Encoding)
+    , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
+    , chunkInfo          :: !ChunkInfo
+    , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
 
 
@@ -134,6 +135,7 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt getBinaryBlockInfo
     , noUnexpectedThunks ctxt chunkInfo
     , noUnexpectedThunks ctxt addHdrEnv
     ]
@@ -150,19 +152,20 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
-      immDecodeHash     :: forall s. Decoder s (HeaderHash blk)
-    , immDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , immEncodeHash     :: HeaderHash blk -> Encoding
-    , immEncodeBlock    :: blk -> BinaryInfo Encoding
-    , immChunkInfo      :: ChunkInfo
-    , immValidation     :: ImmDB.ValidationPolicy
-    , immCheckIntegrity :: blk -> Bool
-    , immAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
-    , immHasFS          :: HasFS m h
-    , immTracer         :: Tracer m (TraceEvent blk)
-    , immCacheConfig    :: Index.CacheConfig
-    , immRegistry       :: ResourceRegistry m
+      immDecodeHash         :: forall s. Decoder s (HeaderHash blk)
+    , immDecodeBlock        :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , immDecodeHeader       :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+    , immEncodeHash         :: HeaderHash blk -> Encoding
+    , immEncodeBlock        :: blk -> Encoding
+    , immGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+    , immChunkInfo          :: ChunkInfo
+    , immValidation         :: ImmDB.ValidationPolicy
+    , immCheckIntegrity     :: blk -> Bool
+    , immAddHdrEnv          :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , immHasFS              :: HasFS m h
+    , immTracer             :: Tracer m (TraceEvent blk)
+    , immCacheConfig        :: Index.CacheConfig
+    , immRegistry           :: ResourceRegistry m
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -174,6 +177,7 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immDecodeHeader'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
+-- * 'immGetBinaryBlockInfo'
 -- * 'immChunkInfo'
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
@@ -181,20 +185,21 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
-    , immCacheConfig    = cacheConfig
-    , immTracer         = nullTracer
+      immHasFS              = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig        = cacheConfig
+    , immTracer             = nullTracer
       -- Fields without a default
-    , immDecodeHash     = error "no default for immDecodeHash"
-    , immDecodeBlock    = error "no default for immDecodeBlock"
-    , immDecodeHeader   = error "no default for immDecodeHeader"
-    , immEncodeHash     = error "no default for immEncodeHash"
-    , immEncodeBlock    = error "no default for immEncodeBlock"
-    , immChunkInfo      = error "no default for immChunkInfo"
-    , immValidation     = error "no default for immValidation"
-    , immCheckIntegrity = error "no default for immCheckIntegrity"
-    , immAddHdrEnv      = error "no default for immAddHdrEnv"
-    , immRegistry       = error "no default for immRegistry"
+    , immDecodeHash         = error "no default for immDecodeHash"
+    , immDecodeBlock        = error "no default for immDecodeBlock"
+    , immDecodeHeader       = error "no default for immDecodeHeader"
+    , immEncodeHash         = error "no default for immEncodeHash"
+    , immEncodeBlock        = error "no default for immEncodeBlock"
+    , immGetBinaryBlockInfo = error "no default for immGetBinaryBlockInfo"
+    , immChunkInfo          = error "no default for immChunkInfo"
+    , immValidation         = error "no default for immValidation"
+    , immCheckIntegrity     = error "no default for immCheckIntegrity"
+    , immAddHdrEnv          = error "no default for immAddHdrEnv"
+    , immRegistry           = error "no default for immRegistry"
     }
   where
     -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
@@ -240,12 +245,13 @@ openDB ImmDbArgs {..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
-      { immDB     = immDB
-      , decHeader = immDecodeHeader
-      , decBlock  = immDecodeBlock
-      , encBlock  = immEncodeBlock
-      , chunkInfo = immChunkInfo
-      , addHdrEnv = immAddHdrEnv
+      { immDB              = immDB
+      , decHeader          = immDecodeHeader
+      , decBlock           = immDecodeBlock
+      , encBlock           = immEncodeBlock
+      , getBinaryBlockInfo = immGetBinaryBlockInfo
+      , chunkInfo          = immChunkInfo
+      , addHdrEnv          = immAddHdrEnv
       }
   where
     args = ImmDB.ImmutableDbArgs
@@ -259,18 +265,19 @@ openDB ImmDbArgs {..} = do
       , parser      = parser
       }
     parser = ImmDB.chunkFileParser immHasFS immDecodeBlock
-      -- TODO a more efficient to accomplish this?
-      (void . immEncodeBlock) immCheckIntegrity
+      immGetBinaryBlockInfo immCheckIntegrity
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> BinaryInfo Encoding)
+        -> (blk -> Encoding)
+        -> (blk -> BinaryBlockInfo)
         -> ChunkInfo
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock chunkInfo addHdrEnv = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock getBinaryBlockInfo chunkInfo addHdrEnv =
+    ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -410,13 +417,16 @@ appendBlock :: (MonadCatch m, HasHeader blk, GetHeader blk, HasCallStack)
             => ImmDB m blk -> blk -> m ()
 appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
     Nothing      ->
-      ImmDB.appendBlock imm slotNo  blockNr hash (CBOR.toBuilder <$> encBlock b)
+      ImmDB.appendBlock imm slotNo  blockNr hash builder binaryBlockInfo
     Just epochNo ->
-      ImmDB.appendEBB   imm epochNo blockNr hash (CBOR.toBuilder <$> encBlock b)
+      ImmDB.appendEBB   imm epochNo blockNr hash builder binaryBlockInfo
   where
-    hash    = blockHash b
-    slotNo  = blockSlot b
-    blockNr = blockNo   b
+    hash            = blockHash b
+    slotNo          = blockSlot b
+    blockNr         = blockNo   b
+    builder         = CBOR.toBuilder $ encBlock b
+    binaryBlockInfo = getBinaryBlockInfo b
+
 
 {-------------------------------------------------------------------------------
   Streaming

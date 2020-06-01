@@ -7,7 +7,6 @@
 module Ouroboros.Consensus.Byron.Ledger.Serialisation (
     -- * Serialisation
     byronBlockEncodingOverhead
-  , encodeByronBlockWithInfo
   , encodeByronBlock
   , decodeByronBlock
   , encodeByronHeader
@@ -18,6 +17,7 @@ module Ouroboros.Consensus.Byron.Ledger.Serialisation (
   , decodeByronHeaderHash
     -- * Support for on-disk format
   , byronAddHeaderEnvelope
+  , byronBinaryBlockInfo
     -- * Exceptions
   , DropEncodedSizeException(..)
     -- * Low-level API
@@ -50,7 +50,7 @@ import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
@@ -102,27 +102,6 @@ encodeByronHeaderHash = toCBOR
 
 decodeByronHeaderHash :: Decoder s (HeaderHash ByronBlock)
 decodeByronHeaderHash = fromCBOR
-
--- | 'encodeByronBlock' including the offset and size of the header within the
--- resulting bytestring.
---
--- NOTE: the bytestring obtained by slicing the serialised block using the
--- header offset and size will correspond to the /header annotation/, but not
--- to the serialised header, as we add an envelope ('encodeListLen' + tag)
--- around a header in 'encodeByronHeader'. This envelope must thus still be
--- added to the sliced bytestring before it can be deserialised using
--- 'decodeByronHeader'.
-encodeByronBlockWithInfo :: ByronBlock -> BinaryInfo Encoding
-encodeByronBlockWithInfo blk = BinaryInfo
-    { binaryBlob   = encodeByronBlock blk
-    , headerOffset = 1 {- 'encodeListLen' of the outer 'Either' envelope -}
-                   + 1 {- the tag -}
-                   + 1 {- 'encodeListLen' of the block: header + body + ...  -}
-      -- Compute the length of the annotated header
-    , headerSize   = fromIntegral $ Strict.length $ case byronBlockRaw blk of
-        CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
-        CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b
-    }
 
 -- | Encode a block
 --
@@ -294,6 +273,25 @@ ebbEnvelope :: IsEBB -> Lazy.ByteString
 ebbEnvelope = \case
   IsEBB    -> "\130\NUL"
   IsNotEBB -> "\130\SOH"
+
+-- | The 'BinaryBlockInfo' of the given 'ByronBlock'.
+--
+-- NOTE: the bytestring obtained by slicing the serialised block using the
+-- header offset and size will correspond to the /header annotation/, but not
+-- to the serialised header, as we add an envelope ('encodeListLen' + tag)
+-- around a header in 'encodeByronHeader'. This envelope must thus still be
+-- added to the sliced bytestring before it can be deserialised using
+-- 'decodeByronHeader'.
+byronBinaryBlockInfo :: ByronBlock -> BinaryBlockInfo
+byronBinaryBlockInfo blk = BinaryBlockInfo
+    { headerOffset = 1 {- 'encodeListLen' of the outer 'Either' envelope -}
+                   + 1 {- the tag -}
+                   + 1 {- 'encodeListLen' of the block: header + body + ...  -}
+      -- Compute the length of the annotated header
+    , headerSize   = fromIntegral $ Strict.length $ case byronBlockRaw blk of
+        CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
+        CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b
+    }
 
 {-------------------------------------------------------------------------------
   Sized header

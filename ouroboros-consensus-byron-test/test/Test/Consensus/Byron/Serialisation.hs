@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node
@@ -66,7 +66,7 @@ tests = testGroup "Byron"
         -- TODO ConsensusState
         -- TODO LedgerState
 
-    , testProperty "BinaryInfo sanity check"   prop_encodeByronBlockWithInfo
+    , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
     , testGroup "ConvertRawHashInfo sanity check"
         [ testProperty "fromRawHash/toRawHash" prop_fromRawHash_toRawHash
         , testProperty "hashSize sanity check" prop_hashSize
@@ -130,21 +130,21 @@ prop_roundtrip_Result =
       (decodeByronResult GetUpdateInterfaceState)
 
 {-------------------------------------------------------------------------------
-  BinaryInfo
+  BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_encodeByronBlockWithInfo :: ByronBlock -> Property
-prop_encodeByronBlockWithInfo blk =
+prop_byronBinaryBlockInfo :: ByronBlock -> Property
+prop_byronBinaryBlockInfo blk =
     headerAnnotation === extractedHeader
   where
-    BinaryInfo { binaryBlob, headerOffset, headerSize } =
-      encodeByronBlockWithInfo blk
+    BinaryBlockInfo { headerOffset, headerSize } =
+      byronBinaryBlockInfo blk
 
     extractedHeader :: Lazy.ByteString
     extractedHeader =
         Lazy.take (fromIntegral headerSize)   $
         Lazy.drop (fromIntegral headerOffset) $
-        toLazyByteString binaryBlob
+        toLazyByteString (encodeByronBlock blk)
 
     headerAnnotation :: Lazy.ByteString
     headerAnnotation = Lazy.fromStrict $ case byronBlockRaw blk of

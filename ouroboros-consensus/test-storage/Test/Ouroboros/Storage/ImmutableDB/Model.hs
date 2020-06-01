@@ -91,11 +91,11 @@ import           Test.Ouroboros.Storage.TestBlock hiding (EBB)
 data InSlot hash =
     -- | This slot contains only a regular block
     InSlotBlock
-      (TipInfo hash SlotNo, BinaryInfo ByteString)
+      (TipInfo hash SlotNo, ByteString, BinaryBlockInfo)
 
     -- | This slot contains only an EBB
   | InSlotEBB
-      (TipInfo hash EpochNo, BinaryInfo ByteString)
+      (TipInfo hash EpochNo, ByteString, BinaryBlockInfo)
 
     -- | This slot contains an EBB /and/ a regular block
     --
@@ -106,8 +106,8 @@ data InSlot hash =
     --
     -- So within the same /slot/, the EBB comes /first/.
   | InSlotBoth
-      (TipInfo hash EpochNo, BinaryInfo ByteString)
-      (TipInfo hash SlotNo , BinaryInfo ByteString)
+      (TipInfo hash EpochNo, ByteString, BinaryBlockInfo)
+      (TipInfo hash SlotNo , ByteString, BinaryBlockInfo)
   deriving (Show, Generic)
 
 data DBModel hash = DBModel
@@ -128,16 +128,17 @@ initDBModel chunkInfo = DBModel
 insertInSlot :: forall hash. HasCallStack
              => SlotNo
              -> TipInfo hash BlockOrEBB
-             -> BinaryInfo ByteString
+             -> ByteString
+             -> BinaryBlockInfo
              -> Map SlotNo (InSlot hash)
              -> Map SlotNo (InSlot hash)
-insertInSlot slot info xs =
+insertInSlot slot info bytes binfo =
     Map.alter (Just . go (forgetTipInfo info)) slot
   where
     go :: BlockOrEBB -> Maybe (InSlot hash) -> InSlot hash
-    go (Block s) Nothing                  = InSlotBlock    (const s <$> info, xs)
-    go (EBB   e) Nothing                  = InSlotEBB      (const e <$> info, xs)
-    go (Block s) (Just (InSlotEBB   ebb)) = InSlotBoth ebb (const s <$> info, xs)
+    go (Block s) Nothing                  = InSlotBlock    (const s <$> info, bytes, binfo)
+    go (EBB   e) Nothing                  = InSlotEBB      (const e <$> info, bytes, binfo)
+    go (Block s) (Just (InSlotEBB   ebb)) = InSlotBoth ebb (const s <$> info, bytes, binfo)
     go (EBB   _) (Just (InSlotBlock _  )) = error "insertInSlot: EBB after block"
     go _ _                                = error "insertInSlot: slot already filled"
 
@@ -151,27 +152,28 @@ dbmTip DBModel{..} =
       Nothing              -> Origin
       Just (_slot, inSlot) -> At $
         case inSlot of
-          InSlotBlock     (tip, _bytes) -> Block <$> tip
-          InSlotEBB       (tip, _bytes) -> EBB   <$> tip
-          InSlotBoth _ebb (tip, _bytes) -> Block <$> tip
+          InSlotBlock     (tip, _bytes, _binfo) -> Block <$> tip
+          InSlotEBB       (tip, _bytes, _binfo) -> EBB   <$> tip
+          InSlotBoth _ebb (tip, _bytes, _binfo) -> Block <$> tip
 
 dbmEBBs :: forall hash.
-           DBModel hash -> Map ChunkNo (hash, BinaryInfo ByteString)
+           DBModel hash -> Map ChunkNo (hash, ByteString, BinaryBlockInfo)
 dbmEBBs =
     Map.fromList . mapMaybe (containsEBB . snd) . Map.toList . dbmSlots
   where
     containsEBB :: InSlot hash
-                -> Maybe (ChunkNo, (hash, BinaryInfo ByteString))
+                -> Maybe (ChunkNo, (hash, ByteString, BinaryBlockInfo))
     containsEBB (InSlotBlock _)                  = Nothing
-    containsEBB (InSlotEBB  (tip, bytes))        = Just $ swizzle tip bytes
-    containsEBB (InSlotBoth (tip, bytes) _block) = Just $ swizzle tip bytes
+    containsEBB (InSlotEBB  (tip, bytes, binfo))        = Just $ swizzle tip bytes binfo
+    containsEBB (InSlotBoth (tip, bytes, binfo) _block) = Just $ swizzle tip bytes binfo
 
     swizzle :: TipInfo hash EpochNo
-            -> BinaryInfo ByteString
-            -> (ChunkNo, (hash, BinaryInfo ByteString))
-    swizzle info bytes = (
+            -> ByteString
+            -> BinaryBlockInfo
+            -> (ChunkNo, (hash, ByteString, BinaryBlockInfo))
+    swizzle info bytes binfo = (
           unsafeEpochNoToChunkNo $ forgetTipInfo info
-        , (tipInfoHash info, bytes)
+        , (tipInfoHash info, bytes, binfo)
         )
 
 dbmCurrentChunk :: DBModel hash -> ChunkNo
@@ -185,20 +187,20 @@ dbmCurrentChunk dbm =
 --
 -- Returns all slots from old to new, with 'Nothing' representing empty slots.
 -- May end on a 'Nothing' if the chain ends on an EBB.
-dbmRegular :: DBModel hash -> [Maybe (hash, BinaryInfo ByteString)]
+dbmRegular :: DBModel hash -> [Maybe (hash, ByteString, BinaryBlockInfo)]
 dbmRegular = expand (SlotNo 0) . Map.toList . dbmSlots
   where
     expand :: SlotNo -- Slot number we expect to see next
            -> [(SlotNo, InSlot hash)]
-           -> [Maybe (hash, BinaryInfo ByteString)]
+           -> [Maybe (hash, ByteString, BinaryBlockInfo)]
     expand _ []                = []
     expand s ((s', inSlot):ss) = concat [
         replicate skipped Nothing
       , case inSlot of
-          InSlotBlock (info, bytes) ->
-            Just (tipInfoHash info, bytes) : expand (succ s') ss
-          InSlotBoth _ebb (info, bytes) ->
-            Just (tipInfoHash info, bytes) : expand (succ s') ss
+          InSlotBlock (info, bytes, binfo) ->
+            Just (tipInfoHash info, bytes, binfo) : expand (succ s') ss
+          InSlotBoth _ebb (info, bytes, binfo) ->
+            Just (tipInfoHash info, bytes, binfo) : expand (succ s') ss
           InSlotEBB _ ->
             -- EBBs share a slot number with their successor
             expand s' ss
@@ -212,8 +214,8 @@ dbmRegular = expand (SlotNo 0) . Map.toList . dbmSlots
 -- 'Left' values denote EBBs.
 dbmBlobs :: DBModel hash
          -> Map (ChunkSlot, SlotNo)
-                (Either (hash, BinaryInfo ByteString)
-                        (hash, BinaryInfo ByteString))
+                (Either (hash, ByteString, BinaryBlockInfo)
+                        (hash, ByteString, BinaryBlockInfo))
 dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
   where
     insert (slot, inSlot) =
@@ -223,28 +225,31 @@ dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
         InSlotBoth  ebb regular -> insertRegular slot regular
                                  . insertEBB     slot ebb
 
-    insertRegular slot (info, xs) =
+    insertRegular slot (info, bytes, binfo) =
         Map.insert (chunkSlotForRegularBlock' dbm slot, slot)
-                   (Right (tipInfoHash info, xs))
+                   (Right (tipInfoHash info, bytes, binfo))
 
-    insertEBB slot (info, xs) =
+    insertEBB slot (info, bytes, binfo) =
         Map.insert (chunkSlotForBoundaryBlock' dbm (forgetTipInfo info), slot)
-                   (Left (tipInfoHash info, xs))
+                   (Left (tipInfoHash info, bytes, binfo))
 
 -- TODO #1151
 dbmTipBlock :: DBModel hash -> Maybe TestBlock
 dbmTipBlock dbm = testBlockFromLazyByteString <$> case forgetTipInfo <$> dbmTip dbm of
     Origin           -> Nothing
-    At (Block _slot) -> Just $ binaryBlob $ snd $ mustBeJust $ last $ dbmRegular dbm
-    At (EBB epoch)   -> Just $ binaryBlob $ snd $ dbmEBBs dbm Map.! (unsafeEpochNoToChunkNo epoch)
+    At (Block _slot) -> Just $ getBytes $ mustBeJust $ last $ dbmRegular dbm
+    At (EBB epoch)   -> Just $ getBytes $ dbmEBBs dbm Map.! (unsafeEpochNoToChunkNo epoch)
   where
     mustBeJust = fromMaybe (error "chain ends with an empty slot")
 
+    getBytes :: (hash, ByteString, BinaryBlockInfo) -> ByteString
+    getBytes (_, bytes, _) = bytes
+
 dbmBlockList :: DBModel hash -> [ByteString]
-dbmBlockList = fmap toBlob . Map.elems . dbmBlobs
+dbmBlockList = fmap getBytes . Map.elems . dbmBlobs
   where
-    toBlob (Left  (_hash, binaryInfo)) = binaryBlob binaryInfo
-    toBlob (Right (_hash, binaryInfo)) = binaryBlob binaryInfo
+    getBytes (Left  (_hash, bytes, _binfo)) = bytes
+    getBytes (Right (_hash, bytes, _binfo)) = bytes
 
 type IteratorId = Int
 
@@ -260,7 +265,7 @@ newtype IteratorModel hash = IteratorModel [IterRes hash]
 
 -- | Short hand. We store @Either EpochNo SlotNo@ (to distinguish regular blocks
 -- from EBBs) and @hash@ to implement 'iteratorHasNext'.
-type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
+type IterRes hash = (Either EpochNo SlotNo, hash, ByteString, BinaryBlockInfo)
 
 {-------------------------------------------------------------------------------
   Convenience: lift slot conversions to 'DBModel'
@@ -360,10 +365,10 @@ properTips :: DBModel hash -> [TipInfo hash BlockOrEBB]
 properTips = concatMap go . Map.elems . dbmSlots
   where
     go :: InSlot hash -> [TipInfo hash BlockOrEBB]
-    go (InSlotBlock (reg, _))          = [ Block <$> reg ]
-    go (InSlotEBB   (ebb, _))          = [ EBB   <$> ebb ]
-    go (InSlotBoth  (ebb, _) (reg, _)) = [ EBB   <$> ebb
-                                         , Block <$> reg ]
+    go (InSlotBlock (reg, _, _))             = [ Block <$> reg ]
+    go (InSlotEBB   (ebb, _, _))             = [ EBB   <$> ebb ]
+    go (InSlotBoth  (ebb, _, _) (reg, _, _)) = [ EBB   <$> ebb
+                                               , Block <$> reg ]
 
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model, including 'TipGenesis'. The tips will be sorted from old to recent.
@@ -374,13 +379,15 @@ tips dbm = Origin NE.:| map At (properTips dbm)
 blobsInChunk :: DBModel hash -> ChunkNo -> [ByteString]
 blobsInChunk dbm chunk =
     maybe id (:) mbEBBBlob       $
-    map (binaryBlob . snd)       $
+    map getBytes                 $
     mapMaybe snd                 $
     takeWhile ((== chunk) . fst) $
     dropWhile ((/= chunk) . fst) $
     zip (map (chunkIndexOfSlot' dbm . SlotNo) [0..]) (dbmRegular dbm)
   where
-    mbEBBBlob = binaryBlob . snd <$> Map.lookup chunk (dbmEBBs dbm)
+    mbEBBBlob = getBytes <$> Map.lookup chunk (dbmEBBs dbm)
+
+    getBytes (_, bytes, _) = bytes
 
 closeAllIterators :: DBModel hash -> DBModel hash
 closeAllIterators dbm = dbm { dbmIterators = mempty }
@@ -557,23 +564,24 @@ extractBlockComponent
   :: hash
   -> SlotNo
   -> IsEBB
-  -> BinaryInfo ByteString
+  -> ByteString
+  -> BinaryBlockInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> b
-extractBlockComponent hash slot isEBB binaryInfo = \case
+extractBlockComponent hash slot isEBB bytes binfo = \case
     GetBlock      -> ()
-    GetRawBlock   -> binaryBlob binaryInfo
+    GetRawBlock   -> bytes
     GetHeader     -> ()
-    GetRawHeader  -> extractHeader binaryInfo
+    GetRawHeader  -> extractHeader binfo bytes
     GetHash       -> hash
     GetSlot       -> slot
     GetIsEBB      -> isEBB
-    GetBlockSize  -> fromIntegral $ Lazy.length $ binaryBlob binaryInfo
-    GetHeaderSize -> headerSize binaryInfo
+    GetBlockSize  -> fromIntegral $ Lazy.length bytes
+    GetHeaderSize -> headerSize binfo
     GetPure a     -> a
     GetApply f bc ->
-      extractBlockComponent hash slot isEBB binaryInfo f $
-      extractBlockComponent hash slot isEBB binaryInfo bc
+      extractBlockComponent hash slot isEBB bytes binfo f $
+      extractBlockComponent hash slot isEBB bytes binfo bc
 
 getBlockComponentModel
   :: HasCallStack
@@ -592,9 +600,9 @@ getBlockComponentModel blockComponent slot dbm@DBModel{..} = do
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
     return $ case lookupBySlot slot (dbmRegular dbm) of
-      Nothing                 -> Nothing
-      Just (hash, binaryInfo) -> Just $
-        extractBlockComponent hash slot IsNotEBB binaryInfo blockComponent
+      Nothing                   -> Nothing
+      Just (hash, bytes, binfo) -> Just $
+        extractBlockComponent hash slot IsNotEBB bytes binfo blockComponent
 
 getEBBComponentModel
   :: HasCallStack
@@ -614,9 +622,9 @@ getEBBComponentModel blockComponent epoch dbm@DBModel {..} = do
       throwUserError $ ReadFutureEBBError epoch currentEpoch
 
     return $ case Map.lookup chunk (dbmEBBs dbm) of
-      Nothing                 -> Nothing
-      Just (hash, binaryInfo) -> Just $
-          extractBlockComponent hash slot IsEBB binaryInfo blockComponent
+      Nothing                   -> Nothing
+      Just (hash, bytes, binfo) -> Just $
+          extractBlockComponent hash slot IsEBB bytes binfo blockComponent
         where
           slot = slotNoOfEBB' dbm epoch
 
@@ -641,14 +649,14 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
 
     -- The chain can be too short if there's an EBB at the tip
     return $ case lookupBySlotMaybe slot of
-      Just (hash', binaryInfo)
+      Just (hash', bytes, binfo)
         | hash' == hash
-        -> Just $ extractBlockComponent hash slot IsNotEBB binaryInfo blockComponent
+        -> Just $ extractBlockComponent hash slot IsNotEBB bytes binfo blockComponent
       -- Fall back to EBB
       _ | Just _ifBoundary <- mIfBoundary
-        , Just (hash', binaryInfo) <- Map.lookup chunk (dbmEBBs dbm)
+        , Just (hash', bytes, binfo) <- Map.lookup chunk (dbmEBBs dbm)
         , hash' == hash
-        -> Just $ extractBlockComponent hash slot IsEBB binaryInfo blockComponent
+        -> Just $ extractBlockComponent hash slot IsEBB bytes binfo blockComponent
         | otherwise
         -> Nothing
   where
@@ -666,10 +674,11 @@ appendBlockModel
   => SlotNo
   -> BlockNo
   -> hash
-  -> BinaryInfo Builder
+  -> Builder
+  -> BinaryBlockInfo
   -> DBModel hash
   -> Either ImmutableDBError (DBModel hash)
-appendBlockModel slot block hash binaryInfo dbm@DBModel {..} = do
+appendBlockModel slot block hash builder binfo dbm@DBModel {..} = do
     -- Check that we're not appending to the past
     let inThePast = case forgetTipInfo <$> dbmTip dbm of
           At (Block lastSlot) -> slot <= lastSlot
@@ -679,9 +688,9 @@ appendBlockModel slot block hash binaryInfo dbm@DBModel {..} = do
     when inThePast $
       throwUserError $ AppendToSlotInThePastError slot (forgetTipInfo <$> dbmTip dbm)
 
-    let binaryInfo' = toLazyByteString <$> binaryInfo
-        tipInfo     = TipInfo hash (Block slot) block
-    return dbm { dbmSlots = insertInSlot slot tipInfo binaryInfo' dbmSlots }
+    let bytes   = toLazyByteString builder
+        tipInfo = TipInfo hash (Block slot) block
+    return dbm { dbmSlots = insertInSlot slot tipInfo bytes binfo dbmSlots }
   where
     _ = keepRedundantConstraint (Proxy @(Show hash))
 
@@ -690,10 +699,11 @@ appendEBBModel
   => EpochNo
   -> BlockNo
   -> hash
-  -> BinaryInfo Builder
+  -> Builder
+  -> BinaryBlockInfo
   -> DBModel hash
   -> Either ImmutableDBError (DBModel hash)
-appendEBBModel epoch block hash binaryInfo dbm@DBModel {..} = do
+appendEBBModel epoch block hash builder binfo dbm@DBModel {..} = do
     -- Check that we're not appending to the past
     let currentChunk = dbmCurrentChunk dbm
         chunk        = unsafeEpochNoToChunkNo epoch
@@ -704,11 +714,11 @@ appendEBBModel epoch block hash binaryInfo dbm@DBModel {..} = do
     when inThePast $
       throwUserError $ AppendToEBBInThePastError epoch currentChunk
 
-    let binaryInfo' = toLazyByteString <$> binaryInfo
-        ebbSlot     = slotNoOfEBB' dbm epoch
-        tipInfo     = TipInfo hash (EBB epoch) block
+    let bytes   = toLazyByteString builder
+        ebbSlot = slotNoOfEBB' dbm epoch
+        tipInfo = TipInfo hash (EBB epoch) block
 
-    return dbm { dbmSlots = insertInSlot ebbSlot tipInfo binaryInfo' dbmSlots }
+    return dbm { dbmSlots = insertInSlot ebbSlot tipInfo bytes binfo dbmSlots }
   where
     _ = keepRedundantConstraint (Proxy @(Show hash))
 
@@ -776,14 +786,14 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
             (Nothing, Nothing)
               -> Left $ EmptySlotError slotNo
             (Just res1, _)
-              | either fst fst res1 == hash
+              | getHash res1 == hash
               -> return $ ifBoundary
             (_, Just res2)
-              | either fst fst res2 == hash
+              | getHash res2 == hash
               -> return $ ifRegular
             (mbRes1, mbRes2)
               -> Left $ WrongHashError slotNo hash $ NE.fromList $
-                 map (either fst fst) $ catMaybes [mbRes1, mbRes2]
+                 map getHash $ catMaybes [mbRes1, mbRes2]
         Nothing ->
           case Map.lookup (ifRegular, slotNo) blobs of
             Nothing  -> Left $ EmptySlotError slotNo
@@ -791,7 +801,14 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
                 | hash' == hash -> return ifRegular
                 | otherwise     -> Left $ WrongHashError slotNo hash (hash' NE.:| [])
               where
-                hash' = either fst fst res
+                hash' = getHash res
+
+    getHash :: Either
+                 (hash, ByteString, BinaryBlockInfo)
+                 (hash, ByteString, BinaryBlockInfo)
+            -> hash
+    getHash (Left  (hash, _, _)) = hash
+    getHash (Right (hash, _, _)) = hash
 
     iteratorResults
       :: Maybe ChunkSlot -> Maybe ChunkSlot
@@ -806,12 +823,12 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
 
     toIterRes
       :: ((ChunkSlot, SlotNo),
-          Either (hash, BinaryInfo ByteString)
-                 (hash, BinaryInfo ByteString))
+          Either (hash, ByteString, BinaryBlockInfo)
+                 (hash, ByteString, BinaryBlockInfo))
       -> ((ChunkSlot, SlotNo), IterRes hash)
     toIterRes (k@(ChunkSlot epoch _, slot), v) = case v of
-      Left  (hash, bi) -> (k, (Left (unsafeChunkNoToEpochNo epoch), hash, bi))
-      Right (hash, bi) -> (k, (Right slot, hash, bi))
+      Left  (hash, bytes, binfo) -> (k, (Left (unsafeChunkNoToEpochNo epoch), hash, bytes, binfo))
+      Right (hash, bytes, binfo) -> (k, (Right slot, hash, bytes, binfo))
 
     dropUntilStart
       :: Maybe ChunkSlot
@@ -841,14 +858,14 @@ streamAllModel blockComponent =
   where
     toBlockComponent
       :: ((ChunkSlot, SlotNo),
-          Either (hash, BinaryInfo ByteString) (hash, BinaryInfo ByteString))
+          Either (hash, ByteString, BinaryBlockInfo) (hash, ByteString, BinaryBlockInfo))
       -> b
     toBlockComponent ((_chunkSlot, slotNo), ebbOrBlock) =
-        extractBlockComponent hash slotNo isEBB binaryInfo blockComponent
+        extractBlockComponent hash slotNo isEBB bytes binfo blockComponent
       where
-        (isEBB, hash, binaryInfo) = case ebbOrBlock of
-          Left  (h, b) -> (IsEBB,    h, b)
-          Right (h, b) -> (IsNotEBB, h, b)
+        (isEBB, hash, bytes, binfo) = case ebbOrBlock of
+          Left  (h, b, bi) -> (IsEBB,    h, b, bi)
+          Right (h, b, bi) -> (IsNotEBB, h, b, bi)
 
 iteratorNextModel
   :: IteratorId
@@ -863,7 +880,7 @@ iteratorNextModel itId blockComponent dbm@DBModel {..} =
       Just (IteratorModel []) ->
           (IteratorExhausted, iteratorCloseModel itId dbm)
 
-      Just (IteratorModel ((epochOrSlot, hash, bi):ress)) ->
+      Just (IteratorModel ((epochOrSlot, hash, bytes, binfo):ress)) ->
           (res, dbm')
         where
           dbm' = dbm
@@ -871,7 +888,7 @@ iteratorNextModel itId blockComponent dbm@DBModel {..} =
             }
 
           res = IteratorResult $
-            extractBlockComponent hash slot isEBB bi blockComponent
+            extractBlockComponent hash slot isEBB bytes binfo blockComponent
 
           (slot, isEBB) = case epochOrSlot of
             Left epoch  -> (slotNoOfEBB' dbm epoch, IsEBB)
@@ -882,9 +899,9 @@ iteratorHasNextModel :: IteratorId
                      -> Maybe (Either EpochNo SlotNo, hash)
 iteratorHasNextModel itId DBModel { dbmIterators } =
     case Map.lookup itId dbmIterators of
-      Nothing                                         -> Nothing
-      Just (IteratorModel [])                         -> Nothing
-      Just (IteratorModel ((epochOrSlot, hash, _):_)) -> Just (epochOrSlot, hash)
+      Nothing                                            -> Nothing
+      Just (IteratorModel [])                            -> Nothing
+      Just (IteratorModel ((epochOrSlot, hash, _, _):_)) -> Just (epochOrSlot, hash)
 
 iteratorCloseModel :: IteratorId -> DBModel hash -> DBModel hash
 iteratorCloseModel itId dbm@DBModel { dbmIterators } =

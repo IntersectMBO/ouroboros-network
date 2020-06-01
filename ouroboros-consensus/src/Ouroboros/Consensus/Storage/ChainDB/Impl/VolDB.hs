@@ -107,13 +107,14 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 -- The intention is that all interaction with the VolatileDB goes through this
 -- module.
 data VolDB m blk = VolDB {
-      volDB     :: VolatileDB (HeaderHash blk) m
-    , decHeader :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , decBlock  :: forall s. Decoder s (Lazy.ByteString -> blk)
+      volDB              :: !(VolatileDB (HeaderHash blk) m)
+    , decHeader          :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+    , decBlock           :: forall s. Decoder s (Lazy.ByteString -> blk)
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock  :: blk -> BinaryInfo Encoding
-    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , encBlock           :: !(blk -> Encoding)
+    , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
+    , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
 
 -- Universal type; we can't use generics
@@ -124,6 +125,7 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt getBinaryBlockInfo
     , noUnexpectedThunks ctxt addHdrEnv
     ]
 
@@ -136,15 +138,16 @@ type TraceEvent blk =
 -------------------------------------------------------------------------------}
 
 data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
-      volHasFS          :: HasFS m h
-    , volCheckIntegrity :: blk -> Bool
-    , volBlocksPerFile  :: BlocksPerFile
-    , volDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , volDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , volEncodeBlock    :: blk -> BinaryInfo Encoding
-    , volAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
-    , volValidation     :: VolDB.BlockValidationPolicy
-    , volTracer         :: Tracer m (TraceEvent blk)
+      volHasFS              :: HasFS m h
+    , volCheckIntegrity     :: blk -> Bool
+    , volBlocksPerFile      :: BlocksPerFile
+    , volDecodeHeader       :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+    , volDecodeBlock        :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , volEncodeBlock        :: blk -> Encoding
+    , volGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+    , volAddHdrEnv          :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , volValidation         :: VolDB.BlockValidationPolicy
+    , volTracer             :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -156,20 +159,22 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 -- * 'volDecodeHeader'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
+-- * 'volGetBinaryBlockInfo'
 -- * 'volAddHdrEnv'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
-      volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
-    , volTracer         = nullTracer
+      volHasFS              = ioHasFS $ MountPoint (fp </> "volatile")
+    , volTracer             = nullTracer
       -- Fields without a default
-    , volCheckIntegrity = error "no default for volCheckIntegrity"
-    , volBlocksPerFile  = error "no default for volBlocksPerFile"
-    , volDecodeHeader   = error "no default for volDecodeHeader"
-    , volDecodeBlock    = error "no default for volDecodeBlock"
-    , volEncodeBlock    = error "no default for volEncodeBlock"
-    , volAddHdrEnv      = error "no default for volAddHdrEnv"
-    , volValidation     = error "no default for volValidation"
+    , volCheckIntegrity     = error "no default for volCheckIntegrity"
+    , volBlocksPerFile      = error "no default for volBlocksPerFile"
+    , volDecodeHeader       = error "no default for volDecodeHeader"
+    , volDecodeBlock        = error "no default for volDecodeBlock"
+    , volEncodeBlock        = error "no default for volEncodeBlock"
+    , volGetBinaryBlockInfo = error "no default for volGetBinaryBlockInfo"
+    , volAddHdrEnv          = error "no default for volAddHdrEnv"
+    , volValidation         = error "no default for volValidation"
     }
 
 openDB :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
@@ -178,11 +183,12 @@ openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB volatileDbArgs
     return VolDB
-      { volDB     = volDB
-      , decHeader = volDecodeHeader
-      , decBlock  = volDecodeBlock
-      , encBlock  = volEncodeBlock
-      , addHdrEnv = volAddHdrEnv
+      { volDB              = volDB
+      , decHeader          = volDecodeHeader
+      , decBlock           = volDecodeBlock
+      , encBlock           = volEncodeBlock
+      , getBinaryBlockInfo = volGetBinaryBlockInfo
+      , addHdrEnv          = volAddHdrEnv
       }
   where
     volatileDbArgs = VolDB.VolatileDbArgs
@@ -196,10 +202,12 @@ openDB args@VolDbArgs{..} = do
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> BinaryInfo Encoding)
+        -> (blk -> Encoding)
+        -> (blk -> BinaryBlockInfo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> VolDB m blk
-mkVolDB volDB decHeader decBlock encBlock addHdrEnv = VolDB {..}
+mkVolDB volDB decHeader decBlock encBlock getBinaryBlockInfo addHdrEnv =
+    VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -231,9 +239,10 @@ putBlock
   :: (MonadCatch m, HasHeader blk, GetHeader blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo binInfo b) binaryBlob
+    VolDB.putBlock vol (extractInfo b binaryBlockInfo) binaryBlob
   where
-    binInfo@BinaryInfo { binaryBlob } = CBOR.toBuilder <$> encBlock b
+    binaryBlockInfo = getBinaryBlockInfo b
+    binaryBlob      = CBOR.toBuilder $ encBlock b
 
 closeDB :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 closeDB db = withDB db VolDB.closeDB
@@ -492,15 +501,19 @@ blockFileParser :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
                      m
                      (HeaderHash blk)
 blockFileParser VolDbArgs{..} =
-    blockFileParser' volHasFS volEncodeBlock volDecodeBlock
-      volCheckIntegrity volValidation
+    blockFileParser'
+      volHasFS
+      volGetBinaryBlockInfo
+      volDecodeBlock
+      volCheckIntegrity
+      volValidation
 
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
 blockFileParser'
   :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
   => HasFS m h
-  -> (blk -> BinaryInfo Encoding)
+  -> (blk -> BinaryBlockInfo)
   -> (forall s. Decoder s (Lazy.ByteString -> blk))
   -> (blk -> Bool)
   -> VolDB.BlockValidationPolicy
@@ -508,14 +521,12 @@ blockFileParser'
        Util.CBOR.ReadIncrementalErr
        m
        (HeaderHash blk)
-blockFileParser' hasFS encodeBlock decodeBlock isNotCorrupt validationPolicy =
+blockFileParser' hasFS getBinaryBlockInfo decodeBlock isNotCorrupt validationPolicy =
     VolDB.Parser $ \fsPath -> Util.CBOR.withStreamIncrementalOffsets
       hasFS decodeBlock fsPath (checkEntries [])
   where
-    -- It looks weird that we use an encoding function 'encodeBlock' during
-    -- parsing, but this is quite cheap, since the encoding is already cached.
     extractInfo' :: blk -> VolDB.BlockInfo (HeaderHash blk)
-    extractInfo' blk = extractInfo (encodeBlock blk) blk
+    extractInfo' blk = extractInfo blk (getBinaryBlockInfo blk)
 
     noValidation :: Bool
     noValidation = validationPolicy == VolDB.NoValidation
@@ -608,10 +619,10 @@ fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
 extractInfo :: (HasHeader blk, GetHeader blk)
-            => BinaryInfo a
-            -> blk
+            => blk
+            -> BinaryBlockInfo
             -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo BinaryInfo{..} b = VolDB.BlockInfo {
+extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
     , bpreBid       = fromChainHash (blockPrevHash b)

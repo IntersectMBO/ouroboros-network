@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Types
   , BlockOrEBB (..)
   , isBlockOrEBB
   , HashInfo (..)
-  , BinaryInfo (..)
+  , BinaryBlockInfo (..)
   , ChunkFileParser (..)
   , ValidationPolicy (..)
   , WrongBoundError (..)

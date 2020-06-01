@@ -8,8 +8,8 @@
 module Ouroboros.Consensus.Storage.Common (
     -- * Indexing
     tipIsGenesis
-    -- * BinaryInfo
-  , BinaryInfo (..)
+    -- * BinaryBlockInfo
+  , BinaryBlockInfo (..)
   , extractHeader
     -- * BlockComponent
   , DB (..)
@@ -39,28 +39,31 @@ tipIsGenesis Origin = True
 tipIsGenesis (At _) = False
 
 {-------------------------------------------------------------------------------
-  BinaryInfo
+  BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
 -- | Information about the serialised block.
-data BinaryInfo blob = BinaryInfo
-  { binaryBlob   :: !blob
-  , headerOffset :: !Word16
-    -- ^ The offset within the 'binaryBlob' at which the header starts.
+data BinaryBlockInfo = BinaryBlockInfo
+  { headerOffset :: !Word16
+    -- ^ The offset within the serialised block at which the header starts.
   , headerSize   :: !Word16
     -- ^ How many bytes the header is long. Extracting the 'headerSize' bytes
-    -- from 'binaryBlob' starting from 'headerOffset' should yield the header.
+    -- from serialised block starting from 'headerOffset' should yield the
+    -- header. Before passing the extracted bytes to the decoder for headers,
+    -- an envelope can be around using 'nodeAddHeaderEnvelope'.
 
     -- In the future, i.e. Shelley, we might want to extend this to include a
     -- field to tell where the transaction body ends and where the transaction
     -- witnesses begin so we can only extract the transaction body.
-  } deriving (Eq, Show, Generic, Functor)
+  } deriving (Eq, Show, Generic)
 
--- | Utility for BinaryInfo of ByteString which are quite common.
-extractHeader :: BinaryInfo ByteString -> ByteString
-extractHeader BinaryInfo { binaryBlob, headerOffset, headerSize } =
-    BL.take (fromIntegral headerSize) $
-    BL.drop (fromIntegral headerOffset) binaryBlob
+
+-- | Extract the header from the given 'ByteString' using the
+-- 'BinaryBlockInfo'.
+extractHeader :: BinaryBlockInfo -> ByteString -> ByteString
+extractHeader BinaryBlockInfo { headerOffset, headerSize } =
+      BL.take (fromIntegral headerSize)
+    . BL.drop (fromIntegral headerOffset)
 
 {-------------------------------------------------------------------------------
   BlockComponent

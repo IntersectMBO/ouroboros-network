@@ -49,8 +49,9 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeImmDbChunkInfo        = \cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeCheckIntegrity        = \_ _ -> True
+  nodeGetBinaryBlockInfo    = simpleBlockBinaryBlockInfo
 
-  nodeEncodeBlockWithInfo   = \_   -> simpleBlockBinaryInfo
+  nodeEncodeBlock           = \_   -> encode
   nodeEncodeHeader          = \_ _ -> encode
   nodeEncodeWrappedHeader   = \_ _ -> encode
   nodeEncodeGenTx           = \_   -> encode

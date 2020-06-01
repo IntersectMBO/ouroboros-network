@@ -303,8 +303,8 @@ instance RunNode TestBlock where
                             . History.getShape
                             . hardForkLedgerConfigShape
                             . configLedger
+  nodeGetBinaryBlockInfo    = hardForkBlockBinaryBlockInfo
 
-  nodeEncodeBlockWithInfo   = \_   -> encodeHardForkBlockWithInfo
   nodeEncodeBlock           = \_   -> encode
   nodeEncodeHeader          = \_ _ -> encode
   nodeEncodeGenTx           = \_   -> encode . fromNS (Proxy @GenTx)

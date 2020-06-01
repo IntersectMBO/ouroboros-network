@@ -16,7 +16,7 @@ module Ouroboros.Consensus.HardFork.Combinator.HasBlockBody (
     -- * HFC support
   , SerialiseHeaderBody(..)
   , Body(..)
-  , encodeHardForkBlockWithInfo
+  , hardForkBlockBinaryBlockInfo
   , toSerialiseOneHeader
   , toSerialiseOneBody
   , fromSerialiseOneHeader
@@ -34,7 +34,7 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
   HasBlockBody
@@ -43,11 +43,11 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 -- | Blocks that can be split into a header and a body
 --
 -- The immutable DB needs to be able to read a header out of a block (see
--- 'BinaryInfo'). When we are dealing with blocks from multiple eras, this is
--- a bit tricky: the encoder for a /header/ of a 'HardForkBlock' would insert
--- a tag to indicate which era the header is from, but the encoder for a
--- 'HardForkBlock' would instead insert a tag around the whole block, and not
--- have a nested tag around the header. This means that we cannot directly
+-- 'BinaryBlockInfo'). When we are dealing with blocks from multiple eras,
+-- this is a bit tricky: the encoder for a /header/ of a 'HardForkBlock' would
+-- insert a tag to indicate which era the header is from, but the encoder for
+-- a 'HardForkBlock' would instead insert a tag around the whole block, and
+-- not have a nested tag around the header. This means that we cannot directly
 -- apply the header decoder to the header nested inside a block, as it is
 -- missing a tag.
 --
@@ -151,10 +151,8 @@ instance ( CanHardFork xs
         Nothing  -> fail "SerialiseHeaderBody: header/body mismatch"
         Just blk -> return $ SerialiseHeaderBody blk
 
--- | Construct 'BinaryInfo' for a hard fork block
+-- | 'BinaryBlockInfo' for 'HardForkBlock'
 --
--- NOTE: This uses 'SerialiseHeaderBody' to serialise the header and body
--- separately, and then 'SerialiseOne' to encode the header and the body.
 -- This function is only useable if that serialisation strategy is used
 -- consistently. See 'toSerialiseOneHeader' and friends. Typically used with
 --
@@ -166,17 +164,14 @@ instance ( CanHardFork xs
 --
 -- TODO: The way this is currently defined is not very efficient; this is not
 -- a big deal right now as this is currently only used for tests.
-encodeHardForkBlockWithInfo
+hardForkBlockBinaryBlockInfo
   :: ( CanHardFork xs
-     , All HasBlockBody xs
      , All (Compose Serialise Header) xs
-     , All (Compose Serialise Body) xs
      )
   => HardForkBlock xs
-  -> BinaryInfo Encoding
-encodeHardForkBlockWithInfo blk = BinaryInfo {
-      binaryBlob   = encode (SerialiseHeaderBody blk)
-    , headerOffset = 1 -- Skip the list length
+  -> BinaryBlockInfo
+hardForkBlockBinaryBlockInfo blk = BinaryBlockInfo {
+      headerOffset = 1 -- Skip the list length
     , headerSize   = fromIntegral . BS.L.length . serialise $
                        toSerialiseOneHeader (getHeader blk)
     }

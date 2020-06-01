@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Block (ConvertRawHash (..), getHeader)
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -42,7 +42,7 @@ tests = testGroup "Mock"
              )
           => proxy c -> String -> TestTree
     props _ title = testGroup title
-      [ testProperty "BinaryInfo sanity check" (prop_simpleBlockBinaryInfo @c @())
+      [ testProperty "BinaryBlockInfo sanity check" (prop_simpleBlockBinaryBlockInfo @c @())
       , testGroup "ConvertRawHash sanity check"
           [ testProperty "fromRawHash/toRawHash" (prop_simpleBlock_fromRawHash_toRawHash @c @())
           , testProperty "hashSize sanity check" (prop_simpleBlock_hashSize @c @())
@@ -50,22 +50,22 @@ tests = testGroup "Mock"
       ]
 
 {-------------------------------------------------------------------------------
-  BinaryInfo
+  BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_simpleBlockBinaryInfo
+prop_simpleBlockBinaryBlockInfo
   :: (SimpleCrypto c, Serialise ext) => SimpleBlock c ext -> Property
-prop_simpleBlockBinaryInfo blk =
+prop_simpleBlockBinaryBlockInfo blk =
     serialisedHeader === extractedHeader
   where
-    BinaryInfo { binaryBlob, headerOffset, headerSize } =
-      simpleBlockBinaryInfo blk
+    BinaryBlockInfo { headerOffset, headerSize } =
+      simpleBlockBinaryBlockInfo blk
 
     extractedHeader :: Lazy.ByteString
     extractedHeader =
         Lazy.take (fromIntegral headerSize)   $
         Lazy.drop (fromIntegral headerOffset) $
-        toLazyByteString binaryBlob
+        toLazyByteString (encode blk)
 
     serialisedHeader :: Lazy.ByteString
     serialisedHeader = toLazyByteString $

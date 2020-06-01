@@ -18,10 +18,10 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , Header (..)
   , mkShelleyHeader
     -- * Serialisation
-  , encodeShelleyBlockWithInfo
   , encodeShelleyBlock
   , decodeShelleyBlock
   , shelleyAddHeaderEnvelope
+  , shelleyBinaryBlockInfo
   , encodeShelleyHeader
   , decodeShelleyHeader
     -- * Conversion
@@ -51,7 +51,7 @@ import           Ouroboros.Network.Block (BlockMeasure, ChainHash (..),
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -195,16 +195,6 @@ instance Crypto c => ToCBOR (Header (ShelleyBlock c)) where
 instance Crypto c => FromCBOR (Annotator (Header (ShelleyBlock c))) where
   fromCBOR = fmap mkShelleyHeader <$> fromCBOR
 
-encodeShelleyBlockWithInfo :: Crypto c => ShelleyBlock c -> BinaryInfo Encoding
-encodeShelleyBlockWithInfo blk = BinaryInfo {
-      binaryBlob   = toCBOR blk
-      -- Drop the 'encodeListLen' that precedes the header and the body (= tx
-      -- seq)
-    , headerOffset = 1
-      -- The Shelley decoders use annotations, so this is cheap
-    , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
-    }
-
 encodeShelleyBlock :: Crypto c => ShelleyBlock c -> Encoding
 encodeShelleyBlock = toCBOR
 
@@ -216,6 +206,15 @@ decodeShelleyBlock = (. Full) . runAnnotator <$> fromCBOR
 -- to the header, no modifications needed.
 shelleyAddHeaderEnvelope :: Lazy.ByteString -> Lazy.ByteString
 shelleyAddHeaderEnvelope = id
+
+shelleyBinaryBlockInfo :: Crypto c => ShelleyBlock c -> BinaryBlockInfo
+shelleyBinaryBlockInfo blk = BinaryBlockInfo {
+      -- Drop the 'encodeListLen' that precedes the header and the body (= tx
+      -- seq)
+      headerOffset = 1
+      -- The Shelley decoders use annotations, so this is cheap
+    , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
+    }
 
 encodeShelleyHeader :: Crypto c => Header (ShelleyBlock c) -> Encoding
 encodeShelleyHeader = toCBOR

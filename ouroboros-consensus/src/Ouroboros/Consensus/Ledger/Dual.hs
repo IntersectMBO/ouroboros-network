@@ -35,7 +35,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx(..)
   , TxId(..)
     -- * Serialisation
-  , encodeDualBlockWithInfo
+  , encodeDualBlock
   , decodeDualBlock
   , encodeDualHeader
   , decodeDualHeader
@@ -47,6 +47,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , decodeDualGenTxErr
   , encodeDualLedgerState
   , decodeDualLedgerState
+  , dualBinaryBlockInfo
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -64,8 +65,6 @@ import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Storage.Common
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -76,6 +75,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.Condense
+
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
   Block
@@ -584,26 +585,15 @@ agreeOnError f (ma, mb) =
   For now we just require 'Serialise' for the auxiliary block.
 -------------------------------------------------------------------------------}
 
--- | The binary info just refers to the main block
---
--- This is sufficient, because we never need just the header of the auxiliary.
-encodeDualBlockWithInfo :: (Bridge m a, Serialise a)
-                        => (m -> BinaryInfo Encoding)
-                        -> DualBlock m a -> BinaryInfo Encoding
-encodeDualBlockWithInfo encodeMainWithInfo DualBlock{..} =
-    BinaryInfo {
-        headerSize   = headerSize   mainWithInfo
-      , headerOffset = headerOffset mainWithInfo + 1
-      , binaryBlob   = mconcat [
-                           encodeListLen 3
-                         , binaryBlob mainWithInfo
-                         , encode dualBlockAux
-                         , encode dualBlockBridge
-                         ]
-      }
-  where
-    mainWithInfo :: BinaryInfo Encoding
-    mainWithInfo = encodeMainWithInfo dualBlockMain
+encodeDualBlock :: (Bridge m a, Serialise a)
+                => (m -> Encoding)
+                -> DualBlock m a -> Encoding
+encodeDualBlock encodeMain DualBlock{..} = mconcat [
+        encodeListLen 3
+      , encodeMain dualBlockMain
+      , encode dualBlockAux
+      , encode dualBlockBridge
+      ]
 
 decodeDualBlock :: (Bridge m a, Serialise a)
                 => Decoder s (Lazy.ByteString -> m)
@@ -699,3 +689,17 @@ decodeDualLedgerState decodeMain = do
       <$> decodeMain
       <*> decode
       <*> decode
+
+-- | The binary info just refers to the main block
+--
+-- This is sufficient, because we never need just the header of the auxiliary.
+dualBinaryBlockInfo :: (m -> BinaryBlockInfo)
+                    -> DualBlock m a -> BinaryBlockInfo
+dualBinaryBlockInfo mainGetBinaryBlockInfo DualBlock{..} =
+    BinaryBlockInfo {
+        headerSize   = headerSize   mainBinaryBlockInfo
+      , headerOffset = headerOffset mainBinaryBlockInfo + 1
+      }
+  where
+    mainBinaryBlockInfo :: BinaryBlockInfo
+    mainBinaryBlockInfo = mainGetBinaryBlockInfo dualBlockMain

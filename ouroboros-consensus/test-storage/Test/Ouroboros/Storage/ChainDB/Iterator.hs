@@ -10,7 +10,6 @@ module Test.Ouroboros.Storage.ChainDB.Iterator
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode, serialiseIncremental)
 import           Control.Monad.Except
@@ -396,7 +395,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
         return $ mkVolDB volDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo addHdrEnv
+          encode getBinaryBlockInfo addHdrEnv
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -423,21 +422,20 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ (Chain.toOldestFirst chain) $ \block -> case blockIsEBB block of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)
-            (CBOR.toBuilder <$> encodeWithBinaryInfo block)
+            (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
           Just epoch -> ImmDB.appendEBB immDB
             epoch (blockNo block) (blockHash block)
-            (CBOR.toBuilder <$> encodeWithBinaryInfo block)
+            (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo chunkInfo addHdrEnv
+          encode getBinaryBlockInfo chunkInfo addHdrEnv
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
 
-encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
-encodeWithBinaryInfo blk = BinaryInfo
-    { binaryBlob   = enc
+getBinaryBlockInfo :: TestBlock -> BinaryBlockInfo
+getBinaryBlockInfo blk = BinaryBlockInfo {
       -- The serialised @Header TestBlock@ is the same as the serialised
       -- @TestBlock@
-    , headerOffset = 0
+      headerOffset = 0
     , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString enc)
     }
   where

@@ -45,7 +45,7 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Storage.Common (BinaryInfo (..),
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
                      BlockComponent (..), extractHeader)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -259,11 +259,13 @@ extractBlockComponent (BlockInfo {..}, bytes) = go
       GetPure a     -> a
       GetApply f bc -> go f $ go bc
 
-    header = extractHeader BinaryInfo {
-        binaryBlob   = bytes
-      , headerOffset = bheaderOffset
-      , headerSize   = bheaderSize
-      }
+    header =
+      extractHeader
+        BinaryBlockInfo {
+            headerOffset = bheaderOffset
+          , headerSize   = bheaderSize
+          }
+        bytes
 
 putBlockModel
   :: forall blockId. Ord blockId
