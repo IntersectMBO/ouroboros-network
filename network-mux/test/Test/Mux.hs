@@ -432,6 +432,50 @@ waitOnAllClients clientVar clientTot = do
             c <- readTVar clientVar
             unless (c == clientTot) retry
 
+setupMiniReqRsp' :: IO ()
+                -- ^ Action performed by responder before processing the response
+                -> DummyTrace
+                -- ^ Trace of messages
+                -> IO ( Channel IO -> IO Bool
+                      , Channel IO -> IO Bool
+                      )
+setupMiniReqRsp' serverAction (DummyTrace msgs) = do
+
+    return ( clientApp
+           , serverApp
+           )
+  where
+    requests  = map fst msgs
+    responses = map snd msgs
+
+    reqRespServer :: [DummyPayload]
+                  -> ReqRespServer DummyPayload DummyPayload IO Bool
+    reqRespServer = go []
+      where
+        go reqs (resp:resps) = ReqRespServer {
+            recvMsgReq  = \req -> serverAction >> return (resp, go (req:reqs) resps),
+            recvMsgDone = pure $ reverse reqs == requests
+          }
+        go reqs [] = ReqRespServer {
+            recvMsgReq  = error "server out of replies",
+            recvMsgDone = pure $ reverse reqs == requests
+          }
+
+    reqRespClient :: [DummyPayload]
+                  -> ReqRespClient DummyPayload DummyPayload IO Bool
+    reqRespClient = go []
+      where
+        go resps []         = SendMsgDone (pure $ reverse resps == responses)
+        go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
+
+    clientApp :: Channel IO
+              -> IO Bool
+    clientApp clientChan = runClient nullTracer clientChan (reqRespClient requests)
+
+    serverApp :: Channel IO
+              -> IO Bool
+    serverApp serverChan = runServer nullTracer serverChan (reqRespServer responses)
+
 --
 -- Running with queues and pipes
 --
@@ -639,9 +683,6 @@ prop_mux_starvation (Uneven response0 response1) =
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     activeMpsVar <- atomically $ newTVar 0
-    -- 2 active initiators and 2 active responders
-    endMpsVar <- atomically $ newTVar 4
-    -- track SDU headers in the test run
     traceHeaderVar <- newTVarM []
     let headerTracer =
           Tracer $ \e -> case e of
@@ -658,47 +699,70 @@ prop_mux_starvation (Uneven response0 response1) =
         clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
-    (verify_short, client_short, server_short) <-
-        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
-                        endMpsVar  $ DummyTrace [(request, response0)]
-    (verify_long, client_long, server_long) <-
-        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
-                        endMpsVar $ DummyTrace [(request, response1)]
+    (client_short, server_short) <-
+        setupMiniReqRsp' (waitOnAllClients activeMpsVar 2)
+                         $ DummyTrace [(request, response1)]
+    (client_long, server_long) <-
+        setupMiniReqRsp' (waitOnAllClients activeMpsVar 2)
+                         $ DummyTrace [(request, response1)]
 
-    let clientApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.InitiatorProtocolOnly client_short
-                        }
-                      , Compat.MuxMiniProtocol  {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 3,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.InitiatorProtocolOnly client_long
-                        }
-                      ]
 
-        serverApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.ResponderProtocolOnly server_short
-                        }
-                      , Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 3,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.ResponderProtocolOnly server_long
-                        }
-                      ]
+    let clientApp2 = MiniProtocolInfo {
+                         miniProtocolNum = MiniProtocolNum 2,
+                         miniProtocolDir = InitiatorDirectionOnly,
+                         miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+        clientApp3 = MiniProtocolInfo {
+                         miniProtocolNum = MiniProtocolNum 3,
+                         miniProtocolDir = InitiatorDirectionOnly,
+                         miniProtocolLimits = defaultMiniProtocolLimits
+                       }
 
-    clientAsync <- async $ Compat.muxStart (clientTracer <> headerTracer)
-                                    clientApp clientBearer
-    serverAsync <- async $ Compat.muxStart serverTracer serverApp serverBearer
+        serverApp2 = MiniProtocolInfo {
+                         miniProtocolNum = MiniProtocolNum 2,
+                         miniProtocolDir = ResponderDirectionOnly,
+                         miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+        serverApp3 = MiniProtocolInfo {
+                         miniProtocolNum = MiniProtocolNum 3,
+                         miniProtocolDir = ResponderDirectionOnly,
+                         miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+
+    serverMux <- newMux $ MiniProtocolBundle [serverApp2, serverApp3]
+    serverMux_aid <- async $ runMux serverTracer serverMux serverBearer
+    serverRes2 <- runMiniProtocol serverMux (miniProtocolNum serverApp2) (miniProtocolDir serverApp2)
+                   StartOnDemand server_short
+    serverRes3 <- runMiniProtocol serverMux (miniProtocolNum serverApp3) (miniProtocolDir serverApp3)
+                   StartOnDemand server_long
+
+    clientMux <- newMux $ MiniProtocolBundle [clientApp2, clientApp3]
+    clientMux_aid <- async $ runMux (clientTracer <> headerTracer) clientMux clientBearer
+    clientRes2 <- runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
+                   StartEagerly client_short
+    clientRes3 <- runMiniProtocol clientMux (miniProtocolNum clientApp3) (miniProtocolDir clientApp3)
+                   StartEagerly client_long
+
+
+    -- Fetch results
+    srvRes2 <- atomically serverRes2
+    srvRes3 <- atomically serverRes3
+    cliRes2 <- atomically clientRes2
+    cliRes3 <- atomically clientRes3
 
     -- First verify that all messages where received correctly
-    _ <- waitBoth clientAsync serverAsync
-    res_short <- verify_short
-    res_long  <- verify_long
+    let res_short = case (srvRes2, cliRes2) of
+                         (Left _, _) -> False
+                         (_, Left _) -> False
+                         (Right a, Right b) -> a && b
+    let res_long  = case (srvRes3, cliRes3) of
+                         (Left _, _) -> False
+                         (_, Left _) -> False
+                         (Right a, Right b) -> a && b
+
+    stopMux serverMux
+    stopMux clientMux
+    _ <- waitBoth serverMux_aid clientMux_aid
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
