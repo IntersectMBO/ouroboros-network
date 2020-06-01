@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -177,14 +178,14 @@ setupOverrideConfig newConfig setup = setup {
 setupExpectedCannotLead :: SetupDualPBft
                         -> SlotNo
                         -> NodeId
-                        -> ACannotLead DualByronBlock
+                        -> WrapCannotLead DualByronBlock
                         -> Bool
-setupExpectedCannotLead setup@SetupDualPBft{..} s nid (ACannotLead cl) =
+setupExpectedCannotLead setup@SetupDualPBft{..} s nid (WrapCannotLead cl) =
     RealPBFT.expectedCannotLead
       (setupSecurityParam setup)
       (numCoreNodes setupConfig)
       (nodeRestarts setupConfig)
-      s nid (ACannotLead cl)
+      s nid (WrapCannotLead cl)
 
 {-------------------------------------------------------------------------------
   Generator for 'SetupDualPBft'

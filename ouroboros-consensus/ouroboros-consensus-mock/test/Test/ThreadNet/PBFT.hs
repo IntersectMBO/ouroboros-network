@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Mock.Node.PBFT (protocolInfoMockPBFT)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -157,8 +158,8 @@ type Blk = SimpleBlock SimpleMockCrypto
 expectedCannotLead :: NumCoreNodes
                    -> SlotNo
                    -> NodeId
-                   -> ACannotLead Blk
+                   -> WrapCannotLead Blk
                    -> Bool
 expectedCannotLead _ _ _ = \case
-    ACannotLead PBftCannotLeadThresholdExceeded{} -> True
-    _                                             -> False
+    WrapCannotLead PBftCannotLeadThresholdExceeded{} -> True
+    _                                                -> False

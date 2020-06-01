@@ -45,6 +45,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
 
@@ -636,11 +637,11 @@ expectedCannotLead
   -> NodeRestarts
   -> SlotNo
   -> NodeId
-  -> ACannotLead ByronBlock
+  -> WrapCannotLead ByronBlock
   -> Bool
 expectedCannotLead
   k numCoreNodes (NodeRestarts nrs)
-  s (CoreId (CoreNodeId i)) (ACannotLead cl)
+  s (CoreId (CoreNodeId i)) (WrapCannotLead cl)
   = case cl of
     PBftCannotLeadThresholdExceeded{} ->
         -- TODO validate this against Ref implementation?

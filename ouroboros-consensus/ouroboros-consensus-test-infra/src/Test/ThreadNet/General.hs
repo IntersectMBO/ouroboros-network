@@ -19,7 +19,6 @@ module Test.ThreadNet.General (
   , truncateNodeRestarts
   , truncateNodeTopology
     -- * Expected CannotLead
-  , ACannotLead (..)
   , noExpectedCannotLeads
     -- * Re-exports
   , ForgeEbbEnv (..)
@@ -51,10 +50,10 @@ import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract (CannotLead,
-                     LedgerView)
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -298,7 +297,7 @@ data PropGeneralArgs blk = PropGeneralArgs
   , pgaCountTxs           :: blk -> Word64
     -- ^ the number of transactions in the block
     --
-  , pgaExpectedCannotLead :: SlotNo -> NodeId -> ACannotLead blk -> Bool
+  , pgaExpectedCannotLead :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
     -- ^ whether this 'CannotLead' was expected
     --
   , pgaFirstBlockNo       :: BlockNo
@@ -309,8 +308,6 @@ data PropGeneralArgs blk = PropGeneralArgs
     -- specifies itself as having block number 0, which implies the genesis
     -- block is block number 0, and so the first proper block is number 1. For
     -- the mock tests, the first proper block is block number 0.
-    --p
-    -- TODO This implies the mock genesis block does not have a number?
     --
   , pgaFixedMaxForkLength :: Maybe NumBlocks
     -- ^ the maximum length of a unique suffix among the final chains
@@ -333,11 +330,8 @@ data PropGeneralArgs blk = PropGeneralArgs
   , pgaCustomLabelling    :: TestOutput blk -> Property -> Property
   }
 
--- | An injective wrapper around 'CannotLead'
-newtype ACannotLead blk = ACannotLead (CannotLead (BlockProtocol blk))
-
 -- | Expect no 'CannotLead's
-noExpectedCannotLeads :: SlotNo -> NodeId -> ACannotLead blk -> Bool
+noExpectedCannotLeads :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
 noExpectedCannotLeads _ _ _ = False
 
 -- | The properties always required
@@ -530,7 +524,7 @@ prop_general pga testOutput =
             , let NodeOutput{nodeOutputCannotLeads} = no
             ]
         ok s nid cl =
-            expectedCannotLead s nid (ACannotLead cl)
+            expectedCannotLead s nid (WrapCannotLead cl)
 
     schedule = case mbSchedule of
         Nothing    -> actualLeaderSchedule

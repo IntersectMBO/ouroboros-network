@@ -1190,7 +1190,7 @@ mkTestOutput vertexInfos = do
                   [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
               , nodeOutputCannotLeads =
                   Map.fromListWith (flip (++)) $
-                  [ (s, [err]) | TraceNotCannotLead s err <- nodeEventsForges ]
+                  [ (s, [err]) | TraceNodeCannotLead s err <- nodeEventsForges ]
               , nodeOutputFinalChain  = ch
               , nodeOutputFinalLedger = ldgr
               , nodeOutputForges      =
