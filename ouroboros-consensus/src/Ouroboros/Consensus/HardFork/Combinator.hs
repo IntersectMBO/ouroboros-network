@@ -56,7 +56,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
 import           Ouroboros.Consensus.HardFork.Combinator.Forge as X ()
 
 -- Instance for 'ConfigSupportsNode'
-import           Ouroboros.Consensus.HardFork.Combinator.Node as X
+import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()
 
 -- Definition of InPairs (required to define translations)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as X

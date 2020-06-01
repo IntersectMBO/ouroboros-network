@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , countSimpleGenTxs
     -- * Configuration
   , BlockConfig(..)
+  , CodecConfig(..)
   , SimpleLedgerConfig(..)
     -- * Protocol-specific part
   , MockProtocolSpecific(..)
@@ -256,6 +257,13 @@ newtype instance BlockConfig (SimpleBlock c ext) =
     SimpleBlockConfig SecurityParam
   deriving stock   (Generic)
   deriving newtype (NoUnexpectedThunks)
+
+instance HasCodecConfig (SimpleBlock c ext) where
+
+  -- | Only the 'SecurityParam' is required for simple blocks
+  newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+
+  getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
 
 instance HasHardForkHistory (SimpleBlock c ext) where
   type HardForkIndices (SimpleBlock c ext) = '[SimpleBlock c ext]

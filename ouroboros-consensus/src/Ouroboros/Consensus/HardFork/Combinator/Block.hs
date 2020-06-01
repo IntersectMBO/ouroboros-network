@@ -14,8 +14,8 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
-    BlockConfig(..)
-  , Header(..)
+    Header(..)
+  , CodecConfig(..)
   ) where
 
 import           Data.FingerTree.Strict (Measured (..))
@@ -93,6 +93,21 @@ instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
   blockNo        =            blockNo       . getHardForkHeader
   blockInvariant = const True
 
+{-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
+
+instance All HasCodecConfig xs => HasCodecConfig (HardForkBlock xs) where
+  newtype CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
+        hardForkCodecConfigPerEra :: PerEraCodecConfig xs
+      }
+
+  getCodecConfig =
+        HardForkCodecConfig
+      . PerEraCodecConfig
+      . hcmap (Proxy @HasCodecConfig) getCodecConfig
+      . getPerEraBlockConfig
+      . hardForkBlockConfigPerEra
 
 {-------------------------------------------------------------------------------
   ConvertRawHash

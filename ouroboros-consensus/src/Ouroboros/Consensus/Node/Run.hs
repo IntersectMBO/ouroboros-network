@@ -48,6 +48,7 @@ class ( LedgerSupportsProtocol    blk
       , HasNetworkProtocolVersion blk
       , CanForge                  blk
       , ConfigSupportsNode        blk
+      , HasCodecConfig            blk
       , ConvertRawHash            blk
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)

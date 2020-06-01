@@ -123,10 +123,12 @@ data instance BlockConfig BlockB = BCfgB
 type instance BlockProtocol BlockB = ProtocolB
 type instance HeaderHash    BlockB = Hash
 
-instance ConfigSupportsNode BlockB where
+instance HasCodecConfig BlockB where
   data CodecConfig BlockB = CCfgB
 
   getCodecConfig     _ = CCfgB
+
+instance ConfigSupportsNode BlockB where
   getSystemStart     _ = SystemStart dawnOfTime
   getNetworkMagic    _ = NetworkMagic 0
   getProtocolMagicId _ = ProtocolMagicId 0

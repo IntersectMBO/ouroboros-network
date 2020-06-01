@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
+  , CodecConfig (..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -35,3 +36,9 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
     }
   deriving stock (Show, Generic)
   deriving anyclass NoUnexpectedThunks
+
+instance HasCodecConfig (ShelleyBlock c) where
+  -- | No particular codec configuration is needed for Shelley
+  data CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+
+  getCodecConfig = const ShelleyCodecConfig

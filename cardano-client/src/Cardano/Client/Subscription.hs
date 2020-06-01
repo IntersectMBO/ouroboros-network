@@ -9,6 +9,7 @@ module Cardano.Client.Subscription (
 import           Data.Proxy
 import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as BSL
+import           Ouroboros.Consensus.Block (getCodecConfig)
 import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
 import           Ouroboros.Consensus.Network.NodeToClient (clientCodecs, ClientCodecs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion (
@@ -31,7 +32,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import qualified Ouroboros.Network.NodeToClient (NodeToClientVersion)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Prelude
-import           Ouroboros.Consensus.Config.SupportsNode (getCodecConfig, getNetworkMagic)
+import           Ouroboros.Consensus.Config.SupportsNode (getNetworkMagic)
 
 subscribe ::
   ( RunNode blk , MonadST m )

@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query ()
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
+import           Ouroboros.Consensus.HardFork.Combinator.Node ()
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
@@ -104,20 +105,22 @@ newtype instance BlockConfig (DegenFork b) = DBCfg {
     }
   deriving (NoUnexpectedThunks)
 
+instance HasCodecConfig b => HasCodecConfig (DegenFork b) where
+  newtype CodecConfig (DegenFork b) = DCCfg {
+        unDCCfg :: CodecConfig (HardForkBlock '[b])
+      }
+
+  getCodecConfig = DCCfg . getCodecConfig . unDBCfg
+
 newtype instance LedgerState (DegenFork b) = DLgr {
       unDLgr :: LedgerState (HardForkBlock '[b])
     }
   deriving (Eq, Show, NoUnexpectedThunks)
 
 instance ConfigSupportsNode b => ConfigSupportsNode (DegenFork b) where
-  newtype CodecConfig (DegenFork b) = DCCfg {
-        unDCCfg :: CodecConfig (HardForkBlock '[b])
-      }
-
-  getCodecConfig     = DCCfg . getCodecConfig     . unDBCfg
-  getSystemStart     =         getSystemStart     . unDBCfg
-  getNetworkMagic    =         getNetworkMagic    . unDBCfg
-  getProtocolMagicId =         getProtocolMagicId . unDBCfg
+  getSystemStart     = getSystemStart     . unDBCfg
+  getNetworkMagic    = getNetworkMagic    . unDBCfg
+  getProtocolMagicId = getProtocolMagicId . unDBCfg
 
 {-------------------------------------------------------------------------------
   Forward HasHeader instances

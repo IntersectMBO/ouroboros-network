@@ -156,16 +156,16 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
     , configBlock     = dualBlockConfigMain  configBlock
     }
 
-instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
-
+instance HasCodecConfig m => HasCodecConfig (DualBlock m a) where
   newtype CodecConfig (DualBlock m a) = DualCodecConfig {
         dualCodecConfigMain :: CodecConfig m
-      }
+     }
 
   getCodecConfig DualBlockConfig{..} = DualCodecConfig {
         dualCodecConfigMain = getCodecConfig dualBlockConfigMain
       }
 
+instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain
   getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
   getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain

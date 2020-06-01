@@ -2,15 +2,10 @@
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
-
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Node (
-    -- * Type family instances
-    CodecConfig(..)
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Node () where
 
 import           Data.Proxy
 import           Data.SOP.Strict
@@ -28,17 +23,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 
 instance (All ConfigSupportsNode xs, IsNonEmpty xs)
       => ConfigSupportsNode (HardForkBlock xs) where
-  newtype CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
-        hardForkCodecConfigPerEra :: PerEraCodecConfig xs
-      }
-
-  getCodecConfig =
-        HardForkCodecConfig
-      . PerEraCodecConfig
-      . hcmap (Proxy @ConfigSupportsNode) getCodecConfig
-      . getPerEraBlockConfig
-      . hardForkBlockConfigPerEra
-
   getSystemStart     = getSameConfigValue getSystemStart
   getNetworkMagic    = getSameConfigValue getNetworkMagic
   getProtocolMagicId = getSameConfigValue getProtocolMagicId

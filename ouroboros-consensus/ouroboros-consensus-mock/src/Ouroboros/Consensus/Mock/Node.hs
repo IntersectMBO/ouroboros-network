@@ -18,7 +18,6 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (defaultDecodeAnnTip,
                      defaultEncodeAnnTip)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol

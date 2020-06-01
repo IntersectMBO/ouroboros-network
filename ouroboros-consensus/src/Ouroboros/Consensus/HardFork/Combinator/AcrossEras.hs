@@ -70,7 +70,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)

@@ -51,11 +51,6 @@ constructMockProtocolMagicId =
 
 instance RunMockBlock c ext
       => ConfigSupportsNode (SimpleBlock c ext) where
-
-  -- | Only the 'SecurityParam' is required for simple blocks
-  newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
-
-  getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
   getSystemStart = const $ SystemStart dummyDate
     where
       --  This doesn't matter much
