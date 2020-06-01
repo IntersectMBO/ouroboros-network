@@ -1147,6 +1147,7 @@ newNodeInfo = do
 
 data NodeOutput blk = NodeOutput
   { nodeOutputAdds        :: Map SlotNo (Set (RealPoint blk, BlockNo))
+  , nodeOutputCannotLeads :: Map SlotNo [CannotLead (BlockProtocol blk)]
   , nodeOutputFinalChain  :: Chain blk
   , nodeOutputFinalLedger :: LedgerState blk
   , nodeOutputForges      :: Map SlotNo blk
@@ -1187,6 +1188,9 @@ mkTestOutput vertexInfos = do
               { nodeOutputAdds        =
                   Map.fromListWith Set.union $
                   [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
+              , nodeOutputCannotLeads =
+                  Map.fromListWith (flip (++)) $
+                  [ (s, [err]) | TraceNodeCannotLead s err <- nodeEventsForges ]
               , nodeOutputFinalChain  = ch
               , nodeOutputFinalLedger = ldgr
               , nodeOutputForges      =

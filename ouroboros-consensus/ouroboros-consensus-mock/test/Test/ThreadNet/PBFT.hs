@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Test.ThreadNet.PBFT (
@@ -19,8 +20,6 @@ import           Ouroboros.Network.MockChain.Chain (foldChain)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.PBFT
 import           Ouroboros.Consensus.Mock.Node ()
@@ -28,6 +27,7 @@ import           Ouroboros.Consensus.Mock.Node.PBFT (protocolInfoMockPBFT)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -78,19 +78,19 @@ prop_simple_pbft_convergence
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = prop_validSimpleBlock
-      , pgaCountTxs               = countSimpleGenTxs
-      , pgaExpectedBlockRejection = expectedBlockRejection numCoreNodes
-      , pgaFirstBlockNo           = 0
-      , pgaFixedMaxForkLength     =
+      { pgaBlockProperty      = prop_validSimpleBlock
+      , pgaCountTxs           = countSimpleGenTxs
+      , pgaExpectedCannotLead = expectedCannotLead numCoreNodes
+      , pgaFirstBlockNo       = 0
+      , pgaFixedMaxForkLength =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule          =
+      , pgaFixedSchedule      =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam          = k
-      , pgaTestConfig             = testConfig
-      , pgaCustomLabelling        = const id
+      , pgaSecurityParam      = k
+      , pgaTestConfig         = testConfig
+      , pgaCustomLabelling    = const id
       }
       testOutput
   where
@@ -155,20 +155,11 @@ prop_simple_pbft_convergence
 type Blk = SimpleBlock SimpleMockCrypto
              (SimplePBftExt SimpleMockCrypto PBftMockCrypto)
 
-expectedBlockRejection :: NumCoreNodes -> BlockRejection Blk -> Bool
-expectedBlockRejection (NumCoreNodes nn) BlockRejection
-  { brBlockSlot = SlotNo s
-  , brReason    = err
-  , brRejector  = CoreId (CoreNodeId i)
-  }
-  | ownBlock               = case err of
-    ExtValidationErrorHeader
-      (HeaderProtocolError PBftExceededSignThreshold{}) -> True
-    _                                                   -> False
-  where
-    -- Because of round-robin and the fact that the id divides slot, we know
-    -- the node lead but rejected its own block. This is the only case we
-    -- expect. (Rejecting its own block also prevents the node from propagating
-    -- that block.)
-    ownBlock = i == mod s nn
-expectedBlockRejection _ _ = False
+expectedCannotLead :: NumCoreNodes
+                   -> SlotNo
+                   -> NodeId
+                   -> WrapCannotLead Blk
+                   -> Bool
+expectedCannotLead _ _ _ = \case
+    WrapCannotLead PBftCannotLeadThresholdExceeded{} -> True
+    _                                                -> False

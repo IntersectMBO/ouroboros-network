@@ -51,15 +51,15 @@ prop_simple_real_tpraos_convergence
 prop_simple_real_tpraos_convergence k d
   testConfig@TestConfig{numCoreNodes = NumCoreNodes n, initSeed} =
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = const $ property True
-      , pgaCountTxs               = fromIntegral . length . extractTxs
-      , pgaExpectedBlockRejection = const False
-      , pgaFirstBlockNo           = 0
-      , pgaFixedMaxForkLength     = Nothing
-      , pgaFixedSchedule          = Nothing
-      , pgaSecurityParam          = k
-      , pgaTestConfig             = testConfig
-      , pgaCustomLabelling        = const id
+      { pgaBlockProperty      = const $ property True
+      , pgaCountTxs           = fromIntegral . length . extractTxs
+      , pgaExpectedCannotLead = noExpectedCannotLeads
+      , pgaFirstBlockNo       = 0
+      , pgaFixedMaxForkLength = Nothing
+      , pgaFixedSchedule      = Nothing
+      , pgaSecurityParam      = k
+      , pgaTestConfig         = testConfig
+      , pgaCustomLabelling    = const id
       }
       testOutput
   where

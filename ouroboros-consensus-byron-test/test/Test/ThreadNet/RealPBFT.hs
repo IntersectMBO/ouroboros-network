@@ -13,7 +13,7 @@ module Test.ThreadNet.RealPBFT (
   , realPBftParams
   , genRealPBFTNodeJoinPlan
   , shrinkTestConfigSlotsOnly
-  , expectedBlockRejection
+  , expectedCannotLead
   ) where
 
 import           Control.Monad.Except (runExceptT)
@@ -41,12 +41,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
 
@@ -365,9 +364,10 @@ tests = testGroup "RealPBFT" $
           -- and were delayed to restart in the next slot (S+1). They do so,
           -- but it forges its block in S+1 before the dlg cert tx arrives.
           --
-          -- The failure was: PBftNotGenesisDelegate in Slot 49. It disappeared
-          -- with the mesh topology, which usually means subtle timings are
-          -- involved, unfortunately.
+          -- The expected failure is an unexpected block rejection (cf
+          -- 'pgaExpectedCannotLead') (PBftNotGenesisDelegate) in Slot 49.
+          -- It disappears with the mesh topology, which usually means subtle
+          -- timings are involved, unfortunately.
           --
           -- c3 and c4 join in s37. c4 rekeys in s37. c3 leads in s38.
           --
@@ -631,26 +631,22 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig dummySlotLen params
 
-expectedBlockRejection
+expectedCannotLead
   :: SecurityParam
   -> NumCoreNodes
   -> NodeRestarts
-  -> BlockRejection ByronBlock
+  -> SlotNo
+  -> NodeId
+  -> WrapCannotLead ByronBlock
   -> Bool
-expectedBlockRejection
-  k numCoreNodes@(NumCoreNodes nn) (NodeRestarts nrs) BlockRejection
-  { brBlockSlot = s
-  , brReason    = err
-  , brRejector  = CoreId (CoreNodeId i)
-  }
-  | ownBlock                   = case err of
-    ExtValidationErrorHeader
-      (HeaderProtocolError PBftExceededSignThreshold{}) ->
+expectedCannotLead
+  k numCoreNodes (NodeRestarts nrs)
+  s (CoreId (CoreNodeId i)) (WrapCannotLead cl)
+  = case cl of
+    PBftCannotLeadThresholdExceeded{} ->
         -- TODO validate this against Ref implementation?
         True
-
-    ExtValidationErrorHeader
-      (HeaderProtocolError PBftNotGenesisDelegate{}) ->
+    PBftCannotLeadInvalidDelegation {} ->
         -- only if it rekeyed within before a restarts latest possible
         -- maturation
         not $ null $
@@ -661,14 +657,7 @@ expectedBlockRejection
         , (CoreNodeId i', NodeRekey) <- Map.toList nrs'
         , i' == i
         ]
-    _                             -> False
-  where
-    -- Because of round-robin and the fact that the id divides slot, we know
-    -- the node lead but rejected its own block. This is the only case we
-    -- expect. (Rejecting its own block also prevents the node from propagating
-    -- that block.)
-    ownBlock = i == mod (unSlotNo s) nn
-expectedBlockRejection _ _ _ _ = False
+expectedCannotLead _ _ _ _ _ _ = False
 
 -- | If we rekey in slot rekeySlot, it is in general possible that the leader
 -- of rekeySlot will include our delegation transaction in its new block.
@@ -726,20 +715,19 @@ prop_simple_real_pbft_convergence produceEBBs k
           | (nid, ch) <- finalChains
           ]) $
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = const $ property True
-      , pgaCountTxs               = Byron.countByronGenTxs
-      , pgaExpectedBlockRejection =
-          expectedBlockRejection k numCoreNodes nodeRestarts
-      , pgaFirstBlockNo           = 1
-      , pgaFixedMaxForkLength     =
+      { pgaBlockProperty      = const $ property True
+      , pgaCountTxs           = Byron.countByronGenTxs
+      , pgaExpectedCannotLead = expectedCannotLead k numCoreNodes nodeRestarts
+      , pgaFirstBlockNo       = 1
+      , pgaFixedMaxForkLength =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule          =
+      , pgaFixedSchedule      =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam          = k
-      , pgaTestConfig             = testConfig
-      , pgaCustomLabelling        = const id
+      , pgaSecurityParam      = k
+      , pgaTestConfig         = testConfig
+      , pgaCustomLabelling    = const id
       }
       testOutput .&&.
     prop_pvu .&&.

@@ -45,8 +45,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -81,18 +83,18 @@ prop_convergence setup = withMaxSuccess 10 $
     (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_general PropGeneralArgs
-      { pgaBlockProperty          = const $ property True
-      , pgaCountTxs               = countByronGenTxs . dualBlockMain
-      , pgaExpectedBlockRejection = setupExpectedRejections setup
-      , pgaFirstBlockNo           = 1
-      , pgaFixedMaxForkLength     =
+      { pgaBlockProperty      = const $ property True
+      , pgaCountTxs           = countByronGenTxs . dualBlockMain
+      , pgaExpectedCannotLead = setupExpectedCannotLead setup
+      , pgaFirstBlockNo       = 1
+      , pgaFixedMaxForkLength =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule          = setupSchedule setup
-      , pgaSecurityParam          = setupSecurityParam setup
-      , pgaTestConfig             = cfg
-      , pgaCustomLabelling        = const id
+      , pgaFixedSchedule      = setupSchedule setup
+      , pgaSecurityParam      = setupSecurityParam setup
+      , pgaTestConfig         = cfg
+      , pgaCustomLabelling    = const id
       }
       (setupTestOutput setup)
   where
@@ -173,22 +175,17 @@ setupOverrideConfig newConfig setup = setup {
     , setupParams = setupParams setup
     }
 
-setupExpectedRejections :: SetupDualPBft
-                        -> BlockRejection DualByronBlock -> Bool
-setupExpectedRejections setup@SetupDualPBft{..} rejection =
-    RealPBFT.expectedBlockRejection
+setupExpectedCannotLead :: SetupDualPBft
+                        -> SlotNo
+                        -> NodeId
+                        -> WrapCannotLead DualByronBlock
+                        -> Bool
+setupExpectedCannotLead setup@SetupDualPBft{..} s nid (WrapCannotLead cl) =
+    RealPBFT.expectedCannotLead
       (setupSecurityParam setup)
       (numCoreNodes setupConfig)
       (nodeRestarts setupConfig)
-      rejection'
-  where
-    rejection' :: BlockRejection ByronBlock
-    rejection' =  BlockRejection {
-          brBlockHash = brBlockHash rejection
-        , brBlockSlot = brBlockSlot rejection
-        , brReason    = dualExtValidationErrorMain (brReason rejection)
-        , brRejector  = brRejector rejection
-        }
+      s nid (WrapCannotLead cl)
 
 {-------------------------------------------------------------------------------
   Generator for 'SetupDualPBft'

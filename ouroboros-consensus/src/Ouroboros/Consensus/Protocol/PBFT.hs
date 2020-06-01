@@ -32,7 +32,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
     -- * Type instances
   , ConsensusConfig(..)
     -- * Exported for testing
-  , PBftValidationErr(..)
+  , PBftCannotLead(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -44,7 +44,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
-import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -229,6 +228,22 @@ data PBftIsLeader c = PBftIsLeader {
   deriving (Generic)
 
 instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
+
+-- | Expresses that, whilst we believe ourselves to be a leader for this slot,
+-- we are nonetheless unable to forge a block.
+data PBftCannotLead c =
+    -- | We cannot forge a block because we are not the current delegate of the
+    -- genesis key we have a delegation certificate from.
+    PBftCannotLeadInvalidDelegation !(PBftVerKeyHash c)
+    -- | We cannot lead because delegates of the genesis key we have a
+    -- delegation from have already forged the maximum number of blocks in this
+    -- signing window.
+  | PBftCannotLeadThresholdExceeded !Word64
+  deriving Generic
+
+deriving instance PBftCrypto c => Show (PBftCannotLead c)
+
+instance PBftCrypto c => NoUnexpectedThunks (PBftCannotLead c)
  -- use generic instance
 
 -- | (Static) node configuration
@@ -267,19 +282,31 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type IsLeader       (PBft c) = PBftIsLeader   c
   type ConsensusState (PBft c) = PBftState      c
   type CanBeLeader    (PBft c) = PBftIsLeader   c
-  type CannotLead     (PBft c) = Void -- TODO!
+  type CannotLead     (PBft c) = PBftCannotLead c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIsLeader PBftConfig{pbftParams} credentials (Ticked (SlotNo n) _l) _cs =
+  checkIsLeader
+    cfg@PBftConfig{pbftParams}
+    credentials
+    (Ticked slot@(SlotNo n) (PBftLedgerView dms)) cs =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
-      return $ if n `mod` numCoreNodes == i
-                 then IsLeader credentials
-                 else NotLeader
+      return $
+        if n `mod` numCoreNodes == i
+          then case Bimap.lookupR dlgKeyHash dms of
+            Nothing -> CannotLead $ PBftCannotLeadInvalidDelegation dlgKeyHash
+            Just gk -> do
+              let state' = append cfg params (slot, gk) cs
+              case exceedsThreshold params state' gk of
+                Nothing -> IsLeader credentials
+                Just numForged  -> CannotLead $ PBftCannotLeadThresholdExceeded numForged
+          else NotLeader
     where
-      PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
+      params = pbftWindowParams cfg
+      dlgKeyHash = hashVerKey . dlgCertDlgVerKey $ pbftDlgCert
+      PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
   updateConsensusState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =

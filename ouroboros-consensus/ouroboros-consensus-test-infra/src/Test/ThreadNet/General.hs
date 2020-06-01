@@ -18,8 +18,8 @@ module Test.ThreadNet.General (
   , truncateNodeJoinPlan
   , truncateNodeRestarts
   , truncateNodeTopology
-    -- * Block rejections
-  , BlockRejection (..)
+    -- * Expected CannotLead
+  , noExpectedCannotLeads
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -287,19 +288,19 @@ data BlockRejection blk = BlockRejection
   deriving (Show)
 
 data PropGeneralArgs blk = PropGeneralArgs
-  { pgaBlockProperty          :: blk -> Property
+  { pgaBlockProperty      :: blk -> Property
     -- ^ test if the block is as expected
     --
     -- For example, it may fail if the block includes transactions that should
     -- have expired before/when the block was forged.
     --
-  , pgaCountTxs               :: blk -> Word64
+  , pgaCountTxs           :: blk -> Word64
     -- ^ the number of transactions in the block
     --
-  , pgaExpectedBlockRejection :: BlockRejection blk -> Bool
-    -- ^ whether this block rejection was expected
+  , pgaExpectedCannotLead :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
+    -- ^ whether this 'CannotLead' was expected
     --
-  , pgaFirstBlockNo           :: BlockNo
+  , pgaFirstBlockNo       :: BlockNo
     -- ^ the block number of the first proper block on the chain
     --
     -- At time of writing this comment... For example, this is 1 for Byron
@@ -308,28 +309,30 @@ data PropGeneralArgs blk = PropGeneralArgs
     -- block is block number 0, and so the first proper block is number 1. For
     -- the mock tests, the first proper block is block number 0.
     --
-    -- TODO This implies the mock genesis block does not have a number?
-    --
-  , pgaFixedMaxForkLength     :: Maybe NumBlocks
+  , pgaFixedMaxForkLength :: Maybe NumBlocks
     -- ^ the maximum length of a unique suffix among the final chains
     --
     -- If not provided, it will be crudely estimated. For example, this
     -- estimation is known to be incorrect for PBFT; it does not anticipate
     -- 'Ouroboros.Consensus.Protocol.PBFT.PBftExceededSignThreshold'.
     --
-  , pgaFixedSchedule          :: Maybe LeaderSchedule
+  , pgaFixedSchedule      :: Maybe LeaderSchedule
     -- ^ the leader schedule of the nodes
     --
     -- If not provided, it will be recovered from the nodes' 'Tracer' data.
     --
-  , pgaSecurityParam          :: SecurityParam
-  , pgaTestConfig             :: TestConfig
+  , pgaSecurityParam      :: SecurityParam
+  , pgaTestConfig         :: TestConfig
 
     -- | Option to add custom labelling to a property
     --
     -- Can use @const id@ if no custom labelling is required.
-  , pgaCustomLabelling        :: TestOutput blk -> Property -> Property
+  , pgaCustomLabelling    :: TestOutput blk -> Property -> Property
   }
+
+-- | Expect no 'CannotLead's
+noExpectedCannotLeads :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
+noExpectedCannotLeads _ _ _ = False
 
 -- | The properties always required
 --
@@ -344,7 +347,9 @@ data PropGeneralArgs blk = PropGeneralArgs
 --
 -- * The nodes' chains grow without unexpected delays.
 --
--- * No blocks are unduly rejected (see 'pgaExpectedBlockRejection').
+-- * No nodes are unduly unable to lead (see 'pgaExpectedCannotLead').
+
+-- * No blocks are rejected as invalid.
 --
 -- Those properties are currently checked under several assumptions. If the
 -- nodes violate any of these assumptions, the tests will fail. The following
@@ -450,7 +455,8 @@ prop_general pga testOutput =
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
     tabulate "average #txs/block" [show (range averageNumTxs)] $
-    prop_no_unexpected_BlockRejections .&&.
+    prop_no_BlockRejections .&&.
+    prop_no_unexpected_CannotLeads .&&.
     prop_no_invalid_blocks .&&.
     prop_all_common_prefix
         maxForkLength
@@ -464,13 +470,13 @@ prop_general pga testOutput =
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
     PropGeneralArgs
-      { pgaBlockProperty          = prop_valid_block
-      , pgaCountTxs               = countTxs
-      , pgaExpectedBlockRejection = expectedBlockRejection
-      , pgaFirstBlockNo           = firstBlockNo
-      , pgaFixedMaxForkLength     = mbMaxForkLength
-      , pgaFixedSchedule          = mbSchedule
-      , pgaSecurityParam          = k
+      { pgaBlockProperty      = prop_valid_block
+      , pgaCountTxs           = countTxs
+      , pgaExpectedCannotLead = expectedCannotLead
+      , pgaFirstBlockNo       = firstBlockNo
+      , pgaFixedMaxForkLength = mbMaxForkLength
+      , pgaFixedSchedule      = mbSchedule
+      , pgaSecurityParam      = k
       , pgaTestConfig
       } = pga
     TestConfig
@@ -484,28 +490,41 @@ prop_general pga testOutput =
       , testOutputTipBlockNos
       } = testOutput
 
-    prop_no_unexpected_BlockRejections =
+    prop_no_BlockRejections =
         counterexample msg $
-        Map.null blocks
+        null brs
       where
-        msg = "There were unexpected block rejections: " <> show blocks
-        blocks =
-            Map.unionsWith (++) $
-            [ Map.filter (not . null) $
-              Map.mapWithKey (\p -> filter (not . ok p nid)) $
-              nodeOutputInvalids
+        msg =
+            "There were unexpected block rejections: " <>
+            unlines (map show brs)
+        brs =
+            [ BlockRejection
+                { brBlockHash = h
+                , brBlockSlot = s
+                , brRejector  = nid
+                , brReason    = err
+                }
             | (nid, no) <- Map.toList testOutputNodes
             , let NodeOutput{nodeOutputInvalids} = no
+            , (RealPoint s h, errs) <- Map.toList nodeOutputInvalids
+            , err                   <- errs
             ]
-        ok (RealPoint s h) nid err =
-          -- TODO The ExtValidationError data declaration imposes this case on
-          -- us but should never exercise it.
-          expectedBlockRejection BlockRejection
-            { brBlockHash = h
-            , brBlockSlot = s
-            , brReason    = err
-            , brRejector  = nid
-            }
+
+    prop_no_unexpected_CannotLeads =
+        counterexample msg $
+        Map.null cls
+      where
+        msg = "There were unexpected CannotLeads: " <> show cls
+        cls =
+            Map.unionsWith (++) $
+            [ Map.filter (not . null) $
+              Map.mapWithKey (\s -> filter (not . ok s nid)) $
+              nodeOutputCannotLeads
+            | (nid, no) <- Map.toList testOutputNodes
+            , let NodeOutput{nodeOutputCannotLeads} = no
+            ]
+        ok s nid cl =
+            expectedCannotLead s nid (WrapCannotLead cl)
 
     schedule = case mbSchedule of
         Nothing    -> actualLeaderSchedule
