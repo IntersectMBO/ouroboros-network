@@ -579,9 +579,10 @@ appendBlockImpl
   -> SlotNo
   -> BlockNo
   -> hash
-  -> BinaryInfo Builder
+  -> Builder
+  -> BinaryBlockInfo
   -> m ()
-appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
+appendBlockImpl dbEnv slot blockNumber headerHash builder binaryBlockInfo =
     modifyOpenState dbEnv $ \hasFS -> do
       OpenState { currentTip, currentIndex } <- get
 
@@ -599,7 +600,7 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
           AppendToSlotInThePastError slot (forgetTipInfo <$> currentTip)
 
       appendChunkSlot hasFS chunkInfo currentIndex chunkSlot
-        blockNumber (Block slot) headerHash binaryInfo
+        blockNumber (Block slot) headerHash builder binaryBlockInfo
   where
     ImmutableDBEnv { chunkInfo } = dbEnv
 
@@ -609,9 +610,10 @@ appendEBBImpl
   -> EpochNo
   -> BlockNo
   -> hash
-  -> BinaryInfo Builder
+  -> Builder
+  -> BinaryBlockInfo
   -> m ()
-appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
+appendEBBImpl dbEnv epoch blockNumber headerHash builder binaryBlockInfo =
     modifyOpenState dbEnv $ \hasFS -> do
       OpenState { currentChunk, currentTip, currentIndex } <- get
 
@@ -630,7 +632,7 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
 
       appendChunkSlot hasFS chunkInfo currentIndex
         (chunkSlotForBoundaryBlock chunkInfo epoch) blockNumber (EBB epoch)
-        headerHash binaryInfo
+        headerHash builder binaryBlockInfo
   where
     ImmutableDBEnv { chunkInfo } = dbEnv
 
@@ -644,10 +646,11 @@ appendChunkSlot
   -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
                 -- new tip
   -> hash
-  -> BinaryInfo Builder
+  -> Builder
+  -> BinaryBlockInfo
   -> ModifyOpenState m hash h ()
 appendChunkSlot hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHash
-                BinaryInfo { binaryBlob, headerOffset, headerSize } = do
+                builder BinaryBlockInfo { headerOffset, headerSize } = do
     OpenState { currentChunk = initialChunk } <- get
 
     -- If the slot is in an chunk > the current one, we have to finalise the
@@ -681,7 +684,7 @@ appendChunkSlot hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHas
     (blockSize, entrySize) <- lift $ lift $ do
 
         -- Write to the chunk file
-        (blockSize, crc) <- hPutCRC hasFS currentChunkHandle binaryBlob
+        (blockSize, crc) <- hPutCRC hasFS currentChunkHandle builder
 
         -- Write to the secondary index file
         let entry = Secondary.Entry

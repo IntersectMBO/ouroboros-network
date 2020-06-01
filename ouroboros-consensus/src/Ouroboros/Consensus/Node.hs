@@ -387,7 +387,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbDecodeHash           = nodeDecodeHeaderHash     ccfg
     , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState    ccfg
     , ChainDB.cdbDecodeAnnTip         = nodeDecodeAnnTip         ccfg
-    , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
+    , ChainDB.cdbEncodeBlock          = nodeEncodeBlock          ccfg
     , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
     , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState ccfg
     , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     ccfg
@@ -395,6 +395,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbEncodeAnnTip         = nodeEncodeAnnTip         ccfg
     , ChainDB.cdbChunkInfo            = chunkInfo
     , ChainDB.cdbGenesis              = return initLedger
+    , ChainDB.cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
     , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    pb
     , ChainDB.cdbDiskPolicy           = defaultDiskPolicy k
     , ChainDB.cdbCheckIntegrity       = nodeCheckIntegrity       cfg

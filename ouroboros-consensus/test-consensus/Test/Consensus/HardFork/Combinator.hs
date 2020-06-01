@@ -308,8 +308,8 @@ instance RunNode TestBlock where
                             . lcfgA_eraParams
                             . firstEraLedgerConfig
                             . configLedger
+  nodeGetBinaryBlockInfo    = hardForkBlockBinaryBlockInfo
 
-  nodeEncodeBlockWithInfo   = \_   -> encodeHardForkBlockWithInfo
   nodeEncodeBlock           = \_   -> encode
   nodeEncodeHeader          = \_ _ -> encode
   nodeEncodeGenTx           = \_   -> encode . fromNS (Proxy @GenTx)

@@ -236,6 +236,7 @@ instance RunNode ByronBlock where
 
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
+  nodeGetBinaryBlockInfo    = byronBinaryBlockInfo
   nodeExceptionIsFatal _ e
     | Just (_ :: DropEncodedSizeException) <- fromException e
     = Just DatabaseCorruption
@@ -243,7 +244,7 @@ instance RunNode ByronBlock where
     = Nothing
 
 
-  nodeEncodeBlockWithInfo   = \_    -> encodeByronBlockWithInfo
+  nodeEncodeBlock           = \_    -> encodeByronBlock
   nodeEncodeHeader          = \_    -> encodeByronHeader
   nodeEncodeWrappedHeader   = \_    -> encodeWrappedByronHeader
   nodeEncodeGenTx           = \_    -> encodeByronGenTx

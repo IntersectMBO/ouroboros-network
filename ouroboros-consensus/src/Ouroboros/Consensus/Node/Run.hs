@@ -33,8 +33,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     ChunkInfo)
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
 {-------------------------------------------------------------------------------
   RunNode proper
@@ -67,6 +67,10 @@ class ( LedgerSupportsProtocol    blk
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
   nodeCheckIntegrity :: TopLevelConfig blk -> blk -> Bool
+
+  -- | Return information about the serialised block, i.e., how to extract the
+  -- bytes corresponding to the header from the serialised block.
+  nodeGetBinaryBlockInfo :: blk -> BinaryBlockInfo
 
   -- | When extracting the bytes corresponding to header from a serialised
   -- block, it may be necessary to add an envelope to it to obtain a
@@ -122,9 +126,7 @@ class ( LedgerSupportsProtocol    blk
   nodeExceptionIsFatal _ _ = Nothing
 
   -- Encoders
-  nodeEncodeBlockWithInfo  :: CodecConfig blk -> blk -> BinaryInfo Encoding
   nodeEncodeBlock          :: CodecConfig blk -> blk -> Encoding
-  nodeEncodeBlock cfg blk = binaryBlob $ nodeEncodeBlockWithInfo cfg blk
   nodeEncodeHeader         :: CodecConfig blk
                            -> SerialisationVersion blk
                            -> Header blk -> Encoding

@@ -78,7 +78,7 @@ chunkFileParser'
   -> (blk -> Maybe EpochNo)    -- ^ If an EBB, return the epoch number
   -> HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> BinaryInfo ())
+  -> (blk -> BinaryBlockInfo)
   -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
                                -- corrupt.
   -> ChunkFileParser
@@ -87,7 +87,7 @@ chunkFileParser'
        (BlockSummary hash)
        hash
 chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBlock
-                 getBinaryInfo isNotCorrupt =
+                 getBinaryBlockInfo isNotCorrupt =
     ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k
@@ -166,7 +166,7 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBloc
               Just epoch -> EBB epoch
               Nothing    -> Block (getSlotNo blk)
           }
-        BinaryInfo { headerOffset, headerSize } = getBinaryInfo blk
+        BinaryBlockInfo { headerOffset, headerSize } = getBinaryBlockInfo blk
 
     checkIfHashesLineUp
       :: Stream (Of (BlockSummary hash, WithOrigin hash))
@@ -195,7 +195,7 @@ chunkFileParser
   :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
   => HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> BinaryInfo ())
+  -> (blk -> BinaryBlockInfo)
   -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
                              -- corrupt.
   -> ChunkFileParser

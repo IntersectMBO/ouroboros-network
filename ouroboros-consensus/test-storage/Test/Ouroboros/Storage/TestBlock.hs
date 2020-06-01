@@ -36,8 +36,7 @@ module Test.Ouroboros.Storage.TestBlock (
     -- ** Serialisation
   , testHashInfo
   , testBlockToBuilder
-  , testBlockToBinaryInfo
-  , testBlockFromBinaryInfo
+  , testBlockBinaryBlockInfo
   , testBlockFromLazyByteString
   , testBlockToLazyByteString
     -- * Ledger
@@ -54,7 +53,6 @@ module Test.Ouroboros.Storage.TestBlock (
   , corruptFile
   ) where
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (decode, encode), serialise)
@@ -108,12 +106,12 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -270,10 +268,9 @@ testBlockIsValid (TestBlock hdr body) =
 testBlockToBuilder :: TestBlock -> Builder
 testBlockToBuilder = CBOR.toBuilder . encode
 
-testBlockToBinaryInfo :: TestBlock -> BinaryInfo CBOR.Encoding
-testBlockToBinaryInfo tb = BinaryInfo
-    { binaryBlob   = encode tb
-    , headerOffset = testBlockHeaderOffset
+testBlockBinaryBlockInfo :: TestBlock -> BinaryBlockInfo
+testBlockBinaryBlockInfo tb = BinaryBlockInfo
+    { headerOffset = testBlockHeaderOffset
     , headerSize   = testBlockHeaderSize tb
     }
 
@@ -294,9 +291,6 @@ testBlockFromLazyByteString bs = case CBOR.deserialiseFromBytes decode bs of
       -> a
       | otherwise
       -> error $ "left-over bytes: " <> show bs'
-
-testBlockFromBinaryInfo :: HasCallStack => BinaryInfo Lazy.ByteString -> TestBlock
-testBlockFromBinaryInfo = testBlockFromLazyByteString . binaryBlob
 
 testBlockToBlockInfo :: TestBlock -> BlockInfo TestHeaderHash
 testBlockToBlockInfo tb = BlockInfo {

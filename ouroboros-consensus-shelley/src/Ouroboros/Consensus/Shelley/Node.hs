@@ -351,8 +351,9 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
         tpraosParams $ configConsensus cfg
 
   nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
+  nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo
 
-  nodeEncodeBlockWithInfo  = \_   -> encodeShelleyBlockWithInfo
+  nodeEncodeBlock          = \_   -> encodeShelleyBlock
   nodeEncodeHeader         = \_ _ -> encodeShelleyHeader
   nodeEncodeWrappedHeader  = \_ _ -> encode
   nodeEncodeGenTx          = \_   -> toCBOR

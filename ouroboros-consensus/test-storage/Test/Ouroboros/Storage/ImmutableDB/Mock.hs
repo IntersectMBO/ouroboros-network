@@ -6,7 +6,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
-import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
+import           Ouroboros.Consensus.Util ((....:), (...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent)
@@ -27,13 +27,13 @@ openDBMock chunkInfo = do
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
         { closeDB_                = return ()
-        , getTip_                 = query       $ getTipModel
-        , getBlockComponent_      = queryE     .: getBlockComponentModel
-        , getEBBComponent_        = queryE     .: getEBBComponentModel
-        , getBlockOrEBBComponent_ = queryE    ..: getBlockOrEBBComponentModel
-        , appendBlock_            = updateE_ ...: appendBlockModel
-        , appendEBB_              = updateE_ ...: appendEBBModel
-        , stream_                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
+        , getTip_                 = query        $ getTipModel
+        , getBlockComponent_      = queryE      .: getBlockComponentModel
+        , getEBBComponent_        = queryE      .: getEBBComponentModel
+        , getBlockOrEBBComponent_ = queryE     ..: getBlockOrEBBComponentModel
+        , appendBlock_            = updateE_ ....: appendBlockModel
+        , appendEBB_              = updateE_ ....: appendEBBModel
+        , stream_                 = updateEE  ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b

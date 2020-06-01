@@ -3,7 +3,6 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import qualified Codec.Serialise as S
-import           Control.Monad (void)
 import           Control.Tracer (nullTracer)
 
 import           Test.Tasty (TestTree, testGroup)
@@ -63,9 +62,11 @@ openTestDB registry hasFS =
       , parser
       }
   where
-    parser = chunkFileParser hasFS (const <$> S.decode) getBinaryInfo
-      testBlockIsValid
-    getBinaryInfo = void . testBlockToBinaryInfo
+    parser = chunkFileParser
+               hasFS
+               (const <$> S.decode)
+               testBlockBinaryBlockInfo
+               testBlockIsValid
 
 -- Shorthand
 withTestDB :: (HasCallStack, IOLike m, Eq h)

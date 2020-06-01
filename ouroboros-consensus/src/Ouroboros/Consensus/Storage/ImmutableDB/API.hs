@@ -132,7 +132,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendBlock_
-      :: HasCallStack => SlotNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+      :: HasCallStack => SlotNo -> BlockNo -> hash -> Builder -> BinaryBlockInfo -> m ()
 
     -- | Appends a block as the EBB of the given epoch.
     --
@@ -147,7 +147,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendEBB_
-      :: HasCallStack => EpochNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+      :: HasCallStack => EpochNo -> BlockNo -> hash -> Builder -> BinaryBlockInfo -> m ()
 
     -- | Return an 'Iterator' to efficiently stream binary blocks out of the
     -- database.
@@ -312,13 +312,13 @@ getBlockOrEBBComponent = getBlockOrEBBComponent_
 appendBlock
   :: HasCallStack
   => ImmutableDB hash m
-  -> SlotNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+  -> SlotNo -> BlockNo -> hash -> Builder -> BinaryBlockInfo -> m ()
 appendBlock = appendBlock_
 
 appendEBB
   :: HasCallStack
   => ImmutableDB hash m
-  -> EpochNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+  -> EpochNo -> BlockNo -> hash -> Builder -> BinaryBlockInfo -> m ()
 appendEBB = appendEBB_
 
 stream

@@ -183,7 +183,7 @@ deriving instance ToExpr EBB
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestBody
 deriving instance ToExpr TestBlock
-deriving instance ToExpr (BinaryInfo ByteString)
+deriving instance ToExpr BinaryBlockInfo
 deriving instance ToExpr (ChainHash TestHeader)
 deriving instance ToExpr BlockNo
 
@@ -584,7 +584,7 @@ test cmds = do
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser' hasFS
-          testBlockToBinaryInfo (const <$> decode) testBlockIsValid
+          testBlockBinaryBlockInfo (const <$> decode) testBlockIsValid
           ValidateAll
         args = VolatileDbArgs
           { hasFS

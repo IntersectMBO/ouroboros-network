@@ -18,7 +18,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Consensus.Block (ConvertRawHash (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -49,8 +49,7 @@ tests = testGroup "Shelley"
         , testProperty "roundtrip LedgerState"    prop_roundtrip_LedgerState
         ]
 
-    , testProperty "BinaryInfo sanity check" prop_encodeShelleyBlockWithInfo
-
+    , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
 
     , testHashInfo (Proxy @TPraosStandardCrypto) "Real crypto"
     , testHashInfo (Proxy @TPraosMockCrypto)     "Mock crypto"
@@ -114,21 +113,21 @@ prop_roundtrip_LedgerState =
     roundtrip encodeShelleyLedgerState decodeShelleyLedgerState
 
 {-------------------------------------------------------------------------------
-  BinaryInfo
+  BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_encodeShelleyBlockWithInfo :: Block -> Property
-prop_encodeShelleyBlockWithInfo blk =
+prop_shelleyBinaryBlockInfo :: Block -> Property
+prop_shelleyBinaryBlockInfo blk =
     encodedHeader === shelleyAddHeaderEnvelope extractedHeader
   where
-    BinaryInfo { binaryBlob, headerOffset, headerSize } =
-      encodeShelleyBlockWithInfo blk
+    BinaryBlockInfo { headerOffset, headerSize } =
+      shelleyBinaryBlockInfo blk
 
     extractedHeader :: Lazy.ByteString
     extractedHeader =
         Lazy.take (fromIntegral headerSize)   $
         Lazy.drop (fromIntegral headerOffset) $
-        CBOR.toLazyByteString binaryBlob
+        CBOR.toLazyByteString (encodeShelleyBlock blk)
 
     encodedHeader :: Lazy.ByteString
     encodedHeader = CBOR.toLazyByteString $ encodeShelleyHeader (getHeader blk)

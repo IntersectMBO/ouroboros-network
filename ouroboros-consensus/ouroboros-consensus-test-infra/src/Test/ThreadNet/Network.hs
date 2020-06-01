@@ -585,7 +585,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbDecodeAnnTip         = nodeDecodeAnnTip         ccfg
           -- Encoders
         , cdbEncodeHash           = nodeEncodeHeaderHash     ccfg
-        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
+        , cdbEncodeBlock          = nodeEncodeBlock          ccfg
         , cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
         , cdbEncodeLedger         = nodeEncodeLedgerState    ccfg
         , cdbEncodeConsensusState = nodeEncodeConsensusState ccfg
@@ -609,6 +609,7 @@ runThreadNetwork ThreadNetworkArgs
                                       (configLedger cfg)
                                       (unwrapLogicalClock clock)
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer               = instrumentationTracer <> nullDebugTracer

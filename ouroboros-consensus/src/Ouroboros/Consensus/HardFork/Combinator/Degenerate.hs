@@ -295,6 +295,9 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
 
+  nodeGetBinaryBlockInfo (DBlk blk) =
+      nodeGetBinaryBlockInfo (projBlock blk)
+
   nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
   nodeExceptionIsFatal  _ = nodeExceptionIsFatal  (Proxy @b)
 
@@ -307,8 +310,6 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
 
   -- Encoders
 
-  nodeEncodeBlockWithInfo (DCCfg cfg) (DBlk blk) =
-      nodeEncodeBlockWithInfo (projCodecConfig cfg) (projBlock blk)
   nodeEncodeBlock (DCCfg cfg) (DBlk blk) =
       nodeEncodeBlock (projCodecConfig cfg) (projBlock blk)
   nodeEncodeHeader (DCCfg cfg) version (DHdr hdr) =
