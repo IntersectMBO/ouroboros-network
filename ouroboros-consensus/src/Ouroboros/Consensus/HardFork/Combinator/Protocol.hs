@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -38,6 +39,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -138,8 +140,10 @@ type HardForkCannotLead xs = OneEraCannotLead xs
 -- | CanBeLeader instance for 'HardForkProtocol'
 --
 -- We allow an optional 'CanBeLeader' proof /per era/, to make it possible to
--- configure a node to, say, be able to produce Shelley but not Byron blocks
-type HardForkCanBeLeader xs = NP (Maybe :.: WrapCanBeLeader) xs
+-- configure a node to, say, be able to produce Shelley but not Byron blocks.
+-- However, we do not allow /all/ eras to be empty (since, in that case, we
+-- /cannot/ be a leader).
+type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
 
 check :: forall m xs. (MonadRandom m, CanHardFork xs)
       => ConsensusConfig (HardForkProtocol xs)
@@ -153,7 +157,11 @@ check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
     . State.tip
     . State.align
         (translateConsensus ei cfg)
-        (hczipWith proxySingle (fn_2 .: checkOne ei slot) cfgs canBeLeader)
+        (hczipWith
+           proxySingle
+           (fn_2 .: checkOne ei slot)
+           cfgs
+           (fromOptNP canBeLeader))
         ledgerView
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra

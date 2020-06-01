@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -407,4 +408,4 @@ injProtocolClientInfo ProtocolClientInfo{..} = ProtocolClientInfo {
 injCanBeLeader :: proxy b
                -> CanBeLeader (BlockProtocol b)
                -> CanBeLeader (BlockProtocol (HardForkBlock '[b]))
-injCanBeLeader _ proof = Comp (Just (WrapCanBeLeader proof)) :* Nil
+injCanBeLeader _ = singletonOptNP . WrapCanBeLeader
