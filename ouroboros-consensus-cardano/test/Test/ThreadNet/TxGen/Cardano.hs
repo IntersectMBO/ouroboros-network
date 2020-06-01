@@ -20,11 +20,11 @@ import           Test.ThreadNet.TxGen.Shelley
 instance TxGen (CardanoBlock TPraosMockCrypto) where
   type TxGenExtra (CardanoBlock TPraosMockCrypto) = ShelleyTxGenExtra
   testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger =
-      map (DTx . injGenTx) <$>
+      map (DTx . inject) <$>
       testGenTxs
         @(ShelleyBlock TPraosMockCrypto)
         numCoreNodes
         curSlotNo
         (projCfg cfg)
         txGenExtra
-        (projLedgerState (unDLgr ledger))
+        (project' (Proxy @(LedgerState (ShelleyBlock TPraosMockCrypto))) (unDLgr ledger))
