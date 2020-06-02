@@ -4,17 +4,9 @@ module Ouroboros.Network.Protocol.Handshake.Direct
   ( pureHandshake
   ) where
 
-import           Control.Exception
-import           Data.Text (Text)
 import           Data.Typeable (Typeable, cast)
-import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import qualified Codec.CBOR.Term     as CBOR
-
-import           Network.TypedProtocol.Core
-
-import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 -- | Pure computation which serves as a reference implementation of the

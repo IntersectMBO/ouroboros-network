@@ -24,7 +24,6 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Block (Serialised (..), StandardHash,

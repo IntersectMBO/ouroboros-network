@@ -215,6 +215,8 @@ library ouroboros-protocol-tests
                        typed-protocols,
                        ouroboros-network-framework,
                        ouroboros-network
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
 
 test-suite test-network
   type:                exitcode-stdio-1.0
