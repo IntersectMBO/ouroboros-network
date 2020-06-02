@@ -242,11 +242,5 @@ source-repository-package
   tag: 2547ad1e80aeabca2899951601079408becbc92c
   --sha256: 1p2kg2w02q5w1cvqzhfhqmxviy4xrzada3mmb096j2n6hfr20kri
 
-source-repository-package
-  type: git
-  location: https://github.com/advancedtelematic/quickcheck-state-machine
-  tag: 2bf37003ca1c0c57e4354610d7c47da0a0e77b5c
-  --sha256: 1cr38aplhmwczrjc2xqya3mjp0zkbk20jjhhzk0spydbcsbi4l5l
-
 package quickcheck-state-machine
   tests: False
