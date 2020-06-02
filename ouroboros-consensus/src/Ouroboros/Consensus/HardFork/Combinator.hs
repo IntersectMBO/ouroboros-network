@@ -5,8 +5,10 @@ module Ouroboros.Consensus.HardFork.Combinator (
     module X
   ) where
 
--- Defines 'SingleEraBlock' and 'CanHardFork'
 -- Defines 'SingleEraInfo' and 'LedgerEraInfo'
+import           Ouroboros.Consensus.HardFork.Combinator.Info as X
+
+-- Defines 'SingleEraBlock' and 'CanHardFork'
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract as X
 
 -- Defines 'HardForkProtocol', 'HardForkBlock', and 'LedgerState',

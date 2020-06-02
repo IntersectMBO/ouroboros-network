@@ -19,7 +19,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
   , HardForkValidationErr(..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
   , HardForkLedgerView
-  , HardForkEraLedgerView(..)
+  , HardForkEraLedgerView_(..)
+  , HardForkEraLedgerView
   , mkHardForkEraLedgerView
   ) where
 
@@ -45,18 +46,19 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                      (HardForkSelectView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                     (HardForkEraLedgerView (..), HardForkLedgerView,
-                     mkHardForkEraLedgerView)
+                     (HardForkEraLedgerView, HardForkEraLedgerView_ (..),
+                     HardForkLedgerView, mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
                      Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..), RequiringBoth (..))
+                     (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
@@ -200,7 +202,7 @@ checkOne ei slot cfg (Comp mCanBeLeader)
          checkIsLeader
            (completeConsensusConfig' ei cfg)
            (unwrapCanBeLeader canBeLeader)
-           (Ticked slot hardForkEraLedgerView)
+           (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
            consensusState
 
 {-------------------------------------------------------------------------------
@@ -261,10 +263,10 @@ update cfg@HardForkConsensusConfig{..}
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
-          -> WrapPartialConsensusConfig                                 blk
-          -> Injection WrapValidationErr xs                             blk
-          -> Product WrapValidateView HardForkEraLedgerView             blk
-          -> WrapConsensusState                                         blk
+          -> WrapPartialConsensusConfig blk
+          -> Injection WrapValidationErr xs blk
+          -> Product WrapValidateView (HardForkEraLedgerView_ WrapLedgerView) blk
+          -> WrapConsensusState blk
           -> (Except (HardForkValidationErr xs) :.: WrapConsensusState) blk
 updateEra ei slot cfg injectErr
           (Pair (WrapValidateView view) HardForkEraLedgerView{..})
@@ -273,7 +275,7 @@ updateEra ei slot cfg injectErr
       fmap WrapConsensusState $
         updateConsensusState
           (completeConsensusConfig' ei cfg)
-          (Ticked slot hardForkEraLedgerView)
+          (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
           view
           consensusState
 
@@ -281,35 +283,20 @@ updateEra ei slot cfg injectErr
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk. SingleEraBlock blk
-           => State.Current HardForkEraLedgerView blk -> LedgerEraInfo blk
+ledgerInfo :: forall f blk. SingleEraBlock blk
+           => State.Current (HardForkEraLedgerView_ f) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-translateConsensus :: CanHardFork xs
+translateConsensus :: forall xs. CanHardFork xs
                    => EpochInfo Identity
                    -> ConsensusConfig (HardForkProtocol xs)
                    -> InPairs (Translate WrapConsensusState) xs
 translateConsensus ei HardForkConsensusConfig{..} =
-    InPairs.requiringBoth
-      (getPerEraConsensusConfig hardForkConsensusConfigPerEra)
-      (InPairs.hcmap
-        proxySingle
-        (RequireBoth . aux)
-        (translateConsensusState hardForkEraTranslation))
+    InPairs.requiringBoth cfgs $
+       translateConsensusState hardForkEraTranslation
   where
-    aux :: forall blk blk'. (SingleEraBlock blk, SingleEraBlock blk')
-        => TranslateEraConsensusState blk blk'
-        -> WrapPartialConsensusConfig blk
-        -> WrapPartialConsensusConfig blk'
-        -> Translate WrapConsensusState blk blk'
-    aux f pcfg pcfg' = Translate $ \epoch (WrapConsensusState st) ->
-        WrapConsensusState $
-          translateConsensusStateWith f cfg cfg' epoch st
-      where
-        cfg  :: ConsensusConfig (BlockProtocol blk)
-        cfg' :: ConsensusConfig (BlockProtocol blk')
-        cfg  = completeConsensusConfig' ei pcfg
-        cfg' = completeConsensusConfig' ei pcfg'
+    pcfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
+    cfgs  = hcmap proxySingle (completeConsensusConfig'' ei) pcfgs
 
 injectValidationErr :: Injection WrapValidationErr xs blk
                     -> ValidationErr (BlockProtocol blk)

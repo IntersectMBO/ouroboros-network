@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)

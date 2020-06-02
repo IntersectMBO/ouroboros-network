@@ -65,7 +65,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
-                     (HardForkEraLedgerView (..))
+                     (HardForkEraLedgerView_ (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
                      HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
@@ -454,7 +454,7 @@ instance Isomorphic WrapCanBeLeader where
 projLedgerView :: proxy b
                -> LedgerView (BlockProtocol (HardForkBlock '[b]))
                -> LedgerView (BlockProtocol b)
-projLedgerView _ = hardForkEraLedgerView . State.fromTZ
+projLedgerView _ = unwrapLedgerView . hardForkEraLedgerView . State.fromTZ
 
 -- | Project 'Query'
 --
