@@ -12,6 +12,8 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapGenTxId(..)
   , WrapApplyTxErr(..)
   , WrapForgeState(..)
+  , WrapHeaderHash(..)
+  , WrapLedgerConfig(..)
     -- * Protocol based
   , WrapConsensusState(..)
   , WrapChainSelConfig(..)
@@ -22,11 +24,14 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapValidationErr(..)
   , WrapValidateView(..)
   , WrapSelectView(..)
+  , WrapLedgerView(..)
   ) where
 
 import           Codec.Serialise (Serialise)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -44,6 +49,8 @@ newtype WrapLedgerErr    blk = WrapLedgerErr    { unwrapLedgerErr    :: LedgerEr
 newtype WrapGenTxId      blk = WrapGenTxId      { unwrapGenTxId      :: GenTxId                  blk }
 newtype WrapApplyTxErr   blk = WrapApplyTxErr   { unwrapApplyTxErr   :: ApplyTxErr               blk }
 newtype WrapForgeState   blk = WrapForgeState   { unwrapForgeState   :: ForgeState               blk }
+newtype WrapHeaderHash   blk = WrapHeaderHash   { unwrapHeaderHash   :: HeaderHash               blk }
+newtype WrapLedgerConfig blk = WrapLedgerConfig { unwrapLedgerConfig :: LedgerConfig             blk }
 
 {-------------------------------------------------------------------------------
   Consensus based
@@ -58,6 +65,7 @@ newtype WrapCanBeLeader     blk = WrapCanBeLeader     { unwrapCanBeLeader     ::
 newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr  (BlockProtocol blk) }
 newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView   (BlockProtocol blk) }
 newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView     (BlockProtocol blk) }
+newtype WrapLedgerView      blk = WrapLedgerView      { unwrapLedgerView      :: LedgerView     (BlockProtocol blk) }
 
 {-------------------------------------------------------------------------------
   Instances

@@ -59,6 +59,7 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed (..))
+import           Ouroboros.Consensus.Util.SOP
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
@@ -196,9 +197,9 @@ prop_simple_hfc_convergence TestSetup{..} = once $
                                 (WrapConsensusState initConsensusState)
             }
         , pInfoLeaderCreds = Just (
-                 Comp (Just (WrapCanBeLeader ()))
-              :* Comp (Just (WrapCanBeLeader ()))
-              :* Nil
+                OptCons (WrapCanBeLeader ())
+              $ OptCons (WrapCanBeLeader ())
+              $ OptNil
             , MaintainForgeState {
                   initForgeState   = PerEraForgeState $ WrapForgeState ()
                                                      :* WrapForgeState ()

@@ -27,6 +27,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
+import           Data.SOP (I (..))
 import           Data.Type.Equality
 import           Data.Void
 
@@ -43,6 +44,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -87,7 +89,7 @@ type instance BlockProtocol (DegenFork b) = BlockProtocol (HardForkBlock '[b])
   Data family instances
 -------------------------------------------------------------------------------}
 
-instance SingleEraBlock b => GetHeader (DegenFork b) where
+instance NoHardForks b => GetHeader (DegenFork b) where
   newtype Header (DegenFork b) = DHdr {
         unDHdr :: Header (HardForkBlock '[b])
       }
@@ -96,9 +98,9 @@ instance SingleEraBlock b => GetHeader (DegenFork b) where
   getHeader (DBlk b) = DHdr (getHeader b)
 
   blockMatchesHeader (DHdr hdr) (DBlk blk) =
-      blockMatchesHeader (projHeader hdr) (projBlock blk)
+      blockMatchesHeader (project hdr) (project' (Proxy @(I b)) blk)
 
-  headerIsEBB (DHdr hdr) = headerIsEBB (projHeader hdr)
+  headerIsEBB (DHdr hdr) = headerIsEBB (project hdr)
 
 newtype instance BlockConfig (DegenFork b) = DBCfg {
       unDBCfg :: BlockConfig (HardForkBlock '[b])
@@ -186,25 +188,25 @@ instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @(HardForkBlock '[b]))
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @(HardForkBlock '[b]))
 
-instance SingleEraBlock b => ValidateEnvelope (DegenFork b) where
+instance NoHardForks b => ValidateEnvelope (DegenFork b) where
   type OtherHeaderEnvelopeError (DegenFork b) = OtherHeaderEnvelopeError (HardForkBlock '[b])
 
   additionalEnvelopeChecks cfg view (DHdr hdr) =
-      withExcept injEnvelopeErr $
+      withExcept (inject' (Proxy @(WrapEnvelopeErr b))) $
         additionalEnvelopeChecks
           (projCfg cfg)
           (projLedgerView (Proxy @b) <$> view)
-          (projHeader hdr)
+          (project hdr)
 
-instance SingleEraBlock b => BlockSupportsProtocol (DegenFork b) where
+instance NoHardForks b => BlockSupportsProtocol (DegenFork b) where
   validateView (DBCfg cfg) (DHdr hdr) = validateView cfg hdr
   selectView   (DBCfg cfg) (DHdr hdr) = selectView   cfg hdr
 
-instance SingleEraBlock b => LedgerSupportsProtocol (DegenFork b) where
+instance NoHardForks b => LedgerSupportsProtocol (DegenFork b) where
   protocolLedgerView   cfg (DLgr lgr) = protocolLedgerView   cfg lgr
   ledgerViewForecastAt cfg (DLgr lgr) = ledgerViewForecastAt cfg lgr
 
-instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
+instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
   newtype GenTx (DegenFork b) = DTx {
         unDTx :: GenTx (HardForkBlock '[b])
       }
@@ -220,11 +222,11 @@ instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
     fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
 
   maxTxCapacity (Ticked slot (DLgr lgr)) =
-    maxTxCapacity (Ticked slot (projLedgerState lgr))
+    maxTxCapacity (Ticked slot (project lgr))
 
-  maxTxSize (DLgr lgr) = maxTxSize (projLedgerState lgr)
+  maxTxSize (DLgr lgr) = maxTxSize (project lgr)
 
-  txInBlockSize (DTx tx) = txInBlockSize (projGenTx tx)
+  txInBlockSize (DTx tx) = txInBlockSize (project tx)
 
 
 instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
@@ -247,18 +249,18 @@ instance SingleEraBlock b => QueryLedger (DegenFork b) where
   answerQuery cfg (DQry qry) (DLgr lgr) = answerQuery cfg qry lgr
   eqQuery (DQry qry1) (DQry qry2) = eqQuery qry1 qry2
 
-instance SingleEraBlock b => CanForge (DegenFork b) where
+instance NoHardForks b => CanForge (DegenFork b) where
   type ForgeState (DegenFork b) = ForgeState (HardForkBlock '[b])
 
   forgeBlock cfg upd block (Ticked slot (DLgr lgr)) txs proof =
-      (DBlk . injBlock) <$>
+      (DBlk . inject' (Proxy @(I b))) <$>
         forgeBlock
           (projCfg cfg)
-          (projForgeState (Proxy @b) upd)
+          (project' (Proxy @(WrapForgeState b)) upd)
           block
-          (Ticked slot (projLedgerState lgr))
-          (map (projGenTx . unDTx) txs)
-          (projIsLeader proof)
+          (Ticked slot (project lgr))
+          (map (project . unDTx) txs)
+          (project' (Proxy @(WrapIsLeader b)) proof)
 
 instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk
@@ -275,8 +277,8 @@ instance SingleEraBlock b => ConvertRawHash (DegenFork b) where
   to @HardForkBlock '[b]@
 -------------------------------------------------------------------------------}
 
-projCfg :: SingleEraBlock b => TopLevelConfig (DegenFork b) -> TopLevelConfig b
-projCfg = projTopLevelConfig . castTopLevelConfig
+projCfg :: NoHardForks b => TopLevelConfig (DegenFork b) -> TopLevelConfig b
+projCfg = project . castTopLevelConfig
 
 instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) where
   type NodeToNodeVersion   (DegenFork b) = NodeToNodeVersion   b
@@ -290,13 +292,13 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     (Proxy @b)
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
 
-instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
-  nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (projHeader hdr)
+instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
+  nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (project hdr)
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
 
   nodeGetBinaryBlockInfo (DBlk blk) =
-      nodeGetBinaryBlockInfo (projBlock blk)
+      nodeGetBinaryBlockInfo (project' (Proxy @(I b)) blk :: b)
 
   nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
   nodeExceptionIsFatal  _ = nodeExceptionIsFatal  (Proxy @b)
@@ -304,73 +306,73 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
   nodeInitChainDB cfg initDB =
       nodeInitChainDB
         (projCfg cfg)
-        (projInitChainDB (InitChainDB.cast initDB))
+        (project (InitChainDB.cast initDB))
 
-  nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (projBlock blk)
+  nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (project' (Proxy @(I b)) blk)
 
   -- Encoders
 
   nodeEncodeBlock (DCCfg cfg) (DBlk blk) =
-      nodeEncodeBlock (projCodecConfig cfg) (projBlock blk)
+      nodeEncodeBlock (project cfg) (project' (Proxy @(I b)) blk)
   nodeEncodeHeader (DCCfg cfg) version (DHdr hdr) =
-      nodeEncodeHeader (projCodecConfig cfg) (castSerialisationVersion version) (projHeader hdr)
+      nodeEncodeHeader (project cfg) (castSerialisationVersion version) (project hdr)
   nodeEncodeWrappedHeader (DCCfg cfg) version (Serialised hdr) =
-      nodeEncodeWrappedHeader (projCodecConfig cfg) (castSerialisationAcrossNetwork version) (Serialised hdr)
+      nodeEncodeWrappedHeader (project cfg) (castSerialisationAcrossNetwork version) (Serialised hdr)
   nodeEncodeGenTx (DCCfg cfg) (DTx tx) =
-      nodeEncodeGenTx (projCodecConfig cfg) (projGenTx tx)
+      nodeEncodeGenTx (project cfg) (project tx)
   nodeEncodeGenTxId (DCCfg cfg) (DTxId tid) =
-      nodeEncodeGenTxId (projCodecConfig cfg) (projGenTxId tid)
+      nodeEncodeGenTxId (project cfg) (project' (Proxy @(WrapGenTxId b)) tid)
   nodeEncodeHeaderHash (DCCfg cfg) hash =
-      nodeEncodeHeaderHash (projCodecConfig cfg) (projHeaderHash hash)
+      nodeEncodeHeaderHash (project cfg) (project' (Proxy @(WrapHeaderHash b)) hash)
   nodeEncodeLedgerState (DCCfg cfg) (DLgr lgr) =
-      nodeEncodeLedgerState (projCodecConfig cfg) (projLedgerState lgr)
+      nodeEncodeLedgerState (project cfg) (project lgr)
   nodeEncodeConsensusState (DCCfg cfg) st =
-      nodeEncodeConsensusState (projCodecConfig cfg) (projConsensusState st)
+      nodeEncodeConsensusState (project cfg) (project' (Proxy @(WrapConsensusState b)) st)
   nodeEncodeApplyTxError (DCCfg cfg) err =
-      nodeEncodeApplyTxError (projCodecConfig cfg) (projApplyTxErr err)
+      nodeEncodeApplyTxError (project cfg) (project' (Proxy @(WrapApplyTxErr b)) err)
   nodeEncodeAnnTip (DCCfg cfg) tip =
-      nodeEncodeAnnTip (projCodecConfig cfg) (projAnnTip (castAnnTip tip))
+      nodeEncodeAnnTip (project cfg) (project (castAnnTip tip))
   nodeEncodeQuery (DCCfg cfg) (DQry qry) =
-      projQuery qry $ \_pf qry' -> nodeEncodeQuery (projCodecConfig cfg) qry'
+      projQuery qry $ \_pf qry' -> nodeEncodeQuery (project cfg) qry'
   nodeEncodeResult (DCCfg cfg) (DQry qry) mResult =
       projQuery qry $ \Refl qry' ->
         case mResult of
-          Right result -> nodeEncodeResult (projCodecConfig cfg) qry' result
+          Right result -> nodeEncodeResult (project cfg) qry' result
           Left  err    -> absurd $ mismatchOneEra err
 
   -- Decoders
 
   nodeDecodeBlock (DCCfg cfg) =
-      (\f -> DBlk . injBlock . f) <$>
-        nodeDecodeBlock (projCodecConfig cfg)
+      (\f -> DBlk . inject' (Proxy @(I b)) . f) <$>
+        nodeDecodeBlock (project cfg)
   nodeDecodeHeader (DCCfg cfg) version =
-      (\f -> DHdr . injHeader . f) <$>
-        nodeDecodeHeader (projCodecConfig cfg) (castSerialisationVersion version)
+      (\f -> DHdr . inject . f) <$>
+        nodeDecodeHeader (project cfg) (castSerialisationVersion version)
   nodeDecodeWrappedHeader (DCCfg cfg) version =
       (\(Serialised hdr) -> Serialised hdr) <$>
-        nodeDecodeWrappedHeader (projCodecConfig cfg) (castSerialisationAcrossNetwork version)
+        nodeDecodeWrappedHeader (project cfg) (castSerialisationAcrossNetwork version)
   nodeDecodeGenTx (DCCfg cfg) =
-      (DTx . injGenTx) <$>
-        nodeDecodeGenTx (projCodecConfig cfg)
+      (DTx . inject) <$>
+        nodeDecodeGenTx (project cfg)
   nodeDecodeGenTxId (DCCfg cfg) =
-      (DTxId . injGenTxId) <$>
-        nodeDecodeGenTxId (projCodecConfig cfg)
+      (DTxId . inject' (Proxy @(WrapGenTxId b))) <$>
+        nodeDecodeGenTxId (project cfg)
   nodeDecodeHeaderHash (DCCfg cfg) =
-      injHeaderHash <$>
-        nodeDecodeHeaderHash (projCodecConfig cfg)
+      inject' (Proxy @(WrapHeaderHash b)) <$>
+        nodeDecodeHeaderHash (project cfg)
   nodeDecodeLedgerState (DCCfg cfg) =
-      (DLgr . injLedgerState) <$> nodeDecodeLedgerState (projCodecConfig cfg)
+      (DLgr . inject) <$> nodeDecodeLedgerState (project cfg)
   nodeDecodeConsensusState (DCCfg cfg) =
-      injConsensusState <$> nodeDecodeConsensusState (projCodecConfig cfg)
+      inject' (Proxy @(WrapConsensusState b)) <$> nodeDecodeConsensusState (project cfg)
   nodeDecodeApplyTxError (DCCfg cfg) =
-      injApplyTxErr <$>
-        nodeDecodeApplyTxError (projCodecConfig cfg)
+      inject' (Proxy @(WrapApplyTxErr b)) <$>
+        nodeDecodeApplyTxError (project cfg)
   nodeDecodeAnnTip (DCCfg cfg) =
-      (castAnnTip . injAnnTip) <$>
-        nodeDecodeAnnTip (projCodecConfig cfg)
+      (castAnnTip . inject) <$>
+        nodeDecodeAnnTip (project cfg)
   nodeDecodeQuery (DCCfg cfg) =
       (\(Some qry) -> Some (DQry $ injQuery qry)) <$>
-        nodeDecodeQuery (projCodecConfig cfg)
+        nodeDecodeQuery (project cfg)
   nodeDecodeResult (DCCfg cfg) (DQry qry) =
       projQuery qry $ \Refl qry' ->
-        Right <$> nodeDecodeResult (projCodecConfig cfg) qry'
+        Right <$> nodeDecodeResult (project cfg) qry'

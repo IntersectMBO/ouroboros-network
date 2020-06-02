@@ -80,7 +80,7 @@ prop_simple_cardano_convergence k d
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = \(CoreNodeId nid) -> plainTestNodeInitialization $
-                castProtocolInfo $ injProtocolInfo
+                castProtocolInfo $ inject
                   (mkProtocolRealTPraos
                     genesisConfig
                     (coreNodes !! fromIntegral nid))

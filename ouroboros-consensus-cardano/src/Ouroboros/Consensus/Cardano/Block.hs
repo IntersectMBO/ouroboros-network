@@ -1,6 +1,11 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Cardano.Block (
     CardanoBlock
   ) where
@@ -10,7 +15,7 @@ import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
-import           Ouroboros.Consensus.HardFork.Combinator.Unary (projBlock)
+import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyLedgerConfig (..))
@@ -50,4 +55,7 @@ instance TPraosCrypto c => SingleEraBlock (ShelleyBlock c) where
     }
 
 instance TPraosCrypto c => Condense (CardanoBlock c) where
-  condense = condense . projBlock . unDBlk
+  condense = condense . aux . unDBlk
+    where
+      aux :: HardForkBlock '[ShelleyBlock c] -> ShelleyBlock c
+      aux = project' (Proxy @(I (ShelleyBlock c)))

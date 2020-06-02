@@ -185,9 +185,7 @@ protocolInfo (ProtocolRealTPraos genesis protVer mbLeaderCredentials) =
     protocolInfoShelley genesis protVer mbLeaderCredentials
 
 protocolInfo (ProtocolCardano genesis protVer mbLeaderCredentials) =
-    castProtocolInfo $
-      injProtocolInfo
-        shelleyProtocolInfo
+    castProtocolInfo $ inject shelleyProtocolInfo
   where
     shelleyProtocolInfo :: ProtocolInfo m (ShelleyBlock TPraosStandardCrypto)
     shelleyProtocolInfo = protocolInfoShelley genesis protVer mbLeaderCredentials
@@ -256,4 +254,4 @@ protocolClientInfo ProtocolClientRealTPraos =
 
 protocolClientInfo ProtocolClientCardano =
     castProtocolClientInfo $
-      injProtocolClientInfo protocolClientInfoShelley
+      inject protocolClientInfoShelley

@@ -1,66 +1,36 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- | Witness isomorphism between @b@ and @HardForkBlock '[b]@
 module Ouroboros.Consensus.HardFork.Combinator.Unary (
-    -- * Projections
-    projAnnTip
-  , projApplyTxErr
-  , projBlock
-  , projBlockConfig
-  , projChainHash
-  , projCodecConfig
-  , projConsensusConfig
-  , projConsensusState
-  , projExtLedgerState
-  , projForgeState
-  , projGenTx
-  , projGenTxId
-  , projHeader
-  , projHeaderHash
-  , projHeaderState
-  , projInitChainDB
-  , projIsLeader
-  , projLedgerConfig
-  , projLedgerState
+    Isomorphic(..)
+  , project'
+  , inject'
+    -- * Special cases
   , projLedgerView
   , projQuery
-  , projTipInfo
-  , projTopLevelConfig
-  , projUpdateForgeState
-    -- * Injections
-  , injAnnTip
-  , injApplyTxErr
-  , injBlock
-  , injBlockConfig
-  , injCodecConfig
-  , injConsensusConfig
-  , injConsensusState
-  , injEnvelopeErr
-  , injExtLedgerState
-  , injForgeState
-  , injGenTx
-  , injGenTxId
-  , injHeader
-  , injHeaderHash
-  , injHeaderState
-  , injLedgerConfig
-  , injLedgerState
-  , injMaintainForgeState
-  , injProtocolClientInfo
-  , injProtocolInfo
   , injQuery
-  , injTopLevelConfig
+    -- * Convenience exports
+  , Proxy(..)
+  , I(..)
   ) where
 
 import           Data.Bifunctor
+import           Data.Coerce
+import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Type.Equality
 import           Data.Void
@@ -80,6 +50,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -95,316 +66,414 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
                      (HardForkEraLedgerView (..))
-import           Ouroboros.Consensus.HardFork.Combinator.State
-                     (HardForkState_ (..))
+import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
+                     HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
-  Projections
+  Projection/injection for a single block into degenerate HardForkBlock
 -------------------------------------------------------------------------------}
 
-projIsLeader :: IsLeader (BlockProtocol (HardForkBlock '[b]))
-             -> IsLeader (BlockProtocol b)
-projIsLeader = unwrapIsLeader . unZ . getOneEraIsLeader
+class Isomorphic f where
+  project :: NoHardForks blk => f (HardForkBlock '[blk]) -> f blk
+  inject  :: NoHardForks blk => f blk -> f (HardForkBlock '[blk])
 
-projGenTx :: GenTx (HardForkBlock '[b]) -> GenTx b
-projGenTx = unZ . getOneEraGenTx . getHardForkGenTx
+project' :: forall proxy f x y blk. (
+              Isomorphic f
+            , NoHardForks blk
+            , Coercible x (f (HardForkBlock '[blk]))
+            , Coercible y (f blk)
+            )
+         => proxy (f blk) -> x -> y
+project' _ =
+      (coerce :: f blk -> y)
+    . project
+    . (coerce :: x -> f (HardForkBlock '[blk]))
 
-injGenTx :: GenTx b -> GenTx (HardForkBlock '[b])
-injGenTx = HardForkGenTx . OneEraGenTx . Z
+inject' :: forall proxy f x y blk. (
+              Isomorphic f
+            , NoHardForks blk
+            , Coercible x (f blk)
+            , Coercible y (f (HardForkBlock '[blk]))
+            )
+         => proxy (f blk) -> x -> y
+inject' _ =
+      (coerce :: f (HardForkBlock '[blk]) -> y)
+    . inject
+    . (coerce :: x -> f blk)
 
-projGenTxId :: GenTxId (HardForkBlock '[b]) -> GenTxId b
-projGenTxId = unwrapGenTxId . unZ . getOneEraGenTxId . getHardForkGenTxId
+{-------------------------------------------------------------------------------
+  Defaults (to ease implementation)
 
-injGenTxId :: GenTxId b -> GenTxId (HardForkBlock '[b])
-injGenTxId = HardForkGenTxId . OneEraGenTxId . Z . WrapGenTxId
+  It'd be nicer to use deriving-via here, but we cannot due to a GHC bug
+  (resulting in @No family instance for ‘GenTx’@ errors).
+  See <https://gitlab.haskell.org/ghc/ghc/issues/13154#note_224287> .
+-------------------------------------------------------------------------------}
 
-projBlock :: HardForkBlock '[b] -> b
-projBlock = unI . unZ . getOneEraBlock . getHardForkBlock
+defaultProjectNS :: forall f blk.
+                    Coercible (f (HardForkBlock '[blk])) (NS f '[blk])
+                 => f (HardForkBlock '[blk]) -> f blk
+defaultProjectNS = unZ . (coerce :: f (HardForkBlock '[blk]) -> NS f '[blk])
 
-injBlock :: b -> HardForkBlock '[b]
-injBlock = HardForkBlock . OneEraBlock . Z . I
+defaultInjectNS :: forall f blk.
+                   Coercible (f (HardForkBlock '[blk])) (NS f '[blk])
+                => f blk -> f (HardForkBlock '[blk])
+defaultInjectNS = (coerce :: NS f '[blk] -> f (HardForkBlock '[blk])) . Z
 
-projHeaderHash :: forall b. ConvertRawHash b
-               => HeaderHash (HardForkBlock '[b]) -> HeaderHash b
-projHeaderHash = fromRawHash (Proxy @b) . getOneEraHash
+defaultProjectNP :: forall f blk.
+                    Coercible (f (HardForkBlock '[blk])) (NP f '[blk])
+                 => f (HardForkBlock '[blk]) -> f blk
+defaultProjectNP = hd . (coerce :: f (HardForkBlock '[blk]) -> NP f '[blk])
 
-injHeaderHash :: forall b. ConvertRawHash b
-              => HeaderHash b -> HeaderHash (HardForkBlock '[b])
-injHeaderHash = OneEraHash . toRawHash (Proxy @b)
+defaultInjectNP :: forall f blk.
+                   Coercible (f (HardForkBlock '[blk])) (NP f '[blk])
+                => f blk -> f (HardForkBlock '[blk])
+defaultInjectNP = (coerce :: NP f '[blk] -> f (HardForkBlock '[blk])) . (:* Nil)
 
-projChainHash :: ConvertRawHash b
-              => ChainHash (HardForkBlock '[b]) -> ChainHash b
-projChainHash = \case
-    GenesisHash -> GenesisHash
-    BlockHash h -> BlockHash (projHeaderHash h)
-
-projHeader :: Header (HardForkBlock '[b]) -> Header b
-projHeader = unZ . getOneEraHeader . getHardForkHeader
-
-injHeader :: Header b -> Header (HardForkBlock '[b])
-injHeader = HardForkHeader . OneEraHeader . Z
-
-projBlockConfig :: BlockConfig (HardForkBlock '[b]) -> BlockConfig b
-projBlockConfig = hd . getPerEraBlockConfig . hardForkBlockConfigPerEra
-
-injBlockConfig :: BlockConfig b -> BlockConfig (HardForkBlock '[b])
-injBlockConfig = HardForkBlockConfig . PerEraBlockConfig . (:* Nil)
-
-projCodecConfig :: CodecConfig (HardForkBlock '[b]) -> CodecConfig b
-projCodecConfig = hd . getPerEraCodecConfig . hardForkCodecConfigPerEra
-
-injCodecConfig :: CodecConfig b -> CodecConfig (HardForkBlock '[b])
-injCodecConfig = HardForkCodecConfig . PerEraCodecConfig . (:* Nil)
-
--- | Project 'LedgerConfig'
---
--- The 'EpochInfo' should be easy to construct, since we are dealing with a
--- single era (see 'fixedSizeEpochInfo').
-projLedgerConfig :: forall b. SingleEraBlock b
-                 => EpochInfo Identity
-                 -> LedgerConfig (HardForkBlock '[b]) -> LedgerConfig b
-projLedgerConfig ei =
-      completeLedgerConfig (Proxy @b) ei
-    . unwrapPartialLedgerConfig
-    . hd
-    . getPerEraLedgerConfig
-    . hardForkLedgerConfigPerEra
-
-injLedgerConfig :: forall b. NoHardForks b
-                => SecurityParam
-                -> History.EraParams
-                -> LedgerConfig b
-                -> LedgerConfig (HardForkBlock '[b])
-injLedgerConfig k eraParams cfg = HardForkLedgerConfig {
-      hardForkLedgerConfigK      = k
-    , hardForkLedgerConfigShape  = History.singletonShape eraParams
-    , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
-           WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @b) cfg )
-        :* Nil
-    }
-
-projConsensusConfig :: forall b. SingleEraBlock b
-                    => EpochInfo Identity
-                    -> ConsensusConfig (BlockProtocol (HardForkBlock '[b]))
-                    -> ConsensusConfig (BlockProtocol b)
-projConsensusConfig ei =
-      completeConsensusConfig (Proxy @(BlockProtocol b)) ei
-    . unwrapPartialConsensusConfig
-    . hd
-    . getPerEraConsensusConfig
-    . hardForkConsensusConfigPerEra
-
-injConsensusConfig :: forall b. NoHardForks b
-                   => History.EraParams
-                   -> ConsensusConfig (BlockProtocol b)
-                   -> ConsensusConfig (BlockProtocol (HardForkBlock '[b]))
-injConsensusConfig eraParams cfg = HardForkConsensusConfig {
-      hardForkConsensusConfigK      = protocolSecurityParam cfg
-    , hardForkConsensusConfigShape  = History.singletonShape eraParams
-    , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
-           WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @b) cfg)
-        :* Nil
-    }
-
-projLedgerState :: LedgerState (HardForkBlock '[b]) -> LedgerState b
-projLedgerState =
+defaultProjectSt :: forall f blk.
+                    Coercible (f (HardForkBlock '[blk])) (HardForkState f '[blk])
+                 => f (HardForkBlock '[blk]) -> f blk
+defaultProjectSt =
       State.currentState
     . Telescope.fromTZ
     . getHardForkState
-    . getHardForkLedgerState
+    . (coerce :: f (HardForkBlock '[blk]) -> HardForkState f '[blk])
 
-injLedgerState :: LedgerState b -> LedgerState (HardForkBlock '[b])
-injLedgerState =
-      HardForkLedgerState
+defaultInjectSt :: forall f blk.
+                   Coercible (f (HardForkBlock '[blk])) (HardForkState f '[blk])
+                => f blk -> f (HardForkBlock '[blk])
+defaultInjectSt =
+      (coerce :: HardForkState f '[blk] -> f (HardForkBlock '[blk]))
     . HardForkState
     . Telescope.TZ
     . State.Current History.initBound
 
+{-------------------------------------------------------------------------------
+  Simple instances
+-------------------------------------------------------------------------------}
+
+instance Isomorphic WrapIsLeader where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+instance Isomorphic WrapGenTxId where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+instance Isomorphic I where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+instance Isomorphic GenTx where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+instance Isomorphic Header where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+instance Isomorphic BlockConfig where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
+instance Isomorphic CodecConfig where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
+instance Isomorphic LedgerState where
+  project = defaultProjectSt
+  inject  = defaultInjectSt
+
+instance Isomorphic WrapConsensusState where
+  project = defaultProjectSt
+  inject  = defaultInjectSt
+
+instance Isomorphic WrapForgeState where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
+instance Isomorphic WrapTipInfo where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
+{-------------------------------------------------------------------------------
+  Hash
+-------------------------------------------------------------------------------}
+
+instance Isomorphic WrapHeaderHash where
+  project :: forall blk. ConvertRawHash blk
+          => WrapHeaderHash (HardForkBlock '[blk]) -> WrapHeaderHash blk
+  project =
+        WrapHeaderHash
+      . fromRawHash (Proxy @blk) . getOneEraHash
+      . unwrapHeaderHash
+
+  inject :: forall blk. ConvertRawHash blk
+      => WrapHeaderHash blk -> WrapHeaderHash (HardForkBlock '[blk])
+  inject =
+        WrapHeaderHash
+      . OneEraHash . toRawHash (Proxy @blk)
+      . unwrapHeaderHash
+
+instance Isomorphic ChainHash where
+  project :: forall blk. NoHardForks blk
+          => ChainHash (HardForkBlock '[blk]) -> ChainHash blk
+  project GenesisHash   = GenesisHash
+  project (BlockHash h) = BlockHash (project' (Proxy @(WrapHeaderHash blk)) h)
+
+  inject :: forall blk. NoHardForks blk
+         => ChainHash blk -> ChainHash (HardForkBlock '[blk])
+  inject GenesisHash   = GenesisHash
+  inject (BlockHash h) = BlockHash (inject' (Proxy @(WrapHeaderHash blk)) h)
+
+{-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+-- | Projection/injection for 'TopLevelConfig'
+--
+-- NOTE: We do not define one for 'LedgerConfig' or 'ConsensusConfig', since
+-- we need the 'EraParams' for their injections, which we can only derive if
+-- we have the top-level config.
+instance Isomorphic TopLevelConfig where
+  project :: forall blk. NoHardForks blk
+          => TopLevelConfig (HardForkBlock '[blk]) -> TopLevelConfig blk
+  project TopLevelConfig{..} = TopLevelConfig{
+        configConsensus  = auxConsensus configConsensus
+      , configLedger     = auxLedger    configLedger
+      , configBlock      = project      configBlock
+      }
+    where
+      ei :: EpochInfo Identity
+      ei = fixedSizeEpochInfo
+         . History.eraEpochSize
+         . unK . hd
+         . History.getShape
+         . hardForkLedgerConfigShape
+         $ configLedger
+
+      auxLedger :: LedgerConfig (HardForkBlock '[blk]) -> LedgerConfig blk
+      auxLedger =
+            completeLedgerConfig (Proxy @blk) ei
+          . unwrapPartialLedgerConfig
+          . hd
+          . getPerEraLedgerConfig
+          . hardForkLedgerConfigPerEra
+
+      auxConsensus :: ConsensusConfig (BlockProtocol (HardForkBlock '[blk]))
+                   -> ConsensusConfig (BlockProtocol blk)
+      auxConsensus =
+            completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
+          . unwrapPartialConsensusConfig
+          . hd
+          . getPerEraConsensusConfig
+          . hardForkConsensusConfigPerEra
+
+  inject :: forall blk. NoHardForks blk
+         => TopLevelConfig blk -> TopLevelConfig (HardForkBlock '[blk])
+  inject tlc@TopLevelConfig{..} = TopLevelConfig{
+        configConsensus = auxConsensus configConsensus
+      , configLedger    = auxLedger    configLedger
+      , configBlock     = inject       configBlock
+      }
+    where
+      eraParams = getEraParams tlc
+      k         = protocolSecurityParam configConsensus
+
+      auxLedger :: LedgerConfig blk -> LedgerConfig (HardForkBlock '[blk])
+      auxLedger cfg = HardForkLedgerConfig {
+            hardForkLedgerConfigK      = k
+          , hardForkLedgerConfigShape  = History.singletonShape eraParams
+          , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+                 WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @blk) cfg )
+              :* Nil
+          }
+
+      auxConsensus :: ConsensusConfig (BlockProtocol blk)
+                   -> ConsensusConfig (BlockProtocol (HardForkBlock '[blk]))
+      auxConsensus cfg = HardForkConsensusConfig {
+            hardForkConsensusConfigK      = protocolSecurityParam cfg
+          , hardForkConsensusConfigShape  = History.singletonShape eraParams
+          , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+                 WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @blk) cfg)
+              :* Nil
+          }
+
+{-------------------------------------------------------------------------------
+  Various kinds of records
+-------------------------------------------------------------------------------}
+
+instance Isomorphic HeaderState where
+  project :: forall blk. NoHardForks blk
+          => HeaderState (HardForkBlock '[blk]) -> HeaderState blk
+  project HeaderState{..} = HeaderState {
+        headerStateConsensus = project' (Proxy @(WrapConsensusState blk)) headerStateConsensus
+      , headerStateTips      = project <$> headerStateTips
+      , headerStateAnchor    = project <$> headerStateAnchor
+      }
+
+  inject :: forall blk. NoHardForks blk
+         => HeaderState blk -> HeaderState (HardForkBlock '[blk])
+  inject HeaderState{..} = HeaderState {
+        headerStateConsensus = inject' (Proxy @(WrapConsensusState blk)) headerStateConsensus
+      , headerStateTips      = inject <$> headerStateTips
+      , headerStateAnchor    = inject <$> headerStateAnchor
+      }
+
+instance Isomorphic ExtLedgerState where
+  project ExtLedgerState{..} = ExtLedgerState {
+        ledgerState = project ledgerState
+      , headerState = project headerState
+      }
+
+  inject ExtLedgerState{..} = ExtLedgerState {
+        ledgerState = inject ledgerState
+      , headerState = inject headerState
+      }
+
+instance Functor m => Isomorphic (MaintainForgeState m) where
+  project :: forall blk. NoHardForks blk
+          => MaintainForgeState m (HardForkBlock '[blk])
+          -> MaintainForgeState m blk
+  project mfs = MaintainForgeState {
+        initForgeState   = project' (Proxy @(WrapForgeState blk)) $ initForgeState mfs
+      , updateForgeState = updateForgeState mfs . liftUpdate get set
+      }
+    where
+      get :: ForgeState blk -> PerEraForgeState '[blk]
+      get = inject' (Proxy @(WrapForgeState blk))
+
+      set :: PerEraForgeState '[blk] -> ForgeState blk -> ForgeState blk
+      set = const . project' (Proxy @(WrapForgeState blk))
+
+  inject :: forall blk. NoHardForks blk
+         => MaintainForgeState m blk
+         -> MaintainForgeState m (HardForkBlock '[blk])
+  inject mfs = MaintainForgeState {
+        initForgeState   = inject' (Proxy @(WrapForgeState blk)) $ initForgeState mfs
+      , updateForgeState = updateForgeState mfs . liftUpdate get set
+      }
+    where
+      get :: PerEraForgeState '[blk] -> ForgeState blk
+      get = project' (Proxy @(WrapForgeState blk))
+
+      set :: ForgeState blk -> PerEraForgeState '[blk] -> PerEraForgeState '[blk]
+      set = const . inject' (Proxy @(WrapForgeState blk))
+
+instance Isomorphic AnnTip where
+  project :: forall blk. NoHardForks blk => AnnTip (HardForkBlock '[blk]) -> AnnTip blk
+  project (AnnTip s b nfo) = AnnTip s b (project' (Proxy @(WrapTipInfo blk)) nfo)
+
+  inject (AnnTip s b nfo) = AnnTip s b (OneEraTipInfo (Z (WrapTipInfo nfo)))
+
+instance Isomorphic (InitChainDB m) where
+  project :: forall blk. NoHardForks blk
+          => InitChainDB m (HardForkBlock '[blk]) -> InitChainDB m blk
+  project initDB = InitChainDB.InitChainDB {
+        InitChainDB.checkEmpty = InitChainDB.checkEmpty initDB
+      , InitChainDB.addBlock   = InitChainDB.addBlock   initDB . inject' (Proxy @(I blk))
+      }
+
+  inject :: forall blk. NoHardForks blk
+         => InitChainDB m blk -> InitChainDB m (HardForkBlock '[blk])
+  inject initDB = InitChainDB.InitChainDB {
+        InitChainDB.checkEmpty = InitChainDB.checkEmpty initDB
+      , InitChainDB.addBlock   = InitChainDB.addBlock   initDB . project' (Proxy @(I blk))
+      }
+
+instance Isomorphic ProtocolClientInfo where
+  project ProtocolClientInfo{..} = ProtocolClientInfo {
+        pClientInfoCodecConfig = project pClientInfoCodecConfig
+      }
+
+  inject ProtocolClientInfo{..} = ProtocolClientInfo {
+        pClientInfoCodecConfig = inject pClientInfoCodecConfig
+      }
+
+instance Functor m => Isomorphic (ProtocolInfo m) where
+  project :: forall blk. NoHardForks blk
+          => ProtocolInfo m (HardForkBlock '[blk]) -> ProtocolInfo m blk
+  project ProtocolInfo {..} = ProtocolInfo {
+        pInfoConfig      = project pInfoConfig
+      , pInfoInitLedger  = project pInfoInitLedger
+      , pInfoLeaderCreds = bimap (project' (Proxy @(WrapCanBeLeader blk))) project <$>
+                             pInfoLeaderCreds
+      }
+
+  inject :: forall blk. NoHardForks blk
+         => ProtocolInfo m blk -> ProtocolInfo m (HardForkBlock '[blk])
+  inject ProtocolInfo {..} = ProtocolInfo {
+        pInfoConfig      = inject pInfoConfig
+      , pInfoInitLedger  = inject pInfoInitLedger
+      , pInfoLeaderCreds = bimap (inject' (Proxy @(WrapCanBeLeader blk))) inject <$>
+                             pInfoLeaderCreds
+      }
+
+{-------------------------------------------------------------------------------
+  Types that require take advantage of the fact that we have a single era
+-------------------------------------------------------------------------------}
+
+instance Isomorphic WrapApplyTxErr where
+  project = aux . unwrapApplyTxErr
+    where
+      aux :: ApplyTxErr (HardForkBlock '[blk]) -> WrapApplyTxErr blk
+      aux (HardForkApplyTxErrFromEra  err) = unZ $ getOneEraApplyTxErr err
+      aux (HardForkApplyTxErrWrongEra err) = absurd $ mismatchOneEra err
+
+  inject = WrapApplyTxErr . aux
+    where
+      aux :: WrapApplyTxErr blk -> ApplyTxErr (HardForkBlock '[blk])
+      aux = HardForkApplyTxErrFromEra . OneEraApplyTxErr . Z
+
+instance Isomorphic WrapEnvelopeErr where
+  project = aux . unwrapEnvelopeErr
+    where
+      aux :: OtherHeaderEnvelopeError (HardForkBlock '[blk])
+          -> WrapEnvelopeErr blk
+      aux (HardForkEnvelopeErrFromEra  err) = unZ $ getOneEraEnvelopeErr err
+      aux (HardForkEnvelopeErrWrongEra err) = absurd $ mismatchOneEra err
+
+  inject = WrapEnvelopeErr . aux
+    where
+      aux :: WrapEnvelopeErr b
+          -> OtherHeaderEnvelopeError (HardForkBlock '[b])
+      aux = HardForkEnvelopeErrFromEra . OneEraEnvelopeErr . Z
+
+instance Isomorphic WrapCanBeLeader where
+  project = fromSingletonOptNP . unwrapCanBeLeader
+  inject  = WrapCanBeLeader . singletonOptNP
+
+{-------------------------------------------------------------------------------
+  Exceptions
+-------------------------------------------------------------------------------}
+
+-- | Project 'LedgerView'
+--
+-- Not an instance of 'Isomorphic' because there is no corresponding injection.
 projLedgerView :: proxy b
                -> LedgerView (BlockProtocol (HardForkBlock '[b]))
                -> LedgerView (BlockProtocol b)
-projLedgerView _ =
-      hardForkEraLedgerView
-    . State.fromTZ
+projLedgerView _ = hardForkEraLedgerView . State.fromTZ
 
-projConsensusState :: ConsensusState (BlockProtocol (HardForkBlock '[b]))
-                   -> ConsensusState (BlockProtocol b)
-projConsensusState =
-      unwrapConsensusState
-    . State.currentState
-    . Telescope.fromTZ
-    . getHardForkState
-
-injConsensusState :: ConsensusState (BlockProtocol b)
-                  -> ConsensusState (BlockProtocol (HardForkBlock '[b]))
-injConsensusState =
-      HardForkState
-    . Telescope.TZ
-    . State.Current History.initBound
-    . WrapConsensusState
-
-projHeaderState :: HeaderState (HardForkBlock '[b]) -> HeaderState b
-projHeaderState HeaderState{..} = HeaderState {
-      headerStateConsensus = projConsensusState headerStateConsensus
-    , headerStateTips      = projAnnTip <$> headerStateTips
-    , headerStateAnchor    = projAnnTip <$> headerStateAnchor
-    }
-
-injHeaderState :: HeaderState b -> HeaderState (HardForkBlock '[b])
-injHeaderState HeaderState{..} = HeaderState {
-      headerStateConsensus = injConsensusState headerStateConsensus
-    , headerStateTips      = injAnnTip <$> headerStateTips
-    , headerStateAnchor    = injAnnTip <$> headerStateAnchor
-    }
-
-projExtLedgerState :: ExtLedgerState (HardForkBlock '[b]) -> ExtLedgerState b
-projExtLedgerState ExtLedgerState{..} = ExtLedgerState {
-      ledgerState = projLedgerState ledgerState
-    , headerState = projHeaderState headerState
-    }
-
-injExtLedgerState :: ExtLedgerState b -> ExtLedgerState (HardForkBlock '[b])
-injExtLedgerState ExtLedgerState{..} = ExtLedgerState {
-      ledgerState = injLedgerState ledgerState
-    , headerState = injHeaderState headerState
-    }
-
-projTopLevelConfig :: forall b. SingleEraBlock b
-                   => TopLevelConfig (HardForkBlock '[b]) -> TopLevelConfig b
-projTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
-      configConsensus  = projConsensusConfig ei configConsensus
-    , configLedger     = projLedgerConfig    ei configLedger
-    , configBlock      = projBlockConfig        configBlock
-    }
-  where
-    ei :: EpochInfo Identity
-    ei = fixedSizeEpochInfo
-       . History.eraEpochSize
-       . unK . hd
-       . History.getShape
-       . hardForkLedgerConfigShape
-       $ configLedger
-
-injTopLevelConfig :: forall b. NoHardForks b
-                  => TopLevelConfig b -> TopLevelConfig (HardForkBlock '[b])
-injTopLevelConfig cfg@TopLevelConfig{..} = TopLevelConfig{
-      configConsensus = injConsensusConfig eraParams configConsensus
-    , configLedger    = injLedgerConfig
-                          (protocolSecurityParam configConsensus)
-                          eraParams
-                          configLedger
-    , configBlock     = injBlockConfig configBlock
-    }
-  where
-    eraParams = getEraParams cfg
-
-projForgeState :: proxy b -> ForgeState (HardForkBlock '[b]) -> ForgeState b
-projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
-
-injForgeState :: proxy b -> ForgeState b -> ForgeState (HardForkBlock '[b])
-injForgeState _ = PerEraForgeState . (:* Nil) . WrapForgeState
-
-injMaintainForgeState :: forall m b. Functor m
-                      => MaintainForgeState m b
-                      -> MaintainForgeState m (HardForkBlock '[b])
-injMaintainForgeState maintainForgeState = MaintainForgeState {
-      initForgeState   = injForgeState (Proxy @b)
-                       $ initForgeState maintainForgeState
-    , updateForgeState = updateForgeState maintainForgeState
-                       . projUpdateForgeState
-    }
-
-projInitChainDB :: InitChainDB m (HardForkBlock '[b]) -> InitChainDB m b
-projInitChainDB initDB = InitChainDB.InitChainDB {
-      InitChainDB.checkEmpty = InitChainDB.checkEmpty initDB
-    , InitChainDB.addBlock   = InitChainDB.addBlock initDB . injBlock
-    }
-
-projApplyTxErr :: ApplyTxErr (HardForkBlock '[b]) -> ApplyTxErr b
-projApplyTxErr (HardForkApplyTxErrFromEra err) =
-      unwrapApplyTxErr
-    . unZ
-    . getOneEraApplyTxErr
-    $ err
-projApplyTxErr (HardForkApplyTxErrWrongEra err) =
-      absurd
-    . mismatchOneEra
-    $ err
-
-injApplyTxErr :: ApplyTxErr b -> ApplyTxErr (HardForkBlock '[b])
-injApplyTxErr =
-      HardForkApplyTxErrFromEra
-    . OneEraApplyTxErr
-    . Z
-    . WrapApplyTxErr
-
-projTipInfo :: TipInfo (HardForkBlock '[b]) -> TipInfo b
-projTipInfo =
-      unwrapTipInfo
-    . unZ
-    . getOneEraTipInfo
-
-projAnnTip :: AnnTip (HardForkBlock '[b]) -> AnnTip b
-projAnnTip (AnnTip s b nfo) = AnnTip s b (projTipInfo nfo)
-
-injAnnTip :: AnnTip b -> AnnTip (HardForkBlock '[b])
-injAnnTip (AnnTip s b nfo) =
-    AnnTip s b (OneEraTipInfo (Z (WrapTipInfo nfo)))
-
+-- | Project 'Query'
+--
+-- Not an instance of 'Isomorphic' because the types change.
 projQuery :: Query (HardForkBlock '[b]) result
           -> (forall result'.
                   (result :~: HardForkQueryResult '[b] result')
                -> Query b result'
                -> a)
           -> a
-projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . projHardForkQuery
+projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . aux
+  where
+    aux :: HardForkQuery '[b] result -> Query b result
+    aux (QZ q) = q
+    aux (QS q) = case q of {}
 
-projHardForkQuery :: HardForkQuery '[b] result -> Query b result
-projHardForkQuery (QZ qry) = qry
-projHardForkQuery (QS qry) = case qry of {}
-
+-- | Inject 'Query'
+--
+-- Not an instance of 'Isomorphic' because the types change.
 injQuery :: Query b result
          -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
 injQuery = HardForkQuery . QZ
-
-injEnvelopeErr :: OtherHeaderEnvelopeError b
-               -> OtherHeaderEnvelopeError (HardForkBlock '[b])
-injEnvelopeErr =
-      HardForkEnvelopeErrFromEra
-    . OneEraEnvelopeErr
-    . Z
-    . WrapEnvelopeErr
-
-projUpdateForgeState :: forall b m. Functor m
-                     => Update m (ForgeState (HardForkBlock '[b]))
-                     -> Update m (ForgeState b)
-projUpdateForgeState = liftUpdate get set
-  where
-    get :: PerEraForgeState '[b] -> ForgeState b
-    get = projForgeState (Proxy @b)
-
-    set :: ForgeState b -> PerEraForgeState '[b] -> PerEraForgeState '[b]
-    set = const . injForgeState (Proxy @b)
-
-injProtocolInfo :: forall m b. (Functor m, NoHardForks b)
-                => ProtocolInfo m b -> ProtocolInfo m (HardForkBlock '[b])
-injProtocolInfo ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig      = injTopLevelConfig
-                           pInfoConfig
-    , pInfoInitLedger  = injExtLedgerState
-                           pInfoInitLedger
-    , pInfoLeaderCreds = bimap (injCanBeLeader (Proxy @b)) injMaintainForgeState <$>
-                           pInfoLeaderCreds
-    }
-
-injProtocolClientInfo :: ProtocolClientInfo b -> ProtocolClientInfo (HardForkBlock '[b])
-injProtocolClientInfo ProtocolClientInfo{..} = ProtocolClientInfo {
-      pClientInfoCodecConfig = injCodecConfig pClientInfoCodecConfig
-    }
-
-injCanBeLeader :: proxy b
-               -> CanBeLeader (BlockProtocol b)
-               -> CanBeLeader (BlockProtocol (HardForkBlock '[b]))
-injCanBeLeader _ proof = Comp (Just (WrapCanBeLeader proof)) :* Nil
