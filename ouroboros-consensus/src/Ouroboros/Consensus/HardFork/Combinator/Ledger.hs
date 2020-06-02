@@ -20,7 +20,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
 
 import           Control.Monad.Except
 import           Data.Functor.Product
-import           Data.SOP.Strict
+import           Data.SOP.Strict hiding (shape)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Counting (Exactly)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -50,8 +51,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkEraLedgerView (..), HardForkLedgerView,
                      mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
-                     HardForkState_ (..), Past (..), Snapshot (..),
-                     TransitionOrTip (..))
+                     HardForkState, HardForkState_ (..), Past (..),
+                     Snapshot (..), TransitionOrTip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
@@ -246,109 +247,22 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       ei   = State.epochInfoLedger ledgerCfg st
 
   ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..} (HardForkLedgerState st) p = do
-      st' <- State.retractToSlot p st
-      f   <- hsequence' $ hczipWith proxySingle forecastOne pcfgs st'
-      return $ mkForecast
-                 (InPairs.requiringBoth cfgs $
-                    translateLedgerView hardForkEraTranslation)
-                 (History.getShape hardForkLedgerConfigShape)
-                 (getHardForkState f)
+      hardforkForecast
+        st
+        (History.getShape hardForkLedgerConfigShape)
+        (InPairs.requiringBoth cfgs $
+           translateLedgerView hardForkEraTranslation)
+        (hcmap proxySingle (fn . forecastOne) pcfgs)
+        p
     where
       ei    = State.epochInfoLedger ledgerCfg st
       pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
 
-      -- Change a telescope of a forecast into a forecast of a telescope
-      mkForecast :: All SingleEraBlock xs'
-                 => InPairs TranslateEraLedgerView                                    xs'
-                 -> NP (K EraParams)                                                  xs'
-                 -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
-                 -> Forecast (HardForkLedgerView                                      xs')
-      mkForecast PNil _ (TZ (Current start (Comp f))) =
-          forecastFinalEra start f
-      mkForecast (PCons g _) (ps :* _) (TZ (Current start f)) =
-          forecastNotFinal g ps start (unComp f)
-      mkForecast (PCons _ gs) (_ :* pps) (TS past f) =
-          shiftView past <$> mkForecast gs pps f
-      mkForecast PNil _ (TS _ f) =
-          case f of {}
-
-      shiftView :: Past g blk
-                -> HardForkLedgerView (blk' : blks)
-                -> HardForkLedgerView (blk : blk' : blks)
-      shiftView past =
-            HardForkState
-          . TS (past { pastSnapshot = NoSnapshot })
-          . getHardForkState
-
-      -- We're in the final era. No translation required
-      forecastFinalEra :: Bound
-                       -> Forecast (HardForkEraLedgerView blk)
-                       -> Forecast (HardForkLedgerView '[blk])
-      forecastFinalEra start f =
-          Forecast (forecastAt f) $ \slot ->
-            aux <$> forecastFor f slot
-        where
-          aux :: HardForkEraLedgerView blk -> HardForkLedgerView '[blk]
-          aux = HardForkState . TZ . Current start
-
-      -- Make forecast with potential need to translate to next era
+      -- Forecast of a single era, as well as the end of that era (if any)
       --
-      -- NOTE 1: It is possible that we had to go to a previous era to get this
-      -- forecast (point @p@ might not have been in the current era). If that is
-      -- the case, the forecast should nonetheless be anchored in that previous
-      -- era, /and not have any knowledge of anything that happened in current
-      -- era/. Therefore, we take the forecast from that previous era, apply it
-      -- as normal, and only /then/ translate to the next era if appropriate.
-      --
-      -- NOTE 2: If we did have to go to a previous era to get a forecast, then
-      -- that ledger must certainly have been aware of the transition.
-      --
-      -- NOTE 3: We assume that we only ever have to translate to the /next/
-      -- era (as opposed to /any/ subsequent era).
-      forecastNotFinal :: forall blk blk' blks.
-                          TranslateEraLedgerView blk blk'
-                       -> K EraParams blk -- Era params in the forecast era
-                       -> Bound           -- Forecast era start
-                       -> Forecast (HardForkEraLedgerView blk)
-                       -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
-      forecastNotFinal g (K eraParams) start f =
-          Forecast (forecastAt f) $ \slot ->
-            translateIf slot <$> forecastFor f slot
-        where
-          -- Translate if the slot is past the end of the epoch
-          translateIf :: SlotNo
-                      -> HardForkEraLedgerView blk
-                      -> HardForkLedgerView (blk ': blk' ': blks)
-          translateIf slot view = HardForkState $
-            case hardForkEraTransition view of
-              TransitionAt tip epoch ->
-                let end = History.mkUpperBound eraParams start epoch
-                in if slot >= History.boundSlot end then
-                     let view' :: HardForkEraLedgerView blk'
-                         view' = HardForkEraLedgerView {
-                                     hardForkEraLedgerView =
-                                       translateLedgerViewWith g
-                                         (History.boundEpoch end)
-                                         (hardForkEraLedgerView view)
-                                   , hardForkEraTransition =
-                                       -- We don't know the transition to the
-                                       -- /next/ era, and it's important that
-                                       -- any safe zones are applied to the
-                                       -- tip in the /previous/ era.
-                                       LedgerTip tip
-                                   }
-                     in TS (Past start end NoSnapshot) $
-                        TZ (Current end view')
-                   else
-                     TZ (Current end view)
-              LedgerTip _tip ->
-                -- End of the era is not yet known. We don't have to worry about
-                -- the safe zone here, because we are limited by whatever the
-                -- range of the forecast is for this era.
-                TZ (Current start view)
-
-      -- | Forecast of a single era, as well as the end of that era (if any)
+      -- See comment of 'hardForkEraTransition' for justification of the
+      -- use of @st'@ to determine the transition/tip.
       forecastOne :: SingleEraBlock blk
                   => WrapPartialLedgerConfig                          blk
                   -> LedgerState                                      blk
@@ -360,14 +274,122 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           transition :: TransitionOrTip
           transition = State.transitionOrTip pcfg st'
 
-          -- See comment of 'hardForkEraTransition' for justification of the
-          -- use of @st'@ to determine the transition/tip.
           mkView :: LedgerView (BlockProtocol blk)
                  -> HardForkEraLedgerView blk
           mkView view = HardForkEraLedgerView {
                 hardForkEraTransition = transition
               , hardForkEraLedgerView = view
               }
+
+{-------------------------------------------------------------------------------
+  Auxiliary: constructing the forecast
+-------------------------------------------------------------------------------}
+
+hardforkForecast :: SListI xs
+                 => HardForkState LedgerState xs
+                 -> Exactly xs EraParams
+                 -> InPairs TranslateEraLedgerView xs
+                 -> NP (LedgerState -.-> Maybe :.: (Forecast :.: HardForkEraLedgerView)) xs
+                 -> WithOrigin SlotNo
+                 -> Maybe (Forecast (HardForkLedgerView xs))
+hardforkForecast st shape tr getOne p = do
+      st' <- State.retractToSlot p st
+      f   <- hsequence' $ hap getOne st'
+      return $ mkForecast
+                 tr
+                 shape
+                 (getHardForkState f)
+
+-- | Change a telescope of a forecast into a forecast of a telescope
+mkForecast :: InPairs TranslateEraLedgerView                                    xs'
+           -> NP (K EraParams)                                                  xs'
+           -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
+           -> Forecast (HardForkLedgerView                                      xs')
+mkForecast PNil _ (TZ (Current start (Comp f))) =
+    forecastFinalEra start f
+mkForecast (PCons g _) (ps :* _) (TZ (Current start f)) =
+    forecastNotFinal g ps start (unComp f)
+mkForecast (PCons _ gs) (_ :* pps) (TS past f) =
+    shiftView past <$> mkForecast gs pps f
+mkForecast PNil _ (TS _ f) =
+    case f of {}
+
+-- | Construct forecast when we're in the final era.
+--
+-- Since we're in the final era, no translation is required.
+forecastFinalEra :: Bound
+                 -> Forecast (HardForkEraLedgerView blk)
+                 -> Forecast (HardForkLedgerView '[blk])
+forecastFinalEra start f =
+    Forecast (forecastAt f) $ \slot ->
+      aux <$> forecastFor f slot
+  where
+    aux :: HardForkEraLedgerView blk -> HardForkLedgerView '[blk]
+    aux = HardForkState . TZ . Current start
+
+-- | Make forecast with potential need to translate to next era
+--
+-- NOTE 1: It is possible that we had to go to a previous era to get this
+-- forecast (point @p@ might not have been in the current era). If that is
+-- the case, the forecast should nonetheless be anchored in that previous
+-- era, /and not have any knowledge of anything that happened in current
+-- era/. Therefore, we take the forecast from that previous era, apply it
+-- as normal, and only /then/ translate to the next era if appropriate.
+--
+-- NOTE 2: If we did have to go to a previous era to get a forecast, then
+-- that ledger must certainly have been aware of the transition.
+--
+-- NOTE 3: We assume that we only ever have to translate to the /next/
+-- era (as opposed to /any/ subsequent era).
+forecastNotFinal :: forall blk blk' blks.
+                    TranslateEraLedgerView blk blk'
+                 -> K EraParams blk -- Era params in the forecast era
+                 -> Bound           -- Forecast era start
+                 -> Forecast (HardForkEraLedgerView blk)
+                 -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
+forecastNotFinal g (K eraParams) start f =
+    Forecast (forecastAt f) $ \slot ->
+      translateIf slot <$> forecastFor f slot
+  where
+    -- Translate if the slot is past the end of the epoch
+    translateIf :: SlotNo
+                -> HardForkEraLedgerView blk
+                -> HardForkLedgerView (blk ': blk' ': blks)
+    translateIf slot view = HardForkState $
+      case hardForkEraTransition view of
+        TransitionAt tip epoch ->
+          let end = History.mkUpperBound eraParams start epoch
+          in if slot >= History.boundSlot end then
+               let view' :: HardForkEraLedgerView blk'
+                   view' = HardForkEraLedgerView {
+                               hardForkEraLedgerView =
+                                 translateLedgerViewWith g
+                                   (History.boundEpoch end)
+                                   (hardForkEraLedgerView view)
+                             , hardForkEraTransition =
+                                 -- We don't know the transition to the
+                                 -- /next/ era, and it's important that
+                                 -- any safe zones are applied to the
+                                 -- tip in the /previous/ era.
+                                 LedgerTip tip
+                             }
+               in TS (Past start end NoSnapshot) $
+                  TZ (Current end view')
+             else
+               TZ (Current end view)
+        LedgerTip _tip ->
+          -- End of the era is not yet known. We don't have to worry about
+          -- the safe zone here, because we are limited by whatever the
+          -- range of the forecast is for this era.
+          TZ (Current start view)
+
+shiftView :: Past g blk
+          -> HardForkLedgerView (blk' : blks)
+          -> HardForkLedgerView (blk : blk' : blks)
+shiftView past =
+      HardForkState
+    . TS (past { pastSnapshot = NoSnapshot })
+    . getHardForkState
 
 {-------------------------------------------------------------------------------
   Auxiliary
