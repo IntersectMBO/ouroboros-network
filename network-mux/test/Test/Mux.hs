@@ -68,17 +68,18 @@ import           Network.Mux.Bearer.Pipe
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"      prop_mux_snd_recv
-  , testProperty "1 miniprotocol Queue"  (withMaxSuccess 50 prop_mux_1_mini_Queue)
-  , testProperty "2 miniprotocols Queue" (withMaxSuccess 50 prop_mux_2_minis_Queue)
-  , testProperty "1 miniprotocol Pipe"   (withMaxSuccess 50 prop_mux_1_mini_Pipe)
-  , testProperty "2 miniprotocols Pipe"  (withMaxSuccess 50 prop_mux_2_minis_Pipe)
-  , testProperty "starvation"            prop_mux_starvation
-  , testProperty "demuxing (Sim)"        prop_demux_sdu_sim
-  , testProperty "demuxing (IO)"         prop_demux_sdu_io
+  [ testProperty "mux send receive"        prop_mux_snd_recv
+  , testProperty "mux send receive compat" prop_mux_snd_recv_compat
+  , testProperty "1 miniprotocol Queue"    (withMaxSuccess 50 prop_mux_1_mini_Queue)
+  , testProperty "2 miniprotocols Queue"   (withMaxSuccess 50 prop_mux_2_minis_Queue)
+  , testProperty "1 miniprotocol Pipe"     (withMaxSuccess 50 prop_mux_1_mini_Pipe)
+  , testProperty "2 miniprotocols Pipe"    (withMaxSuccess 50 prop_mux_2_minis_Pipe)
+  , testProperty "starvation"              prop_mux_starvation
+  , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
+  , testProperty "demuxing (IO)"           prop_demux_sdu_io
   , testGroup "Generators"
-    [ testProperty "genByteString"       prop_arbitrary_genByteString
-    , testProperty "genLargeByteString"  prop_arbitrary_genLargeByteString
+    [ testProperty "genByteString"         prop_arbitrary_genByteString
+    , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
     ]
   ]
 
@@ -313,6 +314,62 @@ prop_mux_snd_recv messages = ioProperty $ do
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
+
+    let server_w = client_r
+        server_r = client_w
+
+        clientBearer = queuesAsMuxBearer clientTracer client_w client_r sduLen
+        serverBearer = queuesAsMuxBearer serverTracer server_w server_r sduLen
+
+        clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
+        serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
+
+    (client_mp, server_mp) <- setupMiniReqRsp (return ()) messages
+
+    let clientApp = MiniProtocolInfo {
+                       miniProtocolNum = MiniProtocolNum 2,
+                       miniProtocolDir = InitiatorDirectionOnly,
+                       miniProtocolLimits = defaultMiniProtocolLimits
+                     }
+
+        serverApp = MiniProtocolInfo {
+                       miniProtocolNum = MiniProtocolNum 2,
+                       miniProtocolDir = ResponderDirectionOnly,
+                       miniProtocolLimits = defaultMiniProtocolLimits
+                     }
+
+    clientMux <- newMux $ MiniProtocolBundle [clientApp]
+    clientRes <- runMiniProtocol clientMux (miniProtocolNum clientApp) (miniProtocolDir clientApp)
+                   StartEagerly client_mp
+
+    serverMux <- newMux $ MiniProtocolBundle [serverApp]
+    serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
+                   StartEagerly server_mp
+
+    (rs_e, rc_e) <- withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync -> 
+      withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
+        rs_e <- atomically serverRes
+        rc_e <- atomically clientRes
+
+        stopMux serverMux
+        stopMux clientMux
+        wait serverAsync
+        wait clientAsync
+        return (rs_e, rc_e)
+
+    case (rs_e, rc_e) of
+         (Left _, _)          -> return $ property False
+         (_, Left _)          -> return $ property False
+         (Right rs, Right rc) -> return (property $ rs && rc)
+
+-- | Like prop_mux_snd_recv but using the Compat interface.
+prop_mux_snd_recv_compat :: DummyTrace
+                  -> Property
+prop_mux_snd_recv_compat messages = ioProperty $ do
+    let sduLen = 1260
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
     endMpsVar <- atomically $ newTVar 2
 
     let server_w = client_r
@@ -324,7 +381,7 @@ prop_mux_snd_recv messages = ioProperty $ do
         clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
-    (verify, client_mp, server_mp) <- setupMiniReqRsp
+    (verify, client_mp, server_mp) <- setupMiniReqRspCompat
                                         (return ()) endMpsVar messages
 
     let clientApp = Compat.MuxApplication
@@ -353,17 +410,17 @@ prop_mux_snd_recv messages = ioProperty $ do
 -- side and a MiniProtocolDescription for the server side for a RequestResponce
 -- protocol.
 --
-setupMiniReqRsp :: IO ()
-                -- ^ Action performed by responder before processing the response
-                -> StrictTVar IO Int
-                -- ^ Total number of miniprotocols.
-                -> DummyTrace
-                -- ^ Trace of messages
-                -> IO ( IO Bool
-                      , Channel IO -> IO ()
-                      , Channel IO -> IO ()
-                      )
-setupMiniReqRsp serverAction mpsEndVar (DummyTrace msgs) = do
+setupMiniReqRspCompat :: IO ()
+                      -- ^ Action performed by responder before processing the response
+                      -> StrictTVar IO Int
+                      -- ^ Total number of miniprotocols.
+                      -> DummyTrace
+                      -- ^ Trace of messages
+                      -> IO ( IO Bool
+                            , Channel IO -> IO ()
+                            , Channel IO -> IO ()
+                            )
+setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
@@ -431,14 +488,14 @@ waitOnAllClients clientVar clientTot = do
             c <- readTVar clientVar
             unless (c == clientTot) retry
 
-setupMiniReqRsp' :: IO ()
+setupMiniReqRsp :: IO ()
                 -- ^ Action performed by responder before processing the response
                 -> DummyTrace
                 -- ^ Trace of messages
                 -> IO ( Channel IO -> IO Bool
                       , Channel IO -> IO Bool
                       )
-setupMiniReqRsp' serverAction (DummyTrace msgs) = do
+setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
     return ( clientApp
            , serverApp
@@ -623,7 +680,7 @@ test_mux_1_mini :: RunMuxApplications
                 -> DummyTrace
                 -> IO Bool
 test_mux_1_mini run msgTrace = do
-    (clientApp, serverApp) <- setupMiniReqRsp' (return ()) msgTrace
+    (clientApp, serverApp) <- setupMiniReqRsp (return ()) msgTrace
     run [clientApp] [serverApp]
 
 
@@ -643,9 +700,9 @@ test_mux_2_minis
     -> IO Bool
 test_mux_2_minis  run msgTrace0 msgTrace1 = do
     (clientApp0, serverApp0) <-
-        setupMiniReqRsp' (return ()) msgTrace0
+        setupMiniReqRsp (return ()) msgTrace0
     (clientApp1, serverApp1) <-
-        setupMiniReqRsp' (return ()) msgTrace1
+        setupMiniReqRsp (return ()) msgTrace1
     run [clientApp0, clientApp1] [serverApp0, serverApp1]
 
 
@@ -694,10 +751,10 @@ prop_mux_starvation (Uneven response0 response1) =
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
     (client_short, server_short) <-
-        setupMiniReqRsp' (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                          $ DummyTrace [(request, response1)]
     (client_long, server_long) <-
-        setupMiniReqRsp' (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                          $ DummyTrace [(request, response1)]
 
 
