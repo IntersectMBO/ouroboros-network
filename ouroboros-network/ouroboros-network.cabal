@@ -53,8 +53,9 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.DeltaQ
-                       Ouroboros.Network.Magic
                        Ouroboros.Network.Diffusion
+                       Ouroboros.Network.KeepAlive
+                       Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.NodeToClient
