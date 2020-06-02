@@ -10,10 +10,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
 
 import           Data.SOP.Strict
 
-import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -38,7 +37,7 @@ data HardForkEraLedgerView_ blk = HardForkEraLedgerView {
       hardForkEraTransition :: !TransitionOrTip
 
       -- | Underlying ledger view
-    , hardForkEraLedgerView :: !(LedgerView (BlockProtocol blk))
+    , hardForkEraLedgerView :: !(WrapLedgerView blk)
     }
 
 deriving instance SingleEraBlock blk => Show (HardForkEraLedgerView_ blk)
@@ -49,8 +48,10 @@ mkHardForkEraLedgerView :: SingleEraBlock blk
                         -> LedgerState blk
                         -> HardForkEraLedgerView_ blk
 mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {
-      hardForkEraLedgerView = protocolLedgerView (completeLedgerConfig' ei pcfg) st
-    , hardForkEraTransition = State.transitionOrTip pcfg st
+      hardForkEraLedgerView = WrapLedgerView $
+        protocolLedgerView (completeLedgerConfig' ei pcfg) st
+    , hardForkEraTransition =
+        State.transitionOrTip pcfg st
     }
 
 {-------------------------------------------------------------------------------

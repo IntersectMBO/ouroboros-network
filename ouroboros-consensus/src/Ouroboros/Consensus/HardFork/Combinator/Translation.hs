@@ -33,8 +33,8 @@ newtype TranslateEraLedgerState blk blk' = TranslateEraLedgerState {
 
 newtype TranslateEraLedgerView blk blk' = TranslateEraLedgerView {
       translateLedgerViewWith :: EpochNo
-                              -> LedgerView (BlockProtocol blk)
-                              -> LedgerView (BlockProtocol blk')
+                              -> WrapLedgerView blk
+                              -> WrapLedgerView blk'
     }
 
 newtype TranslateEraConsensusState blk blk' = TranslateEraConsensusState {

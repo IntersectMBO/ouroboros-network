@@ -227,7 +227,10 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
           -> K (Except (HardForkEnvelopeErr xs) ())             blk
       aux cfg injErr (Pair hdr (Comp view)) = K $
           withExcept injErr' $
-            additionalEnvelopeChecks cfg (hardForkEraLedgerView <$> view) hdr
+            additionalEnvelopeChecks
+              cfg
+              ((unwrapLedgerView . hardForkEraLedgerView) <$> view)
+              hdr
         where
           injErr' :: OtherHeaderEnvelopeError blk -> HardForkEnvelopeErr xs
           injErr' = HardForkEnvelopeErrFromEra
@@ -278,7 +281,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
                  -> HardForkEraLedgerView_ blk
           mkView view = HardForkEraLedgerView {
                 hardForkEraTransition = transition
-              , hardForkEraLedgerView = view
+              , hardForkEraLedgerView = WrapLedgerView view
               }
 
 {-------------------------------------------------------------------------------

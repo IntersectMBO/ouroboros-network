@@ -200,7 +200,7 @@ checkOne ei slot cfg (Comp mCanBeLeader)
          checkIsLeader
            (completeConsensusConfig' ei cfg)
            (unwrapCanBeLeader canBeLeader)
-           (Ticked slot hardForkEraLedgerView)
+           (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
            consensusState
 
 {-------------------------------------------------------------------------------
@@ -273,7 +273,7 @@ updateEra ei slot cfg injectErr
       fmap WrapConsensusState $
         updateConsensusState
           (completeConsensusConfig' ei cfg)
-          (Ticked slot hardForkEraLedgerView)
+          (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
           view
           consensusState
 

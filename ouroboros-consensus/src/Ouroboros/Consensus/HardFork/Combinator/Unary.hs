@@ -454,7 +454,7 @@ instance Isomorphic WrapCanBeLeader where
 projLedgerView :: proxy b
                -> LedgerView (BlockProtocol (HardForkBlock '[b]))
                -> LedgerView (BlockProtocol b)
-projLedgerView _ = hardForkEraLedgerView . State.fromTZ
+projLedgerView _ = unwrapLedgerView . hardForkEraLedgerView . State.fromTZ
 
 -- | Project 'Query'
 --

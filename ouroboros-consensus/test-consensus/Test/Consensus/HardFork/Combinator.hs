@@ -363,7 +363,7 @@ ledgerState_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerState $ \_ LgrA{..} -
     }
 
 ledgerView_AtoB :: RequiringBoth WrapLedgerConfig TranslateEraLedgerView BlockA BlockB
-ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerView $ \_ _ -> ()
+ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerView $ \_ _ -> WrapLedgerView ()
 
 consensusState_AtoB :: RequiringBoth WrapConsensusConfig TranslateEraConsensusState BlockA BlockB
 consensusState_AtoB = RequireBoth $ \_ _ -> TranslateEraConsensusState $ \_ _ -> ()
