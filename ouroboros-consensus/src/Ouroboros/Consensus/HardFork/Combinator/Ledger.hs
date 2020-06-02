@@ -16,6 +16,8 @@
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
     HardForkLedgerError(..)
   , HardForkEnvelopeErr(..)
+    -- * Low-level API (exported for the benefit of testing)
+  , hardforkForecast
   ) where
 
 import           Control.Monad.Except

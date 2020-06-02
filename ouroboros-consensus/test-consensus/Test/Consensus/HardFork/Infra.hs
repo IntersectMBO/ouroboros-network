@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -80,14 +81,16 @@ instance Show (Eras xs) where
         case allComposeShowK (Proxy @xs) (Proxy @Era) of
           Dict -> show np
 
-chooseEras :: (forall xs. Eras xs -> Gen r) -> Gen r
+chooseEras :: forall r. (forall xs. (SListI xs, IsNonEmpty xs) => Eras xs -> Gen r) -> Gen r
 chooseEras k = do
     n <- choose (1, 4)
-    exactlyReplicate n () $ k . renumber
+    exactlyReplicate n () $ renumber
   where
-    renumber :: Exactly xs () -> Eras xs
+    renumber :: Exactly xs () -> Gen r
     renumber Nil        = error "renumber: empty list of eras"
-    renumber e@(_ :* _) = Eras $ go 0 e
+    renumber e@(_ :* _) =
+        npToSListI e $
+          k (Eras $ go 0 e)
       where
         go :: Word64 -> Exactly (x ': xs) () -> Exactly (x ': xs) Era
         go n (K () :* Nil)         = K (Era n True)  :* Nil

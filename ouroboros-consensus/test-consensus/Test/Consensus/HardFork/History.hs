@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
@@ -28,9 +29,20 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util (nTimes)
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
+
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger
+import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
+                     (Telescope (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 import           Test.Consensus.HardFork.Infra
 import           Test.Util.Orphans.Arbitrary ()
@@ -196,7 +208,7 @@ data ArbitraryParams xs = ArbitraryParams {
     }
   deriving (Show)
 
-data ArbitraryChain = forall xs. ArbitraryChain {
+data ArbitraryChain = forall xs. SListI xs => ArbitraryChain {
       -- | QuickCheck generated parameters
       --
       -- The rest of these values are derived
@@ -231,6 +243,72 @@ data ArbitraryChain = forall xs. ArbitraryChain {
     , arbitraryEvent       :: Event
     }
 
+foo :: ArbitraryChain -> ()
+foo ArbitraryChain{..} = ()
+  where
+    mkHardforkForecast :: (SListI xs, IsNonEmpty xs)
+                       => HF.Shape xs
+                       -> HF.Transitions xs
+                       -> Chain xs
+                       -> WithOrigin SlotNo
+                       -> Maybe (Forecast (HardForkLedgerView_ (K ()) xs))
+    mkHardforkForecast (HF.Shape shape) ts chain p =
+        hardforkForecast
+          (transitions ts chain)
+          shape
+          (InPairs.hpure $ Translate $ \_epoch (K ()) -> K ())
+          (hpure (fn (mkOneForecast p)))
+          p
+
+    mkOneForecast :: WithOrigin SlotNo
+                  -> K TransitionOrTip era
+                  -> (Maybe :.: (Forecast :.: HardForkEraLedgerView_ (K ()))) era
+    mkOneForecast p (K transition) = Comp $ fmap Comp $
+        Just Forecast {
+            forecastAt  = p
+          , forecastFor = \_slot -> return $ HardForkEraLedgerView {
+                hardForkEraTransition = transition
+              , hardForkEraLedgerView = K ()
+              }
+          }
+
+    transitions :: HF.Transitions xs
+                -> Chain xs
+                -> HardForkState (K TransitionOrTip) xs
+    transitions (HF.Transitions ts) (Chain ess) =
+        HardForkState $ go HF.initBound ts ess
+      where
+       go :: HF.Bound -- ^ Start of the next (== end of the previous)
+          -> AtMost         xs  EpochNo
+          -> NonEmpty (x ': xs) [Event]
+          -> Telescope
+               (Past    (K TransitionOrTip))
+               (Current (K TransitionOrTip))
+               (x ': xs)
+       go startBound AtMostNil (NonEmptyOne es) =
+           TZ $ Current {
+               currentStart = startBound
+             , currentState = K $ LedgerTip (tip es)
+             }
+       go startBound (AtMostCons t _) (NonEmptyOne es) =
+           TZ $ Current {
+               currentStart = startBound
+             , currentState = K $ TransitionAt (tip es) t
+             }
+       go startBound (AtMostCons t ts) (NonEmptyCons es ess) =
+           flip TS (go endBound ts ess) $ Past {
+               pastStart    = startBound
+             , pastEnd      = endBound
+             , pastSnapshot = Snapshot maxBound $ error "this is weird"
+             }
+         where
+           endBound :: HF.Bound
+           endBound = undefined
+
+    tip :: [Event] -> WithOrigin SlotNo
+    tip [] = Origin
+    tip es = At $ eventTimeSlot $ eventTime (last es)
+
 data EventIx =
     -- > 0 <= n < length (concat (toList arbitraryChain))
     EventOnChain Int
@@ -255,7 +333,7 @@ eventIsPreHorizon (EventInSafeZone  _ _) = True
 eventIsPreHorizon (EventPastHorizon _  ) = False
 
 -- | Fill in the derived parts of the 'ArbitraryChain'
-mkArbitraryChain :: forall xs. ArbitraryParams xs -> ArbitraryChain
+mkArbitraryChain :: forall xs. SListI xs => ArbitraryParams xs -> ArbitraryChain
 mkArbitraryChain params@ArbitraryParams{..} = ArbitraryChain {
       arbitraryParams      = params
     , arbitraryChain       = chain
