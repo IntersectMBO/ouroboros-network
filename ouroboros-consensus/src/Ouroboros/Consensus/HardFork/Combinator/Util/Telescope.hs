@@ -55,6 +55,7 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      allNoUnexpectedThunks)
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), Requiring (..))
@@ -323,11 +324,13 @@ newtype Retract m g f x y = Retract { retractWith :: g x -> f y -> m (f x) }
 -- 'rewindConsensusState' on that era. Of course, retraction may fail (we
 -- might not /have/ past consensus state to rewind to anymore); this failure
 -- would require a choice for a particular monad @m@.
-retract :: forall m h g f xs. (Monad m, SListI xs)
+retract :: forall m h g f xs. Monad m
         => Tails (Requiring h (Retract m g f)) xs  -- ^ How to retract
         -> NP (g -.-> Maybe :.: h) xs              -- ^ Where to retract /to/
         -> Telescope g f xs -> m (Telescope g f xs)
-retract = go
+retract =
+    \tails np ->
+       npToSListI np $ go tails np
   where
     go :: SListI xs'
        => Tails (Requiring h (Retract m g f)) xs'
@@ -364,13 +367,14 @@ retractAux hx gx r fz = Comp $ K <$> retractWith (provide r hx) gx fz
 -- before we can do the consensus header validation check. Note that in this
 -- particular example, the ledger state will always be ahead of the consensus
 -- state, never behind; 'alignExtend' can be used in this case.
-align :: forall m g' g f' f f'' xs. (SListI xs, Monad m)
+align :: forall m g' g f' f f'' xs. Monad m
       => InPairs (Requiring g' (Extend  m g f)) xs  -- ^ How to extend
       -> Tails   (Requiring f' (Retract m g f)) xs  -- ^ How to retract
       -> NP (f' -.-> f -.-> f'') xs  -- ^ Function to apply at the tip
       -> Telescope g' f' xs          -- ^ Telescope we are aligning with
       -> Telescope g f xs -> m (Telescope g f'' xs)
-align = go
+align = \es rs atTip ->
+    npToSListI atTip $ go es rs atTip
   where
     go :: SListI xs'
        => InPairs (Requiring g' (Extend  m g f)) xs'
@@ -397,21 +401,21 @@ align = go
 -------------------------------------------------------------------------------}
 
 -- | Version of 'extend' where the evidence is a simple 'Bool'
-extendIf :: (SListI xs, Monad m)
+extendIf :: Monad m
          => InPairs (Extend m g f) xs -- ^ How to extend
          -> NP (f -.-> K Bool) xs     -- ^ Where to extend /from/
          -> Telescope g f xs -> m (Telescope g f xs)
-extendIf es ps =
+extendIf es ps = npToSListI ps $
     extend
       (InPairs.hmap (Require . const) es)
       (hmap (\f -> fn $ fromBool . apFn f) ps)
 
 -- | Version of 'retract' where the evidence is a simple 'Bool'
-retractIf :: (Monad m, SListI xs)
+retractIf :: Monad m
           => Tails (Retract m g f) xs  -- ^ How to retract
           -> NP (g -.-> K Bool) xs     -- ^ Where to retract /to/
           -> Telescope g f xs -> m (Telescope g f xs)
-retractIf rs ps =
+retractIf rs ps = npToSListI ps $
     retract
       (Tails.hmap (Require . const) rs)
       (hmap (\f -> fn $ fromBool . apFn f) ps)
@@ -419,24 +423,24 @@ retractIf rs ps =
 -- | Version of 'align' that never retracts, only extends
 --
 -- PRE: The telescope we are aligning with cannot be behind us.
-alignExtend :: (SListI xs, Monad m, HasCallStack)
+alignExtend :: (Monad m, HasCallStack)
             => InPairs (Requiring g' (Extend m g f)) xs  -- ^ How to extend
             -> NP (f' -.-> f -.-> f'') xs  -- ^ Function to apply at the tip
             -> Telescope g' f' xs          -- ^ Telescope we are aligning with
             -> Telescope g f xs -> m (Telescope g f'' xs)
-alignExtend es =
-    align es (Tails.hpure $ Require $ \_ -> error precondition)
+alignExtend es atTip = npToSListI atTip $
+    align es (Tails.hpure $ Require $ \_ -> error precondition) atTip
   where
     precondition :: String
     precondition = "alignExtend: precondition violated"
 
 -- | Version of 'alignExtend' that extends with an NS instead
-alignExtendNS :: (SListI xs, Monad m, HasCallStack)
+alignExtendNS :: (Monad m, HasCallStack)
               => InPairs (Extend m g f) xs   -- ^ How to extend
               -> NP (f' -.-> f -.-> f'') xs  -- ^ Function to apply at the tip
               -> NS f' xs                    -- ^ NS we are aligning with
               -> Telescope g f xs -> m (Telescope g f'' xs)
-alignExtendNS es atTip ns =
+alignExtendNS es atTip ns = npToSListI atTip $
    alignExtend
      (InPairs.hmap (Require . const) es)
      atTip
