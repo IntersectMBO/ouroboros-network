@@ -6,29 +6,38 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
     DegenFork(..)
+  , DegenForkProtocol
     -- * Type families
   , Header(..)
   , BlockConfig(..)
+  , ConsensusConfig(..)
   , LedgerState(..)
   , GenTx(..)
   , TxId(..)
   , CodecConfig(..)
+    -- * Newtype wrappers
+  , DegenForkConsensusState(..)
+  , DegenForkHeaderHash(..)
+  , DegenForkApplyTxErr(..)
     -- * Test support
   , projCfg
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.SOP (I (..))
 import           Data.Type.Equality
+import           Data.Typeable
 import           Data.Void
 
 import           Ouroboros.Network.Block
@@ -43,6 +52,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
@@ -83,8 +93,6 @@ newtype DegenFork b = DBlk {
     }
   deriving (Eq, Show)
 
-type instance BlockProtocol (DegenFork b) = BlockProtocol (HardForkBlock '[b])
-
 {-------------------------------------------------------------------------------
   Data family instances
 -------------------------------------------------------------------------------}
@@ -114,6 +122,11 @@ instance HasCodecConfig b => HasCodecConfig (DegenFork b) where
 
   getCodecConfig = DCCfg . getCodecConfig . unDBCfg
 
+newtype instance ConsensusConfig (DegenForkProtocol b) = DConCfg {
+      unDConCfg :: ConsensusConfig (HardForkProtocol '[b])
+    }
+  deriving (NoUnexpectedThunks)
+
 newtype instance LedgerState (DegenFork b) = DLgr {
       unDLgr :: LedgerState (HardForkBlock '[b])
     }
@@ -128,7 +141,12 @@ instance ConfigSupportsNode b => ConfigSupportsNode (DegenFork b) where
   Forward HasHeader instances
 -------------------------------------------------------------------------------}
 
-type instance HeaderHash (DegenFork b) = HeaderHash (HardForkBlock '[b])
+newtype DegenForkHeaderHash b = DHash {
+      unDHash :: HeaderHash (HardForkBlock '[b])
+    }
+  deriving (Eq, Ord, Show, Typeable, NoUnexpectedThunks, Serialise)
+
+type instance HeaderHash (DegenFork b) = DegenForkHeaderHash b
 
 instance SingleEraBlock b => StandardHash (DegenFork b)
 
@@ -136,19 +154,75 @@ instance SingleEraBlock b => Measured BlockMeasure (DegenFork b) where
   measure = blockMeasure
 
 instance SingleEraBlock b => HasHeader (DegenFork b) where
-    blockHash      =            blockHash     . unDBlk
+    blockHash      = DHash    . blockHash     . unDBlk
     blockPrevHash  = castHash . blockPrevHash . unDBlk
     blockSlot      =            blockSlot     . unDBlk
     blockNo        =            blockNo       . unDBlk
-
     blockInvariant = const True
 
 instance SingleEraBlock b => HasHeader (Header (DegenFork b)) where
-  blockHash      =            blockHash     . unDHdr
+  blockHash      = DHash    . blockHash     . unDHdr
   blockPrevHash  = castHash . blockPrevHash . unDHdr
   blockSlot      =            blockSlot     . unDHdr
   blockNo        =            blockNo       . unDHdr
   blockInvariant = const True
+
+{-------------------------------------------------------------------------------
+  Forward the 'ConsensusProtocol' instance
+-------------------------------------------------------------------------------}
+
+data DegenForkProtocol b
+
+type instance BlockProtocol (DegenFork b) = DegenForkProtocol b
+
+newtype DegenForkConsensusState b = DCSt {
+      unDCSt :: ConsensusState (HardForkProtocol '[b])
+    }
+deriving instance SingleEraBlock b => Eq                 (DegenForkConsensusState b)
+deriving instance SingleEraBlock b => Show               (DegenForkConsensusState b)
+deriving instance SingleEraBlock b => NoUnexpectedThunks (DegenForkConsensusState b)
+
+instance SingleEraBlock b => ChainSelection (DegenForkProtocol b) where
+  type ChainSelConfig (DegenForkProtocol b) = ChainSelConfig (HardForkProtocol '[b])
+  type SelectView     (DegenForkProtocol b) = SelectView     (HardForkProtocol '[b])
+  preferCandidate   _ = preferCandidate   (Proxy @(HardForkProtocol '[b]))
+  compareCandidates _ = compareCandidates (Proxy @(HardForkProtocol '[b]))
+
+instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
+  -- The reason for introducing a separate 'DegenForkProtocol' instead of:
+  --
+  -- > type instance BlockProtocol (DegenFork b) = BlockProtocol (HardForkBlock '[b])
+  --
+  -- is that we need to wrap the 'ConsensusState' in a newtype so that we can
+  -- define non-orphan serialisation instances for it. The orphan instances
+  -- would be /bad orphans/, i.e., for @HardForkConsensusState '[b]@.
+  type ConsensusState (DegenForkProtocol b) = DegenForkConsensusState b
+  type ValidationErr  (DegenForkProtocol b) = ValidationErr (HardForkProtocol '[b])
+  type LedgerView     (DegenForkProtocol b) = LedgerView    (HardForkProtocol '[b])
+  type CanBeLeader    (DegenForkProtocol b) = CanBeLeader   (HardForkProtocol '[b])
+  type CannotLead     (DegenForkProtocol b) = CannotLead    (HardForkProtocol '[b])
+  type IsLeader       (DegenForkProtocol b) = IsLeader      (HardForkProtocol '[b])
+  type ValidateView   (DegenForkProtocol b) = ValidateView  (HardForkProtocol '[b])
+
+  -- Operations on the state
+  checkIsLeader (DConCfg cfg) canBeLeader tickedLedgerView (DCSt consensusState) =
+    castLeaderCheck <$>
+      checkIsLeader cfg canBeLeader tickedLedgerView consensusState
+  updateConsensusState (DConCfg cfg) tickedLedgerView valView (DCSt consensusState) =
+    DCSt <$> updateConsensusState cfg tickedLedgerView valView consensusState
+  rewindConsensusState _ secParam pt (DCSt consensusState) =
+    DCSt <$>
+      rewindConsensusState
+        (Proxy @(HardForkProtocol '[b]))
+        secParam
+        pt
+        consensusState
+
+  -- Straight-forward extensions
+  protocolSecurityParam = protocolSecurityParam . unDConCfg
+
+  -- Extract 'ChainSelConfig'
+  chainSelConfig = chainSelConfig . unDConCfg
 
 {-------------------------------------------------------------------------------
   Forward 'HardForkBlock' instances
@@ -179,7 +253,7 @@ instance SingleEraBlock b => HasHardForkHistory (DegenFork b) where
 instance SingleEraBlock b => HasAnnTip (DegenFork b) where
   type TipInfo (DegenFork b) = TipInfo (HardForkBlock '[b])
 
-  tipInfoHash _ = tipInfoHash (Proxy @(HardForkBlock '[b]))
+  tipInfoHash _ = DHash . tipInfoHash (Proxy @(HardForkBlock '[b]))
   getTipInfo (DHdr hdr) = getTipInfo hdr
 
 instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
@@ -206,20 +280,27 @@ instance NoHardForks b => LedgerSupportsProtocol (DegenFork b) where
   protocolLedgerView   cfg (DLgr lgr) = protocolLedgerView   cfg lgr
   ledgerViewForecastAt cfg (DLgr lgr) = ledgerViewForecastAt cfg lgr
 
+newtype DegenForkApplyTxErr b = DApplyTxErr {
+      unDApplyTxErr :: ApplyTxErr (HardForkBlock '[b])
+    }
+  deriving (Show)
+
 instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
   newtype GenTx (DegenFork b) = DTx {
         unDTx :: GenTx (HardForkBlock '[b])
       }
     deriving (Show, NoUnexpectedThunks)
 
-  type ApplyTxErr (DegenFork b) = ApplyTxErr (HardForkBlock '[b])
+  type ApplyTxErr (DegenFork b) = DegenForkApplyTxErr b
 
   txInvariant = txInvariant . unDTx
 
   applyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
-    fmap DLgr <$> applyTx cfg tx (Ticked slot lgr)
+    withExcept DApplyTxErr $
+      fmap DLgr <$> applyTx cfg tx (Ticked slot lgr)
   reapplyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
-    fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
+    withExcept DApplyTxErr $
+      fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
 
   maxTxCapacity (Ticked slot (DLgr lgr)) =
     maxTxCapacity (Ticked slot (project lgr))
@@ -266,9 +347,9 @@ instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk
 
 instance SingleEraBlock b => ConvertRawHash (DegenFork b) where
-  toRawHash   _ = toRawHash   (Proxy @(HardForkBlock '[b]))
-  fromRawHash _ = fromRawHash (Proxy @(HardForkBlock '[b]))
-  hashSize    _ = hashSize    (Proxy @(HardForkBlock '[b]))
+  toRawHash   _ =         toRawHash   (Proxy @(HardForkBlock '[b])) . unDHash
+  fromRawHash _ = DHash . fromRawHash (Proxy @(HardForkBlock '[b]))
+  hashSize    _ =          hashSize   (Proxy @(HardForkBlock '[b]))
 
 {-------------------------------------------------------------------------------
   RunNode instance

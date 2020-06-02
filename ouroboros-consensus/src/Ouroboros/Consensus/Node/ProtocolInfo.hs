@@ -65,8 +65,9 @@ castProtocolInfo
                  (ConsensusConfig (BlockProtocol blk'))
      , Coercible (BlockConfig blk) (BlockConfig blk')
      , Coercible (LedgerState blk) (LedgerState blk')
-     , ConsensusState (BlockProtocol blk) ~ ConsensusState (BlockProtocol blk')
-     , CanBeLeader    (BlockProtocol blk) ~ CanBeLeader    (BlockProtocol blk')
+     , Coercible (ConsensusState (BlockProtocol blk))
+                 (ConsensusState (BlockProtocol blk'))
+     , CanBeLeader (BlockProtocol blk) ~ CanBeLeader (BlockProtocol blk')
      , LedgerConfig blk ~ LedgerConfig blk'
      , TipInfo      blk ~ TipInfo      blk'
      , ForgeState   blk ~ ForgeState   blk'

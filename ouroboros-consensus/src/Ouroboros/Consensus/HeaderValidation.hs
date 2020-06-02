@@ -50,6 +50,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
+import           Data.Coerce
 import           Data.Foldable (toList)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
@@ -186,13 +187,13 @@ deriving instance ( BlockSupportsProtocol blk
 genesisHeaderState :: ConsensusState (BlockProtocol blk) -> HeaderState blk
 genesisHeaderState state = HeaderState state Seq.Empty Origin
 
-castHeaderState :: (   ConsensusState (BlockProtocol blk )
-                     ~ ConsensusState (BlockProtocol blk')
+castHeaderState :: ( Coercible (ConsensusState (BlockProtocol blk ))
+                               (ConsensusState (BlockProtocol blk'))
                    , TipInfo blk ~ TipInfo blk'
                    )
                 => HeaderState blk -> HeaderState blk'
 castHeaderState HeaderState{..} = HeaderState{
-      headerStateConsensus = headerStateConsensus
+      headerStateConsensus = coerce headerStateConsensus
     , headerStateTips      = castSeq castAnnTip $ headerStateTips
     , headerStateAnchor    = fmap    castAnnTip $ headerStateAnchor
     }

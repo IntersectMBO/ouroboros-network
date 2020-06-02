@@ -217,8 +217,10 @@ decodeExtLedgerState decodeLedgerState
 -------------------------------------------------------------------------------}
 
 castExtLedgerState
-  :: ( Coercible (LedgerState blk) (LedgerState blk')
-     , ConsensusState (BlockProtocol blk) ~ ConsensusState (BlockProtocol blk')
+  :: ( Coercible (LedgerState blk)
+                 (LedgerState blk')
+     , Coercible (ConsensusState (BlockProtocol blk))
+                 (ConsensusState (BlockProtocol blk'))
      , TipInfo blk ~ TipInfo blk'
      )
   => ExtLedgerState blk -> ExtLedgerState blk'
