@@ -22,7 +22,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , HardForkLedgerConfig(..)
     -- ** Functions on config
   , completeLedgerConfig'
+  , completeLedgerConfig''
   , completeConsensusConfig'
+  , completeConsensusConfig''
   , distribTopLevelConfig
     -- ** Convenience re-exports
   , EpochInfo
@@ -42,6 +44,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -125,6 +128,16 @@ completeLedgerConfig' ei =
       completeLedgerConfig (Proxy @blk) ei
     . unwrapPartialLedgerConfig
 
+completeLedgerConfig'' :: forall blk.
+                          HasPartialLedgerConfig blk
+                       => EpochInfo Identity
+                       -> WrapPartialLedgerConfig blk
+                       -> WrapLedgerConfig blk
+completeLedgerConfig'' ei =
+      WrapLedgerConfig
+    . completeLedgerConfig (Proxy @blk) ei
+    . unwrapPartialLedgerConfig
+
 completeConsensusConfig' :: forall blk.
                             HasPartialConsensusConfig (BlockProtocol blk)
                          => EpochInfo Identity
@@ -132,6 +145,16 @@ completeConsensusConfig' :: forall blk.
                          -> ConsensusConfig (BlockProtocol blk)
 completeConsensusConfig' ei =
       completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
+    . unwrapPartialConsensusConfig
+
+completeConsensusConfig'' :: forall blk.
+                             HasPartialConsensusConfig (BlockProtocol blk)
+                          => EpochInfo Identity
+                          -> WrapPartialConsensusConfig blk
+                          -> WrapConsensusConfig blk
+completeConsensusConfig'' ei =
+      WrapConsensusConfig
+    . completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
     . unwrapPartialConsensusConfig
 
 distribTopLevelConfig :: CanHardFork xs

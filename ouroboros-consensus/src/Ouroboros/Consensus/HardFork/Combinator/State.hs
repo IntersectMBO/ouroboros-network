@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.State.Infra
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
-                     Requiring (..), RequiringBoth (..))
+                     Requiring (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Extend (..), ScanNext (..), Telescope)
@@ -134,20 +134,22 @@ extendToSlot :: forall xs. CanHardFork xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState . unI
     . Telescope.extend
-        ( InPairs.requiringBoth cfgs
-        $ InPairs.hcmap proxySingle (\f -> RequireBoth $ \cfg cfg'
-                                        -> Require $ \(K t)
-                                        -> Extend $ \cur
-                                        -> I $ howExtend f cfg cfg' t cur)
+        ( InPairs.hmap (\f -> Require $ \(K t)
+                           -> Extend  $ \cur
+                           -> I $ howExtend f t cur)
         $ translate
         )
         (hczipWith
            proxySingle
            (fn .: whenExtend)
-           cfgs
+           pcfgs
            (History.getShape hardForkLedgerConfigShape))
     $ st
   where
+    pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+    cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
+    ei    = epochInfoLedger ledgerCfg ledgerSt
+
     -- Return the end of this era if we should transition to the next
     whenExtend :: SingleEraBlock              blk
                => WrapPartialLedgerConfig     blk
@@ -163,14 +165,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         guard (slot >= History.boundSlot endBound)
         return endBound
 
-    howExtend :: (SingleEraBlock blk, SingleEraBlock blk')
-              => TranslateEraLedgerState blk blk'
-              -> WrapPartialLedgerConfig blk
-              -> WrapPartialLedgerConfig blk'
+    howExtend :: TranslateEraLedgerState blk blk'
               -> History.Bound
               -> Current LedgerState blk
               -> (Past LedgerState blk, Current LedgerState blk')
-    howExtend f pcfg pcfg' currentEnd cur = (
+    howExtend f currentEnd cur = (
           Past {
               pastStart    = currentStart cur
             , pastEnd      = currentEnd
@@ -179,21 +178,14 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         , Current {
               currentStart = currentEnd
             , currentState = translateLedgerStateWith f
-                               (completeLedgerConfig' ei pcfg )
-                               (completeLedgerConfig' ei pcfg')
                                (History.boundEpoch currentEnd)
                                (currentState cur)
             }
         )
 
-    cfgs :: NP WrapPartialLedgerConfig xs
-    cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-
-    ei :: EpochInfo Identity
-    ei = epochInfoLedger ledgerCfg ledgerSt
-
     translate :: InPairs TranslateEraLedgerState xs
-    translate = translateLedgerState hardForkEraTranslation
+    translate = InPairs.requiringBoth cfgs $
+                  translateLedgerState hardForkEraTranslation
 
 {-------------------------------------------------------------------------------
   Collect all current hard fork transitions

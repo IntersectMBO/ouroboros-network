@@ -56,6 +56,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
@@ -246,30 +247,30 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 
   ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..} (HardForkLedgerState st) p = do
       st' <- State.retractToSlot p st
-      f   <- hsequence' $ hczipWith proxySingle forecastOne cfgs st'
+      f   <- hsequence' $ hczipWith proxySingle forecastOne pcfgs st'
       return $ mkForecast
-                 (translateLedgerView hardForkEraTranslation)
-                 cfgs
+                 (InPairs.requiringBoth cfgs $
+                    translateLedgerView hardForkEraTranslation)
                  (History.getShape hardForkLedgerConfigShape)
                  (getHardForkState f)
     where
-      cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-      ei   = State.epochInfoLedger ledgerCfg st
+      ei    = State.epochInfoLedger ledgerCfg st
+      pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+      cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
 
       -- Change a telescope of a forecast into a forecast of a telescope
       mkForecast :: All SingleEraBlock xs'
                  => InPairs TranslateEraLedgerView                                    xs'
-                 -> NP WrapPartialLedgerConfig                                        xs'
                  -> NP (K EraParams)                                                  xs'
                  -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
                  -> Forecast (HardForkLedgerView                                      xs')
-      mkForecast PNil _ _ (TZ (Current start (Comp f))) =
+      mkForecast PNil _ (TZ (Current start (Comp f))) =
           forecastFinalEra start f
-      mkForecast (PCons g _) (cfg :* cfg' :* _) (ps :* _) (TZ (Current start f)) =
-          forecastNotFinal g cfg cfg' ps start (unComp f)
-      mkForecast (PCons _ gs) (_ :* cfgs') (_ :* pps) (TS past f) =
-          shiftView past <$> mkForecast gs cfgs' pps f
-      mkForecast PNil _ _ (TS _ f) =
+      mkForecast (PCons g _) (ps :* _) (TZ (Current start f)) =
+          forecastNotFinal g ps start (unComp f)
+      mkForecast (PCons _ gs) (_ :* pps) (TS past f) =
+          shiftView past <$> mkForecast gs pps f
+      mkForecast PNil _ (TS _ f) =
           case f of {}
 
       shiftView :: Past g blk
@@ -306,23 +307,15 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       -- NOTE 3: We assume that we only ever have to translate to the /next/
       -- era (as opposed to /any/ subsequent era).
       forecastNotFinal :: forall blk blk' blks.
-                          (SingleEraBlock blk, SingleEraBlock blk')
-                       => TranslateEraLedgerView blk blk'
-                       -> WrapPartialLedgerConfig blk
-                       -> WrapPartialLedgerConfig blk'
+                          TranslateEraLedgerView blk blk'
                        -> K EraParams blk -- Era params in the forecast era
                        -> Bound           -- Forecast era start
                        -> Forecast (HardForkEraLedgerView blk)
                        -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
-      forecastNotFinal g pcfg pcfg' (K eraParams) start f =
+      forecastNotFinal g (K eraParams) start f =
           Forecast (forecastAt f) $ \slot ->
             translateIf slot <$> forecastFor f slot
         where
-          cfg  :: LedgerConfig blk
-          cfg' :: LedgerConfig blk'
-          cfg  = completeLedgerConfig' ei pcfg
-          cfg' = completeLedgerConfig' ei pcfg'
-
           -- Translate if the slot is past the end of the epoch
           translateIf :: SlotNo
                       -> HardForkEraLedgerView blk
@@ -336,8 +329,6 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
                          view' = HardForkEraLedgerView {
                                      hardForkEraLedgerView =
                                        translateLedgerViewWith g
-                                         cfg
-                                         cfg'
                                          (History.boundEpoch end)
                                          (hardForkEraLedgerView view)
                                    , hardForkEraTransition =

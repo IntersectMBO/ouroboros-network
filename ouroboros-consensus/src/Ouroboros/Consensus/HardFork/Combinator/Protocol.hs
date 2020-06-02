@@ -56,7 +56,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..), RequiringBoth (..))
+                     (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
@@ -285,31 +285,23 @@ ledgerInfo :: forall blk. SingleEraBlock blk
            => State.Current HardForkEraLedgerView blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-translateConsensus :: CanHardFork xs
+translateConsensus :: forall xs. CanHardFork xs
                    => EpochInfo Identity
                    -> ConsensusConfig (HardForkProtocol xs)
                    -> InPairs (Translate WrapConsensusState) xs
 translateConsensus ei HardForkConsensusConfig{..} =
-    InPairs.requiringBoth
-      (getPerEraConsensusConfig hardForkConsensusConfigPerEra)
-      (InPairs.hcmap
-        proxySingle
-        (RequireBoth . aux)
-        (translateConsensusState hardForkEraTranslation))
+    InPairs.hmap aux $
+      InPairs.requiringBoth cfgs $
+         translateConsensusState hardForkEraTranslation
   where
-    aux :: forall blk blk'. (SingleEraBlock blk, SingleEraBlock blk')
-        => TranslateEraConsensusState blk blk'
-        -> WrapPartialConsensusConfig blk
-        -> WrapPartialConsensusConfig blk'
+    pcfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
+    cfgs  = hcmap proxySingle (completeConsensusConfig'' ei) pcfgs
+
+    aux :: TranslateEraConsensusState   blk blk'
         -> Translate WrapConsensusState blk blk'
-    aux f pcfg pcfg' = Translate $ \epoch (WrapConsensusState st) ->
-        WrapConsensusState $
-          translateConsensusStateWith f cfg cfg' epoch st
-      where
-        cfg  :: ConsensusConfig (BlockProtocol blk)
-        cfg' :: ConsensusConfig (BlockProtocol blk')
-        cfg  = completeConsensusConfig' ei pcfg
-        cfg' = completeConsensusConfig' ei pcfg'
+    aux f = Translate $ \epoch (WrapConsensusState st) ->
+              WrapConsensusState $
+                translateConsensusStateWith f epoch st
 
 injectValidationErr :: Injection WrapValidationErr xs blk
                     -> ValidationErr (BlockProtocol blk)

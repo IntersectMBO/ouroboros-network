@@ -34,14 +34,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Mock
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
-import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
-                     Past (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.HardFork.History (EraParams (..),
-                     defaultSafeZone)
-import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -60,6 +52,17 @@ import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Util.SOP
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
+import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
+                     Past (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+                     (RequiringBoth (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.HardFork.History (EraParams (..),
+                     defaultSafeZone)
+import qualified Ouroboros.Consensus.HardFork.History as History
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
@@ -354,16 +357,16 @@ deriving instance Serialise (AnnTip TestBlock)
   Translation
 -------------------------------------------------------------------------------}
 
-ledgerState_AtoB :: TranslateEraLedgerState BlockA BlockB
-ledgerState_AtoB = TranslateEraLedgerState $ \_ _ _ LgrA{..} -> LgrB {
+ledgerState_AtoB :: RequiringBoth WrapLedgerConfig TranslateEraLedgerState BlockA BlockB
+ledgerState_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerState $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 
-ledgerView_AtoB :: TranslateEraLedgerView BlockA BlockB
-ledgerView_AtoB = TranslateEraLedgerView $ \_ _ _ _ -> ()
+ledgerView_AtoB :: RequiringBoth WrapLedgerConfig TranslateEraLedgerView BlockA BlockB
+ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerView $ \_ _ -> ()
 
-consensusState_AtoB :: TranslateEraConsensusState BlockA BlockB
-consensusState_AtoB = TranslateEraConsensusState $ \_ _ _ _ -> ()
+consensusState_AtoB :: RequiringBoth WrapConsensusConfig TranslateEraConsensusState BlockA BlockB
+consensusState_AtoB = RequireBoth $ \_ _ -> TranslateEraConsensusState $ \_ _ -> ()
 
 {-------------------------------------------------------------------------------
   Auxiliary functions required for RunNode
