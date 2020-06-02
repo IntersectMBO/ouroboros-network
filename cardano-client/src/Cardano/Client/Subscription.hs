@@ -1,38 +1,54 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Cardano.Client.Subscription (
-  subscribe
+    subscribe
+  , MuxMode (..)
+  , ClientCodecs
+  , ConnectionId
+  , LocalAddress
+  , NodeToClientProtocols (..)
+  , NodeToClientVersion
+  , MuxPeer (..)
+  , MuxTrace
+  , RunMiniProtocol (..)
+  , WithMuxBearer
+  , cChainSyncCodec
+  , cStateQueryCodec
+  , cTxSubmissionCodec
   ) where
 
+import           Control.Monad.Class.MonadST (MonadST)
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Proxy
 import           Data.Void (Void)
-import qualified Data.ByteString.Lazy as BSL
-import           Ouroboros.Consensus.Block (getCodecConfig)
-import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
-import           Ouroboros.Consensus.Network.NodeToClient (clientCodecs, ClientCodecs)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion (
-                    nodeToClientProtocolVersion , supportedNodeToClientVersions)
-import           Ouroboros.Consensus.Node.Run (RunNode)
-import           Ouroboros.Network.Mux (MuxMode (..), OuroborosApplication)
-import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
-                    ConnectionId, LocalAddress,
-                    NodeToClientProtocols (..),
-                    NetworkClientSubcriptionTracers,
-                    NodeToClientVersionData (..),
-                    ncSubscriptionWorker,
-                    newNetworkMutableState,
-                    versionedNodeToClientProtocols)
 
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion (NodeToClientVersion)
-import           Ouroboros.Network.Protocol.Handshake.Version (DictVersion, Versions, foldMapVersions)
+import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
+
+import           Ouroboros.Network.Mux (MuxMode (..), MuxPeer (..),
+                     OuroborosApplication, RunMiniProtocol (..))
+import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
+                     ConnectionId, LocalAddress,
+                     NetworkClientSubcriptionTracers,
+                     NodeToClientProtocols (..), NodeToClientVersionData (..),
+                     ncSubscriptionWorker, newNetworkMutableState,
+                     versionedNodeToClientProtocols)
+import qualified Ouroboros.Network.NodeToClient (NodeToClientVersion)
+import           Ouroboros.Network.Protocol.Handshake.Version (DictVersion,
+                     Versions, foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket
 
-import qualified Ouroboros.Network.NodeToClient (NodeToClientVersion)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Prelude
+import           Ouroboros.Consensus.Block (getCodecConfig)
+import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
 import           Ouroboros.Consensus.Config.SupportsNode (getNetworkMagic)
+import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
+                     cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
+                     clientCodecs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+                     (NodeToClientVersion, nodeToClientProtocolVersion,
+                     supportedNodeToClientVersions)
+import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::
   ( RunNode blk , MonadST m )
