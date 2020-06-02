@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                     (HardForkEraLedgerView (..), HardForkLedgerView,
+                     (HardForkEraLedgerView_ (..), HardForkLedgerView,
                      mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      HardForkState, HardForkState_ (..), Past (..),
@@ -221,10 +221,10 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
       cfgs = distribTopLevelConfig ei tlc
 
       aux :: forall blk. SingleEraBlock blk
-          => TopLevelConfig                                    blk
-          -> Injection WrapEnvelopeErr xs                      blk
-          -> Product Header (Ticked :.: HardForkEraLedgerView) blk
-          -> K (Except (HardForkEnvelopeErr xs) ())            blk
+          => TopLevelConfig                                     blk
+          -> Injection WrapEnvelopeErr xs                       blk
+          -> Product Header (Ticked :.: HardForkEraLedgerView_) blk
+          -> K (Except (HardForkEnvelopeErr xs) ())             blk
       aux cfg injErr (Pair hdr (Comp view)) = K $
           withExcept injErr' $
             additionalEnvelopeChecks cfg (hardForkEraLedgerView <$> view) hdr
@@ -264,9 +264,9 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       -- See comment of 'hardForkEraTransition' for justification of the
       -- use of @st'@ to determine the transition/tip.
       forecastOne :: SingleEraBlock blk
-                  => WrapPartialLedgerConfig                          blk
-                  -> LedgerState                                      blk
-                  -> (Maybe :.: (Forecast :.: HardForkEraLedgerView)) blk
+                  => WrapPartialLedgerConfig                           blk
+                  -> LedgerState                                       blk
+                  -> (Maybe :.: (Forecast :.: HardForkEraLedgerView_)) blk
       forecastOne pcfg st' = Comp $
           (Comp . fmap mkView) <$>
             ledgerViewForecastAt (completeLedgerConfig' ei pcfg) st' p
@@ -275,7 +275,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           transition = State.transitionOrTip pcfg st'
 
           mkView :: LedgerView (BlockProtocol blk)
-                 -> HardForkEraLedgerView blk
+                 -> HardForkEraLedgerView_ blk
           mkView view = HardForkEraLedgerView {
                 hardForkEraTransition = transition
               , hardForkEraLedgerView = view
@@ -289,7 +289,7 @@ hardforkForecast :: SListI xs
                  => HardForkState LedgerState xs
                  -> Exactly xs EraParams
                  -> InPairs TranslateEraLedgerView xs
-                 -> NP (LedgerState -.-> Maybe :.: (Forecast :.: HardForkEraLedgerView)) xs
+                 -> NP (LedgerState -.-> Maybe :.: (Forecast :.: HardForkEraLedgerView_)) xs
                  -> WithOrigin SlotNo
                  -> Maybe (Forecast (HardForkLedgerView xs))
 hardforkForecast st shape tr getOne p = do
@@ -301,10 +301,10 @@ hardforkForecast st shape tr getOne p = do
                  (getHardForkState f)
 
 -- | Change a telescope of a forecast into a forecast of a telescope
-mkForecast :: InPairs TranslateEraLedgerView                                    xs'
-           -> NP (K EraParams)                                                  xs'
-           -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
-           -> Forecast (HardForkLedgerView                                      xs')
+mkForecast :: InPairs TranslateEraLedgerView                                     xs'
+           -> NP (K EraParams)                                                   xs'
+           -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView_)) xs'
+           -> Forecast (HardForkLedgerView                                       xs')
 mkForecast PNil _ (TZ (Current start (Comp f))) =
     forecastFinalEra start f
 mkForecast (PCons g _) (ps :* _) (TZ (Current start f)) =
@@ -318,13 +318,13 @@ mkForecast PNil _ (TS _ f) =
 --
 -- Since we're in the final era, no translation is required.
 forecastFinalEra :: Bound
-                 -> Forecast (HardForkEraLedgerView blk)
+                 -> Forecast (HardForkEraLedgerView_ blk)
                  -> Forecast (HardForkLedgerView '[blk])
 forecastFinalEra start f =
     Forecast (forecastAt f) $ \slot ->
       aux <$> forecastFor f slot
   where
-    aux :: HardForkEraLedgerView blk -> HardForkLedgerView '[blk]
+    aux :: HardForkEraLedgerView_ blk -> HardForkLedgerView '[blk]
     aux = HardForkState . TZ . Current start
 
 -- | Make forecast with potential need to translate to next era
@@ -345,7 +345,7 @@ forecastNotFinal :: forall blk blk' blks.
                     TranslateEraLedgerView blk blk'
                  -> K EraParams blk -- Era params in the forecast era
                  -> Bound           -- Forecast era start
-                 -> Forecast (HardForkEraLedgerView blk)
+                 -> Forecast (HardForkEraLedgerView_ blk)
                  -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
 forecastNotFinal g (K eraParams) start f =
     Forecast (forecastAt f) $ \slot ->
@@ -353,14 +353,14 @@ forecastNotFinal g (K eraParams) start f =
   where
     -- Translate if the slot is past the end of the epoch
     translateIf :: SlotNo
-                -> HardForkEraLedgerView blk
+                -> HardForkEraLedgerView_ blk
                 -> HardForkLedgerView (blk ': blk' ': blks)
     translateIf slot view = HardForkState $
       case hardForkEraTransition view of
         TransitionAt tip epoch ->
           let end = History.mkUpperBound eraParams start epoch
           in if slot >= History.boundSlot end then
-               let view' :: HardForkEraLedgerView blk'
+               let view' :: HardForkEraLedgerView_ blk'
                    view' = HardForkEraLedgerView {
                                hardForkEraLedgerView =
                                  translateLedgerViewWith g
@@ -400,7 +400,7 @@ ledgerInfo :: forall blk. SingleEraBlock blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 ledgerViewInfo :: forall blk. SingleEraBlock blk
-               => (Ticked :.: HardForkEraLedgerView) blk -> LedgerEraInfo blk
+               => (Ticked :.: HardForkEraLedgerView_) blk -> LedgerEraInfo blk
 ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 injectLedgerError :: Injection WrapLedgerErr xs blk

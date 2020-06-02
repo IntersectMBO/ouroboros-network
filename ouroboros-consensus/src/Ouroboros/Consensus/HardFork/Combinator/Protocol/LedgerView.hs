@@ -2,7 +2,7 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
     -- * Single era
-    HardForkEraLedgerView(..)
+    HardForkEraLedgerView_(..)
   , mkHardForkEraLedgerView
     -- * Hard fork
   , HardForkLedgerView
@@ -26,7 +26,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State.Infra as State
   Ledger view for single era
 -------------------------------------------------------------------------------}
 
-data HardForkEraLedgerView blk = HardForkEraLedgerView {
+data HardForkEraLedgerView_ blk = HardForkEraLedgerView {
       -- | Transition to the next era or the tip of the ledger otherwise
       --
       -- NOTE: When forecasting a view, this is set to the /actual/ tip of the
@@ -41,13 +41,13 @@ data HardForkEraLedgerView blk = HardForkEraLedgerView {
     , hardForkEraLedgerView :: !(LedgerView (BlockProtocol blk))
     }
 
-deriving instance SingleEraBlock blk => Show (HardForkEraLedgerView blk)
+deriving instance SingleEraBlock blk => Show (HardForkEraLedgerView_ blk)
 
 mkHardForkEraLedgerView :: SingleEraBlock blk
                         => EpochInfo Identity
                         -> WrapPartialLedgerConfig blk
                         -> LedgerState blk
-                        -> HardForkEraLedgerView blk
+                        -> HardForkEraLedgerView_ blk
 mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {
       hardForkEraLedgerView = protocolLedgerView (completeLedgerConfig' ei pcfg) st
     , hardForkEraTransition = State.transitionOrTip pcfg st
@@ -57,4 +57,4 @@ mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {
   HardForkLedgerView
 -------------------------------------------------------------------------------}
 
-type HardForkLedgerView xs = HardForkState_ (K ()) HardForkEraLedgerView xs
+type HardForkLedgerView xs = HardForkState_ (K ()) HardForkEraLedgerView_ xs
