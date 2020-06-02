@@ -27,7 +27,6 @@ import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd)
 import           Data.Tuple (swap)
 import           Data.Word
-import           Data.Void (Void)
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen
 import           Test.Tasty
@@ -482,13 +481,67 @@ setupMiniReqRsp' serverAction (DummyTrace msgs) = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  Compat.MuxApplication Compat.InitiatorMode IO () Void
-    -> Compat.MuxApplication Compat.ResponderMode IO Void ()
-    -> IO ()
+    =  [(Channel IO -> IO Bool)]
+    -> [(Channel IO -> IO Bool)]
+    -> IO Bool
 
+
+runMuxApplication :: [Channel IO -> IO Bool]
+                  -> MuxBearer IO
+                  -> [Channel IO -> IO Bool]
+                  -> MuxBearer IO
+                  -> IO Bool
+runMuxApplication initApps initBearer respApps respBearer = do
+    let clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
+        serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
+        protNum = [1..]
+        respApps' = zip protNum respApps
+        initApps' = zip protNum initApps
+
+    respMux <- newMux $ MiniProtocolBundle $ map (\(pn,_) ->
+        MiniProtocolInfo (MiniProtocolNum pn) ResponderDirectionOnly defaultMiniProtocolLimits)
+        respApps'
+    respAsync <- async $ runMux serverTracer respMux respBearer
+    getRespRes <- sequence [ runMiniProtocol
+                              respMux
+                              (MiniProtocolNum pn)
+                              ResponderDirectionOnly
+                              StartOnDemand
+                              app
+                           | (pn, app) <- respApps'
+                           ]
+
+    initMux <- newMux $ MiniProtocolBundle $ map (\(pn,_) ->
+        MiniProtocolInfo (MiniProtocolNum pn) InitiatorDirectionOnly defaultMiniProtocolLimits)
+        initApps'
+    initAsync <- async $ runMux clientTracer initMux initBearer
+    getInitRes <- sequence [ runMiniProtocol
+                              initMux
+                              (MiniProtocolNum pn)
+                              InitiatorDirectionOnly
+                              StartEagerly
+                              app
+                           | (pn, app) <- initApps'
+                           ]
+
+    initRes <- mapM getResult getInitRes
+    respRes <- mapM getResult getRespRes
+    stopMux initMux
+    stopMux respMux
+    void $ waitBoth initAsync respAsync
+
+    return $ and $ initRes ++ respRes
+
+  where
+    getResult :: STM IO (Either SomeException Bool) -> IO Bool
+    getResult get = do
+        r <- atomically get
+        case r of
+             (Left _)  -> return False
+             (Right b) -> return b
 
 runWithQueues :: RunMuxApplications
-runWithQueues initApp respApp = do
+runWithQueues initApps respApps = do
     let sduLen = 14000
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -501,13 +554,10 @@ runWithQueues initApp respApp = do
         clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
-    initAsync <- async $ Compat.muxStart clientTracer initApp clientBearer
-    respAsync <- async $ Compat.muxStart serverTracer respApp serverBearer
-    void $ waitBoth initAsync respAsync
-
+    runMuxApplication initApps clientBearer respApps serverBearer
 
 runWithPipe :: RunMuxApplications
-runWithPipe initApp respApp =
+runWithPipe initApps respApps =
 #if defined(mingw32_HOST_OS)
     withIOManager $ \ioManager -> do
       let pipeName = "\\\\.\\pipe\\mux-test-pipe"
@@ -542,12 +592,8 @@ runWithPipe initApp respApp =
                  clientBearer  = pipeAsMuxBearer clientTracer clientChannel
                  serverBearer  = pipeAsMuxBearer serverTracer serverChannel
 
-             initAsync <- async $ Compat.muxStart clientTracer initApp clientBearer
-             respAsync <- async $ do
-                Win32.Async.connectNamedPipe hSrv
-                Compat.muxStart serverTracer respApp serverBearer
-
-             void $ waitBoth respAsync initAsync
+             Win32.Async.connectNamedPipe hSrv
+             runMuxApplication initApps clientBearer respApps serverBearer
 #else
     bracket
       ((,) <$> createPipe <*> createPipe)
@@ -562,11 +608,8 @@ runWithPipe initApp respApp =
 
             clientBearer  = pipeAsMuxBearer clientTracer clientChannel
             serverBearer  = pipeAsMuxBearer serverTracer serverChannel
+        runMuxApplication initApps clientBearer respApps serverBearer
 
-        initAsync <- async $ Compat.muxStart clientTracer initApp clientBearer
-        respAsync <- async $ Compat.muxStart serverTracer respApp serverBearer
-
-        void $ waitBoth respAsync initAsync
 #endif
   where
     clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
@@ -580,29 +623,9 @@ test_mux_1_mini :: RunMuxApplications
                 -> DummyTrace
                 -> IO Bool
 test_mux_1_mini run msgTrace = do
+    (clientApp, serverApp) <- setupMiniReqRsp' (return ()) msgTrace
+    run [clientApp] [serverApp]
 
-    endMpsVar <- atomically $ newTVar 2
-
-    (verify, client_mp, server_mp) <-
-        setupMiniReqRsp (return ()) endMpsVar msgTrace
-
-    let clientApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.InitiatorProtocolOnly client_mp
-                        }
-                      ]
-        serverApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.ResponderProtocolOnly server_mp
-                        }
-                      ]
-
-    run clientApp serverApp
-    verify
 
 prop_mux_1_mini_Queue :: DummyTrace -> Property
 prop_mux_1_mini_Queue = ioProperty . test_mux_1_mini runWithQueues
@@ -618,42 +641,13 @@ test_mux_2_minis
     -> DummyTrace
     -> DummyTrace
     -> IO Bool
-test_mux_2_minis run msgTrace0 msgTrace1 = do
-    endMpsVar <- atomically $ newTVar 4 -- Two initiators and two responders.
+test_mux_2_minis  run msgTrace0 msgTrace1 = do
+    (clientApp0, serverApp0) <-
+        setupMiniReqRsp' (return ()) msgTrace0
+    (clientApp1, serverApp1) <-
+        setupMiniReqRsp' (return ()) msgTrace1
+    run [clientApp0, clientApp1] [serverApp0, serverApp1]
 
-    (verify_0, client_mp0, server_mp0) <-
-        setupMiniReqRsp (return ()) endMpsVar msgTrace0
-    (verify_1, client_mp1, server_mp1) <-
-        setupMiniReqRsp (return ()) endMpsVar msgTrace1
-
-    let clientApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.InitiatorProtocolOnly client_mp0
-                        }
-                      , Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 3,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.InitiatorProtocolOnly client_mp1
-                        }
-                      ]
-
-        serverApp = Compat.MuxApplication
-                      [ Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 2,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.ResponderProtocolOnly server_mp0
-                        }
-                      , Compat.MuxMiniProtocol {
-                          Compat.miniProtocolNum    = Compat.MiniProtocolNum 3,
-                          Compat.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Compat.miniProtocolRun    = Compat.ResponderProtocolOnly server_mp1
-                        }
-                      ]
-
-    run clientApp serverApp
-    (&&) <$> verify_0 <*> verify_1
 
 prop_mux_2_minis_Queue :: DummyTrace
                        -> DummyTrace
