@@ -30,7 +30,8 @@ instance TPraosCrypto c => BlockSupportsProtocol (ShelleyBlock c) where
     ChainSelectView
       { csvChainLength = SL.bheaderBlockNo . SL.bhbody $ hdr
       , csvLeaderVRF =
-          SL.fromNatural . certifiedNatural
+              SL.fromNatural
+            . certifiedNatural
             . SL.bheaderL
             . SL.bhbody
             $ hdr
