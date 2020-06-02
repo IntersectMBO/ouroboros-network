@@ -497,10 +497,9 @@ runWithPipe initApp respApp =
                  clientBearer  = pipeAsMuxBearer clientTracer clientChannel
                  serverBearer  = pipeAsMuxBearer serverTracer serverChannel
 
+             Win32.Async.connectNamedPipe hSrv
              initAsync <- async $ muxStart clientTracer initApp clientBearer
-             respAsync <- async $ do
-                Win32.Async.connectNamedPipe hSrv
-                muxStart serverTracer respApp serverBearer
+             respAsync <- async $ muxStart serverTracer respApp serverBearer
 
              void $ waitBoth respAsync initAsync
 #else
