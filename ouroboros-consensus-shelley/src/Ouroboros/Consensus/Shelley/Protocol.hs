@@ -221,18 +221,22 @@ instance TPraosCrypto c => NoUnexpectedThunks (ConsensusConfig (TPraos c))
 --
 --   We order between chains as follows:
 --   - By chain length, with longer chains always preferred; _else_
+--   - By the leader value of the chain tip, with lower values preferred; _else_
 --   - If the tip of each chain was issued by the same agent, then we prefer the
 --     chain whose tip has the highest ocert issue number, if one exists; _else_
 --   - All chains are considered equally preferable
 data TPraosChainSelectView c = ChainSelectView {
     csvChainLength :: BlockNo
+  , csvLeaderVRF   :: SL.UnitInterval
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Natural
   } deriving (Show, Eq)
 
 instance Crypto c => Ord (TPraosChainSelectView c) where
-  compare (ChainSelectView l1 i1 in1) (ChainSelectView l2 i2 in2) =
-    compare l1 l2 <> if i1 == i2 then compare in1 in2 else EQ
+  compare (ChainSelectView l1 v1 i1 in1) (ChainSelectView l2 v2 i2 in2) =
+    compare l1 l2
+    <> compare v2 v1 -- note inverted, since we prefer lower values!
+    <> if i1 == i2 then compare in1 in2 else EQ
 
 instance TPraosCrypto c => ChainSelection (TPraos c) where
 
