@@ -45,15 +45,14 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkEraLedgerView, HardForkEraLedgerView_ (..),
                      HardForkLedgerView, mkHardForkEraLedgerView)
-import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
-                     HardForkState, HardForkState_ (..), Past (..),
-                     Snapshot (..), TransitionOrTip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
@@ -291,7 +290,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 hardforkForecast :: SListI xs
                  => HardForkState LedgerState xs
                  -> Exactly xs EraParams
-                 -> InPairs TranslateEraLedgerView xs
+                 -> InPairs (Translate WrapLedgerView) xs
                  -> NP (LedgerState -.-> Maybe :.: (Forecast :.: HardForkEraLedgerView_ WrapLedgerView)) xs
                  -> WithOrigin SlotNo
                  -> Maybe (Forecast (HardForkLedgerView xs))
@@ -304,7 +303,7 @@ hardforkForecast st shape tr getOne p = do
                  (getHardForkState f)
 
 -- | Change a telescope of a forecast into a forecast of a telescope
-mkForecast :: InPairs TranslateEraLedgerView xs'
+mkForecast :: InPairs (Translate WrapLedgerView) xs'
            -> NP (K EraParams) xs'
            -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView_ WrapLedgerView)) xs'
            -> Forecast (HardForkLedgerView xs')
@@ -345,7 +344,7 @@ forecastFinalEra start f =
 -- NOTE 3: We assume that we only ever have to translate to the /next/
 -- era (as opposed to /any/ subsequent era).
 forecastNotFinal :: forall blk blk' blks.
-                    TranslateEraLedgerView blk blk'
+                    Translate WrapLedgerView blk blk'
                  -> K EraParams blk -- Era params in the forecast era
                  -> Bound           -- Forecast era start
                  -> Forecast (HardForkEraLedgerView_ WrapLedgerView blk)
@@ -366,7 +365,7 @@ forecastNotFinal g (K eraParams) start f =
                let view' :: HardForkEraLedgerView blk'
                    view' = HardForkEraLedgerView {
                                hardForkEraLedgerView =
-                                 translateLedgerViewWith g
+                                 translateWith g
                                    (History.boundEpoch end)
                                    (hardForkEraLedgerView view)
                              , hardForkEraTransition =

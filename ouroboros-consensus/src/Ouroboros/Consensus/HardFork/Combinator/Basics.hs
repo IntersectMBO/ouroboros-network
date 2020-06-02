@@ -8,6 +8,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -49,7 +50,8 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.State.Infra
+import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state
@@ -67,8 +69,10 @@ type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
       getHardForkLedgerState :: HardForkState LedgerState xs
     }
-  deriving stock   (Show, Eq)
-  deriving newtype (NoUnexpectedThunks)
+
+deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
+deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
+deriving newtype instance CanHardFork xs => NoUnexpectedThunks (LedgerState (HardForkBlock xs))
 
 {-------------------------------------------------------------------------------
   Protocol config

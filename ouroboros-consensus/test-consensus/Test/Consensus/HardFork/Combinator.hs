@@ -55,8 +55,7 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
-import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
-                     Past (..))
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
@@ -357,16 +356,16 @@ deriving instance Serialise (AnnTip TestBlock)
   Translation
 -------------------------------------------------------------------------------}
 
-ledgerState_AtoB :: RequiringBoth WrapLedgerConfig TranslateEraLedgerState BlockA BlockB
-ledgerState_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerState $ \_ LgrA{..} -> LgrB {
+ledgerState_AtoB :: RequiringBoth WrapLedgerConfig (Translate LedgerState) BlockA BlockB
+ledgerState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 
-ledgerView_AtoB :: RequiringBoth WrapLedgerConfig TranslateEraLedgerView BlockA BlockB
-ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateEraLedgerView $ \_ _ -> WrapLedgerView ()
+ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (Translate WrapLedgerView) BlockA BlockB
+ledgerView_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapLedgerView ()
 
-consensusState_AtoB :: RequiringBoth WrapConsensusConfig TranslateEraConsensusState BlockA BlockB
-consensusState_AtoB = RequireBoth $ \_ _ -> TranslateEraConsensusState $ \_ _ -> ()
+consensusState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapConsensusState) BlockA BlockB
+consensusState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapConsensusState ()
 
 {-------------------------------------------------------------------------------
   Auxiliary functions required for RunNode

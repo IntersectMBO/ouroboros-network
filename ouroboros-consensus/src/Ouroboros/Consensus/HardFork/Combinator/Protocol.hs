@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                      (HardForkSelectView (..))
@@ -291,18 +292,11 @@ translateConsensus :: forall xs. CanHardFork xs
                    -> ConsensusConfig (HardForkProtocol xs)
                    -> InPairs (Translate WrapConsensusState) xs
 translateConsensus ei HardForkConsensusConfig{..} =
-    InPairs.hmap aux $
-      InPairs.requiringBoth cfgs $
-         translateConsensusState hardForkEraTranslation
+    InPairs.requiringBoth cfgs $
+       translateConsensusState hardForkEraTranslation
   where
     pcfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     cfgs  = hcmap proxySingle (completeConsensusConfig'' ei) pcfgs
-
-    aux :: TranslateEraConsensusState   blk blk'
-        -> Translate WrapConsensusState blk blk'
-    aux f = Translate $ \epoch (WrapConsensusState st) ->
-              WrapConsensusState $
-                translateConsensusStateWith f epoch st
 
 injectValidationErr :: Injection WrapValidationErr xs blk
                     -> ValidationErr (BlockProtocol blk)

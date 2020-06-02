@@ -55,12 +55,16 @@ library
                        Ouroboros.Consensus.HardFork.Abstract
                        Ouroboros.Consensus.HardFork.Combinator
                        Ouroboros.Consensus.HardFork.Combinator.Abstract
+                       Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork
+                       Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
+                       Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
                        Ouroboros.Consensus.HardFork.Combinator.AcrossEras
                        Ouroboros.Consensus.HardFork.Combinator.Basics
                        Ouroboros.Consensus.HardFork.Combinator.Block
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
                        Ouroboros.Consensus.HardFork.Combinator.Forge
                        Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
+                       Ouroboros.Consensus.HardFork.Combinator.Info
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
@@ -71,6 +75,9 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                        Ouroboros.Consensus.HardFork.Combinator.State
                        Ouroboros.Consensus.HardFork.Combinator.State.Infra
+                       Ouroboros.Consensus.HardFork.Combinator.State.Instances
+                       Ouroboros.Consensus.HardFork.Combinator.State.Lift
+                       Ouroboros.Consensus.HardFork.Combinator.State.Types
                        Ouroboros.Consensus.HardFork.Combinator.Translation
                        Ouroboros.Consensus.HardFork.Combinator.Unary
                        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia

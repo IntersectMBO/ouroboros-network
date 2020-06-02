@@ -11,7 +11,7 @@
 -- > import Ouroboros.Consensus.HardFork.Combinator.State (HardForkState_(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 module Ouroboros.Consensus.HardFork.Combinator.State (
-    module Ouroboros.Consensus.HardFork.Combinator.State.Infra
+    module X
     -- * Serialisation support
   , recover
     -- * EpochInfo
@@ -42,7 +42,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-import           Ouroboros.Consensus.HardFork.Combinator.State.Infra
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
                      Requiring (..))
@@ -50,6 +49,10 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Extend (..), ScanNext (..), Telescope)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+
+import           Ouroboros.Consensus.HardFork.Combinator.State.Infra as X
+import           Ouroboros.Consensus.HardFork.Combinator.State.Instances as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
 
 {-------------------------------------------------------------------------------
   Recovery
@@ -165,7 +168,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         guard (slot >= History.boundSlot endBound)
         return endBound
 
-    howExtend :: TranslateEraLedgerState blk blk'
+    howExtend :: Translate LedgerState blk blk'
               -> History.Bound
               -> Current LedgerState blk
               -> (Past LedgerState blk, Current LedgerState blk')
@@ -177,13 +180,13 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
             }
         , Current {
               currentStart = currentEnd
-            , currentState = translateLedgerStateWith f
+            , currentState = translateWith f
                                (History.boundEpoch currentEnd)
                                (currentState cur)
             }
         )
 
-    translate :: InPairs TranslateEraLedgerState xs
+    translate :: InPairs (Translate LedgerState) xs
     translate = InPairs.requiringBoth cfgs $
                   translateLedgerState hardForkEraTranslation
 

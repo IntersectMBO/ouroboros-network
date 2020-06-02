@@ -3,21 +3,16 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Translation (
     -- * Translate from one era to the next
-    TranslateEraLedgerState(..)
-  , TranslateEraLedgerView(..)
-  , TranslateEraConsensusState(..)
-  , EraTranslation(..)
+    EraTranslation(..)
   , trivialEraTranslation
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types (Translate)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), RequiringBoth (..))
 
@@ -25,28 +20,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
   Translate from one era to the next
 -------------------------------------------------------------------------------}
 
-newtype TranslateEraLedgerState blk blk' = TranslateEraLedgerState {
-      translateLedgerStateWith :: EpochNo
-                               -> LedgerState blk
-                               -> LedgerState blk'
-    }
-
-newtype TranslateEraLedgerView blk blk' = TranslateEraLedgerView {
-      translateLedgerViewWith :: EpochNo
-                              -> WrapLedgerView blk
-                              -> WrapLedgerView blk'
-    }
-
-newtype TranslateEraConsensusState blk blk' = TranslateEraConsensusState {
-      translateConsensusStateWith :: EpochNo
-                                  -> ConsensusState (BlockProtocol blk)
-                                  -> ConsensusState (BlockProtocol blk')
-    }
-
 data EraTranslation xs = EraTranslation {
-      translateLedgerState    :: InPairs (RequiringBoth WrapLedgerConfig    TranslateEraLedgerState)    xs
-    , translateLedgerView     :: InPairs (RequiringBoth WrapLedgerConfig    TranslateEraLedgerView)     xs
-    , translateConsensusState :: InPairs (RequiringBoth WrapConsensusConfig TranslateEraConsensusState) xs
+      translateLedgerState    :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))        xs
+    , translateLedgerView     :: InPairs (RequiringBoth WrapLedgerConfig    (Translate WrapLedgerView))     xs
+    , translateConsensusState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapConsensusState)) xs
     }
   deriving NoUnexpectedThunks
        via OnlyCheckIsWHNF "EraTranslation" (EraTranslation xs)
