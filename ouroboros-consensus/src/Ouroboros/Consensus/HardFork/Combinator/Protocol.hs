@@ -20,6 +20,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
   , HardForkLedgerView
   , HardForkEraLedgerView_(..)
+  , HardForkEraLedgerView
   , mkHardForkEraLedgerView
   ) where
 
@@ -49,8 +50,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                      (HardForkSelectView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                     (HardForkEraLedgerView_ (..), HardForkLedgerView,
-                     mkHardForkEraLedgerView)
+                     (HardForkEraLedgerView, HardForkEraLedgerView_ (..),
+                     HardForkLedgerView, mkHardForkEraLedgerView)
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
                      Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
@@ -187,7 +188,7 @@ checkOne :: (MonadRandom m, SingleEraBlock blk)
          -> SlotNo
          -> WrapPartialConsensusConfig  blk
          -> (Maybe :.: WrapCanBeLeader) blk
-         -> HardForkEraLedgerView_      blk
+         -> HardForkEraLedgerView       blk
          -> WrapConsensusState          blk
          -> (m :.: WrapLeaderCheck)     blk
 checkOne ei slot cfg (Comp mCanBeLeader)
@@ -261,10 +262,10 @@ update cfg@HardForkConsensusConfig{..}
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
-          -> WrapPartialConsensusConfig                                 blk
-          -> Injection WrapValidationErr xs                             blk
-          -> Product WrapValidateView HardForkEraLedgerView_            blk
-          -> WrapConsensusState                                         blk
+          -> WrapPartialConsensusConfig blk
+          -> Injection WrapValidationErr xs blk
+          -> Product WrapValidateView (HardForkEraLedgerView_ WrapLedgerView) blk
+          -> WrapConsensusState blk
           -> (Except (HardForkValidationErr xs) :.: WrapConsensusState) blk
 updateEra ei slot cfg injectErr
           (Pair (WrapValidateView view) HardForkEraLedgerView{..})
@@ -281,8 +282,8 @@ updateEra ei slot cfg injectErr
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk. SingleEraBlock blk
-           => State.Current HardForkEraLedgerView_ blk -> LedgerEraInfo blk
+ledgerInfo :: forall f blk. SingleEraBlock blk
+           => State.Current (HardForkEraLedgerView_ f) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
