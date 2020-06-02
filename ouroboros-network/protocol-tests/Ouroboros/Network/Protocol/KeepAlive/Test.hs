@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -13,13 +14,16 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
+import qualified Codec.CBOR.Read  as CBOR
 import           Data.Functor.Identity (Identity (..))
+import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec hiding (prop_codec)
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Protocol.KeepAlive.Type
@@ -53,6 +57,7 @@ tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
   , testProperty "codec"          prop_codec
   , testProperty "codec 2-splits" prop_codec_splits2
   , testProperty "codec 3-splits" (withMaxSuccess 33 prop_codec_splits3)
+  , testProperty "byteLimits"     prop_byteLimits
   ]
 
 --
@@ -150,3 +155,13 @@ prop_codec_splits2 msg =
 prop_codec_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
 prop_codec_splits3 msg =
     runST (prop_codec_splitsM splits3 codecKeepAlive msg)
+
+
+prop_byteLimits :: AnyMessageAndAgency KeepAlive
+                         -> Bool
+prop_byteLimits (AnyMessageAndAgency agency msg) =
+        dataSize (encode agency msg)
+     <= sizeLimitForState agency  
+  where
+    Codec { encode } = (codecKeepAlive :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
+    ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive
