@@ -438,7 +438,8 @@ stepEventTime HF.EraParams{..} EventTime{..} = EventTime{
 -- | Chain divided into eras
 --
 -- Like 'Summary', we might not have blocks in the chain for all eras.
-newtype Chain xs = Chain (AtMost xs [Event])
+-- The chain might be empty, but we must at least have one era.
+newtype Chain xs = Chain (NonEmpty xs [Event])
   deriving (Show)
 
 -- | Slot at the tip of the chain
@@ -512,7 +513,8 @@ findTransition era =
 
 fromEvents :: Eras xs -> [Event] -> Chain xs
 fromEvents (Eras eras) events = Chain $
-    snd <$> exactlyZipFoldable eras grouped
+    fromMaybe (NonEmptyOne []) . atMostNonEmpty . fmap snd $
+      exactlyZipFoldable eras grouped
   where
     grouped :: [[Event]]
     grouped = L.groupBy ((==) `on` eventEra) events
@@ -630,24 +632,31 @@ activeSafeZone :: HF.Shape xs
 activeSafeZone (HF.Shape shape) (Chain chain) (HF.Transitions transitions) =
     go shape chain transitions
   where
-    go :: Exactly (x ': xs) HF.EraParams
-       -> AtMost  (x ': xs) [Event]
-       -> AtMost        xs  EpochNo
+    go :: Exactly  (x ': xs) HF.EraParams
+       -> NonEmpty (x ': xs) [Event]
+       -> AtMost         xs  EpochNo
        -> (Maybe EpochNo, HF.SafeZone)
-    -- The chain is empty; the era parameters of the first era are active
-    go (K ps :* _) AtMostNil _ =
-        (Nothing, HF.eraSafeZone ps)
     -- No transition is yet known for the last era on the chain
-    go (K ps :* _) (AtMostCons _ AtMostNil) AtMostNil =
+    go (K ps :* _) (NonEmptyOne _) AtMostNil =
         (Nothing, HF.eraSafeZone ps)
     -- Transition /is/ known for the last era on the chain
-    go (_ :* pss) (AtMostCons _ AtMostNil) (AtMostCons t AtMostNil) =
+    go (_ :* pss) (NonEmptyOne _) (AtMostCons t AtMostNil) =
         (Just t, HF.eraSafeZone (exactlyHead pss))
     -- Find the last era on chain
-    go (_ :* pss) (AtMostCons _ ess@AtMostCons{}) AtMostNil =
-        go pss ess AtMostNil
-    go (_ :* pss) (AtMostCons _ ess) (AtMostCons _ ts) =
+    go (_ :* pss) (NonEmptyCons _ ess) AtMostNil =
+        -- We need to convince ghc there is another era
+        case ess of
+          NonEmptyCons{} -> go pss ess AtMostNil
+          NonEmptyOne{}  -> go pss ess AtMostNil
+    go (_ :* pss) (NonEmptyCons _ ess) (AtMostCons _ ts) =
         go pss ess ts
+
+    -- Impossible cases
+
+    -- If this is the final era on the chain, we might know the transition to
+    -- the next era, but we certainly couldn't know the next transition
+    go _ (NonEmptyOne _) (AtMostCons _ (AtMostCons{})) =
+        error "activeSafeZone: impossible 1"
 
 -- | Return the events within and outside of the safe zone
 splitSafeZone :: WithOrigin EpochNo
