@@ -39,6 +39,7 @@ module Network.Mux.Compat (
 
 import           Data.Void (Void)
 
+import           Control.Applicative ((<|>))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -52,7 +53,7 @@ import           Network.Mux.Types hiding (MiniProtocolInfo(..))
 import qualified Network.Mux.Types as Types
 import           Network.Mux.Trace
 import           Network.Mux.Channel
-import           Network.Mux (newMux, runMux, runMiniProtocol,
+import           Network.Mux (newMux, runMux, runMiniProtocol, stopMux,
                               StartOnDemandOrEagerly(..), traceMuxBearerState)
 
 
@@ -106,7 +107,7 @@ muxStart
 muxStart tracer muxapp bearer = do
     mux <- newMux (toMiniProtocolBundle muxapp)
 
-    sequence_
+    resOps <- sequence
       [ runMiniProtocol
           mux
           miniProtocolNum
@@ -118,8 +119,16 @@ muxStart tracer muxapp bearer = do
       , (ptclDir, action) <- selectRunner miniProtocolRun
       ]
 
-    runMux tracer mux bearer
+    -- Wait for the first MuxApplication to finish, then stop the mux.
+    withAsync (runMux tracer mux bearer) $ \aid -> do
+      waitOnAny resOps
+      stopMux mux
+      wait aid
+
   where
+    waitOnAny :: [STM m (Either SomeException  ())] -> m ()
+    waitOnAny resOps = atomically $ void $ foldr (<|>) retry resOps
+
     toMiniProtocolBundle :: MuxApplication mode m a b -> MiniProtocolBundle mode
     toMiniProtocolBundle (MuxApplication ptcls) =
       MiniProtocolBundle

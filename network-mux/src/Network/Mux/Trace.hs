@@ -57,6 +57,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- ^ thrown when reading of a single SDU takes too long
                   | MuxSDUWriteTimeout
                   -- ^ thrown when writing a single SDU takes too long
+                  | MuxShutdown
+                  -- ^ Result of runMiniProtocol's completionAction in case of an error.
                   deriving (Show, Eq)
 
 instance Exception MuxError where
@@ -142,6 +144,10 @@ data MuxTrace =
     | forall e. Exception e => MuxTraceHandshakeServerError !e
     | MuxTraceSDUReadTimeoutException
     | MuxTraceSDUWriteTimeoutException
+    | MuxTraceStartEagerly !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceStartOnDemand !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceStartedOnDemand !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceShutdown
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -174,4 +180,8 @@ instance Show MuxTrace where
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
     show MuxTraceSDUReadTimeoutException = "Timed out reading SDU"
     show MuxTraceSDUWriteTimeoutException = "Timed out writing SDU"
+    show (MuxTraceStartEagerly mid dir) = printf "Eagerly started %s in %s" (show mid) (show dir)
+    show (MuxTraceStartOnDemand mid dir) = printf "Preparing to start %s in %s" (show mid) (show dir)
+    show (MuxTraceStartedOnDemand mid dir) = printf "Started %s in %s" (show mid) (show dir)
+    show MuxTraceShutdown = "Mux shutdown"
 
