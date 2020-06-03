@@ -15,6 +15,7 @@
 module Test.Consensus.HardFork.Combinator.B (
     ProtocolB
   , BlockB(..)
+  , safeZoneB
     -- * Additional types
     -- * Type family instances
   , ConsensusConfig(..)
@@ -48,6 +49,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -197,6 +199,14 @@ instance LedgerSupportsProtocol BlockB where
 instance HasPartialConsensusConfig ProtocolB
 
 instance HasPartialLedgerConfig BlockB
+
+-- | A basic 'History.SafeZone'
+--
+-- The mock B ledger has no transactions and so can't end and so needs no
+-- safezone. However, we give it a default one anyway, since that makes the
+-- test more realistic.
+safeZoneB :: SecurityParam -> History.SafeZone
+safeZoneB (SecurityParam k) = History.defaultSafeZone k
 
 instance LedgerSupportsMempool BlockB where
   data GenTx BlockB
