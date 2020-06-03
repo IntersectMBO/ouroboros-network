@@ -16,6 +16,7 @@ module Test.Mux
     ( tests
     ) where
 
+import           Control.Arrow ((&&&))
 import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
@@ -24,10 +25,11 @@ import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
-import           Data.List (dropWhileEnd)
+import           Data.List (dropWhileEnd, and, nub)
 import           Data.Tuple (swap)
 import           Data.Word
-import           Test.QuickCheck
+import           GHC.Stack
+import           Test.QuickCheck hiding ((.&.))
 import           Test.QuickCheck.Gen
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
@@ -42,8 +44,9 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.IOSim (runSimStrictShutdown)
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import           Control.Monad.IOSim ( runSimStrictShutdown, runSimTrace, selectTraceEventsSay
+                                     , traceResult )
+import           Control.Tracer
 
 #if defined(mingw32_HOST_OS)
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
@@ -61,7 +64,8 @@ import           Network.Mux
 import qualified Network.Mux.Compat as Compat
 import           Network.Mux.Codec
 import           Network.Mux.Channel
-import           Network.Mux.Types (MuxSDU(..), MuxSDUHeader(..), RemoteClockModel(..))
+import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), MuxSDU(..), MuxSDUHeader(..)
+                                   , RemoteClockModel(..) )
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
 
@@ -77,6 +81,7 @@ tests =
   , testProperty "starvation"              prop_mux_starvation
   , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
   , testProperty "demuxing (IO)"           prop_demux_sdu_io
+  , testProperty "mux start and stop"      prop_mux_start
   , testGroup "Generators"
     [ testProperty "genByteString"         prop_arbitrary_genByteString
     , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
@@ -1052,3 +1057,297 @@ prop_demux_sdu_sim badSdu =
 prop_demux_sdu_io :: ArbitrarySDU
                     -> Property
 prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
+
+instance Arbitrary MiniProtocolNum where
+    arbitrary = do
+        n <- arbitrary
+        return $ MiniProtocolNum $ 0x7fff .&. n
+
+    shrink (MiniProtocolNum n) = MiniProtocolNum <$> shrink n
+
+instance Arbitrary MuxMode where
+    arbitrary = elements [InitiatorMode, ResponderMode, InitiatorResponderMode]
+
+    shrink InitiatorResponderMode = [InitiatorMode, ResponderMode]
+    shrink _                      = []
+
+data DummyAppResult = DummyAppSucceed | DummyAppFail deriving (Eq, Show)
+
+instance Arbitrary DummyAppResult where
+    arbitrary = elements [DummyAppSucceed, DummyAppFail]
+
+instance Arbitrary DiffTime where
+    arbitrary = fromIntegral <$> choose (0, 100::Word16)
+
+    shrink = map (fromRational . getNonNegative)
+           . shrink
+           . NonNegative
+           . toRational
+
+data DummyApp = DummyApp {
+      daNum        :: !MiniProtocolNum
+    , daAction     :: !DummyAppResult
+    , daRunTime    :: !DiffTime
+    , daStartAfter :: !DiffTime
+    } deriving (Eq, Show)
+
+instance Arbitrary DummyApp where
+    arbitrary = DummyApp <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+
+data DummyApps =
+    DummyResponderApps [DummyApp]
+  | DummyInitiatorApps [DummyApp]
+  | DummyInitiatorResponderApps [DummyApp]
+  deriving Show
+
+instance Arbitrary DummyApps where
+    arbitrary = do
+        nums <- listOf1 $ arbitrary
+        apps <- mapM genApp $ nub nums
+        mode <- arbitrary
+        case mode of
+             InitiatorMode          -> return $ DummyInitiatorApps apps
+             ResponderMode          -> return $ DummyResponderApps apps
+             InitiatorResponderMode -> return $ DummyInitiatorResponderApps apps
+
+      where
+        genApp num = DummyApp num <$> arbitrary <*> arbitrary <*> arbitrary
+
+    shrink (DummyResponderApps apps) = [ DummyResponderApps apps'
+                                       | apps' <- filter (not . null) $ shrinkList (const []) apps
+                                       ]
+    shrink (DummyInitiatorApps apps) = [ DummyResponderApps apps'
+                                       | apps' <- filter (not . null) $ shrinkList (const []) apps
+                                       ]
+    shrink (DummyInitiatorResponderApps apps) = [ DummyResponderApps apps'
+                                       | apps' <- filter (not . null) $ shrinkList (const []) apps
+                                       ]
+
+dummyAppToChannel :: forall m.
+                     ( MonadAsync m
+                     , MonadCatch m
+                     , MonadFork m
+                     , MonadSTM m
+                     , MonadThrow (STM m)
+                     , MonadTime  m
+                     , MonadTimer m
+                     , MonadMask m
+                     , HasCallStack
+                     )
+                  => DummyApp
+                  -> (Channel m -> m ())
+dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
+    threadDelay daRunTime
+    case daAction of
+         DummyAppSucceed -> return ()
+         DummyAppFail    -> throwM $ MuxError MuxShutdown "App Fail" callStack
+
+appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
+appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits
+
+prop_mux_start_mX :: forall m.
+                       ( MonadAsync m
+                       , MonadFork m
+                       , MonadMask m
+                       , MonadSay m
+                       , MonadST m
+                       , MonadSTM m
+                       , MonadThrow (STM m)
+                       , MonadTime m
+                       , MonadTimer m
+                       , Eq (Async m ())
+                       )
+                    => DummyApps
+                    -> DiffTime
+                    -> m Property
+prop_mux_start_mX apps runTime = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
+
+  where
+    triggerApp :: MuxBearer m -> DummyApp -> m ()
+    triggerApp bearer app = do
+        let chan = muxBearerAsChannel bearer (daNum app) InitiatorDir
+        traceWith verboseTracer $ "app waiting " ++ (show $ daNum app)
+        threadDelay (daStartAfter app)
+        traceWith verboseTracer $ "app starting " ++ (show $ daNum app)
+        (send chan) $ BL.singleton 0xa5
+        return ()
+
+    checkRes :: StartOnDemandOrEagerly
+             -> DiffTime
+             -> ((STM m (Either SomeException ())), DummyApp)
+             -> m (Bool, Either SomeException ())
+    checkRes startStrat minRunTime (get,da) = do
+        let totTime = case startStrat of
+                           StartOnDemand -> daRunTime da + daStartAfter da
+                           StartEagerly  -> daRunTime da
+        r <- atomically get
+        case daAction da of
+             DummyAppSucceed ->
+                 case r of
+                      Left _  -> return (minRunTime <= totTime, r)
+                      Right _ -> return (minRunTime >= totTime, r)
+             DummyAppFail ->
+                 case r of
+                      Left _  -> return (True, r)
+                      Right _ -> return (False, r)
+
+
+prop_mux_start_m :: forall m.
+                       ( MonadAsync m
+                       , MonadFork m
+                       , MonadMask m
+                       , MonadSay m
+                       , MonadST m
+                       , MonadSTM m
+                       , MonadThrow (STM m)
+                       , MonadTime m
+                       , MonadTimer m
+                       , Eq (Async m ())
+                       )
+                    => MuxBearer m
+                    -> (DummyApp -> m ())
+                    -> (    StartOnDemandOrEagerly
+                         -> DiffTime
+                         -> ((STM m (Either SomeException ())), DummyApp)
+                         -> m (Bool, Either SomeException ())
+                       )
+                    -> DummyApps
+                    -> DiffTime
+                    -> m Property
+prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
+    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly) apps
+        minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
+
+    mux <- newMux $ MiniProtocolBundle minis
+    mux_aid <- async $ runMux nullTracer mux bearer
+    killer <- async $ (threadDelay runTime) >> stopMux mux
+    getRes <- sequence [ runMiniProtocol
+                           mux
+                          (daNum app)
+                          InitiatorDirectionOnly
+                          StartEagerly
+                          (dummyAppToChannel app)
+                       | app <- apps
+                       ]
+    rc <- mapM (checkRes StartEagerly minRunTime) $ zip getRes apps
+    wait killer
+    void $ waitCatch mux_aid
+
+    return (property $ and $ map fst rc)
+
+prop_mux_start_m bearer triggerApp checkRes (DummyResponderApps apps) runTime = do
+    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+        minRunTime = minimum $ runTime : (map (\a -> daRunTime a + daStartAfter a) $ filter (\app -> daAction app == DummyAppFail) apps)
+
+    mux <- newMux $ MiniProtocolBundle minis
+    mux_aid <- async $ runMux verboseTracer mux bearer
+    getRes <- sequence [ runMiniProtocol
+                           mux
+                          (daNum app)
+                          ResponderDirectionOnly
+                          StartOnDemand
+                          (dummyAppToChannel app)
+                       | app <- apps
+                       ]
+
+    triggers <- mapM (async . triggerApp ) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    killer <- async $ (threadDelay runTime) >> stopMux mux
+    rc <- mapM (checkRes StartOnDemand minRunTime) $ zip getRes apps
+    wait killer
+    mapM_ cancel triggers
+    void $ waitCatch mux_aid
+
+    return (property $ and $ map fst rc)
+
+prop_mux_start_m bearer triggerApp checkRes (DummyInitiatorResponderApps apps) runTime = do
+    let initMinis = map (appToInfo InitiatorDirection) apps
+        respMinis = map (appToInfo ResponderDirection) apps
+        minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
+
+    mux <- newMux $ MiniProtocolBundle $ initMinis ++ respMinis
+    mux_aid <- async $ runMux verboseTracer mux bearer
+    getInitRes <- sequence [ runMiniProtocol
+                               mux
+                               (daNum app)
+                               InitiatorDirection
+                               StartEagerly
+                               (dummyAppToChannel app)
+                           | app <- apps
+                           ]
+    getRespRes <- sequence [ runMiniProtocol
+                               mux
+                               (daNum app)
+                               ResponderDirection
+                               StartOnDemand
+                               (dummyAppToChannel app)
+                           | app <- apps
+                           ]
+
+    triggers <- mapM (async . triggerApp) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    killer <- async $ (threadDelay runTime) >> stopMux mux
+    !rcInit <- mapM (checkRes StartEagerly minRunTime) $ zip getInitRes apps
+    !rcResp <- mapM (checkRes StartOnDemand minRunTime) $ zip getRespRes apps
+    wait killer
+    mapM_ cancel triggers
+    void $ waitCatch mux_aid
+
+    return (property $ (and $ map fst rcInit ++ map fst rcResp))
+
+-- | Verify starting and stopping of miniprotocols. Both normal exits and by exception.
+prop_mux_start :: DummyApps -> DiffTime -> Property
+prop_mux_start apps runTime = do
+  let (_output, r_e) = (selectTraceEventsSay &&& traceResult True) (runSimTrace $ prop_mux_start_mX apps runTime)
+  ioProperty $ do
+    -- mapM_ (printf "%s\n") _output
+    case r_e of
+       Left  _ -> return $ property False
+       Right r -> return r
+
+data WithThreadAndTime a = WithThreadAndTime {
+      wtatOccuredAt    :: !Time
+    , wtatWithinThread :: !String
+    , wtatEvent        :: !a
+    }
+
+instance (Show a) => Show (WithThreadAndTime a) where
+    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
+        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+
+verboseTracer :: forall a m.
+                       ( MonadAsync m
+                       , MonadFork m
+                       , MonadMask m
+                       , MonadSay m
+                       , MonadST m
+                       , MonadSTM m
+                       , MonadThrow (STM m)
+                       , MonadTime m
+                       , MonadTimer m
+                       , Eq (Async m ())
+                       , Show a
+                       )
+               => Tracer m a
+verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+
+threadAndTimeTracer :: forall a m.
+                       ( MonadAsync m
+                       , MonadFork m
+                       , MonadMask m
+                       , MonadSay m
+                       , MonadST m
+                       , MonadSTM m
+                       , MonadThrow (STM m)
+                       , MonadTime m
+                       , MonadTimer m
+                       , Eq (Async m ())
+                       )
+                    => Tracer m (WithThreadAndTime a) -> Tracer m a
+threadAndTimeTracer tr = Tracer $ \s -> do
+    !now <- getMonotonicTime
+    !tid <- myThreadId
+    traceWith tr $ WithThreadAndTime now (show tid) s
