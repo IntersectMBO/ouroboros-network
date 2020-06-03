@@ -9,7 +9,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Types (
   , Snapshot(..)
     -- * Supporting types
   , Translate(..)
-  , TransitionOrTip(..)
+  , TransitionInfo(..)
   ) where
 
 import           Prelude hiding (sequence)
@@ -105,12 +105,22 @@ newtype Translate f x y = Translate {
       translateWith :: EpochNo -> f x -> f y
     }
 
--- | Property of a particular ledger state: transition to the next era if known,
--- or the tip of the ledger otherwise.
-data TransitionOrTip =
-    -- | Transition to the next era has been confirmed and is stable
-    TransitionAt !(WithOrigin SlotNo) !EpochNo
+-- | Knowledge in a particular era of the transition to the next era
+data TransitionInfo =
+    -- | No transition is yet known for this era
+    -- We instead record the ledger tip (which must be in /this/ era)
+    TransitionUnknown !(WithOrigin SlotNo)
 
-    -- | Transition to the next era not yet known; we reported ledger tip
-  | LedgerTip !(WithOrigin SlotNo)
+    -- | Transition to the next era is known to happen at this 'EpochNo'
+  | TransitionKnown !EpochNo
+
+    -- | The transition is impossible
+    --
+    -- This can be due to one of two reasons:
+    --
+    -- * We are in the final era
+    -- * This era has not actually begun yet (we are forecasting). In this case,
+    --   we cannot look past the safe zone of this era and hence, by definition,
+    --   the transition to the /next/ era cannot happen.
+  | TransitionImpossible
   deriving (Show)

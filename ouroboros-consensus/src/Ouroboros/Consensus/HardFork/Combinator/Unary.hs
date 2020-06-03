@@ -19,8 +19,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
     Isomorphic(..)
   , project'
   , inject'
-    -- * Special cases
-  , projLedgerView
+    -- * Queries
   , projQuery
   , injQuery
     -- * Convenience exports
@@ -65,10 +64,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
-                     (HardForkEraLedgerView_ (..))
-import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
-                     HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
@@ -444,17 +441,19 @@ instance Isomorphic WrapCanBeLeader where
   project = fromSingletonOptNP . unwrapCanBeLeader
   inject  = WrapCanBeLeader . singletonOptNP
 
-{-------------------------------------------------------------------------------
-  Exceptions
--------------------------------------------------------------------------------}
+instance Isomorphic WrapLedgerView where
+  project = State.fromTZ . hardForkLedgerViewPerEra . unwrapLedgerView
+  inject  = WrapLedgerView
+          . HardForkLedgerView TransitionImpossible
+          . HardForkState
+          . Telescope.TZ
+          . Current History.initBound
 
--- | Project 'LedgerView'
---
--- Not an instance of 'Isomorphic' because there is no corresponding injection.
-projLedgerView :: proxy b
-               -> LedgerView (BlockProtocol (HardForkBlock '[b]))
-               -> LedgerView (BlockProtocol b)
-projLedgerView _ = unwrapLedgerView . hardForkEraLedgerView . State.fromTZ
+{-------------------------------------------------------------------------------
+  Query
+
+  This doesn't quite fit the pattern: we need to do some reasoning about types.
+-------------------------------------------------------------------------------}
 
 -- | Project 'Query'
 --

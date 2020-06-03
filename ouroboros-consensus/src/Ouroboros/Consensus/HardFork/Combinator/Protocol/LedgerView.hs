@@ -1,66 +1,58 @@
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
-    -- * Single era
-    HardForkEraLedgerView_(..)
-  , HardForkEraLedgerView
-  , mkHardForkEraLedgerView
     -- * Hard fork
-  , HardForkLedgerView_
+    HardForkLedgerView_(..)
   , HardForkLedgerView
   ) where
 
+import           Data.SOP.Dict
 import           Data.SOP.Strict
+import           Data.Void
 
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
-import           Ouroboros.Consensus.HardFork.Combinator.Basics
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import qualified Ouroboros.Consensus.HardFork.Combinator.State.Infra as State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-                     (HardForkState_, TransitionOrTip (..))
-
-{-------------------------------------------------------------------------------
-  Ledger view for single era
--------------------------------------------------------------------------------}
-
-data HardForkEraLedgerView_ f blk = HardForkEraLedgerView {
-      -- | Transition to the next era or the tip of the ledger otherwise
-      --
-      -- NOTE: When forecasting a view, this is set to the /actual/ tip of the
-      -- ledger, not the forecast slot number. It is this tip that determines
-      -- where the safe zone starts, and that should not vary with the slot
-      -- of the forecast.
-      --
-      -- Indeed, it is even possible that this tip is in a /previous/ era.
-      hardForkEraTransition :: !TransitionOrTip
-
-      -- | Underlying ledger view
-    , hardForkEraLedgerView :: !(f blk)
-    }
-
-type HardForkEraLedgerView = HardForkEraLedgerView_ WrapLedgerView
-
-deriving instance Show (f blk) => Show (HardForkEraLedgerView_ f blk)
-
-mkHardForkEraLedgerView :: SingleEraBlock blk
-                        => EpochInfo Identity
-                        -> WrapPartialLedgerConfig blk
-                        -> LedgerState blk
-                        -> HardForkEraLedgerView blk
-mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {
-      hardForkEraLedgerView = WrapLedgerView $
-        protocolLedgerView (completeLedgerConfig' ei pcfg) st
-    , hardForkEraTransition =
-        State.transitionOrTip pcfg st
-    }
 
 {-------------------------------------------------------------------------------
   HardForkLedgerView
 -------------------------------------------------------------------------------}
 
-type HardForkLedgerView_ f = HardForkState_ (K ()) (HardForkEraLedgerView_ f)
-type HardForkLedgerView    = HardForkLedgerView_ WrapLedgerView
+data HardForkLedgerView_ f xs = HardForkLedgerView {
+      -- | Information about the transition to the next era, if known
+      hardForkLedgerViewTransition :: !TransitionInfo
+
+      -- | The underlying ledger view
+      --
+      -- We do not need snapshots for the past eras, and so we use 'Void'.
+    , hardForkLedgerViewPerEra     :: !(HardForkState_ (K Void) f xs)
+    }
+
+deriving instance CanHardFork xs => Show (HardForkLedgerView_ WrapLedgerView xs)
+
+type HardForkLedgerView = HardForkLedgerView_ WrapLedgerView
+
+{-------------------------------------------------------------------------------
+  Show instance for the benefit of tests
+-------------------------------------------------------------------------------}
+
+instance (SListI xs, Show a) => Show (HardForkLedgerView_ (K a) xs) where
+  show HardForkLedgerView{..} =
+      case (dictPast, dictCurrent) of
+        (Dict, Dict) -> show (
+            hardForkLedgerViewTransition
+          , getHardForkState hardForkLedgerViewPerEra
+          )
+    where
+      dictPast :: Dict (All (Compose Show (Past (K Void)))) xs
+      dictPast = all_NP $ hpure Dict
+
+      dictCurrent :: Dict (All (Compose Show (Current (K a)))) xs
+      dictCurrent = all_NP $ hpure Dict

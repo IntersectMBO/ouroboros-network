@@ -9,6 +9,7 @@ module Ouroboros.Consensus.HardFork.History.EpochInfo (
   ) where
 
 import           Data.Functor.Identity
+import           GHC.Stack
 
 import           Cardano.Slotting.EpochInfo.API
 
@@ -50,5 +51,5 @@ snapshotEpochInfo summary = EpochInfo {
     , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch' s)
     }
   where
-    runQueryPure' :: Qry a -> Identity a
+    runQueryPure' :: HasCallStack => Qry a -> Identity a
     runQueryPure' = Identity . flip runQueryPure summary

@@ -15,6 +15,8 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
     -- * Serialisation support
   , recover
     -- * EpochInfo
+  , eraTransitionInfo
+  , mostRecentTransitionInfo
   , reconstructSummaryLedger
   , epochInfoLedger
   , epochInfoLedgerView
@@ -87,16 +89,33 @@ recover =
   Reconstruct EpochInfo
 -------------------------------------------------------------------------------}
 
+eraTransitionInfo :: SingleEraBlock          blk
+                  => WrapPartialLedgerConfig blk
+                  -> LedgerState             blk
+                  -> K TransitionInfo        blk
+eraTransitionInfo cfg st = K $
+    case singleEraTransition' cfg st of
+      Nothing -> TransitionUnknown (ledgerTipSlot st)
+      Just e  -> TransitionKnown e
+
+mostRecentTransitionInfo :: CanHardFork xs
+                         => HardForkLedgerConfig xs
+                         -> HardForkState_ g LedgerState xs
+                         -> TransitionInfo
+mostRecentTransitionInfo HardForkLedgerConfig{..} st =
+    hcollapse $ hczipWith proxySingle eraTransitionInfo cfgs (tip st)
+  where
+    cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+
 reconstructSummaryLedger :: CanHardFork xs
                          => HardForkLedgerConfig xs
                          -> HardForkState LedgerState xs
                          -> History.Summary xs
-reconstructSummaryLedger HardForkLedgerConfig{..} =
+reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
     reconstructSummary
-        hardForkLedgerConfigShape
-        (hcmap proxySingle (fn . (K .: transitionOrTip)) cfgs)
-  where
-    cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+      hardForkLedgerConfigShape
+      (mostRecentTransitionInfo cfg st)
+      st
 
 -- | Construct 'EpochInfo' from the ledger state
 --
@@ -106,24 +125,24 @@ epochInfoLedger :: CanHardFork xs
                 => HardForkLedgerConfig xs
                 -> HardForkState LedgerState xs
                 -> EpochInfo Identity
-epochInfoLedger cfg =
-      History.snapshotEpochInfo
-    . reconstructSummaryLedger cfg
+epochInfoLedger cfg st =
+    History.snapshotEpochInfo $
+      reconstructSummaryLedger cfg st
 
 -- | Construct 'EpochInfo' from a ledger view
 --
 -- The same comments apply as for 'epochInfoLedger', except more so: the range
 -- of the 'EpochInfo' is determined by the ledger that the view was derived
 -- from; when the view is a forecast, that range does not extend (obviously).
-epochInfoLedgerView :: CanHardFork xs
-                    => History.Shape xs
-                    -> HardForkLedgerView xs
+epochInfoLedgerView :: History.Shape xs
+                    -> HardForkLedgerView_ f xs
                     -> EpochInfo Identity
-epochInfoLedgerView shape =
-      History.snapshotEpochInfo
-    . reconstructSummary
+epochInfoLedgerView shape HardForkLedgerView{..} =
+    History.snapshotEpochInfo $
+      reconstructSummary
         shape
-        (hpure (fn $ K . hardForkEraTransition))
+        hardForkLedgerViewTransition
+        hardForkLedgerViewPerEra
 
 {-------------------------------------------------------------------------------
   Extending

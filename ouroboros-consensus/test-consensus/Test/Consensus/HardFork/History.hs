@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
@@ -12,9 +13,12 @@
 
 module Test.Consensus.HardFork.History (tests) where
 
+import           Control.Exception (throw)
+import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
+import           Data.Functor.Identity
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.SOP.Strict hiding (shape, shift)
@@ -25,12 +29,23 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util (nTimes)
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
+
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger
+import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
+                     (Telescope (..))
 
 import           Test.Consensus.HardFork.Infra
 import           Test.Util.Orphans.Arbitrary ()
@@ -67,6 +82,8 @@ tests = testGroup "HardForkHistory" [
             , testProperty "eventEpochToSlot"     eventEpochToSlot
             , testProperty "eventSlotToWallclock" eventSlotToWallclock
             , testProperty "eventWallclockToSlot" eventWallclockToSlot
+            , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
+            , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
             ]
         ]
     ]
@@ -167,6 +184,41 @@ eventWallclockToSlot chain@ArbitraryChain{..} =
     diff = arbitraryDiffTime arbitraryParams
 
 {-------------------------------------------------------------------------------
+  Tests using EpochInfo
+
+  NOTE: We have two degrees of freedom here: we can ask for an 'EpochInfo' for a
+  particular slot, and then we can use that 'EpochInfo' for another slot. We
+  don't try to be exhaustive here: we use the 'SlotNo' of the event that we
+  choose for both.
+
+  TODO: Given time, we should make these tests more thorough.
+-------------------------------------------------------------------------------}
+
+epochInfoSlotToEpoch :: ArbitraryChain -> Property
+epochInfoSlotToEpoch chain@ArbitraryChain{..} =
+        counterexample ("view: " ++ view)
+      $ counterexample ("reconstructed: " ++ reconstructed)
+      $ eventIsPreHorizon arbitraryEventIx
+    ==> runIdentity (epochInfoEpoch epochInfo eventTimeSlot)
+    === eventTimeEpochNo
+  where
+    EventTime{..}     = eventTime arbitraryEvent
+    (epochInfo, view, reconstructed) = hardForkEpochInfo chain eventTimeSlot
+
+epochInfoEpochToSlot :: ArbitraryChain -> Property
+epochInfoEpochToSlot chain@ArbitraryChain{..} =
+        counterexample ("view: " ++ view)
+      $ counterexample ("reconstructed: " ++ reconstructed)
+      $ eventIsPreHorizon arbitraryEventIx
+    ==> let startOfEpoch = runIdentity (epochInfoFirst epochInfo eventTimeEpochNo)
+        in counterexample ("startOfEpoch: " ++ show startOfEpoch) $
+                 HF.addSlots eventTimeEpochSlot startOfEpoch
+             === eventTimeSlot
+  where
+    EventTime{..} = eventTime arbitraryEvent
+    (epochInfo, view, reconstructed) = hardForkEpochInfo chain eventTimeSlot
+
+{-------------------------------------------------------------------------------
   Arbitrary chain
 -------------------------------------------------------------------------------}
 
@@ -196,7 +248,7 @@ data ArbitraryParams xs = ArbitraryParams {
     }
   deriving (Show)
 
-data ArbitraryChain = forall xs. ArbitraryChain {
+data ArbitraryChain = forall xs. (SListI xs, IsNonEmpty xs) => ArbitraryChain {
       -- | QuickCheck generated parameters
       --
       -- The rest of these values are derived
@@ -255,7 +307,8 @@ eventIsPreHorizon (EventInSafeZone  _ _) = True
 eventIsPreHorizon (EventPastHorizon _  ) = False
 
 -- | Fill in the derived parts of the 'ArbitraryChain'
-mkArbitraryChain :: forall xs. ArbitraryParams xs -> ArbitraryChain
+mkArbitraryChain :: forall xs. (SListI xs, IsNonEmpty xs)
+                 => ArbitraryParams xs -> ArbitraryChain
 mkArbitraryChain params@ArbitraryParams{..} = ArbitraryChain {
       arbitraryParams      = params
     , arbitraryChain       = chain
@@ -438,7 +491,8 @@ stepEventTime HF.EraParams{..} EventTime{..} = EventTime{
 -- | Chain divided into eras
 --
 -- Like 'Summary', we might not have blocks in the chain for all eras.
-newtype Chain xs = Chain (AtMost xs [Event])
+-- The chain might be empty, but we must at least have one era.
+newtype Chain xs = Chain (NonEmpty xs [Event])
   deriving (Show)
 
 -- | Slot at the tip of the chain
@@ -512,7 +566,8 @@ findTransition era =
 
 fromEvents :: Eras xs -> [Event] -> Chain xs
 fromEvents (Eras eras) events = Chain $
-    snd <$> exactlyZipFoldable eras grouped
+    fromMaybe (NonEmptyOne []) . atMostNonEmpty . fmap snd $
+      exactlyZipFoldable eras grouped
   where
     grouped :: [[Event]]
     grouped = L.groupBy ((==) `on` eventEra) events
@@ -630,24 +685,31 @@ activeSafeZone :: HF.Shape xs
 activeSafeZone (HF.Shape shape) (Chain chain) (HF.Transitions transitions) =
     go shape chain transitions
   where
-    go :: Exactly (x ': xs) HF.EraParams
-       -> AtMost  (x ': xs) [Event]
-       -> AtMost        xs  EpochNo
+    go :: Exactly  (x ': xs) HF.EraParams
+       -> NonEmpty (x ': xs) [Event]
+       -> AtMost         xs  EpochNo
        -> (Maybe EpochNo, HF.SafeZone)
-    -- The chain is empty; the era parameters of the first era are active
-    go (K ps :* _) AtMostNil _ =
-        (Nothing, HF.eraSafeZone ps)
     -- No transition is yet known for the last era on the chain
-    go (K ps :* _) (AtMostCons _ AtMostNil) AtMostNil =
+    go (K ps :* _) (NonEmptyOne _) AtMostNil =
         (Nothing, HF.eraSafeZone ps)
     -- Transition /is/ known for the last era on the chain
-    go (_ :* pss) (AtMostCons _ AtMostNil) (AtMostCons t AtMostNil) =
+    go (_ :* pss) (NonEmptyOne _) (AtMostCons t AtMostNil) =
         (Just t, HF.eraSafeZone (exactlyHead pss))
     -- Find the last era on chain
-    go (_ :* pss) (AtMostCons _ ess@AtMostCons{}) AtMostNil =
-        go pss ess AtMostNil
-    go (_ :* pss) (AtMostCons _ ess) (AtMostCons _ ts) =
+    go (_ :* pss) (NonEmptyCons _ ess) AtMostNil =
+        -- We need to convince ghc there is another era
+        case ess of
+          NonEmptyCons{} -> go pss ess AtMostNil
+          NonEmptyOne{}  -> go pss ess AtMostNil
+    go (_ :* pss) (NonEmptyCons _ ess) (AtMostCons _ ts) =
         go pss ess ts
+
+    -- Impossible cases
+
+    -- If this is the final era on the chain, we might know the transition to
+    -- the next era, but we certainly couldn't know the next transition
+    go _ (NonEmptyOne _) (AtMostCons _ (AtMostCons{})) =
+        error "activeSafeZone: impossible"
 
 -- | Return the events within and outside of the safe zone
 splitSafeZone :: WithOrigin EpochNo
@@ -711,3 +773,76 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
     pred' :: Word64 -> Word64
     pred' 0 = 0
     pred' n = pred n
+
+{-------------------------------------------------------------------------------
+  Relation to the HardForkLedgerView
+-------------------------------------------------------------------------------}
+
+-- | Construct 'EpochInfo' through the forecast
+--
+-- We also 'Show' the 'HardForkLedgerView' and the reconstructed 'Summary',
+-- for the benefit of 'counterexample'.
+hardForkEpochInfo :: ArbitraryChain -> SlotNo -> (EpochInfo Identity, String, String)
+hardForkEpochInfo ArbitraryChain{..} for =
+    let forecast = mockHardForkLedgerView
+                     arbitraryChainShape
+                     arbitraryTransitions
+                     arbitraryChain
+    in case runExcept $ forecastFor forecast for of
+         Left err -> (
+             EpochInfo {
+                 epochInfoSize_  = \_ -> throw err
+               , epochInfoFirst_ = \_ -> throw err
+               , epochInfoEpoch_ = \_ -> throw err
+               }
+           , "<out of range>"
+           , "<out of range>"
+           )
+         Right view@HardForkLedgerView{..} ->
+           let reconstructed = State.reconstructSummary
+                                 arbitraryChainShape
+                                 hardForkLedgerViewTransition
+                                 hardForkLedgerViewPerEra
+           in (
+             HF.snapshotEpochInfo reconstructed
+           , show view
+           , show reconstructed
+           )
+  where
+    ArbitraryParams{..} = arbitraryParams
+
+mockHardForkLedgerView :: SListI xs
+                       => HF.Shape xs
+                       -> HF.Transitions xs
+                       -> Chain xs
+                       -> Forecast (HardForkLedgerView_ (K ()) xs)
+mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
+    mkHardForkForecast
+      (InPairs.hpure $ Translate $ \_epoch (K ()) -> K ())
+      (HardForkState $ mockState HF.initBound pss ts ess)
+  where
+    mockState :: HF.Bound
+              -> Exactly  (x ': xs) HF.EraParams
+              -> AtMost         xs  EpochNo
+              -> NonEmpty (x ': xs) [Event]
+              -> Telescope (Past (K ())) (Current (AnnForecast (K ()))) (x : xs)
+    mockState start (K ps :* _) ts (NonEmptyOne es) =
+        TZ $ Current start $ AnnForecast {
+            annForecastEraParams = ps
+          , annForecastNext      = atMostHead ts
+          , annForecast          = Forecast {
+                forecastAt  = tip es
+              , forecastFor = \_for -> return $ K ()
+              }
+          }
+    mockState start (K ps :* pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
+        TS (Past start end NoSnapshot) (mockState end pss ts ess)
+      where
+        end :: HF.Bound
+        end = HF.mkUpperBound ps start t
+    mockState _ _ AtMostNil (NonEmptyCons _ _) =
+        error "mockState: next era without transition"
+
+    tip :: [Event] -> WithOrigin SlotNo
+    tip [] = Origin
+    tip es = At $ eventTimeSlot $ eventTime (last es)

@@ -15,7 +15,6 @@ import           Cardano.Slotting.Slot hiding (at)
 data Forecast a = Forecast {
       forecastAt  :: WithOrigin SlotNo
 
-
       -- Precondition: @At s >= forecastAt@
     , forecastFor :: SlotNo -> Except OutsideForecastRange a
     }

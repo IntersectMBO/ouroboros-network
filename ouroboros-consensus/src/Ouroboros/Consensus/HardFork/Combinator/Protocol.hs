@@ -18,10 +18,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
   , HardForkCanBeLeader
   , HardForkValidationErr(..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
+  , HardForkLedgerView_(..)
   , HardForkLedgerView
-  , HardForkEraLedgerView_(..)
-  , HardForkEraLedgerView
-  , mkHardForkEraLedgerView
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -51,8 +49,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                      (HardForkSelectView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                     (HardForkEraLedgerView, HardForkEraLedgerView_ (..),
-                     HardForkLedgerView, mkHardForkEraLedgerView)
+                     (HardForkLedgerView, HardForkLedgerView_ (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
                      Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
@@ -164,7 +161,7 @@ check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
            (fn_2 .: checkOne ei slot)
            cfgs
            (fromOptNP canBeLeader))
-        ledgerView
+        (hardForkLedgerViewPerEra ledgerView)
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
@@ -189,11 +186,11 @@ checkOne :: (MonadRandom m, SingleEraBlock blk)
          -> SlotNo
          -> WrapPartialConsensusConfig  blk
          -> (Maybe :.: WrapCanBeLeader) blk
-         -> HardForkEraLedgerView       blk
+         -> WrapLedgerView              blk
          -> WrapConsensusState          blk
          -> (m :.: WrapLeaderCheck)     blk
 checkOne ei slot cfg (Comp mCanBeLeader)
-         HardForkEraLedgerView{..}
+         ledgerView
          (WrapConsensusState consensusState) = Comp $ WrapLeaderCheck <$>
      case mCanBeLeader of
        Nothing ->
@@ -202,7 +199,7 @@ checkOne ei slot cfg (Comp mCanBeLeader)
          checkIsLeader
            (completeConsensusConfig' ei cfg)
            (unwrapCanBeLeader canBeLeader)
-           (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
+           (Ticked slot (unwrapLedgerView ledgerView))
            consensusState
 
 {-------------------------------------------------------------------------------
@@ -244,7 +241,7 @@ update cfg@HardForkConsensusConfig{..}
        (Ticked slot ledgerView)
        (OneEraValidateView view)
        consensusState =
-    case State.match view ledgerView of
+    case State.match view (hardForkLedgerViewPerEra ledgerView) of
       Left mismatch ->
         throwError $ HardForkValidationErrWrongEra . MismatchEraInfo $
           Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
@@ -265,17 +262,17 @@ updateEra :: forall xs blk. SingleEraBlock blk
           -> SlotNo
           -> WrapPartialConsensusConfig blk
           -> Injection WrapValidationErr xs blk
-          -> Product WrapValidateView (HardForkEraLedgerView_ WrapLedgerView) blk
+          -> Product WrapValidateView WrapLedgerView blk
           -> WrapConsensusState blk
           -> (Except (HardForkValidationErr xs) :.: WrapConsensusState) blk
 updateEra ei slot cfg injectErr
-          (Pair (WrapValidateView view) HardForkEraLedgerView{..})
+          (Pair (WrapValidateView view) ledgerView)
           (WrapConsensusState consensusState) = Comp $
     withExcept (injectValidationErr injectErr) $
       fmap WrapConsensusState $
         updateConsensusState
           (completeConsensusConfig' ei cfg)
-          (Ticked slot (unwrapLedgerView hardForkEraLedgerView))
+          (Ticked slot (unwrapLedgerView ledgerView))
           view
           consensusState
 
@@ -284,7 +281,7 @@ updateEra ei slot cfg injectErr
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall f blk. SingleEraBlock blk
-           => State.Current (HardForkEraLedgerView_ f) blk -> LedgerEraInfo blk
+           => State.Current f blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
