@@ -77,9 +77,6 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-crypto/
     commit: 2547ad1e80aeabca2899951601079408becbc92c
 
-  - git: https://github.com/advancedtelematic/quickcheck-state-machine
-    commit: 2bf37003ca1c0c57e4354610d7c47da0a0e77b5c
-
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
@@ -92,6 +89,7 @@ extra-deps:
   - statistics-linreg-0.3
   - network-3.1.0.1
   - quiet-0.2
+  - quickcheck-state-machine-0.7.0
 
   # Windows only
   - Win32-2.6.2.0

@@ -510,7 +510,7 @@ test-suite test-storage
                      , mtl
                      , pretty-show
                      , QuickCheck
-                     , quickcheck-state-machine >=0.6.0
+                     , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise
                      , tasty
