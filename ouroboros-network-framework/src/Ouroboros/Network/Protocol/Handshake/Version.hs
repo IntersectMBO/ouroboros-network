@@ -23,6 +23,7 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
+  , mapWithVersion
   ) where
 
 import           Data.Foldable (toList)
@@ -69,6 +70,22 @@ instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
       where
         fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
+
+
+mapWithVersion
+    :: forall vNum extra a b.
+       (vNum -> a -> b)
+    -> Versions vNum extra a
+    -> Versions vNum extra b
+mapWithVersion f (Versions vs) = Versions $ Map.mapWithKey g vs
+  where
+    g :: vNum -> Sigma (Version extra a) -> Sigma (Version extra b)
+    g vNum (Sigma vData (Version (Application app) extra)) =
+      Sigma vData
+            (Version
+              (Application $ \vData' vData'' -> f vNum (app vData' vData''))
+              extra)
+
 
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
