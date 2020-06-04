@@ -40,7 +40,6 @@ import           Control.Monad.Trans.Except (except)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
-import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -210,6 +209,17 @@ data TPraosProof c = TPraosProof {
 
 instance TPraosCrypto c => NoUnexpectedThunks (TPraosProof c)
 
+-- | Expresses that, whilst we believe ourselves to be a leader for this slot,
+-- we are nonetheless unable to forge a block.
+data TPraosCannotLead c =
+  -- | Our operational certificate is not valid for the current KES period. The
+  --   given parameters are the current KES period, the minimum and maximum KES
+  --   periods for which this operational certificate is valid.
+  TPraosCannotLeadInvalidOcert KES.Period KES.Period KES.Period
+  deriving (Generic)
+
+deriving instance (TPraosCrypto c) => Show (TPraosCannotLead c)
+
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
       tpraosParams    :: !TPraosParams
@@ -251,7 +261,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ConsensusState  (TPraos c) = TPraosState c
   type IsLeader        (TPraos c) = TPraosProof c
   type CanBeLeader     (TPraos c) = TPraosIsCoreNode c
-  type CannotLead      (TPraos c) = Void -- TODO: We should check if key is OK
+  type CannotLead      (TPraos c) = TPraosCannotLead c
   type LedgerView      (TPraos c) = SL.LedgerView c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
   type ValidateView    (TPraos c) = TPraosValidateView c
@@ -265,13 +275,16 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       return $ case Map.lookup slot (SL.lvOverlaySched lv) of
         Nothing
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
-          , hasValidOCert icn
+          -> case hasValidOCert icn of
+            Right () ->
             -- Slot isn't in the overlay schedule, so we're in Praos
-          -> IsLeader TPraosProof {
-               tpraosEta        = coerce rho
-             , tpraosLeader     = coerce y
-             , tpraosIsCoreNode = icn
-             }
+              IsLeader TPraosProof {
+                tpraosEta        = coerce rho
+              , tpraosLeader     = coerce y
+              , tpraosIsCoreNode = icn
+              }
+            Left (c, mi, ma) ->
+              CannotLead $ TPraosCannotLeadInvalidOcert c mi ma
           | otherwise
           -> NotLeader
 
@@ -283,15 +296,18 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
             Just dlgHash
               | SL.coerceKeyRole dlgHash == vkhCold
-              , hasValidOCert icn
-              -> IsLeader TPraosProof {
-                  tpraosEta        = coerce rho
-                  -- Note that this leader value is not checked for slots in
-                  -- the overlay schedule, so we could set it to whatever we
-                  -- want. We evaluate it as normal for simplicity's sake.
-                , tpraosLeader     = coerce y
-                , tpraosIsCoreNode = icn
-                }
+              -> case hasValidOCert icn of
+                Right () ->
+                  IsLeader TPraosProof {
+                      tpraosEta        = coerce rho
+                      -- Note that this leader value is not checked for slots in
+                      -- the overlay schedule, so we could set it to whatever we
+                      -- want. We evaluate it as normal for simplicity's sake.
+                    , tpraosLeader     = coerce y
+                    , tpraosIsCoreNode = icn
+                    }
+                Left (c, mi, ma) ->
+                  CannotLead $ TPraosCannotLeadInvalidOcert c mi ma
             _ -> NotLeader
           where
             SL.GenDelegs dlgMap = SL.lvGenDelegs lv
@@ -309,9 +325,16 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
       -- | Check whether we have an operational certificate valid for the
       -- current KES period.
-      hasValidOCert :: TPraosIsCoreNode c -> Bool
+      --
+      -- Returns 'Right ()' when the OCert is valid and 'Left (current, min,
+      -- max)' when it is not.
+      hasValidOCert
+        :: TPraosIsCoreNode c
+        -> Either (KES.Period, KES.Period, KES.Period) ()
       hasValidOCert TPraosIsCoreNode{tpraosIsCoreNodeOpCert} =
-          kesPeriod >= c0 && kesPeriod < c1
+          if kesPeriod >= c0 && kesPeriod < c1
+            then Right ()
+            else Left (kesPeriod, c0, c1)
         where
           SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
           c1 = c0 + fromIntegral (tpraosMaxKESEvo tpraosParams)
