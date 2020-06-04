@@ -73,6 +73,7 @@ tests :: TestTree
 tests =
   testGroup "Mux"
   [ testProperty "mux send receive"        prop_mux_snd_recv
+  , testProperty "mux send receive bidir"  prop_mux_snd_recv_bi
   , testProperty "mux send receive compat" prop_mux_snd_recv_compat
   , testProperty "1 miniprotocol Queue"    (withMaxSuccess 50 prop_mux_1_mini_Queue)
   , testProperty "2 miniprotocols Queue"   (withMaxSuccess 50 prop_mux_2_minis_Queue)
@@ -366,6 +367,99 @@ prop_mux_snd_recv messages = ioProperty $ do
          (Left _, _)          -> return $ property False
          (_, Left _)          -> return $ property False
          (Right rs, Right rc) -> return (property $ rs && rc)
+
+-- | Like prop_mux_snd_recv but using a bidirectional mux with client and server
+-- on both endpoints.
+prop_mux_snd_recv_bi :: DummyTrace
+                     -> Property
+prop_mux_snd_recv_bi messages = ioProperty $ do
+    let sduLen = 1260
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+
+    let server_w = client_r
+        server_r = client_w
+
+        clientBearer = queuesAsMuxBearer clientTracer client_w client_r sduLen
+        serverBearer = queuesAsMuxBearer serverTracer server_w server_r sduLen
+
+        clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
+        serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
+
+    (client_mp, server_mp) <- setupMiniReqRsp (return ()) messages
+
+    let clientApps = [ MiniProtocolInfo {
+                        miniProtocolNum = MiniProtocolNum 2,
+                        miniProtocolDir = InitiatorDirection,
+                        miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+                     , MiniProtocolInfo {
+                        miniProtocolNum = MiniProtocolNum 2,
+                        miniProtocolDir = ResponderDirection,
+                        miniProtocolLimits = defaultMiniProtocolLimits
+                      }
+                     ]
+
+        serverApps = [ MiniProtocolInfo {
+                        miniProtocolNum = MiniProtocolNum 2,
+                        miniProtocolDir = ResponderDirection,
+                        miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+                     , MiniProtocolInfo {
+                        miniProtocolNum = MiniProtocolNum 2,
+                        miniProtocolDir = InitiatorDirection,
+                        miniProtocolLimits = defaultMiniProtocolLimits
+                       }
+                     ]
+
+
+    clientMux <- newMux $ MiniProtocolBundle clientApps
+    clientRes <- sequence
+      [ runMiniProtocol
+          clientMux
+          miniProtocolNum
+          miniProtocolDir
+          strat
+          chan
+      | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- clientApps
+      , (strat, chan) <- case miniProtocolDir of
+                              InitiatorDirection -> [(StartEagerly, client_mp)]
+                              _                  -> [(StartOnDemand, server_mp)]
+      ]
+    clientAsync <- async $ runMux clientTracer clientMux clientBearer
+
+    serverMux <- newMux $ MiniProtocolBundle serverApps
+    serverRes <- sequence
+      [ runMiniProtocol
+          serverMux
+          miniProtocolNum
+          miniProtocolDir
+          strat
+          chan
+      | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- serverApps
+      , (strat, chan) <- case miniProtocolDir of
+                              InitiatorDirection -> [(StartEagerly, client_mp)]
+                              _                  -> [(StartOnDemand, server_mp)]
+      ]
+    serverAsync <- async $ runMux serverTracer serverMux serverBearer
+
+    !rc <- mapM getResult clientRes
+    !rs <- mapM getResult serverRes
+    stopMux clientMux
+    stopMux serverMux
+    wait serverAsync
+    wait clientAsync
+    return (property $ and (rs ++ rc))
+
+  where
+    getResult :: STM IO (Either SomeException Bool) -> IO Bool
+    getResult get = do
+        r <- atomically get
+        case r of
+             (Left _)  -> return False
+             (Right b) -> return b
+
 
 -- | Like prop_mux_snd_recv but using the Compat interface.
 prop_mux_snd_recv_compat :: DummyTrace
