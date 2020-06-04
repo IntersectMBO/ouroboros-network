@@ -258,70 +258,12 @@ nodeToNodeProtocols MiniProtocolParameters {
 
     chainSyncProtocolLimits =
       MiniProtocolLimits {
-          -- chain sync has two potentially large messages:
-          --
-          -- - 'MsgFindIntersect'
-          --      it can include up to 18 'Points' (see
-          --      'Ouroboros.Consensus.ChainSyncClient.chainSyncClient'; search
-          --      for the 'offset' term)
-          -- - 'MnsgRollForward'
-          --      These messages are pipelined.  Up to 300 messages can be
-          --      pipelined (this is defined in
-          --      'Ouroboros.Consensus.NodeKernel.NodeArgs', which is
-          --      instantiated in 'Ouroboros.Consensus.Node.mkNodeArgs').
-          --
-          -- Sizes:
-          -- - @Point (HeaderHash ByronBlock)@ - 45 as witnessed by
-          --    @encodedPointSize (szGreedy :: Proxy (HeaderHash ByronBlock) -> Size) (Proxy :: Proxy (Point ByronBlock))
-          --    or
-          --    ```
-          --      1  -- encodeListLen 2
-          --    + 1  -- encode tag
-          --    + 9  -- encode 'SlotNo', i.e. a 'Word64'
-          --    + 34 -- encode @HeaderHas ByronBlock@ which resolves to
-          --            'ByronHash' which is a newtype wrapper around
-          --             'Cardano.Chain.Block.HeaderHash'
-          --    = 45
-          --
-          -- - @Tip (HeaderHash ByronBlock)@ - 55 as witnessed by
-          --    @encodedTipSize (szGreedy :: Proxy (HeaderHash ByronBlock) -> Size) (Proxy :: Proxy (Tip ByronBlock))
-          --    or
-          --    ```
-          --      1  -- encodeListLen 2
-          --    + 45 -- point size
-          --    + 9  -- 'BlockNo', e.g. 'Word64'
-          --    + 55
-          --    ```
-          --
-          -- - @MsgFindIntersect@ carrying 18 @Point (HeaderHash ByronBlock)@
-          --   ```
-          --     1 -- encodeListLen 2
-          --   + 1 -- enocdeWord 4
-          --   + 2 -- encodeListLenIndef + encodeBreak
-          --   + (18 * 55)
-          --   = 994
-          --   ```
-          --
-          -- - @MsgRollForward@
-          --   ```
-          --     1   -- encodeListLen 3
-          --   + 1   -- encodeWord 2
-          --   + 659 -- as witnessed by 'ts_prop_sizeABlockOrBoundaryHdr' in 'cardano-ledger'
-          --         -- 'Header ByronBlock' resolves to 'ByronHeader' which
-          --         -- binary format is the same as
-          --         -- 'Cardano.Chain.Block.ABlockOrBoundaryHdr'
-          --   + 55  -- @Tip ByronBlock@
-          --   = 716
-          --   ```
-          --
-          -- Since chain sync can pipeline up to 'chainSyncPipeliningHighMark' of 'MsgRollForward'
-          -- messages the maximal queue size can be
-          -- @chainSyncPipeliningHighMark * 716@.  The current value of
-          -- 'chainSyncPipeliningHighMark' is '300' thus the upper bound is
-          -- `214.8Kb`)  We add 10% to that for safety.
-          --
+          -- The largest message over ChainSync is @MsgRollForward@ which mainly
+          -- consists of a BlockHeader.
+          -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
+          -- from consensus rather than beeing hardcoded.
           maximumIngressQueue = addSafetyMargin $
-            fromIntegral chainSyncPipeliningHighMark * 716
+            fromIntegral chainSyncPipeliningHighMark * 1400
         }
 
     blockFetchProtocolLimits = MiniProtocolLimits {
