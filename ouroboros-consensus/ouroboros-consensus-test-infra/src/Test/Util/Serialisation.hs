@@ -125,19 +125,64 @@ roundtrip_SerialiseNodeToNode ccfg =
     , rt (Proxy @(Header blk))     "Header"
     , rt (Proxy @(GenTx blk))      "GenTx"
     , rt (Proxy @(GenTxId blk))    "GenTxId"
-      -- We generate a random 'blk', convert (by encoding) it to 'Serialised',
-      -- encode that, decode that 'Serialised' and convert (by decoding) it to
-      -- a 'blk' again.
+      -- Roundtrip a @'Serialised' blk@
+      --
+      -- We generate a random @blk@, convert it to 'Serialised' (using
+      -- 'encodeDisk', which doesn't add CBOR-in-CBOR), encode it (adding
+      -- CBOR-in-CBOR), decode that 'Serialised' and convert (using
+      -- 'decodeNodeToNode') it to a @blk@ again.
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
           roundtrip @blk
             (encodeThroughSerialised (encodeDisk ccfg) (enc version))
             (decodeThroughSerialised (decodeDisk ccfg) (dec version))
             blk
+      -- Same as above but for 'Header'
     , testProperty "roundtrip Serialised Header" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
             (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            hdr
+      -- Check the compatibility between 'encodeNodeToNode' for @'Serialised'
+      -- blk@ and 'decodeNodeToNode' for @blk@.
+      --
+      -- We generate a random @blk@, convert it to 'Serialised' (using
+      -- 'encodeDisk', which doesn't add CBOR-in-CBOR), encode it (adding
+      -- CBOR-in-CBOR and making version-specific changes), decode that using
+      -- 'decodeNodeToNode' for @blk@, which should handle the CBOR-in-CBOR
+      -- correctly.
+    , testProperty "roundtrip Serialised blk compat 1" $
+        \(WithVersion version blk) ->
+          roundtrip @blk
+            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (dec version)
+            blk
+      -- Check the compatibility between 'encodeNodeToNode' for @blk@ and
+      -- 'decodeNodeToNode' for @'Serialised' blk@.
+      --
+      -- We generate a random @blk@, encode it using 'encodeNodeToNode'
+      -- (adding CBOR-in-CBOR and making any version-specific changes), decode
+      -- that as a @'Serialised' blk@ using 'decodeNodeToNode' (removing the
+      -- CBOR-in-CBOR from the bytestring) and then convert the @'Serialised'
+      -- blk@ to a @blk@ using using 'decodeDisk'.
+    , testProperty "roundtrip Serialised blk compat 2" $
+        \(WithVersion version blk) ->
+          roundtrip @blk
+            (enc version)
+            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            blk
+      -- Same as above but for 'Header'
+    , testProperty "roundtrip Serialised Header compat 1" $
+        \(WithVersion version hdr) ->
+          roundtrip @(Header blk)
+            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (dec version)
+            hdr
+    , testProperty "roundtrip Serialised Header compat 2" $
+        \(WithVersion version hdr) ->
+          roundtrip @(Header blk)
+            (enc version)
             (decodeThroughSerialised (decodeDisk ccfg) (dec version))
             hdr
     ]
@@ -187,11 +232,19 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))        "GenTx"
     , rt (Proxy @(ApplyTxErr blk))   "ApplTxErr"
     , rt (Proxy @(Some (Query blk))) "Query"
+      -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
           roundtrip @blk
             (encodeThroughSerialised (encodeDisk ccfg) (enc version))
             (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            blk
+      -- See roundtrip_SerialiseNodeToNode for more info
+    , testProperty "roundtrip Serialised blk compat" $
+        \(WithVersion version blk) ->
+          roundtrip @blk
+            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (dec version)
             blk
     , testProperty "roundtrip Result" $
         \(WithVersion version (SomeResult query result :: SomeResult blk)) ->
