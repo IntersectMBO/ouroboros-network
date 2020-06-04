@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , NonMyopicMemberRewards (..)
     -- * Ledger config
   , ShelleyLedgerConfig (..)
-  , mkShelleyEraParams
   , mkShelleyLedgerConfig
     -- * Auxiliary
   , getPParams
@@ -65,7 +64,6 @@ import           Cardano.Slotting.Slot hiding (at)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
@@ -118,13 +116,6 @@ data ShelleyLedgerConfig c = ShelleyLedgerConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
--- TODO: k * 2 is wrong.
-mkShelleyEraParams :: SecurityParam -> EpochSize -> SlotLength -> HardFork.EraParams
-mkShelleyEraParams (SecurityParam k) epochLen slotLen = HardFork.EraParams {
-      eraEpochSize  = epochLen
-    , eraSlotLength = slotLen
-    , eraSafeZone   = HardFork.SafeZone (k * 2) HardFork.NoLowerBound
-    }
 
 mkShelleyLedgerConfig
   :: ShelleyGenesis c
@@ -133,22 +124,25 @@ mkShelleyLedgerConfig
 mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
       shelleyLedgerGenesis   = genesis
     , shelleyLedgerGlobals   = shelleyGlobals
-    , shelleyLedgerEraParams = mkShelleyEraParams
-                                 (sgSecurityParam genesis)
-                                 (sgEpochLength   genesis)
-                                 (sgSlotLength    genesis)
+    , shelleyLedgerEraParams = shelleyEraParams
     }
   where
     SecurityParam k = sgSecurityParam genesis
+
+    shelleyEraParams :: HardFork.EraParams
+    shelleyEraParams = HardFork.EraParams {
+          eraEpochSize  = sgEpochLength genesis
+        , eraSlotLength = sgSlotLength  genesis
+        , eraSafeZone   = HardFork.SafeZone stabilityWindow
+                                            HardFork.NoLowerBound
+        }
 
     shelleyGlobals :: SL.Globals
     shelleyGlobals = SL.Globals {
           epochInfo         = epochInfo
         , slotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-        , stabilityWindow   =
-            computeStabilityWindow (sgSecurityParam genesis) (sgActiveSlotCoeff genesis)
-        , randomnessStabilisationWindow =
-            computeRandomnessStabilisationWindow (sgSecurityParam genesis) (sgActiveSlotCoeff genesis)
+        , stabilityWindow
+        , randomnessStabilisationWindow
         , securityParameter = k
         , maxKESEvo         = sgMaxKESEvolutions  genesis
         , quorum            = sgUpdateQuorum      genesis
@@ -157,6 +151,15 @@ mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
         , activeSlotCoeff   = sgActiveSlotCoeff   genesis
         , networkId         = sgNetworkId         genesis
         }
+
+    stabilityWindow =
+      computeStabilityWindow (sgSecurityParam genesis)
+                             (sgActiveSlotCoeff genesis)
+
+    randomnessStabilisationWindow =
+      computeRandomnessStabilisationWindow (sgSecurityParam genesis)
+                                           (sgActiveSlotCoeff genesis)
+
 
 type instance LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
 
