@@ -406,19 +406,15 @@ instance SerialiseNodeToNodeConstraints TestBlock
 
 instance SerialiseNodeToNode TestBlock (OneEraHash '[BlockA, BlockB])
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance SerialiseNodeToNode TestBlock TestBlock where
-  encodeNodeToNode _ _ = wrapCBORinCBOR   encode
-  decodeNodeToNode _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
 instance SerialiseNodeToNode TestBlock (Serialised TestBlock)
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance SerialiseNodeToNode TestBlock (Header TestBlock) where
-  encodeNodeToNode _ _ = wrapCBORinCBOR   encode
-  decodeNodeToNode _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
 instance SerialiseNodeToNode TestBlock (Serialised (Header TestBlock))
 
@@ -434,11 +430,9 @@ instance SerialiseNodeToClientConstraints TestBlock
 
 instance SerialiseNodeToClient TestBlock (OneEraHash '[BlockA, BlockB])
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance SerialiseNodeToClient TestBlock TestBlock where
-  encodeNodeToClient _ _ = wrapCBORinCBOR   encode
-  decodeNodeToClient _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToClient _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToClient _ _ = defaultDecodeCBORinCBOR
 
 instance SerialiseNodeToClient TestBlock (Serialised TestBlock)
 

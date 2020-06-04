@@ -20,6 +20,9 @@ module Ouroboros.Consensus.Node.Serialisation (
     SerialiseNodeToNode (..)
   , SerialiseNodeToClient (..)
   , SerialiseResult (..)
+    -- * Defaults
+  , defaultEncodeCBORinCBOR
+  , defaultDecodeCBORinCBOR
     -- * Re-exported for convenience
   , Some (..)
   ) where
@@ -29,7 +32,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode, encode))
 import           Data.SOP.BasicFunctors
 
-import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Network.Block (HeaderHash, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
@@ -90,6 +94,22 @@ class SerialiseResult blk query where
     -> NodeToClientVersion blk
     -> query result
     -> forall s. Decoder s result
+
+{-------------------------------------------------------------------------------
+  Defaults
+-------------------------------------------------------------------------------}
+
+-- | Uses the 'Serialise' instance, but wraps it in CBOR-in-CBOR.
+--
+-- Use this for the 'SerialiseNodeToNode' and/or 'SerialiseNodeToClient'
+-- instance of @blk@ and/or @'Header' blk@, which require CBOR-in-CBOR to be
+-- compatible with the corresponding 'Serialised' instance.
+defaultEncodeCBORinCBOR :: Serialise a => a -> Encoding
+defaultEncodeCBORinCBOR = wrapCBORinCBOR encode
+
+-- | Inverse of 'defaultEncodeCBORinCBOR'
+defaultDecodeCBORinCBOR :: Serialise a => Decoder s a
+defaultDecodeCBORinCBOR = unwrapCBORinCBOR (const <$> decode)
 
 {-------------------------------------------------------------------------------
   Forwarding instances

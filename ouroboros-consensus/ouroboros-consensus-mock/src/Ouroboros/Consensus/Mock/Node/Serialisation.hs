@@ -69,17 +69,13 @@ instance Serialise ext => SerialiseNodeToNodeConstraints (MockBlock ext)
 
 instance SerialiseNodeToNode (MockBlock ext) (Hash ShortHash (Header (MockBlock ext)))
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (MockBlock ext) where
-  encodeNodeToNode _ _ = wrapCBORinCBOR   encode
-  decodeNodeToNode _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (Header (MockBlock ext)) where
-  encodeNodeToNode _ _ = wrapCBORinCBOR   encode
-  decodeNodeToNode _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
 instance SerialiseNodeToNode (MockBlock ext) (Serialised (MockBlock ext))
 instance SerialiseNodeToNode (MockBlock ext) (Serialised (Header (MockBlock ext)))
@@ -97,11 +93,9 @@ instance Serialise ext => SerialiseNodeToClientConstraints (MockBlock ext)
 
 instance SerialiseNodeToClient (MockBlock ext) (Hash ShortHash (Header (MockBlock ext)))
 
--- | Use CBOR-in-CBOR to be compatible with the wrapped ('Serialised')
--- variant.
 instance Serialise ext => SerialiseNodeToClient (MockBlock ext) (MockBlock ext) where
-  encodeNodeToClient _ _ = wrapCBORinCBOR   encode
-  decodeNodeToClient _ _ = unwrapCBORinCBOR (const <$> decode)
+  encodeNodeToClient _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToClient _ _ = defaultDecodeCBORinCBOR
 
 instance SerialiseNodeToClient (MockBlock ext) (Serialised (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) (GenTx (MockBlock ext))
