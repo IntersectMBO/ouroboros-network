@@ -288,28 +288,28 @@ instance LedgerSupportsMempool BlockA where
               -- both the aforementioned @k@ additional blocks and also a
               -- further @safeFromTipA k@ slots after the last of those.
 
-              -- the last slot that must be in the current era
+              -- The last slot that must be in the current era
               firstPossibleLastSlotThisEra =
                   History.addSlots (stabilityWindowA k + safeFromTipA k) sno
+
+              -- The 'EpochNo' corresponding to 'firstPossibleLastSlotThisEra'
+              --
+              -- NOTE: We cannot use 'EpochInfo' for this. The 'EpochInfo'
+              -- only allows us to look ahead as far as the safe zone allows,
+              -- but here we are, almost by definition, looking further ahead
+              -- than that (stability window + safe zone).
+              --
+              -- (Once we construct an 'EpochInfo' with the known transition, it
+              -- would allow us to look this far ahead, but we cannot use it
+              -- to /determine/ the transition point.)
               lastEpochThisEra =
                   History.addEpochs
                     (History.countSlots
                        firstPossibleLastSlotThisEra firstSlotTipEpoch
                      `div` unEpochSize epochSizeTipEpoch)
                     tipEpoch
-                  `asTypeOf`
-                     -- an equivalent expression
-                     --
-                     -- The following would be equivalent if it couldn't fail
-                     -- with 'PastHorizonException', which it may since we may
-                     -- be inspecting a slot beyond the ledger's safe zone. In
-                     -- particular, the @ei@ the HFC provided to us is overly
-                     -- conservative for our specific purpose here. We're using
-                     -- it to decide here when this era should end. This era
-                     -- could only end sooner than that if this decision itself
-                     -- gets discarded! (TODO: double-check this claim)
-                     runEI epochInfoEpoch firstPossibleLastSlotThisEra
-              -- the first epoch that may be in the next era (recall: eras are
+
+              -- The first epoch that may be in the next era (recall: eras are
               -- epoch-aligned)
               firstEpochNextEra = succ lastEpochThisEra
 
