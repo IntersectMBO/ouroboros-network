@@ -140,16 +140,15 @@ mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
     }
   where
     SecurityParam k = sgSecurityParam genesis
-    f = SL.intervalValue . SL.activeSlotVal $ sgActiveSlotCoeff genesis
 
     shelleyGlobals :: SL.Globals
     shelleyGlobals = SL.Globals {
           epochInfo         = epochInfo
         , slotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-          -- The values 3k/f and 4k/f are determined to be suitabe values as per
-          -- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
-        , stabilityWindow   = ceiling $ fromIntegral @_ @Double (3 * k) / fromRational f
-        , randomnessStabilisationWindow = ceiling $ fromIntegral @_ @Double (4 * k) / fromRational f
+        , stabilityWindow   =
+            computeStabilityWindow (sgSecurityParam genesis) (sgActiveSlotCoeff genesis)
+        , randomnessStabilisationWindow =
+            computeRandomnessStabilisationWindow (sgSecurityParam genesis) (sgActiveSlotCoeff genesis)
         , securityParameter = k
         , maxKESEvo         = sgMaxKESEvolutions  genesis
         , quorum            = sgUpdateQuorum      genesis
