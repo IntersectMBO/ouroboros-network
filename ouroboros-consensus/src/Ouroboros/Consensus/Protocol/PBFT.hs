@@ -31,7 +31,8 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , pbftValidateBoundary
     -- * Type instances
   , ConsensusConfig(..)
-    -- * Exported for testing
+    -- * Exported for tracing errors
+  , PBftValidationErr(..)
   , PBftCannotLead(..)
   ) where
 

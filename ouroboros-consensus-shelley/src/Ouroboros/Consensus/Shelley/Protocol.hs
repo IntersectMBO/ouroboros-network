@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosProof (..)
   , TPraosIsCoreNode (..)
   , mkShelleyGlobals
+  , TPraosCannotLead(..)
     -- * Crypto
   , Crypto
   , TPraosCrypto
