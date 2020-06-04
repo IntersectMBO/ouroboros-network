@@ -101,6 +101,7 @@ instance All HasCodecConfig xs => HasCodecConfig (HardForkBlock xs) where
   newtype CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
         hardForkCodecConfigPerEra :: PerEraCodecConfig xs
       }
+    deriving (NoUnexpectedThunks)
 
   getCodecConfig =
         HardForkCodecConfig

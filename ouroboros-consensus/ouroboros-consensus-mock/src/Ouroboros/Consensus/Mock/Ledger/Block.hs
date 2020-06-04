@@ -262,6 +262,7 @@ instance HasCodecConfig (SimpleBlock c ext) where
 
   -- | Only the 'SecurityParam' is required for simple blocks
   newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+    deriving newtype (NoUnexpectedThunks)
 
   getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
 

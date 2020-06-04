@@ -119,6 +119,7 @@ instance HasCodecConfig b => HasCodecConfig (DegenFork b) where
   newtype CodecConfig (DegenFork b) = DCCfg {
         unDCCfg :: CodecConfig (HardForkBlock '[b])
       }
+    deriving (NoUnexpectedThunks)
 
   getCodecConfig = DCCfg . getCodecConfig . unDBCfg
 
