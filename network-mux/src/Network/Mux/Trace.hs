@@ -105,11 +105,7 @@ instance (Show a, Show peerid) => Show (WithMuxBearer peerid a) where
     show WithMuxBearer {wmbPeerId, wmbEvent} = printf "Mux %s %s" (show wmbPeerId) (show wmbEvent)
 
 
-data MuxBearerState = Larval
-                    -- ^ Newly created MuxBearer.
-                    | Connected
-                    -- ^ MuxBearer is connected to a peer.
-                    | Mature
+data MuxBearerState = Mature
                     -- ^ MuxBearer has successufully completed the handshake.
                     | Dying
                     -- ^ MuxBearer is in the process of beeing torn down,

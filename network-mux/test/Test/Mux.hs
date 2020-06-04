@@ -211,8 +211,8 @@ instance Show InvalidSDU where
                     (isRealLength a)
                     (isPattern a)
 
-data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Compat.MuxBearerState Compat.MuxErrorType
-                  | ArbitraryValidSDU DummyPayload Compat.MuxBearerState (Maybe Compat.MuxErrorType)
+data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Compat.MuxErrorType
+                  | ArbitraryValidSDU DummyPayload (Maybe Compat.MuxErrorType)
                   deriving Show
 
 instance Arbitrary ArbitrarySDU where
@@ -225,15 +225,7 @@ instance Arbitrary ArbitrarySDU where
         validSdu = do
             b <- arbitrary
 
-            -- Valid SDUs before version negotiation does only make sense for single SDUs.
-            state <- if BL.length (unDummyPayload b) < 0xffff
-                         then arbitrary
-                         else return Compat.Mature
-            let err_m = if state == Compat.Larval || state == Compat.Connected
-                            then Just Compat.MuxUnknownMiniProtocol
-                            else Nothing
-
-            return $ ArbitraryValidSDU b state err_m
+            return $ ArbitraryValidSDU b Nothing
 
         tooLargeSdu = do
             l <- choose (1 + smallMiniProtocolLimit , 2 * smallMiniProtocolLimit)
@@ -242,19 +234,17 @@ instance Arbitrary ArbitrarySDU where
             -- This SDU is still considered valid, since the header itself will
             -- not cause a trouble, the error will be triggered by the fact that
             -- it is sent as a single message.
-            return $ ArbitraryValidSDU (DummyPayload pl) Compat.Mature (Just Compat.MuxIngressQueueOverRun)
+            return $ ArbitraryValidSDU (DummyPayload pl) (Just Compat.MuxIngressQueueOverRun)
 
         unknownMiniProtocol = do
             ts  <- arbitrary
             mid <- choose (6, 0x7fff) -- ClientChainSynWithBlocks with 5 is the highest valid mid
             mode <- oneof [return 0x0, return 0x8000]
             len <- arbitrary
-            state <- arbitrary
             p <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) (mid .|. mode) len
                                           (8 + fromIntegral len) p)
-                                         state
                                          Compat.MuxUnknownMiniProtocol
         invalidLenght = do
             ts  <- arbitrary
@@ -262,18 +252,12 @@ instance Arbitrary ArbitrarySDU where
             len <- arbitrary
             realLen <- choose (0, 7) -- Size of mux header is 8
             p <- arbitrary
-            state <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) mid len realLen p)
-                                         state
                                          Compat.MuxDecodeError
 
 instance Arbitrary Compat.MuxBearerState where
-     -- XXX Compat.Larval and Compat.Connected test behaviour is dependant on version
-     -- negotation so they are disabled for now.
-     arbitrary = elements [ -- Compat.Larval
-                            -- , Compat.Connected
-                            Compat.Mature
+     arbitrary = elements [ Compat.Mature
                           , Compat.Dying
                           , Compat.Dead
                           ]
@@ -983,7 +967,7 @@ prop_demux_sdu a = do
     return $ tabulate "SDU type" [stateLabel a] $
              tabulate "SDU Violation " [violationLabel a] r
   where
-    run (ArbitraryValidSDU sdu state (Just Compat.MuxIngressQueueOverRun)) = do
+    run (ArbitraryValidSDU sdu (Just Compat.MuxIngressQueueOverRun)) = do
         stopVar <- newEmptyTMVarM
 
         -- To trigger Compat.MuxIngressQueueOverRun we use a special test protocol
@@ -996,7 +980,6 @@ prop_demux_sdu a = do
                          }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
-        setup state client_w
 
         writeSdu client_w $! unDummyPayload sdu
 
@@ -1012,7 +995,7 @@ prop_demux_sdu a = do
                     Nothing -> return $ property False
             Right _ -> return $ property False
 
-    run (ArbitraryValidSDU sdu state err_m) = do
+    run (ArbitraryValidSDU sdu err_m) = do
         stopVar <- newEmptyTMVarM
 
         let server_mps = MiniProtocolInfo {
@@ -1023,7 +1006,6 @@ prop_demux_sdu a = do
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
-        setup state client_w
         atomically $! putTMVar stopVar $! unDummyPayload sdu
         writeSdu client_w $ unDummyPayload sdu
 
@@ -1039,7 +1021,7 @@ prop_demux_sdu a = do
                     Nothing -> return $ property False
             Right _ -> return $ err_m === Nothing
 
-    run (ArbitraryInvalidSDU badSdu state err) = do
+    run (ArbitraryInvalidSDU badSdu err) = do
         stopVar <- newEmptyTMVarM
 
         let server_mps = MiniProtocolInfo {
@@ -1050,7 +1032,6 @@ prop_demux_sdu a = do
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
-        setup state client_w
         atomically $ writeTBQueue client_w $
                        BL.take (fromIntegral (isRealLength badSdu))
                                (encodeInvalidMuxSDU badSdu)
@@ -1113,26 +1094,11 @@ prop_demux_sdu a = do
         atomically $ writeTBQueue queue pkt
         writeSdu queue rest
 
-    -- Unless we are in Compat.Larval or Compat.Connected we fake version negotiation before
-    -- we run the test.
-    {- Not yet! setup state q | state /= Compat.Larval && state /= Compat.Connected = do
-        let msg = MsgInitReq [version0]
-            blob = toLazyByteString $ encodeControlMsg msg
-            pkt = MuxSDU (RemoteClockModel 0) Muxcontrol Compat.InitiatorDir
-                            (fromIntegral $ BL.length blob) blob
-        atomically $ writeTBQueue q $ encodeMuxSDU (pkt :: MuxSDU)
-        return () -}
-    setup _ _ = return ()
+    stateLabel (ArbitraryInvalidSDU _ _) = "Invalid"
+    stateLabel (ArbitraryValidSDU _ _)   = "Valid"
 
-    stateLabel (ArbitraryInvalidSDU _ state _) = "Invalid " ++ versionLabel state
-    stateLabel (ArbitraryValidSDU _ state _)   = "Valid " ++ versionLabel state
-
-    versionLabel Compat.Larval    = "before version negotiation"
-    versionLabel Compat.Connected = "before version negotiation"
-    versionLabel _         = "after version negotiation"
-
-    violationLabel (ArbitraryValidSDU _ _ err_m) = sduViolation err_m
-    violationLabel (ArbitraryInvalidSDU _ _ err) = sduViolation $ Just err
+    violationLabel (ArbitraryValidSDU _ err_m) = sduViolation err_m
+    violationLabel (ArbitraryInvalidSDU _ err) = sduViolation $ Just err
 
     sduViolation (Just Compat.MuxUnknownMiniProtocol) = "unknown miniprotocol"
     sduViolation (Just Compat.MuxDecodeError        ) = "decode error"
