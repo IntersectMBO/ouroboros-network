@@ -195,7 +195,7 @@ instance NoHardForks b => ValidateEnvelope (DegenFork b) where
       withExcept (inject' (Proxy @(WrapEnvelopeErr b))) $
         additionalEnvelopeChecks
           (projCfg cfg)
-          (projLedgerView (Proxy @b) <$> view)
+          (project' (Proxy @(WrapLedgerView b)) <$> view)
           (project hdr)
 
 instance NoHardForks b => BlockSupportsProtocol (DegenFork b) where

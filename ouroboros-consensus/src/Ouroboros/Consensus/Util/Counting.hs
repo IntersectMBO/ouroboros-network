@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -30,8 +31,10 @@ module Ouroboros.Consensus.Util.Counting (
     -- * Working with 'AtMost'
   , atMostOne
   , atMostInit
+  , atMostHead
   , atMostLast
   , atMostZipFoldable
+  , atMostNonEmpty
     -- * Working with 'NonEmpty'
   , nonEmptyHead
   , nonEmptyLast
@@ -150,6 +153,11 @@ atMostInit = go
                                Nothing        -> (AtMostNil, a)
                                Just (as', a') -> (AtMostCons a as', a')
 
+-- | Analogue of 'head'
+atMostHead :: AtMost xs a -> Maybe a
+atMostHead AtMostNil        = Nothing
+atMostHead (AtMostCons x _) = Just x
+
 -- | Analogue of 'last'
 atMostLast :: AtMost xs a -> Maybe a
 atMostLast = fmap snd . atMostInit
@@ -161,6 +169,15 @@ atMostZipFoldable = \as bs -> go as (Foldable.toList bs)
     go AtMostNil         _      = AtMostNil
     go _                 []     = AtMostNil
     go (AtMostCons a as) (b:bs) = AtMostCons (a, b) (go as bs)
+
+atMostNonEmpty :: AtMost (x ': xs) a -> Maybe (NonEmpty (x ': xs) a)
+atMostNonEmpty = \case
+    AtMostNil       -> Nothing
+    AtMostCons x xs -> Just $ go x xs
+  where
+    go :: a -> AtMost xs a -> NonEmpty (x ': xs) a
+    go x AtMostNil         = NonEmptyOne  x
+    go x (AtMostCons y zs) = NonEmptyCons x (go y zs)
 
 {-------------------------------------------------------------------------------
   Working with 'NonEmpty'

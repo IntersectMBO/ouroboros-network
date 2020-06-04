@@ -13,6 +13,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
     initHardForkState
     -- * GC
   , tickAllPast
+  , dropAllPast
     -- * Lifting 'Telescope' operations
   , tip
   , match
@@ -24,7 +25,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
     -- * Rewinding
   , retractToSlot
     -- * EpochInfo/Summary
-  , transitionOrTip
   , reconstructSummary
   ) where
 
@@ -39,11 +39,9 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.Counting
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
@@ -85,6 +83,11 @@ tickSnapshot :: SecurityParam -> Snapshot f blk -> Snapshot f blk
 tickSnapshot (SecurityParam k) = \case
     Snapshot n st | n < k -> Snapshot (n + 1) st
     _                     -> NoSnapshot
+
+-- | Drop all past snapshots
+dropAllPast :: SListI xs => HardForkState_ g f xs -> HardForkState_ g' f xs
+dropAllPast (HardForkState st) = HardForkState $
+    Telescope.bihmap (\past -> past { pastSnapshot = NoSnapshot }) id st
 
 {-------------------------------------------------------------------------------
   Lift telescope operations
@@ -204,38 +207,24 @@ getSnapshot NoSnapshot      = Nothing
   Summary/EpochInfo
 -------------------------------------------------------------------------------}
 
-transitionOrTip :: SingleEraBlock blk
-                => WrapPartialLedgerConfig blk
-                -> LedgerState blk
-                -> TransitionOrTip
-transitionOrTip cfg st =
-    case singleEraTransition' cfg st of
-      Just epoch -> TransitionAt (ledgerTipSlot st) epoch
-      Nothing    -> LedgerTip (ledgerTipSlot st)
-
-reconstructSummary :: forall g f xs. All SingleEraBlock xs
-                   => History.Shape xs
-                   -> NP (f -.-> K TransitionOrTip) xs
-                   -- ^ Return the 'EpochNo' of the transition to the next
-                   -- era if known, or the 'SlotNo' at the tip otherwise.
+reconstructSummary :: History.Shape xs
+                   -> TransitionInfo         -- ^ At the tip
                    -> HardForkState_ g f xs
                    -> History.Summary xs
 reconstructSummary (History.Shape shape) transition (HardForkState st) =
-    History.Summary $ go shape transition st
+    History.Summary $ go shape st
   where
-    go :: All SingleEraBlock xs'
-       => Exactly xs' EraParams
-       -> NP (f -.-> K TransitionOrTip) xs'
+    go :: Exactly xs' EraParams
        -> Telescope (Past g) (Current f) xs'
        -> NonEmpty xs' EraSummary
-    go (K params :* ss) (_ :* ts) (TS Past{..} t) =
-        NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss ts t
-    go (K params :* Nil) _ (TZ Current{..}) =
+    go (K params :* ss) (TS Past{..} t) =
+        NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
+    go (K params :* Nil) (TZ Current{..}) =
         -- The current era is the last. We assume it lasts until all eternity.
         NonEmptyOne (EraSummary currentStart EraUnbounded params)
-    go (K params :* K nextParams :* _) (t :* _) (TZ Current{..}) =
-        case unK $ apFn t currentState of
-          TransitionAt _tip epoch ->
+    go (K params :* K nextParams :* _) (TZ Current{..}) =
+        case transition of
+          TransitionKnown epoch ->
             -- We haven't reached the next era yet, but the transition is
             -- already known. The safe zone applies from the start of the
             -- next era.
@@ -252,32 +241,43 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
                  , eraEnd    = applySafeZone
                                  nextParams
                                  nextStart
-                                 (At (boundSlot nextStart))
+                                 (boundSlot nextStart)
                  }
-          LedgerTip ledgerTip -> NonEmptyOne $
-            -- The transition to the /next/ era is not yet known, but it's
-            -- possible that the tip was actually in the previous era. If that
-            -- is the case, the safe zone of /this/ era extends from the start
-            -- of this era.  Otherwise, the safe zone extends from the current
-            -- ledger tip.
-            EraSummary {
+          TransitionUnknown ledgerTip -> NonEmptyOne $ EraSummary {
                 eraStart  = currentStart
               , eraParams = params
               , eraEnd    = applySafeZone
                               params
                               currentStart
-                              (max ledgerTip (At (boundSlot currentStart)))
+                              -- Even if the safe zone is 0, the first slot at
+                              -- which the next era could begin is the /next/
+                              (next ledgerTip)
+              }
+          -- 'TransitionImpossible' is used in one of two cases: we are in the
+          -- final era (clearly not the case here) or this era is a future era
+          -- that hasn't begun yet, in which case the safe zone must start at
+          -- the beginning of this era.
+          TransitionImpossible -> NonEmptyOne $ EraSummary {
+                eraStart  = currentStart
+              , eraParams = params
+              , eraEnd    = applySafeZone
+                              params
+                              currentStart
+                              (boundSlot currentStart)
               }
 
-    go Nil _ t = case t of {}
+    go Nil t = case t of {}
 
     -- Apply safe zone from the specified 'SlotNo'
     --
     -- All arguments must be referring to or in the same era.
-    applySafeZone :: EraParams -> Bound -> WithOrigin SlotNo -> EraEnd
+    applySafeZone :: EraParams -> Bound -> SlotNo -> EraEnd
     applySafeZone params@EraParams{..} start =
           History.mkEraEnd params start
         . History.maxMaybeEpoch (History.safeBeforeEpoch eraSafeZone)
         . History.slotToEpochBound params start
         . History.addSlots (History.safeFromTip eraSafeZone)
-        . fromWithOrigin (boundSlot start)
+
+    next :: WithOrigin SlotNo -> SlotNo
+    next Origin = SlotNo 0
+    next (At s) = succ s
