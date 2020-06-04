@@ -28,6 +28,9 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , Crypto
   , TPraosCrypto
   , TPraosStandardCrypto
+    -- * Stability
+  , computeStabilityWindow
+  , computeRandomnessStabilisationWindow
     -- * Type instances
   , ConsensusConfig (..)
   ) where
@@ -347,8 +350,10 @@ mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
 mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
       epochInfo                     = epochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
-    , stabilityWindow               = ceiling $ 3 * (f / fromIntegral k)
-    , randomnessStabilisationWindow = ceiling $ 4 * (f / fromIntegral k)
+    , stabilityWindow               =
+        computeStabilityWindow tpraosSecurityParam tpraosLeaderF
+    , randomnessStabilisationWindow =
+        computeRandomnessStabilisationWindow tpraosSecurityParam tpraosLeaderF
     , securityParameter             = k
     , maxKESEvo                     = tpraosMaxKESEvo
     , quorum                        = tpraosQuorum
@@ -359,7 +364,6 @@ mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
     }
   where
     SecurityParam k = tpraosSecurityParam
-    f = SL.intervalValue . SL.activeSlotVal $ tpraosLeaderF
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold
@@ -382,6 +386,40 @@ meetsLeaderThreshold
     SL.PoolDistr poolDistr = lvPoolDistr
     r = maybe 0 fst
         $ Map.lookup keyHash poolDistr
+
+{-------------------------------------------------------------------------------
+  Stability
+-------------------------------------------------------------------------------}
+
+-- | Calculate the stability window (e.g. the number of slots needed for a block
+-- to become stable) from the security param and the active slot coefficient.
+--
+-- The value 3k/f is determined to be a suitabe value as per
+-- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
+computeStabilityWindow
+  :: SecurityParam
+  -> SL.ActiveSlotCoeff
+  -> Word64
+computeStabilityWindow securityParam asc =
+    ceiling $ fromIntegral @_ @Double (3 * k) / fromRational f
+  where
+    SecurityParam k = securityParam
+    f = SL.intervalValue . SL.activeSlotVal $ asc
+
+-- | Calculate the randomness stabilisation window from the security param and
+-- the active slot coefficient.
+--
+-- The value 4k/f is determined to be a suitabe value as per
+-- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
+computeRandomnessStabilisationWindow
+  :: SecurityParam
+  -> SL.ActiveSlotCoeff
+  -> Word64
+computeRandomnessStabilisationWindow securityParam asc =
+    ceiling $ fromIntegral @_ @Double (4 * k) / fromRational f
+  where
+    SecurityParam k = securityParam
+    f = SL.intervalValue . SL.activeSlotVal $ asc
 
 {-------------------------------------------------------------------------------
   Condense
