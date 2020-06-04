@@ -71,9 +71,15 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (BlockRef (..),
                      ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                      (addBlockSync)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
+                     (ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+                     (LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
+                     (VolDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 {-------------------------------------------------------------------------------
@@ -85,6 +91,10 @@ launchBgTasks
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
+     , HasCodecConfig blk
+     , ImmDbSerialiseConstraints blk
+     , LgrDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -133,6 +143,8 @@ copyToImmDB
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)
+     , VolDbSerialiseConstraints blk
+     , ImmDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -240,6 +252,10 @@ copyAndSnapshotRunner
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)
+     , HasCodecConfig blk
+     , ImmDbSerialiseConstraints blk
+     , LgrDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> GcSchedule m
@@ -294,7 +310,9 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
-updateLedgerSnapshots :: IOLike m => ChainDbEnv m blk -> m ()
+updateLedgerSnapshots
+  :: (IOLike m, HasCodecConfig blk, LgrDbSerialiseConstraints blk)
+  => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
     -- TODO avoid taking multiple snapshots corresponding to the same tip.
     void $ LgrDB.takeSnapshot  cdbLgrDB
@@ -515,6 +533,7 @@ addBlockRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
+     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk

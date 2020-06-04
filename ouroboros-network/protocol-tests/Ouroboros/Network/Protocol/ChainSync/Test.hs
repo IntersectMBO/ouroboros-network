@@ -459,6 +459,7 @@ codecSerialised
            m ByteString
 codecSerialised = codecChainSyncSerialised
     S.encode             S.decode
+    S.encode             S.decode
     (encodeTip S.encode) (decodeTip S.decode)
 
 prop_codec_ChainSyncSerialised

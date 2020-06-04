@@ -10,43 +10,31 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
-
 import           Ouroboros.Network.Block (HeaderHash)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (ConvertRawHash (..))
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Roundtrip
+import           Test.Util.Serialisation
 
-import           Test.Consensus.Shelley.Generators
+import           Test.Consensus.Shelley.Generators ()
 import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Shelley"
     [ testGroup "Serialisation roundtrips"
-        [ testProperty "roundtrip Block"          prop_roundtrip_Block
-        , testProperty "roundtrip Header"         prop_roundtrip_Header
-        , testProperty "roundtrip HeaderHash"     prop_roundtrip_HeaderHash
-        , testProperty "roundtrip GenTx"          prop_roundtrip_GenTx
-        , testProperty "roundtrip GenTxId"        prop_roundtrip_GenTxId
-        , testProperty "roundtrip ApplyTxErr"     prop_roundtrip_ApplyTxErr
-        , testProperty "roundtrip Query"          prop_roundtrip_Query
-        , testProperty "roundtrip Result"         prop_roundtrip_Result
-        , testProperty "roundtrip ConsensusState" prop_roundtrip_ConsensusState
-        , testProperty "roundtrip LedgerState"    prop_roundtrip_LedgerState
+        [ testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         testCodecCfg
+        , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   testCodecCfg
+        , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient testCodecCfg
         ]
 
     , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
@@ -68,49 +56,8 @@ tests = testGroup "Shelley"
       , testProperty "hashSize"              (prop_hashSize  @c)
       ]
 
-{-------------------------------------------------------------------------------
-  Serialisation roundtrips
--------------------------------------------------------------------------------}
-
-prop_roundtrip_Block :: Block -> Property
-prop_roundtrip_Block = roundtrip' encodeShelleyBlock decodeShelleyBlock
-
-prop_roundtrip_Header :: Header Block -> Property
-prop_roundtrip_Header = roundtrip' encodeShelleyHeader decodeShelleyHeader
-
-prop_roundtrip_HeaderHash :: HeaderHash Block -> Property
-prop_roundtrip_HeaderHash = roundtrip toCBOR fromCBOR
-
-prop_roundtrip_GenTx :: GenTx Block -> Property
-prop_roundtrip_GenTx = roundtrip toCBOR fromCBOR
-
-prop_roundtrip_GenTxId :: GenTxId Block -> Property
-prop_roundtrip_GenTxId = roundtrip toCBOR fromCBOR
-
-prop_roundtrip_ApplyTxErr :: ApplyTxErr Block -> Property
-prop_roundtrip_ApplyTxErr = roundtrip toCBOR fromCBOR
-
-prop_roundtrip_Query :: Some (Query Block) -> Property
-prop_roundtrip_Query =
-    roundtrip
-      (\case { Some query -> encodeShelleyQuery query })
-      decodeShelleyQuery
-
-prop_roundtrip_Result :: SomeResult -> Property
-prop_roundtrip_Result (SomeResult query result) =
-    roundtrip
-      (encodeShelleyResult query)
-      (decodeShelleyResult query)
-      result
-
-prop_roundtrip_ConsensusState
-  :: TPraosState TPraosMockCrypto
-  -> Property
-prop_roundtrip_ConsensusState = roundtrip toCBOR fromCBOR
-
-prop_roundtrip_LedgerState :: LedgerState Block -> Property
-prop_roundtrip_LedgerState =
-    roundtrip encodeShelleyLedgerState decodeShelleyLedgerState
+    testCodecCfg :: CodecConfig Block
+    testCodecCfg = ShelleyCodecConfig
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo

@@ -10,22 +10,15 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   , fromChainDbArgs
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap)
 
-import           Ouroboros.Network.Block (HeaderHash)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
@@ -45,32 +38,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
 
-      -- Decoders
-      cdbDecodeHash           :: forall s. Decoder s (HeaderHash blk)
-    , cdbDecodeBlock          :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , cdbDecodeHeader         :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-      -- ^ The given encoding will include the header envelope
-      -- ('cdbAddHdrEnv').
-    , cdbDecodeLedger         :: forall s. Decoder s (LedgerState blk)
-    , cdbDecodeAnnTip         :: forall s. Decoder s (AnnTip blk)
-    , cdbDecodeConsensusState :: forall s. Decoder s (ConsensusState (BlockProtocol blk))
-
-      -- Encoders
-    , cdbEncodeHash           :: HeaderHash blk -> Encoding
-    , cdbEncodeBlock          :: blk -> Encoding
-    , cdbEncodeHeader         :: Header blk -> Encoding
-      -- ^ The returned encoding must include the header envelope
-      -- ('cdbAddHdrEnv').
-      --
-      -- This should be cheap, preferably \( O(1) \), as the Readers will
-      -- often be encoding the in-memory headers. (It is cheap for Byron
-      -- headers, as we store the serialisation in the annotation.)
-    , cdbEncodeLedger         :: LedgerState blk -> Encoding
-    , cdbEncodeAnnTip         :: AnnTip blk -> Encoding
-    , cdbEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
-
       -- HasFS instances
-    , cdbHasFSImmDb           :: HasFS m h1
+      cdbHasFSImmDb           :: HasFS m h1
     , cdbHasFSVolDb           :: HasFS m h2
     , cdbHasFSLgrDB           :: HasFS m h3
 
@@ -127,7 +96,6 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
       -- ^ Batch all scheduled GCs so that at most one GC happens every
       -- 'cdbsGcInterval'.
     , cdbsCheckInFuture   :: CheckInFuture m blk
-    , cdbsEncodeHeader    :: Header blk -> Encoding
     , cdbsBlocksToAddSize :: Word
     }
 
@@ -138,7 +106,6 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 -- * 'cdbsTracer'
 -- * 'cdbsRegistry'
 -- * 'cdbsCheckInFuture'
--- * 'cdbsEncodeHeader'
 --
 -- We a 'cdbsGcDelay' of 60 seconds and a 'cdbsGcInterval' of 10 seconds, this
 -- means (see the properties in "Test.Ouroboros.Storage.ChainDB.GcSchedule"):
@@ -163,7 +130,6 @@ defaultSpecificArgs = ChainDbSpecificArgs{
     , cdbsTracer          = error "no default for cdbsTracer"
     , cdbsRegistry        = error "no default for cdbsRegistry"
     , cdbsCheckInFuture   = error "no default for cdbsCheckInFuture"
-    , cdbsEncodeHeader    = error "no default for cdbsEncodeHeader"
     }
 
 -- | Default arguments for use within IO
@@ -180,7 +146,8 @@ defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
 
 -- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolDbArgs, 'LgrDbArgs',
 -- and 'ChainDbSpecificArgs'.
-fromChainDbArgs :: ChainDbArgs m blk
+fromChainDbArgs :: HasCodecConfig blk
+                => ChainDbArgs m blk
                 -> ( ImmDB.ImmDbArgs     m blk
                    , VolDB.VolDbArgs     m blk
                    , LgrDB.LgrDbArgs     m blk
@@ -188,12 +155,8 @@ fromChainDbArgs :: ChainDbArgs m blk
                    )
 fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
-          immDecodeHash         = cdbDecodeHash
-        , immDecodeBlock        = cdbDecodeBlock
-        , immDecodeHeader       = cdbDecodeHeader
-        , immEncodeHash         = cdbEncodeHash
-        , immEncodeBlock        = cdbEncodeBlock
-        , immGetBinaryBlockInfo = cdbGetBinaryBlockInfo
+          immGetBinaryBlockInfo = cdbGetBinaryBlockInfo
+        , immCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
         , immChunkInfo          = cdbChunkInfo
         , immValidation         = cdbImmValidation
         , immCheckIntegrity     = cdbCheckIntegrity
@@ -207,10 +170,8 @@ fromChainDbArgs ChainDbArgs{..} = (
           volHasFS              = cdbHasFSVolDb
         , volCheckIntegrity     = cdbCheckIntegrity
         , volBlocksPerFile      = cdbBlocksPerFile
-        , volDecodeHeader       = cdbDecodeHeader
-        , volDecodeBlock        = cdbDecodeBlock
-        , volEncodeBlock        = cdbEncodeBlock
         , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
+        , volCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
         , volAddHdrEnv          = cdbAddHdrEnv
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer
@@ -218,14 +179,6 @@ fromChainDbArgs ChainDbArgs{..} = (
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig       = cdbTopLevelConfig
         , lgrHasFS                = cdbHasFSLgrDB
-        , lgrDecodeLedger         = cdbDecodeLedger
-        , lgrDecodeConsensusState = cdbDecodeConsensusState
-        , lgrDecodeHash           = cdbDecodeHash
-        , lgrDecodeAnnTip         = cdbDecodeAnnTip
-        , lgrEncodeLedger         = cdbEncodeLedger
-        , lgrEncodeConsensusState = cdbEncodeConsensusState
-        , lgrEncodeHash           = cdbEncodeHash
-        , lgrEncodeAnnTip         = cdbEncodeAnnTip
         , lgrParams               = cdbParamsLgrDB
         , lgrDiskPolicy           = cdbDiskPolicy
         , lgrGenesis              = cdbGenesis
@@ -238,7 +191,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , cdbsGcDelay         = cdbGcDelay
         , cdbsGcInterval      = cdbGcInterval
         , cdbsCheckInFuture   = cdbCheckInFuture
-        , cdbsEncodeHeader    = cdbEncodeHeader
         , cdbsBlocksToAddSize = cdbBlocksToAddSize
         }
     )
@@ -256,22 +208,8 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
               VolDB.VolDbArgs{..}
               LgrDB.LgrDbArgs{..}
               ChainDbSpecificArgs{..} = ChainDbArgs{
-      -- Decoders
-      cdbDecodeHash           = immDecodeHash
-    , cdbDecodeBlock          = immDecodeBlock
-    , cdbDecodeHeader         = immDecodeHeader
-    , cdbDecodeLedger         = lgrDecodeLedger
-    , cdbDecodeAnnTip         = lgrDecodeAnnTip
-    , cdbDecodeConsensusState = lgrDecodeConsensusState
-      -- Encoders
-    , cdbEncodeHash           = immEncodeHash
-    , cdbEncodeBlock          = immEncodeBlock
-    , cdbEncodeHeader         = cdbsEncodeHeader
-    , cdbEncodeLedger         = lgrEncodeLedger
-    , cdbEncodeAnnTip         = lgrEncodeAnnTip
-    , cdbEncodeConsensusState = lgrEncodeConsensusState
       -- HasFS instances
-    , cdbHasFSImmDb           = immHasFS
+      cdbHasFSImmDb           = immHasFS
     , cdbHasFSVolDb           = volHasFS
     , cdbHasFSLgrDB           = lgrHasFS
       -- Policy

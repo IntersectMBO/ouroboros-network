@@ -11,7 +11,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise (decode, encode, serialiseIncremental)
+import           Codec.Serialise (encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
@@ -394,8 +394,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB (const <$> decode) (const <$> decode)
-          encode getBinaryBlockInfo addHdrEnv
+        return $ mkVolDB volDB getBinaryBlockInfo TestBlockCodecConfig addHdrEnv
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -426,8 +425,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           Just epoch -> ImmDB.appendEBB immDB
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
-        return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encode getBinaryBlockInfo chunkInfo addHdrEnv
+        return $ mkImmDB immDB getBinaryBlockInfo TestBlockCodecConfig chunkInfo addHdrEnv
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
 

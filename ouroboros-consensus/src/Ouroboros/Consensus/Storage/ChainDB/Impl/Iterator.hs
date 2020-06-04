@@ -46,10 +46,12 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
                      UnknownRange (..), getPoint, validBounds)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
+                     ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
+                     VolDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | Stream blocks
@@ -191,7 +193,13 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -- disk upfront and 1 block read from disk upfront as it uses an exclusive
 -- lower bound. This can happen multiple times.
 stream
-  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     ( IOLike m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     , HasCallStack
+     )
   => ChainDbHandle m blk
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
@@ -233,7 +241,13 @@ fromChainDbEnv CDB{..} = IteratorEnv
 
 -- | See 'streamBlocks'.
 newIterator
-  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     ( IOLike m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     , HasCallStack
+     )
   => IteratorEnv m blk
   -> (forall r. (IteratorEnv m blk -> m r) -> m r)
      -- ^ Function with which the operations on the returned iterator should
@@ -574,12 +588,18 @@ data InImmDBEnd blk
     -- second parameter) from the VolatileDB.
   deriving (Generic, NoUnexpectedThunks)
 
-implIteratorNext :: forall m blk b. (IOLike m, HasHeader blk)
-                 => ResourceRegistry m
-                 -> StrictTVar m (IteratorState m blk b)
-                 -> BlockComponent (ChainDB m blk) b
-                 -> IteratorEnv m blk
-                 -> m (IteratorResult blk b)
+implIteratorNext
+  :: forall m blk b.
+     ( IOLike m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
+  => ResourceRegistry m
+  -> StrictTVar m (IteratorState m blk b)
+  -> BlockComponent (ChainDB m blk) b
+  -> IteratorEnv m blk
+  -> m (IteratorResult blk b)
 implIteratorNext registry varItState blockComponent IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->

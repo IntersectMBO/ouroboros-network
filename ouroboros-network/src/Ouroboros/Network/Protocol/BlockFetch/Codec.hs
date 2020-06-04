@@ -10,7 +10,6 @@
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
   , codecBlockFetchSerialised
-  , codecBlockFetchSerialised'
   , codecBlockFetchId
 
   , byteLimitsBlockFetch
@@ -25,7 +24,6 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.Serialise as Serialise
 import           Text.Printf
 
 import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
@@ -116,7 +114,7 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
         fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
       (ServerAgency TokStreaming, _ , _) ->
         fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
-      (ServerAgency TokBusy, _, _) -> 
+      (ServerAgency TokBusy, _, _) ->
         fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
 
 
@@ -142,19 +140,7 @@ codecBlockFetch
 codecBlockFetch = codecBlockFetchUnwrapped
 
 -- | Codec for chain sync that doesn't encode/decode blocks
---
--- Uses CBOR-in-CBOR by default; see also 'codecBlockFetchSerialised''.
 codecBlockFetchSerialised
-  :: forall block m.
-     MonadST m
-  => (HeaderHash block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (HeaderHash block))
-  -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetchSerialised =
-  codecBlockFetchSerialised' Serialise.encode Serialise.decode
-
--- | Generalized version of 'codecBlockFetchSerialised'
-codecBlockFetchSerialised'
   :: forall block m.
      MonadST m
   => (Serialised block -> CBOR.Encoding)
@@ -162,7 +148,7 @@ codecBlockFetchSerialised'
   -> (HeaderHash block -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetchSerialised' = codecBlockFetchUnwrapped
+codecBlockFetchSerialised = codecBlockFetchUnwrapped
 
 codecBlockFetchId
   :: forall block m. Monad m

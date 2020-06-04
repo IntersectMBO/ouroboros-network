@@ -46,6 +46,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit Praos
 -------------------------------------------------------------------------------}
@@ -122,9 +124,7 @@ instance PraosCrypto c' => Serialise (BlockInfo c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          ) => RunMockBlock c (SimplePraosExt c c') where
-  mockProtocolMagicId      = const constructMockProtocolMagicId
-  mockEncodeConsensusState = const encode
-  mockDecodeConsensusState = const decode
+  mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
@@ -226,3 +226,9 @@ decodePraosExtraFields = do
     praosRho     <- fromCBOR
     praosY       <- fromCBOR
     return PraosExtraFields{..}
+
+instance PraosCrypto c' => EncodeDisk (SimplePraosBlock c c') [BlockInfo c']
+  -- Default instance
+
+instance PraosCrypto c' => DecodeDisk (SimplePraosBlock c c') [BlockInfo c']
+  -- Default instance

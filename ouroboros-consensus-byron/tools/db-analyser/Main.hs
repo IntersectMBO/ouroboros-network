@@ -36,7 +36,6 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -353,17 +352,12 @@ withImmDB :: FilePath
           -> IO a
 withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
-    ccfg = getCodecConfig $ configBlock cfg
-    pb   = Proxy @ByronBlock
+    pb = Proxy @ByronBlock
 
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
-          immDecodeHash         = nodeDecodeHeaderHash    ccfg
-        , immDecodeBlock        = nodeDecodeBlock         ccfg
-        , immDecodeHeader       = nodeDecodeHeader        ccfg SerialisedToDisk
-        , immEncodeHash         = nodeEncodeHeaderHash    ccfg
-        , immEncodeBlock        = nodeEncodeBlock         ccfg
-        , immGetBinaryBlockInfo = nodeGetBinaryBlockInfo
+          immGetBinaryBlockInfo = nodeGetBinaryBlockInfo
+        , immCodecConfig        = getCodecConfig $ configBlock cfg
         , immChunkInfo          = chunkInfo
         , immValidation         = ValidateMostRecentChunk
         , immCheckIntegrity     = nodeCheckIntegrity      cfg

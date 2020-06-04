@@ -37,6 +37,8 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit BFT
 -------------------------------------------------------------------------------}
@@ -89,9 +91,7 @@ instance SignedHeader (SimpleBftHeader c c') where
 instance ( SimpleCrypto c
          , BftCrypto c'
          ) => RunMockBlock c (SimpleBftExt c c') where
-  mockProtocolMagicId      = const constructMockProtocolMagicId
-  mockEncodeConsensusState = const encode
-  mockDecodeConsensusState = const decode
+  mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance ( SimpleCrypto c
          , BftCrypto c'
@@ -155,3 +155,9 @@ instance BftCrypto c' => Serialise (SimpleBftExt c c') where
 instance SimpleCrypto c => Serialise (SignedSimpleBft c c')
 instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimpleBft c c') where
   toCBOR = encode
+
+instance EncodeDisk (SimpleBftBlock c c') ()
+  -- Default instance
+
+instance DecodeDisk (SimpleBftBlock c c') ()
+  -- Default instance

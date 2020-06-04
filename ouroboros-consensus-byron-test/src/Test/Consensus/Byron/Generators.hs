@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications   #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Byron.Generators (
     epochSlots
@@ -8,25 +9,43 @@ module Test.Consensus.Byron.Generators (
   , RegularBlock (..)
   ) where
 
+import           Data.Coerce (coerce)
+import           Data.Proxy
+
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
-import           Cardano.Chain.Common (KeyHash)
+import           Cardano.Chain.Common (BlockCount (..), KeyHash)
+import qualified Cardano.Chain.Delegation as CC.Del
+import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Act
+import qualified Cardano.Chain.Delegation.Validation.Interface as CC.DI
+import qualified Cardano.Chain.Delegation.Validation.Scheduling as CC.Sched
+import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
+import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Crypto.Hashing (Hash)
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
+import           Ouroboros.Network.Block (BlockNo (..), SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block (Header, IsEBB (..))
+import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
+import qualified Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes as PBftState
 
 import           Ouroboros.Consensus.Byron.Ledger
+import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as DH
+import           Ouroboros.Consensus.Byron.Protocol
 
 import           Test.QuickCheck hiding (Result)
 import           Test.QuickCheck.Hedgehog (hedgehog)
@@ -41,6 +60,7 @@ import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Orphans
@@ -55,8 +75,13 @@ deriving instance Show (Some (Query ByronBlock))
   Generators
 -------------------------------------------------------------------------------}
 
+-- | Matches that from the 'CC.dummyConfig'
+k :: SecurityParam
+k = SecurityParam 10
+
+-- | Matches that from the 'CC.dummyConfig'
 epochSlots :: EpochSlots
-epochSlots = EpochSlots 21600
+epochSlots = EpochSlots 100
 
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
@@ -107,8 +132,11 @@ instance Arbitrary (Header ByronBlock) where
             CC.Block.fromCBORABoundaryHeader <$>
           hedgehog CC.genBoundaryHeader
 
+instance Arbitrary (Hash a) where
+  arbitrary = coerce <$> hedgehog CC.genTextHash
+
 instance Arbitrary ByronHash where
-  arbitrary = ByronHash <$> hedgehog CC.genHeaderHash
+  arbitrary = ByronHash <$> arbitrary
 
 instance Arbitrary KeyHash where
   arbitrary = hedgehog CC.genKeyHash
@@ -149,9 +177,6 @@ instance Arbitrary EpochNumber where
 instance Arbitrary SlotNumber where
   arbitrary = hedgehog CC.genSlotNumber
 
-instance Arbitrary CC.Update.UpId where
-  arbitrary = hedgehog (UG.genUpId protocolMagicId)
-
 instance Arbitrary CC.Update.ApplicationName where
   arbitrary = hedgehog UG.genApplicationName
 
@@ -184,20 +209,128 @@ instance Arbitrary CC.UPI.State where
     <*> pure mempty -- TODO Endorsement is not exported
     <*> arbitrary
 
-instance Arbitrary (SerialisationVersion ByronBlock) where
-  arbitrary =
-      elements $ concat [
-          [SerialisedToDisk]
-        , map (SerialisedAcrossNetwork . SerialisedNodeToNode)   nodeToNode
-        , map (SerialisedAcrossNetwork . SerialisedNodeToClient) nodeToClient
-        ]
+instance Arbitrary CC.Genesis.GenesisHash where
+  arbitrary = CC.Genesis.GenesisHash <$> arbitrary
+
+instance Arbitrary CC.UTxO.UTxO where
+  arbitrary = hedgehog CC.genUTxO
+
+instance Arbitrary CC.Act.State where
+  arbitrary = CC.Act.State
+    <$> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Sched.ScheduledDelegation where
+  arbitrary = CC.Sched.ScheduledDelegation
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Sched.State where
+  arbitrary = CC.Sched.State
+    <$> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.DI.State where
+  arbitrary = CC.DI.State
+    <$> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Block.ChainValidationState where
+  arbitrary = CC.Block.ChainValidationState
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary ByronNodeToNodeVersion where
+  arbitrary = arbitraryBoundedEnum
+
+instance Arbitrary ByronNodeToClientVersion where
+  arbitrary = arbitraryBoundedEnum
+
+instance Arbitrary CC.Del.Map where
+  arbitrary = CC.Del.fromList <$> arbitrary
+
+instance Arbitrary DelegationHistory where
+  arbitrary = do
+      steps <- choose (0, 5)
+      go steps (SlotNo 0) DH.empty
     where
-      -- We enumerate /all/ nodeToNode here, not just the ones returned by
-      -- 'supportedNetworkProtocolVersions', which may be fewer.
-      -- We might want to reconsider that later.
+      go :: Int
+         -> SlotNo
+         -> DelegationHistory
+         -> Gen DelegationHistory
+      go steps prevSlot st
+        | 0 <- steps = return st
+        | otherwise  = do
+          slot <- ((prevSlot +) . SlotNo) <$> choose (1, 5)
+          delMap <- arbitrary
+          go (steps - 1) slot (DH.snapOld (BlockCount 10) slot delMap st)
 
-      nodeToNode :: [ByronNodeToNodeVersion]
-      nodeToNode = [minBound .. maxBound]
+instance Arbitrary (LedgerState ByronBlock) where
+  arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary
 
-      nodeToClient :: [ByronNodeToClientVersion]
-      nodeToClient = [minBound .. maxBound]
+instance Arbitrary (AnnTip ByronBlock) where
+  arbitrary = AnnTip
+    <$> arbitrary
+    <*> (BlockNo <$> arbitrary)
+    <*> ((,) <$> arbitrary <*> elements [IsEBB, IsNotEBB])
+
+instance Arbitrary (PBftState PBftByronCrypto) where
+  arbitrary = do
+      steps <- choose (0, 5)
+      go steps Origin PBftState.empty
+    where
+      go :: Int
+         -> WithOrigin SlotNo
+         -> PBftState PBftByronCrypto
+         -> Gen (PBftState PBftByronCrypto)
+      go steps prevSlot st
+        | 0 <- steps = return st
+        | otherwise  = do
+          let slot = withOrigin (SlotNo 0) succ prevSlot
+          ebb <- arbitrary
+          st' <-
+            if ebb then do
+              headerHashBytes <-
+                PBftState.headerHashBytes (Proxy @ByronBlock) <$> arbitrary
+              return $ PBftState.appendEBB k windowSize slot headerHashBytes st
+            else do
+              newSigner <- PBftState.PBftSigner slot <$> arbitrary
+              return $ PBftState.append k windowSize newSigner st
+          go (steps - 1) (At slot) st'
+
+      windowSize = PBftState.WindowSize (maxRollbacks k)
+
+instance Arbitrary (SomeResult ByronBlock) where
+  arbitrary = SomeResult GetUpdateInterfaceState  <$> arbitrary
+
+{-------------------------------------------------------------------------------
+  Versioned generators for serialisation
+-------------------------------------------------------------------------------}
+
+-- | We only have to be careful about headers with ByronNodeToNodeVersion1,
+-- where we will have a fake block size hint.
+instance Arbitrary (WithVersion ByronNodeToNodeVersion (Header ByronBlock)) where
+  arbitrary = do
+    version <- arbitrary
+    hdr     <- arbitrary
+    let hdr' = case version of
+          ByronNodeToNodeVersion1 ->
+            hdr { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
+          ByronNodeToNodeVersion2 ->
+            hdr
+    return (WithVersion version hdr')
+
+-- | All other types are unaffected by the versioning for
+-- 'ByronNodeToNodeVersion'.
+instance {-# OVERLAPPABLE #-} Arbitrary a
+      => Arbitrary (WithVersion ByronNodeToNodeVersion a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary
+
+-- | No types are affected by the versioning for
+-- 'ByronNodeToClientVersion'.
+instance Arbitrary a => Arbitrary (WithVersion ByronNodeToClientVersion a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary

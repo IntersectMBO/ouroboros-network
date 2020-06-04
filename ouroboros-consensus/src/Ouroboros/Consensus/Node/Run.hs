@@ -4,34 +4,42 @@
 -- | Infrastructure required to run a node
 --
 -- The definitions in this module are independent from any specific protocol.
-module Ouroboros.Consensus.Node.Run
-  ( RunNode (..)
+module Ouroboros.Consensus.Node.Run (
+    -- * SerialiseDisk
+    SerialiseDiskConstraints
+  , ImmDbSerialiseConstraints
+  , LgrDbSerialiseConstraints
+  , VolDbSerialiseConstraints
+    -- * SerialiseNodeToNode
+  , SerialiseNodeToNodeConstraints
+    -- * SerialiseNodeToClient
+  , SerialiseNodeToClientConstraints
+    -- * RunNode
+  , RunNode (..)
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise)
 import           Control.Exception (SomeException)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
+                     LgrDbSerialiseConstraints, SerialiseDiskConstraints,
+                     VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
@@ -39,6 +47,26 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 {-------------------------------------------------------------------------------
   RunNode proper
 -------------------------------------------------------------------------------}
+
+-- | Serialisation constraints needed by the node-to-node protocols
+class ( SerialiseNodeToNode blk (HeaderHash blk)
+      , SerialiseNodeToNode blk blk
+      , SerialiseNodeToNode blk (Header blk)
+      , SerialiseNodeToNode blk (Serialised blk)
+      , SerialiseNodeToNode blk (Serialised (Header blk))
+      , SerialiseNodeToNode blk (GenTx blk)
+      , SerialiseNodeToNode blk (GenTxId blk)
+      ) => SerialiseNodeToNodeConstraints blk
+
+-- | Serialisation constraints needed by the node-to-client protocols
+class ( SerialiseNodeToClient blk (HeaderHash blk)
+      , SerialiseNodeToClient blk blk
+      , SerialiseNodeToClient blk (Serialised blk)
+      , SerialiseNodeToClient blk (GenTx blk)
+      , SerialiseNodeToClient blk (ApplyTxErr blk)
+      , SerialiseNodeToClient blk (Some (Query blk))
+      , SerialiseResult       blk (Query blk)
+      ) => SerialiseNodeToClientConstraints blk
 
 class ( LedgerSupportsProtocol    blk
       , HasHardForkHistory        blk
@@ -50,8 +78,9 @@ class ( LedgerSupportsProtocol    blk
       , ConfigSupportsNode        blk
       , HasCodecConfig            blk
       , ConvertRawHash            blk
-        -- TODO: Remove after reconsidering rewindConsensusState:
-      , Serialise (HeaderHash blk)
+      , SerialiseDiskConstraints         blk
+      , SerialiseNodeToNodeConstraints   blk
+      , SerialiseNodeToClientConstraints blk
       ) => RunNode blk where
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
 
@@ -124,39 +153,3 @@ class ( LedgerSupportsProtocol    blk
   -- This is what the default implementation does.
   nodeExceptionIsFatal :: Proxy blk -> SomeException -> Maybe ExitReason
   nodeExceptionIsFatal _ _ = Nothing
-
-  -- Encoders
-  nodeEncodeBlock          :: CodecConfig blk -> blk -> Encoding
-  nodeEncodeHeader         :: CodecConfig blk
-                           -> SerialisationVersion blk
-                           -> Header blk -> Encoding
-  nodeEncodeWrappedHeader  :: CodecConfig blk
-                           -> SerialisationAcrossNetwork blk
-                           -> Serialised (Header blk) -> Encoding
-  nodeEncodeGenTx          :: CodecConfig blk -> GenTx blk -> Encoding
-  nodeEncodeGenTxId        :: CodecConfig blk -> GenTxId blk -> Encoding
-  nodeEncodeHeaderHash     :: CodecConfig blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState    :: CodecConfig blk -> LedgerState blk -> Encoding
-  nodeEncodeConsensusState :: CodecConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
-  nodeEncodeApplyTxError   :: CodecConfig blk -> ApplyTxErr blk -> Encoding
-  nodeEncodeAnnTip         :: CodecConfig blk -> AnnTip blk -> Encoding
-  nodeEncodeQuery          :: CodecConfig blk -> Query blk result -> Encoding
-  nodeEncodeResult         :: CodecConfig blk -> Query blk result -> result -> Encoding
-
-  -- Decoders
-  nodeDecodeHeader         :: CodecConfig blk
-                           -> SerialisationVersion blk
-                           -> forall s. Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeWrappedHeader  :: CodecConfig blk
-                           -> SerialisationAcrossNetwork blk
-                           -> forall s. Decoder s (Serialised (Header blk))
-  nodeDecodeBlock          :: CodecConfig blk -> forall s. Decoder s (Lazy.ByteString -> blk)
-  nodeDecodeGenTx          :: CodecConfig blk -> forall s. Decoder s (GenTx blk)
-  nodeDecodeGenTxId        :: CodecConfig blk -> forall s. Decoder s (GenTxId blk)
-  nodeDecodeHeaderHash     :: CodecConfig blk -> forall s. Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState    :: CodecConfig blk -> forall s. Decoder s (LedgerState blk)
-  nodeDecodeConsensusState :: CodecConfig blk -> forall s. Decoder s (ConsensusState (BlockProtocol blk))
-  nodeDecodeApplyTxError   :: CodecConfig blk -> forall s. Decoder s (ApplyTxErr blk)
-  nodeDecodeAnnTip         :: CodecConfig blk -> forall s. Decoder s (AnnTip blk)
-  nodeDecodeQuery          :: CodecConfig blk -> forall s. Decoder s (Some (Query blk))
-  nodeDecodeResult         :: CodecConfig blk -> Query blk result -> forall s. Decoder s result

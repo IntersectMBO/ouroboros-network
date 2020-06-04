@@ -119,6 +119,7 @@ library
                        Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.Node.BlockProduction
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
+                       Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
@@ -177,6 +178,7 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Consensus.Storage.ChainDB.Init
+                       Ouroboros.Consensus.Storage.ChainDB.Serialisation
                        Ouroboros.Consensus.Storage.Common
                        Ouroboros.Consensus.Storage.FS.API
                        Ouroboros.Consensus.Storage.FS.API.Types

@@ -18,6 +18,7 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     LgrDB -- opaque
   , LedgerDB
+  , LgrDbSerialiseConstraints
     -- * Initialization
   , LgrDbArgs(..)
   , defaultArgs
@@ -53,8 +54,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , mkLgrDB
   ) where
 
-import           Codec.Serialise.Decoding (Decoder)
-import           Codec.Serialise.Encoding (Encoding)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise (decode, encode))
 import           Control.Tracer
 import           Data.Bifunctor (second)
 import           Data.Foldable (foldl')
@@ -103,8 +105,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
+                     ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
@@ -132,6 +136,18 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
                => NoUnexpectedThunks (LgrDB m blk)
   -- use generic instance
 
+-- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
+class ( -- TODO remove/replace this one once we remove it from the
+        -- 'ConsensusProtocol'.
+        Serialise      (HeaderHash  blk)
+      , EncodeDisk blk (LedgerState blk)
+      , DecodeDisk blk (LedgerState blk)
+      , EncodeDisk blk (AnnTip      blk)
+      , DecodeDisk blk (AnnTip      blk)
+      , EncodeDisk blk (ConsensusState (BlockProtocol blk))
+      , DecodeDisk blk (ConsensusState (BlockProtocol blk))
+      ) => LgrDbSerialiseConstraints blk
+
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)
 
@@ -140,21 +156,13 @@ type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs m blk = forall h. Eq h => LgrDbArgs {
-      lgrTopLevelConfig       :: TopLevelConfig blk
-    , lgrHasFS                :: HasFS m h
-    , lgrDecodeLedger         :: forall s. Decoder s (LedgerState                   blk)
-    , lgrDecodeHash           :: forall s. Decoder s (HeaderHash                    blk)
-    , lgrDecodeAnnTip         :: forall s. Decoder s (AnnTip                        blk)
-    , lgrDecodeConsensusState :: forall s. Decoder s (ConsensusState (BlockProtocol blk))
-    , lgrEncodeLedger         :: LedgerState                   blk  -> Encoding
-    , lgrEncodeHash           :: HeaderHash                    blk  -> Encoding
-    , lgrEncodeAnnTip         :: AnnTip                        blk  -> Encoding
-    , lgrEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
-    , lgrParams               :: LedgerDbParams
-    , lgrDiskPolicy           :: DiskPolicy
-    , lgrGenesis              :: m (ExtLedgerState blk)
-    , lgrTracer               :: Tracer m (TraceEvent (RealPoint blk))
-    , lgrTraceLedger          :: Tracer m (LedgerDB blk)
+      lgrTopLevelConfig :: TopLevelConfig blk
+    , lgrHasFS          :: HasFS m h
+    , lgrParams         :: LedgerDbParams
+    , lgrDiskPolicy     :: DiskPolicy
+    , lgrGenesis        :: m (ExtLedgerState blk)
+    , lgrTracer         :: Tracer m (TraceEvent (RealPoint blk))
+    , lgrTraceLedger    :: Tracer m (LedgerDB blk)
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrDbArgs" (LgrDbArgs m blk)
 
@@ -163,14 +171,6 @@ data LgrDbArgs m blk = forall h. Eq h => LgrDbArgs {
 -- The following arguments must still be defined:
 --
 -- * 'lgrTopLevelConfig'
--- * 'lgrDecodeLedger'
--- * 'lgrDecodeConsensusState'
--- * 'lgrDecodeHash'
--- * 'lgrDecodeTipInfo'
--- * 'lgrEncodeLedger'
--- * 'lgrEncodeConsensusState'
--- * 'lgrEncodeHash'
--- * 'lgrEncodeTipInfo'
 -- * 'lgrMemPolicy'
 -- * 'lgrGenesis'
 defaultArgs :: FilePath -> LgrDbArgs IO blk
@@ -178,14 +178,6 @@ defaultArgs fp = LgrDbArgs {
       lgrHasFS            = ioHasFS $ MountPoint (fp </> "ledger")
       -- Fields without a default
     , lgrTopLevelConfig       = error "no default for lgrTopLevelConfig"
-    , lgrDecodeLedger         = error "no default for lgrDecodeLedger"
-    , lgrDecodeHash           = error "no default for lgrDecodeHash"
-    , lgrDecodeAnnTip         = error "no default for lgrDecodeAnnTip"
-    , lgrDecodeConsensusState = error "no default for lgrDecodeConsensusState"
-    , lgrEncodeLedger         = error "no default for lgrEncodeLedger"
-    , lgrEncodeHash           = error "no default for lgrEncodeHash"
-    , lgrEncodeAnnTip         = error "no default for lgrEncodeAnnTip"
-    , lgrEncodeConsensusState = error "no default for lgrEncodeConsensusState"
     , lgrParams               = error "no default for lgrParams"
     , lgrDiskPolicy           = error "no default for lgrDiskPolicy"
     , lgrGenesis              = error "no default for lgrGenesis"
@@ -197,7 +189,14 @@ defaultArgs fp = LgrDbArgs {
 --
 -- In addition to the ledger DB also returns the number of immutable blocks
 -- that were replayed.
-openDB :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+openDB :: forall m blk.
+          ( IOLike m
+          , LedgerSupportsProtocol blk
+          , HasCodecConfig blk
+          , LgrDbSerialiseConstraints blk
+          , ImmDbSerialiseConstraints blk
+          , HasCallStack
+          )
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (TraceReplayEvent (RealPoint blk) ())
@@ -234,7 +233,13 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
 -- | Reopen the ledger DB
 --
 -- Returns the number of immutable blocks replayed.
-reopen :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+reopen :: ( IOLike m
+          , LedgerSupportsProtocol blk
+          , HasCodecConfig blk
+          , LgrDbSerialiseConstraints blk
+          , ImmDbSerialiseConstraints blk
+          , HasCallStack
+          )
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (RealPoint blk) ())
@@ -244,11 +249,19 @@ reopen LgrDB{..} immDB replayTracer = do
     atomically $ writeTVar varDB db
     return replayed
 
-initFromDisk :: forall blk m. (IOLike m, HasCallStack, LedgerSupportsProtocol blk)
-             => LgrDbArgs m blk
-             -> Tracer m (TraceReplayEvent (RealPoint blk) ())
-             -> ImmDB     m blk
-             -> m (LedgerDB blk, Word64)
+initFromDisk
+  :: forall blk m.
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , HasCodecConfig blk
+     , LgrDbSerialiseConstraints blk
+     , ImmDbSerialiseConstraints blk
+     , HasCallStack
+     )
+  => LgrDbArgs m blk
+  -> Tracer m (TraceReplayEvent (RealPoint blk) ())
+  -> ImmDB     m blk
+  -> m (LedgerDB blk, Word64)
 initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
@@ -256,18 +269,20 @@ initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
         lgrTracer
         lgrHasFS
         decodeExtLedgerState'
-        (decodeRealPoint lgrDecodeHash)
+        (decodeRealPoint decode)
         lgrParams
         lgrTopLevelConfig
         lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
   where
+    ccfg = getCodecConfig (configBlock lgrTopLevelConfig)
+
     decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
     decodeExtLedgerState' = decodeExtLedgerState
-                              lgrDecodeLedger
-                              lgrDecodeConsensusState
-                              lgrDecodeAnnTip
+                              (decodeDisk ccfg)
+                              (decodeDisk ccfg)
+                              (decodeDisk ccfg)
 
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB blk)
@@ -328,20 +343,25 @@ currentPoint = ledgerTipPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 
-takeSnapshot :: IOLike m => LgrDB m blk -> m (DiskSnapshot, Point blk)
+takeSnapshot :: forall m blk.
+                (IOLike m, HasCodecConfig blk, LgrDbSerialiseConstraints blk)
+             => LgrDB m blk -> m (DiskSnapshot, Point blk)
 takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second withOriginRealPointToPoint <$> LedgerDB.takeSnapshot
       lgrTracer
       lgrHasFS
       encodeExtLedgerState'
-      (encodeRealPoint lgrEncodeHash)
+      (encodeRealPoint encode)
       ledgerDB
   where
+    ccfg = getCodecConfig (configBlock lgrTopLevelConfig)
+
+    encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
-                              lgrEncodeLedger
-                              lgrEncodeConsensusState
-                              lgrEncodeAnnTip
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
 
 trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = LgrDbArgs{..} } = wrapFailure $
@@ -427,8 +447,10 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
   Stream API to the immutable DB
 -------------------------------------------------------------------------------}
 
-streamAPI :: forall m blk. (IOLike m, HasHeader blk)
-          => ImmDB m blk -> StreamAPI m (RealPoint blk) blk
+streamAPI
+  :: forall m blk.
+     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk)
+  => ImmDB m blk -> StreamAPI m (RealPoint blk) blk
 streamAPI immDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack

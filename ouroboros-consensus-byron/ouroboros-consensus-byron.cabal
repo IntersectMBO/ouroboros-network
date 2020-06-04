@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.Byron.Ledger.Serialisation
                        Ouroboros.Consensus.Byron.Protocol
                        Ouroboros.Consensus.Byron.Node
+                       Ouroboros.Consensus.Byron.Node.Serialisation
 
   build-depends:       base              >=4.9   && <4.13
                      , binary            >=0.8   && <0.9

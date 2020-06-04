@@ -1,8 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.Abstract (
@@ -11,8 +9,6 @@ module Ouroboros.Consensus.Mock.Node.Abstract (
   , constructMockProtocolMagicId
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import           Data.Hashable (hash)
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
@@ -28,18 +24,16 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Protocol specific functionality required to run consensus with mock blocks
-class MockProtocolSpecific c ext => RunMockBlock c ext where
+class ( MockProtocolSpecific c ext
+      , EncodeDisk (SimpleBlock c ext) (ConsensusState (BlockProtocol (SimpleBlock c ext)))
+      , DecodeDisk (SimpleBlock c ext) (ConsensusState (BlockProtocol (SimpleBlock c ext)))
+      ) => RunMockBlock c ext where
   mockProtocolMagicId
     :: BlockConfig (SimpleBlock c ext)
     -> ProtocolMagicId
-  mockEncodeConsensusState
-    :: CodecConfig (SimpleBlock c ext)
-    -> ConsensusState (BlockProtocol (SimpleBlock c ext)) -> Encoding
-  mockDecodeConsensusState
-    :: CodecConfig (SimpleBlock c ext)
-    -> Decoder s (ConsensusState (BlockProtocol (SimpleBlock c ext)))
 
 -- | Construct protocol magic ID depending on where in the code this is called
 --

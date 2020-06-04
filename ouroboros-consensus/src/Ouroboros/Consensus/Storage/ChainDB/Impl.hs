@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
     ChainDbArgs(..)
   , defaultArgs
+  , SerialiseDiskConstraints
   , withDB
   , openDB
     -- * Trace types
@@ -23,6 +24,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
   , LgrDB.TraceLedgerReplayEvent
+    -- * Re-exported for convenience
+  , ImmDB.ImmDbSerialiseConstraints
+  , LgrDB.LgrDbSerialiseConstraints
+  , VolDB.VolDbSerialiseConstraints
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -38,7 +43,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, castPoint)
 
-import           Ouroboros.Consensus.Block (ConvertRawHash, Header)
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -74,6 +79,8 @@ withDB
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
+     , HasCodecConfig blk
+     , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
@@ -86,6 +93,8 @@ openDB
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
+     , HasCodecConfig blk
+     , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk
   -> m (ChainDB m blk)
@@ -97,6 +106,8 @@ openDBInternal
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
+     , HasCodecConfig blk
+     , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
@@ -182,7 +193,7 @@ openDBInternal args launchBgTasks = do
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , stream             = Iterator.stream  h
-          , newReader          = Reader.newReader h (Args.cdbEncodeHeader args)
+          , newReader          = Reader.newReader h
           , newLedgerCursor    = getEnv     h $ \env' ->
               LedgerCursor.newLedgerCursor
                 (cdbLgrDB env')

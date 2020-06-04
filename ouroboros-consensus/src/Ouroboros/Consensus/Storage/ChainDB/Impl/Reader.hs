@@ -13,7 +13,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
   , closeAllReaders
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (join)
@@ -32,16 +31,21 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDB, ChainDbError (..), Reader (..), getPoint)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
+                     ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
+                     (VolDbSerialiseConstraints)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 {-------------------------------------------------------------------------------
   Accessing the environment
@@ -87,22 +91,22 @@ newReader
      , HasHeader blk
      , HasHeader (Header blk)
      , GetHeader blk
+     , HasCodecConfig blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     , EncodeDisk blk (Header blk)
      )
   => ChainDbHandle m blk
-  -> (Header blk -> Encoding)
-     -- ^ Needed to serialise a deserialised header that we already had in
-     -- memory.
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
   -> m (Reader m blk b)
-newReader h encodeHeader registry blockComponent = getEnv h $ \CDB{..} -> do
+newReader h registry blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
     readerKey  <- atomically $ updateTVar cdbNextReaderKey $ \r -> (succ r, r)
     varReader <- newTVarM ReaderInit
     let readerHandle = mkReaderHandle cdbImmDB varReader
     atomically $ modifyTVar cdbReaders $ Map.insert readerKey readerHandle
-    let reader = makeNewReader h encodeHeader readerKey varReader registry
-          blockComponent
+    let reader = makeNewReader h readerKey varReader registry blockComponent
     traceWith cdbTracer $ TraceReaderEvent NewReader
     return reader
   where
@@ -128,25 +132,27 @@ makeNewReader
      , HasHeader blk
      , HasHeader (Header blk)
      , GetHeader blk
+     , HasCodecConfig blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     , EncodeDisk blk (Header blk)
      )
   => ChainDbHandle m blk
-  -> (Header blk -> Encoding)
   -> ReaderKey
   -> StrictTVar m (ReaderState m blk b)
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
   -> Reader m blk b
-makeNewReader h encodeHeader readerKey varReader registry blockComponent = Reader {..}
+makeNewReader h readerKey varReader registry blockComponent = Reader {..}
   where
     readerInstruction :: m (Maybe (ChainUpdate blk b))
     readerInstruction = getReader h readerKey $
-      instructionHelper registry varReader blockComponent encodeHeader id
+      instructionHelper registry varReader blockComponent id
 
     readerInstructionBlocking :: m (ChainUpdate blk b)
     readerInstructionBlocking = fmap runIdentity $
       getReader h readerKey $
-      instructionHelper registry varReader blockComponent encodeHeader
-        (fmap Identity . blockUntilJust)
+      instructionHelper registry varReader blockComponent (fmap Identity . blockUntilJust)
 
     readerForward :: [Point blk] -> m (Maybe (Point blk))
     readerForward = getReader1 h readerKey $
@@ -208,12 +214,15 @@ instructionHelper
      , HasHeader blk
      , HasHeader (Header blk)
      , GetHeader blk
+     , HasCodecConfig blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     , EncodeDisk blk (Header blk)
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
   -> StrictTVar m (ReaderState m blk b)
   -> BlockComponent (ChainDB m blk) b
-  -> (Header blk -> Encoding)
   -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
        -> STM m (f     (ChainUpdate blk (Header blk))))
      -- ^ How to turn a transaction that may or may not result in a new
@@ -222,7 +231,7 @@ instructionHelper
      -- @Maybe@.
   -> ChainDbEnv m blk
   -> m (f (ChainUpdate blk b))
-instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CDB{..} = do
+instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     -- In one transaction: check in which state we are, if in the
     -- @ReaderInMem@ state, just call 'instructionSTM', otherwise,
     -- return the contents of the 'ReaderInImmDB' state.
@@ -276,6 +285,9 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
   where
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
+    codecConfig :: CodecConfig blk
+    codecConfig = getCodecConfig (configBlock cdbTopLevelConfig)
+
     headerUpdateToBlockComponentUpdate
       :: f (ChainUpdate blk (Header blk)) -> m (f (ChainUpdate blk b))
     headerUpdateToBlockComponentUpdate =
@@ -290,7 +302,7 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
         GetBlock      -> getBlockComponent GetBlock
         GetRawBlock   -> getBlockComponent GetRawBlock
         GetHeader     -> return $ return hdr
-        GetRawHeader  -> return $ toLazyByteString $ encodeHeader hdr
+        GetRawHeader  -> return $ toLazyByteString $ encodeDisk codecConfig hdr
         GetHash       -> return $ headerHash hdr
         GetSlot       -> return $ blockSlot hdr
         GetIsEBB      -> return $ headerToIsEBB hdr
@@ -300,7 +312,7 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
         GetHeaderSize -> return $
-          fromIntegral $ Lazy.length $ toLazyByteString $ encodeHeader hdr
+          fromIntegral $ Lazy.length $ toLazyByteString $ encodeDisk codecConfig hdr
         GetPure a     -> return a
         GetApply f bc ->
           getBlockComponentFromHeader hdr f <*>
@@ -405,6 +417,7 @@ forward
      , HasCallStack
      , HasHeader blk
      , HasHeader (Header blk)
+     , ImmDbSerialiseConstraints blk
      )
   => ResourceRegistry m
   -> StrictTVar m (ReaderState m blk b)

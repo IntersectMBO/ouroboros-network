@@ -38,6 +38,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Util.Condense
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+
 {-------------------------------------------------------------------------------
   Instantiate @ext@
 -------------------------------------------------------------------------------}
@@ -84,9 +86,7 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  mockProtocolMagicId      = const constructMockProtocolMagicId
-  mockEncodeConsensusState = const encode
-  mockDecodeConsensusState = const decode
+  mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance
   ( SimpleCrypto c
@@ -137,3 +137,9 @@ instance SimpleCrypto c => CanForge (SimplePraosRuleBlock c) where
 -------------------------------------------------------------------------------}
 
 instance Serialise SimplePraosRuleExt
+
+instance EncodeDisk (SimplePraosRuleBlock c) ()
+  -- Default instance
+
+instance DecodeDisk (SimplePraosRuleBlock c) ()
+  -- Default instance

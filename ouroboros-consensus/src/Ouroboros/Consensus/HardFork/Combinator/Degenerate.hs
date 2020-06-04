@@ -4,11 +4,13 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
@@ -31,17 +33,20 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
+import qualified Data.ByteString.Lazy as Lazy
+import           Data.Coerce
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
-import           Data.SOP (I (..))
+import           Data.SOP.BasicFunctors
 import           Data.Type.Equality
 import           Data.Typeable
 import           Data.Void
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -52,8 +57,10 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -65,7 +72,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query ()
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Node ()
-import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 -- | Degenerate hard fork with a single era
@@ -353,6 +359,249 @@ instance SingleEraBlock b => ConvertRawHash (DegenFork b) where
   hashSize    _ =          hashSize   (Proxy @(HardForkBlock '[b]))
 
 {-------------------------------------------------------------------------------
+  Serialisation instances
+
+  As discussed in the module header, for this we delegate to @b@, rather than
+  to @HardForkBlock '[b]@
+-------------------------------------------------------------------------------}
+
+-- Disk
+
+instance (SerialiseDiskConstraints b, NoHardForks b) => ImmDbSerialiseConstraints (DegenFork b)
+instance (SerialiseDiskConstraints b, NoHardForks b) => LgrDbSerialiseConstraints (DegenFork b)
+instance (SerialiseDiskConstraints b, NoHardForks b) => VolDbSerialiseConstraints (DegenFork b)
+instance (SerialiseDiskConstraints b, NoHardForks b) => SerialiseDiskConstraints  (DegenFork b)
+
+defaultEncodeDisk
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , EncodeDisk b (f b)
+     )
+  => Proxy (f b) -> CodecConfig (DegenFork b) -> x -> Encoding
+defaultEncodeDisk p (DCCfg ccfg) x =
+    encodeDisk (project ccfg) (project' p x :: f b)
+
+defaultDecodeDisk
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , DecodeDisk b (f b)
+     )
+  => Proxy (f b) -> CodecConfig (DegenFork b) -> forall s. Decoder s x
+defaultDecodeDisk _ (DCCfg ccfg) =
+    coerce . inject <$> decodeDisk @b @(f b) (project ccfg)
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => EncodeDisk (DegenFork b) (DegenFork b) where
+  encodeDisk = defaultEncodeDisk (Proxy @(I b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => DecodeDisk (DegenFork b) (Lazy.ByteString -> DegenFork b) where
+  decodeDisk = defaultDecodeDisk (Proxy @(Lazy.ByteString -> b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+       => EncodeDisk (DegenFork b) (Header (DegenFork b)) where
+  encodeDisk = defaultEncodeDisk (Proxy @(Header b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+       => DecodeDisk (DegenFork b) (Lazy.ByteString -> Header (DegenFork b)) where
+  decodeDisk = defaultDecodeDisk (Proxy @(((->) Lazy.ByteString :.: Header) b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => EncodeDisk (DegenFork b) (DegenForkConsensusState b) where
+  encodeDisk = defaultEncodeDisk (Proxy @(WrapConsensusState b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => DecodeDisk (DegenFork b) (DegenForkConsensusState b) where
+  decodeDisk = defaultDecodeDisk (Proxy @(WrapConsensusState b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => EncodeDisk (DegenFork b) (LedgerState (DegenFork b)) where
+  encodeDisk = defaultEncodeDisk (Proxy @(LedgerState b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => DecodeDisk (DegenFork b) (LedgerState (DegenFork b)) where
+  decodeDisk = defaultDecodeDisk (Proxy @(LedgerState b))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => EncodeDisk (DegenFork b) (AnnTip (DegenFork b)) where
+  encodeDisk cfg =
+        defaultEncodeDisk (Proxy @(AnnTip b)) cfg
+      . (castAnnTip :: AnnTip (DegenFork b) -> AnnTip (HardForkBlock '[b]))
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => DecodeDisk (DegenFork b) (AnnTip (DegenFork b)) where
+  decodeDisk =
+      fmap (castAnnTip :: AnnTip (HardForkBlock '[b]) -> AnnTip (DegenFork b))
+    . defaultDecodeDisk (Proxy @(AnnTip b))
+
+-- NodeToNode
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNodeConstraints (DegenFork b)
+
+defaultEncodeNodeToNode
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , SerialiseNodeToNode b (f b)
+     )
+  => Proxy (f b)
+  -> CodecConfig (DegenFork b) -> NodeToNodeVersion (DegenFork b)
+  -> x -> Encoding
+defaultEncodeNodeToNode p (DCCfg ccfg) version x =
+    encodeNodeToNode (project ccfg) version (project' p x :: f b)
+
+defaultDecodeNodeToNode
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , SerialiseNodeToNode b (f b)
+     )
+  => Proxy (f b)
+  -> CodecConfig (DegenFork b) -> NodeToNodeVersion (DegenFork b)
+  -> forall s. Decoder s x
+defaultDecodeNodeToNode _ (DCCfg ccfg) version =
+    coerce . inject <$> decodeNodeToNode @b @(f b) (project ccfg) version
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (DegenForkHeaderHash b) where
+  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(WrapHeaderHash b))
+  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(WrapHeaderHash b))
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (DegenFork b) where
+  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(I b))
+  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(I b))
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (Header (DegenFork b)) where
+  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(Header b))
+  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(Header b))
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (Serialised (DegenFork b)) where
+  encodeNodeToNode (DCCfg ccfg) version (Serialised bytes) =
+      encodeNodeToNode
+        (project ccfg)
+        version
+        (Serialised bytes :: Serialised b)
+  decodeNodeToNode (DCCfg ccfg) version =
+      (\(Serialised bytes) -> Serialised bytes) <$>
+        decodeNodeToNode @b @(Serialised b) (project ccfg) version
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (Serialised (Header (DegenFork b))) where
+  encodeNodeToNode (DCCfg ccfg) version (Serialised bytes) =
+      encodeNodeToNode
+        (project ccfg)
+        version
+        (Serialised bytes :: Serialised (Header b))
+  decodeNodeToNode (DCCfg ccfg) version =
+      (\(Serialised bytes) -> Serialised bytes) <$>
+        decodeNodeToNode @b @(Serialised (Header b)) (project ccfg) version
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (GenTx (DegenFork b)) where
+  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(GenTx b))
+  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(GenTx b))
+
+instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
+       => SerialiseNodeToNode (DegenFork b) (GenTxId (DegenFork b)) where
+  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(WrapGenTxId b))
+  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(WrapGenTxId b))
+
+-- NodeToClient
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClientConstraints (DegenFork b)
+
+defaultEncodeNodeToClient
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , SerialiseNodeToClient b (f b)
+     )
+  => Proxy (f b)
+  -> CodecConfig (DegenFork b) -> NodeToClientVersion (DegenFork b)
+  -> x -> Encoding
+defaultEncodeNodeToClient p (DCCfg ccfg) version x =
+    encodeNodeToClient (project ccfg) version (project' p x :: f b)
+
+defaultDecodeNodeToClient
+  :: forall x f b.
+     ( Coercible x (f (HardForkBlock '[b]))
+     , Isomorphic f
+     , NoHardForks b
+     , SerialiseNodeToClient b (f b)
+     )
+  => Proxy (f b)
+  -> CodecConfig (DegenFork b) -> NodeToClientVersion (DegenFork b)
+  -> forall s. Decoder s x
+defaultDecodeNodeToClient _ (DCCfg ccfg) version =
+    coerce . inject <$> decodeNodeToClient @b @(f b) (project ccfg) version
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (DegenForkHeaderHash b) where
+  encodeNodeToClient = defaultEncodeNodeToClient (Proxy @(WrapHeaderHash b))
+  decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(WrapHeaderHash b))
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (DegenFork b) where
+  encodeNodeToClient = defaultEncodeNodeToClient (Proxy @(I b))
+  decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(I b))
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (Serialised (DegenFork b)) where
+  encodeNodeToClient (DCCfg ccfg) version (Serialised bytes) =
+      encodeNodeToClient
+        (project ccfg)
+        version
+        (Serialised bytes :: Serialised b)
+  decodeNodeToClient (DCCfg ccfg) version =
+      (\(Serialised bytes) -> Serialised bytes) <$>
+        decodeNodeToClient @b @(Serialised b) (project ccfg) version
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (GenTx (DegenFork b)) where
+  encodeNodeToClient = defaultEncodeNodeToClient (Proxy @(GenTx b))
+  decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(GenTx b))
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (DegenForkApplyTxErr b) where
+  encodeNodeToClient = defaultEncodeNodeToClient (Proxy @(WrapApplyTxErr b))
+  decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(WrapApplyTxErr b))
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseNodeToClient (DegenFork b) (Some (Query (DegenFork b))) where
+  encodeNodeToClient (DCCfg ccfg) version (Some (DQry qry)) =
+      projQuery qry $ \_pf qry' ->
+        encodeNodeToClient
+          (project ccfg)
+          version
+          (Some qry')
+  decodeNodeToClient (DCCfg ccfg) version =
+      (\(Some qry) -> Some (DQry $ injQuery qry)) <$>
+        decodeNodeToClient @b @(Some (Query b)) (project ccfg) version
+
+instance (SerialiseNodeToClientConstraints b, NoHardForks b)
+       => SerialiseResult (DegenFork b) (Query (DegenFork b)) where
+  encodeResult (DCCfg ccfg) version (DQry qry) mResult =
+      projQuery qry $ \Refl qry' ->
+        case mResult of
+          Right result -> encodeResult (project ccfg) version qry' result
+          Left  err    -> absurd $ mismatchOneEra err
+  decodeResult (DCCfg ccfg) version (DQry qry) =
+      projQuery qry $ \Refl qry' ->
+        Right <$> decodeResult (project ccfg) version qry'
+
+{-------------------------------------------------------------------------------
   RunNode instance
 
   As discussed in the module header, for this we delegate to @b@, rather than
@@ -375,9 +624,9 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
 
 instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
-  nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (project hdr)
+  nodeBlockFetchSize (DHdr hdr) = nodeBlockFetchSize (project hdr)
 
-  nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
+  nodeImmDbChunkInfo cfg = nodeImmDbChunkInfo (projCfg cfg)
 
   nodeGetBinaryBlockInfo (DBlk blk) =
       nodeGetBinaryBlockInfo (project' (Proxy @(I b)) blk :: b)
@@ -390,71 +639,5 @@ instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
         (projCfg cfg)
         (project (InitChainDB.cast initDB))
 
-  nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (project' (Proxy @(I b)) blk)
-
-  -- Encoders
-
-  nodeEncodeBlock (DCCfg cfg) (DBlk blk) =
-      nodeEncodeBlock (project cfg) (project' (Proxy @(I b)) blk)
-  nodeEncodeHeader (DCCfg cfg) version (DHdr hdr) =
-      nodeEncodeHeader (project cfg) (castSerialisationVersion version) (project hdr)
-  nodeEncodeWrappedHeader (DCCfg cfg) version (Serialised hdr) =
-      nodeEncodeWrappedHeader (project cfg) (castSerialisationAcrossNetwork version) (Serialised hdr)
-  nodeEncodeGenTx (DCCfg cfg) (DTx tx) =
-      nodeEncodeGenTx (project cfg) (project tx)
-  nodeEncodeGenTxId (DCCfg cfg) (DTxId tid) =
-      nodeEncodeGenTxId (project cfg) (project' (Proxy @(WrapGenTxId b)) tid)
-  nodeEncodeHeaderHash (DCCfg cfg) hash =
-      nodeEncodeHeaderHash (project cfg) (project' (Proxy @(WrapHeaderHash b)) hash)
-  nodeEncodeLedgerState (DCCfg cfg) (DLgr lgr) =
-      nodeEncodeLedgerState (project cfg) (project lgr)
-  nodeEncodeConsensusState (DCCfg cfg) st =
-      nodeEncodeConsensusState (project cfg) (project' (Proxy @(WrapConsensusState b)) st)
-  nodeEncodeApplyTxError (DCCfg cfg) err =
-      nodeEncodeApplyTxError (project cfg) (project' (Proxy @(WrapApplyTxErr b)) err)
-  nodeEncodeAnnTip (DCCfg cfg) tip =
-      nodeEncodeAnnTip (project cfg) (project (castAnnTip tip))
-  nodeEncodeQuery (DCCfg cfg) (DQry qry) =
-      projQuery qry $ \_pf qry' -> nodeEncodeQuery (project cfg) qry'
-  nodeEncodeResult (DCCfg cfg) (DQry qry) mResult =
-      projQuery qry $ \Refl qry' ->
-        case mResult of
-          Right result -> nodeEncodeResult (project cfg) qry' result
-          Left  err    -> absurd $ mismatchOneEra err
-
-  -- Decoders
-
-  nodeDecodeBlock (DCCfg cfg) =
-      (\f -> DBlk . inject' (Proxy @(I b)) . f) <$>
-        nodeDecodeBlock (project cfg)
-  nodeDecodeHeader (DCCfg cfg) version =
-      (\f -> DHdr . inject . f) <$>
-        nodeDecodeHeader (project cfg) (castSerialisationVersion version)
-  nodeDecodeWrappedHeader (DCCfg cfg) version =
-      (\(Serialised hdr) -> Serialised hdr) <$>
-        nodeDecodeWrappedHeader (project cfg) (castSerialisationAcrossNetwork version)
-  nodeDecodeGenTx (DCCfg cfg) =
-      (DTx . inject) <$>
-        nodeDecodeGenTx (project cfg)
-  nodeDecodeGenTxId (DCCfg cfg) =
-      (DTxId . inject' (Proxy @(WrapGenTxId b))) <$>
-        nodeDecodeGenTxId (project cfg)
-  nodeDecodeHeaderHash (DCCfg cfg) =
-      inject' (Proxy @(WrapHeaderHash b)) <$>
-        nodeDecodeHeaderHash (project cfg)
-  nodeDecodeLedgerState (DCCfg cfg) =
-      (DLgr . inject) <$> nodeDecodeLedgerState (project cfg)
-  nodeDecodeConsensusState (DCCfg cfg) =
-      inject' (Proxy @(WrapConsensusState b)) <$> nodeDecodeConsensusState (project cfg)
-  nodeDecodeApplyTxError (DCCfg cfg) =
-      inject' (Proxy @(WrapApplyTxErr b)) <$>
-        nodeDecodeApplyTxError (project cfg)
-  nodeDecodeAnnTip (DCCfg cfg) =
-      (castAnnTip . inject) <$>
-        nodeDecodeAnnTip (project cfg)
-  nodeDecodeQuery (DCCfg cfg) =
-      (\(Some qry) -> Some (DQry $ injQuery qry)) <$>
-        nodeDecodeQuery (project cfg)
-  nodeDecodeResult (DCCfg cfg) (DQry qry) =
-      projQuery qry $ \Refl qry' ->
-        Right <$> nodeDecodeResult (project cfg) qry'
+  nodeCheckIntegrity cfg (DBlk blk) =
+      nodeCheckIntegrity (projCfg cfg) (project' (Proxy @(I b)) blk)

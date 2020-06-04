@@ -41,11 +41,13 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDB, ChainDbFailure (..), InvalidBlockReason)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
+                     ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
+                     VolDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | Return the last @k@ headers.
@@ -80,7 +82,13 @@ getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
 
 getTipBlock
-  :: forall m blk. (IOLike m, HasHeader blk, HasHeader (Header blk))
+  :: forall m blk.
+     ( IOLike m
+     , HasHeader blk
+     , HasHeader (Header blk)
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
   => ChainDbEnv m blk
   -> m (Maybe blk)
 getTipBlock cdb@CDB{..} = do
@@ -94,6 +102,7 @@ getTipHeader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
+     , ImmDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> m (Maybe (Header blk))
@@ -125,7 +134,12 @@ getTipPoint CDB{..} =
     (castPoint . AF.headPoint) <$> readTVar cdbChain
 
 getBlockComponent
-  :: forall m blk b. (MonadCatch m , HasHeader blk)
+  :: forall m blk b.
+     ( MonadCatch m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
   => ChainDbEnv m blk
   -> BlockComponent (ChainDB m blk) b
   -> RealPoint blk -> m (Maybe b)
@@ -177,7 +191,12 @@ getMaxSlotNo CDB{..} = do
 
 -- | Variant of 'getAnyBlockComponent' instantiated with 'GetBlock'.
 getAnyKnownBlock
-  :: forall m blk. (MonadCatch m, HasHeader blk)
+  :: forall m blk.
+     ( MonadCatch m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
   => ImmDB m blk
   -> VolDB m blk
   -> RealPoint blk
@@ -188,7 +207,12 @@ getAnyKnownBlock immDB volDB = join . getAnyKnownBlockComponent immDB volDB GetB
 --
 -- If the block does not exist, this indicates disk failure.
 getAnyKnownBlockComponent
-  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  :: forall m blk b.
+     ( MonadCatch m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
   => ImmDB m blk
   -> VolDB m blk
   -> BlockComponent (ChainDB m blk) b
@@ -205,7 +229,12 @@ getAnyKnownBlockComponent immDB volDB blockComponent p = do
 -- Returns 'Nothing' if the 'Point' is unknown.
 -- Throws 'NoGenesisBlockException' if the 'Point' refers to the genesis block.
 getAnyBlockComponent
-  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  :: forall m blk b.
+     ( MonadCatch m
+     , HasHeader blk
+     , ImmDbSerialiseConstraints blk
+     , VolDbSerialiseConstraints blk
+     )
   => ImmDB m blk
   -> VolDB m blk
   -> BlockComponent (ChainDB m blk) b

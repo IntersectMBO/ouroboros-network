@@ -9,10 +9,14 @@ module Ouroboros.Consensus.Byron.Ledger.Serialisation (
     byronBlockEncodingOverhead
   , encodeByronBlock
   , decodeByronBlock
-  , encodeByronHeader
-  , decodeByronHeader
-  , encodeWrappedByronHeader
-  , decodeWrappedByronHeader
+  , encodeByronHeaderWithBlockSize
+  , encodeByronHeaderWithoutBlockSize
+  , decodeByronHeaderWithBlockSize
+  , decodeByronHeaderWithoutBlockSize
+  , encodeWrappedByronHeaderWithBlockSize
+  , encodeWrappedByronHeaderWithoutBlockSize
+  , decodeWrappedByronHeaderWithBlockSize
+  , decodeWrappedByronHeaderWithoutBlockSize
   , encodeByronHeaderHash
   , decodeByronHeaderHash
     -- * Support for on-disk format
@@ -48,12 +52,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 
 {-------------------------------------------------------------------------------
@@ -166,87 +168,84 @@ decodeByronBoundaryBlock epochSlots =
                . CC.ABOBBoundary)
     <$> CC.fromCBORABoundaryBlock
 
--- | Encode a header
-encodeByronHeader :: SerialisationVersion ByronBlock
-                  -> Header ByronBlock -> Encoding
-encodeByronHeader = \case
-    SerialisedToDisk ->
-      -- Sending with size is compatible with 'byronAddHeaderEnvelope'
-      -- (Moreover, version 1 is lossy)
-      encWithSize
-    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
-      encWithoutSize
-    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion2) ->
-      encWithSize
-    SerialisedAcrossNetwork (SerialisedNodeToClient _) ->
-      -- See 'Ouroboros.Consensus.Network.NodeToClient.defaultCodecs'
-      -- for the encoders/decoders used for node-to-client communication
-      error "encodeByronHeader: not used"
-  where
-    encWithoutSize, encWithSize :: Header ByronBlock -> Encoding
-    encWithoutSize = encodeUnsizedHeader . fst . splitSizeHint
-    encWithSize    = uncurry (flip encodeSizedHeader) . splitSizeHint
-
--- | Inverse of 'encodeByronHeader'
-decodeByronHeader :: CC.EpochSlots
-                  -> SerialisationVersion ByronBlock
-                  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
-decodeByronHeader epochSlots = \case
-    SerialisedToDisk ->
-      -- Sending with size is compatible with 'byronAddHeaderEnvelope'
-      -- (Moreover, version 1 is lossy)
-      decWithSize
-    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
-      decWithoutSize
-    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion2) ->
-      decWithSize
-    SerialisedAcrossNetwork (SerialisedNodeToClient _) ->
-      error "decodeByronHeader: not used"
-  where
-    decWithoutSize, decWithSize :: Decoder s (Lazy.ByteString -> Header ByronBlock)
-    decWithoutSize = (flip joinSizeHint fakeByronBlockSizeHint .) <$>
-                       decodeUnsizedHeader epochSlots
-    decWithSize    = const . uncurry (flip joinSizeHint) <$>
-                       decodeSizedHeader epochSlots
-
--- | Encode wrapped header
+-- | Encode a header with the block size.
 --
--- When we get a header from the chain DB, we add the missing envelope
--- ('byronAddHeaderEnvelope'). This envelope is valid for version 2.
--- If we are using version 1 on the wire, we must alter this envelope.
--- If we are using version 2, there is nothing to do.
+-- Headers from disk, version 2 of the node-to-node protocols, and all
+-- versions of the node-to-client protocols will include the size of the
+-- block. Only version 1 of the node-to-node protocols doesn't include the
+-- block size.
 --
--- For either version we add a CBOR-in-CBOR wrapper.
-encodeWrappedByronHeader :: SerialisationAcrossNetwork ByronBlock
-                         -> Serialised (Header ByronBlock) -> Encoding
-encodeWrappedByronHeader = \case
-    SerialisedNodeToNode ByronNodeToNodeVersion1 ->
-      encWithoutSize
-    SerialisedNodeToNode ByronNodeToNodeVersion2 ->
-      encWithSize
-    SerialisedNodeToClient _ ->
-      error "encodeWrappedByronHeader: not used"
-  where
-    encWithoutSize, encWithSize :: Serialised (Header ByronBlock) -> Encoding
-    encWithoutSize = encode . dropEncodedSize
-    encWithSize    = encode
+-- Note: after extracting the header from the binary block in the ChainDB, we
+-- add the size hint using 'byronAddHeaderEnvelope'.
+encodeByronHeaderWithBlockSize :: Header ByronBlock -> Encoding
+encodeByronHeaderWithBlockSize =
+    uncurry (flip encodeSizedHeader) . splitSizeHint
 
--- | Decode wrapped header
+-- | Encode a header without the block size.
 --
--- See 'encodeWrappedByronHeader' for details.
-decodeWrappedByronHeader :: SerialisationAcrossNetwork ByronBlock
-                         -> Decoder s (Serialised (Header ByronBlock))
-decodeWrappedByronHeader = \case
-    SerialisedNodeToNode ByronNodeToNodeVersion1 ->
-      decWithoutSize
-    SerialisedNodeToNode ByronNodeToNodeVersion2 ->
-      decWithSize
-    SerialisedNodeToClient _ ->
-      error "decodeWrappedByronHeader: not used"
-  where
-    decWithoutSize, decWithSize :: Decoder s (Serialised (Header ByronBlock))
-    decWithoutSize = fakeEncodedSize <$> decode
-    decWithSize    = decode
+-- See 'encodeByronHeaderWithBlockSize' for more info. We drop the block size
+-- from the encoding.
+encodeByronHeaderWithoutBlockSize :: Header ByronBlock -> Encoding
+encodeByronHeaderWithoutBlockSize =
+    encodeUnsizedHeader . fst . splitSizeHint
+
+-- | Inverse of 'encodeByronHeaderWithBlockSize'
+decodeByronHeaderWithBlockSize
+  :: CC.EpochSlots
+  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
+decodeByronHeaderWithBlockSize epochSlots =
+    const . uncurry (flip joinSizeHint) <$> decodeSizedHeader epochSlots
+
+-- | Inverse of 'encodeByronHeaderWithoutBlockSize'
+decodeByronHeaderWithoutBlockSize
+  :: CC.EpochSlots
+  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
+decodeByronHeaderWithoutBlockSize epochSlots =
+    (flip joinSizeHint fakeByronBlockSizeHint .) <$> decodeUnsizedHeader epochSlots
+
+-- | Encode wrapped header with the block size.
+--
+-- Wrapped variant of 'encodeByronHeaderWithBlockSize'.
+--
+-- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
+-- en/decoder, the non-wrapped ones will have to be wrapped using
+-- @(un)wrapCBORinCBOR@.
+encodeWrappedByronHeaderWithBlockSize
+  :: Serialised (Header ByronBlock) -> Encoding
+encodeWrappedByronHeaderWithBlockSize = encode
+
+-- | Encode wrapped header without the block size.
+--
+-- Wrapped variant of 'encodeByronHeaderWithoutBlockSize'.
+--
+-- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
+-- en/decoder, the non-wrapped ones will have to be wrapped using
+-- @(un)wrapCBORinCBOR@.
+encodeWrappedByronHeaderWithoutBlockSize
+  :: Serialised (Header ByronBlock) -> Encoding
+encodeWrappedByronHeaderWithoutBlockSize = encode . dropEncodedSize
+
+-- | Decode wrapped header with the block size
+--
+-- Wrapped variant of 'decodeByronHeaderWithoutBlockSize'
+--
+-- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
+-- en/decoder, the non-wrapped ones will have to be wrapped using
+-- @(un)wrapCBORinCBOR@.
+decodeWrappedByronHeaderWithBlockSize
+  :: Decoder s (Serialised (Header ByronBlock))
+decodeWrappedByronHeaderWithBlockSize = decode
+
+-- | Decode wrapped header with the block size
+--
+-- Wrapped variant of 'decodeByronHeaderWithoutBlockSize'
+--
+-- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
+-- en/decoder, the non-wrapped ones will have to be wrapped using
+-- @(un)wrapCBORinCBOR@.
+decodeWrappedByronHeaderWithoutBlockSize
+  :: Decoder s (Serialised (Header ByronBlock))
+decodeWrappedByronHeaderWithoutBlockSize = fakeEncodedSize <$> decode
 
 -- | When given the raw header bytes extracted from the block, i.e., the
 -- header annotation of 'CC.AHeader' or 'CC.ABoundaryHdr', we still need to

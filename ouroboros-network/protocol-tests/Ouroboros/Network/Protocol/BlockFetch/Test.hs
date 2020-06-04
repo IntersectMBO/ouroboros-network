@@ -332,7 +332,7 @@ codecSerialised :: MonadST m
                 => Codec (BlockFetch (Serialised Block))
                          S.DeserialiseFailure
                          m ByteString
-codecSerialised = codecBlockFetchSerialised S.encode S.decode
+codecSerialised = codecBlockFetchSerialised S.encode S.decode S.encode S.decode
 
 genBlockFetch :: Gen block
               -> Gen (ChainRange block)

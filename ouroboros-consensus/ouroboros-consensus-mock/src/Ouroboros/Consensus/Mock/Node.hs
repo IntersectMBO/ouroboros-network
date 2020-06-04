@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Mock.Node (
     CodecConfig (..)
   ) where
 
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 
 import           Cardano.Slotting.Slot
@@ -18,11 +18,10 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.HeaderValidation (defaultDecodeAnnTip,
-                     defaultEncodeAnnTip)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Mock.Node.Serialisation ()
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 
@@ -50,29 +49,3 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeCheckIntegrity        = \_ _ -> True
   nodeGetBinaryBlockInfo    = simpleBlockBinaryBlockInfo
-
-  nodeEncodeBlock           = \_   -> encode
-  nodeEncodeHeader          = \_ _ -> encode
-  nodeEncodeWrappedHeader   = \_ _ -> encode
-  nodeEncodeGenTx           = \_   -> encode
-  nodeEncodeGenTxId         = \_   -> encode
-  nodeEncodeHeaderHash      = \_   -> encode
-  nodeEncodeLedgerState     = \_   -> encode
-  nodeEncodeConsensusState  = mockEncodeConsensusState
-  nodeEncodeApplyTxError    = \_   -> encode
-  nodeEncodeAnnTip          = \_   -> defaultEncodeAnnTip encode
-  nodeEncodeQuery           = \_   -> \case {}
-  nodeEncodeResult          = \_   -> \case {}
-
-  nodeDecodeBlock           = \_   -> (const <$> decode)
-  nodeDecodeHeader          = \_ _ -> (const <$> decode)
-  nodeDecodeWrappedHeader   = \_ _ -> decode
-  nodeDecodeGenTx           = \_   -> decode
-  nodeDecodeGenTxId         = \_   -> decode
-  nodeDecodeHeaderHash      = \_   -> decode
-  nodeDecodeLedgerState     = \_   -> decode
-  nodeDecodeConsensusState  = mockDecodeConsensusState
-  nodeDecodeApplyTxError    = \_   -> decode
-  nodeDecodeAnnTip          = \_   -> defaultDecodeAnnTip decode
-  nodeDecodeQuery           = \_   -> error "Mock.nodeDecodeQuery"
-  nodeDecodeResult          = \_   -> \case {}
