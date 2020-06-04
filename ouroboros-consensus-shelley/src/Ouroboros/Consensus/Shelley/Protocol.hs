@@ -212,10 +212,15 @@ instance TPraosCrypto c => NoUnexpectedThunks (TPraosProof c)
 -- | Expresses that, whilst we believe ourselves to be a leader for this slot,
 -- we are nonetheless unable to forge a block.
 data TPraosCannotLead c =
-  -- | Our operational certificate is not valid for the current KES period. The
-  --   given parameters are the current KES period, the minimum and maximum KES
-  --   periods for which this operational certificate is valid.
-  TPraosCannotLeadInvalidOcert KES.Period KES.Period KES.Period
+    -- | Our operational certificate is not valid for the current KES period. The
+    --   given parameters are the current KES period, the minimum and maximum KES
+    --   periods for which this operational certificate is valid.
+    TPraosCannotLeadInvalidOcert KES.Period KES.Period KES.Period
+    -- | We are a genesis delegate, but our VRF key does not match the
+    -- registered key for that delegate.
+  | TPraosCannotLeadWrongVRF
+      (SL.Hash c (VerKeyVRF (VRF c)))
+      (SL.Hash c (VerKeyVRF (VRF c)))
   deriving (Generic)
 
 deriving instance (TPraosCrypto c) => Show (TPraosCannotLead c)
@@ -294,23 +299,28 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
        -- The given genesis key has authority to produce a block in this
         -- slot. Check whether we're its delegate.
         Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-            Just (dlgHash, _)
+            Just (dlgHash, genDlgVRFHash)
               | SL.coerceKeyRole dlgHash == vkhCold
               -> case hasValidOCert icn of
                 Right () ->
-                  IsLeader TPraosProof {
-                      tpraosEta        = coerce rho
-                      -- Note that this leader value is not checked for slots in
-                      -- the overlay schedule, so we could set it to whatever we
-                      -- want. We evaluate it as normal for simplicity's sake.
-                    , tpraosLeader     = coerce y
-                    , tpraosIsCoreNode = icn
-                    }
+                  if genDlgVRFHash == coreNodeVRFHash
+                    then
+                      IsLeader TPraosProof {
+                          tpraosEta        = coerce rho
+                          -- Note that this leader value is not checked for slots in
+                          -- the overlay schedule, so we could set it to whatever we
+                          -- want. We evaluate it as normal for simplicity's sake.
+                        , tpraosLeader     = coerce y
+                        , tpraosIsCoreNode = icn
+                        }
+                    else
+                      CannotLead $ TPraosCannotLeadWrongVRF genDlgVRFHash coreNodeVRFHash
                 Left (c, mi, ma) ->
                   CannotLead $ TPraosCannotLeadInvalidOcert c mi ma
             _ -> NotLeader
           where
             SL.GenDelegs dlgMap = SL.lvGenDelegs lv
+            coreNodeVRFHash = SL.hashVerKeyVRF $ deriveVerKeyVRF tpraosIsCoreNodeSignKeyVRF
     where
       TPraosIsCoreNode {
           tpraosIsCoreNodeColdVerKey
