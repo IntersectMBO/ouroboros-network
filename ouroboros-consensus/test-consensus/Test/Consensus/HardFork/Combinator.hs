@@ -170,7 +170,6 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , pgaFixedSchedule      = Just leaderSchedule
         , pgaSecurityParam      = k
         , pgaTestConfig         = testConfig
-        , pgaCustomLabelling    = const id
         }
 
     testConfig :: TestConfig

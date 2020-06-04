@@ -59,7 +59,6 @@ prop_simple_real_tpraos_convergence k d
       , pgaFixedSchedule      = Nothing
       , pgaSecurityParam      = k
       , pgaTestConfig         = testConfig
-      , pgaCustomLabelling    = const id
       }
       testOutput
   where
