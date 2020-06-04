@@ -86,7 +86,11 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgMaxMajorPV            :: !Natural
     , sgMaxLovelaceSupply     :: !Word64
     , sgProtocolParams        :: !SL.PParams
-    , sgGenDelegs             :: !(Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c))
+    , sgGenDelegs
+        :: !(Map
+              (SL.KeyHash 'SL.Genesis c)
+              (SL.KeyHash 'SL.GenesisDelegate c, SL.Hash c (SL.VerKeyVRF c))
+            )
     , sgInitialFunds          :: !(Map (SL.Addr c) SL.Coin)
     , sgStaking               :: !(ShelleyGenesisStaking c)
     }

@@ -200,12 +200,14 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
       , SL._maxBHSize = 1000 -- TODO
       }
 
-    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c)
+    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c)  (SL.KeyHash 'SL.GenesisDelegate c, SL.Hash c (SL.VerKeyVRF c))
     coreNodesToGenesisMapping  = Map.fromList
       [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
-        , SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+        , ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+          , SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
+          )
         )
-      | CoreNode { cnGenesisKey, cnDelegateKey } <- coreNodes
+      | CoreNode { cnGenesisKey, cnDelegateKey, cnVRF } <- coreNodes
       ]
 
     initialFunds :: Map (SL.Addr c) SL.Coin

@@ -13,6 +13,7 @@ module Test.Consensus.Shelley.Generators (
   , genHash
   ) where
 
+import           Data.Coerce (coerce)
 import           Data.IP (IPv4, IPv6, toIPv4, toIPv6)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
@@ -24,6 +25,7 @@ import           Data.Word (Word8)
 import           Numeric.Natural (Natural)
 
 import           Cardano.Crypto.DSIGN.Mock (VerKeyDSIGN (..))
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      Point, SlotNo (..), mkSerialised)
@@ -271,6 +273,12 @@ instance Arbitrary Natural where
   Generators for cardano-ledger-specs
 -------------------------------------------------------------------------------}
 
+instance Arbitrary SL.MIRPot where
+  arbitrary = oneof
+    [ pure SL.ReservesMIR
+    , pure SL.TreasuryMIR
+    ]
+
 instance Crypto c => Arbitrary (SL.StakeCreds c) where
   arbitrary = SL.StakeCreds <$> arbitrary
 
@@ -289,6 +297,10 @@ instance Arbitrary SL.Coin where
 
 -- Most generators below don't care about correctness, they just generate
 -- random values to exercise the roundtrip generators
+
+instance (HashAlgorithm h)
+  => Arbitrary (Hash h a) where
+  arbitrary = coerce $ SL.hash @h <$> arbitrary @Int
 
 instance Crypto c => Arbitrary (SL.KeyHash a c) where
   arbitrary = SL.KeyHash <$> genHash (Proxy @c)

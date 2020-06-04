@@ -97,10 +97,7 @@ genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
         ledgerSlotNo   = tickedSlotNo
       , ledgerIx       = 0 -- TODO Ix
       , ledgerPp       = SL.esPp epochState
-      , ledgerReserves =
-            SL._reserves
-          . SL.esAccountState
-          $ epochState
+      , ledgerAccount  = SL.esAccountState epochState
       }
 
     utxoSt :: CSL.UTxOState
