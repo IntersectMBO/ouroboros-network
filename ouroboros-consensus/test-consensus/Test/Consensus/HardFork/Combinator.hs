@@ -20,6 +20,7 @@ import qualified Data.Map as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Type.Equality
 import           Data.Void
+import           Data.Word
 
 import           Cardano.Slotting.Slot
 
@@ -66,6 +67,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
@@ -82,59 +84,81 @@ tests = testGroup "HardForkCombinator" [
     ]
 
 data TestSetup = TestSetup {
-      testSetupSeed :: Seed
+      -- TODO: Vary epoch size across the fork
+      testSetupEpochSize  :: EpochSize
+      -- ^ INVARIANT: @> 0@
+    , testSetupK          :: SecurityParam
+    , testSetupSeed       :: Seed
+      -- TODO: Vary slot length across the fork
+    , testSetupSlotLength :: SlotLength
+    , testSetupTxSlot     :: SlotNo
     }
   deriving (Show)
 
 instance Arbitrary TestSetup where
   arbitrary = do
-      testSetupSeed <- arbitrary
+      testSetupEpochSize <- EpochSize     <$> choose (1, 10)
+      testSetupK         <- SecurityParam <$> choose (2, 10)
+      -- TODO why does k=1 cause the nodes to only forge in the first epoch?
+      testSetupTxSlot    <- SlotNo        <$> choose (0, 9)
+
+      testSetupSeed       <- arbitrary
+      testSetupSlotLength <- arbitrary
       return TestSetup{..}
 
+-- | The number of epochs in the A era
+testSetupEraSizeA :: TestSetup -> Word64
+testSetupEraSizeA TestSetup{..} =
+    -- This function, as a specification, intentionally independently
+    -- reimplements the interpretation of the 'InitiateAtoB' transaction by the
+    -- A ledger.
+    succ lastEpochA
+  where
+    lastEpochA = lastSlotA `div` unEpochSize testSetupEpochSize
+    lastSlotA  =
+        unSlotNo testSetupTxSlot +
+        stabilityWindowA testSetupK +
+        safeFromTipA testSetupK
+
+-- | Minimum number of slots needed to include exactly one epoch of the B era
+testSetupNumSlots :: TestSetup -> NumSlots
+testSetupNumSlots testSetup@TestSetup{..} =
+    -- this test doesn't need more than one B epoch
+    NumSlots $ eraSizeA * epoSizeA + epoSizeB
+  where
+    eraSizeA           = testSetupEraSizeA testSetup
+    EpochSize epoSizeA = testSetupEpochSize
+    EpochSize epoSizeB = testSetupEpochSize
+
 prop_simple_hfc_convergence :: TestSetup -> Property
-prop_simple_hfc_convergence TestSetup{..} = once $
-    prop_general args $
-      runTestNetwork testConfig globalEpochSize testConfigBlock
+prop_simple_hfc_convergence testSetup@TestSetup{..} =
+    counterexample (show testConfig) $
+    tabulate "size of era A" [show (testSetupEraSizeA testSetup)] $
+    prop_general args testOutput .&&.
+    prop_allExpectedBlocks
   where
     k :: SecurityParam
-    k = SecurityParam 2
-
-    -- TODO: Tests still want a single epoch size for now
-    globalEpochSize :: EpochSize
-    globalEpochSize = 6
-
-    -- TODO: Tests still want a single unique slot length
-    globalSlotLength :: SlotLength
-    globalSlotLength = slotLengthFromSec 1
+    k = testSetupK
 
     eraParamsA, eraParamsB :: EraParams
     eraParamsA = EraParams {
-                     eraEpochSize  = globalEpochSize
-                   , eraSlotLength = globalSlotLength
-                   , eraSafeZone   = defaultSafeZone 2
+                     eraEpochSize  = testSetupEpochSize
+                   , eraSlotLength = testSetupSlotLength
+                   , eraSafeZone   = defaultSafeZone (safeFromTipA k)
                    }
     eraParamsB = EraParams {
-                     eraEpochSize  = globalEpochSize
-                   , eraSlotLength = globalSlotLength
-                   , eraSafeZone   = defaultSafeZone 2
+                     eraEpochSize  = testSetupEpochSize
+                   , eraSlotLength = testSetupSlotLength
+                   , eraSafeZone   = safeZoneB k
                    }
 
     shape :: History.Shape '[BlockA, BlockB]
     shape = History.Shape $ exactlyTwo eraParamsA eraParamsB
 
     leaderSchedule :: LeaderSchedule
-    leaderSchedule = LeaderSchedule $ Map.fromList [
-          (SlotNo 0, [CoreNodeId 0])
-        , (SlotNo 1, [CoreNodeId 1])
-        , (SlotNo 2, [CoreNodeId 0])
-        , (SlotNo 3, [CoreNodeId 1])
-        , (SlotNo 4, [CoreNodeId 0])
-        , (SlotNo 5, [CoreNodeId 1])
-        , (SlotNo 6, [CoreNodeId 0])
-        , (SlotNo 7, [CoreNodeId 1])
-        , (SlotNo 8, [CoreNodeId 0])
-        , (SlotNo 9, [CoreNodeId 1])
-        ]
+    leaderSchedule = roundRobinLeaderSchedule numCoreNodes numSlots
+      where
+        TestConfig{..} = testConfig
 
     args :: PropGeneralArgs TestBlock
     args = PropGeneralArgs {
@@ -146,32 +170,17 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         , pgaFixedSchedule      = Just leaderSchedule
         , pgaSecurityParam      = k
         , pgaTestConfig         = testConfig
-        , pgaCustomLabelling    = customLabelling
+        , pgaCustomLabelling    = const id
         }
-
-    customLabelling :: TestOutput TestBlock -> Property -> Property
-    customLabelling TestOutput{..} =
-          tabulate "length A" (map (show . chainLen isA) $ Map.elems testOutputNodes)
-        . tabulate "length B" (map (show . chainLen isB) $ Map.elems testOutputNodes)
-      where
-        isA, isB :: TestBlock -> Bool
-        isA (HardForkBlock (OneEraBlock blk)) = index_NS blk == 0
-        isB (HardForkBlock (OneEraBlock blk)) = index_NS blk == 1
-
-        chainLen ::  (TestBlock -> Bool) -> NodeOutput TestBlock -> Int
-        chainLen p NodeOutput{..} =
-              length
-            . filter p
-            $ Mock.chainToList nodeOutputFinalChain
 
     testConfig :: TestConfig
     testConfig = TestConfig {
           numCoreNodes = ncn
-        , numSlots     = NumSlots 10
+        , numSlots     = testSetupNumSlots testSetup
         , nodeJoinPlan = trivialNodeJoinPlan ncn
         , nodeRestarts = noRestarts
         , nodeTopology = meshNodeTopology ncn
-        , slotLength   = globalSlotLength
+        , slotLength   = testSetupSlotLength
         , initSeed     = testSetupSeed
         }
       where
@@ -258,13 +267,12 @@ prop_simple_hfc_convergence TestSetup{..} = once $
         , cfgB_leadInSlots = leaderScheduleFor nid leaderSchedule
         }
 
-    -- TODO: We should vary at which point we submit the transition tx.
     ledgerConfigA :: CoreNodeId -> PartialLedgerConfig BlockA
     ledgerConfigA _nid = LCfgA {
           lcfgA_k           = k
         , lcfgA_systemStart = SystemStart dawnOfTime -- required for RunNode
         , lcfgA_forgeTxs    = Map.fromList [
-              (SlotNo 2, [TxA (TxIdA 0) InitiateAtoB])
+              (testSetupTxSlot, [TxA (TxIdA 0) InitiateAtoB])
             ]
         }
 
@@ -276,6 +284,44 @@ prop_simple_hfc_convergence TestSetup{..} = once $
 
     blockConfigB :: CoreNodeId -> BlockConfig BlockB
     blockConfigB _ = BCfgB
+
+    testOutput :: TestOutput TestBlock
+    testOutput = runTestNetwork testConfig testSetupEpochSize testConfigBlock
+
+    prop_allExpectedBlocks :: Property
+    prop_allExpectedBlocks =
+        counterexample
+            ( "some final chain does not have " <>
+              show a <> " blocks from A and " <>
+              show b <> " blocks from B"
+            ) $
+        counterexample (show $ Map.toList counts) $
+        property $ all (== (a, b)) counts
+      where
+        TestConfig{..} = testConfig
+        NumSlots t     = numSlots
+
+        -- we expect one epoch from B and the rest from A
+        b = unEpochSize testSetupEpochSize
+        a = t - b
+
+    -- counts of A blocks and of B blocks for each final chain
+    counts :: Map.Map NodeId (Word64, Word64)
+    counts =
+        (\c -> (chainLen isA c, chainLen isB c)) <$> testOutputNodes
+      where
+        TestOutput{..} = testOutput
+
+        isA, isB :: TestBlock -> Bool
+        isA (HardForkBlock (OneEraBlock blk)) = index_NS blk == 0
+        isB (HardForkBlock (OneEraBlock blk)) = index_NS blk == 1
+
+        chainLen :: (a -> Bool) -> NodeOutput a -> Word64
+        chainLen p NodeOutput{..} =
+              fromIntegral
+            . length
+            . filter p
+            $ Mock.chainToList nodeOutputFinalChain
 
 -- We ignore the mempool for these tests
 instance TxGen TestBlock where
