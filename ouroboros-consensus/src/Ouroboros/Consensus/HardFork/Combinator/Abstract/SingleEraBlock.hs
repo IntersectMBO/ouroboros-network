@@ -30,6 +30,7 @@ class ( LedgerSupportsProtocol blk
       , HasPartialConsensusConfig (BlockProtocol blk)
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
+      , HasCodecConfig blk
         -- Instances required to support testing
       , Show blk
       , Show (Header blk)
