@@ -323,11 +323,6 @@ data PropGeneralArgs blk = PropGeneralArgs
     --
   , pgaSecurityParam      :: SecurityParam
   , pgaTestConfig         :: TestConfig
-
-    -- | Option to add custom labelling to a property
-    --
-    -- Can use @const id@ if no custom labelling is required.
-  , pgaCustomLabelling    :: TestOutput blk -> Property -> Property
   }
 
 -- | Expect no 'CannotLead's
@@ -446,7 +441,6 @@ prop_general pga testOutput =
     counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
     counterexample ("maxForkLength: " <> show maxForkLength) $
-    pgaCustomLabelling pga testOutput $
     tabulate "consensus expected" [show isConsensusExpected] $
     tabulate "k" [show (maxRollbacks k)] $
     tabulate ("shortestLength (k = " <> show (maxRollbacks k) <> ")")

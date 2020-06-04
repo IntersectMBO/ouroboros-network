@@ -90,7 +90,6 @@ prop_simple_pbft_convergence
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
       , pgaSecurityParam      = k
       , pgaTestConfig         = testConfig
-      , pgaCustomLabelling    = const id
       }
       testOutput
   where

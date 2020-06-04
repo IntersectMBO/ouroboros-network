@@ -101,7 +101,6 @@ prop_simple_leader_schedule_convergence
       , pgaFixedSchedule      = Just schedule
       , pgaSecurityParam      = praosSecurityParam
       , pgaTestConfig         = testConfig
-      , pgaCustomLabelling    = const id
       }
       testOutput
   where
