@@ -9,13 +9,14 @@
 module Test.ThreadNet.RealPBFT (
     tests
     -- * To support the DualPBFT tests
+  , TestSetup (..)
   , noEBBs
   , realPBftParams
-  , genRealPBFTNodeJoinPlan
-  , shrinkTestConfigSlotsOnly
+  , genTestSetup
   , expectedCannotLead
   ) where
 
+import           Control.Monad (join)
 import           Control.Monad.Except (runExceptT)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity
@@ -71,6 +72,7 @@ import           Test.ThreadNet.General
 import           Test.ThreadNet.Network (NodeOutput (..),
                      TestNodeInitialization (..))
 import qualified Test.ThreadNet.Ref.PBFT as Ref
+import           Test.ThreadNet.Rekeying
 import           Test.ThreadNet.TxGen.Byron ()
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -78,29 +80,64 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Shrink (andId, dropId)
 import qualified Test.Util.Stream as Stream
 import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
 import           Test.ThreadNet.RealPBFT.TrackUpdates
 
--- | Generate k values as small as this module is known to handle.
---
--- TODO Issue #1566 will bring this to k>=0, at which point we may be able to
--- relocate this to a more general module.
---
-newtype K1 = K1 SecurityParam
+data TestSetup = TestSetup
+  { setupEBBs         :: ProduceEBBs
+  , setupK            :: SecurityParam
+  , setupTestConfig   :: TestConfig
+  , setupNodeJoinPlan :: NodeJoinPlan
+  , setupNodeRestarts :: NodeRestarts
+  , setupSlotLength   :: SlotLength
+  }
   deriving (Show)
 
-instance Arbitrary K1 where
-  arbitrary                     = (K1 . SecurityParam) <$> elements [1 .. 10]
-  shrink (K1 (SecurityParam k)) = (K1 . SecurityParam) <$> [ 1 .. k - 1 ]
+instance Arbitrary TestSetup where
+  arbitrary = do
+     -- TODO Issue #1566 will bring this to k>=0
+      k <- SecurityParam <$> choose (1, 10)
+
+      join $ genTestSetup k <$> arbitrary <*> arbitrary <*> arbitrary
+
+  -- TODO shrink
+
+-- | An entrypoint used by "Test.ThreadNet.DualPBFT"
+--
+-- See the @'Arbitrary' 'Test.ThreadNet.DualPBFT.SetupDualPBft'@ instance.
+genTestSetup :: SecurityParam -> NumCoreNodes -> NumSlots -> SlotLength -> Gen TestSetup
+genTestSetup k numCoreNodes numSlots setupSlotLength = do
+    setupEBBs    <- arbitrary
+    initSeed     <- arbitrary
+    nodeTopology <- genNodeTopology numCoreNodes
+
+    let testConfig = TestConfig
+          { initSeed
+          , nodeTopology
+          , numCoreNodes
+          , numSlots
+          }
+    let params = realPBftParams k numCoreNodes
+
+    nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
+    nodeRestarts <- genNodeRestarts nodeJoinPlan numSlots >>=
+                    genNodeRekeys params nodeJoinPlan nodeTopology numSlots
+
+    pure $ TestSetup
+      setupEBBs
+      k
+      testConfig
+      nodeJoinPlan
+      nodeRestarts
+      setupSlotLength
 
 tests :: TestTree
 tests = testGroup "RealPBFT" $
     [ testProperty "trivial join plan is considered deterministic"
-        $ \(K1 k) numCoreNodes ->
+        $ \TestSetup{setupK = k, setupTestConfig = TestConfig{numCoreNodes}} ->
           prop_deterministicPlan $ realPBftParams k numCoreNodes
     , localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
       testProperty "check setup"
@@ -116,14 +153,18 @@ tests = testGroup "RealPBFT" $
       testProperty "addressed by InvalidRollForward exception (PR #773)" $
           once $
           let ncn = NumCoreNodes 3 in
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 24
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+              , nodeTopology = meshNodeTopology ncn
+              , numCoreNodes = ncn
+              , numSlots     = NumSlots 24
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #1" $
           once $
@@ -134,28 +175,36 @@ tests = testGroup "RealPBFT" $
           -- \"rewind\" to slot 0 (even though it's already there). That rewind
           -- fails if EBBs don't affect the PBFT chain state, since its chain
           -- state is empty.
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 2
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 2
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #2" $
           once $
           let ncn = NumCoreNodes 2 in
           -- Same as above, except node 0 gets to forge an actual block before
           -- node 1 tells it to rewind to the EBB.
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 4
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 4
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "one testOutputTipBlockNos update per node per slot" $
           once $
@@ -165,14 +214,18 @@ tests = testGroup "RealPBFT" $
           -- the restart, which caused the 'testOutputTipBlockNos' field to
           -- contain data from the middle of the slot (after the node lead)
           -- instead of only from the onset of the slot.
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 5) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 7
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
-            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 5
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 7
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
+            , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "BlockFetch live lock due to an EBB at the ImmutableDB tip, Issue #1435" $
           once $
@@ -183,14 +236,18 @@ tests = testGroup "RealPBFT" $
           -- ImmutableDB, we end up looking in the VolatileDB and incorrectly
           -- return ForkTooOld. The client keeps on requesting this block
           -- range, resulting in a live lock.
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 5) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 58
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 5
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 58
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "ImmutableDB is leaking file handles, #1543" $
           -- The failure was: c0 leaks one ImmDB file handle (for path
@@ -200,11 +257,17 @@ tests = testGroup "RealPBFT" $
           -- seems to matter!
           once $
           let ncn5 = NumCoreNodes 5 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 2) TestConfig
-            { numCoreNodes = ncn5
-            -- Still fails if I increase numSlots.
-            , numSlots     = NumSlots 54
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn5
+              -- Still fails if I increase numSlots.
+              , numSlots     = NumSlots 54
+              , nodeTopology = meshNodeTopology ncn5
+              , initSeed     = Seed {getSeed = (15062108706768000853,6202101653126031470,15211681930891010376,1718914402782239589,12639712845887620121)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0, SlotNo {unSlotNo = 0})
               , (CoreNodeId 1, SlotNo {unSlotNo = 0})
               , (CoreNodeId 2, SlotNo {unSlotNo = 0})
@@ -212,14 +275,12 @@ tests = testGroup "RealPBFT" $
               , (CoreNodeId 4, SlotNo {unSlotNo = 53})
               ]
               -- Passes if I drop either of these restarts.
-            , nodeRestarts = NodeRestarts $ Map.fromList
+            , setupNodeRestarts = NodeRestarts $ Map.fromList
               [ (SlotNo {unSlotNo = 50},Map.fromList [(CoreNodeId 0,NodeRestart)])
               , (SlotNo {unSlotNo = 53},Map.fromList [(CoreNodeId 3,NodeRestart)])
               ]
-            , nodeTopology = meshNodeTopology ncn5
               -- Slot length of 19s passes, and 21s also fails; I haven't seen this matter before.
-            , slotLength   = slotLengthFromSec 20
-            , initSeed     = Seed {getSeed = (15062108706768000853,6202101653126031470,15211681930891010376,1718914402782239589,12639712845887620121)}
+            , setupSlotLength = slotLengthFromSec 20
             }
     , -- RealPBFT runs are slow, so do 10x less of this narrow test
       adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
@@ -235,16 +296,18 @@ tests = testGroup "RealPBFT" $
               slotsPerRekey :: Num a => a
               slotsPerRekey = 2 * k    -- delegations take effect 2k slots later
           in
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam k) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots $ window + slotsPerEpoch + slotsPerRekey + window
-            , nodeJoinPlan = trivialNodeJoinPlan ncn
-            , nodeRestarts = NodeRestarts $ Map.singleton
-                (SlotNo (slotsPerEpoch + mod w window))
-                (Map.singleton (CoreNodeId 0) NodeRekey)
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = seed
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam k
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots $ window + slotsPerEpoch + slotsPerRekey + window
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = seed
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+            , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo (slotsPerEpoch + mod w window)) (Map.singleton (CoreNodeId 0) NodeRekey)
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "exercise a corner case of mkCurrentBlockContext" $
           -- The current chain fragment is @Empty a :> B@ and we're trying to
@@ -257,15 +320,18 @@ tests = testGroup "RealPBFT" $
           let k   = SecurityParam 1
               ncn = NumCoreNodes 2
           in
-          prop_simple_real_pbft_convergence NoEBBs k TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 2
-            , nodeJoinPlan = trivialNodeJoinPlan ncn
-            , nodeRestarts = NodeRestarts $ Map.singleton
-                (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (4690259409304062007,9560140637825988311,3774468764133159390,14745090572658815456,7199590241247856333)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = k
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 2
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed (4690259409304062007,9560140637825988311,3774468764133159390,14745090572658815456,7199590241247856333)
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+            , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "correct EpochNumber in delegation certificate 1" $
           -- Node 3 rekeys in slot 59, which is epoch 1. But Node 3 also leads
@@ -274,14 +340,18 @@ tests = testGroup "RealPBFT" $
           -- epoch 2.
           once $
           let ncn4 = NumCoreNodes 4 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 3) TestConfig
-            { numCoreNodes = ncn4
-            , numSlots     = NumSlots 72
-            , nodeJoinPlan = trivialNodeJoinPlan ncn4
-            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo 59,Map.fromList [(CoreNodeId 3,NodeRekey)])])
-            , nodeTopology = meshNodeTopology ncn4
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (17364222041321661634,8266509462575908621,10410472349244348261,9332246846568887555,6178891282750652496)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 3
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn4
+              , numSlots     = NumSlots 72
+              , nodeTopology = meshNodeTopology ncn4
+              , initSeed     = Seed (17364222041321661634,8266509462575908621,10410472349244348261,9332246846568887555,6178891282750652496)
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn4
+            , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo 59,Map.fromList [(CoreNodeId 3,NodeRekey)])])
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "correct EpochNumber in delegation certificate 2" $
           -- Revealed the incorrectness of setting the dlg cert epoch based on
@@ -294,14 +364,18 @@ tests = testGroup "RealPBFT" $
           -- 60. However, since that's epoch 3, the tx is discarded as invalid
           -- before the block is forged.
           let ncn3 = NumCoreNodes 3 in
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 2) TestConfig
-            { numCoreNodes = ncn3
-            , numSlots     = NumSlots 84
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 1}),(CoreNodeId 1,SlotNo {unSlotNo = 1}),(CoreNodeId 2,SlotNo {unSlotNo = 58})])
-            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 58},Map.fromList [(CoreNodeId 2,NodeRekey)])])
-            , nodeTopology = meshNodeTopology ncn3
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (15151717355257504044,5938503171282920606,17557892055617026469,2625071732074633531,737988411488637670)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn3
+              , numSlots     = NumSlots 84
+              , nodeTopology = meshNodeTopology ncn3
+              , initSeed     = Seed {getSeed = (15151717355257504044,5938503171282920606,17557892055617026469,2625071732074633531,737988411488637670)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 1}),(CoreNodeId 1,SlotNo {unSlotNo = 1}),(CoreNodeId 2,SlotNo {unSlotNo = 58})])
+            , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 58},Map.fromList [(CoreNodeId 2,NodeRekey)])])
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "repeatedly add the the dlg cert tx" $
           -- Revealed the incorrectness of only adding dlg cert tx to the
@@ -344,15 +418,19 @@ tests = testGroup "RealPBFT" $
           -- > TraceLabelPeer (CoreId (CoreNodeId 0)) Recv MsgBatchDone
           -- > TraceLabelPeer (CoreId (CoreNodeId 0)) Recv MsgRequestTxs [dlgid: certificateid: fb50aa22]
           -- > TraceLabelPeer (CoreId (CoreNodeId 0)) Send MsgReplyTxs []
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 4) TestConfig
-            { numCoreNodes = NumCoreNodes 3
-            , numSlots     = NumSlots 96
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 0),(CoreNodeId 2,SlotNo 83)]
-            , nodeRestarts = NodeRestarts $ Map.fromList [(SlotNo 83,Map.fromList [(CoreNodeId 2,NodeRekey)])]
-            , nodeTopology =    --   1 <-> 0 <-> 2
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 4
+            , setupTestConfig = TestConfig
+              { numCoreNodes = NumCoreNodes 3
+              , numSlots     = NumSlots 96
+              , nodeTopology =    --   1 <-> 0 <-> 2
                 NodeTopology $ Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0])]
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (6137414258840919713,13743611065535662953,11200456599001708481,15059765168210441725,7592004320108020587)}
+              , initSeed     = Seed {getSeed = (6137414258840919713,13743611065535662953,11200456599001708481,15059765168210441725,7592004320108020587)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 0),(CoreNodeId 2,SlotNo 83)]
+            , setupNodeRestarts = NodeRestarts $ Map.fromList [(SlotNo 83,Map.fromList [(CoreNodeId 2,NodeRekey)])]
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "topology prevents timely dlg cert tx propagation" $
           -- Caught a bug in the test infrastructure. If node X rekeys in slot
@@ -382,15 +460,19 @@ tests = testGroup "RealPBFT" $
           let ncn5 = NumCoreNodes 5 in
           expectFailure $
           once $
-          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 2) TestConfig
-            { numCoreNodes = ncn5
-            , numSlots     = NumSlots 50
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 0}),(CoreNodeId 3,SlotNo {unSlotNo = 37}),(CoreNodeId 4,SlotNo {unSlotNo = 37})])
-            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 37},Map.fromList [(CoreNodeId 4,NodeRekey)])])
-            , nodeTopology = -- 3 <-> {0,1,2} <-> 4
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn5
+              , numSlots     = NumSlots 50
+              , nodeTopology = -- 3 <-> {0,1,2} <-> 4
                 NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0, CoreNodeId 1]),(CoreNodeId 3,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2]),(CoreNodeId 4,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2])])
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
+              , initSeed     = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 0}),(CoreNodeId 3,SlotNo {unSlotNo = 37}),(CoreNodeId 4,SlotNo {unSlotNo = 37})])
+            , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 37},Map.fromList [(CoreNodeId 4,NodeRekey)])])
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "mkDelegationEnvironment uses currentSlot not latestSlot" $
       -- After rekeying, node 2 continues to emit its dlg cert tx. This an ugly
@@ -404,43 +486,52 @@ tests = testGroup "RealPBFT" $
       -- identified as expired until it was already inside a block.
       once $
       let ncn = NumCoreNodes 3 in
-      prop_simple_real_pbft_convergence
-       NoEBBs
-       SecurityParam {maxRollbacks = 2}
-       TestConfig
-         { numCoreNodes = ncn
-         , numSlots     = NumSlots 41
-         , nodeJoinPlan = trivialNodeJoinPlan ncn
-         , nodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
-         , nodeTopology = meshNodeTopology ncn
-         , slotLength   = defaultSlotLength
-         , initSeed     = Seed (368401128646137767,7989071211759985580,4921478144180472393,11759221144888418607,7602439127562955319)
-         }
+      prop_simple_real_pbft_convergence TestSetup
+        { setupEBBs       = NoEBBs
+        , setupK          = SecurityParam 2
+        , setupTestConfig = TestConfig
+          { numCoreNodes = ncn
+          , numSlots     = NumSlots 41
+          , nodeTopology = meshNodeTopology ncn
+          , initSeed     = Seed (368401128646137767,7989071211759985580,4921478144180472393,11759221144888418607,7602439127562955319)
+          }
+        , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+        , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
+        , setupSlotLength   = defaultSlotLength
+        }
     , testProperty "delayed message corner case" $
           once $
           let ncn = NumCoreNodes 2 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 7) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 10
-            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 7
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 10
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "mkUpdateLabels anticipates instant confirmation" $
           -- caught a bug in 'mkUpdateLabels' where it didn't anticipate that
           -- node c0 can confirm the proposal as soon as it joins when quorum
           -- == 1
           let ncn = NumCoreNodes 3 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 9) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 1
-            , nodeJoinPlan = trivialNodeJoinPlan ncn
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (560784040296064078,562654861307142039,14390345921802859256,6074698800134646104,12960749422959162150)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 9
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 1
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (560784040296064078,562654861307142039,14390345921802859256,6074698800134646104,12960749422959162150)}
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "have nodes add transactions as promptly as possible, as expected by proposal tracking" $
           -- this repro requires that changes to the ledger point triggers the
@@ -453,14 +544,18 @@ tests = testGroup "RealPBFT" $
           -- doesn't change in this repro, since the new block and its
           -- predecessor both inhabit slot 0. EBBeeeeeees!
           let ncn = NumCoreNodes 4 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 8) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 2
-            , nodeJoinPlan = trivialNodeJoinPlan ncn
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (17661772013144211573,3458753765485439359,3510665480596920798,18073896085829422849,10200170902568172302)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 8
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 2
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (17661772013144211573,3458753765485439359,3510665480596920798,18073896085829422849,10200170902568172302)}
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "track proposals even when c0 is not the first to lead" $
           -- requires prompt and accurate vote tracking when c0 is not the
@@ -469,73 +564,78 @@ tests = testGroup "RealPBFT" $
           -- The necessary promptness trigger in this case is the arrival of
           -- the proposal transaction.
           let ncn = NumCoreNodes 4 in
-          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 5) TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 5
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
-              [ (CoreNodeId 0, SlotNo 2)
-              , (CoreNodeId 1, SlotNo 3)
-              , (CoreNodeId 2, SlotNo 4)
-              , (CoreNodeId 3, SlotNo 4)
-              ]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (7536539674426109099,5947274896735415773,14396421290275890646,8359457880945605675,13921484090802881569)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 5
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 5
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (7536539674426109099,5947274896735415773,14396421290275890646,8359457880945605675,13921484090802881569)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 2) , (CoreNodeId 1, SlotNo 3) , (CoreNodeId 2, SlotNo 4) , (CoreNodeId 3, SlotNo 4) ]
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "cardano-ledger checks for proposal confirmation before it checks for expiry" $
           -- must check for quorum before checking for expiration
           let ncn = NumCoreNodes 5 in
-          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 12
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
-              [ (CoreNodeId 0, SlotNo 0)
-              , (CoreNodeId 1, SlotNo 0)
-              , (CoreNodeId 2, SlotNo 10)
-              , (CoreNodeId 3, SlotNo 10)
-              , (CoreNodeId 4, SlotNo 10)
-              ]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (2578884099630273185,16934506387441904343,18333130054045336554,17133864958166263786,3231825379390681058)}
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 12
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (2578884099630273185,16934506387441904343,18333130054045336554,17133864958166263786,3231825379390681058)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 0) , (CoreNodeId 1, SlotNo 0) , (CoreNodeId 2, SlotNo 10) , (CoreNodeId 3, SlotNo 10) , (CoreNodeId 4, SlotNo 10) ]
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "repropose an expired proposal" $
           -- the proposal expires in slot 10, but then c0 reintroduces it in
           -- slot 11 and it is eventually confirmed
           let ncn = NumCoreNodes 5 in
-          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 17
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 17
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (306806859316465898,5351335255935493133,6240542044036351784,5824248410373935607,16492982022780410836)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [(CoreNodeId 0, SlotNo 0)
               ,(CoreNodeId 1, SlotNo 10)
               ,(CoreNodeId 2, SlotNo 11)
               ,(CoreNodeId 3, SlotNo 11)
               ,(CoreNodeId 4, SlotNo 16)
               ]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (306806859316465898,5351335255935493133,6240542044036351784,5824248410373935607,16492982022780410836)}
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "only expect EBBs if the reference simulator does" $
           -- In this repro, block in the 20th slot is wasted since c2 just
           -- joined. As a result, the final chains won't include that EBB.
           let ncn = NumCoreNodes 3 in
-          prop_simple_real_pbft_convergence ProduceEBBs SecurityParam {maxRollbacks = 2} TestConfig
-            { numCoreNodes = ncn
-            , numSlots     = NumSlots 21
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = ncn
+              , numSlots     = NumSlots 21
+              , nodeTopology = meshNodeTopology ncn
+              , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0,SlotNo {unSlotNo = 0})
               , (CoreNodeId 1,SlotNo {unSlotNo = 0})
               , (CoreNodeId 2,SlotNo {unSlotNo = 20})
               ]
-            , nodeRestarts = noRestarts
-            , nodeTopology = meshNodeTopology ncn
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "only check updates for mesh topologies" $
           -- This repro exercises
@@ -558,27 +658,31 @@ tests = testGroup "RealPBFT" $
           -- "Test.ThreadNet.RealPBFT.TrackUpdates" does not otherwise
           -- correctly anticipate such races, so it makes no requirement for
           -- non-mesh topologies.
-          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
-            { numCoreNodes = NumCoreNodes 5
-            , numSlots     = NumSlots 13
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 10
+            , setupTestConfig = TestConfig
+              { numCoreNodes = NumCoreNodes 5
+              , numSlots     = NumSlots 13
+              , nodeTopology = NodeTopology $ Map.fromList
+                               -- mesh except for 0 <-> 2
+                [ (CoreNodeId 0, Set.fromList [])
+                , (CoreNodeId 1, Set.fromList [CoreNodeId 0])
+                , (CoreNodeId 2, Set.fromList [CoreNodeId 1])
+                , (CoreNodeId 3, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2])
+                , (CoreNodeId 4, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2, CoreNodeId 3])
+              ]
+              , initSeed = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
+            }
+            , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0, SlotNo 0)
               , (CoreNodeId 1, SlotNo 11)
               , (CoreNodeId 2, SlotNo 11)
               , (CoreNodeId 3, SlotNo 11)
               , (CoreNodeId 4, SlotNo 11)
               ]
-            , nodeRestarts = noRestarts
-            , nodeTopology = NodeTopology $ Map.fromList
-                -- mesh except for 0 <-> 2
-              [ (CoreNodeId 0, Set.fromList [])
-              , (CoreNodeId 1, Set.fromList [CoreNodeId 0])
-              , (CoreNodeId 2, Set.fromList [CoreNodeId 1])
-              , (CoreNodeId 3, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2])
-              , (CoreNodeId 4, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2, CoreNodeId 3])
-              ]
-            , slotLength   = defaultSlotLength
-            , initSeed     = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
             }
     , testProperty "HeaderProtocolError prevents JIT EBB emission" $
           -- "extra" EBB generated in anticipation of a block that ends up
@@ -593,26 +697,21 @@ tests = testGroup "RealPBFT" $
           -- apparent for k=8 n=3 in which the nodes' steady-state behavior
           -- involves a regularly occurring 'PBftExceededSignThreshold'
           once $
-          prop_simple_real_pbft_convergence ProduceEBBs SecurityParam {maxRollbacks = 8} TestConfig
-          { numCoreNodes = NumCoreNodes 3
-          , numSlots     = NumSlots 81
-          , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 2}),(CoreNodeId 1,SlotNo {unSlotNo = 6}),(CoreNodeId 2,SlotNo {unSlotNo = 9})])
-          , nodeRestarts = noRestarts
-          , nodeTopology = meshNodeTopology (NumCoreNodes 3)
-          , slotLength   = slotLengthFromSec 20
-          , initSeed     = Seed {getSeed = (7952153859682074489,1209195599086387203,1003230838846108849,16300282375150619951,13414350229958775450)}
-          }
-    , testProperty "simple convergence" $
-          \produceEBBs ->
-          -- TODO k > 1 as a workaround for Issue #1511.
-          --
-          forAll (SecurityParam <$> elements [2 .. 10])
-            $ \k ->
-          forAllShrink
-              (genRealPBFTTestConfig k)
-              shrinkRealPBFTTestConfig
-            $ \testConfig ->
-          prop_simple_real_pbft_convergence produceEBBs k testConfig
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 8
+            , setupTestConfig = TestConfig
+              { numCoreNodes = NumCoreNodes 3
+              , numSlots     = NumSlots 81
+              , nodeTopology = meshNodeTopology (NumCoreNodes 3)
+              , initSeed     = Seed {getSeed = (7952153859682074489,1209195599086387203,1003230838846108849,16300282375150619951,13414350229958775450)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 2}),(CoreNodeId 1,SlotNo {unSlotNo = 6}),(CoreNodeId 2,SlotNo {unSlotNo = 9})])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = slotLengthFromSec 20
+            }
+    , testProperty "simple convergence" $ \setup ->
+        prop_simple_real_pbft_convergence setup
     ]
   where
     defaultSlotLength :: SlotLength
@@ -705,20 +804,15 @@ latestPossibleDlgMaturation
   (SecurityParam k) (NumCoreNodes n) (SlotNo rekeySlot) =
     SlotNo $ rekeySlot + n + 2 * k
 
-prop_simple_real_pbft_convergence :: ProduceEBBs
-                                  -> SecurityParam
-                                  -> TestConfig
-                                  -> Property
-prop_simple_real_pbft_convergence produceEBBs k
-  testConfig@TestConfig
-    { numCoreNodes
-    , numSlots
-    , nodeJoinPlan
-    , nodeTopology
-    , nodeRestarts
-    , initSeed
-    , slotLength
-    } =
+prop_simple_real_pbft_convergence :: TestSetup -> Property
+prop_simple_real_pbft_convergence TestSetup
+  { setupEBBs         = produceEBBs
+  , setupK            = k
+  , setupTestConfig   = testConfig
+  , setupNodeJoinPlan = nodeJoinPlan
+  , setupNodeRestarts = nodeRestarts
+  , setupSlotLength   = slotLength
+  } =
     tabulate "produce EBBs" [show produceEBBs] $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     tabulate "proposed protocol version was adopted" [show aPvuRequired] $
@@ -749,6 +843,7 @@ prop_simple_real_pbft_convergence produceEBBs k
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
       , pgaSecurityParam      = k
       , pgaTestConfig         = testConfig
+      , pgaTestConfigB        = testConfigB
       }
       testOutput .&&.
     prop_pvu .&&.
@@ -759,15 +854,30 @@ prop_simple_real_pbft_convergence produceEBBs k
           conjoin (map (hasAllEBBs k produceEBBs outcomes) finalChains)
       _ -> property True
   where
+    TestConfig
+      { nodeTopology
+      , numCoreNodes
+      , numSlots
+      , initSeed
+      } = testConfig
+
+    testConfigB = TestConfigB
+      { epochSize
+      , forgeEbbEnv = case produceEBBs of
+          NoEBBs      -> Nothing
+          ProduceEBBs -> Just byronForgeEbbEnv
+      , nodeJoinPlan
+      , nodeRestarts
+      , slotLength
+      , txGenExtra = ()
+      }
+
     testOutput =
-        runTestNetwork testConfig epochSize TestConfigBlock
-            { forgeEbbEnv = case produceEBBs of
-                NoEBBs      -> Nothing
-                ProduceEBBs -> Just byronForgeEbbEnv
-            , nodeInfo = \nid ->
+        runTestNetwork testConfig testConfigB TestConfigMB
+            { nodeInfo = \nid ->
                 mkProtocolRealPBftAndHardForkTxs
                   params nid genesisConfig genesisSecrets
-            , rekeying = Just Rekeying
+            , mkRekeyM = Just $ fromRekeyingToRekeyM Rekeying
               { rekeyOracle   = \cid s ->
                   let nominalSlots = case refResult of
                         Ref.Forked{}           -> Set.empty
@@ -799,7 +909,6 @@ prop_simple_real_pbft_convergence produceEBBs k
                   withSeed initSeed $   -- seems fine to reuse seed for this
                   sequence $ let ms = genKeyDSIGNRandom Stream.:< ms in ms
               }
-            , txGenExtra = ()
             }
 
     -- Byron has a hard-coded relation between k and the size of an epoch
@@ -968,9 +1077,6 @@ realPBftParams paramK numCoreNodes = PBftParams
       k :: Num a => a
       k = fromIntegral x where SecurityParam x = paramK
 
-pbftSlotLength :: SlotLength
-pbftSlotLength = slotLengthFromSec 20
-
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
 -- number of rich men.
@@ -1106,69 +1212,6 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
         i   = case fst <$> Map.lookupMax m of
             Nothing             -> 0
             Just (CoreNodeId h) -> succ h
-
-genRealPBFTTestConfig :: SecurityParam -> Gen TestConfig
-genRealPBFTTestConfig k = do
-    numCoreNodes <- arbitrary
-    numSlots     <- arbitrary
-
-    let params = realPBftParams k numCoreNodes
-    nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
-    nodeTopology <- genNodeTopology numCoreNodes
-    nodeRestarts <- genNodeRestarts nodeJoinPlan numSlots >>=
-                    genNodeRekeys params nodeJoinPlan nodeTopology numSlots
-
-    initSeed <- arbitrary
-
-    pure TestConfig
-      { nodeJoinPlan
-      , nodeRestarts
-      , nodeTopology
-      , numCoreNodes
-      , numSlots
-      , slotLength = pbftSlotLength
-      , initSeed
-      }
-
-shrinkRealPBFTTestConfig :: TestConfig -> [TestConfig]
-shrinkRealPBFTTestConfig  = shrinkTestConfigSlotsOnly
-  -- NOTE 'shrink' at type 'NodePlanJoin' never increases inter-join delays
-  --
-  -- and we're neither shrinking the security parameter nor /increasing/ the
-  -- number of slots, so the invariant established by 'genRealPBFTNodeJoinPlan'
-  -- will be preserved
-
--- | Shrink, including the number of slots but not number of nodes
---
-shrinkTestConfigSlotsOnly :: TestConfig -> [TestConfig]
-shrinkTestConfigSlotsOnly TestConfig
-  { numCoreNodes
-  , numSlots
-  , nodeJoinPlan
-  , nodeRestarts
-  , nodeTopology
-  , slotLength
-  , initSeed
-  } =
-    dropId $
-    [ TestConfig
-        { nodeJoinPlan = p'
-        , nodeRestarts = r'
-        , nodeTopology = top'
-        , numCoreNodes
-        , numSlots     = t'
-        , slotLength   = len'
-        , initSeed
-        }
-    | t'            <- andId shrink numSlots
-    , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
-    , let adjustedR  = truncateNodeRestarts nodeRestarts t'
-    , p'            <- andId shrinkNodeJoinPlan adjustedP
-    , r'            <- andId shrinkNodeRestarts adjustedR
-    , top'          <- andId shrinkNodeTopology nodeTopology
-    , len'          <- andId shrink slotLength
-    ]
-
 -- | Possibly promote some 'NodeRestart's to 'NodeRekey's
 --
 -- POSTCONDITION No node will rekey multiple times in a single epoch.

@@ -5,16 +5,18 @@
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 module Test.ThreadNet.General (
     PropGeneralArgs (..)
   , prop_general
   , runTestNetwork
     -- * TestConfig
-  , Rekeying (..)
   , TestConfig (..)
-  , TestConfigBlock (..)
+  , TestConfigB (..)
+  , TestConfigMB (..)
   , truncateNodeJoinPlan
   , truncateNodeRestarts
   , truncateNodeTopology
@@ -34,7 +36,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
-import           Control.Monad.IOSim (SimM, runSimOrThrow, setCurrentTime)
+import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
 import           Cardano.Slotting.Slot
 
@@ -75,7 +77,6 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
-import           Test.Util.Stream
 import           Test.Util.Time (dawnOfTime)
 import           Test.Util.WrappedClock (NumSlots (..))
 
@@ -83,15 +84,19 @@ import           Test.Util.WrappedClock (NumSlots (..))
   Configuring tests
 -------------------------------------------------------------------------------}
 
+-- | Test configuration that does not depend on the block
+--
+-- The primary motivation for separating this type from 'TestConfigB' and
+-- 'TestConfigMB' is so that the instance @'Arbitrary' 'TestConfig'@ can be
+-- reused by multiple tests using different @blk@s: /as/ /of/ /yet/, no block
+-- (each of which realizes a ledger-protocol combination) influences the
+-- validity of these data.
 data TestConfig = TestConfig
-  { numCoreNodes :: !NumCoreNodes
-  , numSlots     :: !NumSlots
+  { initSeed     :: Seed
+  , nodeTopology :: NodeTopology
+  , numCoreNodes :: NumCoreNodes
+  , numSlots     :: NumSlots
     -- ^ TODO generate in function of @k@
-  , nodeJoinPlan :: !NodeJoinPlan
-  , nodeRestarts :: !NodeRestarts
-  , nodeTopology :: !NodeTopology
-  , slotLength   :: !SlotLength
-  , initSeed     :: !Seed
   }
   deriving (Show)
 
@@ -116,92 +121,74 @@ truncateNodeRestarts (NodeRestarts m) (NumSlots t) =
 
 instance Arbitrary TestConfig where
   arbitrary = do
-      numCoreNodes <- arbitrary
-      numSlots     <- arbitrary
-      nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
-      nodeTopology <- genNodeTopology numCoreNodes
-      slotLength   <- arbitrary
       initSeed     <- arbitrary
+
+      numCoreNodes <- arbitrary
+      nodeTopology <- genNodeTopology numCoreNodes
+
+      numSlots     <- arbitrary
       pure TestConfig
-        { numCoreNodes
-        , numSlots
-        , nodeJoinPlan
-          -- TODO how to enrich despite variable schedules?
-        , nodeRestarts = noRestarts
+        { initSeed
         , nodeTopology
-        , slotLength
-        , initSeed
+        , numCoreNodes
+        , numSlots
         }
 
   shrink TestConfig
-    { numCoreNodes
-    , numSlots
-    , nodeJoinPlan
-    , nodeRestarts
+    { initSeed
     , nodeTopology
-    , slotLength
-    , initSeed
+    , numCoreNodes
+    , numSlots
     } =
       dropId $
       [ TestConfig
-          { numCoreNodes = n'
-          , numSlots     = t'
-          , nodeJoinPlan = p'
-          , nodeRestarts = r'
+          { initSeed
           , nodeTopology = top'
-          , slotLength   = len'
-          , initSeed
+          , numCoreNodes = n'
+          , numSlots     = t'
           }
       | n'             <- andId shrink numCoreNodes
       , t'             <- andId shrink numSlots
-      , let adjustedP   = truncateNodeJoinPlan nodeJoinPlan n' (numSlots, t')
-      , let adjustedR   = truncateNodeRestarts nodeRestarts t'
       , let adjustedTop = truncateNodeTopology nodeTopology n'
-      , p'             <- andId shrinkNodeJoinPlan adjustedP
-      , r'             <- andId shrinkNodeRestarts adjustedR
       , top'           <- andId shrinkNodeTopology adjustedTop
-      , len'           <- andId shrink slotLength
       ]
 
 {-------------------------------------------------------------------------------
   Configuring tests for a specific block type
 -------------------------------------------------------------------------------}
 
-data TestConfigBlock m blk = TestConfigBlock
-  { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
-  , nodeInfo    :: CoreNodeId -> TestNodeInitialization m blk
-  , rekeying    :: Maybe (Rekeying m blk)
-  , txGenExtra  :: TxGenExtra blk
+-- | Test configuration that depends on the block (incl the ledger and\/or
+-- protocol) but not on the monad
+--
+-- Some fields do not explicitly involve the @blk@ type, but their semantics
+-- (at least their validity) does depend on the semantics of the underlying
+-- ledger and\/or protocol. For example, 'nodeJoinPlan' is here instead of in
+-- 'TestConfig' because different blocks can withstand different degrees of
+-- absence/lateness. And 'epochSize' is here because eg the Byron ledger
+-- assumes a fixed epoch size of @10k@. And so on.
+data TestConfigB blk = TestConfigB
+  { epochSize    :: EpochSize
+    -- ^ Temporary: until we start testing the hard fork combinator, we only
+    -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
+  , forgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
+  , nodeJoinPlan :: NodeJoinPlan
+  , nodeRestarts :: NodeRestarts
+  , slotLength   :: SlotLength
+  , txGenExtra   :: TxGenExtra blk
   }
 
--- | Functionality used by test node in order to update its operational key
+deriving instance Show (TxGenExtra blk) => Show (TestConfigB blk)
+
+-- | Test configuration that depends on the block and the monad
 --
--- This is the conceptual interface demanded from the test-specific logic. It
--- is used to define 'tnaRekeyM', which the test infrastructure invokes per the
--- 'NodeRestarts' schedule.
-data Rekeying m blk = forall opKey. Rekeying
-  { rekeyOracle
-      :: CoreNodeId -> SlotNo -> Maybe SlotNo
-    -- ^ The first /nominal/ slot after the given slot, assuming the given core
-    -- node cannot lead.
-    --
-    -- IE the first slot that will result in a block successfully being forged
-    -- and diffused (eg no @PBftExceededSignThreshold@).
-  , rekeyUpd ::
-         ProtocolInfo (ChaChaT m) blk
-      -> EpochNo
-      -> opKey
-      -> Maybe (TestNodeInitialization m blk)
-     -- ^ new config and any corresponding delegation certificate transactions
-     --
-     -- The epoch number is the one required to create a Byron redeleg cert.
-     --
-     -- The 'TestNodeInitialization' includes the new 'ProtocolInfo' used when
-     -- the node completes restarting.
-  , rekeyFreshSKs :: Stream opKey
-     -- ^ a stream that only repeats itself after an *effectively* *infinite*
-     -- number of iterations and also never includes an operational key from
-     -- the genesis configuration
+-- The primary motivation for separating this type from 'TestConfigB' is so
+-- that 'TestConfigB' can occur in contexts (such as in 'PropGeneralArgs') for
+-- which the @m@ parameter is irrelevant and hence unknown.
+data TestConfigMB m blk = TestConfigMB
+  { nodeInfo :: CoreNodeId -> TestNodeInitialization m blk
+  , mkRekeyM :: Maybe (m (RekeyM m blk))
+    -- ^ 'runTestNetwork' immediately runs this action once in order to
+    -- initialize an 'RekeyM' value that it then reuses throughout the test
   }
 
 {-------------------------------------------------------------------------------
@@ -218,60 +205,43 @@ runTestNetwork ::
      , HasCallStack
      )
   => TestConfig
-  -> EpochSize
-  -- ^ Temporary: until we start testing the hard fork combinator, we just
-  -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
-  -> (forall m. IOLike m => TestConfigBlock m blk)
+  -> TestConfigB blk
+  -> (forall m. IOLike m => TestConfigMB m blk)
   -> TestOutput blk
-runTestNetwork
-  TestConfig
-    { numCoreNodes
-    , numSlots
-    , nodeJoinPlan
-    , nodeRestarts
-    , nodeTopology
-    , slotLength
-    , initSeed
-    }
-  epochSize
-  cfg
-  = runSimOrThrow (go cfg)
-  where
-    go :: forall s. TestConfigBlock (SimM s) blk -> SimM s (TestOutput blk)
-    go TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra} = do
-        setCurrentTime dawnOfTime
-        case rekeying of
-          Nothing -> runThreadNetwork tna
-          Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
-            rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
-            runThreadNetwork tna
-              { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
-                  Nothing -> pure $ plainTestNodeInitialization pInfo
-                  Just s' -> do
-                    x <- atomically $ do
-                      x :< xs <- readTVar rekeyVar
-                      x <$ writeTVar rekeyVar xs
-                    eno <- mkEno s'
-                    pure $ case rekeyUpd pInfo eno x of
-                      Nothing  -> plainTestNodeInitialization pInfo
-                      Just tni -> tni
-              }
-      where
-        tna = ThreadNetworkArgs
-          { tnaForgeEbbEnv    = forgeEbbEnv
-          , tnaJoinPlan       = nodeJoinPlan
-          , tnaNodeInfo       = nodeInfo
-          , tnaNumCoreNodes   = numCoreNodes
-          , tnaNumSlots       = numSlots
-          , tnaRNG            = seedToChaCha initSeed
-          , tnaRekeyM         = Nothing
-          , tnaRestarts       = nodeRestarts
-          , tnaSlotLength     = slotLength
-          , tnaTopology       = nodeTopology
-          , tnaEpochSize      = epochSize
-          , tnaTxGenExtra     = txGenExtra
-          }
-
+runTestNetwork TestConfig
+  { numCoreNodes
+  , numSlots
+  , nodeTopology
+  , initSeed
+  } TestConfigB
+  { epochSize
+  , forgeEbbEnv
+  , nodeJoinPlan
+  , nodeRestarts
+  , slotLength
+  , txGenExtra
+  }
+    mkTestConfigMB
+  = runSimOrThrow $ do
+    setCurrentTime dawnOfTime
+    let TestConfigMB
+          { nodeInfo
+          , mkRekeyM
+          } = mkTestConfigMB
+    runThreadNetwork ThreadNetworkArgs
+      { tnaForgeEbbEnv    = forgeEbbEnv
+      , tnaJoinPlan       = nodeJoinPlan
+      , tnaNodeInfo       = nodeInfo
+      , tnaNumCoreNodes   = numCoreNodes
+      , tnaNumSlots       = numSlots
+      , tnaRNG            = seedToChaCha initSeed
+      , tnaMkRekeyM       = mkRekeyM
+      , tnaRestarts       = nodeRestarts
+      , tnaSlotLength     = slotLength
+      , tnaTopology       = nodeTopology
+      , tnaEpochSize      = epochSize
+      , tnaTxGenExtra     = txGenExtra
+      }
 
 {-------------------------------------------------------------------------------
   Test properties
@@ -323,6 +293,7 @@ data PropGeneralArgs blk = PropGeneralArgs
     --
   , pgaSecurityParam      :: SecurityParam
   , pgaTestConfig         :: TestConfig
+  , pgaTestConfigB        :: TestConfigB blk
   }
 
 -- | Expect no 'CannotLead's
@@ -472,13 +443,16 @@ prop_general pga testOutput =
       , pgaFixedSchedule      = mbSchedule
       , pgaSecurityParam      = k
       , pgaTestConfig
+      , pgaTestConfigB
       } = pga
     TestConfig
       { numSlots
-      , nodeJoinPlan
-      , nodeRestarts
       , nodeTopology
       } = pgaTestConfig
+    TestConfigB
+      { nodeJoinPlan
+      , nodeRestarts
+      } = pgaTestConfigB
     TestOutput
       { testOutputNodes
       , testOutputTipBlockNos

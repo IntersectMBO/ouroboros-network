@@ -174,28 +174,36 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , pgaFixedSchedule      = Just leaderSchedule
         , pgaSecurityParam      = k
         , pgaTestConfig         = testConfig
+        , pgaTestConfigB        = testConfigB
         }
 
     testConfig :: TestConfig
     testConfig = TestConfig {
           numCoreNodes = ncn
         , numSlots     = testSetupNumSlots testSetup
-        , nodeJoinPlan = trivialNodeJoinPlan ncn
-        , nodeRestarts = noRestarts
         , nodeTopology = meshNodeTopology ncn
-        , slotLength   = testSetupSlotLength
         , initSeed     = testSetupSeed
         }
       where
         ncn :: NumCoreNodes
         ncn = NumCoreNodes 2
 
-    testConfigBlock :: Monad m => TestConfigBlock m TestBlock
-    testConfigBlock = TestConfigBlock {
-          forgeEbbEnv = Nothing
-        , nodeInfo    = plainTestNodeInitialization . protocolInfo
-        , rekeying    = Nothing
-        , txGenExtra  = ()
+    testConfigB :: TestConfigB TestBlock
+    testConfigB = TestConfigB {
+          epochSize    = testSetupEpochSize
+        , forgeEbbEnv  = Nothing
+        , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+        , nodeRestarts = noRestarts
+        , slotLength   = testSetupSlotLength
+        , txGenExtra   = ()
+        }
+      where
+        TestConfig{..} = testConfig
+
+    testConfigMB :: Monad m => TestConfigMB m TestBlock
+    testConfigMB = TestConfigMB {
+          nodeInfo = plainTestNodeInitialization . protocolInfo
+        , mkRekeyM = Nothing
         }
 
     protocolInfo :: Monad m => CoreNodeId -> ProtocolInfo m TestBlock
@@ -289,7 +297,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     blockConfigB _ = BCfgB
 
     testOutput :: TestOutput TestBlock
-    testOutput = runTestNetwork testConfig testSetupEpochSize testConfigBlock
+    testOutput = runTestNetwork testConfig testConfigB testConfigMB
 
     prop_allExpectedBlocks :: Property
     prop_allExpectedBlocks =

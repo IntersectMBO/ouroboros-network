@@ -14,8 +14,6 @@ module Test.ThreadNet.Infra.Shelley (
   , coreNodeKeys
   , mkProtocolRealTPraos
   , tpraosSlotLength
-  , genRealTPraosTestConfig
-  , shrinkRealTPraosTestConfig
   ) where
 
 import           Data.Map.Strict (Map)
@@ -277,27 +275,3 @@ mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         , tpraosIsCoreNodeSignKeyVRF = cnVRF
         }
       }
-
-genRealTPraosTestConfig :: SecurityParam -> Gen TestConfig
-genRealTPraosTestConfig _k = do
-    numCoreNodes <- arbitrary
-    numSlots     <- arbitrary
-
-    -- TODO generate more interesting scenarios
-    let nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
-        nodeTopology = meshNodeTopology numCoreNodes
-
-    initSeed <- arbitrary
-
-    pure TestConfig
-      { nodeJoinPlan
-      , nodeRestarts = noRestarts
-      , nodeTopology
-      , numCoreNodes
-      , numSlots
-      , slotLength = tpraosSlotLength
-      , initSeed
-      }
-
-shrinkRealTPraosTestConfig :: TestConfig -> [TestConfig]
-shrinkRealTPraosTestConfig _ = [] -- TODO

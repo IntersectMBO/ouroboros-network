@@ -45,36 +45,58 @@ import           Test.ThreadNet.Util.SimpleBlock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.WrappedClock (NumSlots (..))
 
+data TestSetup = TestSetup
+  { setupK            :: SecurityParam
+  , setupTestConfig   :: TestConfig
+  , setupNodeJoinPlan :: NodeJoinPlan
+  }
+  deriving (Show)
+
+instance Arbitrary TestSetup where
+  arbitrary = do
+      k <- SecurityParam <$> choose (1, 10)
+
+      testConfig <- arbitrary
+      let TestConfig{numCoreNodes, numSlots} = testConfig
+
+      nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
+      pure $ TestSetup k testConfig nodeJoinPlan
+
+  -- TODO shrink
+
 tests :: TestTree
 tests = testGroup "PBFT" $
     [ testProperty "Issue 1505: removeTxs must not use fast path" $
       -- See (the comments of) Issue 1505.
-      let ncn5 = NumCoreNodes 5 in
-      prop_simple_pbft_convergence (SecurityParam 5) TestConfig
-        { numCoreNodes = ncn5
-        , numSlots     = NumSlots 100
-        , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+      let ncn5 = NumCoreNodes 5
+          k    = SecurityParam 5
+      in
+      prop_simple_pbft_convergence TestSetup
+        { setupK = k
+        , setupTestConfig = TestConfig
+          { initSeed     = Seed (9550173506264790139,4734409083700350196,9697926137031612922,16476814117921936461,9569412668768792610)
+          , nodeTopology = meshNodeTopology ncn5
+          , numCoreNodes = ncn5
+          , numSlots     = NumSlots 100
+          }
+        , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
           [ (CoreNodeId 0, SlotNo 0)   -- 0 only leads this slot
           , (CoreNodeId 1, SlotNo 6)   -- 1 only leads this slot
           , (CoreNodeId 2, SlotNo 22)  -- 2 only leads this slot
           , (CoreNodeId 3, SlotNo 24)
           , (CoreNodeId 4, SlotNo 99)  -- irrelevant, beyond affecting pbftThreshold via numCoreNodes
           ]
-        , nodeRestarts = noRestarts
-        , nodeTopology = meshNodeTopology ncn5
-        , slotLength   = slotLengthFromSec 1
-        , initSeed     = Seed (9550173506264790139,4734409083700350196,9697926137031612922,16476814117921936461,9569412668768792610)
         }
-    , testProperty "simple convergence" $ \tc ->
-        forAll (SecurityParam <$> elements [1 .. 10]) $ \k ->
-        prop_simple_pbft_convergence k tc
+    , testProperty "simple convergence" $ \setup ->
+        prop_simple_pbft_convergence setup
     ]
 
-prop_simple_pbft_convergence :: SecurityParam
-                             -> TestConfig
-                             -> Property
-prop_simple_pbft_convergence
-  k testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan, slotLength} =
+prop_simple_pbft_convergence :: TestSetup -> Property
+prop_simple_pbft_convergence TestSetup
+  { setupK            = k
+  , setupTestConfig   = testConfig
+  , setupNodeJoinPlan = nodeJoinPlan
+  } =
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
     prop_general PropGeneralArgs
@@ -90,29 +112,36 @@ prop_simple_pbft_convergence
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
       , pgaSecurityParam      = k
       , pgaTestConfig         = testConfig
+      , pgaTestConfigB        = testConfigB
       }
       testOutput
   where
+    TestConfig{numCoreNodes, numSlots} = testConfig
+    slotLength = slotLengthFromSec 1
+    testConfigB = TestConfigB
+      { epochSize = EpochSize $ maxRollbacks k * 10
+          -- The mock ledger doesn't really care, and neither does PBFT. We
+          -- stick with the common @k * 10@ size for now.
+      , forgeEbbEnv = Nothing
+      , nodeJoinPlan
+      , slotLength
+      , nodeRestarts = noRestarts
+      , txGenExtra   = ()
+      }
+
     NumCoreNodes nn = numCoreNodes
 
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams k numCoreNodes sigThd
 
     testOutput =
-        runTestNetwork testConfig epochSize TestConfigBlock
-            { forgeEbbEnv = Nothing
-            , nodeInfo    = plainTestNodeInitialization .
+        runTestNetwork testConfig testConfigB TestConfigMB
+            { nodeInfo = plainTestNodeInitialization .
                             protocolInfoMockPBFT
                               params
                               (HardFork.defaultEraParams k slotLength)
-            , rekeying    = Nothing
-            , txGenExtra  = ()
+            , mkRekeyM = Nothing
             }
-
-    -- The mock ledger doesn't really care, and neither does BFT.
-    -- We stick with the common @k * 10@ size for now.
-    epochSize :: EpochSize
-    epochSize = EpochSize (maxRollbacks k * 10)
 
     refResult :: Ref.Result
     refResult = Ref.simulate params nodeJoinPlan numSlots
