@@ -263,20 +263,20 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
     where
       ShelleyLedgerState {history , shelleyState} = ledgerState
       globals = shelleyLedgerGlobals cfg
-      k       = SL.securityParameter globals
+      swindow = SL.stabilityWindow globals
       tip     = ledgerTipSlot ledgerState
 
       -- Inclusive lower bound
       minLo :: WithOrigin SlotNo
       minLo = case tip of
-                At (SlotNo s) | s >= (2 * k) -> At (SlotNo (s - (2 * k)))
+                At (SlotNo s) | s >= swindow -> At (SlotNo (s - swindow))
                 _otherwise                   -> Origin
 
       -- Exclusive upper bound
       maxHi :: SlotNo
       maxHi = case at of
-                Origin -> SlotNo $ 2 * k
-                At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
+                Origin -> SlotNo swindow
+                At s   -> SlotNo $ unSlotNo s + 1 + swindow
 
 instance HasHardForkHistory (ShelleyBlock c) where
   type HardForkIndices (ShelleyBlock c) = '[ShelleyBlock c]
