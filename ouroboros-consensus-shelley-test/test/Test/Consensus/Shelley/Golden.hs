@@ -88,6 +88,8 @@ testQueries = testGroup "Queries"
       , TkTag 258
       , TkListLen 1
       , TkListLen 2
+      , TkInt 1
+      , TkListLen 2
       , TkInt 0
       , TkBytes "}\234\&6+"
       ]
@@ -110,7 +112,7 @@ testQueries = testGroup "Queries"
     queryNonMyopicMemberRewards
       :: Query Block (NonMyopicMemberRewards TPraosMockCrypto)
     queryNonMyopicMemberRewards =
-      GetNonMyopicMemberRewards $ Set.singleton $
+      GetNonMyopicMemberRewards $ Set.singleton $ Right $
         (SL.KeyHashObj . SL.hashKey . SL.vKey) $ SL.KeyPair 0 0
 
     goldenTestQuery :: Query Block result -> FlatTerm -> Assertion
@@ -143,28 +145,7 @@ testResults = testGroup "Results"
     proposedPParamsUpdates :: SL.ProposedPPUpdates TPraosMockCrypto
     proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
       (SL.hashKey 0)
-      (SL.PParams {
-          _minfeeA         = SNothing
-        , _minfeeB         = SNothing
-        , _maxBBSize       = SNothing
-        , _maxTxSize       = SNothing
-        , _maxBHSize       = SNothing
-        , _keyDeposit      = SJust 100
-        , _keyMinRefund    = SNothing
-        , _keyDecayRate    = SNothing
-        , _poolDeposit     = SNothing
-        , _poolMinRefund   = SNothing
-        , _poolDecayRate   = SNothing
-        , _eMax            = SNothing
-        , _nOpt            = SNothing
-        , _a0              = SNothing
-        , _rho             = SNothing
-        , _tau             = SNothing
-        , _d               = SNothing
-        , _extraEntropy    = SNothing
-        , _protocolVersion = SNothing
-        , _minUTxOValue    = SNothing
-        })
+      (SL.emptyPParamsUpdate {SL._keyDeposit = SJust 100})
 
     stakeDistribution :: SL.PoolDistr TPraosMockCrypto
     stakeDistribution = SL.PoolDistr $ Map.singleton
@@ -173,30 +154,14 @@ testResults = testGroup "Results"
 
     currentPParamsTerm :: FlatTerm
     currentPParamsTerm =
-      [ TkListLen 21
+      [ TkListLen 17
       , TkInt 0
       , TkInt 0
       , TkInt 0
       , TkInt 2048
       , TkInt 0
       , TkInt 0
-      , TkTag 30
-      , TkListLen 2
       , TkInt 0
-      , TkInt 1
-      , TkTag 30
-      , TkListLen 2
-      , TkInt 0
-      , TkInt 1
-      , TkInt 0
-      , TkTag 30
-      , TkListLen 2
-      , TkInt 0
-      , TkInt 1
-      , TkTag 30
-      , TkListLen 2
-      , TkInt 0
-      , TkInt 1
       , TkInt 0
       , TkInt 100
       , TkTag 30
@@ -254,7 +219,7 @@ test_golden_Block = goldenTestCBOR
     , TkListLen 15
     , TkInt 2
     , TkInt 20
-    , TkBytes "\ACK\FS\238\144"
+    , TkBytes "cR\153\CAN"
     , TkBytes "HiG\254\155\230\144\SI"
     , TkBytes "\v\139\240N\254\v\129%"
     , TkListLen 2
@@ -264,20 +229,20 @@ test_golden_Block = goldenTestCBOR
     , TkInt 0
     , TkBytes "\v\139\240N\254\v\129%\\E"
     , TkInt 208
-    , TkBytes "\DLE\SIvJ"
+    , TkBytes "Y\128\228\217"
     , TkBytes "\201\&5\162|\221l\132\&2"
     , TkInt 0
     , TkInt 0
     , TkBytes "\SOH\217\&2\EOTHiG\254\155\230\144\SI"
     , TkInt 0
     , TkInt 0
-    , TkBytes "\SUB\221\219\212\246TB\217n\STXx\186\186\202\132X\201\&5\162|\221l\132\&2\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
+    , TkBytes "\154n\223F\n\162;\208\229\129\f\143\239h\231\f\201\&5\162|\221l\132\&2\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     , TkListLen 1
     , TkMapLen 5
     , TkInt 0
     , TkListLen 1
     , TkListLen 2
-    , TkBytes "F)\186|"
+    , TkBytes "\211n\\7"
     , TkInt 0
     , TkInt 1
     , TkListLen 1
@@ -293,17 +258,17 @@ test_golden_Block = goldenTestCBOR
     , TkMapLen 2
     , TkBytes "h\204\223#"
     , TkMapLen 2
-    , TkInt 8
+    , TkInt 6
     , TkInt 200
-    , TkInt 17
+    , TkInt 13
     , TkListLen 2
     , TkInt 1
     , TkBytes "e\138\176\224\245\253\239\216h\168\232\ENQ\209\SOH\169\140\195Z\181\ETB\233}\243\147q\130\218\fz\243\139="
     , TkBytes "\155\240{\183"
     , TkMapLen 2
-    , TkInt 8
+    , TkInt 6
     , TkInt 200
-    , TkInt 17
+    , TkInt 13
     , TkListLen 2
     , TkInt 1
     , TkBytes "e\138\176\224\245\253\239\216h\168\232\ENQ\209\SOH\169\140\195Z\181\ETB\233}\243\147q\130\218\fz\243\139="
@@ -314,13 +279,13 @@ test_golden_Block = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkBytes "HiG\254\155\230\144\SI"
-    , TkBytes "'x\142$HiG\254\155\230\144\SI"
+    , TkBytes "\186s\204\178HiG\254\155\230\144\SI"
     , TkListLen 2
     , TkBytes "\204\215\148\135Q\248,\206"
-    , TkBytes "'x\142$\204\215\148\135Q\248,\206"
+    , TkBytes "\186s\204\178\204\215\148\135Q\248,\206"
     , TkListLen 2
     , TkBytes "|o\252\b\214\250\152\173"
-    , TkBytes "'x\142$|o\252\b\214\250\152\173"
+    , TkBytes "\186s\204\178|o\252\b\214\250\152\173"
     , TkMapLen 0
     ]
 
@@ -332,7 +297,7 @@ test_golden_Header = goldenTestCBOR
     , TkListLen 15
     , TkInt 2
     , TkInt 20
-    , TkBytes "\ACK\FS\238\144"
+    , TkBytes "cR\153\CAN"
     , TkBytes "HiG\254\155\230\144\SI"
     , TkBytes "\v\139\240N\254\v\129%"
     , TkListLen 2
@@ -342,22 +307,21 @@ test_golden_Header = goldenTestCBOR
     , TkInt 0
     , TkBytes "\v\139\240N\254\v\129%\\E"
     , TkInt 208
-    , TkBytes "\DLE\SIvJ"
+    , TkBytes "Y\128\228\217"
     , TkBytes "\201\&5\162|\221l\132\&2"
     , TkInt 0
     , TkInt 0
     , TkBytes "\SOH\217\&2\EOTHiG\254\155\230\144\SI"
     , TkInt 0
     , TkInt 0
-    , TkBytes "\SUB\221\219\212\246TB\217n\STXx\186\186\202\132X\201\&5\162|\221l\132\&2\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
+    , TkBytes "\154n\223F\n\162;\208\229\129\f\143\239h\231\f\201\&5\162|\221l\132\&2\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     ]
 
 test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
     toCBOR
     exampleHeaderHash
-    [ TkBytes "\174\218O\ETX" ]
-
+    [ TkBytes "\236\b\243\225" ]
 
 test_golden_GenTx :: Assertion
 test_golden_GenTx = goldenTestCBORInCBOR
@@ -709,30 +673,14 @@ test_golden_LedgerState = goldenTestCBOR
     , TkBytes "{}"
     , TkMapLen 0
     , TkMapLen 0
-    , TkListLen 21
+    , TkListLen 17
     , TkInt 0
     , TkInt 0
     , TkInt 50000
     , TkInt 10000
     , TkInt 10000
     , TkInt 7
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 500
     , TkInt 250
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 1000
     , TkInt 10000
     , TkInt 100
     , TkTag 30
@@ -756,30 +704,14 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
-    , TkListLen 21
+    , TkListLen 17
     , TkInt 0
     , TkInt 0
     , TkInt 50000
     , TkInt 10000
     , TkInt 10000
     , TkInt 7
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 500
     , TkInt 250
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 1000
     , TkInt 10000
     , TkInt 100
     , TkTag 30
@@ -1087,30 +1019,14 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkBytes "{}"
     , TkMapLen 0
     , TkMapLen 0
-    , TkListLen 21
+    , TkListLen 17
     , TkInt 0
     , TkInt 0
     , TkInt 50000
     , TkInt 10000
     , TkInt 10000
     , TkInt 7
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 500
     , TkInt 250
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 1000
     , TkInt 10000
     , TkInt 100
     , TkTag 30
@@ -1134,30 +1050,14 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
-    , TkListLen 21
+    , TkListLen 17
     , TkInt 0
     , TkInt 0
     , TkInt 50000
     , TkInt 10000
     , TkInt 10000
     , TkInt 7
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 500
     , TkInt 250
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 1000
     , TkInt 10000
     , TkInt 100
     , TkTag 30

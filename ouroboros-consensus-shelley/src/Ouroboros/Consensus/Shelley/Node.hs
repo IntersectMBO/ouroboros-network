@@ -13,12 +13,11 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , protocolClientInfoShelley
-  , ShelleyGenesis (..)
-  , initialFundsPseudoTxIn
-  , ShelleyGenesisStaking (..)
+  , SL.ShelleyGenesis (..)
+  , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
   , SL.ProtVer
-  , emptyGenesisStaking
+  , SL.emptyGenesisStaking
   ) where
 
 import           Control.Monad.Reader (runReader)
@@ -27,14 +26,17 @@ import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
+import           Cardano.Prelude (Natural)
+
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin))
 
 import           Ouroboros.Network.Block (genesisPoint)
+import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -49,21 +51,17 @@ import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
-import           Shelley.Spec.Ledger.Crypto (HASH)
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Scripts as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
-import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
-import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
@@ -84,41 +82,14 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
   }
 
--- | Compute the 'SL.TxIn' of the initial UTxO pseudo-transaction corresponding
--- to the given address in the genesis initial funds.
---
--- The Shelley initial UTxO is constructed from the 'sgInitialFunds' which
--- is not a full UTxO but just a map from addresses to coin values.
---
--- This gets turned into a UTxO by making a pseudo-transaction for each address,
--- with the 0th output being the coin value. So to spend from the initial UTxO
--- we need this same 'SL.TxIn' to use as an input to the spending transaction.
---
-initialFundsPseudoTxIn :: forall c. SL.Addr c -> SL.TxIn c
-initialFundsPseudoTxIn addr =
-    case addr of
-      SL.Addr _networkId (SL.KeyHashObj    (SL.KeyHash    h)) _sref -> pseudoTxIn h
-      SL.Addr _networkId (SL.ScriptHashObj (SL.ScriptHash h)) _sref -> pseudoTxIn h
-      SL.AddrBootstrap byronAddr -> error $
-        "Unsupported Byron address in the genesis UTxO: " <> show byronAddr
-  where
-    pseudoTxIn :: Crypto.Hash (HASH c) a -> SL.TxIn c
-    pseudoTxIn h = SL.TxIn (pseudoTxId h) 0
-
-    pseudoTxId :: Crypto.Hash (HASH c) a -> SL.TxId c
-    pseudoTxId = SL.TxId . castHash
-
-    --TODO: move this to the hash API module
-    castHash :: Crypto.Hash (HASH c) a -> Crypto.Hash (HASH c) b
-    castHash (Crypto.UnsafeHash h) = Crypto.UnsafeHash h
-
 protocolInfoShelley
   :: forall m c. (MonadRandom m, TPraosCrypto c)
-  => ShelleyGenesis c
+  => SL.ShelleyGenesis c
+  -> Natural -- ^ Max major protocol version
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials c)
   -> ProtocolInfo m (ShelleyBlock c)
-protocolInfoShelley genesis protVer mbCredentials =
+protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     ProtocolInfo {
         pInfoConfig      = topLevelConfig
       , pInfoInitLedger  = initExtLedgerState
@@ -139,23 +110,26 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo
+    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorPV
 
     -- TODO: This must instead be derived from the hard fork history.
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
     epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo $ sgEpochLength genesis
+    epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
+
+    securityParam :: SecurityParam
+    securityParam = SecurityParam $ SL.sgSecurityParam genesis
 
     tpraosParams :: TPraosParams
     tpraosParams = TPraosParams {
-        tpraosSlotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-      , tpraosLeaderF           = sgActiveSlotCoeff   genesis
-      , tpraosSecurityParam     = sgSecurityParam     genesis
-      , tpraosMaxKESEvo         = sgMaxKESEvolutions  genesis
-      , tpraosQuorum            = sgUpdateQuorum      genesis
-      , tpraosMaxMajorPV        = sgMaxMajorPV        genesis
-      , tpraosMaxLovelaceSupply = sgMaxLovelaceSupply genesis
-      , tpraosNetworkId         = sgNetworkId         genesis
+        tpraosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
+      , tpraosLeaderF           = SL.sgActiveSlotCoeff   genesis
+      , tpraosSecurityParam     = securityParam
+      , tpraosMaxKESEvo         = SL.sgMaxKESEvolutions  genesis
+      , tpraosQuorum            = SL.sgUpdateQuorum      genesis
+      , tpraosMaxMajorPV        = maxMajorPV
+      , tpraosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
+      , tpraosNetworkId         = SL.sgNetworkId         genesis
       }
 
     mkLeaderCreds :: TPraosLeaderCredentials c
@@ -182,9 +156,9 @@ protocolInfoShelley genesis protVer mbCredentials =
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig = ShelleyConfig {
         shelleyProtocolVersion = protVer
-      , shelleySystemStart     = sgSystemStart     genesis
-      , shelleyNetworkMagic    = sgNetworkMagic    genesis
-      , shelleyProtocolMagicId = sgProtocolMagicId genesis
+      , shelleySystemStart     = SystemStart $ SL.sgSystemStart genesis
+      , shelleyNetworkMagic    = NetworkMagic $ SL.sgNetworkMagic  genesis
+      , shelleyProtocolMagicId = SL.sgProtocolMagicId genesis
       }
 
     initLedgerState :: LedgerState (ShelleyBlock c)
@@ -206,15 +180,18 @@ protocolInfoShelley genesis protVer mbCredentials =
     initialEpochNo :: EpochNo
     initialEpochNo = 0
 
+    initialUtxo :: SL.UTxO c
+    initialUtxo = SL.genesisUtxO genesis
+
     initShelleyState :: SL.ChainState c
     initShelleyState = registerGenesisStaking $ SL.initialShelleyState
       Origin
       initialEpochNo
-      genesisUtxO
-      (fromIntegral (sgMaxLovelaceSupply genesis) - SL.balance genesisUtxO)
-      (sgGenDelegs genesis)
+      initialUtxo
+      (fromIntegral (SL.sgMaxLovelaceSupply genesis) - SL.balance initialUtxo)
+      (SL.sgGenDelegs genesis)
       oSched
-      (sgProtocolParams genesis)
+      (SL.sgProtocolParams genesis)
       -- We can start without entropy, throughout the epoch(s) we'll obtain
       -- entropy.
       SL.NeutralNonce
@@ -232,16 +209,8 @@ protocolInfoShelley genesis protVer mbCredentials =
     oSched = runShelleyBase $
       SL.overlaySchedule
         initialEpochNo
-        (Map.keysSet (sgGenDelegs genesis))
-        (sgProtocolParams genesis)
-
-    genesisUtxO :: SL.UTxO c
-    genesisUtxO = SL.UTxO $ Map.fromList
-        [ (txIn, txOut)
-        | (addr, amount) <- Map.toList (sgInitialFunds genesis)
-        , let txIn  = initialFundsPseudoTxIn addr
-              txOut = SL.TxOut addr amount
-        ]
+        (Map.keysSet (SL.sgGenDelegs genesis))
+        (SL.sgProtocolParams genesis)
 
     -- Register the initial staking.
     --
@@ -251,7 +220,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
         { SL.chainNes = newChainNes }
       where
-        ShelleyGenesisStaking { sgsPools, sgsStake } = sgStaking genesis
+        SL.ShelleyGenesisStaking { sgsPools, sgsStake } = SL.sgStaking genesis
         oldEpochState = SL.nesEs $ oldChainNes
         oldLedgerState = SL.esLState oldEpochState
         oldDPState = SL._delegationState oldLedgerState
@@ -296,7 +265,7 @@ protocolInfoShelley genesis protVer mbCredentials =
         initSnapShot = SL.SnapShot
           { SL._stake = SL.Stake . Map.fromList $
               [ (stakeCred, stake)
-              | (addr, stake) <- Map.toList (sgInitialFunds genesis)
+              | (addr, stake) <- Map.toList (SL.sgInitialFunds genesis)
               , Just stakeCred <- [addrStakeCred addr]
               ]
           , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake

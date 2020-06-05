@@ -34,6 +34,8 @@ module Ouroboros.Consensus.Cardano (
 import           Crypto.Random (MonadRandom)
 import           Data.Type.Equality
 
+import           Cardano.Prelude (Natural)
+
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
@@ -140,6 +142,7 @@ data Protocol (m :: * -> *) blk p where
   ProtocolRealTPraos
     :: ShelleyGenesis TPraosStandardCrypto
     -> ProtVer
+    -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
     -> Protocol m (ShelleyBlock TPraosStandardCrypto) ProtocolRealTPraos
 
@@ -147,6 +150,7 @@ data Protocol (m :: * -> *) blk p where
   ProtocolCardano
     :: ShelleyGenesis TPraosStandardCrypto
     -> ProtVer
+    -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
     -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
@@ -181,14 +185,15 @@ protocolInfo (ProtocolMockPBFT paramsPBft paramsEra nid) =
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc
 
-protocolInfo (ProtocolRealTPraos genesis protVer mbLeaderCredentials) =
-    protocolInfoShelley genesis protVer mbLeaderCredentials
+protocolInfo (ProtocolRealTPraos genesis protVer maxMajorPV mbLeaderCredentials) =
+    protocolInfoShelley genesis maxMajorPV protVer mbLeaderCredentials
 
-protocolInfo (ProtocolCardano genesis protVer mbLeaderCredentials) =
+protocolInfo (ProtocolCardano genesis protVer maxMajorPV mbLeaderCredentials) =
     castProtocolInfo $ inject shelleyProtocolInfo
   where
     shelleyProtocolInfo :: ProtocolInfo m (ShelleyBlock TPraosStandardCrypto)
-    shelleyProtocolInfo = protocolInfoShelley genesis protVer mbLeaderCredentials
+    shelleyProtocolInfo =
+      protocolInfoShelley genesis maxMajorPV protVer mbLeaderCredentials
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
