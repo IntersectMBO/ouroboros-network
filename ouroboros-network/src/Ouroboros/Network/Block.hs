@@ -75,6 +75,7 @@ import qualified Codec.CBOR.Write as Write
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Coerce (Coercible, coerce)
 import           Data.FingerTree.Strict (Measured)
 import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
@@ -148,9 +149,9 @@ deriving instance StandardHash block => Show (ChainHash block)
 instance (StandardHash block, Typeable block) => NoUnexpectedThunks (ChainHash block)
   -- use generic instance
 
-castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
+castHash :: Coercible (HeaderHash b) (HeaderHash b') => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
-castHash (BlockHash b) = BlockHash b
+castHash (BlockHash h) = BlockHash (coerce h)
 
 {-------------------------------------------------------------------------------
   Point on a chain
@@ -190,9 +191,9 @@ pointHash (Point pt) = case pt of
     Origin -> GenesisHash
     At blk -> BlockHash (Point.blockPointHash blk)
 
-castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
-castPoint (Point Origin)                       = Point Origin
-castPoint (Point (At (Point.Block slot hash))) = Point (block slot hash)
+castPoint :: Coercible (HeaderHash b) (HeaderHash b') => Point b -> Point b'
+castPoint GenesisPoint           = GenesisPoint
+castPoint (BlockPoint slot hash) = BlockPoint slot (coerce hash)
 
 blockPoint :: HasHeader block => block -> Point block
 blockPoint b = Point (block (blockSlot b) (blockHash b))

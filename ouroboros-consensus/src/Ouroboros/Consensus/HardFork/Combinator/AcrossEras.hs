@@ -229,6 +229,9 @@ instance CanHardFork xs => HasHeader (OneEraBlock xs) where
 deriving via LiftNamedNP "PerEraBlockConfig" BlockConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraBlockConfig xs)
 
+deriving via LiftNamedNP "PerEraCodecConfig" CodecConfig xs
+         instance CanHardFork xs => NoUnexpectedThunks (PerEraCodecConfig xs)
+
 deriving via LiftNamedNP "PerEraConsensusConfig" WrapPartialConsensusConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraConsensusConfig xs)
 

@@ -126,6 +126,7 @@ type instance HeaderHash    BlockB = Hash
 
 instance HasCodecConfig BlockB where
   data CodecConfig BlockB = CCfgB
+    deriving (Generic, NoUnexpectedThunks)
 
   getCodecConfig     _ = CCfgB
 

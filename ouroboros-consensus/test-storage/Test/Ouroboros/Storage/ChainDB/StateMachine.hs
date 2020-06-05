@@ -23,7 +23,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 
 import           Prelude hiding (elem)
 
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (Serialise)
 import           Control.Monad (replicateM, void)
 import           Control.Tracer
 import           Data.Bifoldable
@@ -269,9 +269,10 @@ type TestConstraints blk =
   , ModelSupportsBlock                blk
   , Eq                       (Header  blk)
   , Show                     (Header  blk)
-  , Serialise                (Header  blk)
   , ConvertRawHash                    blk
   , HasHardForkHistory                blk
+  , HasCodecConfig                    blk
+  , SerialiseDiskConstraints          blk
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
@@ -1492,24 +1493,8 @@ mkArgs :: IOLike m
        -> ChainDbArgs m Blk
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
-    { -- Decoders
-      cdbDecodeHash           = decode
-    , cdbDecodeBlock          = const <$> decode
-    , cdbDecodeHeader         = const <$> decode
-    , cdbDecodeLedger         = decode
-    , cdbDecodeConsensusState = decode
-    , cdbDecodeAnnTip         = decodeAnnTipIsEBB decode
-
-      -- Encoders
-    , cdbEncodeHash           = encode
-    , cdbEncodeBlock          = encode
-    , cdbEncodeHeader         = encode
-    , cdbEncodeLedger         = encode
-    , cdbEncodeConsensusState = encode
-    , cdbEncodeAnnTip         = encodeAnnTipIsEBB encode
-
-      -- HasFS instances
-    , cdbHasFSImmDb           = simHasFS immDbFsVar
+    { -- HasFS instances
+      cdbHasFSImmDb           = simHasFS immDbFsVar
     , cdbHasFSVolDb           = simHasFS volDbFsVar
     , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 

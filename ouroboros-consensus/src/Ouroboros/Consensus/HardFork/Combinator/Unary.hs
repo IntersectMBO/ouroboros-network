@@ -147,6 +147,18 @@ defaultInjectSt =
     . State.Current History.initBound
 
 {-------------------------------------------------------------------------------
+  Forwarding instances
+-------------------------------------------------------------------------------}
+
+instance Isomorphic ((->) a) where
+  project f = coerce (project @I) . f
+  inject  f = coerce (inject  @I) . f
+
+instance (Functor f, Isomorphic g) => Isomorphic (f :.: g) where
+  project (Comp fg) = Comp (project <$> fg)
+  inject  (Comp fg) = Comp (inject  <$> fg)
+
+{-------------------------------------------------------------------------------
   Simple instances
 -------------------------------------------------------------------------------}
 

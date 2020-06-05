@@ -1,10 +1,6 @@
-{-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -31,7 +27,6 @@ import qualified Test.Cardano.Chain.UTxO.Model as Spec.Test
 
 import qualified Cardano.Chain.Block as Impl
 import qualified Cardano.Chain.Genesis as Impl
-import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Impl
 import qualified Cardano.Chain.Update.Validation.Interface as Impl
 import qualified Cardano.Chain.UTxO as Impl
@@ -45,7 +40,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -61,6 +55,7 @@ import           Ouroboros.Consensus.ByronSpec.Ledger
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
 
 import           Ouroboros.Consensus.ByronDual.Ledger
+import           Ouroboros.Consensus.ByronDual.Node.Serialisation ()
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -197,20 +192,6 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
   RunNode instance
 -------------------------------------------------------------------------------}
 
-pb :: Proxy ByronBlock
-pb = Proxy
-
-instance HasNetworkProtocolVersion DualByronBlock where
-  type NodeToNodeVersion   DualByronBlock = NodeToNodeVersion   ByronBlock
-  type NodeToClientVersion DualByronBlock = NodeToClientVersion ByronBlock
-
-  supportedNodeToNodeVersions   _ = supportedNodeToNodeVersions   pb
-  supportedNodeToClientVersions _ = supportedNodeToClientVersions pb
-  mostRecentNodeToNodeVersion   _ = mostRecentNodeToNodeVersion   pb
-  mostRecentNodeToClientVersion _ = mostRecentNodeToClientVersion pb
-  nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     pb
-  nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   pb
-
 instance RunNode DualByronBlock where
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg chainDB = do
@@ -234,10 +215,6 @@ instance RunNode DualByronBlock where
   -- Node config is a consensus concern, determined by the main block only
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
 
-  -- Envelope
-  nodeEncodeAnnTip = \cfg -> nodeEncodeAnnTip (dualCodecConfigMain cfg) . castAnnTip
-  nodeDecodeAnnTip = \cfg -> castAnnTip <$> nodeDecodeAnnTip (dualCodecConfigMain cfg)
-
   -- For now the size of the block is just an estimate, and so we just reuse
   -- the estimate from the concrete header.
   nodeBlockFetchSize = nodeBlockFetchSize . dualHeaderMain
@@ -253,63 +230,5 @@ instance RunNode DualByronBlock where
 
   nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb
 
-  -- Encoders
-  nodeEncodeBlock          = \_ -> encodeDualBlock encodeByronBlock
-  nodeEncodeHeader         = \ccfg version ->
-                                  nodeEncodeHeader
-                                    (dualCodecConfigMain ccfg)
-                                    (castSerialisationVersion version)
-                                . dualHeaderMain
-  nodeEncodeWrappedHeader  = \ccfg version ->
-                                  nodeEncodeWrappedHeader
-                                    (dualCodecConfigMain ccfg)
-                                    (castSerialisationAcrossNetwork version)
-                                . dualWrappedMain
-  nodeEncodeLedgerState    = \_ -> encodeDualLedgerState encodeByronLedgerState
-  nodeEncodeApplyTxError   = \_ -> encodeDualGenTxErr encodeByronApplyTxError
-  nodeEncodeHeaderHash     = \_ -> encodeByronHeaderHash
-  nodeEncodeGenTx          = \_ -> encodeDualGenTx   encodeByronGenTx
-  nodeEncodeGenTxId        = \_ -> encodeDualGenTxId encodeByronGenTxId
-  nodeEncodeConsensusState = \_ -> encodeByronConsensusState
-  nodeEncodeQuery          = \_ -> \case {}
-  nodeEncodeResult         = \_ -> \case {}
-
-  -- Decoders
-  nodeDecodeBlock          = decodeDualBlock . decodeByronBlock . extractEpochSlots
-  nodeDecodeHeader         = \ccfg version ->
-                               (DualHeader .) <$>
-                                 nodeDecodeHeader
-                                   (dualCodecConfigMain ccfg)
-                                   (castSerialisationVersion version)
-  nodeDecodeWrappedHeader  = \ccfg version ->
-                               rewrapMain <$>
-                                 nodeDecodeWrappedHeader
-                                   (dualCodecConfigMain ccfg)
-                                   (castSerialisationAcrossNetwork version)
-  nodeDecodeGenTx          = \_ -> decodeDualGenTx   decodeByronGenTx
-  nodeDecodeGenTxId        = \_ -> decodeDualGenTxId decodeByronGenTxId
-  nodeDecodeHeaderHash     = \_ -> decodeByronHeaderHash
-  nodeDecodeLedgerState    = \_ -> decodeDualLedgerState decodeByronLedgerState
-  nodeDecodeApplyTxError   = \_ -> decodeDualGenTxErr    decodeByronApplyTxError
-  nodeDecodeConsensusState = \ccfg ->
-                                let k = getByronSecurityParam
-                                      $ dualCodecConfigMain ccfg
-                                in decodeByronConsensusState k
-  nodeDecodeQuery          = \_ -> error "DualByron.nodeDecodeQuery"
-  nodeDecodeResult         = \_ -> \case {}
-
-extractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
-extractEpochSlots = getByronEpochSlots . dualCodecConfigMain
-
-{-------------------------------------------------------------------------------
-  The headers for DualByronBlock and ByronBlock are identical, so we can
-  safely cast the serialised forms.
--------------------------------------------------------------------------------}
-
-dualWrappedMain :: Serialised (Header DualByronBlock)
-                -> Serialised (Header ByronBlock)
-dualWrappedMain (Serialised bs) = Serialised bs
-
-rewrapMain :: Serialised (Header ByronBlock)
-           -> Serialised (Header DualByronBlock)
-rewrapMain (Serialised bs) = Serialised bs
+pb :: Proxy ByronBlock
+pb = Proxy

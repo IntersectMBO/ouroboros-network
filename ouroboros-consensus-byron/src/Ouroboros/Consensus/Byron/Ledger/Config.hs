@@ -66,6 +66,7 @@ instance HasCodecConfig ByronBlock where
         getByronEpochSlots    :: !CC.Slot.EpochSlots
       , getByronSecurityParam :: !SecurityParam
       }
+    deriving (Generic, NoUnexpectedThunks)
 
   getCodecConfig bcfg = ByronCodecConfig {
       getByronEpochSlots    = byronEpochSlots bcfg

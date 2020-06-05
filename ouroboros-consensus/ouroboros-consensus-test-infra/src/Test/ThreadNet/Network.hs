@@ -576,22 +576,8 @@ runThreadNetwork ThreadNetworkArgs
       cfg initLedger
       invalidTracer addTracer
       nodeDBs _coreNodeId = ChainDbArgs
-        { -- Decoders
-          cdbDecodeHash           = nodeDecodeHeaderHash     ccfg
-        , cdbDecodeBlock          = nodeDecodeBlock          ccfg
-        , cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
-        , cdbDecodeLedger         = nodeDecodeLedgerState    ccfg
-        , cdbDecodeConsensusState = nodeDecodeConsensusState ccfg
-        , cdbDecodeAnnTip         = nodeDecodeAnnTip         ccfg
-          -- Encoders
-        , cdbEncodeHash           = nodeEncodeHeaderHash     ccfg
-        , cdbEncodeBlock          = nodeEncodeBlock          ccfg
-        , cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
-        , cdbEncodeLedger         = nodeEncodeLedgerState    ccfg
-        , cdbEncodeConsensusState = nodeEncodeConsensusState ccfg
-        , cdbEncodeAnnTip         = nodeEncodeAnnTip         ccfg
-          -- HasFS instances
-        , cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
+        { -- HasFS instances
+          cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
         , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
@@ -621,8 +607,6 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
-        ccfg = getCodecConfig $ configBlock cfg
-
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
           ChainDB.TraceAddBlockEvent
@@ -843,16 +827,16 @@ runThreadNetwork ThreadNetworkArgs
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
     customNodeToNodeCodecs cfg = NTN.Codecs
         { cChainSyncCodec =
-            mapFailureCodec CodecBytesFailure $
+            mapFailureCodec (CodecBytesFailure "ChainSync") $
               NTN.cChainSyncCodec binaryProtocolCodecs
         , cChainSyncCodecSerialised =
-            mapFailureCodec CodecBytesFailure $
+            mapFailureCodec (CodecBytesFailure "ChainSyncSerialised") $
               NTN.cChainSyncCodecSerialised binaryProtocolCodecs
         , cBlockFetchCodec =
-            mapFailureCodec CodecBytesFailure $
+            mapFailureCodec (CodecBytesFailure "BlockFetch") $
               NTN.cBlockFetchCodec binaryProtocolCodecs
         , cBlockFetchCodecSerialised =
-            mapFailureCodec CodecBytesFailure $
+            mapFailureCodec (CodecBytesFailure "BlockFetchSerialised") $
               NTN.cBlockFetchCodecSerialised binaryProtocolCodecs
         , cTxSubmissionCodec =
             mapFailureCodec CodecIdFailure $
@@ -867,8 +851,10 @@ runThreadNetwork ThreadNetworkArgs
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
 data CodecError
-  = CodecIdFailure    CodecFailure
-  | CodecBytesFailure DeserialiseFailure
+  = CodecIdFailure CodecFailure
+  | CodecBytesFailure
+      String  -- ^ Extra error message, e.g., the name of the codec
+      DeserialiseFailure
   deriving (Show, Exception)
 
 {-------------------------------------------------------------------------------

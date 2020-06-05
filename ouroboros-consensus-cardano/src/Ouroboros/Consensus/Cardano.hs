@@ -87,7 +87,7 @@ type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft PBftMockCrypto
 type ProtocolRealPBFT       = PBft PBftByronCrypto
 type ProtocolRealTPraos     = TPraos TPraosStandardCrypto
-type ProtocolCardano        = HardForkProtocol '[ShelleyBlock TPraosStandardCrypto]
+type ProtocolCardano        = DegenForkProtocol (ShelleyBlock TPraosStandardCrypto)
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols

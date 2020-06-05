@@ -77,7 +77,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
+                     VolDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
@@ -87,7 +88,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+  :: forall m blk.
+     (IOLike m, LedgerSupportsProtocol blk, VolDbSerialiseConstraints blk)
   => ImmDB m blk
   -> VolDB m blk
   -> LgrDB m blk
@@ -234,6 +236,7 @@ addBlockSync
      , HasHeader blk
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
+     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -341,6 +344,7 @@ chainSelectionForFutureBlocks
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
+     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk -> BlockCache blk -> m ()
@@ -397,6 +401,7 @@ chainSelectionForBlock
      , HasHeader blk
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
+     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -719,7 +724,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 --
 -- PRECONDITION: the header (block) must exist in the VolatileDB.
 getKnownHeaderThroughCache
-  :: (MonadCatch m, HasHeader blk)
+  :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
   -> HeaderHash blk
   -> StateT (Map (HeaderHash blk) (Header blk)) m (Header blk)

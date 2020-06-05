@@ -22,17 +22,13 @@ import           Data.Proxy (Proxy (..))
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
-import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 
 import           Ouroboros.Network.Block (HeaderHash)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.Block (ConvertRawHash (..), Header)
+import           Ouroboros.Consensus.Block (ConvertRawHash (..), getCodecConfig)
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
-                     GenTxId)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Serialisation ()
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
@@ -47,24 +43,17 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Roundtrip
+import           Test.Util.Serialisation
 
 import           Test.Consensus.Byron.Generators
 
 tests :: TestTree
 tests = testGroup "Byron"
     [ testGroup "Serialisation roundtrips"
-        [ testProperty "roundtrip Block"       prop_roundtrip_Block
-        , testProperty "roundtrip Header"      prop_roundtrip_Header
-        , testProperty "roundtrip HeaderHash"  prop_roundtrip_HeaderHash
-        , testProperty "roundtrip GenTx"       prop_roundtrip_GenTx
-        , testProperty "roundtrip GenTxId"     prop_roundtrip_GenTxId
-        , testProperty "roundtrip ApplyTxErr"  prop_roundtrip_ApplyTxErr
-        , testProperty "roundtrip Query"       prop_roundtrip_Query
-        , testProperty "roundtrip Result"      prop_roundtrip_Result
-        ]
-        -- TODO ConsensusState
-        -- TODO LedgerState
+      [ testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         testCodecCfg
+      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   testCodecCfg
+      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient testCodecCfg
+      ]
 
     , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
     , testGroup "ConvertRawHashInfo sanity check"
@@ -76,58 +65,6 @@ tests = testGroup "Byron"
         [ testProperty "detect corruption in RegularBlock" prop_detectCorruption_RegularBlock
         ]
     ]
-
-{-------------------------------------------------------------------------------
-  Serialisation roundtrips
--------------------------------------------------------------------------------}
-
-prop_roundtrip_Block :: ByronBlock -> Property
-prop_roundtrip_Block b =
-    roundtrip' encodeByronBlock (decodeByronBlock epochSlots) b
-
-prop_roundtrip_Header :: SerialisationVersion ByronBlock
-                      -> Header ByronBlock -> Property
-prop_roundtrip_Header v h =
-    not (isNodeToClientVersion v) ==>
-    roundtrip'
-      (encodeByronHeader v)
-      (decodeByronHeader epochSlots v)
-      h'
-  where
-    h' = case v of
-           SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
-             -- This is a lossy format
-             h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
-           _otherwise ->
-             h
-
-prop_roundtrip_HeaderHash :: HeaderHash ByronBlock -> Property
-prop_roundtrip_HeaderHash =
-    roundtrip encodeByronHeaderHash decodeByronHeaderHash
-
-prop_roundtrip_GenTx :: GenTx ByronBlock -> Property
-prop_roundtrip_GenTx =
-    roundtrip encodeByronGenTx decodeByronGenTx
-
-prop_roundtrip_GenTxId :: GenTxId ByronBlock -> Property
-prop_roundtrip_GenTxId =
-    roundtrip encodeByronGenTxId decodeByronGenTxId
-
-prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
-prop_roundtrip_ApplyTxErr =
-    roundtrip encodeByronApplyTxError decodeByronApplyTxError
-
-prop_roundtrip_Query :: Some (Query ByronBlock) -> Property
-prop_roundtrip_Query =
-    roundtrip
-      (\case { Some query -> encodeByronQuery query })
-      decodeByronQuery
-
-prop_roundtrip_Result :: CC.UPI.State -> Property
-prop_roundtrip_Result =
-    roundtrip
-      (encodeByronResult GetUpdateInterfaceState)
-      (decodeByronResult GetUpdateInterfaceState)
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo
@@ -186,6 +123,7 @@ prop_detectCorruption_RegularBlock (RegularBlock blk) =
       (verifyBlockIntegrity (configBlock testCfg))
       blk
 
+-- | Matches the values used for the generators.
 testCfg :: TopLevelConfig ByronBlock
 testCfg = pInfoConfig protocolInfo
   where
@@ -197,3 +135,7 @@ testCfg = pInfoConfig protocolInfo
         (CC.Update.ProtocolVersion 1 0 0)
         (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
         Nothing
+
+-- | Matches the values used for the generators.
+testCodecCfg :: CodecConfig ByronBlock
+testCodecCfg = getCodecConfig (configBlock testCfg)

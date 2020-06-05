@@ -16,7 +16,8 @@
 -- | Types used throughout the implementation: handle, state, environment,
 -- types, trace types, etc.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
-    ChainDbHandle (..)
+    SerialiseDiskConstraints
+  , ChainDbHandle (..)
   , getEnv
   , getEnv1
   , getEnv2
@@ -89,13 +90,25 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
                      StreamTo, UnknownRange)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
+                     ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
+                     LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
+                     VolDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+
+-- | All the serialisation related constraints needed by the ChainDB.
+class ( ImmDbSerialiseConstraints blk
+      , LgrDbSerialiseConstraints blk
+      , VolDbSerialiseConstraints blk
+        -- Needed for Reader
+      , EncodeDisk blk (Header blk)
+      ) => SerialiseDiskConstraints blk
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
@@ -245,7 +258,7 @@ data ChainDbEnv m blk = CDB
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
-instance (IOLike m, LedgerSupportsProtocol blk)
+instance (IOLike m, LedgerSupportsProtocol blk, HasCodecConfig blk)
       => NoUnexpectedThunks (ChainDbEnv m blk) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 

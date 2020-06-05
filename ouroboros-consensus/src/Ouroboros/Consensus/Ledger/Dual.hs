@@ -1,20 +1,21 @@
-{-# LANGUAGE ConstraintKinds         #-}
-{-# LANGUAGE DerivingStrategies      #-}
-{-# LANGUAGE DerivingVia             #-}
-{-# LANGUAGE EmptyCase               #-}
-{-# LANGUAGE EmptyDataDeriving       #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE LambdaCase              #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE OverloadedStrings       #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeApplications        #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Ledger.Dual (
     Bridge(..)
@@ -165,6 +166,9 @@ instance HasCodecConfig m => HasCodecConfig (DualBlock m a) where
   getCodecConfig DualBlockConfig{..} = DualCodecConfig {
         dualCodecConfigMain = getCodecConfig dualBlockConfigMain
       }
+
+deriving newtype instance HasCodecConfig m
+                       => NoUnexpectedThunks (CodecConfig (DualBlock m a))
 
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain

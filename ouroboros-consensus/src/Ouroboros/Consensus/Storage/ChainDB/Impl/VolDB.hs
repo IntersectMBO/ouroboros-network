@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
@@ -16,6 +18,7 @@
 -- | Thin wrapper around the VolatileDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
     VolDB -- Opaque
+  , VolDbSerialiseConstraints
     -- * Initialization
   , VolDbArgs(..)
   , defaultArgs
@@ -55,7 +58,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (join)
@@ -69,12 +71,12 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           Streaming.Prelude (Of (..), Stream)
 import qualified Streaming.Prelude as S
 import           System.FilePath ((</>))
-
-import           Cardano.Prelude (Word64, allNoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
@@ -86,10 +88,6 @@ import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
-import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
-                     closeDB, getMaxSlotNo)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
@@ -101,6 +99,11 @@ import           Ouroboros.Consensus.Storage.VolatileDB
                      VolatileDBError)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
+                     closeDB, getMaxSlotNo)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Thin wrapper around the VolatileDB (opaque type)
 --
@@ -108,26 +111,20 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 -- module.
 data VolDB m blk = VolDB {
       volDB              :: !(VolatileDB (HeaderHash blk) m)
-    , decHeader          :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , decBlock           :: forall s. Decoder s (Lazy.ByteString -> blk)
-      -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
-      -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock           :: !(blk -> Encoding)
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
+    , codecConfig        :: !(CodecConfig blk)
     , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
+  deriving (Generic)
 
--- Universal type; we can't use generics
-instance NoUnexpectedThunks (VolDB m blk) where
-  showTypeOf _ = "VolDB"
-  whnfNoUnexpectedThunks ctxt VolDB {..} = allNoUnexpectedThunks
-    [ noUnexpectedThunks ctxt volDB
-    , noUnexpectedThunks ctxt decHeader
-    , noUnexpectedThunks ctxt decBlock
-    , noUnexpectedThunks ctxt encBlock
-    , noUnexpectedThunks ctxt getBinaryBlockInfo
-    , noUnexpectedThunks ctxt addHdrEnv
-    ]
+deriving instance HasCodecConfig blk => NoUnexpectedThunks (VolDB m blk)
+  -- use generic instance
+
+-- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the VolDB.
+class ( EncodeDisk blk blk
+      , DecodeDisk blk (Lazy.ByteString -> blk)
+      , DecodeDisk blk (Lazy.ByteString -> Header blk)
+      ) => VolDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the VolDB wrapper.
 type TraceEvent blk =
@@ -141,10 +138,8 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
       volHasFS              :: HasFS m h
     , volCheckIntegrity     :: blk -> Bool
     , volBlocksPerFile      :: BlocksPerFile
-    , volDecodeHeader       :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , volDecodeBlock        :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , volEncodeBlock        :: blk -> Encoding
     , volGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+    , volCodecConfig        :: CodecConfig blk
     , volAddHdrEnv          :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     , volValidation         :: VolDB.BlockValidationPolicy
     , volTracer             :: Tracer m (TraceEvent blk)
@@ -156,10 +151,8 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 --
 -- * 'volCheckIntegrity'
 -- * 'volBlocksPerFile'
--- * 'volDecodeHeader'
--- * 'volDecodeBlock'
--- * 'volEncodeBlock'
 -- * 'volGetBinaryBlockInfo'
+-- * 'volCodecConfig'
 -- * 'volAddHdrEnv'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
@@ -169,25 +162,23 @@ defaultArgs fp = VolDbArgs {
       -- Fields without a default
     , volCheckIntegrity     = error "no default for volCheckIntegrity"
     , volBlocksPerFile      = error "no default for volBlocksPerFile"
-    , volDecodeHeader       = error "no default for volDecodeHeader"
-    , volDecodeBlock        = error "no default for volDecodeBlock"
-    , volEncodeBlock        = error "no default for volEncodeBlock"
     , volGetBinaryBlockInfo = error "no default for volGetBinaryBlockInfo"
+    , volCodecConfig        = error "no default for volCodecConfig"
     , volAddHdrEnv          = error "no default for volAddHdrEnv"
     , volValidation         = error "no default for volValidation"
     }
 
-openDB :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
-       => VolDbArgs m blk -> m (VolDB m blk)
+openDB
+  :: forall m blk.
+     (IOLike m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
+  => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB volatileDbArgs
     return VolDB
       { volDB              = volDB
-      , decHeader          = volDecodeHeader
-      , decBlock           = volDecodeBlock
-      , encBlock           = volEncodeBlock
       , getBinaryBlockInfo = volGetBinaryBlockInfo
+      , codecConfig        = volCodecConfig
       , addHdrEnv          = volAddHdrEnv
       }
   where
@@ -200,14 +191,11 @@ openDB args@VolDbArgs{..} = do
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
-        -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
-        -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> Encoding)
         -> (blk -> BinaryBlockInfo)
+        -> CodecConfig blk
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> VolDB m blk
-mkVolDB volDB decHeader decBlock encBlock getBinaryBlockInfo addHdrEnv =
-    VolDB {..}
+mkVolDB volDB getBinaryBlockInfo codecConfig addHdrEnv = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -236,13 +224,13 @@ getMaxSlotNo :: VolDB m blk
 getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock
-  :: (MonadCatch m, HasHeader blk, GetHeader blk)
+  :: (MonadCatch m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
     VolDB.putBlock vol (extractInfo b binaryBlockInfo) binaryBlob
   where
     binaryBlockInfo = getBinaryBlockInfo b
-    binaryBlob      = CBOR.toBuilder $ encBlock b
+    binaryBlob      = CBOR.toBuilder $ encodeDisk codecConfig b
 
 closeDB :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 closeDB db = withDB db VolDB.closeDB
@@ -450,21 +438,21 @@ deriving instance Show (HeaderHash blk) => Show (Path blk)
 -------------------------------------------------------------------------------}
 
 getKnownBlock
-  :: (MonadCatch m, HasHeader blk)
+  :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
   -> HeaderHash blk
   -> m blk
 getKnownBlock volDB = join . getKnownBlockComponent volDB GetBlock
 
 getKnownHeader
-  :: (MonadCatch m, HasHeader blk)
+  :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
   -> HeaderHash blk
   -> m (Header blk)
 getKnownHeader volDB = join . getKnownBlockComponent volDB GetHeader
 
 getKnownBlockComponent
-  :: (MonadCatch m, HasHeader blk)
+  :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
   -> BlockComponent (ChainDB m blk) b
   -> HeaderHash blk
@@ -477,7 +465,8 @@ getKnownBlockComponent db blockComponent hash = do
       Left err -> throwM err
 
 getBlockComponent
-  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  :: forall m blk b.
+     (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
   -> BlockComponent (ChainDB m blk) b
   -> HeaderHash blk
@@ -494,17 +483,19 @@ getBlockComponent db blockComponent hash = withDB db $ \vol ->
 type BlockFileParserError hash =
     VolDB.ParserError hash Util.CBOR.ReadIncrementalErr
 
-blockFileParser :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
-                => VolDbArgs m blk
-                -> VolDB.Parser
-                     Util.CBOR.ReadIncrementalErr
-                     m
-                     (HeaderHash blk)
+blockFileParser
+  :: forall m blk.
+     (IOLike m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
+  => VolDbArgs m blk
+  -> VolDB.Parser
+       Util.CBOR.ReadIncrementalErr
+       m
+       (HeaderHash blk)
 blockFileParser VolDbArgs{..} =
     blockFileParser'
       volHasFS
       volGetBinaryBlockInfo
-      volDecodeBlock
+      (decodeDisk volCodecConfig)
       volCheckIntegrity
       volValidation
 
@@ -588,19 +579,21 @@ mustExist _ hash Nothing  = Left  $ VolDbMissingBlock (Proxy @blk) hash
 mustExist _ _    (Just b) = Right $ b
 
 -- TODO unify with ImmDB.parse
-parse :: forall m blk b. (HasHeader blk, MonadThrow m)
-      => VolDB m blk
-      -> BlockOrHeader blk b
-      -> BlockRef blk
-      -> Lazy.ByteString
-      -> m b  -- ^ Throws 'ChainDbFailure'
-parse db blockOrHeader blockRef bytes =
+parse
+  :: forall m blk b.
+     (HasHeader blk, VolDbSerialiseConstraints blk, MonadThrow m)
+ => VolDB m blk
+  -> BlockOrHeader blk b
+  -> BlockRef blk
+  -> Lazy.ByteString
+  -> m b  -- ^ Throws 'ChainDbFailure'
+parse VolDB { codecConfig } blockOrHeader blockRef bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     dec :: forall s. Decoder s (Lazy.ByteString -> b)
     dec = case blockOrHeader of
-      Block  -> decBlock  db
-      Header -> decHeader db
+      Block  -> decodeDisk codecConfig
+      Header -> decodeDisk codecConfig
 
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> b)

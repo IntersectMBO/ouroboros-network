@@ -41,6 +41,8 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit PBFT
 -------------------------------------------------------------------------------}
@@ -102,10 +104,7 @@ instance ( SimpleCrypto c
          , PBftCrypto c'
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  mockProtocolMagicId      = const constructMockProtocolMagicId
-  mockEncodeConsensusState = const S.encodePBftState
-  mockDecodeConsensusState = \(SimpleCodecConfig k) ->
-                               S.decodePBftState k (pbftWindowSize k)
+  mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
@@ -177,3 +176,11 @@ instance PBftCrypto c' => Serialise (SimplePBftExt c c') where
 instance SimpleCrypto c => Serialise (SignedSimplePBft c c')
 instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimplePBft c c') where
   toCBOR = encode
+
+instance Serialise (PBftVerKeyHash c')
+      => EncodeDisk (SimplePBftBlock c c') (S.PBftState c') where
+  encodeDisk = const S.encodePBftState
+
+instance (Serialise (PBftVerKeyHash c'), PBftCrypto c')
+      => DecodeDisk (SimplePBftBlock c c') (S.PBftState c') where
+  decodeDisk (SimpleCodecConfig k) = S.decodePBftState k (pbftWindowSize k)

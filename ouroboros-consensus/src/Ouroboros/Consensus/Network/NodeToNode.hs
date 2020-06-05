@@ -28,6 +28,8 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , responder
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
@@ -70,6 +72,7 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Util.IOLike
@@ -182,49 +185,57 @@ data Codecs blk e m bCS bSCS bBF bSBF bTX = Codecs {
     }
 
 -- | Protocol codecs for the node-to-node protocols
-defaultCodecs :: forall m blk. (IOLike m, RunNode blk)
+defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk)
               => CodecConfig       blk
               -> NodeToNodeVersion blk
               -> Codecs blk DeserialiseFailure m
                    ByteString ByteString ByteString ByteString ByteString
-defaultCodecs cfg version = Codecs {
+defaultCodecs ccfg version = Codecs {
       cChainSyncCodec =
         codecChainSync
-          (wrapCBORinCBOR   (nodeEncodeHeader cfg (serialisedNodeToNode version)))
-          (unwrapCBORinCBOR (nodeDecodeHeader cfg (serialisedNodeToNode version)))
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (encodeTip   (nodeEncodeHeaderHash cfg))
-          (decodeTip   (nodeDecodeHeaderHash cfg))
+          enc
+          dec
+          (encodePoint enc)
+          (decodePoint dec)
+          (encodeTip   enc)
+          (decodeTip   dec)
 
     , cChainSyncCodecSerialised =
-        codecChainSyncSerialised'
-          (nodeEncodeWrappedHeader cfg (SerialisedNodeToNode version))
-          (nodeDecodeWrappedHeader cfg (SerialisedNodeToNode version))
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (encodeTip   (nodeEncodeHeaderHash cfg))
-          (decodeTip   (nodeDecodeHeaderHash cfg))
+        codecChainSyncSerialised
+          enc
+          dec
+          (encodePoint enc)
+          (decodePoint dec)
+          (encodeTip   enc)
+          (decodeTip   dec)
 
     , cBlockFetchCodec =
         codecBlockFetch
-          (wrapCBORinCBOR   (nodeEncodeBlock cfg))
-          (unwrapCBORinCBOR (nodeDecodeBlock cfg))
-          (nodeEncodeHeaderHash cfg)
-          (nodeDecodeHeaderHash cfg)
+          enc
+          dec
+          enc
+          dec
 
     , cBlockFetchCodecSerialised =
         codecBlockFetchSerialised
-          (nodeEncodeHeaderHash cfg)
-          (nodeDecodeHeaderHash cfg)
+          enc
+          dec
+          enc
+          dec
 
     , cTxSubmissionCodec =
         codecTxSubmission
-          (nodeEncodeGenTxId cfg)
-          (nodeDecodeGenTxId cfg)
-          (nodeEncodeGenTx   cfg)
-          (nodeDecodeGenTx   cfg)
+          enc
+          dec
+          enc
+          dec
     }
+  where
+    enc :: SerialiseNodeToNode blk a => a -> Encoding
+    enc = encodeNodeToNode ccfg version
+
+    dec :: SerialiseNodeToNode blk a => forall s. Decoder s a
+    dec = decodeNodeToNode ccfg version
 
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m

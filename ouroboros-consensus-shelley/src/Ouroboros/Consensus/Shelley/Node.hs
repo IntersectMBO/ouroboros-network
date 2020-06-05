@@ -21,14 +21,12 @@ module Ouroboros.Consensus.Shelley.Node (
   , emptyGenesisStaking
   ) where
 
-import           Codec.Serialise (decode, encode)
 import           Control.Monad.Reader (runReader)
 import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
@@ -69,6 +67,7 @@ import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
+import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
@@ -352,29 +351,3 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
 
   nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
   nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo
-
-  nodeEncodeBlock          = \_   -> encodeShelleyBlock
-  nodeEncodeHeader         = \_ _ -> encodeShelleyHeader
-  nodeEncodeWrappedHeader  = \_ _ -> encode
-  nodeEncodeGenTx          = \_   -> toCBOR
-  nodeEncodeGenTxId        = \_   -> toCBOR
-  nodeEncodeHeaderHash     = \_   -> toCBOR
-  nodeEncodeLedgerState    = \_   -> encodeShelleyLedgerState
-  nodeEncodeConsensusState = \_   -> toCBOR
-  nodeEncodeApplyTxError   = \_   -> toCBOR
-  nodeEncodeAnnTip         = \_   -> encodeShelleyAnnTip
-  nodeEncodeQuery          = \_   -> encodeShelleyQuery
-  nodeEncodeResult         = \_   -> encodeShelleyResult
-
-  nodeDecodeBlock          = \_   -> decodeShelleyBlock
-  nodeDecodeHeader         = \_ _ -> decodeShelleyHeader
-  nodeDecodeWrappedHeader  = \_ _ -> decode
-  nodeDecodeGenTx          = \_   -> fromCBOR
-  nodeDecodeGenTxId        = \_   -> fromCBOR
-  nodeDecodeHeaderHash     = \_   -> fromCBOR
-  nodeDecodeLedgerState    = \_   -> decodeShelleyLedgerState
-  nodeDecodeConsensusState = \_   -> fromCBOR
-  nodeDecodeApplyTxError   = \_   -> fromCBOR
-  nodeDecodeAnnTip         = \_   -> decodeShelleyAnnTip
-  nodeDecodeQuery          = \_   -> decodeShelleyQuery
-  nodeDecodeResult         = \_   -> decodeShelleyResult

@@ -32,6 +32,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
@@ -79,23 +80,10 @@ import           Test.QuickCheck hiding (Result)
 import           Test.QuickCheck.Hedgehog (hedgehog)
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
 
 import           Test.Consensus.Shelley.Examples (mkDummyHash)
 import           Test.Consensus.Shelley.MockCrypto
-
-{-------------------------------------------------------------------------------
-  SomeResult
--------------------------------------------------------------------------------}
-
--- | To easily generate all the possible @result@s of the 'Query' GADT, we
--- introduce an existential that also bundles the corresponding 'Query' as
--- evidence. We also capture an 'Eq' and a 'Show' constraint, as we need them
--- in the tests.
-data SomeResult where
-  SomeResult :: (Eq result, Show result)
-             => Query Block result -> result -> SomeResult
-
-deriving instance Show SomeResult
 
 {-------------------------------------------------------------------------------
   Orphans
@@ -198,7 +186,7 @@ instance Arbitrary (Some (Query Block)) where
     , Some . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
 
-instance Arbitrary SomeResult where
+instance Arbitrary (SomeResult Block) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
@@ -264,6 +252,18 @@ instance Arbitrary (LedgerState Block) where
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
+
+instance Arbitrary (AnnTip Block) where
+  arbitrary = AnnTip
+    <$> arbitrary
+    <*> (BlockNo <$> arbitrary)
+    <*> arbitrary
+
+instance Arbitrary ShelleyNodeToNodeVersion where
+  arbitrary = arbitraryBoundedEnum
+
+instance Arbitrary ShelleyNodeToClientVersion where
+  arbitrary = arbitraryBoundedEnum
 
 -- Convenient to have
 instance Arbitrary Natural where
@@ -517,3 +517,21 @@ instance Arbitrary (STS.PredicateFailure (STS.LEDGER TPraosMockCrypto)) where
 instance Arbitrary (STS.PredicateFailure (STS.LEDGERS TPraosMockCrypto)) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
+
+{-------------------------------------------------------------------------------
+  Versioned generators for serialisation
+-------------------------------------------------------------------------------}
+
+-- | We only have single version, so no special casing required.
+--
+-- This blanket orphan instance will have to be replaced with more specific
+-- ones, once we introduce a different Shelley version.
+instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToNodeVersion a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary
+
+-- | We only have single version, so no special casing required.
+--
+-- This blanket orphan instance will have to be replaced with more specific
+-- ones, once we introduce a different Shelley version.
+instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary

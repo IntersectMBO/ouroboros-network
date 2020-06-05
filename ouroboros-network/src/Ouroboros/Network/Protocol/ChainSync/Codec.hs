@@ -8,7 +8,6 @@
 module Ouroboros.Network.Protocol.ChainSync.Codec
   ( codecChainSync
   , codecChainSyncSerialised
-  , codecChainSyncSerialised'
   , codecChainSyncId
 
   , byteLimitsChainSync
@@ -31,7 +30,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.Serialise as Serialise
 import           Text.Printf
 
 
@@ -192,22 +190,7 @@ codecChainSync
 codecChainSync = codecChainSyncUnwrapped
 
 -- | Codec for chain sync that doesn't encode/decode headers
---
--- Uses CBOR-in-CBOR by default; see also 'codecChainSyncSerialised''.
 codecChainSyncSerialised
-  :: forall header tip m.
-     (MonadST m)
-  => (Point header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Point header))
-  -> (tip -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s tip)
-  -> Codec (ChainSync (Serialised header) tip)
-           CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSyncSerialised =
-    codecChainSyncSerialised' Serialise.encode Serialise.decode
-
--- | Generalized version of 'codecChainSyncSerialised'
-codecChainSyncSerialised'
   :: forall header tip m.
      (MonadST m)
   => (Serialised header -> CBOR.Encoding)
@@ -218,8 +201,8 @@ codecChainSyncSerialised'
   -> (forall s. CBOR.Decoder s tip)
   -> Codec (ChainSync (Serialised header) tip)
            CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSyncSerialised' encodeHeaderWrapped decodeHeaderWrapped
-                          encodePoint decodePoint =
+codecChainSyncSerialised encodeHeaderWrapped decodeHeaderWrapped
+                         encodePoint decodePoint =
     codecChainSyncUnwrapped
       encodeHeaderWrapped       decodeHeaderWrapped
       (encodePoint . castPoint) (castPoint <$> decodePoint)

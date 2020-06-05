@@ -97,15 +97,16 @@ instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
   Codec config
 -------------------------------------------------------------------------------}
 
-instance All HasCodecConfig xs => HasCodecConfig (HardForkBlock xs) where
+instance CanHardFork xs => HasCodecConfig (HardForkBlock xs) where
   newtype CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
         hardForkCodecConfigPerEra :: PerEraCodecConfig xs
       }
+    deriving (NoUnexpectedThunks)
 
   getCodecConfig =
         HardForkCodecConfig
       . PerEraCodecConfig
-      . hcmap (Proxy @HasCodecConfig) getCodecConfig
+      . hcmap (Proxy @SingleEraBlock) getCodecConfig
       . getPerEraBlockConfig
       . hardForkBlockConfigPerEra
 

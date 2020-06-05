@@ -25,6 +25,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (EpochNo)
 
 -- TODO: Should we re-export (a subset of?) this module so that we don't need
@@ -47,7 +48,7 @@ type family BlockProtocol blk :: *
 -- | Static configuration required to work with this type of blocks
 data family BlockConfig blk :: *
 
-class HasCodecConfig blk where
+class NoUnexpectedThunks (CodecConfig blk) => HasCodecConfig blk where
   -- | Static configuration required for serialisation and deserialisation of
   -- types pertaining to this type of block.
   --

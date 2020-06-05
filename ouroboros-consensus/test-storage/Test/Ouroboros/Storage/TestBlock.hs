@@ -22,6 +22,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , TestBodyHash(..)
   , Header(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , EBB(..)
     -- ** Construction
   , mkBlock
@@ -98,6 +99,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -106,6 +108,7 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
@@ -235,6 +238,11 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     , testBlockNumCoreNodes :: !NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
+
+instance HasCodecConfig TestBlock where
+  data CodecConfig TestBlock = TestBlockCodecConfig
+    deriving (Generic, NoUnexpectedThunks)
+  getCodecConfig = const TestBlockCodecConfig
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -588,6 +596,36 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
       , eraSafeZone   =
           HardFork.SafeZone (maxRollbacks k * 2) HardFork.NoLowerBound
       }
+
+{-------------------------------------------------------------------------------
+  Test infrastructure: serialisation
+-------------------------------------------------------------------------------}
+
+instance ImmDbSerialiseConstraints TestBlock
+instance LgrDbSerialiseConstraints TestBlock
+instance VolDbSerialiseConstraints TestBlock
+instance SerialiseDiskConstraints  TestBlock
+
+instance EncodeDisk TestBlock TestBlock
+instance DecodeDisk TestBlock (Lazy.ByteString -> TestBlock) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk TestBlock (Header TestBlock)
+instance DecodeDisk TestBlock (Lazy.ByteString -> Header TestBlock) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk TestBlock (LedgerState TestBlock)
+instance DecodeDisk TestBlock (LedgerState TestBlock)
+
+instance EncodeDisk TestBlock (AnnTip TestBlock) where
+  encodeDisk _ = encodeAnnTipIsEBB encode
+
+instance DecodeDisk TestBlock (AnnTip TestBlock) where
+  decodeDisk _ = decodeAnnTipIsEBB decode
+
+-- ConsensusState
+instance EncodeDisk TestBlock ()
+instance DecodeDisk TestBlock ()
 
 {-------------------------------------------------------------------------------
   Corruption

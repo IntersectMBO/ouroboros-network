@@ -1,4 +1,7 @@
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
@@ -6,12 +9,14 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 
 -- | Thin wrapper around the ImmutableDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
     ImmDB -- Opaque
+  , ImmDbSerialiseConstraints
     -- * Initialization
   , ImmDbArgs(..)
   , defaultArgs
@@ -61,7 +66,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
@@ -76,10 +80,10 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word32)
+import           GHC.Generics (Generic)
 import           GHC.Stack
 import           System.FilePath ((</>))
 
-import           Cardano.Prelude (allNoUnexpectedThunks)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot
 
@@ -95,16 +99,13 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
-import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
-                     Iterator (..), closeDB)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+
 import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..),
                      ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
@@ -113,32 +114,30 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
 
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
+                     Iterator (..), closeDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
       immDB              :: !(ImmutableDB (HeaderHash blk) m)
-    , decHeader          :: !(forall s. Decoder s (Lazy.ByteString -> Header blk))
-    , decBlock           :: !(forall s. Decoder s (Lazy.ByteString -> blk))
-      -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
-      -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock           :: !(blk -> Encoding)
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
+    , codecConfig        :: !(CodecConfig blk)
     , chunkInfo          :: !ChunkInfo
     , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
+  deriving (Generic)
 
+deriving instance HasCodecConfig blk => NoUnexpectedThunks (ImmDB m blk)
+  -- use generic instance
 
--- Universal type; we can't use generics
-instance NoUnexpectedThunks (ImmDB m blk) where
-  showTypeOf _ = "ImmDB"
-  whnfNoUnexpectedThunks ctxt ImmDB {..} = allNoUnexpectedThunks
-    [ noUnexpectedThunks ctxt immDB
-    , noUnexpectedThunks ctxt decHeader
-    , noUnexpectedThunks ctxt decBlock
-    , noUnexpectedThunks ctxt encBlock
-    , noUnexpectedThunks ctxt getBinaryBlockInfo
-    , noUnexpectedThunks ctxt chunkInfo
-    , noUnexpectedThunks ctxt addHdrEnv
-    ]
+-- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmDB.
+class ( EncodeDisk blk blk
+      , DecodeDisk blk (Lazy.ByteString -> blk)
+      , DecodeDisk blk (Lazy.ByteString -> Header blk)
+      ) => ImmDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the ImmDB wrapper.
 type TraceEvent blk =
@@ -152,12 +151,8 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
-      immDecodeHash         :: forall s. Decoder s (HeaderHash blk)
-    , immDecodeBlock        :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , immDecodeHeader       :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , immEncodeHash         :: HeaderHash blk -> Encoding
-    , immEncodeBlock        :: blk -> Encoding
-    , immGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+      immGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+    , immCodecConfig        :: CodecConfig blk
     , immChunkInfo          :: ChunkInfo
     , immValidation         :: ImmDB.ValidationPolicy
     , immCheckIntegrity     :: blk -> Bool
@@ -172,12 +167,8 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 --
 -- The following fields must still be defined:
 --
--- * 'immDecodeHash'
--- * 'immDecodeBlock'
--- * 'immDecodeHeader'
--- * 'immEncodeHash'
--- * 'immEncodeBlock'
 -- * 'immGetBinaryBlockInfo'
+-- * 'immCodecConfig'
 -- * 'immChunkInfo'
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
@@ -189,12 +180,8 @@ defaultArgs fp = ImmDbArgs{
     , immCacheConfig        = cacheConfig
     , immTracer             = nullTracer
       -- Fields without a default
-    , immDecodeHash         = error "no default for immDecodeHash"
-    , immDecodeBlock        = error "no default for immDecodeBlock"
-    , immDecodeHeader       = error "no default for immDecodeHeader"
-    , immEncodeHash         = error "no default for immEncodeHash"
-    , immEncodeBlock        = error "no default for immEncodeBlock"
     , immGetBinaryBlockInfo = error "no default for immGetBinaryBlockInfo"
+    , immCodecConfig        = error "no default for immCodecConfig"
     , immChunkInfo          = error "no default for immChunkInfo"
     , immValidation         = error "no default for immValidation"
     , immCheckIntegrity     = error "no default for immCheckIntegrity"
@@ -232,24 +219,34 @@ hashInfo p = HashInfo { hashSize, getHash, putHash }
     putHash :: HeaderHash blk -> Put
     putHash = Put.putByteString . toRawHash p
 
-withImmDB :: (IOLike m, HasHeader blk, GetHeader blk, ConvertRawHash blk)
-          => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
+withImmDB
+  :: ( IOLike m
+     , HasHeader blk
+     , GetHeader blk
+     , ConvertRawHash blk
+     , ImmDbSerialiseConstraints blk
+     )
+  => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
 withImmDB args = bracket (openDB args) closeDB
 
 -- | For testing purposes
-openDB :: forall m blk.
-          (IOLike m, HasHeader blk, GetHeader blk, ConvertRawHash blk)
-       => ImmDbArgs m blk
-       -> m (ImmDB m blk)
+openDB
+  :: forall m blk.
+     ( IOLike m
+     , HasHeader blk
+     , GetHeader blk
+     , ConvertRawHash blk
+     , ImmDbSerialiseConstraints blk
+     )
+  => ImmDbArgs m blk
+  -> m (ImmDB m blk)
 openDB ImmDbArgs {..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
       { immDB              = immDB
-      , decHeader          = immDecodeHeader
-      , decBlock           = immDecodeBlock
-      , encBlock           = immEncodeBlock
       , getBinaryBlockInfo = immGetBinaryBlockInfo
+      , codecConfig        = immCodecConfig
       , chunkInfo          = immChunkInfo
       , addHdrEnv          = immAddHdrEnv
       }
@@ -264,20 +261,17 @@ openDB ImmDbArgs {..} = do
       , valPol      = immValidation
       , parser      = parser
       }
-    parser = ImmDB.chunkFileParser immHasFS immDecodeBlock
+    parser = ImmDB.chunkFileParser immHasFS (decodeDisk immCodecConfig)
       immGetBinaryBlockInfo immCheckIntegrity
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
-        -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
-        -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> Encoding)
         -> (blk -> BinaryBlockInfo)
+        -> CodecConfig blk
         -> ChunkInfo
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock getBinaryBlockInfo chunkInfo addHdrEnv =
-    ImmDB {..}
+mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -361,7 +355,7 @@ getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = pointSlot <$> getPointAtTip db
 
 getKnownBlockComponent
-  :: (MonadCatch m, HasHeader blk, HasCallStack)
+  :: (MonadCatch m, HasHeader blk, ImmDbSerialiseConstraints blk, HasCallStack)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk) b
   -> Either EpochNo SlotNo
@@ -374,7 +368,8 @@ getKnownBlockComponent db blockComponent epochOrSlot = do
       Left err -> throwM err
 
 getBlockComponent
-  :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     (MonadCatch m, HasHeader blk, ImmDbSerialiseConstraints blk, HasCallStack)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk) b
   -> Either EpochNo SlotNo
@@ -395,7 +390,8 @@ getBlockComponent db blockComponent epochOrSlot = withDB db $ \imm ->
 -- If the point corresponds to some slot in the future, a
 -- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
 getBlockComponentWithPoint
-  :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     (MonadCatch m, HasHeader blk, ImmDbSerialiseConstraints blk, HasCallStack)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk) b
   -> RealPoint blk
@@ -413,8 +409,14 @@ getBlockComponentWithPoint db blockComponent (RealPoint slot hash) =
 -- | Appends the given block (as a regular block or EBB) to the ImmutableDB.
 --
 -- Does not check whether the block is in the past or not.
-appendBlock :: (MonadCatch m, HasHeader blk, GetHeader blk, HasCallStack)
-            => ImmDB m blk -> blk -> m ()
+appendBlock
+  :: ( MonadCatch m
+     , HasHeader blk
+     , GetHeader blk
+     , ImmDbSerialiseConstraints blk
+     , HasCallStack
+     )
+  => ImmDB m blk -> blk -> m ()
 appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
     Nothing      ->
       ImmDB.appendBlock imm slotNo  blockNr hash builder binaryBlockInfo
@@ -424,9 +426,8 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
     hash            = blockHash b
     slotNo          = blockSlot b
     blockNr         = blockNo   b
-    builder         = CBOR.toBuilder $ encBlock b
+    builder         = CBOR.toBuilder $ encodeDisk codecConfig b
     binaryBlockInfo = getBinaryBlockInfo b
-
 
 {-------------------------------------------------------------------------------
   Streaming
@@ -436,7 +437,8 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
 -- 'BlockComponent' into the 'ImmDB.BlockComponent' the ImmutableDB
 -- understands.
 openIterator
-  :: forall m blk b. (IOLike m, HasHeader blk)
+  :: forall m blk b.
+     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
@@ -455,7 +457,8 @@ openIterator db registry blockComponent start end =
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
 stream
-  :: forall m blk b. (IOLike m, HasHeader blk)
+  :: forall m blk b.
+     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
@@ -561,7 +564,8 @@ stream db registry blockComponent from to = runExceptT $ do
 -- Returns 'ImmDB.WrongBoundError' if the lower bound is not part of the
 -- ImmutableDB.
 streamAfter
-  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
@@ -594,7 +598,8 @@ streamAfter db registry blockComponent low =
 --
 -- Throws an exception if the precondition is violated.
 streamAfterKnownBlock
-  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  :: forall m blk b.
+     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
@@ -632,19 +637,21 @@ mustExist epochOrSlot Nothing  = Left  $ ImmDbMissingBlock epochOrSlot
 mustExist _           (Just b) = Right $ b
 
 -- TODO unify with VolDB.parse
-parse :: forall m blk b. (HasHeader blk, MonadThrow m)
-      => ImmDB m blk
-      -> BlockOrHeader blk b
-      -> BlockRef blk
-      -> Lazy.ByteString
-      -> m b  -- ^ Throws 'ChainDbFailure'
-parse db blockOrHeader blockRef bytes =
+parse
+  :: forall m blk b.
+     (HasHeader blk, ImmDbSerialiseConstraints blk, MonadThrow m)
+  => ImmDB m blk
+  -> BlockOrHeader blk b
+  -> BlockRef blk
+  -> Lazy.ByteString
+  -> m b  -- ^ Throws 'ChainDbFailure'
+parse ImmDB { codecConfig } blockOrHeader blockRef bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     dec :: forall s. Decoder s (Lazy.ByteString -> b)
     dec = case blockOrHeader of
-      Block  -> decBlock  db
-      Header -> decHeader db
+      Block  -> decodeDisk codecConfig
+      Header -> decodeDisk codecConfig
 
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> b)

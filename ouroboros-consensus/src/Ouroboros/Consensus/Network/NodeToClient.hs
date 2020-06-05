@@ -32,6 +32,8 @@ module Ouroboros.Consensus.Network.NodeToClient (
   , responder
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
@@ -64,6 +66,7 @@ import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Util.IOLike
@@ -145,70 +148,82 @@ type ClientCodecs blk  m =
 -- Implementation mode: currently none of the consensus encoders/decoders do
 -- anything different based on the version, so @_version@ is unused; it's just
 -- that not all codecs are used, depending on the version number.
-defaultCodecs :: forall m blk. (RunNode blk, MonadST m)
+defaultCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
               => CodecConfig         blk
               -> NodeToClientVersion blk
               -> DefaultCodecs blk m
-defaultCodecs cfg _version = Codecs {
+defaultCodecs ccfg version = Codecs {
       cChainSyncCodec =
         codecChainSyncSerialised
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (encodeTip   (nodeEncodeHeaderHash cfg))
-          (decodeTip   (nodeDecodeHeaderHash cfg))
+          enc
+          dec
+          (encodePoint enc)
+          (decodePoint dec)
+          (encodeTip   enc)
+          (decodeTip   dec)
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
-          (nodeEncodeGenTx        cfg)
-          (nodeDecodeGenTx        cfg)
-          (nodeEncodeApplyTxError cfg)
-          (nodeDecodeApplyTxError cfg)
+          enc
+          dec
+          enc
+          dec
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (nodeEncodeQuery  cfg)
-          (nodeDecodeQuery  cfg)
-          (nodeEncodeResult cfg)
-          (nodeDecodeResult cfg)
+          (encodePoint enc)
+          (decodePoint dec)
+          (enc . Some)
+          dec
+          (encodeResult ccfg version)
+          (decodeResult ccfg version)
     }
+  where
+    enc :: SerialiseNodeToClient blk a => a -> Encoding
+    enc = encodeNodeToClient ccfg version
 
+    dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
+    dec = decodeNodeToClient ccfg version
 
 -- | Protocol codecs for the node-to-client protocols which serialise
 -- / deserialise blocks in /chain-sync/ protocol.
 --
-clientCodecs :: forall m blk. (RunNode blk, MonadST m)
+clientCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
              => CodecConfig         blk
              -> NodeToClientVersion blk
              -> ClientCodecs blk m
-clientCodecs cfg _version = Codecs {
+clientCodecs ccfg version = Codecs {
       cChainSyncCodec =
         codecChainSync
-          (wrapCBORinCBOR   (nodeEncodeBlock cfg))
-          (unwrapCBORinCBOR (nodeDecodeBlock cfg))
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (encodeTip   (nodeEncodeHeaderHash cfg))
-          (decodeTip   (nodeDecodeHeaderHash cfg))
+          enc
+          dec
+          (encodePoint enc)
+          (decodePoint dec)
+          (encodeTip   enc)
+          (decodeTip   dec)
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
-          (nodeEncodeGenTx        cfg)
-          (nodeDecodeGenTx        cfg)
-          (nodeEncodeApplyTxError cfg)
-          (nodeDecodeApplyTxError cfg)
+          enc
+          dec
+          enc
+          dec
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (nodeEncodeHeaderHash cfg))
-          (decodePoint (nodeDecodeHeaderHash cfg))
-          (nodeEncodeQuery  cfg)
-          (nodeDecodeQuery  cfg)
-          (nodeEncodeResult cfg)
-          (nodeDecodeResult cfg)
+          (encodePoint enc)
+          (decodePoint dec)
+          (enc . Some)
+          dec
+          (encodeResult ccfg version)
+          (decodeResult ccfg version)
     }
+  where
+    enc :: SerialiseNodeToClient blk a => a -> Encoding
+    enc = encodeNodeToClient ccfg version
 
+    dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
+    dec = decodeNodeToClient ccfg version
 
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)

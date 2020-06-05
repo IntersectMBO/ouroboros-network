@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -15,6 +16,7 @@
 module Test.Consensus.HardFork.Combinator (tests) where
 
 import           Codec.Serialise
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
 import qualified Data.Map as Map
 import           Data.SOP.Strict hiding (shape)
@@ -42,10 +44,12 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
@@ -353,32 +357,6 @@ instance RunNode TestBlock where
                             . configLedger
   nodeGetBinaryBlockInfo    = hardForkBlockBinaryBlockInfo
 
-  nodeEncodeBlock           = \_   -> encode
-  nodeEncodeHeader          = \_ _ -> encode
-  nodeEncodeGenTx           = \_   -> encode . fromNS (Proxy @GenTx)
-  nodeEncodeGenTxId         = \_   -> encode . fromNS (Proxy @WrapGenTxId)
-  nodeEncodeHeaderHash      = \_   -> encode
-  nodeEncodeLedgerState     = \_   -> encode . fromTelescope' (Proxy @LedgerState)
-  nodeEncodeConsensusState  = \_   -> encode . fromTelescope' (Proxy @WrapConsensusState)
-  nodeEncodeApplyTxError    = \_   -> encode . Match.mismatchTwo . mustBeMismatch
-  nodeEncodeAnnTip          = \_   -> encode
-  nodeEncodeWrappedHeader   = \_ _ -> encode
-  nodeEncodeQuery           = \_   -> absurd . thereIsNoQuery
-  nodeEncodeResult          = \_   -> absurd . thereIsNoQuery
-
-  nodeDecodeHeader          = \_ _ -> const                                    <$> decode
-  nodeDecodeBlock           = \_   -> const                                    <$> decode
-  nodeDecodeGenTx           = \_   -> toNS (Proxy @GenTx)                      <$> decode
-  nodeDecodeGenTxId         = \_   -> toNS (Proxy @WrapGenTxId)                <$> decode
-  nodeDecodeLedgerState     = \_   -> toTelescope' (Proxy @LedgerState)        <$> decode
-  nodeDecodeConsensusState  = \_   -> toTelescope' (Proxy @WrapConsensusState) <$> decode
-  nodeDecodeApplyTxError    = \_   -> (fromMismatch . Match.mkMismatchTwo)     <$> decode
-  nodeDecodeHeaderHash      = \_   -> decode
-  nodeDecodeAnnTip          = \_   -> decode
-  nodeDecodeWrappedHeader   = \_ _ -> decode
-  nodeDecodeQuery           = fail "there are no queries to be decoded"
-  nodeDecodeResult          = \_   -> absurd . thereIsNoQuery
-
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
@@ -396,6 +374,83 @@ deriving via SerialiseOne WrapTipInfo '[BlockA, BlockB]
 -- between the eras, because it's an NS of the TipInfos of the underlying
 -- eras. Not sure if that's helpful/harmful/neither
 deriving instance Serialise (AnnTip TestBlock)
+
+instance ImmDbSerialiseConstraints TestBlock
+instance LgrDbSerialiseConstraints TestBlock
+instance VolDbSerialiseConstraints TestBlock
+instance SerialiseDiskConstraints  TestBlock
+
+--  We use the default instances relying on 'Serialise' where possible.
+instance EncodeDisk TestBlock TestBlock
+instance DecodeDisk TestBlock (Lazy.ByteString -> TestBlock) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk TestBlock (Header TestBlock)
+instance DecodeDisk TestBlock (Lazy.ByteString -> Header TestBlock) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk TestBlock (LedgerState TestBlock) where
+  encodeDisk _ = encode . fromTelescope' (Proxy @LedgerState)
+instance DecodeDisk TestBlock (LedgerState TestBlock) where
+  decodeDisk _ = toTelescope' (Proxy @LedgerState) <$> decode
+
+instance EncodeDisk TestBlock (HardForkConsensusState '[BlockA, BlockB]) where
+  encodeDisk _ = encode . fromTelescope' (Proxy @WrapConsensusState)
+instance DecodeDisk TestBlock (HardForkConsensusState '[BlockA, BlockB]) where
+  decodeDisk _ = toTelescope' (Proxy @WrapConsensusState) <$> decode
+
+instance EncodeDisk TestBlock (AnnTip TestBlock)
+instance DecodeDisk TestBlock (AnnTip TestBlock)
+
+instance SerialiseNodeToNodeConstraints TestBlock
+
+instance SerialiseNodeToNode TestBlock (OneEraHash '[BlockA, BlockB])
+
+instance SerialiseNodeToNode TestBlock TestBlock where
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
+
+instance SerialiseNodeToNode TestBlock (Serialised TestBlock)
+
+instance SerialiseNodeToNode TestBlock (Header TestBlock) where
+  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
+
+instance SerialiseNodeToNode TestBlock (Serialised (Header TestBlock))
+
+instance SerialiseNodeToNode TestBlock (GenTx TestBlock) where
+  encodeNodeToNode _ _ = encode . fromNS (Proxy @GenTx)
+  decodeNodeToNode _ _ = toNS (Proxy @GenTx) <$> decode
+
+instance SerialiseNodeToNode TestBlock (GenTxId TestBlock) where
+  encodeNodeToNode _ _ = encode . fromNS (Proxy @WrapGenTxId)
+  decodeNodeToNode _ _ = toNS (Proxy @WrapGenTxId) <$> decode
+
+instance SerialiseNodeToClientConstraints TestBlock
+
+instance SerialiseNodeToClient TestBlock (OneEraHash '[BlockA, BlockB])
+
+instance SerialiseNodeToClient TestBlock TestBlock where
+  encodeNodeToClient _ _ = defaultEncodeCBORinCBOR
+  decodeNodeToClient _ _ = defaultDecodeCBORinCBOR
+
+instance SerialiseNodeToClient TestBlock (Serialised TestBlock)
+
+instance SerialiseNodeToClient TestBlock (GenTx TestBlock) where
+  encodeNodeToClient _ _ = encode . fromNS (Proxy @GenTx)
+  decodeNodeToClient _ _ = toNS (Proxy @GenTx) <$> decode
+
+instance SerialiseNodeToClient TestBlock (HardForkApplyTxErr '[BlockA, BlockB]) where
+  encodeNodeToClient _ _ = encode . Match.mismatchTwo . mustBeMismatch
+  decodeNodeToClient _ _ = (fromMismatch . Match.mkMismatchTwo) <$> decode
+
+instance SerialiseNodeToClient TestBlock (Some (Query TestBlock)) where
+  encodeNodeToClient _ _ (Some q) = absurd $ thereIsNoQuery q
+  decodeNodeToClient _ _ = fail "there are no queries to be decoded"
+
+instance SerialiseResult TestBlock (Query TestBlock) where
+  encodeResult _ _ = absurd . thereIsNoQuery
+  decodeResult _ _ = absurd . thereIsNoQuery
 
 {-------------------------------------------------------------------------------
   Translation

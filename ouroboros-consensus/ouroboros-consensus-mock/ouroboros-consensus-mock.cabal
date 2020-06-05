@@ -38,6 +38,7 @@ library
                        Ouroboros.Consensus.Mock.Node.PBFT
                        Ouroboros.Consensus.Mock.Node.Praos
                        Ouroboros.Consensus.Mock.Node.PraosRule
+                       Ouroboros.Consensus.Mock.Node.Serialisation
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
   build-depends:       base              >=4.9   && <4.13

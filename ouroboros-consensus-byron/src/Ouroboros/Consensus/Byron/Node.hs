@@ -1,13 +1,4 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -62,6 +53,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Node.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
 
 {-------------------------------------------------------------------------------
@@ -242,30 +234,3 @@ instance RunNode ByronBlock where
     = Just DatabaseCorruption
     | otherwise
     = Nothing
-
-
-  nodeEncodeBlock           = \_    -> encodeByronBlock
-  nodeEncodeHeader          = \_    -> encodeByronHeader
-  nodeEncodeWrappedHeader   = \_    -> encodeWrappedByronHeader
-  nodeEncodeGenTx           = \_    -> encodeByronGenTx
-  nodeEncodeGenTxId         = \_    -> encodeByronGenTxId
-  nodeEncodeHeaderHash      = \_    -> encodeByronHeaderHash
-  nodeEncodeLedgerState     = \_    -> encodeByronLedgerState
-  nodeEncodeConsensusState  = \_    -> encodeByronConsensusState
-  nodeEncodeApplyTxError    = \_    -> encodeByronApplyTxError
-  nodeEncodeAnnTip          = \_    -> encodeByronAnnTip
-  nodeEncodeQuery           = \_    -> encodeByronQuery
-  nodeEncodeResult          = \_    -> encodeByronResult
-
-  nodeDecodeBlock           = \ccfg -> decodeByronBlock  (getByronEpochSlots ccfg)
-  nodeDecodeHeader          = \ccfg -> decodeByronHeader (getByronEpochSlots ccfg)
-  nodeDecodeWrappedHeader   = \_    -> decodeWrappedByronHeader
-  nodeDecodeGenTx           = \_    -> decodeByronGenTx
-  nodeDecodeGenTxId         = \_    -> decodeByronGenTxId
-  nodeDecodeHeaderHash      = \_    -> decodeByronHeaderHash
-  nodeDecodeLedgerState     = \_    -> decodeByronLedgerState
-  nodeDecodeConsensusState  = \ccfg -> decodeByronConsensusState (getByronSecurityParam ccfg)
-  nodeDecodeApplyTxError    = \_    -> decodeByronApplyTxError
-  nodeDecodeAnnTip          = \_    -> decodeByronAnnTip
-  nodeDecodeQuery           = \_    -> decodeByronQuery
-  nodeDecodeResult          = \_    -> decodeByronResult

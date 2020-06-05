@@ -53,6 +53,7 @@ library
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Roundtrip
+                       Test.Util.Serialisation
                        Test.Util.Shrink
                        Test.Util.SOP
                        Test.Util.Split
@@ -83,7 +84,9 @@ library
                      , quickcheck-state-machine
                      , random
                      , serialise         >=0.2   && <0.3
+                     , tasty
                      , tasty-hunit
+                     , tasty-quickcheck
                      , text              >=1.2   && <1.3
                      , time
                      , transformers

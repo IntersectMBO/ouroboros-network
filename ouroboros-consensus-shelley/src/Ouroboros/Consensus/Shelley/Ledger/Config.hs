@@ -40,5 +40,6 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
 instance HasCodecConfig (ShelleyBlock c) where
   -- | No particular codec configuration is needed for Shelley
   data CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+    deriving (Generic, NoUnexpectedThunks)
 
   getCodecConfig = const ShelleyCodecConfig
