@@ -37,6 +37,7 @@ module Network.Mux.Compat (
     , WithMuxBearer (..)
     ) where
 
+import           Data.ByteString.Lazy (empty)
 import           Data.Void (Void)
 
 import           Control.Applicative ((<|>))
@@ -113,7 +114,10 @@ muxStart tracer muxapp bearer = do
           miniProtocolNum
           ptclDir
           StartEagerly
-          action
+          (\a -> do
+            r <- action a
+            return (r, empty) -- Compat interface doesn't do restarts
+          )
       | let MuxApplication ptcls = muxapp
       , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
       , (ptclDir, action) <- selectRunner miniProtocolRun
