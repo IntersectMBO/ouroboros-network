@@ -22,8 +22,6 @@ import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 
-import           Test.QuickCheck
-
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
@@ -43,11 +41,6 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Time (dawnOfTime)
-
-import           Test.ThreadNet.General
-import           Test.ThreadNet.Util.NodeJoinPlan
-import           Test.ThreadNet.Util.NodeRestarts
-import           Test.ThreadNet.Util.NodeTopology
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
