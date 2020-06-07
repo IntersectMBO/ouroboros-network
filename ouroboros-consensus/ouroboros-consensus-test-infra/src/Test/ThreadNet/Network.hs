@@ -130,6 +130,8 @@ data ForgeEbbEnv blk = ForgeEbbEnv
          -- EBB predecessor's hash
       -> blk
   }
+instance Show (ForgeEbbEnv blk) where
+  showsPrec p _ = showParen (p > 10) $ showString "ForgeEbbEnv _"
 
 -- | How to rekey a node with a fresh operational key
 --
@@ -171,7 +173,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaRNG          :: ChaChaDRG
-  , tnaRekeyM       :: Maybe (RekeyM m blk)
+  , tnaMkRekeyM     :: Maybe (m (RekeyM m blk))
   , tnaRestarts     :: NodeRestarts
   , tnaSlotLength   :: SlotLength
   , tnaTopology     :: NodeTopology
@@ -263,13 +265,15 @@ runThreadNetwork ThreadNetworkArgs
   , tnaNumCoreNodes   = numCoreNodes
   , tnaNumSlots       = numSlots
   , tnaRNG            = initRNG
-  , tnaRekeyM         = mbRekeyM
+  , tnaMkRekeyM       = mbMkRekeyM
   , tnaRestarts       = nodeRestarts
   , tnaSlotLength     = slotLength
   , tnaTopology       = nodeTopology
   , tnaEpochSize      = epochSize
   , tnaTxGenExtra     = txGenExtra
   } = withRegistry $ \sharedRegistry -> do
+    mbRekeyM <- sequence mbMkRekeyM
+
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
     -- for its ChainDB.
@@ -344,6 +348,7 @@ runThreadNetwork ThreadNetworkArgs
             , coreNodeId `elem` [n1, n2]
             ]
       forkVertex
+        mbRekeyM
         varRNG
         clock
         sharedRegistry
@@ -399,7 +404,8 @@ runThreadNetwork ThreadNetworkArgs
     joinSlotOf = coreNodeIdJoinSlot nodeJoinPlan
 
     forkVertex
-      :: StrictTVar m ChaChaDRG
+      :: Maybe (RekeyM m blk)
+      -> StrictTVar m ChaChaDRG
       -> WrappedClock m
       -> ResourceRegistry m
       -> CoreNodeId
@@ -408,6 +414,7 @@ runThreadNetwork ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> m ()
     forkVertex
+      mbRekeyM
       varRNG
       clock
       sharedRegistry

@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
@@ -65,8 +64,7 @@ import qualified Test.ThreadNet.RealPBFT as RealPBFT
 import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
-import           Test.ThreadNet.Util.NodeRestarts
-import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 
 import           Test.Util.WrappedClock (NumSlots (..))
 
@@ -91,17 +89,21 @@ prop_convergence setup = withMaxSuccess 10 $
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule      = setupSchedule setup
-      , pgaSecurityParam      = setupSecurityParam setup
-      , pgaTestConfig         = cfg
+      , pgaFixedSchedule      =
+          Just $ roundRobinLeaderSchedule numCoreNodes numSlots
+      , pgaSecurityParam      = setupK
+      , pgaTestConfig         = setupTestConfig
+      , pgaTestConfigB        = setupTestConfigB setup
       }
       (setupTestOutput setup)
   where
-    cfg = setupConfig setup
+    SetupDualPBft{..}      = setup
+    RealPBFT.TestSetup{..} = setupRealPBft
+    TestConfig{..} = setupTestConfig
 
     refResult :: Ref.Result
     refResult =
-      Ref.simulate (setupParams setup) (nodeJoinPlan cfg) (numSlots cfg)
+      Ref.simulate (setupParams setup) setupNodeJoinPlan numSlots
 
     -- The test infrastructure allows nodes to forge in slot 0; however, the
     -- cardano-ledger-specs code causes @PBFTFailure (SlotNotAfterLastBlock
@@ -128,80 +130,86 @@ prop_convergence setup = withMaxSuccess 10 $
 -------------------------------------------------------------------------------}
 
 data SetupDualPBft = SetupDualPBft {
-      setupGenesis :: ByronSpecGenesis
-    , setupConfig  :: TestConfig
-      -- | PBftParams is derived from the parameters above
-    , setupParams  :: PBftParams
+      setupGenesis  :: ByronSpecGenesis
+    , setupRealPBft :: RealPBFT.TestSetup
     }
   deriving (Show)
 
-setupSecurityParam :: SetupDualPBft -> SecurityParam
-setupSecurityParam = pbftSecurityParam . setupParams
+setupParams :: SetupDualPBft -> PBftParams
+setupParams = realPBftParams . setupGenesis
 
-setupEpochSize :: SetupDualPBft -> EpochSize
-setupEpochSize setup =
-    fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount k)
+setupTestConfigB :: SetupDualPBft -> TestConfigB DualByronBlock
+setupTestConfigB SetupDualPBft{..} = TestConfigB
+  { epochSize    =
+      fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount setupK)
+  , forgeEbbEnv  = Nothing -- spec does not model EBBs
+  , nodeJoinPlan = setupNodeJoinPlan
+  , nodeRestarts = setupNodeRestarts
+  , txGenExtra   = ()
+  , slotLength   = setupSlotLength
+  }
   where
-    k = setupSecurityParam setup
-
-setupNumSlots :: SetupDualPBft -> NumSlots
-setupNumSlots = numSlots . setupConfig
-
-setupSchedule :: SetupDualPBft -> Maybe LeaderSchedule
-setupSchedule setup@SetupDualPBft{..} = Just $
-    roundRobinLeaderSchedule
-      (numCoreNodes setupConfig)
-      (setupNumSlots setup)
+    RealPBFT.TestSetup{..} = setupRealPBft
 
 setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
 setupTestOutput setup@SetupDualPBft{..} =
-    runTestNetwork setupConfig (setupEpochSize setup) $ TestConfigBlock {
-        forgeEbbEnv = Nothing -- spec does not model EBBs
-      , rekeying    = Nothing -- TODO
-      , nodeInfo    = \coreNodeId ->
+    runTestNetwork testConfig testConfigB TestConfigMB {
+        nodeInfo = \coreNodeId ->
           plainTestNodeInitialization $
           protocolInfoDualByron
             setupGenesis
-            setupParams
+            (setupParams setup)
             (Just coreNodeId)
-      , txGenExtra  = ()
+      , mkRekeyM = Nothing -- TODO
       }
-
--- | Override 'TestConfig'
-setupOverrideConfig :: TestConfig -> SetupDualPBft -> SetupDualPBft
-setupOverrideConfig newConfig setup = setup {
-      setupConfig = newConfig
-    , setupParams = setupParams setup
-    }
+  where
+    testConfig  = RealPBFT.setupTestConfig setupRealPBft
+    testConfigB = setupTestConfigB setup
 
 setupExpectedCannotLead :: SetupDualPBft
                         -> SlotNo
                         -> NodeId
                         -> WrapCannotLead DualByronBlock
                         -> Bool
-setupExpectedCannotLead setup@SetupDualPBft{..} s nid (WrapCannotLead cl) =
+setupExpectedCannotLead SetupDualPBft{..} s nid (WrapCannotLead cl) =
     RealPBFT.expectedCannotLead
-      (setupSecurityParam setup)
-      (numCoreNodes setupConfig)
-      (nodeRestarts setupConfig)
+      setupK
+      numCoreNodes
+      setupNodeRestarts
       s nid (WrapCannotLead cl)
+  where
+    RealPBFT.TestSetup{..} = setupRealPBft
+    TestConfig{..}         = setupTestConfig
 
 {-------------------------------------------------------------------------------
   Generator for 'SetupDualPBft'
 -------------------------------------------------------------------------------}
 
+-- | We do an awkward dance in this generator. We want to reuse
+-- 'RealPBFT.TestSetup' as much as possible. However, 'genSpecGenesis' needs
+-- values provided by 'RealPBFT.TestSetup' (ie @numSlots@ and @slotLen@) but
+-- also sets a value provided by 'RealPBFT.TestSetup' (eg @k@).
 instance Arbitrary SetupDualPBft where
   arbitrary = do
       numSlots <- arbitrary
       slotLen  <- arbitrary
-      genesis  <- genSpecGenesis slotLen numSlots
-      let params = realPBftParams genesis
-      config <- genDualPBFTTestConfig slotLen numSlots params
-      return SetupDualPBft {
-          setupGenesis = adjustGenesis params genesis
-        , setupConfig  = config
-        , setupParams  = params
-        }
+
+      genesis0                 <- genSpecGenesis slotLen numSlots
+      let params@PBftParams{..} = realPBftParams genesis0
+          setupGenesis          = adjustGenesis params genesis0
+
+      -- TODO: Once we produce all kinds of transactions, we will need to
+      -- rethink rekeys/restarts (but might not be trivial, as we do not
+      -- generate the blocks upfront..).
+      setupRealPBft <-
+        (\x -> x{RealPBFT.setupNodeRestarts = noRestarts})
+        <$> RealPBFT.genTestSetup
+              pbftSecurityParam
+              pbftNumNodes
+              numSlots
+              slotLen
+
+      return SetupDualPBft{..}
     where
       -- The spec tests and the RealPBFT tests compute a different test value
       -- for the PBFT threshold. For now we ignore the value computed by the
@@ -214,30 +222,7 @@ instance Arbitrary SetupDualPBft where
                     -> ByronSpecGenesis
       adjustGenesis = Genesis.modPBftThreshold . const . pbftSignatureThreshold
 
-  shrink setup@SetupDualPBft{..} = concat [
-        -- Shrink number of slots
-        --
-        -- The number of slots is a parameter to everything else we generate
-        -- also, so we have to be careful:
-        --
-        --   * The CHAIN environment just uses the number of slots to optimize
-        --     some test parameter, for instance to guarantee that the test
-        --     contains epoch boundaries. Once we have a failing test case,
-        --     reducing the number of slots won't affect that.
-        --   * The PBFT parameters are derived from the genesis (which in turn
-        --     derives from the number of slots), but really only depends on
-        --     @k@ and the number of genesis keys, so we can shrink the number of
-        --     slots independently from the PBFT parameters.
-        --   * The TestConfig /does/ depend on the number of slots quite a lot,
-        --     but we already have a shrinker 'shrinkTestConfigSlotsOnly' for
-        --     the test config that does precisely this: reduce the number of
-        --     slots and readjust the rest.
-        --
-        -- Therefore here we can just piggy-back on 'shrinkTestConfigSlotsOnly'.
-        [ setupOverrideConfig config' setup
-        | config' <- RealPBFT.shrinkTestConfigSlotsOnly setupConfig
-        ]
-      ]
+  -- TODO shrink
 
 -- | Generate abstract genesis config (environment for the CHAIN rule)
 --
@@ -259,28 +244,6 @@ genSpecGenesis slotLen (NumSlots numSlots) = fmap fromEnv . hedgehog $
     fromEnv :: Spec.Environment Spec.CHAIN -> ByronSpecGenesis
     fromEnv = Genesis.modUtxoValues (* 10000)
             . Genesis.fromChainEnv (toByronSlotLength slotLen)
-
--- | Generate test config
---
--- This is adopted from 'genRealPBFTTestConfig'.
---
--- TODO: Once we produce all kinds of transactions, we will need to rethink
--- rekeys/restarts (but might not be trivial, as we do not generate the blocks
--- upfront..).
-genDualPBFTTestConfig :: SlotLength
-                      -> NumSlots
-                      -> PBftParams
-                      -> Gen TestConfig
-genDualPBFTTestConfig slotLength numSlots params = do
-    nodeJoinPlan <- RealPBFT.genRealPBFTNodeJoinPlan params numSlots
-    nodeTopology <- genNodeTopology (pbftNumNodes params)
-    initSeed     <- arbitrary
-
-    return TestConfig {
-          nodeRestarts = noRestarts
-        , numCoreNodes = pbftNumNodes params
-        , ..
-        }
 
 realPBftParams :: ByronSpecGenesis -> PBftParams
 realPBftParams ByronSpecGenesis{..} =

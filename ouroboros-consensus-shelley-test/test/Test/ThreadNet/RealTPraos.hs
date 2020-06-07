@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+
 module Test.ThreadNet.RealTPraos (tests) where
 
 import           Control.Monad (replicateM)
@@ -28,28 +29,44 @@ import           Ouroboros.Consensus.Shelley.Node
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.TxGen.Shelley
+import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
+import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+
+data TestSetup = TestSetup
+  { setupD          :: Double
+    -- ^ decentralization parameter
+  , setupK          :: SecurityParam
+  , setupTestConfig :: TestConfig
+  }
+  deriving (Show)
+
+instance Arbitrary TestSetup where
+  arbitrary = do
+    setupD <- (/10)         <$> choose   (1, 10)
+    setupK <- SecurityParam <$> elements [5, 10]
+
+    setupTestConfig <- arbitrary
+
+    pure TestSetup
+      { setupD
+      , setupK
+      , setupTestConfig
+      }
+
+  -- TODO shrink
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
-    [ testProperty "simple convergence" $ withMaxSuccess 20 $
-          forAll (SecurityParam <$> elements [5, 10])
-            $ \k ->
-          forAll (elements [x / 10 | x <- [1..10]])
-            $ \d ->
-          forAllShrink
-              (genRealTPraosTestConfig k)
-              shrinkRealTPraosTestConfig
-            $ \testConfig ->
-          prop_simple_real_tpraos_convergence k d testConfig
+    [ testProperty "simple convergence" $ withMaxSuccess 20 $ \setup ->
+        prop_simple_real_tpraos_convergence setup
     ]
 
-prop_simple_real_tpraos_convergence
-  :: SecurityParam
-  -> Double -- Decentralisation parameter
-  -> TestConfig
-  -> Property
-prop_simple_real_tpraos_convergence k d
-  testConfig@TestConfig{numCoreNodes = NumCoreNodes n, initSeed} =
+prop_simple_real_tpraos_convergence :: TestSetup -> Property
+prop_simple_real_tpraos_convergence TestSetup
+  { setupD
+  , setupK
+  , setupTestConfig
+  } =
     prop_general PropGeneralArgs
       { pgaBlockProperty      = const $ property True
       , pgaCountTxs           = fromIntegral . length . extractTxs
@@ -57,21 +74,34 @@ prop_simple_real_tpraos_convergence k d
       , pgaFirstBlockNo       = 0
       , pgaFixedMaxForkLength = Nothing
       , pgaFixedSchedule      = Nothing
-      , pgaSecurityParam      = k
-      , pgaTestConfig         = testConfig
+      , pgaSecurityParam      = setupK
+      , pgaTestConfig         = setupTestConfig
+      , pgaTestConfigB        = testConfigB
       }
       testOutput
   where
+    TestConfig
+      { initSeed
+      , numCoreNodes
+      } = setupTestConfig
+
+    testConfigB = TestConfigB
+      { epochSize
+      , forgeEbbEnv  = Nothing
+      , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      , nodeRestarts = noRestarts
+      , slotLength   = tpraosSlotLength
+      , txGenExtra   = ShelleyTxGenExtra $ mkGenEnv coreNodes
+      }
+
     testOutput =
-        runTestNetwork testConfig epochSize TestConfigBlock
-            { forgeEbbEnv = Nothing
-            , nodeInfo    = \(CoreNodeId nid) ->
+        runTestNetwork setupTestConfig testConfigB TestConfigMB
+            { nodeInfo = \(CoreNodeId nid) ->
               plainTestNodeInitialization $
                 mkProtocolRealTPraos
                   genesisConfig
                   (coreNodes !! fromIntegral nid)
-            , rekeying    = Nothing
-            , txGenExtra  = ShelleyTxGenExtra $ mkGenEnv coreNodes
+            , mkRekeyM = Nothing
             }
 
     initialKESPeriod :: SL.KESPeriod
@@ -81,12 +111,15 @@ prop_simple_real_tpraos_convergence k d
     maxKESEvolution = 100 -- TODO
 
     coreNodes :: [CoreNode TPraosMockCrypto]
-    coreNodes = withSeed initSeed $
-      replicateM (fromIntegral n) $
-      genCoreNode initialKESPeriod
+    coreNodes =
+        withSeed initSeed $
+        replicateM (fromIntegral n) $
+        genCoreNode initialKESPeriod
+      where
+        NumCoreNodes n = numCoreNodes
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
-    genesisConfig = mkGenesisConfig k d maxKESEvolution coreNodes
+    genesisConfig = mkGenesisConfig setupK setupD maxKESEvolution coreNodes
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig

@@ -34,63 +34,61 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
-import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.WrappedClock (NumSlots (..))
 
+data TestSetup = TestSetup
+  { setupK              :: SecurityParam
+  , setupTestConfig     :: TestConfig
+  , setupEpochSize      :: EpochSize
+    -- ^ Note: we don't think this value actually matters, since this test
+    -- overrides the leader schedule.
+  , setupNodeJoinPlan   :: NodeJoinPlan
+  , setupLeaderSchedule :: LeaderSchedule
+  , setupSlotLength     :: SlotLength
+  }
+  deriving (Show)
+
+instance Arbitrary TestSetup where
+  arbitrary = do
+      -- TODO k > 1 as a workaround for Issue #1511.
+      k          <- SecurityParam <$> choose (2, 10)
+      epochSize  <- EpochSize     <$> choose (1, 10)
+      slotLength <- arbitrary
+
+      testConfig <- arbitrary
+      let TestConfig{numCoreNodes, numSlots} = testConfig
+
+      nodeJoinPlan   <- genNodeJoinPlan numCoreNodes numSlots
+      leaderSchedule <- genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan
+
+      pure $ TestSetup
+        k
+        testConfig
+        epochSize
+        nodeJoinPlan
+        leaderSchedule
+        slotLength
+
+  -- TODO shrink
+
 tests :: TestTree
 tests = testGroup "LeaderSchedule"
-    [ testProperty "simple convergence" $
-          forAllShrink
-              (genNodeJoinPlan numCoreNodes numSlots)
-              shrinkNodeJoinPlan
-            $ \nodeJoinPlan ->
-          forAllShrink
-              (genNodeTopology numCoreNodes)
-              shrinkNodeTopology
-            $ \nodeTopology ->
-          forAllShrink
-              (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
-              (shrinkLeaderSchedule numSlots)
-            $ \schedule ->
-          forAll arbitrary
-            $ \initSeed ->
-          prop_simple_leader_schedule_convergence params TestConfig
-            { numCoreNodes
-            , numSlots
-            , nodeJoinPlan
-            , nodeRestarts = noRestarts
-            , nodeTopology
-            , slotLength
-            , initSeed
-            }
-              schedule
+    [ testProperty "simple convergence" $ \setup ->
+        prop_simple_leader_schedule_convergence setup
     ]
-  where
-    params@PraosParams{praosSecurityParam = k, ..} = PraosParams
-      { praosSecurityParam = SecurityParam 5
-      , praosSlotsPerEpoch = 3
-      , praosLeaderF       = 0.5
-      , praosLifetimeKES   = 1000000
-      }
 
-    numCoreNodes = NumCoreNodes 3
-    numSlots     = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
-    numEpochs    = 3
-    slotLength   = praosSlotLength
-
-praosSlotLength :: SlotLength
-praosSlotLength = slotLengthFromSec 2
-
-prop_simple_leader_schedule_convergence :: PraosParams
-                                        -> TestConfig
-                                        -> LeaderSchedule
-                                        -> Property
-prop_simple_leader_schedule_convergence
-  params@PraosParams{praosSecurityParam}
-  testConfig@TestConfig{numCoreNodes} schedule =
+prop_simple_leader_schedule_convergence :: TestSetup -> Property
+prop_simple_leader_schedule_convergence TestSetup
+  { setupK              = k
+  , setupTestConfig     = testConfig
+  , setupEpochSize      = epochSize
+  , setupNodeJoinPlan   = nodeJoinPlan
+  , setupLeaderSchedule = schedule
+  , setupSlotLength     = slotLength
+  } =
     counterexample (tracesToDot testOutputNodes) $
     prop_general PropGeneralArgs
       { pgaBlockProperty      = prop_validSimpleBlock
@@ -99,31 +97,43 @@ prop_simple_leader_schedule_convergence
       , pgaFirstBlockNo       = 0
       , pgaFixedMaxForkLength = Nothing
       , pgaFixedSchedule      = Just schedule
-      , pgaSecurityParam      = praosSecurityParam
+      , pgaSecurityParam      = k
       , pgaTestConfig         = testConfig
+      , pgaTestConfigB        = testConfigB
       }
       testOutput
   where
-    testOutput@TestOutput{testOutputNodes} =
-        runTestNetwork testConfig epochSize TestConfigBlock
-            { forgeEbbEnv = Nothing
-            , nodeInfo    = \nid -> plainTestNodeInitialization $
-                                    protocolInfoPraosRule
-                                      numCoreNodes
-                                      nid
-                                      params
-                                      (HardFork.defaultEraParams
-                                        praosSecurityParam
-                                        praosSlotLength)
-                                      schedule
-            , rekeying    = Nothing
-            , txGenExtra  = ()
-            }
+    TestConfig{numCoreNodes} = testConfig
 
-    -- I don't think this value actually matters if we override the leader
-    -- schedule
-    epochSize :: EpochSize
-    epochSize = EpochSize $ praosSlotsPerEpoch params
+    testConfigB = TestConfigB
+      { epochSize
+      , forgeEbbEnv  = Nothing
+      , nodeJoinPlan
+      , slotLength
+      , nodeRestarts = noRestarts
+      , txGenExtra   = ()
+      }
+
+    -- this is entirely ignored because of the 'WithLeaderSchedule' combinator
+    dummyF = 0.5
+
+    testOutput@TestOutput{testOutputNodes} =
+        runTestNetwork testConfig testConfigB TestConfigMB
+            { nodeInfo = \nid ->
+                plainTestNodeInitialization $
+                protocolInfoPraosRule
+                  numCoreNodes
+                  nid
+                  PraosParams
+                  { praosSecurityParam = k
+                  , praosSlotsPerEpoch = unEpochSize epochSize
+                  , praosLeaderF       = dummyF
+                  , praosLifetimeKES   = 1000000
+                  }
+                  (HardFork.defaultEraParams k slotLength)
+                  schedule
+            , mkRekeyM = Nothing
+            }
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
@@ -155,8 +165,8 @@ genLeaderSchedule k (NumSlots numSlots) numCoreNodes nodeJoinPlan =
             xs  <- go (filter (/= nid) nids) (n - 1)
             return $ nid : xs
 
-shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
-shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
+_shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
+_shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
     [ LeaderSchedule m'
     | slot <- [0 .. fromIntegral numSlots - 1]
     , m'   <- reduceSlot slot m

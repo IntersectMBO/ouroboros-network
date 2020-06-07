@@ -460,12 +460,12 @@ data PraosStandardCrypto
 data PraosMockCrypto
 
 instance PraosCrypto PraosStandardCrypto where
-  type PraosKES  PraosStandardCrypto = SimpleKES Ed448DSIGN 100
+  type PraosKES  PraosStandardCrypto = SimpleKES Ed448DSIGN 1000
   type PraosVRF  PraosStandardCrypto = SimpleVRF
   type PraosHash PraosStandardCrypto = SHA256
 
 instance PraosCrypto PraosMockCrypto where
-  type PraosKES  PraosMockCrypto = MockKES 100
+  type PraosKES  PraosMockCrypto = MockKES 1000
   type PraosVRF  PraosMockCrypto = MockVRF
   type PraosHash PraosMockCrypto = MD5
 

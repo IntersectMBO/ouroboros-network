@@ -378,6 +378,7 @@ test-suite test-consensus
                        -- ThreadNet (also from -infra) (for the HFC tests)
                        Test.ThreadNet.General
                        Test.ThreadNet.Network
+                       Test.ThreadNet.Rekeying
                        Test.ThreadNet.TxGen
                        Test.ThreadNet.Util
                        Test.ThreadNet.Util.Expectations

@@ -14,8 +14,6 @@ module Test.ThreadNet.Infra.Shelley (
   , coreNodeKeys
   , mkProtocolRealTPraos
   , tpraosSlotLength
-  , genRealTPraosTestConfig
-  , shrinkRealTPraosTestConfig
   ) where
 
 import           Data.Map.Strict (Map)
@@ -23,8 +21,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
-
-import           Test.QuickCheck
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
@@ -45,11 +41,6 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Time (dawnOfTime)
-
-import           Test.ThreadNet.General
-import           Test.ThreadNet.Util.NodeJoinPlan
-import           Test.ThreadNet.Util.NodeRestarts
-import           Test.ThreadNet.Util.NodeTopology
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
@@ -277,27 +268,3 @@ mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         , tpraosIsCoreNodeSignKeyVRF = cnVRF
         }
       }
-
-genRealTPraosTestConfig :: SecurityParam -> Gen TestConfig
-genRealTPraosTestConfig _k = do
-    numCoreNodes <- arbitrary
-    numSlots     <- arbitrary
-
-    -- TODO generate more interesting scenarios
-    let nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
-        nodeTopology = meshNodeTopology numCoreNodes
-
-    initSeed <- arbitrary
-
-    pure TestConfig
-      { nodeJoinPlan
-      , nodeRestarts = noRestarts
-      , nodeTopology
-      , numCoreNodes
-      , numSlots
-      , slotLength = tpraosSlotLength
-      , initSeed
-      }
-
-shrinkRealTPraosTestConfig :: TestConfig -> [TestConfig]
-shrinkRealTPraosTestConfig _ = [] -- TODO
