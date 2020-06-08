@@ -706,6 +706,56 @@ tests = testGroup "RealPBFT" $
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = slotLengthFromSec 20
             }
+    , testProperty "WallClock must handle PastHorizon by exactly slotLength delay" $
+          -- Previously, 'PastTimeHorizon' put the node to sleep for 60s. That
+          -- had caused it to be offline for slots it shouldn't miss.
+          once $
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = ProduceEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = NumCoreNodes 2
+              , numSlots     = NumSlots 39
+              , nodeTopology = meshNodeTopology (NumCoreNodes 2)
+              , initSeed     = Seed {getSeed = (11093776200493502340,9766052265905454052,355252349267827465,10040961818992481753,11110970950178961567)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 33})])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = slotLengthFromSec 20
+            }
+    , testProperty "systemTimeCurrent must not answer once clock is exhausted" $
+          -- This test would pass (before fixing the bug) if I moved both the
+          -- end of the test and also the last node's join slot ahead by 3
+          -- slots. So I think to the epoch boundary may be involved, likely
+          -- via its effect on the 'SafeZone'.
+          --
+          -- The failure is due to the following sequence. The node joins with
+          -- an empty chain. The existing nodes disconnect from it. The new
+          -- node blocks due to 'PastTimeHorizon', and so syncs the whole chain.
+          -- Then the new node leads. But the old nodes don't get its new
+          -- block. Then the test ends.
+          --
+          -- The new node should not have been able to create a block in that
+          -- slot. The 'PastTimeHorizon' should cause the node to sleep for an
+          -- entire slot duration, so it should have missed it's chance to
+          -- lead.
+          --
+          -- This failure clarified that 'OracularClock.systemTimeCurrent' should not provide
+          -- a time after the clock is exhausted.
+          once $
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { numCoreNodes = NumCoreNodes 3
+              , numSlots     = NumSlots 21
+              , nodeTopology = meshNodeTopology (NumCoreNodes 3)
+              , initSeed     = Seed {getSeed = (7933264215983541521,2681014020787292578,6408681784379385004,8771173040756324558,17527213245124735813)}
+              }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 20})])
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = slotLengthFromSec 20
+            }
     , testProperty "simple convergence" $ \setup ->
         prop_simple_real_pbft_convergence setup
     ]
