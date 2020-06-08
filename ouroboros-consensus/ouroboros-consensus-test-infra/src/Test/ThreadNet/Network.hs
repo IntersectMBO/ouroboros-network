@@ -117,9 +117,9 @@ import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.OracularClock (OracularClock (..))
 import qualified Test.Util.HardFork.OracularClock as OracularClock
 import           Test.Util.Random
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer
-import           Test.Util.WrappedClock (NumSlots (..))
 
 -- | How to forge an EBB
 --

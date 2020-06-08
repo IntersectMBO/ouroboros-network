@@ -67,7 +67,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 
 import           Test.Util.HardFork.Future (singleEraFuture)
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "DualPBFT" [

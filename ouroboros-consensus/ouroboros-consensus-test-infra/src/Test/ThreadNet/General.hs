@@ -77,8 +77,8 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Random
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
-import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Configuring tests

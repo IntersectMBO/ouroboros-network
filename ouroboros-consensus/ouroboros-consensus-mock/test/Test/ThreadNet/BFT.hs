@@ -39,7 +39,7 @@ import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import           Test.Util.Serialisation
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 data TestSetup = TestSetup
   { setupK            :: SecurityParam

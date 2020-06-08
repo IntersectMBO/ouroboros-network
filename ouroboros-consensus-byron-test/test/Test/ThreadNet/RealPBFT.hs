@@ -77,8 +77,8 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
+import           Test.Util.Slots (NumSlots (..))
 import qualified Test.Util.Stream as Stream
-import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.ThreadNet.Infra.Byron
 

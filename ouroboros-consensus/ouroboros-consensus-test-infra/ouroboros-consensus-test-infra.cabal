@@ -61,13 +61,13 @@ library
                        Test.Util.Serialisation
                        Test.Util.Shrink
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
-                       Test.Util.WrappedClock
 
   build-depends:       base              >=4.9 && <4.13
                      , base16-bytestring

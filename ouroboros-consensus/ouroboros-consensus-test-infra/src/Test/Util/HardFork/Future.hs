@@ -26,8 +26,8 @@ import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
 import           Ouroboros.Consensus.BlockchainTime (SlotLength (..))
 import           Ouroboros.Consensus.Util (nTimes)
 
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Stream (Stream (..))
-import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Careful counts

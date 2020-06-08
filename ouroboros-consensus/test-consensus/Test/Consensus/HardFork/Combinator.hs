@@ -80,7 +80,7 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.HardFork.Future
 import           Test.Util.Random (Seed (..))
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B

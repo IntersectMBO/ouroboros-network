@@ -380,12 +380,12 @@ test-suite test-consensus
                        Test.Util.Roundtrip
                        Test.Util.Shrink
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
-                       Test.Util.WrappedClock
 
                        -- ThreadNet (also from -infra) (for the HFC tests)
                        Test.ThreadNet.General
@@ -505,11 +505,11 @@ test-suite test-storage
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
-                       Test.Util.WrappedClock
 
   build-depends:       base
                      , bifunctors

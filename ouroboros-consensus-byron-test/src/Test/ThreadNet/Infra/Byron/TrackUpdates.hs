@@ -59,7 +59,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Infra.Byron.ProtocolInfo
 
 import           Test.Util.Random
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 -- | The expectation and observation regarding whether the hard-fork proposal
 -- successfully updated the protocol version

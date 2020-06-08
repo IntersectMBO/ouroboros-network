@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia   #-}
 
-module Test.Util.WrappedClock (
+module Test.Util.Slots (
   NumSlots (..),
   ) where
 

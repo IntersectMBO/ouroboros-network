@@ -12,7 +12,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "Test.ThreadNet.Util.Tests" $

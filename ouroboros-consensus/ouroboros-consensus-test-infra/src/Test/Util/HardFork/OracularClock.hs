@@ -30,8 +30,8 @@ import           Ouroboros.Consensus.Util.Time (nominalDelay)
 
 import           Test.Util.HardFork.Future (Future, futureSlotLengths,
                      futureTimeToSlot)
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Stream
-import           Test.Util.WrappedClock (NumSlots (..))
 
 -- | A clock that knows the future
 --
