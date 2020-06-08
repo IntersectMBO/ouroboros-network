@@ -19,28 +19,16 @@ module Test.Util.LogicalClock (
   , onEachTick
   , onTick
   , blockUntilTick
-    -- * Conversions
-  , hardForkBlockchainTime
-  , checkInFuture
-    -- * Only exported for the benefit of 'WrappedClock'
-    -- TODO: Once 'WrappedClock' is gone, this should not be exported.
-  , newWithDelay
   ) where
 
 import           Control.Exception (Exception)
 import           Control.Monad
-import           Control.Tracer
 import           Data.Time (NominalDiffTime)
 import           Data.Word
 import           GHC.Stack
 import           System.Random (Random)
 
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
-import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HardFork.History (PastHorizonException)
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
@@ -141,31 +129,6 @@ blockUntilTick clock tick = atomically $ do
     else do
       when (now < tick) retry
       return False
-
-{-------------------------------------------------------------------------------
-  Conversions
--------------------------------------------------------------------------------}
-
--- | Construct 'BlockchainTime' using 'BTime.hardForkBlockchainTime'
---
--- We do this by providing it a 'SystemTime' instance that translates ticks
--- to time.
-hardForkBlockchainTime :: (IOLike m, HasHardForkHistory blk, HasCallStack)
-                       => ResourceRegistry m
-                       -> Tracer m (BTime.RelativeTime, PastHorizonException)
-                       -> LogicalClock m
-                       -> LedgerConfig blk
-                       -> STM m (LedgerState blk)
-                       -> m (BTime.BlockchainTime m)
-hardForkBlockchainTime rr tracer =
-    BTime.hardForkBlockchainTime rr tracer . mockSystemTime
-
-checkInFuture :: (Monad m, HasHardForkHistory blk, UpdateLedger blk)
-              => LedgerConfig blk
-              -> LogicalClock m
-              -> CheckInFuture m blk
-checkInFuture cfg =
-    InFuture.reference cfg InFuture.defaultClockSkew . mockSystemTime
 
 {-------------------------------------------------------------------------------
   Internal
