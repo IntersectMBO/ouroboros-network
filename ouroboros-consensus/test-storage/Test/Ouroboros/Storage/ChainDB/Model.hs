@@ -738,7 +738,13 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       []    -> Map.empty
       b:bs' -> case runExcept (tickThenApply cfg b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
-        Right ledger' -> findInvalidBlockInTheFuture ledger' bs'
+        Right ledger'
+          | Block.blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
+          -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>
+             findInvalidBlockInTheFuture ledger' bs'
+          | otherwise
+          -> findInvalidBlockInTheFuture ledger' bs'
+
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]
