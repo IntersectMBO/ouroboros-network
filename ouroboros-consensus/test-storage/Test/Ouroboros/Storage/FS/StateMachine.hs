@@ -407,18 +407,15 @@ instance Bitraversable t => Rank2.Traversable (At t) where
 -- | An event records the model before and after a command along with the
 -- command itself and its response
 data Event r = Event {
-      eventBefore :: Model   r
-    , eventCmd    :: Cmd  :@ r
-    , eventAfter  :: Model   r
-    , eventResp   :: Resp :@ r
+      eventBefore   :: Model  r
+    , eventCmd      :: Cmd :@ r
+    , eventAfter    :: Model  r
+    , eventMockResp :: Resp FsPath (Handle HandleMock)
     }
   deriving (Show)
 
 eventMockCmd :: Eq1 r => Event r -> Cmd FsPath (Handle HandleMock)
 eventMockCmd Event{..} = toMock eventBefore eventCmd
-
-eventMockResp :: Eq1 r => Event r -> Resp FsPath (Handle HandleMock)
-eventMockResp Event{..} = toMock eventAfter eventResp
 
 -- | Construct an event
 --
@@ -430,14 +427,14 @@ lockstep :: forall r. (Show1 r, Ord1 r, HasCallStack)
          -> Resp :@ r
          -> Event r
 lockstep model@Model{..} cmd (At resp) = Event {
-      eventBefore = model
-    , eventCmd    = cmd
-    , eventAfter  = Model {
-                        mockFS       = mockFS'
-                      , knownPaths   = knownPaths   `RE.union` newPaths
-                      , knownHandles = knownHandles `RE.union` newHandles
-                      }
-    , eventResp   = At resp
+      eventBefore   = model
+    , eventCmd      = cmd
+    , eventAfter    = Model {
+                          mockFS       = mockFS'
+                        , knownPaths   = knownPaths   `RE.union` newPaths
+                        , knownHandles = knownHandles `RE.union` newHandles
+                        }
+    , eventMockResp = resp'
     }
   where
     (resp', mockFS') = step model cmd
