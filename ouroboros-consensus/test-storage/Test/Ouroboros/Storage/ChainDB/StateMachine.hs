@@ -83,7 +83,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (takeLast)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -815,15 +814,14 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genGetPastLedger :: Gen (Cmd blk it rdr)
     genGetPastLedger = do
-        GetPastLedger <$> elements (takeLast (maxRollbacks secParam) onChain)
+        GetPastLedger <$> elements onChain
       where
-        -- Non-empty list of points on our chain
+        volatileFrag = Model.volatileChain secParam id $ dbModel
+
+        -- Non-empty list of points on the volatile fragment of our chain
         onChain :: [Point blk]
-        onChain = (Block.genesisPoint :)
-                . map Block.blockPoint
-                . Chain.toOldestFirst
-                . Model.currentChain
-                $ dbModel
+        onChain = AF.anchorPoint volatileFrag
+                : map Block.blockPoint (AF.toOldestFirst volatileFrag)
 
     genAddBlock = do
       let curSlot = Model.currentSlot dbModel
