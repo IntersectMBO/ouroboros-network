@@ -481,6 +481,7 @@ instance Arbitrary MaxClockSkew where
   arbitrary = MaxClockSkew <$> choose (0, 3)
   -- We're only interested in 0 or 1
   shrink (MaxClockSkew 0) = []
+  shrink (MaxClockSkew 1) = []
   shrink (MaxClockSkew _) = MaxClockSkew <$> [0, 1]
 
 {-------------------------------------------------------------------------------
