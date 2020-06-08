@@ -203,7 +203,7 @@ tipPoint :: HasHeader blk => Model blk -> Point blk
 tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
 
 getMaxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
-getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . volDbBlocks
+getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . blocks
 
 lastK :: HasHeader a
       => SecurityParam
