@@ -398,10 +398,12 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
               | tipHash == predHash
               -> case NE.nonEmpty hashes of
                    Just hashes' -> startStream pt hashes'
-                   -- The path is actually empty, but the exclusive upper bound
-                   -- was in the VolatileDB. Since there's nothing to stream,
-                   -- just return an empty iterator.
-                   Nothing      -> lift emptyIterator
+                   -- The lower bound was in the ImmutableDB and the upper was
+                   -- in the VolatileDB, but the path of hashes in the
+                   -- VolatileDB is actually empty. It must be that the
+                   -- exclusive bound was in the VolatileDB and its
+                   -- predecessor is the tip of the ImmutableDB.
+                   Nothing      -> streamFromImmDBHelper (StreamToInclusive pt)
               -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
               -- Note that since we have constructed the incomplete path through
               -- the VolatileDB, blocks might have moved from the VolatileDB to
