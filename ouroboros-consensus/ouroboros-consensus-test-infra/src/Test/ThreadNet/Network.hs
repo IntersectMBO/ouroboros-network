@@ -753,6 +753,25 @@ runThreadNetwork systemTime ThreadNetworkArgs
           -- traces the node's local events other than those from the -- ChainDB
           tracers = instrumentationTracers <> nullDebugTracers
 
+      let -- use a backoff delay of exactly one slot length (which the
+          -- 'OracularClock' always knows) for the following reasons
+          --
+          -- o It gives the node a chance to sync some blocks so that it will
+          --   eventually not need to backoff
+          --
+          -- o It maintains the invariant that the node's activities all happen "
+          --   during " a slot onset
+          --
+          -- o It avoids causing the node to miss a slot it could have
+          --   nominally lead. EG If we used a backoff of two slot durations,
+          --   then it might have synced during the first slot and then been
+          --   able to productively lead the second slot had it not still been
+          --   asleep.
+          --
+          -- o We assume a node will only backoff when it joins late and only
+          --   until it syncs enough of the net's existing common prefix.
+          backoffDelay =
+              BackoffDelay <$> OracularClock.delayUntilNextSlot clock
       btime <- hardForkBlockchainTime
                  registry
                  (contramap
@@ -764,6 +783,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                     (blockchainTimeTracer tracers))
                  (OracularClock.finiteSystemTime clock)
                  (configLedger pInfoConfig)
+                 backoffDelay
                  (ledgerState <$>
                     ChainDB.getCurrentLedger chainDB)
 
