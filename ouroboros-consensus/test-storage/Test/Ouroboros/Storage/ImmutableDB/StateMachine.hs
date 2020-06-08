@@ -239,19 +239,22 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
         closeOpenIterators varIters
         closeDB db
         reopen env valPol
-        Tip <$> getTip db
+        db' <- getImmDB env
+        Tip <$> getTip db'
       Migrate valPol -> do
         closeOpenIterators varIters
         closeDB db
         unmigrate hasFS
         reopen env valPol
-        Tip <$> getTip db
+        db' <- getImmDB env
+        Tip <$> getTip db'
       Corruption (MkCorruption corrs) -> do
         closeOpenIterators varIters
         closeDB db
         forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
         reopen env ValidateAllChunks
-        Tip <$> getTip db
+        db' <- getImmDB env
+        Tip <$> getTip db'
   where
     ImmutableDbArgs { registry, hasFS } = args
 
