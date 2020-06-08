@@ -29,6 +29,7 @@ module Test.ThreadNet.General (
   ) where
 
 import           Control.Monad (guard)
+import           Control.Tracer (nullTracer)
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -47,6 +48,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -71,6 +73,7 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
@@ -228,8 +231,14 @@ runTestNetwork TestConfig
           { nodeInfo
           , mkRekeyM
           } = mkTestConfigMB
-    runThreadNetwork ThreadNetworkArgs
+    setCurrentTime dawnOfTime
+    let systemTime =
+            BTime.defaultSystemTime
+              (BTime.SystemStart dawnOfTime)
+              nullTracer
+    runThreadNetwork systemTime ThreadNetworkArgs
       { tnaForgeEbbEnv    = forgeEbbEnv
+      , tnaFuture         = singleEraFuture slotLength epochSize
       , tnaJoinPlan       = nodeJoinPlan
       , tnaNodeInfo       = nodeInfo
       , tnaNumCoreNodes   = numCoreNodes
@@ -237,9 +246,7 @@ runTestNetwork TestConfig
       , tnaRNG            = seedToChaCha initSeed
       , tnaMkRekeyM       = mkRekeyM
       , tnaRestarts       = nodeRestarts
-      , tnaSlotLength     = slotLength
       , tnaTopology       = nodeTopology
-      , tnaEpochSize      = epochSize
       , tnaTxGenExtra     = txGenExtra
       }
 

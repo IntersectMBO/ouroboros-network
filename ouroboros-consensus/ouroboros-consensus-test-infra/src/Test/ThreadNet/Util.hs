@@ -45,13 +45,13 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import qualified Test.Util.MockChain as Chain
+import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.ThreadNet.Network (NodeOutput (..))
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..),
                      determineForkLength)
 import           Test.ThreadNet.Util.HasCreator
 import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
-import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Chain properties

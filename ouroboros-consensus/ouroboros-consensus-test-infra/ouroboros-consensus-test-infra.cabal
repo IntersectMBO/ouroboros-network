@@ -43,6 +43,8 @@ library
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
                        Test.Util.Golden
+                       Test.Util.HardFork.Future
+                       Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
                        Test.Util.LogicalClock
                        Test.Util.MockChain
@@ -85,6 +87,7 @@ library
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
                      , quickcheck-state-machine
+                     , quiet             >=0.2   && <0.3
                      , random
                      , serialise         >=0.2   && <0.3
                      , tasty
