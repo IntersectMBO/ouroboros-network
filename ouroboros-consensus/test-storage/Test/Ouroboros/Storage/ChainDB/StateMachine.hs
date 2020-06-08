@@ -512,7 +512,7 @@ runPure :: forall blk.
 runPure cfg = \case
     AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
-    GetCurrentChain          -> ok  Chain               $ query   (Model.lastK k getHeader)
+    GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock

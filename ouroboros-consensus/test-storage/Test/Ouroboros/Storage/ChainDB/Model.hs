@@ -31,6 +31,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , maxClockSkew
   , lastK
   , immutableChain
+  , volatileChain
   , immutableBlockNo
   , immutableSlotNo
   , tipBlock
@@ -262,6 +263,33 @@ immutableChain (SecurityParam k) m =
     maxBy f a b
       | f a >= f b = a
       | otherwise  = b
+
+-- | Return the volatile suffix of the current chain.
+--
+-- The opposite of 'immutableChain'.
+--
+-- This is the shortest of the given two chain fragments:
+--
+-- 1. The last @k@ blocks of the current chain.
+-- 2. The suffix of the current chain not part of the 'immDbChain', i.e., the
+--    \"ImmutableDB\".
+volatileChain
+    :: (HasHeader a, HasHeader blk)
+    => SecurityParam
+    -> (blk -> a)  -- ^ Provided since 'AnchoredFragment' is not a functor
+    -> Model blk
+    -> AnchoredFragment a
+volatileChain k f m =
+      Fragment.fromNewestFirst anchor
+    . map f
+    . takeWhile ((/= immutableTipPoint) . Block.blockPoint)
+    . Chain.toNewestFirst
+    . currentChain
+    $ m
+  where
+    (immutableTipPoint, anchor) = case Chain.head (immutableChain k m) of
+        Nothing -> (GenesisPoint,       Fragment.AnchorGenesis)
+        Just b  -> (Block.blockPoint b, Fragment.anchorFromBlock (f b))
 
 -- | The block number of the most recent \"immutable\" block, i.e. the oldest
 -- block we can roll back to. We cannot roll back the block itself.
