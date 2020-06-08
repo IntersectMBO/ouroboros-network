@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Storage.Common (
 
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Word
 import           GHC.Generics
 
@@ -90,6 +91,8 @@ data BlockComponent db a where
   GetIsEBB      :: BlockComponent db IsEBB
   GetBlockSize  :: BlockComponent db Word32
   GetHeaderSize :: BlockComponent db Word16
+  GetNestedType :: Word8
+                -> BlockComponent db ShortByteString
   GetPure       :: a
                 -> BlockComponent db a
   GetApply      :: BlockComponent db (a -> b)
@@ -113,14 +116,15 @@ castBlockComponent
   => BlockComponent db1 b
   -> BlockComponent db2 b
 castBlockComponent = \case
-    GetBlock      -> GetBlock
-    GetRawBlock   -> GetRawBlock
-    GetHeader     -> GetHeader
-    GetRawHeader  -> GetRawHeader
-    GetHash       -> GetHash
-    GetSlot       -> GetSlot
-    GetIsEBB      -> GetIsEBB
-    GetBlockSize  -> GetBlockSize
-    GetHeaderSize -> GetHeaderSize
-    GetPure a     -> GetPure a
-    GetApply f bc -> GetApply (castBlockComponent f) (castBlockComponent bc)
+    GetBlock        -> GetBlock
+    GetRawBlock     -> GetRawBlock
+    GetHeader       -> GetHeader
+    GetRawHeader    -> GetRawHeader
+    GetHash         -> GetHash
+    GetSlot         -> GetSlot
+    GetIsEBB        -> GetIsEBB
+    GetBlockSize    -> GetBlockSize
+    GetHeaderSize   -> GetHeaderSize
+    GetNestedType n -> GetNestedType n
+    GetPure a       -> GetPure a
+    GetApply f bc   -> GetApply (castBlockComponent f) (castBlockComponent bc)

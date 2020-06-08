@@ -27,6 +27,7 @@ import           Codec.Serialise (decode)
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
@@ -164,7 +165,7 @@ data Success it
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
 allComponents :: BlockComponent (ImmutableDB Hash m) AllComponents
-allComponents = (,,,,,,,,)
+allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetRawBlock
     <*> GetHeader
@@ -174,6 +175,7 @@ allComponents = (,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
+    <*> GetNestedType 2
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents =
@@ -186,6 +188,7 @@ type AllComponents =
   , IsEBB
   , Word32
   , Word16
+  , ShortByteString
   )
 
 -- | Short-hand
@@ -1145,11 +1148,11 @@ instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot
 instance ToExpr BlockNo
 instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
-          ToExpr h, ToExpr i)
-      => ToExpr (a, b, c, d, e, f, g, h, i) where
-    toExpr (a, b, c, d, e, f, g, h, i) = App "_×_×_×_×_×_×_×_×_"
+          ToExpr h, ToExpr i, ToExpr j)
+      => ToExpr (a, b, c, d, e, f, g, h, i, j) where
+    toExpr (a, b, c, d, e, f, g, h, i, j) = App "_×_×_×_×_×_×_×_×_x_"
       [ toExpr a, toExpr b, toExpr c, toExpr d, toExpr e, toExpr f, toExpr g
-      , toExpr h, toExpr i
+      , toExpr h, toExpr i, toExpr j
       ]
 instance ToExpr (IteratorResult AllComponents)
 instance ToExpr (IteratorModel Hash)

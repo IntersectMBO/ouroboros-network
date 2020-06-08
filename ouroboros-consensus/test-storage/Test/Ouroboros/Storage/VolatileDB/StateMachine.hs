@@ -22,6 +22,7 @@ import           Codec.Serialise (decode)
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
@@ -91,7 +92,7 @@ type (:@) t r = At t r
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
 allComponents :: BlockComponent (VolatileDB BlockId m) AllComponents
-allComponents = (,,,,,,,,)
+allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetRawBlock
     <*> GetHeader
@@ -101,6 +102,7 @@ allComponents = (,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
+    <*> GetNestedType 2
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents =
@@ -113,6 +115,7 @@ type AllComponents =
   , IsEBB
   , Word32
   , Word16
+  , ShortByteString
   )
 
 data Cmd

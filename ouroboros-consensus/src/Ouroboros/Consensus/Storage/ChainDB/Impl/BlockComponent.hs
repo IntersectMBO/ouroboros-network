@@ -31,21 +31,22 @@ translateToRawDB
   -> BlockComponent (ChainDB m blk) b
   -> BlockComponent db b
 translateToRawDB parse addHdrEnv = \case
-    GetBlock ->
+    GetBlock        ->
       parse Block <$> getBlockRef <*> GetRawBlock
-    GetRawBlock   -> GetRawBlock
-    GetHeader ->
+    GetRawBlock     -> GetRawBlock
+    GetHeader       ->
       (\isEBB blockSize blockRef bs ->
         parse Header blockRef (addHdrEnv isEBB blockSize bs)) <$>
       GetIsEBB <*> GetBlockSize <*> getBlockRef <*> GetRawHeader
-    GetRawHeader  -> addHdrEnv <$> GetIsEBB <*> GetBlockSize <*> GetRawHeader
-    GetHash       -> GetHash
-    GetSlot       -> GetSlot
-    GetIsEBB      -> GetIsEBB
-    GetBlockSize  -> GetBlockSize
-    GetHeaderSize -> GetHeaderSize
-    GetPure a     -> GetPure a
-    GetApply f bc -> GetApply
+    GetRawHeader    -> addHdrEnv <$> GetIsEBB <*> GetBlockSize <*> GetRawHeader
+    GetHash         -> GetHash
+    GetSlot         -> GetSlot
+    GetIsEBB        -> GetIsEBB
+    GetBlockSize    -> GetBlockSize
+    GetHeaderSize   -> GetHeaderSize
+    GetNestedType n -> GetNestedType n
+    GetPure a       -> GetPure a
+    GetApply f bc   -> GetApply
       (translateToRawDB parse addHdrEnv f)
       (translateToRawDB parse addHdrEnv bc)
 

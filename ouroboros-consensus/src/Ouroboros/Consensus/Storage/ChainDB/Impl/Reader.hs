@@ -299,22 +299,26 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     getBlockComponentFromHeader
       :: forall b'. Header blk -> BlockComponent (ChainDB m blk) b' -> m b'
     getBlockComponentFromHeader hdr = \case
-        GetBlock      -> getBlockComponent GetBlock
-        GetRawBlock   -> getBlockComponent GetRawBlock
-        GetHeader     -> return $ return hdr
-        GetRawHeader  -> return $ toLazyByteString $ encodeDisk codecConfig hdr
-        GetHash       -> return $ headerHash hdr
-        GetSlot       -> return $ blockSlot hdr
-        GetIsEBB      -> return $ headerToIsEBB hdr
-        GetBlockSize  -> getBlockComponent GetBlockSize
+        GetBlock        -> getBlockComponent GetBlock
+        GetRawBlock     -> getBlockComponent GetRawBlock
+        GetHeader       -> return $ return hdr
+        GetRawHeader    -> return $ toLazyByteString $ encodeDisk codecConfig hdr
+        GetHash         -> return $ headerHash hdr
+        GetSlot         -> return $ blockSlot hdr
+        GetIsEBB        -> return $ headerToIsEBB hdr
+        GetBlockSize    -> getBlockComponent GetBlockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap because we keep the
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
-        GetHeaderSize -> return $
+        GetHeaderSize   -> return $
           fromIntegral $ Lazy.length $ toLazyByteString $ encodeDisk codecConfig hdr
-        GetPure a     -> return a
-        GetApply f bc ->
+        -- We don't know with which bytes the block starts, forward it.
+        -- TODO When we replace 'GetNestedType' with the proper type, we can
+        -- probably return the right value here.
+        GetNestedType n -> getBlockComponent (GetNestedType n)
+        GetPure a       -> return a
+        GetApply f bc   ->
           getBlockComponentFromHeader hdr f <*>
           getBlockComponentFromHeader hdr bc
       where

@@ -53,6 +53,7 @@ import           Data.Bifunctor (first)
 import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
@@ -569,17 +570,19 @@ extractBlockComponent
   -> BlockComponent (ImmutableDB hash m) b
   -> b
 extractBlockComponent hash slot isEBB bytes binfo = \case
-    GetBlock      -> ()
-    GetRawBlock   -> bytes
-    GetHeader     -> ()
-    GetRawHeader  -> extractHeader binfo bytes
-    GetHash       -> hash
-    GetSlot       -> slot
-    GetIsEBB      -> isEBB
-    GetBlockSize  -> fromIntegral $ Lazy.length bytes
-    GetHeaderSize -> headerSize binfo
-    GetPure a     -> a
-    GetApply f bc ->
+    GetBlock        -> ()
+    GetRawBlock     -> bytes
+    GetHeader       -> ()
+    GetRawHeader    -> extractHeader binfo bytes
+    GetHash         -> hash
+    GetSlot         -> slot
+    GetIsEBB        -> isEBB
+    GetBlockSize    -> fromIntegral $ Lazy.length bytes
+    GetHeaderSize   -> headerSize binfo
+    GetNestedType n -> Short.toShort $ Lazy.toStrict $
+                       Lazy.take (fromIntegral n) bytes
+    GetPure a       -> a
+    GetApply f bc   ->
       extractBlockComponent hash slot isEBB bytes binfo f $
       extractBlockComponent hash slot isEBB bytes binfo bc
 

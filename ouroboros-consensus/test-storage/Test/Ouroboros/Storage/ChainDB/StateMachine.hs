@@ -31,6 +31,7 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
@@ -222,7 +223,7 @@ data Success blk it rdr
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
 allComponents :: BlockComponent (ChainDB m blk) (AllComponentsM m blk)
-allComponents = (,,,,,,,,)
+allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetHeader
     <*> GetRawBlock
@@ -232,6 +233,7 @@ allComponents = (,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
+    <*> GetNestedType 2
 
 -- | 'AllComponentsM' instantiated to 'Identity'.
 type AllComponents blk = AllComponentsM Identity blk
@@ -247,14 +249,15 @@ type AllComponentsM m blk =
   , IsEBB
   , Word32
   , Word16
+  , ShortByteString
   )
 
 -- | Convert @'AllComponentsM m'@ to 'AllComponents'
 runAllComponentsM :: IOLike m => AllComponentsM m blk -> m (AllComponents blk)
-runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
+runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g, h) = do
     blk <- mblk
     hdr <- mhdr
-    return (Identity blk, Identity hdr, a, b, c, d, e, f, g)
+    return (Identity blk, Identity hdr, a, b, c, d, e, f, g, h)
 
 type TestConstraints blk =
   ( ConsensusProtocol  (BlockProtocol blk)
