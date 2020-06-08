@@ -947,6 +947,7 @@ wipeVolDB cfg m =
       { volDbBlocks   = Map.empty
       , cps           = CPS.switchFork newChain (cps m)
       , currentLedger = newLedger
+      , invalid       = Map.empty
       }
 
     -- Get the chain ending at the ImmutableDB by doing chain selection on the
