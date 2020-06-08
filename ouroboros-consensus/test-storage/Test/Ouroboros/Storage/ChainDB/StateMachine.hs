@@ -51,7 +51,6 @@ import qualified Generics.SOP as SOP
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.StateMachine
-import           Test.StateMachine.Labelling
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -679,17 +678,24 @@ instance Bitraversable (t blk) => Rank2.Traversable (At t blk m) where
 
 -- | An event records the model before and after a command along with the
 -- command itself, and the response.
-type ChainDBEvent blk m = Event (Model blk m) (At Cmd blk m) (At Resp blk m)
+data Event blk m r = Event
+  { eventBefore :: Model   blk m r
+  , eventCmd    :: At Cmd  blk m r
+  , eventAfter  :: Model   blk m r
+  , eventResp   :: At Resp blk m r
+  }
 
-eventMockResp :: Eq1 r => ChainDBEvent blk m r -> Resp blk IteratorId ReaderId
+deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
+
+eventMockResp :: Eq1 r => Event blk m r -> Resp blk IteratorId ReaderId
 eventMockResp Event{..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
-         => Model        blk m r
-         -> At Cmd       blk m r
-         -> At Resp      blk m r
-         -> ChainDBEvent blk m r
+         => Model     blk m r
+         -> At Cmd    blk m r
+         -> At Resp   blk m r
+         -> Event     blk m r
 lockstep model@Model {..} cmd (At resp) = Event
     { eventBefore = model
     , eventCmd    = cmd
