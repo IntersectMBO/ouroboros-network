@@ -19,6 +19,7 @@ module Ouroboros.Network.Mux
   , TokProtocolTemperature (..)
   , WithProtocolTemperature (..)
   , withoutProtocolTemperature
+  , WithSomeProtocolTemperature (..)
   , Bundle (..)
   , projectBundle
   , OuroborosBundle
@@ -149,6 +150,10 @@ withoutProtocolTemperature :: WithProtocolTemperature pt a -> a
 withoutProtocolTemperature (WithHot a)         = a
 withoutProtocolTemperature (WithWarm a)        = a
 withoutProtocolTemperature (WithEstablished a) = a
+
+
+data WithSomeProtocolTemperature a where
+    WithSomeProtocolTemperature :: WithProtocolTemperature pt a -> WithSomeProtocolTemperature a
 
 
 -- | A bundle of 'HotApp', 'WarmApp' and 'EstablishedApp'.
