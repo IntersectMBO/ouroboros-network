@@ -44,13 +44,14 @@ import           Data.Word (Word16, Word32, Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
+import           System.Random (getStdRandom, randomR)
+import           Text.Show.Pretty (ppShow)
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Random (mkQCGen)
 import           Test.StateMachine hiding (showLabelledExamples,
                      showLabelledExamples')
-import           Test.StateMachine.Labelling
-import qualified Test.StateMachine.Labelling as QSM
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -66,6 +67,7 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -90,6 +92,7 @@ import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
+import           Test.Util.QuickCheck (collects)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
@@ -451,31 +454,33 @@ deriving instance Rank2.Foldable    (At Resp m)
 
 -- | An event records the model before and after a command along with the
 -- command itself, and the response.
-type ImmDBEvent m = Event (Model m) (At CmdErr m) (At Resp m)
+data Event m r = Event
+  { eventBefore :: Model     m r
+  , eventCmdErr :: At CmdErr m r
+  , eventAfter  :: Model     m r
+  , eventResp   :: At Resp   m r
+  } deriving (Show)
 
-eventCmdErr :: ImmDBEvent m r -> At CmdErr m r
-eventCmdErr = eventCmd
-
-eventCmdNoErr :: ImmDBEvent m r -> At Cmd m r
+eventCmdNoErr :: Event m r -> At Cmd m r
 eventCmdNoErr = At . cmd . unAt . eventCmdErr
 
-eventMockCmd :: Eq1 r => ImmDBEvent m r -> Cmd IteratorId
-eventMockCmd ev@Event {..} = toMock eventBefore (eventCmdNoErr ev)
+eventMockCmdNoErr :: Eq1 r => Event m r -> Cmd IteratorId
+eventMockCmdNoErr ev@Event {..} = toMock eventBefore (eventCmdNoErr ev)
 
-eventMockResp :: Eq1 r => ImmDBEvent m r -> Resp IteratorId
+eventMockResp :: Eq1 r => Event m r -> Resp IteratorId
 eventMockResp Event {..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (Show1 r, Eq1 r)
-         => Model      m r
-         -> At CmdErr  m r
-         -> At Resp    m r
-         -> ImmDBEvent m r
+         => Model     m r
+         -> At CmdErr m r
+         -> At Resp   m r
+         -> Event     m r
 lockstep model@Model {..} cmdErr (At resp) = Event
-    { eventBefore = model
-    , eventCmd    = cmdErr
-    , eventAfter  = model'
-    , eventResp   = At resp
+    { eventBefore   = model
+    , eventCmdErr   = cmdErr
+    , eventAfter    = model'
+    , eventResp     = At resp
     }
   where
     (mockResp, dbModel') = step model cmdErr
@@ -948,31 +953,31 @@ data Tag
 
 
 -- | Predicate on events
-type EventPred m = Predicate (ImmDBEvent m Symbolic) Tag
+type EventPred m = C.Predicate (Event m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
-successful :: (    ImmDBEvent m Symbolic
+successful :: (    Event m Symbolic
                 -> Success IteratorId
                 -> Either Tag (EventPred m)
               )
            -> EventPred m
-successful f = predicate $ \ev -> case eventMockResp ev of
+successful f = C.predicate $ \ev -> case eventMockResp ev of
     Resp (Left  _ ) -> Right $ successful f
     Resp (Right ok) -> f ev ok
 
 -- | Convenience combinator for creating classifiers for failed commands
-failed :: (    ImmDBEvent m Symbolic
+failed :: (    Event m Symbolic
             -> ImmutableDBError
             -> Either Tag (EventPred m)
           )
        -> EventPred m
-failed f = predicate $ \ev -> case eventMockResp ev of
+failed f = C.predicate $ \ev -> case eventMockResp ev of
     Resp (Left  e) -> f ev e
     Resp (Right _) -> Right $ failed f
 
 -- | Convenience combinator for creating classifiers for commands failed with
 -- a @UserError@.
-failedUserError :: (    ImmDBEvent m Symbolic
+failedUserError :: (    Event m Symbolic
                      -> UserError
                      -> Either Tag (EventPred m)
                    )
@@ -983,9 +988,9 @@ failedUserError f = failed $ \ev e -> case e of
 
 -- | Convenience combinator for creating classifiers for commands for which an
 -- error is simulated.
-simulatedError :: (ImmDBEvent m Symbolic -> Either Tag (EventPred m))
+simulatedError :: (Event m Symbolic -> Either Tag (EventPred m))
                -> EventPred m
-simulatedError f = predicate $ \ev ->
+simulatedError f = C.predicate $ \ev ->
     case (cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
       (Just _, Right _) -> f ev
       _                 -> Right $ simulatedError f
@@ -994,8 +999,8 @@ simulatedError f = predicate $ \ev ->
 -- | Tag commands
 --
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
-tag :: forall m. [ImmDBEvent m Symbolic] -> [Tag]
-tag = QSM.classify
+tag :: forall m. [Event m Symbolic] -> [Tag]
+tag = C.classify
     [ tagGetBlockComponentJust
     , tagGetBlockComponentNothing
     , tagGetEBBComponentJust
@@ -1078,14 +1083,14 @@ tag = QSM.classify
 
     tagIteratorStreamedN :: Map IteratorId Int
                          -> EventPred m
-    tagIteratorStreamedN streamedPerIterator = Predicate
-      { predApply = \ev -> case eventMockResp ev of
+    tagIteratorStreamedN streamedPerIterator = C.Predicate
+      { C.predApply = \ev -> case eventMockResp ev of
           Resp (Right (IterResult (IteratorResult {})))
-            | IteratorNext it <- eventMockCmd ev
+            | IteratorNext it <- eventMockCmdNoErr ev
             -> Right $ tagIteratorStreamedN $
                Map.insertWith (+) it 1 streamedPerIterator
           _ -> Right $ tagIteratorStreamedN streamedPerIterator
-      , predFinish = do
+      , C.predFinish = do
           -- Find the entry with the highest value, i.e. the iterator that has
           -- streamed the most blocks/headers
           (_, longestStream) <- listToMaybe $ sortBy (flip compare `on` snd) $
@@ -1099,24 +1104,44 @@ tag = QSM.classify
       _                           -> Right tagIteratorWithoutBounds
 
     tagCorruption :: EventPred m
-    tagCorruption = Predicate
-      { predApply = \ev -> case eventCmdNoErr ev of
+    tagCorruption = C.Predicate
+      { C.predApply = \ev -> case eventCmdNoErr ev of
           At (Corruption {}) -> Left  TagCorruption
           _                  -> Right tagCorruption
-      , predFinish = Nothing
+      , C.predFinish = Nothing
       }
 
     tagMigrate :: EventPred m
-    tagMigrate = Predicate
-      { predApply = \ev -> case eventCmdNoErr ev of
+    tagMigrate = C.Predicate
+      { C.predApply = \ev -> case eventCmdNoErr ev of
           At (Migrate {}) -> Left  TagMigrate
           _               -> Right tagMigrate
-      , predFinish = Nothing
+      , C.predFinish = Nothing
       }
 
     tagErrorDuring :: Tag -> (At Cmd m Symbolic -> Bool) -> EventPred m
     tagErrorDuring t isErr = simulatedError $ \ev ->
       if isErr (eventCmdNoErr ev) then Left t else Right $ tagErrorDuring t isErr
+
+
+-- | Step the model using a 'QSM.Command' (i.e., a command associated with
+-- an explicit set of variables)
+execCmd :: Model m Symbolic
+        -> QSM.Command (At CmdErr m) (At Resp m)
+        -> Event m Symbolic
+execCmd model (QSM.Command cmdErr resp _vars) = lockstep model cmdErr resp
+
+-- | 'execCmds' is just the repeated form of 'execCmd'
+execCmds :: forall m
+          . Model m Symbolic
+         -> QSM.Commands (At CmdErr m) (At Resp m) -> [Event m Symbolic]
+execCmds model = \(QSM.Commands cs) -> go model cs
+  where
+    go :: Model m Symbolic -> [QSM.Command (At CmdErr m) (At Resp m)]
+       -> [Event m Symbolic]
+    go _ []       = []
+    go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
+
 
 {-------------------------------------------------------------------------------
   Required instances
@@ -1181,15 +1206,28 @@ instance ToExpr (Model m Concrete)
 -------------------------------------------------------------------------------}
 
 -- | Show minimal examples for each of the generated tags
-showLabelledExamples' :: Maybe Int
-                      -- ^ Seed
-                      -> Int
-                      -- ^ Number of tests to run to find examples
-                      -> (Tag -> Bool)
-                      -- ^ Tag filter (can be @const True@)
-                      -> ChunkInfo -> IO ()
-showLabelledExamples' mReplay numTests focus chunkInfo =
-    QSM.showLabelledExamples' smUnused mReplay numTests tag focus
+showLabelledExamples'
+  :: Maybe Int
+  -- ^ Seed
+  -> Int
+  -- ^ Number of tests to run to find examples
+  -> (Tag -> Bool)
+  -- ^ Tag filter (can be @const True@)
+  -> ChunkInfo
+  -> IO ()
+showLabelledExamples' mbReplay numTests focus chunkInfo = do
+    replaySeed <- case mbReplay of
+      Nothing   -> getStdRandom (randomR (1,999999))
+      Just seed -> return seed
+
+    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
+                                  , maxSuccess = numTests
+                                  }) $
+      forAllShrinkShow (QSM.generateCommands smUnused Nothing)
+                       (QSM.shrinkCommands   smUnused)
+                       ppShow $ \cmds ->
+        collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
+          property True
   where
     smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo
 
@@ -1201,7 +1239,7 @@ prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
     forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       (hist, prop) <- QC.run $ test cacheConfig chunkInfo cmds
       prettyCommands smUnused hist
-        $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
+        $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
         $ prop
   where
     smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo
