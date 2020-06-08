@@ -1182,6 +1182,7 @@ instance ToExpr (IteratorModel Hash)
 instance ToExpr (HeaderHash h) => ToExpr (Block.ChainHash h)
 instance ToExpr EBB
 instance ToExpr IsEBB
+instance ToExpr ChainLength
 instance ToExpr TestHeaderHash
 instance ToExpr TestBodyHash
 instance ToExpr TestHeader

@@ -182,6 +182,7 @@ deriving instance ToExpr (WithOrigin BlockId)
 deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBodyHash
 deriving instance ToExpr EBB
+deriving instance ToExpr ChainLength
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestBody
 deriving instance ToExpr TestBlock
@@ -391,8 +392,9 @@ generatorCmdImpl Model {..} = frequency
       let body  = testBody b
           th    = testHeader b
           no    = thBlockNo th
+          clen  = thChainLength th
           ebb   = blockIsEBB b
-      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no ebb
+      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no clen ebb
 
     genRandomBlock :: Gen TestBlock
     genRandomBlock = do
@@ -406,7 +408,9 @@ generatorCmdImpl Model {..} = frequency
       no       <- BlockNo <$> arbitrary
       -- We don't care about epoch numbers in the VolatileDB
       ebb      <- arbitrary
-      return $ mkBlock canContainEBB body prevHash slot no ebb
+      -- We don't care about chain length in the VolatileDB
+      let clen = ChainLength (fromIntegral (unBlockNo no))
+      return $ mkBlock canContainEBB body prevHash slot no clen ebb
 
     genBlockId :: Gen BlockId
     genBlockId = frequency

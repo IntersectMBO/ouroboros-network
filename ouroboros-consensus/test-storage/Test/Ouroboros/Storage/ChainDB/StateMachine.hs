@@ -1145,6 +1145,7 @@ deriving instance ( ToExpr blk
 deriving instance ToExpr EpochNo
 deriving instance ToExpr EBB
 deriving instance ToExpr IsEBB
+deriving instance ToExpr ChainLength
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBody

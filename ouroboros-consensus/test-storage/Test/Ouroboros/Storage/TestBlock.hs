@@ -24,6 +24,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , BlockConfig(..)
   , CodecConfig(..)
   , EBB(..)
+  , ChainLength(..)
     -- ** Construction
   , mkBlock
   , firstBlock
@@ -141,7 +142,7 @@ newtype TestBodyHash = TestBodyHash Int
   deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise)
 
 data TestHeader = TestHeader {
-      thHash     :: HeaderHash TestHeader
+      thHash        :: HeaderHash TestHeader
       -- ^ Not included in the calculation of the hash of the 'TestHeader',
       -- i.e., in its own value, which would be pretty hard to do.
       --
@@ -149,11 +150,12 @@ data TestHeader = TestHeader {
       -- To calculate it, the 'TestHeader' is passed to the hashing function,
       -- even though the field is not read, making the field strict would
       -- create an infinite loop.
-    , thPrevHash :: !(ChainHash TestHeader)
-    , thBodyHash :: !TestBodyHash
-    , thSlotNo   :: !SlotNo
-    , thBlockNo  :: !BlockNo
-    , thIsEBB    :: !EBB
+    , thPrevHash    :: !(ChainHash TestHeader)
+    , thBodyHash    :: !TestBodyHash
+    , thSlotNo      :: !SlotNo
+    , thBlockNo     :: !BlockNo
+    , thChainLength :: !ChainLength
+    , thIsEBB       :: !EBB
     }
   deriving stock    (Eq, Show, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise)
@@ -254,7 +256,7 @@ hashBody :: TestBody -> TestBodyHash
 hashBody = TestBodyHash . hash
 
 hashHeader :: TestHeader -> TestHeaderHash
-hashHeader (TestHeader _ a b c d e) = TestHeaderHash (hash (a, b, c, d, e))
+hashHeader (TestHeader _ a b c d e f) = TestHeaderHash (hash (a, b, c, d, e, f))
 
 testHashInfo :: HashInfo TestHeaderHash
 testHashInfo = HashInfo
@@ -315,6 +317,59 @@ testBlockToBlockInfo tb = BlockInfo {
     TestHeader{..} = testHeader tb
 
 {-------------------------------------------------------------------------------
+  Real chain length
+-------------------------------------------------------------------------------}
+
+-- | In chain selection, we use 'BlockNo' as a proxy for the block length.
+-- This is entirely correct, except for those dreadful EBBs, which share their
+-- block number with their predecessor. So it is possible that two chains with
+-- the same 'BlockNo' at the tip have a different length because the longer
+-- chain contains more EBBs than the shorter.
+--
+-- For example:
+--
+-- > .. :> EBB (100, slotNo 10, blockNo 1) :> (400, slotNo 10, blockNo 2)
+-- > .. :> (999, slotNo 10, blockNo 2)
+--
+-- The chain selection for this 'TestBlock' looks at the hashes in case of a
+-- 'BlockNo' tie (after prefering the chain ending with an EBB) and will pick
+-- the block with the highest hash. This is to have a more deterministic chain
+-- selection (less implementation specific) which will keep the model better
+-- in sync with the implementation.
+--
+-- In the example above, that would mean picking the second chain, /even
+-- though it is shorter/! The implementation does not support switching to a
+-- shorter chain.
+--
+-- Note that this is not a problem for Byron, because we don't look at the
+-- hashes or anything else in case of a tie (we just prefer a chain ending
+-- with an EBB, which /must/ be longer).
+--
+-- Note that is not a problem for Shelley either, where we do look at the
+-- certificate number and VRF hash in case of a tie, because there are no EBBs.
+--
+-- This is only an issue when:
+-- * There can be EBBs in the chain
+-- * In case of equal 'blockNo's, we still prefer one over the other because
+--   of some additional condition.
+--
+-- Which is the case for this TestBlock.
+--
+-- To solve this, we store the /real/ chain length inside the block. The only
+-- difference with the 'BlockNo' is that 'ChainLength' takes EBBs into account.
+--
+-- When there is 'BlockNo' tie as in the example above and we would look at
+-- the hashes, we will first look at the 'ChainLength' (and prefer the longest
+-- one). Only if that is equal do we actually look at the hashes. This
+-- guarantees that we never prefer a chain that is shorter.
+--
+-- NOTE: we start counting from 1 (unlike 'BlockNo', which starts from 0),
+-- because it corresponds to the /length/.
+newtype ChainLength = ChainLength Int
+  deriving stock   (Show, Generic)
+  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks, Serialise, Hashable)
+
+{-------------------------------------------------------------------------------
   Creating blocks
 -------------------------------------------------------------------------------}
 
@@ -330,9 +385,10 @@ mkBlock
   -- ^ Hash of previous header
   -> SlotNo
   -> BlockNo
+  -> ChainLength
   -> Maybe EpochNo
   -> TestBlock
-mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo ebb =
+mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thChainLength ebb =
     case (canContainEBB thSlotNo, ebb) of
       (False, Just _) ->
         error "mkBlock: EBB in invalid slot"
@@ -345,6 +401,7 @@ mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo ebb =
       , thBodyHash = hashBody testBody
       , thSlotNo
       , thBlockNo
+      , thChainLength
       , thIsEBB = case ebb of
           Just epoch -> EBB epoch
           Nothing    -> RegularBlock
@@ -359,6 +416,7 @@ firstBlock slotNo testBody =
       GenesisHash
       slotNo
       0
+      (ChainLength 1)
       Nothing
 
 mkNextBlock :: TestBlock  -- ^ Previous block
@@ -372,13 +430,14 @@ mkNextBlock prev slotNo testBody =
       (BlockHash (blockHash prev))
       slotNo
       (succ (blockNo prev))
+      (succ (thChainLength (testHeader prev)))
       Nothing
 
 firstEBB :: (SlotNo -> Bool)
          -> TestBody
          -> TestBlock
 firstEBB canContainEBB testBody =
-    mkBlock canContainEBB testBody GenesisHash 0 0 (Just 0)
+    mkBlock canContainEBB testBody GenesisHash 0 0 (ChainLength 1) (Just 0)
 
 -- | Note that in various places, e.g., the ImmutableDB, we rely on the fact
 -- that the @slotNo@ should correspond to the first slot number of the epoch,
@@ -396,6 +455,7 @@ mkNextEBB canContainEBB prev slotNo epochNo testBody =
       (BlockHash (blockHash prev))
       slotNo
       (blockNo prev)
+      (succ (thChainLength (testHeader prev)))
       (Just epochNo)
 
 {-------------------------------------------------------------------------------
@@ -404,8 +464,12 @@ mkNextEBB canContainEBB prev slotNo epochNo testBody =
 
 data BftWithEBBs
 
-ebbAwareCompareCandidates :: (BlockNo, IsEBB) -> (BlockNo, IsEBB) -> Ordering
-ebbAwareCompareCandidates (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
+ebbAwareCompareCandidates
+    :: (BlockNo, IsEBB, ChainLength, TestHeaderHash)
+    -> (BlockNo, IsEBB, ChainLength, TestHeaderHash)
+    -> Ordering
+ebbAwareCompareCandidates (lBlockNo, lIsEBB, lChainLength, lHash)
+                          (rBlockNo, rIsEBB, rChainLength, rHash) =
     -- Prefer the highest block number, as it is a proxy for chain length
     case lBlockNo `compare` rBlockNo of
       LT -> LT
@@ -414,14 +478,25 @@ ebbAwareCompareCandidates (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
       -- An EBB has the same block number as the block before it, so the
       -- chain ending with an EBB is actually longer than the one ending
       -- with a regular block.
-      EQ -> score lIsEBB `compare` score rIsEBB
+      --
+      -- In case of a tie, look at the real chain length, so that we never
+      -- prefer a shorter chain over a longer one, see 'ChainLength'.
+      --
+      -- In case of another tie, pick the largest hash, so that the model and
+      -- the implementation will make the same choice, regardless
+      -- implementation details (e.g., sort order).
+      EQ -> mconcat
+        [ score lIsEBB `compare` score rIsEBB
+        , lChainLength `compare` rChainLength
+        , lHash        `compare` rHash
+        ]
    where
      score :: IsEBB -> Int
      score IsEBB    = 1
      score IsNotEBB = 0
 
 instance ChainSelection BftWithEBBs where
-  type SelectView BftWithEBBs = (BlockNo, IsEBB)
+  type SelectView BftWithEBBs = (BlockNo, IsEBB, ChainLength, TestHeaderHash)
 
   compareCandidates _ _ = ebbAwareCompareCandidates
 
@@ -452,7 +527,12 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
-  selectView _ hdr = (blockNo hdr, headerToIsEBB hdr)
+  selectView _ hdr =
+      ( blockNo hdr
+      , headerToIsEBB hdr
+      , thChainLength (unTestHeader hdr)
+      , blockHash hdr
+      )
 
 data TestBlockError =
     -- | The hashes don't line up
