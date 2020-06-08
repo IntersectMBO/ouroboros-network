@@ -529,7 +529,9 @@ runDB env@VolatileDBEnv { varDB, args } cmd = readMVar varDB >>= \db -> case cmd
     GarbageCollect slot      -> Unit                     <$> garbageCollect db slot
     GetMaxSlotNo             -> MaxSlot                  <$> atomically (getMaxSlotNo db)
     Close                    -> Unit                     <$> closeDB db
-    ReOpen                   -> Unit                     <$> reopenDB env
+    ReOpen                   -> do
+        readMVar varDB >>= idemPotentCloseDB
+        Unit <$> reopenDB env
     Corruption corrs ->
       withClosedDB $
         forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
