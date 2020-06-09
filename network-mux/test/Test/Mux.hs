@@ -173,6 +173,7 @@ instance Arbitrary DummyPayload where
     arbitrary = do
         n <- choose (1, 128)
         len <- oneof [ return n
+                     , return $ n * 8
                      , return $ defaultMiniProtocolLimit - n - cborOverhead
                      , choose (1, defaultMiniProtocolLimit - cborOverhead)
                      ]
@@ -194,6 +195,21 @@ instance Arbitrary DummyTrace where
     arbitrary = do
         len <- choose (1, 20)
         DummyTrace <$> vector len
+
+    shrink (DummyTrace a) =
+        let a' = shrink a in
+        map DummyTrace $ filter (not . null) a'
+
+-- | A sequence of DymmyTraces
+newtype DummyRun = DummyRun [DummyTrace] deriving Show
+
+instance Arbitrary DummyRun where
+    arbitrary = do
+        len <- choose (1, 4)
+        DummyRun <$> vector len
+    shrink (DummyRun a) =
+        let a' = shrink a in
+        map DummyRun $ filter (not . null) a'
 
 data InvalidSDU = InvalidSDU {
       isTimestamp  :: !RemoteClockModel
@@ -297,9 +313,9 @@ instance Arbitrary Uneven where
 -- messages and the testcases will verify that they are correctly reassembled
 -- into the original message.
 --
-prop_mux_snd_recv :: DummyTrace
+prop_mux_snd_recv :: DummyRun
                   -> Property
-prop_mux_snd_recv messages = ioProperty $ do
+prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
     let sduLen = 1260
 
     client_w <- atomically $ newTBQueue 10
@@ -314,9 +330,7 @@ prop_mux_snd_recv messages = ioProperty $ do
         clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
-    (client_mp, server_mp) <- setupMiniReqRsp (return ()) messages
-
-    let clientApp = MiniProtocolInfo {
+        clientApp = MiniProtocolInfo {
                        miniProtocolNum = MiniProtocolNum 2,
                        miniProtocolDir = InitiatorDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits
@@ -329,34 +343,41 @@ prop_mux_snd_recv messages = ioProperty $ do
                      }
 
     clientMux <- newMux $ MiniProtocolBundle [clientApp]
-    clientRes <- runMiniProtocol clientMux (miniProtocolNum clientApp) (miniProtocolDir clientApp)
-                   StartEagerly client_mp
 
     serverMux <- newMux $ MiniProtocolBundle [serverApp]
-    serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
-                   StartEagerly server_mp
 
-    (rs_e, rc_e) <- withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync -> 
+    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync -> 
       withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
-        rs_e <- atomically serverRes
-        rc_e <- atomically clientRes
 
+        r <- step clientMux clientApp serverMux serverApp messages
         stopMux serverMux
         stopMux clientMux
         wait serverAsync
         wait clientAsync
-        return (rs_e, rc_e)
+        return $ r
 
-    case (rs_e, rc_e) of
-         (Left _, _)          -> return $ property False
-         (_, Left _)          -> return $ property False
-         (Right rs, Right rc) -> return (property $ rs && rc)
+  where
+    step _ _ _ _ [] = return $ property True
+    step clientMux clientApp serverMux serverApp (msgs:msgss) = do
+        (client_mp, server_mp) <- setupMiniReqRsp (return ()) msgs
+
+        clientRes <- runMiniProtocol clientMux (miniProtocolNum clientApp) (miniProtocolDir clientApp)
+                   StartEagerly client_mp
+        serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
+                   StartEagerly server_mp
+        rs_e <- atomically serverRes
+        rc_e <- atomically clientRes
+        case (rs_e, rc_e) of
+         (Right True, Right True) -> step clientMux clientApp serverMux serverApp msgss
+         (_, _)                   -> return $ property False
+
+
 
 -- | Like prop_mux_snd_recv but using a bidirectional mux with client and server
 -- on both endpoints.
-prop_mux_snd_recv_bi :: DummyTrace
+prop_mux_snd_recv_bi :: DummyRun
                      -> Property
-prop_mux_snd_recv_bi messages = ioProperty $ do
+prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
     let sduLen = 1260
 
     client_w <- atomically $ newTBQueue 10
@@ -370,8 +391,6 @@ prop_mux_snd_recv_bi messages = ioProperty $ do
 
         clientTracer = contramap (Compat.WithMuxBearer "client") activeTracer
         serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
-
-    (client_mp, server_mp) <- setupMiniReqRsp (return ()) messages
 
     let clientApps = [ MiniProtocolInfo {
                         miniProtocolNum = MiniProtocolNum 2,
@@ -399,44 +418,54 @@ prop_mux_snd_recv_bi messages = ioProperty $ do
 
 
     clientMux <- newMux $ MiniProtocolBundle clientApps
-    clientRes <- sequence
-      [ runMiniProtocol
-          clientMux
-          miniProtocolNum
-          miniProtocolDir
-          strat
-          chan
-      | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- clientApps
-      , (strat, chan) <- case miniProtocolDir of
-                              InitiatorDirection -> [(StartEagerly, client_mp)]
-                              _                  -> [(StartOnDemand, server_mp)]
-      ]
     clientAsync <- async $ runMux clientTracer clientMux clientBearer
 
     serverMux <- newMux $ MiniProtocolBundle serverApps
-    serverRes <- sequence
-      [ runMiniProtocol
-          serverMux
-          miniProtocolNum
-          miniProtocolDir
-          strat
-          chan
-      | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- serverApps
-      , (strat, chan) <- case miniProtocolDir of
-                              InitiatorDirection -> [(StartEagerly, client_mp)]
-                              _                  -> [(StartOnDemand, server_mp)]
-      ]
     serverAsync <- async $ runMux serverTracer serverMux serverBearer
 
-    !rc <- mapM getResult clientRes
-    !rs <- mapM getResult serverRes
+    r <- step clientMux clientApps serverMux serverApps messages
     stopMux clientMux
     stopMux serverMux
     wait serverAsync
     wait clientAsync
-    return (property $ and (rs ++ rc))
+    return r
 
   where
+    step _ _ _ _ [] = return $ property True
+    step clientMux clientApps serverMux serverApps (msgs:msgss) = do
+        (client_mp, server_mp) <- setupMiniReqRsp (return ()) msgs
+        clientRes <- sequence
+          [ runMiniProtocol
+            clientMux
+            miniProtocolNum
+            miniProtocolDir
+            strat
+            chan
+          | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- clientApps
+          , (strat, chan) <- case miniProtocolDir of
+                              InitiatorDirection -> [(StartEagerly, client_mp)]
+                              _                  -> [(StartOnDemand, server_mp)]
+          ]
+        serverRes <- sequence
+          [ runMiniProtocol
+            serverMux
+            miniProtocolNum
+            miniProtocolDir
+            strat
+            chan
+          | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- serverApps
+          , (strat, chan) <- case miniProtocolDir of
+                              InitiatorDirection -> [(StartEagerly, client_mp)]
+                              _                  -> [(StartOnDemand, server_mp)]
+          ]
+
+        rs <- mapM getResult serverRes
+        rc <- mapM getResult clientRes
+        if and $ rs ++ rc
+           then step clientMux clientApps serverMux serverApps msgss
+           else return $ property False
+
+
     getResult :: STM IO (Either SomeException Bool) -> IO Bool
     getResult get = do
         r <- atomically get
