@@ -24,6 +24,8 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer
 
+import           Data.Proxy (Proxy (..))
+
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -65,7 +67,7 @@ _sayTracer = Tracer say
 testProtocols :: RunMiniProtocol appType bytes m a b
               -> OuroborosApplication appType addr bytes m a b
 testProtocols chainSync =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -145,12 +147,18 @@ demo chain0 updates delay = do
     clientAsync <- async $
       Mx.muxStart
         activeTracer
-        (Mx.toApplication (ConnectionId "client" "server") consumerApp)
+        (Mx.toApplication
+          (ConnectionId "client" "server")
+          (neverStop (Proxy :: Proxy m))
+          consumerApp)
         clientBearer
     serverAsync <- async $
       Mx.muxStart
         activeTracer
-        (Mx.toApplication (ConnectionId "server" "client") producerApp)
+        (Mx.toApplication
+          (ConnectionId "server" "client")
+          (neverStop (Proxy :: Proxy m))
+          producerApp)
         serverBearer
 
     updateAid <- async $ sequence_

@@ -14,12 +14,14 @@ module Cardano.Client.Subscription (
   , MuxTrace
   , RunMiniProtocol (..)
   , WithMuxBearer
+  , RunOrStop (..)
   , cChainSyncCodec
   , cStateQueryCodec
   , cTxSubmissionCodec
   ) where
 
 import           Control.Monad.Class.MonadST (MonadST)
+import           Control.Monad.Class.MonadSTM
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Proxy
 import           Data.Void (Void)
@@ -27,7 +29,7 @@ import           Data.Void (Void)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
 
 import           Ouroboros.Network.Mux (MuxMode (..), MuxPeer (..),
-                     OuroborosApplication, RunMiniProtocol (..))
+                     OuroborosApplication, RunMiniProtocol (..), RunOrStop (..))
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      ConnectionId, LocalAddress,
                      NetworkClientSubcriptionTracers,
@@ -51,13 +53,13 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::
-  ( RunNode blk , MonadST m )
+     RunNode blk
   => Snocket.LocalSnocket
   -> TopLevelConfig blk
   -> NetworkClientSubcriptionTracers
   -> ClientSubscriptionParams ()
   -> (NodeToClientVersion blk
-      -> ClientCodecs blk m
+      -> ClientCodecs blk IO
       -> ConnectionId LocalAddress
       -> NodeToClientProtocols 'InitiatorMode BSL.ByteString IO x y)
   -> IO Void
@@ -74,20 +76,31 @@ subscribe
         tracers
         networkState
         subscriptionParams
-        (versionedProtocols (Proxy :: Proxy blk) topLevelConfig protocols)
+        (versionedProtocols (Proxy :: Proxy blk) topLevelConfig
+          (\version codecs connectionId _ -> protocols version codecs connectionId))
+
 
 versionedProtocols ::
-  (RunNode blk, MonadST m)
+     ( MonadST m
+     , RunNode blk
+     )
   => Proxy blk
   -> TopLevelConfig blk
   -> (NodeToClientVersion blk
       -> ClientCodecs blk m
       -> ConnectionId LocalAddress
-      -> NodeToClientProtocols appType bytes IO a b)
+      -> STM m RunOrStop
+      -> NodeToClientProtocols appType bytes m a b)
+  -- ^ callback which recieves codecs, connection id and STM action which can be
+  -- checked if the networking runtime system requests the protocols to stop.
+  --
+  -- TODO: the `RunOrStop` might not be needed for `node-to-client`, hence it's
+  -- not exposed in `subscribe`.  We should provide
+  -- `OuroborosClientApplication`, which does not include it.
   -> Versions
        Ouroboros.Network.NodeToClient.NodeToClientVersion
        DictVersion
-       (OuroborosApplication appType LocalAddress bytes IO a b)
+       (OuroborosApplication appType LocalAddress bytes m a b)
 versionedProtocols blkProxy topLevelConfig p
   = foldMapVersions applyVersion $ supportedNodeToClientVersions blkProxy
   where

@@ -87,6 +87,7 @@ import           Control.Exception (IOException)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
@@ -160,13 +161,13 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 -- wireshark plugins.
 --
 nodeToClientProtocols
-  :: (ConnectionId addr -> NodeToClientProtocols appType bytes m a b)
+  :: (ConnectionId addr -> STM m RunOrStop -> NodeToClientProtocols appType bytes m a b)
   -> NodeToClientVersion
   -> OuroborosApplication appType addr bytes m a b
 nodeToClientProtocols protocols version =
     case version of
-      NodeToClientV_1 -> OuroborosApplication $ \connectionId ->
-        case protocols connectionId of
+      NodeToClientV_1 -> OuroborosApplication $ \connectionId shouldStopSTM ->
+        case protocols connectionId shouldStopSTM of
           NodeToClientProtocols {
               localChainSyncProtocol,
               localTxSubmissionProtocol
@@ -174,8 +175,8 @@ nodeToClientProtocols protocols version =
             [ localChainSyncMiniProtocol localChainSyncProtocol
             , localTxSubmissionMiniProtocol localTxSubmissionProtocol
             ]
-      NodeToClientV_2 -> OuroborosApplication $ \connectionId ->
-        case protocols connectionId of
+      NodeToClientV_2 -> OuroborosApplication $ \connectionId shouldStopSTM ->
+        case protocols connectionId shouldStopSTM of
           NodeToClientProtocols {
               localChainSyncProtocol,
               localTxSubmissionProtocol,
@@ -222,7 +223,7 @@ nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
 versionedNodeToClientProtocols
     :: NodeToClientVersion
     -> NodeToClientVersionData
-    -> (ConnectionId LocalAddress -> NodeToClientProtocols appType bytes m a b)
+    -> (ConnectionId LocalAddress -> STM m RunOrStop -> NodeToClientProtocols appType bytes m a b)
     -> Versions NodeToClientVersion
                 DictVersion
                 (OuroborosApplication appType LocalAddress bytes m a b)
@@ -333,14 +334,12 @@ connectTo_V2 snocket tracers versionData application_V1 application_V2 =
 -- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
 --
 withServer
-  :: ( HasResponder mode ~ True
-     )
-  => LocalSnocket
+  :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalFD
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication mode LocalAddress BL.ByteString IO a b)
+              (OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -361,16 +360,14 @@ withServer sn tracers networkState sd versions errPolicies =
 -- 'NodeToClientV_1' version of the protocol.
 --
 withServer_V1
-  :: ( HasResponder mode ~ True
-     )
-  => LocalSnocket
+  :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalFD
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> OuroborosApplication mode LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -392,20 +389,18 @@ withServer_V1 sn tracers networkState sd versionData application =
 -- 'NodeToClientV_1' or 'NodeToClientV_2' version of the protocol.
 --
 withServer_V2
-  :: ( HasResponder appType ~ True
-     )
-  => LocalSnocket
+  :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalFD
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_1' version of applications which has the reponder side,
   -- i.e.  'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
-  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_2' version of 'OuroborosApplication', which supports
   -- 'LocalStateQuery' mini-protocol.
   -> ErrorPolicies

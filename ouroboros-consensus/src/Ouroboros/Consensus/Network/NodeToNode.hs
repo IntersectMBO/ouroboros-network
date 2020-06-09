@@ -490,7 +490,7 @@ initiator miniProtocolParameters version Apps {..} =
       -- p2p-governor & connection-manager.  Then consenus can use peer's ip
       -- address & port number, rather than 'ConnectionId' (which is
       -- a quadruple uniquely determinaing a connection).
-      (\them -> NodeToNodeProtocols {
+      (\them _shouldStopSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version them))),
           blockFetchProtocol =
@@ -511,7 +511,7 @@ responder
 responder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
-      (\them -> NodeToNodeProtocols {
+      (\them _shouldStopSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
           blockFetchProtocol =
