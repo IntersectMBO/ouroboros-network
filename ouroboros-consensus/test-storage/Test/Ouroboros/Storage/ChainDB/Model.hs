@@ -369,16 +369,7 @@ addBlock :: forall blk. LedgerSupportsProtocol blk
          => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
-addBlock cfg blk m
-    -- If the block is as old as the tip of the ImmutableDB, i.e. older than
-    -- @k@, we ignore it, as we can never switch to it.
-  | olderThanK hdr (headerToIsEBB hdr) immBlockNo
-  = m
-    -- If it's an invalid block we've seen before, ignore it.
-  | isKnownInvalid blk
-  = m
-  | otherwise
-  = Model {
+addBlock cfg blk m = Model {
       volDbBlocks   = volDbBlocks'
     , immDbChain    = immDbChain m
     , cps           = CPS.switchFork newChain (cps m)
@@ -398,10 +389,19 @@ addBlock cfg blk m
 
     hdr = getHeader blk
 
-    isKnownInvalid b = Map.member (Block.blockHash b) (invalid m)
+    ignoreBlock =
+        -- If the block is as old as the tip of the ImmutableDB, i.e. older
+        -- than @k@, we ignore it, as we can never switch to it.
+        olderThanK hdr (headerToIsEBB hdr) immBlockNo ||
+        -- If it's an invalid block we've seen before, ignore it.
+        Map.member (Block.blockHash blk) (invalid m)
 
     volDbBlocks' :: Map (HeaderHash blk) blk
-    volDbBlocks' = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
+    volDbBlocks'
+        | ignoreBlock
+        = volDbBlocks m
+        | otherwise
+        = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
 
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
