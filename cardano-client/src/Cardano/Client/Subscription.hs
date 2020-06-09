@@ -53,13 +53,13 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::
-  ( RunNode blk , MonadST m )
+     RunNode blk
   => Snocket.LocalSnocket
   -> TopLevelConfig blk
   -> NetworkClientSubcriptionTracers
   -> ClientSubscriptionParams ()
   -> (NodeToClientVersion blk
-      -> ClientCodecs blk m
+      -> ClientCodecs blk IO
       -> ConnectionId LocalAddress
       -> NodeToClientProtocols 'InitiatorMode BSL.ByteString IO x y)
   -> IO Void
@@ -81,14 +81,16 @@ subscribe
 
 
 versionedProtocols ::
-  (RunNode blk, MonadST m)
+     ( MonadST m
+     , RunNode blk
+     )
   => Proxy blk
   -> TopLevelConfig blk
   -> (NodeToClientVersion blk
       -> ClientCodecs blk m
       -> ConnectionId LocalAddress
-      -> STM IO RunOrStop
-      -> NodeToClientProtocols appType bytes IO a b)
+      -> STM m RunOrStop
+      -> NodeToClientProtocols appType bytes m a b)
   -- ^ callback which recieves codecs, connection id and STM action which can be
   -- checked if the networking runtime system requests the protocols to stop.
   --
@@ -98,7 +100,7 @@ versionedProtocols ::
   -> Versions
        Ouroboros.Network.NodeToClient.NodeToClientVersion
        DictVersion
-       (OuroborosApplication appType LocalAddress bytes IO a b)
+       (OuroborosApplication appType LocalAddress bytes m a b)
 versionedProtocols blkProxy topLevelConfig p
   = foldMapVersions applyVersion $ supportedNodeToClientVersions blkProxy
   where
