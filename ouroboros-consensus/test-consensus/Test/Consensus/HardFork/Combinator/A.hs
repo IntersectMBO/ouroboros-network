@@ -4,10 +4,12 @@
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -15,16 +17,20 @@
 module Test.Consensus.HardFork.Combinator.A (
     ProtocolA
   , BlockA(..)
+  , binaryBlockInfoA
+  , headerIdentifierA
   , safeFromTipA
   , stabilityWindowA
     -- * Additional types
   , PartialLedgerConfigA(..)
   , TxPayloadA(..)
     -- * Type family instances
-  , ConsensusConfig(..)
   , BlockConfig(..)
-  , LedgerState(..)
+  , ConsensusConfig(..)
   , GenTx(..)
+  , Header(..)
+  , LedgerState(..)
+  , NestedCtxt_(..)
   , TxId(..)
   ) where
 
@@ -57,14 +63,15 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (repeatedlyM, (.:))
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -105,21 +112,32 @@ instance ConsensusProtocol ProtocolA where
 
 data BlockA = BlkA {
       blkA_header :: Header BlockA
-    , blkA_body   :: Body   BlockA
+    , blkA_body   :: [GenTx BlockA]
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise)
 
-instance HasBlockBody BlockA where
-  data Body BlockA = BodyA { blkA_txs :: [GenTx BlockA] }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (NoUnexpectedThunks, Serialise)
+-- Standard cborg generic serialisation is:
+--
+-- > [number of fields in the product]
+-- >   [tag of the constructor]
+-- >   field1
+-- >   ..
+-- >   fieldN
+binaryBlockInfoA :: BlockA -> BinaryBlockInfo
+binaryBlockInfoA BlkA{..} = BinaryBlockInfo {
+      headerOffset = 2
+    , headerSize   = fromIntegral $ Lazy.length (serialise blkA_header)
+    }
 
-  getBody       = blkA_body
-  assembleBlock = Just .: BlkA
+headerIdentifierA :: Word32
+headerIdentifierA = 0x01010101
 
 instance GetHeader BlockA where
-  newtype Header BlockA = HdrA { getHdrA :: HeaderFields BlockA }
+  data Header BlockA = HdrA {
+        hdrA_tag    :: Word32
+      , hdrA_fields :: HeaderFields BlockA
+      }
     deriving stock    (Show, Eq, Generic)
     deriving anyclass (NoUnexpectedThunks, Serialise)
 
@@ -157,10 +175,10 @@ instance HasHeader BlockA where
   blockInvariant = const True
 
 instance HasHeader (Header BlockA) where
-  blockHash      =            headerFieldHash     . getHdrA
-  blockPrevHash  = castHash . headerFieldPrevHash . getHdrA
-  blockSlot      =            headerFieldSlot     . getHdrA
-  blockNo        =            headerFieldNo       . getHdrA
+  blockHash      =            headerFieldHash     . hdrA_fields
+  blockPrevHash  = castHash . headerFieldPrevHash . hdrA_fields
+  blockSlot      =            headerFieldSlot     . hdrA_fields
+  blockNo        =            headerFieldNo       . hdrA_fields
   blockInvariant = const True
 
 instance HasAnnTip BlockA where
@@ -195,7 +213,7 @@ instance IsLedger (LedgerState BlockA) where
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
-      . repeatedlyM (applyTx cfg) (blkA_txs $ blkA_body blk)
+      . repeatedlyM (applyTx cfg) (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (Ticked _ st) = st { lgrA_tip = blockPoint blk }
@@ -211,13 +229,16 @@ instance UpdateLedger BlockA
 
 instance CanForge BlockA where
   forgeBlock TopLevelConfig{..} _ bno (Ticked sno st) _txs _ = return $ BlkA {
-        blkA_header = HdrA HeaderFields {
-            headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
-          , headerFieldPrevHash = ledgerTipHash st
-          , headerFieldSlot     = sno
-          , headerFieldNo       = bno
+        blkA_header = HdrA {
+            hdrA_tag    = headerIdentifierA
+          , hdrA_fields = HeaderFields {
+                headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
+              , headerFieldPrevHash = ledgerTipHash st
+              , headerFieldSlot     = sno
+              , headerFieldNo       = bno
+              }
           }
-      , blkA_body = BodyA (Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig))
+      , blkA_body = Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig)
       }
     where
       ledgerConfig :: PartialLedgerConfig BlockA
@@ -351,6 +372,33 @@ instance ConvertRawHash BlockA where
   fromRawHash _ = id
   hashSize    _ = 8 -- We use the SlotNo as the hash, which is Word64
 
+data instance NestedCtxt_ BlockA f a where
+  CtxtA :: NestedCtxt_ BlockA f (f BlockA)
+
+deriving instance Show (NestedCtxt_ BlockA f a)
+instance SameDepIndex (NestedCtxt_ BlockA f)
+
+instance TrivialDependency (NestedCtxt_ BlockA f) where
+  type TrivialIndex (NestedCtxt_ BlockA f) = f BlockA
+  hasSingleIndex CtxtA CtxtA = Refl
+  indexIsTrivial = CtxtA
+
+instance EncodeDisk BlockA (Header BlockA)
+instance DecodeDisk BlockA (Lazy.ByteString -> Header BlockA) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDiskDepIx (NestedCtxt Header) BlockA
+instance EncodeDiskDep   (NestedCtxt Header) BlockA
+
+instance DecodeDiskDepIx (NestedCtxt Header) BlockA
+instance DecodeDiskDep   (NestedCtxt Header) BlockA
+
+instance HasNestedContent Header BlockA where
+  -- Use defaults
+
+instance ReconstructNestedCtxt Header BlockA
+  -- Use defaults
+
 instance SingleEraBlock BlockA where
   singleEraInfo _     = SingleEraInfo "A"
   singleEraTransition = \cfg st -> do
@@ -365,7 +413,7 @@ instance SingleEraBlock BlockA where
       return transition
 
 instance HasTxs BlockA where
-  extractTxs = blkA_txs . blkA_body
+  extractTxs = blkA_body
 
 instance Condense BlockA where
   condense = show

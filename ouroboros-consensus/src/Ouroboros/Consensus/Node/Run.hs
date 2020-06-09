@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE DefaultSignatures   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Infrastructure required to run a node
 --
@@ -41,6 +44,8 @@ import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (ReconstructNestedCtxt, addReconstructedTypeEnvelope)
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
@@ -106,11 +111,21 @@ class ( LedgerSupportsProtocol    blk
   -- bytestring that can actually be decoded as a header.
   --
   -- For example, a CBOR tag may have to be added in front.
-  nodeAddHeaderEnvelope :: Proxy blk
+  --
+  -- TODO: Now that we have 'HasNestedContent', we should get rid of this.
+  -- <https://github.com/input-output-hk/ouroboros-network/issues/2237>
+  nodeAddHeaderEnvelope :: CodecConfig blk
                         -> IsEBB
                         -> SizeInBytes  -- ^ Block size
                         -> Lazy.ByteString -> Lazy.ByteString
-  nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
+
+  default nodeAddHeaderEnvelope
+    :: ReconstructNestedCtxt Header blk
+    => CodecConfig blk
+    -> IsEBB
+    -> SizeInBytes  -- ^ Block size
+    -> Lazy.ByteString -> Lazy.ByteString
+  nodeAddHeaderEnvelope = addReconstructedTypeEnvelope (Proxy @(Header blk))
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block

@@ -11,4 +11,4 @@ import           Ouroboros.Consensus.Mock.Ledger.Block.PraosRule as X
 import           Ouroboros.Consensus.Mock.Ledger.Forge as X
 import           Ouroboros.Consensus.Mock.Ledger.Stake as X
 import           Ouroboros.Consensus.Mock.Ledger.State as X
-import           Ouroboros.Consensus.Mock.Ledger.UTxO as X
+import           Ouroboros.Consensus.Mock.Ledger.UTxO as X hiding (TxId)

@@ -1,11 +1,17 @@
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Mock.Node.Serialisation (
     MockBlock
+  , NestedCtxt_(..)
   ) where
 
 import           Codec.Serialise (Serialise, decode, encode)
@@ -102,9 +108,31 @@ instance SerialiseNodeToClient (MockBlock ext) (GenTx (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) (MockError (MockBlock ext))
 
 instance SerialiseNodeToClient (MockBlock ext) (Some (Query (MockBlock ext))) where
-  encodeNodeToClient _ _ (Some q) = case q of {}
-  decodeNodeToClient _ _ = error "Mock no Query to decode"
+  encodeNodeToClient _ _ (Some QueryLedgerTip) = encode ()
+  decodeNodeToClient _ _ = (\() -> Some QueryLedgerTip) <$> decode
 
 instance SerialiseResult (MockBlock ext) (Query (MockBlock ext)) where
-  encodeResult _ _ = \case {}
-  decodeResult _ _ = \case {}
+  encodeResult _ _ QueryLedgerTip = encode
+  decodeResult _ _ QueryLedgerTip = decode
+
+{-------------------------------------------------------------------------------
+  Nested contents
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ (SimpleBlock c ext) f a where
+  CtxtMock :: NestedCtxt_ (SimpleBlock c ext) f (f (SimpleBlock c ext))
+
+deriving instance Show (NestedCtxt_ (SimpleBlock c ext) f a)
+
+instance TrivialDependency (NestedCtxt_ (SimpleBlock c ext) f) where
+  type TrivialIndex (NestedCtxt_ (SimpleBlock c ext) f) = f (SimpleBlock c ext)
+
+  hasSingleIndex CtxtMock CtxtMock = Refl
+  indexIsTrivial = CtxtMock
+
+instance SameDepIndex (NestedCtxt_ (SimpleBlock c ext) f)
+instance HasNestedContent f (SimpleBlock c ext)
+
+instance Serialise ext => ReconstructNestedCtxt Header        (MockBlock ext)
+instance Serialise ext => EncodeDiskDepIx (NestedCtxt Header) (MockBlock ext)
+instance Serialise ext => EncodeDiskDep   (NestedCtxt Header) (MockBlock ext)

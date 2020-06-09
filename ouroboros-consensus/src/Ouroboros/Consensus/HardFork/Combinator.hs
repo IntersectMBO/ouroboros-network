@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
                      (MismatchEraInfo (..), OneEraApplyTxErr (..),
                      OneEraBlock (..), OneEraGenTx (..), OneEraGenTxId (..),
                      OneEraHash (..), OneEraHeader (..), OneEraTipInfo (..),
-                     PerEraLedgerConfig (..), SerialiseOne (..))
+                     PerEraLedgerConfig (..))
 
 -- Re-export types required to initialize 'ProtocolInfo'
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X

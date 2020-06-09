@@ -2,14 +2,14 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Consensus.HardFork.Combinator.Common (
     -- Shared header fields
     Hash
   , HeaderFields(..)
+  , zeroHeaderFields
   ) where
 
 import           Codec.Serialise
@@ -36,3 +36,12 @@ data HeaderFields b = HeaderFields {
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 deriving instance Serialise (HeaderHash b) => Serialise (HeaderFields b)
+
+-- | Value for 'HeaderFields' when the values of the fields is irrelevant
+zeroHeaderFields :: HeaderHash b ~ Hash => HeaderFields b
+zeroHeaderFields = HeaderFields {
+      headerFieldHash     = Strict.empty
+    , headerFieldPrevHash = GenesisHash
+    , headerFieldSlot     = SlotNo  0
+    , headerFieldNo       = BlockNo 0
+    }

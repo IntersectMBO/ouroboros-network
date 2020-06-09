@@ -2,7 +2,9 @@
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications   #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Consensus.Byron.Generators (
     epochSlots
   , protocolMagicId
@@ -34,7 +36,7 @@ import           Cardano.Crypto.Hashing (Hash)
 import           Ouroboros.Network.Block (BlockNo (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 
-import           Ouroboros.Consensus.Block (Header, IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
@@ -61,15 +63,6 @@ import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
-
-{-------------------------------------------------------------------------------
-  Orphans
--------------------------------------------------------------------------------}
-
-instance Eq (Some (Query ByronBlock)) where
-  Some GetUpdateInterfaceState == Some GetUpdateInterfaceState = True
-
-deriving instance Show (Some (Query ByronBlock))
 
 {-------------------------------------------------------------------------------
   Generators
@@ -323,6 +316,18 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (Header ByronBlock)) wher
           ByronNodeToNodeVersion2 ->
             hdr
     return (WithVersion version hdr')
+
+instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeBlock (NestedCtxt Header) ByronBlock)) where
+  arbitrary = do
+      version <- arbitrary
+      size    <- case version of
+                   ByronNodeToNodeVersion1 -> return fakeByronBlockSizeHint
+                   ByronNodeToNodeVersion2 -> arbitrary
+      ctxt    <- elements [
+                     SomeBlock . NestedCtxt $ CtxtByronRegular  size
+                   , SomeBlock . NestedCtxt $ CtxtByronBoundary size
+                   ]
+      return (WithVersion version ctxt)
 
 -- | All other types are unaffected by the versioning for
 -- 'ByronNodeToNodeVersion'.

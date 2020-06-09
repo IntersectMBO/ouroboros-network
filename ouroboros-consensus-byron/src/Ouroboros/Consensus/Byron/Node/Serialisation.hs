@@ -1,15 +1,30 @@
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Byron.Node.Serialisation () where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Write as CBOR
+import           Codec.Serialise (decode, encode)
+import           Control.Exception (throw)
+import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 
+import           Cardano.Binary
+import           Cardano.Prelude (cborError)
+
+import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
+import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -20,6 +35,7 @@ import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
 
 {-------------------------------------------------------------------------------
@@ -36,10 +52,18 @@ instance EncodeDisk ByronBlock ByronBlock where
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
   decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
 
+-- | Encode Header
+--
+-- We need to construct something that is compatible with the nested type
+-- envelope added to the raw bytes in the block.
 instance EncodeDisk ByronBlock (Header ByronBlock) where
-  encodeDisk _ = encodeByronHeaderWithBlockSize
+  encodeDisk ccfg = encodeDisk ccfg . unnest
+instance DecodeDisk ByronBlock (Header ByronBlock) where
+  decodeDisk ccfg = nest <$> decodeDisk ccfg
+
+-- | We don't need the BS, since the 'DepPair' serialization provides its own
 instance DecodeDisk ByronBlock (Lazy.ByteString -> Header ByronBlock) where
-  decodeDisk ccfg = decodeByronHeaderWithBlockSize (getByronEpochSlots ccfg)
+  decodeDisk ccfg = const <$> decodeDisk ccfg
 
 instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
   encodeDisk _ = encodeByronLedgerState
@@ -77,16 +101,20 @@ instance SerialiseNodeToNode ByronBlock ByronBlock where
     where
       epochSlots = getByronEpochSlots ccfg
 
--- | CBOR-in-CBOR to be compatible with the wrapped ('Serialised') variant.
--- Uses nested CBOR-in-CBOR for the annotation. We can't reuse the outer
--- CBOR-in-CBOR for the annotation because of the optional block size hint.
 instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
-  encodeNodeToNode _    version = wrapCBORinCBOR $ case version of
-      ByronNodeToNodeVersion1 -> encodeByronHeaderWithoutBlockSize
-      ByronNodeToNodeVersion2 -> encodeByronHeaderWithBlockSize
-  decodeNodeToNode ccfg version = unwrapCBORinCBOR $ case version of
-      ByronNodeToNodeVersion1 -> decodeByronHeaderWithoutBlockSize epochSlots
-      ByronNodeToNodeVersion2 -> decodeByronHeaderWithBlockSize    epochSlots
+  encodeNodeToNode ccfg = \case
+      ByronNodeToNodeVersion1 ->
+          wrapCBORinCBOR $
+            encodeUnsizedHeader . fst . splitSizeHint
+      ByronNodeToNodeVersion2 -> encodeDisk ccfg
+
+  decodeNodeToNode ccfg = \case
+      ByronNodeToNodeVersion1 ->
+        unwrapCBORinCBOR $
+              (flip joinSizeHint fakeByronBlockSizeHint .)
+          <$> decodeUnsizedHeader epochSlots
+      ByronNodeToNodeVersion2 -> decodeDisk ccfg
+
     where
       epochSlots = getByronEpochSlots ccfg
 
@@ -94,14 +122,41 @@ instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
 instance SerialiseNodeToNode ByronBlock (Serialised ByronBlock)
   -- Default instance
 
--- | 'Serialised' uses CBOR-in-CBOR by default.
 instance SerialiseNodeToNode ByronBlock (Serialised (Header ByronBlock)) where
-  encodeNodeToNode _ version = case version of
-      ByronNodeToNodeVersion1 -> encodeWrappedByronHeaderWithoutBlockSize
-      ByronNodeToNodeVersion2 -> encodeWrappedByronHeaderWithBlockSize
-  decodeNodeToNode _ version = case version of
-      ByronNodeToNodeVersion1 -> decodeWrappedByronHeaderWithoutBlockSize
-      ByronNodeToNodeVersion2 -> decodeWrappedByronHeaderWithBlockSize
+  encodeNodeToNode ccfg version = case version of
+      -- Drop the context and add the tag, encode that using CBOR-in-CBOR
+      ByronNodeToNodeVersion1 ->
+            encode
+          . Serialised
+          . addV1Envelope
+          . noErrors
+          . dropNestedCtxtEnvelope ccfg
+          . unSerialised
+      ByronNodeToNodeVersion2 -> \(Serialised bs) ->
+        -- Don't use 'encode' on 'Serialised', as that adds CBOR-in-CBOR
+        -- again.
+        CBOR.encodePreEncoded (Lazy.toStrict bs)
+    where
+      noErrors :: Except DropNestedCtxtFailure a -> a
+      noErrors = either throw id . runExcept
+
+  decodeNodeToNode ccfg version = case version of
+      ByronNodeToNodeVersion1 -> do
+        bs <- unSerialised <$> decode
+        either fail (return . Serialised) $
+          runExcept $ addNestedCtxtEnvelope ccfg <$> dropV1Envelope bs
+      ByronNodeToNodeVersion2 -> do
+        -- We can't use 'decode' for 'Serialised', as that expects
+        -- CBOR-in-CBOR again. So decode 'WithCodecContext', which decodes the
+        -- context and decodes the header as a ByteString using CBOR-in-CBOR.
+        -- Then re-encode that, convert it to a ByteString and wrap that in
+        -- 'Serialised'.
+        --
+        -- Note that we don't use this decoder in practice, we only use the
+        -- corresponding encoder.
+        depPair :: GenDepPair Serialised (NestedCtxt Header ByronBlock) <-
+                     decodeDisk ccfg
+        return $ Serialised $ CBOR.toLazyByteString (encodeDisk ccfg depPair)
 
 -- | No CBOR-in-CBOR, because we check for canonical encodings, which means we
 -- can use the recomputed encoding for the annotation.
@@ -154,3 +209,67 @@ instance SerialiseNodeToClient ByronBlock (Some (Query ByronBlock)) where
 instance SerialiseResult ByronBlock (Query ByronBlock) where
   encodeResult _ _ = encodeByronResult
   decodeResult _ _ = decodeByronResult
+
+{-------------------------------------------------------------------------------
+  Nested contents
+-------------------------------------------------------------------------------}
+
+instance ReconstructNestedCtxt Header ByronBlock where
+  reconstructPrefixLen _ = 0
+  reconstructNestedCtxt _proxy isEBB size _bs =
+      case isEBB of
+        IsEBB    -> SomeBlock $ NestedCtxt (CtxtByronBoundary size)
+        IsNotEBB -> SomeBlock $ NestedCtxt (CtxtByronRegular  size)
+
+instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
+  encodeDiskDepIx ByronCodecConfig{..} (SomeBlock (NestedCtxt ctxt)) = mconcat [
+        CBOR.encodeListLen 2
+      , case ctxt of
+          CtxtByronBoundary size -> mconcat [
+              CBOR.encodeWord8 0
+            , CBOR.encodeWord32 size
+            ]
+          CtxtByronRegular size -> mconcat [
+              CBOR.encodeWord8 1
+            , CBOR.encodeWord32 size
+            ]
+      ]
+
+instance EncodeDiskDep (NestedCtxt Header) ByronBlock where
+  encodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) h =
+      case ctxt of
+        CtxtByronRegular _size ->
+          encodeByronRegularHeader h
+        CtxtByronBoundary _size ->
+          -- We don't encode the 'SlotNo'
+          -- This is important, because this encoder/decoder must be compatible
+          -- with the raw bytes as stored on disk as part of a Byron block.
+          encodeByronBoundaryHeader (snd h)
+
+instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
+  decodeDiskDepIx _ccfg = do
+      enforceSize "decodeDiskDepIx ByronBlock" 2
+      CBOR.decodeWord8 >>= \case
+        0 -> SomeBlock . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
+        1 -> SomeBlock . NestedCtxt . CtxtByronRegular  <$> CBOR.decodeWord32
+        t -> cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
+
+instance DecodeDiskDep (NestedCtxt Header) ByronBlock where
+  decodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) =
+      case ctxt of
+        CtxtByronRegular _size ->
+          decodeByronRegularHeader getByronEpochSlots
+        CtxtByronBoundary _size ->
+          auxBoundary <$> decodeByronBoundaryHeader
+    where
+      auxBoundary :: (Lazy.ByteString -> RawBoundaryHeader)
+                  -> (Lazy.ByteString -> (SlotNo, RawBoundaryHeader))
+      auxBoundary f bs =
+          (slotNo, hdr)
+        where
+          hdr :: RawBoundaryHeader
+          hdr = f bs
+
+          slotNo :: SlotNo
+          slotNo = fromByronSlotNo $
+              CC.boundaryBlockSlot getByronEpochSlots (CC.boundaryEpoch hdr)

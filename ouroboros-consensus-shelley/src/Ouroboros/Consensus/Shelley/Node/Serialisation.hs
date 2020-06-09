@@ -138,3 +138,15 @@ instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (Some (Query (Shelle
 instance Crypto c => SerialiseResult (ShelleyBlock c) (Query (ShelleyBlock c)) where
   encodeResult _ _ = encodeShelleyResult
   decodeResult _ _ = decodeShelleyResult
+
+{-------------------------------------------------------------------------------
+  HFC support
+
+  Since 'NestedCtxt' for Shelley is trivial, these instances can use defaults.
+-------------------------------------------------------------------------------}
+
+instance Crypto c => ReconstructNestedCtxt Header (ShelleyBlock c)
+instance Crypto c => EncodeDiskDepIx (NestedCtxt Header) (ShelleyBlock c)
+instance Crypto c => EncodeDiskDep   (NestedCtxt Header) (ShelleyBlock c)
+instance Crypto c => DecodeDiskDepIx (NestedCtxt Header) (ShelleyBlock c)
+instance Crypto c => DecodeDiskDep   (NestedCtxt Header) (ShelleyBlock c)

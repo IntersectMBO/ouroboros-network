@@ -31,6 +31,7 @@ class ( LedgerSupportsProtocol blk
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
       , HasCodecConfig blk
+      , HasNestedContent Header blk
         -- Instances required to support testing
       , Show blk
       , Show (Header blk)

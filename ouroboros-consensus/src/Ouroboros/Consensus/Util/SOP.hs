@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE EmptyCase            #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -15,6 +16,8 @@ module Ouroboros.Consensus.Util.SOP (
     sequence_NS'
   , map_NP'
   , partition_NS
+  , npWithIndices
+  , nsFromIndex
   , Lens(..)
   , lenses_NP
   , npToSListI
@@ -31,6 +34,7 @@ module Ouroboros.Consensus.Util.SOP (
 
 import           Data.SOP.Dict
 import           Data.SOP.Strict
+import           Data.Word
 
 {-------------------------------------------------------------------------------
   Minor variations on standard SOP operators
@@ -68,6 +72,22 @@ partition_NS =
 
     append :: ([] :.: f) a -> ([] :.: f) a -> ([] :.: f) a
     append (Comp as) (Comp as') = Comp (as ++ as')
+
+npWithIndices :: SListI xs => NP (K Word8) xs
+npWithIndices = go 0 sList
+  where
+    go :: Word8 -> SList xs' -> NP (K Word8) xs'
+    go !_ SNil  = Nil
+    go !i SCons = K i :* go (i + 1) sList
+
+nsFromIndex :: SListI xs => Word8 -> Maybe (NS (K ()) xs)
+nsFromIndex n = go 0 sList
+  where
+    go :: Word8 -> SList xs' -> Maybe (NS (K ()) xs')
+    go !i SCons
+      | i == n    = Just $ Z $ K ()
+      | otherwise = S <$> go (i + 1) sList
+    go !_ SNil    = Nothing
 
 -- | Simple lens to access an element of an n-ary product.
 data Lens f xs a = Lens {

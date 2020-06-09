@@ -601,7 +601,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbCheckInFuture        = LogicalClock.checkInFuture
                                       (configLedger cfg)
                                       (unwrapLogicalClock clock)
-        , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbAddHdrEnv            = nodeAddHeaderEnvelope ccfg
         , cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
@@ -614,6 +614,8 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
+        ccfg = getCodecConfig $ configBlock cfg
+
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
           ChainDB.TraceAddBlockEvent

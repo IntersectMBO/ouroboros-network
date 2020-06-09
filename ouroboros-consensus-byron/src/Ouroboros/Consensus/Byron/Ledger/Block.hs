@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -20,6 +21,8 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
     -- * Header
   , Header(..)
   , mkByronHeader
+  , mkRegularByronHeader
+  , mkBoundaryByronHeader
     -- * Auxiliary functions
   , byronHeaderIsEBB
   , byronBlockIsEBB
@@ -171,6 +174,17 @@ mkByronHeader :: CC.EpochSlots
               -> Header ByronBlock
 mkByronHeader epochSlots = joinSizeHint . mkUnsizedHeader epochSlots
 
+mkRegularByronHeader :: CC.AHeader ByteString
+                     -> SizeInBytes
+                     -> Header ByronBlock
+mkRegularByronHeader = joinSizeHint . mkRegularUnsizedHeader
+
+mkBoundaryByronHeader :: SlotNo
+                      -> CC.ABoundaryHeader ByteString
+                      -> SizeInBytes
+                      -> Header ByronBlock
+mkBoundaryByronHeader slotNo = joinSizeHint . mkBoundaryUnsizedHeader slotNo
+
 {-------------------------------------------------------------------------------
   HasHeader instances
 
@@ -230,11 +244,35 @@ data UnsizedHeader = UnsizedHeader {
 mkUnsizedHeader :: CC.EpochSlots
                 -> CC.ABlockOrBoundaryHdr ByteString
                 -> UnsizedHeader
-mkUnsizedHeader epochSlots hdr = UnsizedHeader {
-      unsizedHeaderRaw    = hdr
-    , unsizedHeaderSlotNo = fromByronSlotNo $ CC.abobHdrSlotNo epochSlots hdr
-    , unsizedHeaderHash   = mkByronHash hdr
+mkUnsizedHeader epochSlots = \case
+    CC.ABOBBlockHdr    hdr -> mkRegularUnsizedHeader hdr
+    CC.ABOBBoundaryHdr hdr -> mkBoundaryUnsizedHeader slotNo hdr
+      where
+        slotNo = fromByronSlotNo $
+            CC.boundaryBlockSlot epochSlots (CC.boundaryEpoch hdr)
+
+mkRegularUnsizedHeader :: CC.AHeader ByteString -> UnsizedHeader
+mkRegularUnsizedHeader hdr = UnsizedHeader {
+      unsizedHeaderRaw    = hdr'
+    , unsizedHeaderSlotNo = fromByronSlotNo $ CC.headerSlot hdr
+    , unsizedHeaderHash   = mkByronHash hdr'
     }
+  where
+    hdr' :: CC.ABlockOrBoundaryHdr ByteString
+    hdr' = CC.ABOBBlockHdr hdr
+
+-- | For a boundary header, we must be told the slot
+mkBoundaryUnsizedHeader :: SlotNo
+                        -> CC.ABoundaryHeader ByteString
+                        -> UnsizedHeader
+mkBoundaryUnsizedHeader slotNo hdr = UnsizedHeader {
+      unsizedHeaderRaw    = hdr'
+    , unsizedHeaderSlotNo = slotNo
+    , unsizedHeaderHash   = mkByronHash hdr'
+    }
+  where
+    hdr' :: CC.ABlockOrBoundaryHdr ByteString
+    hdr' = CC.ABOBBoundaryHdr hdr
 
 splitSizeHint :: Header ByronBlock -> (UnsizedHeader, SizeInBytes)
 splitSizeHint ByronHeader{..} = (

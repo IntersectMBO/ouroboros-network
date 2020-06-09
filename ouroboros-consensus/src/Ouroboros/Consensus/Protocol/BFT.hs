@@ -27,10 +27,6 @@ module Ouroboros.Consensus.Protocol.BFT (
   , ConsensusConfig(..)
   ) where
 
-import           Cardano.Crypto.DSIGN.Class
-import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -38,6 +34,9 @@ import           Data.Proxy
 import           Data.Typeable
 import           Data.Void
 import           GHC.Generics (Generic)
+
+import           Cardano.Crypto.DSIGN
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
 

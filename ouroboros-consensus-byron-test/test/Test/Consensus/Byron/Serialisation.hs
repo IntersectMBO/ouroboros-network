@@ -49,11 +49,7 @@ import           Test.Consensus.Byron.Generators
 
 tests :: TestTree
 tests = testGroup "Byron"
-    [ testGroup "Serialisation roundtrips"
-      [ testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         testCodecCfg
-      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   testCodecCfg
-      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient testCodecCfg
-      ]
+    [ roundtrip_all testCodecCfg
 
     , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
     , testGroup "ConvertRawHashInfo sanity check"
@@ -87,7 +83,6 @@ prop_byronBinaryBlockInfo blk =
     headerAnnotation = Lazy.fromStrict $ case byronBlockRaw blk of
       ABOBBoundary b -> CC.Block.boundaryHeaderAnnotation $ CC.Block.boundaryHeader b
       ABOBBlock    b -> CC.Block.headerAnnotation         $ CC.Block.blockHeader    b
-
 
 {-------------------------------------------------------------------------------
   ConvertRawHash

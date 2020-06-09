@@ -5,6 +5,7 @@
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -77,6 +78,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.Condense
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
@@ -537,6 +539,53 @@ deriving instance Bridge m a => Show (DualGenTxErr m a)
 deriving instance Show (GenTxId m) => Show (TxId (GenTx (DualBlock m a)))
 deriving instance Eq   (GenTxId m) => Eq   (TxId (GenTx (DualBlock m a)))
 deriving instance Ord  (GenTxId m) => Ord  (TxId (GenTx (DualBlock m a)))
+
+{-------------------------------------------------------------------------------
+  Nested contents
+
+  Since we only have a single header, we just delegate to the main block.
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ (DualBlock m a) f x where
+    CtxtDual :: NestedCtxt_ m f x -> NestedCtxt_ (DualBlock m a) f x
+
+deriving instance Show (NestedCtxt_ m f x)
+               => Show (NestedCtxt_ (DualBlock m a) f x)
+
+instance SameDepIndex (NestedCtxt_ m f)
+      => SameDepIndex (NestedCtxt_ (DualBlock m a) f) where
+  sameDepIndex (CtxtDual ctxt) (CtxtDual ctxt') =
+     sameDepIndex ctxt ctxt'
+
+ctxtDualMain :: NestedCtxt_ (DualBlock m a) f x -> NestedCtxt_ m f x
+ctxtDualMain (CtxtDual ctxtMain) = ctxtMain
+
+instance HasNestedContent Header m
+      => HasNestedContent Header (DualBlock m a) where
+  unnest = depPairFirst (mapNestedCtxt CtxtDual) . unnest . dualHeaderMain
+  nest   = DualHeader . nest . depPairFirst (mapNestedCtxt ctxtDualMain)
+
+instance ReconstructNestedCtxt Header m
+      => ReconstructNestedCtxt Header (DualBlock m a) where
+  reconstructPrefixLen _ =
+      reconstructPrefixLen (Proxy @(Header m))
+  reconstructNestedCtxt _ isEBB size bs =
+      case reconstructNestedCtxt (Proxy @(Header m)) isEBB size bs of
+        SomeBlock ctxt -> SomeBlock (mapNestedCtxt CtxtDual ctxt)
+
+instance EncodeDiskDepIx (NestedCtxt Header) m
+      => EncodeDiskDepIx (NestedCtxt Header) (DualBlock m a) where
+  encodeDiskDepIx ccfg (SomeBlock ctxt) =
+      encodeDiskDepIx
+        (dualCodecConfigMain ccfg)
+        (SomeBlock (mapNestedCtxt ctxtDualMain ctxt))
+
+instance EncodeDiskDep (NestedCtxt Header) m
+      => EncodeDiskDep (NestedCtxt Header) (DualBlock m a) where
+  encodeDiskDep ccfg ctxt =
+      encodeDiskDep
+        (dualCodecConfigMain ccfg)
+        (mapNestedCtxt ctxtDualMain ctxt)
 
 {-------------------------------------------------------------------------------
   Auxiliary
