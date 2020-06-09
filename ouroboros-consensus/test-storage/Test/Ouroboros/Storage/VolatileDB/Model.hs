@@ -34,6 +34,7 @@ import           Control.Monad.Except (MonadError, throwError)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Short as Short
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -247,17 +248,19 @@ extractBlockComponent (BlockInfo {..}, bytes) = go
   where
     go :: forall b'. BlockComponent (VolatileDB blockId m) b' -> b'
     go = \case
-      GetBlock      -> ()
-      GetRawBlock   -> bytes
-      GetHeader     -> ()
-      GetRawHeader  -> header
-      GetHash       -> bbid
-      GetSlot       -> bslot
-      GetIsEBB      -> bisEBB
-      GetBlockSize  -> fromIntegral $ BL.length bytes
-      GetHeaderSize -> bheaderSize
-      GetPure a     -> a
-      GetApply f bc -> go f $ go bc
+      GetBlock        -> ()
+      GetRawBlock     -> bytes
+      GetHeader       -> ()
+      GetRawHeader    -> header
+      GetHash         -> bbid
+      GetSlot         -> bslot
+      GetIsEBB        -> bisEBB
+      GetBlockSize    -> fromIntegral $ BL.length bytes
+      GetHeaderSize   -> bheaderSize
+      GetNestedType n -> Short.toShort $ BL.toStrict $
+                         BL.take (fromIntegral n) bytes
+      GetPure a       -> a
+      GetApply f bc   -> go f $ go bc
 
     header =
       extractHeader

@@ -82,6 +82,7 @@ import           Codec.Serialise (Serialise, serialise)
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (isInfixOf, isPrefixOf, sortBy)
@@ -469,20 +470,22 @@ getBlockComponent
   :: (ModelSupportsBlock blk, Monad m)
   => blk -> BlockComponent (ChainDB m blk) b -> b
 getBlockComponent blk = \case
-    GetBlock      -> return blk
-    GetRawBlock   -> serialise blk
+    GetBlock        -> return blk
+    GetRawBlock     -> serialise blk
 
-    GetHeader     -> return $ getHeader blk
-    GetRawHeader  -> serialise $ getHeader blk
+    GetHeader       -> return $ getHeader blk
+    GetRawHeader    -> serialise $ getHeader blk
 
-    GetHash       -> Block.blockHash blk
-    GetSlot       -> Block.blockSlot blk
-    GetIsEBB      -> headerToIsEBB (getHeader blk)
-    GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
-    GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
+    GetHash         -> Block.blockHash blk
+    GetSlot         -> Block.blockSlot blk
+    GetIsEBB        -> headerToIsEBB (getHeader blk)
+    GetBlockSize    -> fromIntegral $ Lazy.length $ serialise blk
+    GetHeaderSize   -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
+    GetNestedType n -> Short.toShort $ Lazy.toStrict $
+                       Lazy.take (fromIntegral n) $ serialise blk
 
-    GetPure a     -> a
-    GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
+    GetPure a       -> a
+    GetApply f bc   -> getBlockComponent blk f $ getBlockComponent blk bc
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.

@@ -20,11 +20,15 @@ import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Except
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.Foldable (find)
 import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
+import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -390,6 +394,8 @@ iteratorNextImpl dbEnv it@IteratorHandle
           readNextBlock  itChunkHandle entryWithBlockSize itChunk
         GetRawHeader    ->
           readNextHeader itChunkHandle entry
+        GetNestedType n ->
+          readNestedType itChunkHandle entry n
         GetBlock        ->
           return ()
         GetHeader       ->
@@ -434,6 +440,17 @@ iteratorNextImpl dbEnv it@IteratorHandle
         offset = AbsOffset $
           (Secondary.unBlockOffset blockOffset) +
           fromIntegral (Secondary.unHeaderOffset headerOffset)
+
+    readNestedType
+      :: Handle h
+      -> Secondary.Entry hash
+      -> Word8
+      -> m ShortByteString
+    readNestedType eHnd Secondary.Entry { blockOffset } n =
+        Short.toShort . Lazy.toStrict <$>
+          hGetExactlyAt hasFS eHnd (fromIntegral n) offset
+      where
+        offset = AbsOffset $ Secondary.unBlockOffset blockOffset
 
     -- | Move the iterator to the next position that can be read from,
     -- advancing chunks if necessary. If no next position can be found, the

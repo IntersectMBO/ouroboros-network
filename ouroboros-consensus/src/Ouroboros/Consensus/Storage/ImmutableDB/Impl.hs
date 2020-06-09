@@ -98,6 +98,8 @@ import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (get, lift, modify, put)
 import           Control.Tracer (Tracer, traceWith)
 import           Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.Functor (($>))
 import           GHC.Stack (HasCallStack)
 
@@ -503,6 +505,10 @@ extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \c
         offset = AbsOffset $
           unBlockOffset blockOffset +
           fromIntegral (unHeaderOffset headerOffset)
+    GetNestedType n ->
+        withFile hasFS chunkFile ReadMode $ \eHnd -> do
+          bytes <- hGetExactlyAt hasFS eHnd (fromIntegral n) (AbsOffset 0)
+          return $ Short.toShort $ Lazy.toStrict bytes
     GetBlock  -> return ()
     GetHeader -> return ()
   where

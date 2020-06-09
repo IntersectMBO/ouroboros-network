@@ -104,6 +104,8 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -219,6 +221,9 @@ getBlockComponentImpl env blockComponent blockId =
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
+        GetNestedType n -> withFile hasFS ibFile ReadMode $ \hndl -> do
+          bytes <- hGetExactlyAt hasFS hndl (fromIntegral n) (AbsOffset 0)
+          return $ Short.toShort $ Lazy.toStrict bytes
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib
 
