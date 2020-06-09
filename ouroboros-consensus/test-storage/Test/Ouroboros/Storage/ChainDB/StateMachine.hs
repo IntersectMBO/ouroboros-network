@@ -954,8 +954,15 @@ precondition Model {..} (At cmd) =
      Close                    -> Not equallyOrMorePreferableFork
      Reopen                   -> Not $ Boolean (Model.isOpen dbModel)
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
+     --
+     -- We do not allow multiple future blocks with the same block number, as
+     -- the real implementation might have to switch between forks when they
+     -- are no longer in the future, whereas the model will pick the right
+     -- chain directly. This causes readers to go out of sync.
+     -- https://github.com/input-output-hk/ouroboros-network/issues/2234
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
-                                 blockSlot blk .> s
+                                 blockSlot blk .> s .&&
+                                 Not (futureBlockWithSameBlockNo (blockNo blk))
      WipeVolDB                -> Boolean $ Model.isOpen dbModel
      _                        -> Top
   where
@@ -978,6 +985,11 @@ precondition Model {..} (At cmd) =
     equallyOrMorePreferableFork = exists forks $ \fork ->
       Boolean (isEquallyOrMorePreferableThan cfg fork curChain) .&&
       Chain.head curChain ./= Chain.head fork
+
+    futureBlockWithSameBlockNo :: BlockNo -> Logic
+    futureBlockWithSameBlockNo no =
+        Not $ exists (Map.elems (Model.futureBlocks dbModel)) $ \futureBlock ->
+          blockNo futureBlock .== no
 
     cfg :: TopLevelConfig blk
     cfg = unOpaque modelConfig

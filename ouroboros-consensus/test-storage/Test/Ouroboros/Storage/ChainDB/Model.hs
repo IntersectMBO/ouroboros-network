@@ -28,6 +28,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , currentChain
   , currentLedger
   , currentSlot
+  , futureBlocks
   , maxClockSkew
   , lastK
   , immutableChain
@@ -168,6 +169,10 @@ immDbBlocks Model { immDbChain } = Map.fromList $
 
 blocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 blocks m = volDbBlocks m <> immDbBlocks m
+
+futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
+futureBlocks m =
+    Map.filter ((currentSlot m >) . Block.blockSlot) (volDbBlocks m)
 
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
