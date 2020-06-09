@@ -547,8 +547,8 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
   where
     ptclDir' = protocolDirEnum ptclDir
 
-    -- Wait for the miniprot to complete.
-    -- If the mux i stopped through a call to 'stopMux' (MuxStopped)
+    -- Wait for the miniprotocol to complete.
+    -- If the mux was stopped through a call to 'stopMux' (MuxStopped)
     -- or in case of an error (MuxFailed) we return the result of
     -- the miniprotocol, or a `MuxError` if it was still running.
     completionAction completionVar = do
