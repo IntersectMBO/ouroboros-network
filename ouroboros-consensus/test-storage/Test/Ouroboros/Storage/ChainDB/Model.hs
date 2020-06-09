@@ -28,9 +28,11 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , currentChain
   , currentLedger
   , currentSlot
+  , futureBlocks
   , maxClockSkew
   , lastK
   , immutableChain
+  , volatileChain
   , immutableBlockNo
   , immutableSlotNo
   , tipBlock
@@ -169,6 +171,10 @@ immDbBlocks Model { immDbChain } = Map.fromList $
 blocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 blocks m = volDbBlocks m <> immDbBlocks m
 
+futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
+futureBlocks m =
+    Map.filter ((currentSlot m >) . Block.blockSlot) (volDbBlocks m)
+
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
 
@@ -204,7 +210,7 @@ tipPoint :: HasHeader blk => Model blk -> Point blk
 tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
 
 getMaxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
-getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . volDbBlocks
+getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . blocks
 
 lastK :: HasHeader a
       => SecurityParam
@@ -263,6 +269,33 @@ immutableChain (SecurityParam k) m =
     maxBy f a b
       | f a >= f b = a
       | otherwise  = b
+
+-- | Return the volatile suffix of the current chain.
+--
+-- The opposite of 'immutableChain'.
+--
+-- This is the shortest of the given two chain fragments:
+--
+-- 1. The last @k@ blocks of the current chain.
+-- 2. The suffix of the current chain not part of the 'immDbChain', i.e., the
+--    \"ImmutableDB\".
+volatileChain
+    :: (HasHeader a, HasHeader blk)
+    => SecurityParam
+    -> (blk -> a)  -- ^ Provided since 'AnchoredFragment' is not a functor
+    -> Model blk
+    -> AnchoredFragment a
+volatileChain k f m =
+      Fragment.fromNewestFirst anchor
+    . map f
+    . takeWhile ((/= immutableTipPoint) . Block.blockPoint)
+    . Chain.toNewestFirst
+    . currentChain
+    $ m
+  where
+    (immutableTipPoint, anchor) = case Chain.head (immutableChain k m) of
+        Nothing -> (GenesisPoint,       Fragment.AnchorGenesis)
+        Just b  -> (Block.blockPoint b, Fragment.anchorFromBlock (f b))
 
 -- | The block number of the most recent \"immutable\" block, i.e. the oldest
 -- block we can roll back to. We cannot roll back the block itself.
@@ -342,16 +375,7 @@ addBlock :: forall blk. LedgerSupportsProtocol blk
          => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
-addBlock cfg blk m
-    -- If the block is as old as the tip of the ImmutableDB, i.e. older than
-    -- @k@, we ignore it, as we can never switch to it.
-  | olderThanK hdr (headerToIsEBB hdr) immBlockNo
-  = m
-    -- If it's an invalid block we've seen before, ignore it.
-  | isKnownInvalid blk
-  = m
-  | otherwise
-  = Model {
+addBlock cfg blk m = Model {
       volDbBlocks   = volDbBlocks'
     , immDbChain    = immDbChain m
     , cps           = CPS.switchFork newChain (cps m)
@@ -371,10 +395,19 @@ addBlock cfg blk m
 
     hdr = getHeader blk
 
-    isKnownInvalid b = Map.member (Block.blockHash b) (invalid m)
+    ignoreBlock =
+        -- If the block is as old as the tip of the ImmutableDB, i.e. older
+        -- than @k@, we ignore it, as we can never switch to it.
+        olderThanK hdr (headerToIsEBB hdr) immBlockNo ||
+        -- If it's an invalid block we've seen before, ignore it.
+        Map.member (Block.blockHash blk) (invalid m)
 
     volDbBlocks' :: Map (HeaderHash blk) blk
-    volDbBlocks' = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
+    volDbBlocks'
+        | ignoreBlock
+        = volDbBlocks m
+        | otherwise
+        = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
 
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
@@ -713,7 +746,13 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       []    -> Map.empty
       b:bs' -> case runExcept (tickThenApply cfg b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
-        Right ledger' -> findInvalidBlockInTheFuture ledger' bs'
+        Right ledger'
+          | Block.blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
+          -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>
+             findInvalidBlockInTheFuture ledger' bs'
+          | otherwise
+          -> findInvalidBlockInTheFuture ledger' bs'
+
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]
@@ -950,6 +989,7 @@ wipeVolDB cfg m =
       { volDbBlocks   = Map.empty
       , cps           = CPS.switchFork newChain (cps m)
       , currentLedger = newLedger
+      , invalid       = Map.empty
       }
 
     -- Get the chain ending at the ImmutableDB by doing chain selection on the

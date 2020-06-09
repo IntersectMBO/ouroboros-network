@@ -140,6 +140,7 @@ library
                        Ouroboros.Consensus.Util.Assert
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
+                       Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.EarlyExit

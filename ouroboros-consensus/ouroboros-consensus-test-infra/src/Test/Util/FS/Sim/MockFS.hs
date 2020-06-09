@@ -793,18 +793,43 @@ removeFile fp =
 renameFile :: CanSimFS m => FsPath -> FsPath -> m ()
 renameFile fpOld fpNew =
     modifyMockFS $ \fs -> if
+      | not (sameDir fpOld fpNew) ->
+        throwError $ errDifferentDir fpOld
       | fpOld `S.member` openFilePaths fs ->
         throwError $ errRenameOpenFile fpOld
       | fpNew `S.member` openFilePaths fs ->
         throwError $ errRenameOpenFile fpNew
+      | Right _ <- FS.getDir fpNew (mockFiles fs) ->
+        throwError $ errRenameDir fpNew
       | otherwise -> do
         files' <- checkFsTree $ FS.renameFile fpOld fpNew (mockFiles fs)
         return ((), fs { mockFiles = files' })
   where
+    sameDir fp1 fp2 =
+        (fst <$> fsPathSplit fp1) == (fst <$> fsPathSplit fp2)
+
     errRenameOpenFile fp = FsError {
         fsErrorType   = FsIllegalOperation
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot rename opened file"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+    errRenameDir fp = FsError {
+        fsErrorType   = FsResourceInappropriateType
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
+      , fsErrorString = "is a directory"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+    errDifferentDir fp = FsError {
+        fsErrorType   = FsIllegalOperation
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
+      , fsErrorString = "files must be in the same directory"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
       , fsLimitation  = True

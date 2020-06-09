@@ -249,7 +249,6 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
       <*> Query.getCurrentChain           cdb
 
     let immBlockNo = AF.anchorBlockNo curChain
-        curTip     = castPoint (AF.headPoint curChain)
 
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
@@ -261,35 +260,36 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- 'chainSelectionForFutureBlocks'.
 
     -- ### Ignore
-    if
+    newTip <- if
       | olderThanK hdr isEBB immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockRealPoint b)
-        deliverPromises False curTip
+        deliverWrittenToDisk False
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
       | isMember (blockHash b) -> do
         trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
-        deliverPromises True curTip
+        deliverWrittenToDisk True
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
       | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
         trace $ IgnoreInvalidBlock (blockRealPoint b) reason
-        deliverPromises False curTip
+        deliverWrittenToDisk False
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
-        atomically $ putTMVar varBlockWrittenToDisk True
+        deliverWrittenToDisk True
 
         let blockCache = BlockCache.singleton b
         -- Do chain selection for future blocks before chain selection for the
         -- new block. When some future blocks are now older than the current
         -- block, we will do chain selection in a more chronological order.
-        chainSelectionForFutureBlocks cdb blockCache
-        newTip <- chainSelectionForBlock cdb blockCache hdr
-        atomically $ putTMVar varBlockProcessed newTip
+        void $ chainSelectionForFutureBlocks cdb blockCache
+        chainSelectionForBlock cdb blockCache hdr
+
+    deliverProcessed newTip
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -300,12 +300,17 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     isEBB :: IsEBB
     isEBB = headerToIsEBB hdr
 
-    -- | Use the given 'Bool' and 'Point' to fill in the 'TMVar's
-    -- corresponding to the block's 'AddBlockPromise'.
-    deliverPromises :: Bool -> Point blk -> m ()
-    deliverPromises writtenToDisk tip = atomically $ do
-      putTMVar varBlockWrittenToDisk      writtenToDisk
-      putTMVar varBlockProcessed          tip
+    -- | Fill in the 'TMVar' for the 'varBlockWrittenToDisk' of the block's
+    -- 'AddBlockPromise' with the given 'Bool'.
+    deliverWrittenToDisk :: Bool -> m ()
+    deliverWrittenToDisk writtenToDisk = atomically $
+        putTMVar varBlockWrittenToDisk writtenToDisk
+
+    -- | Fill in the 'TMVar' for the 'varBlockProcessed' of the block's
+    -- 'AddBlockPromise' with the given tip.
+    deliverProcessed :: Point blk -> m ()
+    deliverProcessed tip = atomically $
+        putTMVar varBlockProcessed tip
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain
@@ -340,6 +345,7 @@ olderThanK hdr isEBB immBlockNo
   where
     bNo = blockNo hdr
 
+-- | Return the new tip.
 chainSelectionForFutureBlocks
   :: ( IOLike m
      , LedgerSupportsProtocol blk
@@ -347,7 +353,7 @@ chainSelectionForFutureBlocks
      , VolDbSerialiseConstraints blk
      , HasCallStack
      )
-  => ChainDbEnv m blk -> BlockCache blk -> m ()
+  => ChainDbEnv m blk -> BlockCache blk -> m (Point blk)
 chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
     -- Get 'cdbFutureBlocks' and empty the map in the TVar. It will be
     -- repopulated with the blocks that are still from the future (but not the
@@ -360,6 +366,7 @@ chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
     forM_ futureBlockHeaders $ \hdr -> do
       trace $ ChainSelectionForFutureBlock (headerRealPoint hdr)
       chainSelectionForBlock cdb blockCache hdr
+    atomically $ Query.getTipPoint cdb
   where
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 

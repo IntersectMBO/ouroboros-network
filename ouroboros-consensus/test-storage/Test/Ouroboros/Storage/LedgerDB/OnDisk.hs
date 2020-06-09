@@ -25,10 +25,10 @@
 
 module Test.Ouroboros.Storage.LedgerDB.OnDisk (
     tests
-  , showLabelledExamples'
+  , showLabelledExamples
   ) where
 
-import           Prelude hiding (elem, maximum)
+import           Prelude hiding (elem)
 
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
@@ -47,14 +47,13 @@ import           Data.Proxy
 import           Data.TreeDiff (ToExpr (..))
 import           Data.Word
 import           GHC.Generics (Generic)
+import           System.Random (getStdRandom, randomR)
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC
-import           Test.StateMachine hiding (showLabelledExamples')
-import qualified Test.StateMachine as QSM
-import           Test.StateMachine.Labelling
-import qualified Test.StateMachine.Labelling as QSM
+import qualified Test.QuickCheck.Random as QC
+import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -68,6 +67,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Ledger.Abstract as Lgr
 import           Ouroboros.Consensus.Util
+import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
@@ -762,25 +762,51 @@ step m cmd = runMock (toMock m cmd) (modelMock m)
   Events
 -------------------------------------------------------------------------------}
 
-type LgrEvent t = Event (Model t) (At (Cmd t)) (At (Resp t))
+data Event t r = Event {
+      eventBefore   :: Model t    r
+    , eventCmd      :: Cmd   t :@ r
+    , eventResp     :: Resp  t :@ r
+    , eventAfter    :: Model t    r
+    , eventMockResp :: Resp  t MockSnap
+    }
 
-eventMockResp :: Eq1 r => LgrEvent t r -> Resp t MockSnap
-eventMockResp Event{..} = toMock eventAfter eventResp
+deriving instance (LUT t, Show1 r) => Show (Event t r)
 
 lockstep :: (Eq1 r, LUT t)
-         => Model    t    r
-         -> Cmd      t :@ r
-         -> Resp     t :@ r
-         -> LgrEvent t    r
+         => Model t    r
+         -> Cmd   t :@ r
+         -> Resp  t :@ r
+         -> Event t    r
 lockstep m@(Model _ hs) cmd (At resp) = Event {
       eventBefore   = m
     , eventCmd      = cmd
     , eventResp     = At resp
     , eventAfter    = Model mock' (hs' <> hs) -- new references override old!
+    , eventMockResp = resp'
     }
   where
     (resp', mock') = step m cmd
     hs' = zip (toList resp) (toList resp')
+
+execCmd :: LUT t
+        => Model t Symbolic
+        -> QSM.Command (At (Cmd t)) (At (Resp t))
+        -> Event t Symbolic
+execCmd model (QSM.Command cmd resp _vars) = lockstep model cmd resp
+
+execCmds :: forall t. LUT t
+         => LedgerDbParams
+         -> QSM.Commands (At (Cmd t)) (At (Resp t))
+         -> [Event t Symbolic]
+execCmds memPolicy = \(QSM.Commands cs) -> go (initModel memPolicy) cs
+  where
+    go :: Model t Symbolic
+       -> [QSM.Command (At (Cmd t)) (At (Resp t))]
+       -> [Event t Symbolic]
+    go _ []     = []
+    go m (c:cs) = e : go (eventAfter e) cs
+      where
+        e = execCmd m c
 
 {-------------------------------------------------------------------------------
   Generator
@@ -981,8 +1007,7 @@ propCmds lgrDbParams cmds = do
     let sm' = sm lgrDbParams db
     (hist, _model, res) <- runCommands sm' cmds
     prettyCommands sm' hist
-      $ QC.tabulate "Tags"
-        (map show $ tagEvents k (execCmds sm' cmds))
+      $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds lgrDbParams cmds))
       $ res QC.=== Ok
   where
     k = ledgerDbSecurityParam lgrDbParams
@@ -1031,10 +1056,10 @@ data Tag =
   | TagMaxDrop RangeK
   deriving (Show, Eq)
 
-type EventPred t = Predicate (LgrEvent t Symbolic) Tag
+type EventPred t = C.Predicate (Event t Symbolic) Tag
 
-tagEvents :: forall t. SecurityParam -> [LgrEvent t Symbolic] -> [Tag]
-tagEvents k = QSM.classify [
+tagEvents :: forall t. SecurityParam -> [Event t Symbolic] -> [Tag]
+tagEvents k = C.classify [
       tagMaxRollback
     , tagMaxDrop
     , tagRestore Nothing
@@ -1045,21 +1070,21 @@ tagEvents k = QSM.classify [
   where
     tagMaxRollback :: EventPred t
     tagMaxRollback =
-        fmap (TagMaxRollback . rangeK k) $ maximum $ \ev ->
+        fmap (TagMaxRollback . rangeK k) $ C.maximum $ \ev ->
           case eventCmd ev of
             At (Switch n _) -> Just n
             _otherwise      -> Nothing
 
     tagMaxDrop :: EventPred t
     tagMaxDrop =
-        fmap (TagMaxDrop . rangeK k) $ maximum $ \ev ->
+        fmap (TagMaxDrop . rangeK k) $ C.maximum $ \ev ->
           case eventCmd ev of
             At (Drop n) -> Just n
             _otherwise  -> Nothing
 
     tagRestore :: Maybe SnapState -> EventPred t
     tagRestore mST =
-        fmap (TagRestore mST . rangeK k) $ maximum $ \ev ->
+        fmap (TagRestore mST . rangeK k) $ C.maximum $ \ev ->
           let mock = modelMock (eventBefore ev) in
           case eventCmd ev of
             At Restore | mockRecentSnap mock == mST -> Just (mockChainLength mock)
@@ -1069,19 +1094,29 @@ tagEvents k = QSM.classify [
   Inspecting the labelling function
 -------------------------------------------------------------------------------}
 
--- | Show minimal examples for each of the generated tags
---
--- TODO: The examples listed are not always minimal. I'm not entirely sure why.
-showLabelledExamples' :: LedgerDbParams
-                      -> Maybe Int
-                      -- ^ Seed
-                      -> Int
-                      -- ^ Number of tests to run to find examples
-                      -> (Tag -> Bool)
-                      -- ^ Tag filter (can be @const True@)
-                      -> IO ()
-showLabelledExamples' lgrDbParams mReplay numTests focus =
-    QSM.showLabelledExamples' smUnused mReplay numTests tag focus
+showLabelledExamples :: LedgerDbParams
+                     -> Maybe Int
+                     -> (Tag -> Bool) -- ^ Which tag are we interested in?
+                     -> IO ()
+showLabelledExamples lgrDbParams mReplay relevant = do
+    replaySeed <- case mReplay of
+                    Nothing   -> getStdRandom $ randomR (1, 999999)
+                    Just seed -> return seed
+
+    putStrLn $ "Using replaySeed " ++ show replaySeed
+
+    let args = QC.stdArgs {
+            QC.maxSuccess = 10000
+          , QC.replay     = Just (QC.mkQCGen replaySeed, 0)
+          }
+
+    QC.labelledExamplesWith args $
+      forAllCommands (sm lgrDbParams (dbUnused p)) Nothing $ \cmds ->
+        repeatedly QC.collect (run cmds) $
+          QC.property True
   where
-    smUnused = sm lgrDbParams (dbUnused (Proxy @'LedgerSimple))
-    tag = tagEvents (ledgerDbSecurityParam lgrDbParams)
+    k = ledgerDbSecurityParam lgrDbParams
+    p = Proxy @'LedgerSimple
+
+    run :: LUT t => QSM.Commands (At (Cmd t)) (At (Resp t)) -> [Tag]
+    run = filter relevant . tagEvents k . execCmds lgrDbParams

@@ -52,7 +52,6 @@ import qualified Generics.SOP as SOP
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.StateMachine
-import           Test.StateMachine.Labelling
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -85,7 +84,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (takeLast)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -482,10 +480,14 @@ newtype MaxClockSkew = MaxClockSkew Word64
   deriving (Eq, Show)
 
 instance Arbitrary MaxClockSkew where
-  arbitrary = MaxClockSkew <$> choose (0, 3)
-  -- We're only interested in 0 or 1
-  shrink (MaxClockSkew 0) = []
-  shrink (MaxClockSkew _) = MaxClockSkew <$> [0, 1]
+  -- TODO make sure no blocks from the future exceed the max clock skew:
+  -- <https://github.com/input-output-hk/ouroboros-network/issues/2232>
+  arbitrary = return $ MaxClockSkew 100000
+  -- arbitrary = MaxClockSkew <$> choose (0, 3)
+  -- -- We're only interested in 0 or 1
+  -- shrink (MaxClockSkew 0) = []
+  -- shrink (MaxClockSkew 1) = []
+  -- shrink (MaxClockSkew _) = MaxClockSkew <$> [0, 1]
 
 {-------------------------------------------------------------------------------
   Instantiating the semantics
@@ -515,7 +517,7 @@ runPure :: forall blk.
 runPure cfg = \case
     AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
-    GetCurrentChain          -> ok  Chain               $ query   (Model.lastK k getHeader)
+    GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
@@ -681,23 +683,27 @@ instance Bitraversable (t blk) => Rank2.Traversable (At t blk m) where
 -------------------------------------------------------------------------------}
 
 -- | An event records the model before and after a command along with the
--- command itself, and the response.
-type ChainDBEvent blk m = Event (Model blk m) (At Cmd blk m) (At Resp blk m)
+-- command itself, and a mocked version of the response.
+data Event blk m r = Event
+  { eventBefore   :: Model  blk m r
+  , eventCmd      :: At Cmd blk m r
+  , eventAfter    :: Model  blk m r
+  , eventMockResp :: Resp   blk     IteratorId ReaderId
+  }
 
-eventMockResp :: Eq1 r => ChainDBEvent blk m r -> Resp blk IteratorId ReaderId
-eventMockResp Event{..} = toMock eventAfter eventResp
+deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
 
 -- | Construct an event
 lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
-         => Model        blk m r
-         -> At Cmd       blk m r
-         -> At Resp      blk m r
-         -> ChainDBEvent blk m r
+         => Model     blk m r
+         -> At Cmd    blk m r
+         -> At Resp   blk m r
+         -> Event     blk m r
 lockstep model@Model {..} cmd (At resp) = Event
-    { eventBefore = model
-    , eventCmd    = cmd
-    , eventAfter  = model'
-    , eventResp   = At resp
+    { eventBefore   = model
+    , eventCmd      = cmd
+    , eventAfter    = model'
+    , eventMockResp = mockResp
     }
   where
     (mockResp, dbModel') = step model cmd
@@ -814,15 +820,14 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genGetPastLedger :: Gen (Cmd blk it rdr)
     genGetPastLedger = do
-        GetPastLedger <$> elements (takeLast (maxRollbacks secParam) onChain)
+        GetPastLedger <$> elements onChain
       where
-        -- Non-empty list of points on our chain
+        volatileFrag = Model.volatileChain secParam id $ dbModel
+
+        -- Non-empty list of points on the volatile fragment of our chain
         onChain :: [Point blk]
-        onChain = (Block.genesisPoint :)
-                . map Block.blockPoint
-                . Chain.toOldestFirst
-                . Model.currentChain
-                $ dbModel
+        onChain = AF.anchorPoint volatileFrag
+                : map Block.blockPoint (AF.toOldestFirst volatileFrag)
 
     genAddBlock = do
       let curSlot = Model.currentSlot dbModel
@@ -952,8 +957,15 @@ precondition Model {..} (At cmd) =
      Close                    -> Not equallyOrMorePreferableFork
      Reopen                   -> Not $ Boolean (Model.isOpen dbModel)
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
+     --
+     -- We do not allow multiple future blocks with the same block number, as
+     -- the real implementation might have to switch between forks when they
+     -- are no longer in the future, whereas the model will pick the right
+     -- chain directly. This causes readers to go out of sync.
+     -- https://github.com/input-output-hk/ouroboros-network/issues/2234
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
-                                 blockSlot blk .> s
+                                 blockSlot blk .> s .&&
+                                 Not (futureBlockWithSameBlockNo (blockNo blk))
      WipeVolDB                -> Boolean $ Model.isOpen dbModel
      _                        -> Top
   where
@@ -976,6 +988,11 @@ precondition Model {..} (At cmd) =
     equallyOrMorePreferableFork = exists forks $ \fork ->
       Boolean (isEquallyOrMorePreferableThan cfg fork curChain) .&&
       Chain.head curChain ./= Chain.head fork
+
+    futureBlockWithSameBlockNo :: BlockNo -> Logic
+    futureBlockWithSameBlockNo no =
+        Not $ exists (Map.elems (Model.futureBlocks dbModel)) $ \futureBlock ->
+          blockNo futureBlock .== no
 
     cfg :: TopLevelConfig blk
     cfg = unOpaque modelConfig
@@ -1145,6 +1162,7 @@ deriving instance ( ToExpr blk
 deriving instance ToExpr EpochNo
 deriving instance ToExpr EBB
 deriving instance ToExpr IsEBB
+deriving instance ToExpr ChainLength
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBody

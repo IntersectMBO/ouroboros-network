@@ -45,14 +45,15 @@ import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
 import           System.IO.Temp (withTempDirectory)
+import           System.Random (getStdRandom, randomR)
 import           Text.Read (readMaybe)
+import           Text.Show.Pretty (ppShow)
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Random (mkQCGen)
 import           Test.StateMachine (Concrete, Symbolic)
 import qualified Test.StateMachine as QSM
-import           Test.StateMachine.Labelling
-import qualified Test.StateMachine.Labelling as QSM
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -64,12 +65,14 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO
 import qualified Ouroboros.Consensus.Storage.IO as F
 
+import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
 
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.Pure
+import           Test.Util.QuickCheck (collects)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
@@ -403,13 +406,16 @@ instance Bitraversable t => Rank2.Traversable (At t) where
 
 -- | An event records the model before and after a command along with the
 -- command itself and its response
-type FsEvent = Event Model (At Cmd) (At Resp)
+data Event r = Event {
+      eventBefore   :: Model  r
+    , eventCmd      :: Cmd :@ r
+    , eventAfter    :: Model  r
+    , eventMockResp :: Resp FsPath (Handle HandleMock)
+    }
+  deriving (Show)
 
-eventMockCmd :: Eq1 r => FsEvent r -> Cmd FsPath (Handle HandleMock)
+eventMockCmd :: Eq1 r => Event r -> Cmd FsPath (Handle HandleMock)
 eventMockCmd Event{..} = toMock eventBefore eventCmd
-
-eventMockResp :: Eq1 r => FsEvent r -> Resp FsPath (Handle HandleMock)
-eventMockResp Event{..} = toMock eventAfter eventResp
 
 -- | Construct an event
 --
@@ -419,16 +425,16 @@ lockstep :: forall r. (Show1 r, Ord1 r, HasCallStack)
          => Model r
          -> Cmd :@ r
          -> Resp :@ r
-         -> FsEvent r
+         -> Event r
 lockstep model@Model{..} cmd (At resp) = Event {
-      eventBefore = model
-    , eventCmd    = cmd
-    , eventAfter  = Model {
-                        mockFS       = mockFS'
-                      , knownPaths   = knownPaths   `RE.union` newPaths
-                      , knownHandles = knownHandles `RE.union` newHandles
-                      }
-    , eventResp   = At resp
+      eventBefore   = model
+    , eventCmd      = cmd
+    , eventAfter    = Model {
+                          mockFS       = mockFS'
+                        , knownPaths   = knownPaths   `RE.union` newPaths
+                        , knownHandles = knownHandles `RE.union` newHandles
+                        }
+    , eventMockResp = resp'
     }
   where
     (resp', mockFS') = step model cmd
@@ -887,17 +893,17 @@ data Tag =
   deriving (Show, Eq)
 
 -- | Predicate on events
-type EventPred = Predicate (FsEvent Symbolic) Tag
+type EventPred = C.Predicate (Event Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
 --
 -- For convenience we pair handles with the paths they refer to
-successful :: (    FsEvent Symbolic
+successful :: (    Event Symbolic
                 -> Success FsPath (Handle HandleMock)
                 -> Either Tag EventPred
               )
            -> EventPred
-successful f = predicate $ \ev ->
+successful f = C.predicate $ \ev ->
                  case eventMockResp ev of
                    Resp (Left  _ ) -> Right $ successful f
                    Resp (Right ok) -> f ev ok
@@ -905,8 +911,8 @@ successful f = predicate $ \ev ->
 -- | Tag commands
 --
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
-tag :: [FsEvent Symbolic] -> [Tag]
-tag = QSM.classify [
+tag :: [Event Symbolic] -> [Tag]
+tag = C.classify [
       tagCreateDirThenListDir Set.empty
     , tagCreateDirWithParentsThenListDir Set.empty
     , tagAtLeastNOpenFiles 0
@@ -984,7 +990,7 @@ tag = QSM.classify [
     -- TODO: It turns out we never hit the 10 (or higher) open handles case
     -- Not sure if this is a problem or not.
     tagAtLeastNOpenFiles :: Int -> EventPred
-    tagAtLeastNOpenFiles maxNumOpen = Predicate {
+    tagAtLeastNOpenFiles maxNumOpen = C.Predicate {
           predApply = \ev ->
             let maxNumOpen' = max maxNumOpen (countOpen (eventAfter ev))
             in Right $ tagAtLeastNOpenFiles maxNumOpen'
@@ -1116,7 +1122,7 @@ tag = QSM.classify [
 
     -- this never succeeds because of an fsLimitation
     tagOpenDirectory :: Set FsPath -> EventPred
-    tagOpenDirectory created = predicate $ \ev ->
+    tagOpenDirectory created = C.predicate $ \ev ->
         case (eventMockCmd ev, eventMockResp ev) of
           (CreateDir fe, Resp (Right _)) ->
             Right $ tagOpenDirectory (Set.insert fp created)
@@ -1205,7 +1211,7 @@ tag = QSM.classify [
 
     -- this never succeeds because of an fsLimitation
     tagReadInvalid :: Set HandleMock -> EventPred
-    tagReadInvalid openAppend = predicate $ \ev ->
+    tagReadInvalid openAppend = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
         (Open _ (AppendMode _), Resp (Right (WHandle _ (Handle h _)))) ->
           Right $ tagReadInvalid $ Set.insert h openAppend
@@ -1218,7 +1224,7 @@ tag = QSM.classify [
         _otherwise -> Right $ tagReadInvalid openAppend
 
     tagWriteInvalid :: Set HandleMock -> EventPred
-    tagWriteInvalid openRead = predicate $ \ev ->
+    tagWriteInvalid openRead = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
         (Open _ ReadMode, Resp (Right (RHandle (Handle h _)))) ->
           Right $ tagWriteInvalid $ Set.insert h openRead
@@ -1255,7 +1261,7 @@ tag = QSM.classify [
         _otherwise -> Right $ tagPutSeekNegGet put seek
 
     tagExclusiveFail :: EventPred
-    tagExclusiveFail = predicate $ \ev ->
+    tagExclusiveFail = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
         (Open _ mode, Resp (Left fsError))
           | MustBeNew <- allowExisting mode
@@ -1275,6 +1281,19 @@ tag = QSM.classify [
       case eventMockCmd ev of
         GetAt{}    -> Left  TagPread
         _otherwise -> Right tagPread
+
+-- | Step the model using a 'QSM.Command' (i.e., a command associated with
+-- an explicit set of variables)
+execCmd :: Model Symbolic -> QSM.Command (At Cmd) (At Resp) -> Event Symbolic
+execCmd model (QSM.Command cmd resp _vars) = lockstep model cmd resp
+
+-- | 'execCmds' is just the repeated form of 'execCmd'
+execCmds :: QSM.Commands (At Cmd) (At Resp) -> [Event Symbolic]
+execCmds = \(QSM.Commands cs) -> go initModel cs
+  where
+    go :: Model Symbolic -> [QSM.Command (At Cmd) (At Resp)] -> [Event Symbolic]
+    go _ []       = []
+    go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
 
 {-------------------------------------------------------------------------------
   Required instances
@@ -1316,8 +1335,24 @@ showLabelledExamples' :: Maybe Int
                       -> (Tag -> Bool)
                       -- ^ Tag filter (can be @const True@)
                       -> IO ()
-showLabelledExamples' mReplay numTests focus =
-    QSM.showLabelledExamples' (sm mountUnused) mReplay numTests tag focus
+showLabelledExamples' mReplay numTests focus = do
+    replaySeed <- case mReplay of
+      Nothing   -> getStdRandom (randomR (1,999999))
+      Just seed -> return seed
+
+    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
+                                  , maxSuccess = numTests
+                                  }) $
+      forAllShrinkShow (QSM.generateCommands sm' Nothing)
+                       (QSM.shrinkCommands   sm')
+                       pp $ \cmds ->
+        collects (filter focus . tag . execCmds $ cmds) $
+          property True
+
+    putStrLn $ "Used replaySeed " ++ show replaySeed
+  where
+    sm' = sm mountUnused
+    pp  = \x -> ppShow x ++ "\n" ++ condense x
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
@@ -1338,7 +1373,7 @@ prop_sequential tmpDir =
           return (tstTmpDir, hist, res)
 
       QSM.prettyCommands (sm mountUnused) hist
-        $ tabulate "Tags" (map show $ tag (execCmds (sm mountUnused) cmds))
+        $ tabulate "Tags" (map show $ tag (execCmds cmds))
         $ counterexample ("Mount point: " ++ tstTmpDir)
         $ res === QSM.Ok
 
@@ -1379,7 +1414,7 @@ _showTaggedShrinks hasRequiredTags numLevels = go 0
       else
         return ()
       where
-        tags    = tag $ execCmds (sm mountUnused) cmds
+        tags    = tag $ execCmds cmds
         shrinks = QSM.shrinkCommands (sm mountUnused) cmds
 
 {-------------------------------------------------------------------------------
