@@ -169,7 +169,7 @@ data EBB =
 
 instance Hashable EBB where
   hashWithSalt s (EBB epoch)  = hashWithSalt s (unEpochNo epoch)
-  hashWithSalt s RegularBlock = hashWithSalt s (0 :: Int)
+  hashWithSalt s RegularBlock = hashWithSalt s (-1 :: Int)
 
 data TestBody = TestBody {
       tbForkNo  :: !Word
