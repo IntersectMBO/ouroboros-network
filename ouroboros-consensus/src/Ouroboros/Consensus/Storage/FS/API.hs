@@ -137,6 +137,8 @@ data HasFS m h = HasFS {
     -- | Rename the file (which must exist) from the first path to the second
     -- path. If there is already a file at the latter path, it is replaced by
     -- the new one.
+    --
+    -- NOTE: only works for files within the same folder.
   , renameFile                 :: HasCallStack => FsPath -> FsPath -> m ()
 
     -- | Useful for better error reporting
