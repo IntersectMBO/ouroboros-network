@@ -11,6 +11,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
   ) where
 
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
+import           Data.Word (Word8)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
                      SlotNo)
@@ -26,19 +28,21 @@ import           Ouroboros.Consensus.Storage.Common
 translateToRawDB
   :: forall m blk b db. DBHeaderHash db ~ HeaderHash blk
   => (forall b'. Parser m blk b')
-  -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+  -> Word8
+     -- ^ Length of the 'ShortByteString' below, returned by 'GetNestedCtxt'
+  -> (ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
      -- ^ Add header envelope
   -> BlockComponent (ChainDB m blk) b
   -> BlockComponent db b
-translateToRawDB parse addHdrEnv = \case
+translateToRawDB parse prefixLen addHdrEnv = \case
     GetBlock        ->
       parse Block <$> getBlockRef <*> GetRawBlock
     GetRawBlock     -> GetRawBlock
     GetHeader       ->
-      (\isEBB blockSize blockRef bs ->
-        parse Header blockRef (addHdrEnv isEBB blockSize bs)) <$>
-      GetIsEBB <*> GetBlockSize <*> getBlockRef <*> GetRawHeader
-    GetRawHeader    -> addHdrEnv <$> GetIsEBB <*> GetBlockSize <*> GetRawHeader
+      (\prefix blockSize blockRef bs ->
+        parse Header blockRef (addHdrEnv prefix blockSize bs)) <$>
+      GetNestedCtxt prefixLen <*> GetBlockSize <*> getBlockRef <*> GetRawHeader
+    GetRawHeader    -> addHdrEnv <$> GetNestedCtxt prefixLen <*> GetBlockSize <*> GetRawHeader
     GetHash         -> GetHash
     GetSlot         -> GetSlot
     GetIsEBB        -> GetIsEBB
@@ -47,8 +51,8 @@ translateToRawDB parse addHdrEnv = \case
     GetNestedCtxt n -> GetNestedCtxt n
     GetPure a       -> GetPure a
     GetApply f bc   -> GetApply
-      (translateToRawDB parse addHdrEnv f)
-      (translateToRawDB parse addHdrEnv bc)
+      (translateToRawDB parse prefixLen addHdrEnv f)
+      (translateToRawDB parse prefixLen addHdrEnv bc)
 
 -- | Block or header parser
 type Parser m blk b =

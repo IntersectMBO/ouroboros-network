@@ -13,6 +13,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -31,7 +32,7 @@ class ( LedgerSupportsProtocol blk
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
       , HasCodecConfig blk
-      , HasNestedContent Header blk
+      , ReconstructNestedCtxt Header blk
         -- Instances required to support testing
       , Show blk
       , Show (Header blk)

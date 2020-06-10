@@ -18,7 +18,6 @@ module Test.Consensus.HardFork.Combinator.A (
     ProtocolA
   , BlockA(..)
   , binaryBlockInfoA
-  , headerIdentifierA
   , safeFromTipA
   , stabilityWindowA
     -- * Additional types
@@ -130,13 +129,9 @@ binaryBlockInfoA BlkA{..} = BinaryBlockInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialise blkA_header)
     }
 
-headerIdentifierA :: Word32
-headerIdentifierA = 0x01010101
-
 instance GetHeader BlockA where
-  data Header BlockA = HdrA {
-        hdrA_tag    :: Word32
-      , hdrA_fields :: HeaderFields BlockA
+  newtype Header BlockA = HdrA {
+        hdrA_fields :: HeaderFields BlockA
       }
     deriving stock    (Show, Eq, Generic)
     deriving anyclass (NoUnexpectedThunks, Serialise)
@@ -230,8 +225,7 @@ instance UpdateLedger BlockA
 instance CanForge BlockA where
   forgeBlock TopLevelConfig{..} _ bno (Ticked sno st) _txs _ = return $ BlkA {
         blkA_header = HdrA {
-            hdrA_tag    = headerIdentifierA
-          , hdrA_fields = HeaderFields {
+            hdrA_fields = HeaderFields {
                 headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
               , headerFieldPrevHash = ledgerTipHash st
               , headerFieldSlot     = sno

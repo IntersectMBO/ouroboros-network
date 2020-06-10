@@ -631,6 +631,8 @@ instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
   nodeGetBinaryBlockInfo (DBlk blk) =
       nodeGetBinaryBlockInfo (project' (Proxy @(I b)) blk :: b)
 
+  nodeReconstructPrefixLen _ = nodeReconstructPrefixLen (Proxy @b)
+
   nodeAddHeaderEnvelope (DCCfg cfg) =
       nodeAddHeaderEnvelope (project cfg)
 

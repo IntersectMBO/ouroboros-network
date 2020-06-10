@@ -1,13 +1,17 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
+
+{-# OPTIONS_GHC -Wno-orphans  #-}
 
 -- | Serialisation support for the HFC
 --
@@ -25,8 +29,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation (
   , decodeNested
   , encodeNestedCtxt
   , decodeNestedCtxt
-    -- * BinaryBlockInfo
-  , Ouroboros.Consensus.HardFork.Combinator.Serialisation.reconstructPrefixLen
+    -- * ReconstructNestedCtxt
   , binaryBlockInfo
     -- * Deriving via
   , SerialiseOne(..)
@@ -38,6 +41,8 @@ import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.SOP.Strict
 import           Data.Word
 
@@ -45,7 +50,6 @@ import           Cardano.Binary (enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import qualified Ouroboros.Consensus.Storage.ChainDB.Serialisation as ChainDB
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util (Some (..))
 import           Ouroboros.Consensus.Util.SOP
@@ -90,7 +94,7 @@ decodeNested = \ccfg (NestedCtxt ctxt) ->
     go (c :* _)  (NCZ ctxt) = decodeDiskDep c (NestedCtxt ctxt)
     go (_ :* cs) (NCS ctxt) = go cs ctxt
 
-encodeNestedCtxt :: All (EncodeDiskDep (NestedCtxt f)) xs
+encodeNestedCtxt :: All (EncodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
                  -> SomeBlock (NestedCtxt f) (HardForkBlock xs)
                  -> Encoding
@@ -99,7 +103,7 @@ encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
        npWithIndices
        (flipNestedCtxt ctxt)
   where
-    go :: All (EncodeDiskDep (NestedCtxt f)) xs'
+    go :: All (EncodeDiskDepIx (NestedCtxt f)) xs'
        => NP CodecConfig xs'
        -> NP (K Word8) xs'
        -> NestedCtxt_ (HardForkBlock xs') f a
@@ -112,7 +116,7 @@ encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
         , encodeDiskDepIx c (SomeBlock (NestedCtxt ctxt))
         ]
 
-decodeNestedCtxt :: All (DecodeDiskDep (NestedCtxt f)) xs
+decodeNestedCtxt :: All (DecodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
                  -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs))
 decodeNestedCtxt = \ccfg -> do
@@ -123,7 +127,7 @@ decodeNestedCtxt = \ccfg -> do
       Just ns -> flipSomeNestedCtxt <$>
         go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg)) ns
   where
-    go :: All (DecodeDiskDep (NestedCtxt f)) xs'
+    go :: All (DecodeDiskDepIx (NestedCtxt f)) xs'
        => NP CodecConfig xs'
        -> NS (K ()) xs'
        -> forall s. Decoder s (Some (NestedCtxt_ (HardForkBlock xs') f))
@@ -134,21 +138,44 @@ decodeNestedCtxt = \ccfg -> do
                             return $ Some (NCS ctxt)
 
 {-------------------------------------------------------------------------------
-  'BinaryBlockInfo'
+  'ReconstructNestedCtxt'
 -------------------------------------------------------------------------------}
 
-reconstructPrefixLen :: forall proxy f xs. All (ReconstructNestedCtxt f) xs
-                     => proxy (f (HardForkBlock xs)) -> Word8
-reconstructPrefixLen _ =
-    -- We insert two bytes at the front
-    2 + maximum (hcollapse perEra)
-  where
-    perEra :: NP (K Word8) xs
-    perEra = hcpure (Proxy @(ReconstructNestedCtxt f)) reconstructOne
+instance CanHardFork xs => ReconstructNestedCtxt Header (HardForkBlock xs) where
 
-    reconstructOne :: forall blk. ReconstructNestedCtxt f blk
-                   => K Word8 blk
-    reconstructOne = K $ ChainDB.reconstructPrefixLen (Proxy @(f blk))
+  reconstructPrefixLen _ =
+      -- We insert two bytes at the front
+      2 + maximum (hcollapse perEra)
+    where
+      perEra :: NP (K Word8) xs
+      perEra = hcpure (Proxy @SingleEraBlock) reconstructOne
+
+      reconstructOne :: forall blk. SingleEraBlock blk
+                     => K Word8 blk
+      reconstructOne = K $ reconstructPrefixLen (Proxy @(Header blk))
+
+  reconstructNestedCtxt _ prefix blockSize =
+     case nsFromIndex tag of
+       Nothing -> error $ "invalid HardForkBlock with tag: " <> show tag
+       Just ns -> injSomeBlock $ hcmap (Proxy @SingleEraBlock) reconstructOne ns
+    where
+      tag :: Word8
+      tag = Short.index prefix 1
+
+      prefixOne :: ShortByteString
+      prefixOne = Short.pack . drop 2 . Short.unpack $ prefix
+
+      reconstructOne :: forall blk. SingleEraBlock blk
+                     => K () blk -> SomeBlock (NestedCtxt Header) blk
+      reconstructOne _ =
+          reconstructNestedCtxt (Proxy @(Header blk)) prefixOne blockSize
+
+      injSomeBlock :: NS (SomeBlock (NestedCtxt Header)) xs'
+                   -> SomeBlock (NestedCtxt Header) (HardForkBlock xs')
+      injSomeBlock (Z x) = case x of
+          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
+      injSomeBlock (S x) = case injSomeBlock x of
+          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
 
 -- | 'BinaryBlockInfo' compatible with 'SerialiseOne'
 binaryBlockInfo :: NP (I -.-> K BinaryBlockInfo) xs

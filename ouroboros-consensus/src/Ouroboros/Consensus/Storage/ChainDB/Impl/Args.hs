@@ -11,7 +11,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   ) where
 
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
+import           Data.Word (Word8)
 
 import           Control.Tracer (Tracer, contramap)
 
@@ -57,10 +59,15 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
     , cdbGenesis              :: m (ExtLedgerState blk)
     , cdbCheckInFuture        :: CheckInFuture m blk
     , cdbGetBinaryBlockInfo   :: blk -> BinaryBlockInfo
-    , cdbAddHdrEnv            :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , cdbPrefixLen            :: Word8
+      -- ^ The length of the 'ShortByteString' in 'cdbAddHdrEnv'.
+    , cdbAddHdrEnv            :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
+      --
+      -- The 'ShortByteString' are the first few bytes of the serialised
+      -- block, see 'cdbPrefixLen'.
       --
       -- The 'SizeInBytes' is the size of the block.
     , cdbImmDbCacheConfig     :: ImmDB.CacheConfig
@@ -163,6 +170,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immHasFS              = cdbHasFSImmDb
         , immTracer             = contramap TraceImmDBEvent cdbTracer
         , immAddHdrEnv          = cdbAddHdrEnv
+        , immPrefixLen          = cdbPrefixLen
         , immCacheConfig        = cdbImmDbCacheConfig
         , immRegistry           = cdbRegistry
         }
@@ -173,6 +181,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
         , volCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
         , volAddHdrEnv          = cdbAddHdrEnv
+        , volPrefixLen          = cdbPrefixLen
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer
         }
@@ -226,6 +235,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbCheckInFuture        = cdbsCheckInFuture
     , cdbGetBinaryBlockInfo   = immGetBinaryBlockInfo
     , cdbAddHdrEnv            = immAddHdrEnv
+    , cdbPrefixLen            = immPrefixLen
     , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc
     , cdbTracer               = cdbsTracer
