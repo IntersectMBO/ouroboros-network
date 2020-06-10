@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Block.NestedContent (
   , flipSomeNestedCtxt
   , unflipSomeNestedCtxt
   , castSomeNestedCtxt
+  , mapSomeNestedCtxt
     -- * Convenience re-exports
   , module Ouroboros.Consensus.Util.DepPair
   ) where
@@ -137,6 +138,9 @@ mapNestedCtxt :: (NestedCtxt_ blk f a -> NestedCtxt_ blk' f' a')
               -> NestedCtxt f' blk' a'
 mapNestedCtxt f (NestedCtxt ctxt) = NestedCtxt (f ctxt)
 
+deriving instance (HasNestedContent f blk, forall a. Show (g a))
+               => Show (GenDepPair g (NestedCtxt f blk))
+
 {-------------------------------------------------------------------------------
   Existentials
 -------------------------------------------------------------------------------}
@@ -164,3 +168,8 @@ castSomeNestedCtxt :: (forall a. NestedCtxt_ blk f a -> NestedCtxt_ blk' f a)
                    -> SomeBlock (NestedCtxt f) blk
                    -> SomeBlock (NestedCtxt f) blk'
 castSomeNestedCtxt coerce (SomeBlock ctxt) = SomeBlock (castNestedCtxt coerce ctxt)
+
+mapSomeNestedCtxt :: (forall a. NestedCtxt_ blk f a -> NestedCtxt_ blk' f' a)
+                  -> SomeBlock (NestedCtxt f)  blk
+                  -> SomeBlock (NestedCtxt f') blk'
+mapSomeNestedCtxt f (SomeBlock ctxt) = SomeBlock (mapNestedCtxt f ctxt)

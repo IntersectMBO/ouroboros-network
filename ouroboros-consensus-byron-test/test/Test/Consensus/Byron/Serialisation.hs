@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.Block (ConvertRawHash (..), getCodecConfig)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()
+import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
@@ -49,7 +50,7 @@ import           Test.Consensus.Byron.Generators
 
 tests :: TestTree
 tests = testGroup "Byron"
-    [ roundtrip_all testCodecCfg
+    [ roundtrip_all testCodecCfg dictNestedHdr
 
     , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
     , testGroup "ConvertRawHashInfo sanity check"
@@ -61,6 +62,10 @@ tests = testGroup "Byron"
         [ testProperty "detect corruption in RegularBlock" prop_detectCorruption_RegularBlock
         ]
     ]
+  where
+    dictNestedHdr :: forall a. NestedCtxt_ ByronBlock Header a -> Dict (Eq a, Show a)
+    dictNestedHdr (CtxtByronBoundary _) = Dict
+    dictNestedHdr (CtxtByronRegular  _) = Dict
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo

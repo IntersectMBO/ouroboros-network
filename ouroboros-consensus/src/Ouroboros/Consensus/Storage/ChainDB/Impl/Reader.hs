@@ -94,7 +94,7 @@ newReader
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
-     , EncodeDisk blk (Header blk)
+     , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
   -> ResourceRegistry m
@@ -135,7 +135,7 @@ makeNewReader
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
-     , EncodeDisk blk (Header blk)
+     , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
   -> ReaderKey
@@ -217,7 +217,7 @@ instructionHelper
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
-     , EncodeDisk blk (Header blk)
+     , EncodeDiskDep (NestedCtxt Header) blk
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
@@ -302,7 +302,7 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         GetBlock        -> getBlockComponent GetBlock
         GetRawBlock     -> getBlockComponent GetRawBlock
         GetHeader       -> return $ return hdr
-        GetRawHeader    -> return $ toLazyByteString $ encodeDisk codecConfig hdr
+        GetRawHeader    -> return $ rawHdr
         GetHash         -> return $ headerHash hdr
         GetSlot         -> return $ blockSlot hdr
         GetIsEBB        -> return $ headerToIsEBB hdr
@@ -311,8 +311,7 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         -- but getting the serialisation is cheap because we keep the
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
-        GetHeaderSize   -> return $
-          fromIntegral $ Lazy.length $ toLazyByteString $ encodeDisk codecConfig hdr
+        GetHeaderSize   -> return $ fromIntegral $ Lazy.length rawHdr
         -- We don't know with which bytes the block starts, forward it.
         -- TODO When we replace 'GetNestedCtxt' with the proper type, we can
         -- probably return the right value here.
@@ -327,6 +326,11 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         getBlockComponent :: forall c. BlockComponent (ChainDB m blk) c -> m c
         getBlockComponent bc =
           Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerRealPoint hdr)
+
+        rawHdr :: Lazy.ByteString
+        rawHdr = case unnest hdr of
+          DepPair ctxt h ->
+            toLazyByteString $ encodeDiskDep codecConfig ctxt h
 
     next
       :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)

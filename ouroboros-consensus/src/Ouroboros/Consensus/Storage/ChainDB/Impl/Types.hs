@@ -107,7 +107,7 @@ class ( ImmDbSerialiseConstraints blk
       , LgrDbSerialiseConstraints blk
       , VolDbSerialiseConstraints blk
         -- Needed for Reader
-      , EncodeDisk blk (Header blk)
+      , EncodeDiskDep (NestedCtxt Header) blk
       ) => SerialiseDiskConstraints blk
 
 -- | A handle to the internal ChainDB state

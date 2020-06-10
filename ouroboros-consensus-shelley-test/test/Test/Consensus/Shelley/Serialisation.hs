@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,6 +15,7 @@ import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash (..))
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
@@ -31,7 +33,7 @@ import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Shelley"
-    [ roundtrip_all testCodecCfg
+    [ roundtrip_all testCodecCfg dictNestedHdr
 
     , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
 
@@ -54,6 +56,10 @@ tests = testGroup "Shelley"
 
     testCodecCfg :: CodecConfig Block
     testCodecCfg = ShelleyCodecConfig
+
+    dictNestedHdr :: forall a c. Crypto c
+                  => NestedCtxt_ (ShelleyBlock c) Header a -> Dict (Eq a, Show a)
+    dictNestedHdr CtxtShelley = Dict
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo

@@ -9,7 +9,6 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
-  , codecBlockFetchSerialised
   , codecBlockFetchId
 
   , byteLimitsBlockFetch
@@ -26,7 +25,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Text.Printf
 
-import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
+import           Ouroboros.Network.Block (HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
@@ -57,8 +56,11 @@ timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
     stateToLimit (ServerAgency TokBusy)      = longWait
     stateToLimit (ServerAgency TokStreaming) = longWait
 
--- | 'codecBlockFetch' but without the CBOR-in-CBOR trick
-codecBlockFetchUnwrapped
+-- | Codec for chain sync that encodes/decodes blocks
+--
+-- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- with a block type that has annotations.
+codecBlockFetch
   :: forall block m.
      MonadST m
   => (block            -> CBOR.Encoding)
@@ -66,8 +68,8 @@ codecBlockFetchUnwrapped
   -> (HeaderHash block -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetchUnwrapped encodeBlock     decodeBlock
-                         encodeBlockHash decodeBlockHash =
+codecBlockFetch encodeBlock decodeBlock
+                encodeBlockHash decodeBlockHash =
     mkCodecCborLazyBS encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
@@ -125,30 +127,6 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
   decodePoint :: forall s. CBOR.Decoder s (Point block)
   decodePoint = Block.decodePoint decodeBlockHash
 
--- | Codec for chain sync that encodes/decodes blocks
---
--- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
--- with a block type that has annotations.
-codecBlockFetch
-  :: forall block m.
-     MonadST m
-  => (block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s block)
-  -> (HeaderHash block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (HeaderHash block))
-  -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetch = codecBlockFetchUnwrapped
-
--- | Codec for chain sync that doesn't encode/decode blocks
-codecBlockFetchSerialised
-  :: forall block m.
-     MonadST m
-  => (Serialised block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (Serialised block))
-  -> (HeaderHash block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (HeaderHash block))
-  -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetchSerialised = codecBlockFetchUnwrapped
 
 codecBlockFetchId
   :: forall block m. Monad m

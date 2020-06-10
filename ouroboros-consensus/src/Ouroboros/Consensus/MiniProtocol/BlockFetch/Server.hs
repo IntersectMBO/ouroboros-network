@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
-                     IteratorResult (..), SerialisedWithPoint (..),
+                     IteratorResult (..), WithPoint (..),
                      getSerialisedBlockWithPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
@@ -111,13 +111,13 @@ blockFetchServer _tracer chainDB _version registry = senderSide
         -- iterator is empty.
         Right it -> SendMsgStartBatch $ sendBlocks it
 
-    sendBlocks :: ChainDB.Iterator m blk (SerialisedWithPoint blk blk)
+    sendBlocks :: ChainDB.Iterator m blk (WithPoint blk (Serialised blk))
                -> m (BlockFetchSendBlocks (Serialised blk) m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of
         IteratorResult blk     ->
-          return $ SendMsgBlock (serialised blk) (sendBlocks it)
+          return $ SendMsgBlock (withoutPoint blk) (sendBlocks it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
           return $ SendMsgBatchDone $ return senderSide

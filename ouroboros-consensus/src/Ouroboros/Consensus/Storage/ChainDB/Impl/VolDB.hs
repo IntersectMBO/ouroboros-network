@@ -58,13 +58,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (join)
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isJust, mapMaybe)
@@ -72,7 +70,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
-import           Data.Word (Word64, Word8)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           Streaming.Prelude (Of (..), Stream)
@@ -114,8 +112,6 @@ data VolDB m blk = VolDB {
       volDB              :: !(VolatileDB (HeaderHash blk) m)
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
     , codecConfig        :: !(CodecConfig blk)
-    , addHdrEnv          :: !(ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , prefixLen          :: !Word8
     }
   deriving (Generic)
 
@@ -125,7 +121,8 @@ deriving instance HasCodecConfig blk => NoUnexpectedThunks (VolDB m blk)
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the VolDB.
 class ( EncodeDisk blk blk
       , DecodeDisk blk (Lazy.ByteString -> blk)
-      , DecodeDisk blk (Lazy.ByteString -> Header blk)
+      , DecodeDiskDep (NestedCtxt Header) blk
+      , ReconstructNestedCtxt Header blk
       ) => VolDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the VolDB wrapper.
@@ -142,8 +139,6 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
     , volBlocksPerFile      :: BlocksPerFile
     , volGetBinaryBlockInfo :: blk -> BinaryBlockInfo
     , volCodecConfig        :: CodecConfig blk
-    , volAddHdrEnv          :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
-    , volPrefixLen          :: Word8
     , volValidation         :: VolDB.BlockValidationPolicy
     , volTracer             :: Tracer m (TraceEvent blk)
     }
@@ -156,8 +151,6 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 -- * 'volBlocksPerFile'
 -- * 'volGetBinaryBlockInfo'
 -- * 'volCodecConfig'
--- * 'volAddHdrEnv'
--- * 'volPrefixLen'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
@@ -168,8 +161,6 @@ defaultArgs fp = VolDbArgs {
     , volBlocksPerFile      = error "no default for volBlocksPerFile"
     , volGetBinaryBlockInfo = error "no default for volGetBinaryBlockInfo"
     , volCodecConfig        = error "no default for volCodecConfig"
-    , volAddHdrEnv          = error "no default for volAddHdrEnv"
-    , volPrefixLen          = error "no default for volPrefixLen"
     , volValidation         = error "no default for volValidation"
     }
 
@@ -184,8 +175,6 @@ openDB args@VolDbArgs{..} = do
       { volDB              = volDB
       , getBinaryBlockInfo = volGetBinaryBlockInfo
       , codecConfig        = volCodecConfig
-      , addHdrEnv          = volAddHdrEnv
-      , prefixLen          = volPrefixLen
       }
   where
     volatileDbArgs = VolDB.VolatileDbArgs
@@ -199,10 +188,8 @@ openDB args@VolDbArgs{..} = do
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
-        -> (ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> Word8
         -> VolDB m blk
-mkVolDB volDB getBinaryBlockInfo codecConfig addHdrEnv prefixLen = VolDB {..}
+mkVolDB volDB getBinaryBlockInfo codecConfig = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -450,8 +437,7 @@ translateBlockComponent
   => VolDB m blk
   -> BlockComponent (ChainDB m blk)                  b
   -> BlockComponent (VolatileDB (HeaderHash blk) m) b
-translateBlockComponent db blockComponent =
-    translateToRawDB (parse db) (prefixLen db) (addHdrEnv db) blockComponent
+translateBlockComponent VolDB { codecConfig } = translateToRawDB codecConfig
 
 getKnownBlock
   :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
@@ -593,31 +579,6 @@ mustExist :: forall proxy blk b. (StandardHash blk, Typeable blk)
           -> Either ChainDbFailure b
 mustExist _ hash Nothing  = Left  $ VolDbMissingBlock (Proxy @blk) hash
 mustExist _ _    (Just b) = Right $ b
-
--- TODO unify with ImmDB.parse
-parse
-  :: forall m blk b.
-     (HasHeader blk, VolDbSerialiseConstraints blk, MonadThrow m)
- => VolDB m blk
-  -> BlockOrHeader blk b
-  -> BlockRef blk
-  -> Lazy.ByteString
-  -> m b  -- ^ Throws 'ChainDbFailure'
-parse VolDB { codecConfig } blockOrHeader blockRef bytes =
-    aux (CBOR.deserialiseFromBytes dec bytes)
-  where
-    dec :: forall s. Decoder s (Lazy.ByteString -> b)
-    dec = case blockOrHeader of
-      Block  -> decodeDisk codecConfig
-      Header -> decodeDisk codecConfig
-
-    aux :: Either CBOR.DeserialiseFailure
-                  (Lazy.ByteString, Lazy.ByteString -> b)
-        -> m b
-    aux (Right (bs, b))
-      | Lazy.null bs = return $ b bytes
-      | otherwise    = throwM $ VolDbTrailingData blockRef bs
-    aux (Left err)   = throwM $ VolDbParseFailure blockRef err
 
 {-------------------------------------------------------------------------------
   Auxiliary

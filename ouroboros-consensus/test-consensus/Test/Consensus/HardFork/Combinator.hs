@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
@@ -446,10 +447,12 @@ instance SerialiseNodeToNode TestBlock TestBlock where
 instance SerialiseNodeToNode TestBlock (Serialised TestBlock)
 
 instance SerialiseNodeToNode TestBlock (Header TestBlock) where
-  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
-  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
+  encodeNodeToNode ccfg _ = encodeDisk ccfg . unnest
+  decodeNodeToNode ccfg _ = nest <$> decodeDisk ccfg
 
-instance SerialiseNodeToNode TestBlock (Serialised (Header TestBlock))
+instance SerialiseNodeToNode TestBlock (SerialisedHeader TestBlock) where
+  encodeNodeToNode ccfg _ = encodeDisk ccfg
+  decodeNodeToNode ccfg _ = decodeDisk ccfg
 
 instance SerialiseNodeToNode TestBlock (GenTx TestBlock) where
   encodeNodeToNode _ _ = encode . fromNS (Proxy @GenTx)

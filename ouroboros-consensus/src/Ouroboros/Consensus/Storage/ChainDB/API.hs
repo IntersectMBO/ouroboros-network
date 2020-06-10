@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
@@ -14,6 +15,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
@@ -29,7 +31,8 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , streamBlocks
   , newBlockReader
     -- * Serialised block/header with its point
-  , SerialisedWithPoint(..)
+  , WithPoint(..)
+  , SerialisedHeader
   , getSerialisedBlockWithPoint
   , getSerialisedHeaderWithPoint
   , getPoint
@@ -68,6 +71,7 @@ import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception (..))
 import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -91,6 +95,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
@@ -426,31 +431,63 @@ newBlockReader ChainDB { newReader } rr =
   Serialised block/header with its point
 -------------------------------------------------------------------------------}
 
--- | A @'Serialised' b@ together with its 'Point'.
+-- | A @b@ together with its 'Point'.
 --
 -- The 'Point' is needed because we often need to know the hash, slot, or
 -- point itself of the block or header in question, and we don't want to
 -- deserialise the block to obtain it.
-data SerialisedWithPoint blk b = SerialisedWithPoint
-   { serialised :: !(Serialised b)
-   , point      :: !(Point blk)
+data WithPoint blk b = WithPoint
+   { withoutPoint :: !b
+   , point        :: !(Point blk)
    }
 
-type instance HeaderHash (SerialisedWithPoint blk b) = HeaderHash blk
-instance StandardHash blk => StandardHash (SerialisedWithPoint blk b)
+type instance HeaderHash (WithPoint blk b) = HeaderHash blk
+instance StandardHash blk => StandardHash (WithPoint blk b)
 
 getPoint :: BlockComponent (ChainDB m blk) (Point blk)
 getPoint = BlockPoint <$> GetSlot <*> GetHash
 
 getSerialisedBlockWithPoint
-  :: BlockComponent (ChainDB m blk) (SerialisedWithPoint blk blk)
+  :: BlockComponent (ChainDB m blk) (WithPoint blk (Serialised blk))
 getSerialisedBlockWithPoint =
-    SerialisedWithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
+    WithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
+
+-- | A 'Serialised' header along with context identifying what kind of header
+-- it is.
+--
+-- The 'SerialiseNodeToNodeDep' for 'Header' will decide how to actually
+-- encode this.
+type SerialisedHeader blk = GenDepPair Serialised (NestedCtxt Header blk)
+
+-- | Only needed for the 'ChainSyncServer'
+type instance HeaderHash (SerialisedHeader blk) = HeaderHash blk
+instance StandardHash blk => StandardHash (SerialisedHeader blk)
+
+getSerialisedHeader
+  :: forall m blk. ReconstructNestedCtxt Header blk
+  => BlockComponent (ChainDB m blk) (SerialisedHeader blk)
+getSerialisedHeader =
+    mkSerialisedHeader
+      <$> GetNestedCtxt prefixLen
+      <*> GetBlockSize
+      <*> GetRawHeader
+  where
+    prefixLen = reconstructPrefixLen (Proxy @(Header blk))
+
+    mkSerialisedHeader
+      :: ShortByteString
+      -> SizeInBytes
+      -> Lazy.ByteString
+      -> SerialisedHeader blk
+    mkSerialisedHeader prefix blockSize rawHdr =
+        case reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize of
+          SomeBlock ctxt -> GenDepPair ctxt (Serialised rawHdr)
 
 getSerialisedHeaderWithPoint
-  :: BlockComponent (ChainDB m blk) (SerialisedWithPoint blk (Header blk))
+  :: ReconstructNestedCtxt Header blk
+  => BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
 getSerialisedHeaderWithPoint =
-    SerialisedWithPoint <$> (Serialised <$> GetRawHeader) <*> getPoint
+    WithPoint <$> getSerialisedHeader <*> getPoint
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -743,13 +780,13 @@ data BlockRef blk = BlockRef
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
 data ChainDbFailure =
-    -- | A block in the immutable DB failed to parse
+    -- | A block in the immutable or volatile DB failed to parse
     forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
+      ChainDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
 
-    -- | When parsing a block from the immutable DB we got some trailing data
+    -- | When parsing a block from the immutable or volatile DB we got some trailing data
   | forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbTrailingData (BlockRef blk) Lazy.ByteString
+      ChainDbTrailingData (BlockRef blk) Lazy.ByteString
 
     -- | Block missing from the immutable DB
     --
@@ -781,14 +818,6 @@ data ChainDbFailure =
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
   | ImmDbFailure ImmDB.UnexpectedError
-
-    -- | A block in the volatile DB failed to parse
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
-
-    -- | When parsing a block from the volatile DB, we got some trailing data
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbTrailingData (BlockRef blk) Lazy.ByteString
 
     -- | Block missing from the volatile DB
     --
@@ -825,8 +854,8 @@ deriving instance Show ChainDbFailure
 
 instance Exception ChainDbFailure where
   displayException = \case
-      ImmDbParseFailure {}                -> corruption
-      ImmDbTrailingData {}                -> corruption
+      ChainDbParseFailure {}              -> corruption
+      ChainDbTrailingData {}              -> corruption
       ImmDbMissingBlock {}                -> corruption
       ImmDbMissingBlockPoint {}           -> corruption
       ImmDbUnexpectedIteratorExhausted {} -> corruption
@@ -835,8 +864,6 @@ instance Exception ChainDbFailure where
         ImmDB.InvalidFileError {}      -> corruption
         ImmDB.MissingFileError {}      -> corruption
         ImmDB.ChecksumMismatchError {} -> corruption
-      VolDbParseFailure {}                -> corruption
-      VolDbTrailingData {}                -> corruption
       VolDbMissingBlock {}                -> corruption
       VolDbCorruptBlock {}                -> corruption
       VolDbFailure e -> case e of
@@ -852,17 +879,17 @@ instance Exception ChainDbFailure where
       fsError = displayException
 
 instance Eq ChainDbFailure where
-  ImmDbParseFailure (a1 :: BlockRef blk) b1 == ImmDbParseFailure (a2 :: BlockRef blk') b2 =
+  ChainDbParseFailure (a1 :: BlockRef blk) b1 == ChainDbParseFailure (a2 :: BlockRef blk') b2 =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> a1 == a2 && b1 == b2
-  ImmDbParseFailure {} == _ = False
+  ChainDbParseFailure {} == _ = False
 
-  ImmDbTrailingData (a1 :: BlockRef blk) b1 == ImmDbTrailingData (a2 :: BlockRef blk') b2 =
+  ChainDbTrailingData (a1 :: BlockRef blk) b1 == ChainDbTrailingData (a2 :: BlockRef blk') b2 =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> a1 == a2 && b1 == b2
-  ImmDbTrailingData {} == _ = False
+  ChainDbTrailingData {} == _ = False
 
   ImmDbMissingBlock a1 == ImmDbMissingBlock a2 = a1 == a2
   ImmDbMissingBlock {} == _ = False
@@ -881,18 +908,6 @@ instance Eq ChainDbFailure where
 
   ImmDbFailure a1 == ImmDbFailure a2 = ImmDB.sameUnexpectedError a1 a2
   ImmDbFailure {} == _               = False
-
-  VolDbParseFailure (a1 :: BlockRef blk) b1 == VolDbParseFailure (a2 :: BlockRef blk') b2 =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2 && b1 == b2
-  VolDbParseFailure {} == _ = False
-
-  VolDbTrailingData (a1 :: BlockRef blk) b1 == VolDbTrailingData (a2 :: BlockRef blk') b2 =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2 && b1 == b2
-  VolDbTrailingData {} == _ = False
 
   VolDbMissingBlock (Proxy :: Proxy blk) a1 == VolDbMissingBlock (Proxy :: Proxy blk') a2 =
     case eqT @blk @blk' of

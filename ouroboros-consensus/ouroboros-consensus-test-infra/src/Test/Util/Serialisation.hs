@@ -21,7 +21,6 @@ module Test.Util.Serialisation (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode)
 import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
@@ -43,7 +42,9 @@ import           Ouroboros.Consensus.Node.Run (SerialiseNodeToClientConstraints,
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract (ConsensusState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -85,14 +86,13 @@ roundtrip_all
      , ArbitraryWithVersion (NodeToClientVersion blk) (ApplyTxErr blk)
      , ArbitraryWithVersion (NodeToClientVersion blk) (Some (Query blk))
      , ArbitraryWithVersion (NodeToClientVersion blk) (SomeResult blk)
-
-     , EncodeDiskDep (NestedCtxt Header) blk
      )
   => CodecConfig blk
+  -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
   -> TestTree
-roundtrip_all ccfg =
+roundtrip_all ccfg dictNestedHdr =
     testGroup "Roundtrip" [
-        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk           ccfg
+        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk           ccfg dictNestedHdr
       , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode     ccfg
       , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient   ccfg
       , testProperty "envelopes"          $ roundtrip_envelopes               ccfg
@@ -113,12 +113,19 @@ roundtrip_SerialiseDisk
      , Arbitrary' (ConsensusState (BlockProtocol blk))
      )
   => CodecConfig blk
+  -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
   -> [TestTree]
-roundtrip_SerialiseDisk ccfg =
+roundtrip_SerialiseDisk ccfg dictNestedHdr =
     [ testProperty "roundtrip block" $
         roundtrip' @blk (encodeDisk ccfg) (decodeDisk ccfg)
-    , testProperty "roundtrip Header" $
-        roundtrip' @(Header blk) (encodeDisk ccfg) (decodeDisk ccfg)
+    , testProperty "roundtrip Header" $ \hdr ->
+        case unnest hdr of
+          DepPair ctxt nestedHdr -> case dictNestedHdr (flipNestedCtxt ctxt) of
+            Dict ->
+              roundtrip'
+                (encodeDiskDep ccfg ctxt)
+                (decodeDiskDep ccfg ctxt)
+                nestedHdr
     , testProperty "roundtrip HeaderHash" $
         roundtrip @(HeaderHash blk) encode decode
       -- Since the 'LedgerState' is a large data structure, we lower the
@@ -166,8 +173,9 @@ roundtrip_SerialiseNodeToNode
      , EncodeDisk blk blk
      , DecodeDisk blk (Lazy.ByteString -> blk)
        -- Needed for testing the @Serialised (Header blk)@
-     , EncodeDisk blk (Header blk)
-     , DecodeDisk blk (Lazy.ByteString -> Header blk)
+     , HasNestedContent Header blk
+     , EncodeDiskDep (NestedCtxt Header) blk
+     , DecodeDiskDep (NestedCtxt Header) blk
      )
   => CodecConfig blk
   -> [TestTree]
@@ -193,17 +201,11 @@ roundtrip_SerialiseNodeToNode ccfg =
     , testProperty "roundtrip Serialised Header" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
-            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            (enc version . encodeDepPair ccfg . unnest)
+            (nest <$> (decodeDepPair ccfg =<< dec version))
             hdr
       -- Check the compatibility between 'encodeNodeToNode' for @'Serialised'
       -- blk@ and 'decodeNodeToNode' for @blk@.
-      --
-      -- We generate a random @blk@, convert it to 'Serialised' (using
-      -- 'encodeDisk', which doesn't add CBOR-in-CBOR), encode it (adding
-      -- CBOR-in-CBOR and making version-specific changes), decode that using
-      -- 'decodeNodeToNode' for @blk@, which should handle the CBOR-in-CBOR
-      -- correctly.
     , testProperty "roundtrip Serialised blk compat 1" $
         \(WithVersion version blk) ->
           roundtrip @blk
@@ -212,12 +214,6 @@ roundtrip_SerialiseNodeToNode ccfg =
             blk
       -- Check the compatibility between 'encodeNodeToNode' for @blk@ and
       -- 'decodeNodeToNode' for @'Serialised' blk@.
-      --
-      -- We generate a random @blk@, encode it using 'encodeNodeToNode'
-      -- (adding CBOR-in-CBOR and making any version-specific changes), decode
-      -- that as a @'Serialised' blk@ using 'decodeNodeToNode' (removing the
-      -- CBOR-in-CBOR from the bytestring) and then convert the @'Serialised'
-      -- blk@ to a @blk@ using using 'decodeDisk'.
     , testProperty "roundtrip Serialised blk compat 2" $
         \(WithVersion version blk) ->
           roundtrip @blk
@@ -228,14 +224,14 @@ roundtrip_SerialiseNodeToNode ccfg =
     , testProperty "roundtrip Serialised Header compat 1" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (enc version . encodeDepPair ccfg . unnest)
             (dec version)
             hdr
     , testProperty "roundtrip Serialised Header compat 2" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
             (enc version)
-            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            (nest <$> (decodeDepPair ccfg =<< dec version))
             hdr
     ]
   where
@@ -336,8 +332,8 @@ roundtrip_SerialiseNodeToClient ccfg =
 -- debugging a bit easier as we can focus on just the envelope.
 roundtrip_envelopes ::
      forall blk. (
-       EncodeDiskDep (NestedCtxt Header) blk
-     , SerialiseNodeToNode blk (Serialised (Header blk))
+       SerialiseNodeToNode blk (SerialisedHeader blk)
+     , HasNestedContent Header blk
      )
   => CodecConfig blk
   -> WithVersion (NodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
@@ -346,23 +342,26 @@ roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
     roundtrip
       (encodeNodeToNode ccfg v . unBase16)
       (Base16 <$> decodeNodeToNode ccfg v)
-      (Base16 encoded)
+      (Base16 serialisedHeader)
   where
-    -- We don't use mkSerialised because we're faking the payload
-    encoded :: Serialised (Header blk)
-    encoded = Serialised . CBOR.toLazyByteString $ encodeDisk ccfg $ depPair
-
-    depPair :: GenDepPair Serialised (NestedCtxt Header blk)
-    depPair = GenDepPair ctxt (Serialised bs)
+    serialisedHeader :: SerialisedHeader blk
+    serialisedHeader = GenDepPair ctxt (Serialised bs)
 
     bs :: Lazy.ByteString
     bs = "<PAYLOAD>" -- Something we can easily recognize in test failures
 
 newtype Base16 a = Base16 { unBase16 :: a }
-  deriving (Eq)
 
-instance Show (Base16 (Serialised (Header blk))) where
-  show (Base16 (Serialised bs)) = Char8.unpack $ Base16.encode bs
+instance HasNestedContent Header blk => Show (Base16 (SerialisedHeader blk)) where
+  show (Base16 (GenDepPair ctxt (Serialised bs))) =
+      "(" <> show ctxt <> "," <> Char8.unpack (Base16.encode bs) <> ")"
+
+instance HasNestedContent Header blk => Eq (Base16 (SerialisedHeader blk)) where
+  Base16 (GenDepPair ctxt (Serialised bs)) ==
+    Base16 (GenDepPair ctxt' (Serialised bs')) =
+      case sameDepIndex ctxt ctxt' of
+        Just Refl -> bs == bs'
+        Nothing   -> False
 
 {-------------------------------------------------------------------------------
   Serialised helpers

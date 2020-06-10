@@ -154,7 +154,7 @@ defaultCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
               -> DefaultCodecs blk m
 defaultCodecs ccfg version = Codecs {
       cChainSyncCodec =
-        codecChainSyncSerialised
+        codecChainSync
           enc
           dec
           (encodePoint enc)

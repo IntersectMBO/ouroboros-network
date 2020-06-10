@@ -1,4 +1,6 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.BFT (
     tests
@@ -18,8 +20,10 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT
+import           Ouroboros.Consensus.Mock.Node.Serialisation
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Util (Dict (..))
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Test.ThreadNet.General
@@ -59,7 +63,7 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "BFT" $
-    [ roundtrip_all testCodecCfg
+    [ roundtrip_all testCodecCfg dictNestedHdr
 
     , testProperty "delayed message corner case" $
         once $
@@ -97,6 +101,9 @@ tests = testGroup "BFT" $
     -- We pick a single value for @k@ for the serialisation tests
     testCodecCfg :: CodecConfig MockBftBlock
     testCodecCfg = SimpleCodecConfig (SecurityParam 4)
+
+    dictNestedHdr :: forall a. NestedCtxt_ MockBftBlock Header a -> Dict (Eq a, Show a)
+    dictNestedHdr CtxtMock = Dict
 
 prop_simple_bft_convergence :: TestSetup -> Property
 prop_simple_bft_convergence TestSetup

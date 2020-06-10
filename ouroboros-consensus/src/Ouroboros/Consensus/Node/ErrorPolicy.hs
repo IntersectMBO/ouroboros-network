@@ -2,7 +2,6 @@
 
 module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
-import           Data.Proxy (Proxy)
 import           Data.Time.Clock (DiffTime)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
@@ -23,13 +22,12 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
-import           Ouroboros.Consensus.Node.Run (RunNode (nodeExceptionIsFatal))
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException,
                      TempRegistryException)
 
-consensusErrorPolicy :: RunNode blk => Proxy blk -> ErrorPolicies
-consensusErrorPolicy pb = ErrorPolicies {
+consensusErrorPolicy :: ErrorPolicies
+consensusErrorPolicy = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
@@ -114,13 +112,7 @@ consensusErrorPolicy pb = ErrorPolicies {
 
           -- Dispatch on nested exception
         , ErrorPolicy $ \(ExceptionInLinkedThread _ e) ->
-            evalErrorPolicies e (epAppErrorPolicies (consensusErrorPolicy pb))
-
-          -- Blocks can have their own specific exceptions, which can be fatal
-          -- too
-        , ErrorPolicy $ \e -> case nodeExceptionIsFatal pb e of
-            Just _reason -> Just shutdownNode
-            Nothing      -> Nothing
+            evalErrorPolicies e (epAppErrorPolicies consensusErrorPolicy)
         ]
     }
   where

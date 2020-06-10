@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -67,12 +68,9 @@ instance DecodeDisk DualByronBlock (Lazy.ByteString -> DualByronBlock) where
     where
       epochSlots = extractEpochSlots ccfg
 
-instance EncodeDisk DualByronBlock (Header DualByronBlock) where
-  encodeDisk ccfg = encodeDisk (dualCodecConfigMain ccfg) . dualHeaderMain
-instance DecodeDisk DualByronBlock (Header DualByronBlock) where
-  decodeDisk ccfg = DualHeader <$> decodeDisk (dualCodecConfigMain ccfg)
-instance DecodeDisk DualByronBlock (Lazy.ByteString -> Header DualByronBlock) where
-  decodeDisk ccfg = const <$> decodeDisk ccfg
+instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
+  decodeDiskDep (DualCodecConfig ccfg) (NestedCtxt (CtxtDual ctxt)) =
+      decodeDiskDep ccfg (NestedCtxt ctxt)
 
 instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
@@ -129,7 +127,7 @@ instance SerialiseNodeToNode DualByronBlock (Header DualByronBlock) where
       <$> decodeNodeToNode (dualCodecConfigMain ccfg) version
 
 -- | Forward to the Byron instance.
-instance SerialiseNodeToNode DualByronBlock (Serialised (Header DualByronBlock)) where
+instance SerialiseNodeToNode DualByronBlock (SerialisedHeader DualByronBlock) where
   encodeNodeToNode ccfg version =
         encodeNodeToNode (dualCodecConfigMain ccfg) version
       . dualWrappedMain
@@ -195,11 +193,11 @@ extractEpochSlots = getByronEpochSlots . dualCodecConfigMain
 
 -- | The headers for 'DualByronBlock' and 'ByronBlock' are identical, so we
 -- can safely cast the serialised forms.
-dualWrappedMain :: Serialised (Header DualByronBlock)
-                -> Serialised (Header ByronBlock)
-dualWrappedMain (Serialised bs) = Serialised bs
+dualWrappedMain :: SerialisedHeader DualByronBlock
+                -> SerialisedHeader ByronBlock
+dualWrappedMain = depPairFirst (mapNestedCtxt ctxtDualMain)
 
 -- | Inverse of 'dualWrappedMain'.
-rewrapMain :: Serialised (Header ByronBlock)
-           -> Serialised (Header DualByronBlock)
-rewrapMain (Serialised bs) = Serialised bs
+rewrapMain :: SerialisedHeader ByronBlock
+           -> SerialisedHeader DualByronBlock
+rewrapMain = depPairFirst (mapNestedCtxt CtxtDual)

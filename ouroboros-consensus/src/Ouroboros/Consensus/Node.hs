@@ -301,7 +301,7 @@ run runargs@RunNodeArgs{..} =
             | version <- rnNodeToClientVersions
             , let version' = nodeToClientProtocolVersion (Proxy @blk) version
             ]
-        , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
+        , daErrorPolicies = consensusErrorPolicy
         }
 
 -- | Check the DB marker, lock the DB and look for the clean shutdown marker.
@@ -337,8 +337,7 @@ withDBChecks RunNodeArgs{..} body = do
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole
       -- database.
-      createMarkerOnCleanShutdown (Proxy @blk) hasFS $
-
+      createMarkerOnCleanShutdown hasFS $
         body lastShutDownWasClean
   where
     mountPoint                   = MountPoint rnDatabasePath
@@ -384,7 +383,6 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbChunkInfo          = chunkInfo
     , ChainDB.cdbGenesis            = return initLedger
     , ChainDB.cdbGetBinaryBlockInfo = nodeGetBinaryBlockInfo
-    , ChainDB.cdbAddHdrEnv          = nodeAddHeaderEnvelope ccfg
     , ChainDB.cdbDiskPolicy         = defaultDiskPolicy k
     , ChainDB.cdbCheckIntegrity     = nodeCheckIntegrity cfg
     , ChainDB.cdbParamsLgrDB        = ledgerDbDefaultParams k
@@ -396,8 +394,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbCheckInFuture      = inFuture
     }
   where
-    k    = configSecurityParam cfg
-    ccfg = getCodecConfig $ configBlock cfg
+    k = configSecurityParam cfg
 
 mkNodeArgs
   :: forall blk. RunNode blk

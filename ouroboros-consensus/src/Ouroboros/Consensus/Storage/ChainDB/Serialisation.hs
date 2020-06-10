@@ -32,23 +32,19 @@ module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
   , EncodeDiskDep(..)
   , DecodeDiskDepIx(..)
   , DecodeDiskDep(..)
-    -- * Manipulating raw bytestrings
-  , addNestedCtxtEnvelope
-  , dropNestedCtxtEnvelope
-  , DropNestedCtxtFailure(..)
     -- * Reconstruct nested type
   , ReconstructNestedCtxt (..)
-  , addReconstructedTypeEnvelope
+    -- * Re-exported for convenience
+  , SizeInBytes
+    -- * Exported for the benefit of tests
+  , encodeDepPair
+  , decodeDepPair
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise
-import           Control.Exception (Exception)
-import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.SOP.BasicFunctors
@@ -114,7 +110,7 @@ class EncodeDiskDepIx f blk where
       _ = keepRedundantConstraint (Proxy @(TrivialDependency (f blk)))
 
 -- | Encode a dependent value
-class EncodeDiskDepIx f blk => EncodeDiskDep f blk where
+class EncodeDiskDep f blk where
   encodeDiskDep :: CodecConfig blk -> f blk a -> a -> Encoding
 
   default encodeDiskDep
@@ -136,7 +132,7 @@ class DecodeDiskDepIx f blk where
 -- | Decode a dependent value
 --
 -- Typical usage: @f = NestedCtxt Header@.
-class DecodeDiskDepIx f blk => DecodeDiskDep f blk where
+class DecodeDiskDep f blk where
   decodeDiskDep :: CodecConfig blk -> f blk a -> forall s. Decoder s (Lazy.ByteString -> a)
 
   default decodeDiskDep
@@ -147,26 +143,28 @@ class DecodeDiskDepIx f blk => DecodeDiskDep f blk where
   decodeDiskDep cfg ctxt =
       (\f -> toTrivialDependency ctxt . f) <$> decodeDisk cfg
 
-instance EncodeDiskDep f blk => EncodeDisk blk (DepPair (f blk)) where
-  encodeDisk ccfg = encodeDisk ccfg . encodeSnd ccfg
+instance (EncodeDiskDepIx f blk, EncodeDiskDep f blk)
+       => EncodeDisk blk (DepPair (f blk)) where
+  encodeDisk ccfg = encodeDisk ccfg . encodeDepPair ccfg
 
-instance DecodeDiskDep f blk => DecodeDisk blk (DepPair (f blk)) where
-  decodeDisk ccfg = decodeDisk ccfg >>= decodeSnd ccfg
+instance (DecodeDiskDepIx f blk, DecodeDiskDep f blk)
+       => DecodeDisk blk (DepPair (f blk)) where
+  decodeDisk ccfg = decodeDisk ccfg >>= decodeDepPair ccfg
 
 {-------------------------------------------------------------------------------
   Internal: support for serialisation of dependent pairs
 -------------------------------------------------------------------------------}
 
-encodeSnd :: EncodeDiskDep f blk
-          => CodecConfig blk
-          -> DepPair (f blk) -> GenDepPair Serialised (f blk)
-encodeSnd ccfg (DepPair fa a) =
+encodeDepPair :: EncodeDiskDep f blk
+              => CodecConfig blk
+              -> DepPair (f blk) -> GenDepPair Serialised (f blk)
+encodeDepPair ccfg (DepPair fa a) =
     GenDepPair fa (mkSerialised (encodeDiskDep ccfg fa) a)
 
-decodeSnd :: DecodeDiskDep f blk
-          => CodecConfig blk
-          -> GenDepPair Serialised (f blk) -> Decoder s (DepPair (f blk))
-decodeSnd ccfg (GenDepPair fa serialised) =
+decodeDepPair :: DecodeDiskDep f blk
+              => CodecConfig blk
+              -> GenDepPair Serialised (f blk) -> Decoder s (DepPair (f blk))
+decodeDepPair ccfg (GenDepPair fa serialised) =
     DepPair fa <$> fromSerialised (decodeDiskDep ccfg fa) serialised
 
 instance EncodeDiskDepIx f blk => EncodeDisk blk (GenDepPair Serialised (f blk)) where
@@ -182,56 +180,6 @@ instance DecodeDiskDepIx f blk => DecodeDisk blk (GenDepPair Serialised (f blk))
       SomeBlock fa <- decodeDiskDepIx ccfg
       serialised   <- decode
       return $ GenDepPair fa serialised
-
-{-------------------------------------------------------------------------------
-  Add/remove envelope
-
-  These functions manipulate raw bytestrings, adding/dropping an envelope that
-  is compatible with the instances for
-
-  > EncodeDisk blk (GenDepPair Serialised (f blk))
-  > DecodeDisk blk (GenDepPair Serialised (f blk))
-
-  defined above.
--------------------------------------------------------------------------------}
-
--- | Add envelope to raw contents as found inside the block
-addNestedCtxtEnvelope
-  :: EncodeDiskDep (NestedCtxt f) blk
-  => CodecConfig blk
-  -> (SomeBlock (NestedCtxt f) blk, Lazy.ByteString)
-  -> Lazy.ByteString
-addNestedCtxtEnvelope ccfg (SomeBlock ctxt, bs) =
-    CBOR.toLazyByteString $
-      encodeDisk ccfg (GenDepPair ctxt (Serialised bs))
-
--- | Drop envelope to get the raw contents as found inside the block
-dropNestedCtxtEnvelope
-  :: DecodeDiskDep (NestedCtxt f) blk
-  => CodecConfig blk
-  -> Lazy.ByteString
-  -> Except DropNestedCtxtFailure (SomeBlock (NestedCtxt f) blk, Lazy.ByteString)
-dropNestedCtxtEnvelope ccfg bs = do
-    GenDepPair ctxt (Serialised bs') <-
-      aux $ CBOR.deserialiseFromBytes (decodeDisk ccfg) bs
-    return (SomeBlock ctxt, bs')
-  where
-    aux :: Either DeserialiseFailure (Lazy.ByteString, a)
-        -> Except DropNestedCtxtFailure a
-    aux (Left err) =
-        throwError $ DropNestedCtxtFailure err
-    aux (Right (trailing, a)) =
-        if Lazy.null trailing then
-          return a
-        else
-          throwError $ DropNestedCtxtTrailing trailing
-
-data DropNestedCtxtFailure =
-    DropNestedCtxtFailure DeserialiseFailure
-  | DropNestedCtxtTrailing Lazy.ByteString
-  deriving (Show)
-
-instance Exception DropNestedCtxtFailure
 
 {-------------------------------------------------------------------------------
   Reconstruct nested type
@@ -267,19 +215,6 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
     -> SizeInBytes      -- ^ Block size
     -> SomeBlock (NestedCtxt f) blk
   reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
-
--- | Reconstruct the nested type, then add it to the bytestring
---
--- This function is a suitable instantiation for 'nodeAddHeaderEnvelope'.
-addReconstructedTypeEnvelope
-  :: (ReconstructNestedCtxt f blk, EncodeDiskDep (NestedCtxt f) blk)
-  => proxy (f blk)
-  -> CodecConfig blk
-  -> ShortByteString
-  -> SizeInBytes
-  -> Lazy.ByteString -> Lazy.ByteString
-addReconstructedTypeEnvelope p ccfg prefix size bs =
-    addNestedCtxtEnvelope ccfg (reconstructNestedCtxt p prefix size, bs)
 
 {-------------------------------------------------------------------------------
   Forwarding instances

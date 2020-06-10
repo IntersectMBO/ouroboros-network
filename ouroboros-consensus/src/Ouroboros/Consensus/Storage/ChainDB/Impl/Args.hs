@@ -10,10 +10,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   , fromChainDbArgs
   ) where
 
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
-import           Data.Word (Word8)
 
 import           Control.Tracer (Tracer, contramap)
 
@@ -23,7 +20,6 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
@@ -41,44 +37,33 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
 
       -- HasFS instances
-      cdbHasFSImmDb           :: HasFS m h1
-    , cdbHasFSVolDb           :: HasFS m h2
-    , cdbHasFSLgrDB           :: HasFS m h3
+      cdbHasFSImmDb         :: HasFS m h1
+    , cdbHasFSVolDb         :: HasFS m h2
+    , cdbHasFSLgrDB         :: HasFS m h3
 
       -- Policy
-    , cdbImmValidation        :: ImmDB.ValidationPolicy
-    , cdbVolValidation        :: VolDB.BlockValidationPolicy
-    , cdbBlocksPerFile        :: VolDB.BlocksPerFile
-    , cdbParamsLgrDB          :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy           :: LgrDB.DiskPolicy
+    , cdbImmValidation      :: ImmDB.ValidationPolicy
+    , cdbVolValidation      :: VolDB.BlockValidationPolicy
+    , cdbBlocksPerFile      :: VolDB.BlocksPerFile
+    , cdbParamsLgrDB        :: LgrDB.LedgerDbParams
+    , cdbDiskPolicy         :: LgrDB.DiskPolicy
 
       -- Integration
-    , cdbTopLevelConfig       :: TopLevelConfig blk
-    , cdbChunkInfo            :: ChunkInfo
-    , cdbCheckIntegrity       :: blk -> Bool
-    , cdbGenesis              :: m (ExtLedgerState blk)
-    , cdbCheckInFuture        :: CheckInFuture m blk
-    , cdbGetBinaryBlockInfo   :: blk -> BinaryBlockInfo
-    , cdbPrefixLen            :: Word8
-      -- ^ The length of the 'ShortByteString' in 'cdbAddHdrEnv'.
-    , cdbAddHdrEnv            :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
-      -- ^ The header envelope will only be added after extracting the binary
-      -- header from the binary block. Note that we never have to remove an
-      -- envelope.
-      --
-      -- The 'ShortByteString' are the first few bytes of the serialised
-      -- block, see 'cdbPrefixLen'.
-      --
-      -- The 'SizeInBytes' is the size of the block.
-    , cdbImmDbCacheConfig     :: ImmDB.CacheConfig
+    , cdbTopLevelConfig     :: TopLevelConfig blk
+    , cdbChunkInfo          :: ChunkInfo
+    , cdbCheckIntegrity     :: blk -> Bool
+    , cdbGenesis            :: m (ExtLedgerState blk)
+    , cdbCheckInFuture      :: CheckInFuture m blk
+    , cdbGetBinaryBlockInfo :: blk -> BinaryBlockInfo
+    , cdbImmDbCacheConfig   :: ImmDB.CacheConfig
 
       -- Misc
-    , cdbTracer               :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger          :: Tracer m (LgrDB.LedgerDB blk)
-    , cdbRegistry             :: ResourceRegistry m
-    , cdbGcDelay              :: DiffTime
-    , cdbGcInterval           :: DiffTime
-    , cdbBlocksToAddSize      :: Word
+    , cdbTracer             :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger        :: Tracer m (LgrDB.LedgerDB blk)
+    , cdbRegistry           :: ResourceRegistry m
+    , cdbGcDelay            :: DiffTime
+    , cdbGcInterval         :: DiffTime
+    , cdbBlocksToAddSize    :: Word
       -- ^ Size of the queue used to store asynchronously added blocks. This
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
@@ -169,8 +154,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immCheckIntegrity     = cdbCheckIntegrity
         , immHasFS              = cdbHasFSImmDb
         , immTracer             = contramap TraceImmDBEvent cdbTracer
-        , immAddHdrEnv          = cdbAddHdrEnv
-        , immPrefixLen          = cdbPrefixLen
         , immCacheConfig        = cdbImmDbCacheConfig
         , immRegistry           = cdbRegistry
         }
@@ -180,8 +163,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volBlocksPerFile      = cdbBlocksPerFile
         , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
         , volCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
-        , volAddHdrEnv          = cdbAddHdrEnv
-        , volPrefixLen          = cdbPrefixLen
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer
         }
@@ -234,8 +215,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbGenesis              = lgrGenesis
     , cdbCheckInFuture        = cdbsCheckInFuture
     , cdbGetBinaryBlockInfo   = immGetBinaryBlockInfo
-    , cdbAddHdrEnv            = immAddHdrEnv
-    , cdbPrefixLen            = immPrefixLen
     , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc
     , cdbTracer               = cdbsTracer

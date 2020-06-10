@@ -42,6 +42,10 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+{-------------------------------------------------------------------------------
+  NodeToNode
+-------------------------------------------------------------------------------}
+
 -- | Serialise a type @a@ so that it can be sent across network via a
 -- node-to-node protocol.
 class SerialiseNodeToNode blk a where
@@ -59,6 +63,9 @@ class SerialiseNodeToNode blk a where
     => CodecConfig blk -> NodeToNodeVersion blk -> forall s. Decoder s a
   decodeNodeToNode _ccfg _version = decode
 
+{-------------------------------------------------------------------------------
+  NodeToClient
+-------------------------------------------------------------------------------}
 
 -- | Serialise a type @a@ so that it can be sent across the network via
 -- node-to-client protocol.
@@ -76,6 +83,10 @@ class SerialiseNodeToClient blk a where
     :: Serialise a
     => CodecConfig blk -> NodeToClientVersion blk -> forall s. Decoder s a
   decodeNodeToClient _ccfg _version = decode
+
+{-------------------------------------------------------------------------------
+  NodeToClient - SerialiseResult
+-------------------------------------------------------------------------------}
 
 -- | How to serialise the result of the @result@ of a query.
 --

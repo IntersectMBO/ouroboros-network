@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Byron.Node (
   , plcCoreNodeId
   ) where
 
-import           Control.Exception (Exception (..))
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
@@ -41,15 +40,12 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.Exit (ExitReason (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (DropNestedCtxtFailure)
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -230,8 +226,3 @@ instance RunNode ByronBlock where
 
   nodeCheckIntegrity     = verifyBlockIntegrity . configBlock
   nodeGetBinaryBlockInfo = byronBinaryBlockInfo
-  nodeExceptionIsFatal _ e
-    | Just (_ :: DropNestedCtxtFailure) <- fromException e
-    = Just DatabaseCorruption
-    | otherwise
-    = Nothing
