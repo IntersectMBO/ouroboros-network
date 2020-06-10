@@ -507,8 +507,10 @@ extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \c
           fromIntegral (unHeaderOffset headerOffset)
     GetNestedCtxt n ->
         withFile hasFS chunkFile ReadMode $ \eHnd -> do
-          bytes <- hGetExactlyAt hasFS eHnd (fromIntegral n) (AbsOffset 0)
+          bytes <- hGetExactlyAt hasFS eHnd (fromIntegral n) offset
           return $ Short.toShort $ Lazy.toStrict bytes
+      where
+        offset = AbsOffset $ unBlockOffset blockOffset
     GetBlock  -> return ()
     GetHeader -> return ()
   where
