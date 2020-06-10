@@ -15,8 +15,10 @@ import           Codec.Serialise (encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word8)
 
 import           Cardano.Slotting.Slot hiding (At)
 
@@ -394,7 +396,13 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB getBinaryBlockInfo TestBlockCodecConfig addHdrEnv
+        return $
+          mkVolDB
+            volDB
+            getBinaryBlockInfo
+            TestBlockCodecConfig
+            addHdrEnv
+            prefixLen
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -411,7 +419,10 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     epochSize :: EpochSize
     epochSize = 10
 
-    addHdrEnv :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    prefixLen :: Word8
+    prefixLen = 0
+
+    addHdrEnv :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     addHdrEnv _ _ = id
 
     -- | Open a mock ImmutableDB and add the given chain of blocks
@@ -425,7 +436,14 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           Just epoch -> ImmDB.appendEBB immDB
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
-        return $ mkImmDB immDB getBinaryBlockInfo TestBlockCodecConfig chunkInfo addHdrEnv
+        return $
+          mkImmDB
+            immDB
+            getBinaryBlockInfo
+            TestBlockCodecConfig
+            chunkInfo
+            addHdrEnv
+            prefixLen
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
 

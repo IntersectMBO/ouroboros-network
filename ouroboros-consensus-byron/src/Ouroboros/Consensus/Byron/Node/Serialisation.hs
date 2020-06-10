@@ -17,6 +17,7 @@ import           Codec.Serialise (decode, encode)
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 
 import           Cardano.Binary
 import           Cardano.Prelude (cborError)
@@ -215,11 +216,14 @@ instance SerialiseResult ByronBlock (Query ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance ReconstructNestedCtxt Header ByronBlock where
-  reconstructPrefixLen _ = 0
-  reconstructNestedCtxt _proxy isEBB size _bs =
-      case isEBB of
-        IsEBB    -> SomeBlock $ NestedCtxt (CtxtByronBoundary size)
-        IsNotEBB -> SomeBlock $ NestedCtxt (CtxtByronRegular  size)
+  reconstructPrefixLen _ = 2
+  reconstructNestedCtxt _proxy prefix size =
+      -- The first byte is @encodeListLen 2@, the second (index 1) is 0 for
+      -- EBB, 1 for regular block
+      case Short.index prefix 1 of
+        0 -> SomeBlock $ NestedCtxt (CtxtByronBoundary size)
+        1 -> SomeBlock $ NestedCtxt (CtxtByronRegular  size)
+        _ -> error $ "invalid ByronBlock with prefix: " <> show prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
   encodeDiskDepIx ByronCodecConfig{..} (SomeBlock (NestedCtxt ctxt)) = mconcat [

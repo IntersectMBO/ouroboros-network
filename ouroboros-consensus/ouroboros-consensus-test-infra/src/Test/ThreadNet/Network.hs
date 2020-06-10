@@ -601,6 +601,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbCheckInFuture        = LogicalClock.checkInFuture
                                       (configLedger cfg)
                                       (unwrapLogicalClock clock)
+        , cdbPrefixLen            = nodeReconstructPrefixLen (Proxy @blk)
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope ccfg
         , cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60

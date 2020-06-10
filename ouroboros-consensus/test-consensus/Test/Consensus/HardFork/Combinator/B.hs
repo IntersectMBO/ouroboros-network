@@ -18,7 +18,6 @@ module Test.Consensus.HardFork.Combinator.B (
     ProtocolB
   , BlockB(..)
   , binaryBlockInfoB
-  , headerIdentifierB
   , safeZoneB
     -- * Type family instances
   , BlockConfig(..)
@@ -37,7 +36,6 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
-import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.ProtocolMagic
@@ -112,13 +110,9 @@ binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialise blkB_header)
     }
 
-headerIdentifierB :: Word32
-headerIdentifierB = 0x02020202
-
 instance GetHeader BlockB where
-  data Header BlockB = HdrB {
-        hdrB_tag    :: Word32
-      , hdrB_fields :: HeaderFields BlockB
+  newtype Header BlockB = HdrB {
+        hdrB_fields :: HeaderFields BlockB
       }
     deriving stock    (Show, Eq, Generic)
     deriving anyclass (NoUnexpectedThunks, Serialise)
@@ -191,8 +185,7 @@ instance UpdateLedger BlockB
 instance CanForge BlockB where
   forgeBlock _ _ bno (Ticked sno st) _txs _ = return $ BlkB {
       blkB_header = HdrB {
-          hdrB_tag    = headerIdentifierB
-        , hdrB_fields = HeaderFields {
+          hdrB_fields = HeaderFields {
               headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
             , headerFieldPrevHash = ledgerTipHash st
             , headerFieldSlot     = sno

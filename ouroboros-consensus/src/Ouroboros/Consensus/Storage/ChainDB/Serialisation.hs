@@ -50,6 +50,7 @@ import           Codec.Serialise
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.SOP.BasicFunctors
 import           Data.Word
 
@@ -236,25 +237,18 @@ instance Exception DropNestedCtxtFailure
   Reconstruct nested type
 -------------------------------------------------------------------------------}
 
-class EncodeDiskDep (NestedCtxt f) blk => ReconstructNestedCtxt f blk where
+class HasNestedContent f blk => ReconstructNestedCtxt f blk where
   -- | Number of bytes required to reconstruct the nested type
   --
   -- This will be the /minimum/ length of the 'ShortByteString' passed to
   -- 'reconstructNestedCtxt'.
   reconstructPrefixLen :: proxy (f blk) -> Word8
 
-  -- | Reconstruct the context of nested contents
-  --
-  -- TODO: Right now we must be able to reconstruct the context  based on the
-  -- raw representation /of that nested content/. In general, this will not be
-  -- possible. We should instead pass the (first few) bytes of the raw /block/
-  -- instead. Better yet, we should cache the 'NestedCtxt' inside the secondary
-  -- index.
+  -- | Reconstruct the type of nested contents
   reconstructNestedCtxt ::
        proxy (f blk)
-    -> IsEBB
+    -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> Lazy.ByteString  -- ^ Corresponds to the raw contents
     -> SomeBlock (NestedCtxt f) blk
 
   -- Defaults if there is only one type
@@ -269,24 +263,23 @@ class EncodeDiskDep (NestedCtxt f) blk => ReconstructNestedCtxt f blk where
   default reconstructNestedCtxt ::
        TrivialDependency (NestedCtxt_ blk f)
     => proxy (f blk)
-    -> IsEBB
+    -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> Lazy.ByteString  -- ^ Corresponds to the raw contents
     -> SomeBlock (NestedCtxt f) blk
-  reconstructNestedCtxt _ _ _ _ = SomeBlock indexIsTrivial
+  reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
 
 -- | Reconstruct the nested type, then add it to the bytestring
 --
--- This function is a suitable instantiation for 'cdbAddHdrEnv'.
+-- This function is a suitable instantiation for 'nodeAddHeaderEnvelope'.
 addReconstructedTypeEnvelope
-  :: ReconstructNestedCtxt f blk
+  :: (ReconstructNestedCtxt f blk, EncodeDiskDep (NestedCtxt f) blk)
   => proxy (f blk)
   -> CodecConfig blk
-  -> IsEBB
+  -> ShortByteString
   -> SizeInBytes
   -> Lazy.ByteString -> Lazy.ByteString
-addReconstructedTypeEnvelope p ccfg isEBB size bs =
-    addNestedCtxtEnvelope ccfg (reconstructNestedCtxt p isEBB size bs, bs)
+addReconstructedTypeEnvelope p ccfg prefix size bs =
+    addNestedCtxtEnvelope ccfg (reconstructNestedCtxt p prefix size, bs)
 
 {-------------------------------------------------------------------------------
   Forwarding instances

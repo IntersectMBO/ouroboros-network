@@ -23,7 +23,9 @@ module Ouroboros.Consensus.Node.Run (
 
 import           Control.Exception (SomeException)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Proxy (Proxy)
+import           Data.Word (Word8)
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
@@ -45,7 +47,8 @@ import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
                      VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (ReconstructNestedCtxt, addReconstructedTypeEnvelope)
+                     (EncodeDiskDep, ReconstructNestedCtxt,
+                     addReconstructedTypeEnvelope, reconstructPrefixLen)
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
@@ -106,6 +109,17 @@ class ( LedgerSupportsProtocol    blk
   -- bytes corresponding to the header from the serialised block.
   nodeGetBinaryBlockInfo :: blk -> BinaryBlockInfo
 
+  -- | Number of bytes from the start of the serialisation of a block needed
+  -- for 'nodeAddHeaderEnvelope'
+  --
+  -- This will be the /minimum/ length of the 'ShortByteString' passed to
+  -- 'nodeAddHeaderEnvelope'.
+  nodeReconstructPrefixLen :: Proxy blk -> Word8
+
+  default nodeReconstructPrefixLen
+    :: ReconstructNestedCtxt Header blk => Proxy blk -> Word8
+  nodeReconstructPrefixLen _ = reconstructPrefixLen (Proxy @(Header blk))
+
   -- | When extracting the bytes corresponding to header from a serialised
   -- block, it may be necessary to add an envelope to it to obtain a
   -- bytestring that can actually be decoded as a header.
@@ -114,15 +128,17 @@ class ( LedgerSupportsProtocol    blk
   --
   -- TODO: Now that we have 'HasNestedContent', we should get rid of this.
   -- <https://github.com/input-output-hk/ouroboros-network/issues/2237>
-  nodeAddHeaderEnvelope :: CodecConfig blk
-                        -> IsEBB
-                        -> SizeInBytes  -- ^ Block size
-                        -> Lazy.ByteString -> Lazy.ByteString
+  nodeAddHeaderEnvelope
+    :: CodecConfig blk
+    -> ShortByteString  -- ^ First bytes ('nodeReconstructPrefixLen') of the
+                        -- block
+    -> SizeInBytes      -- ^ Block size
+    -> Lazy.ByteString -> Lazy.ByteString
 
   default nodeAddHeaderEnvelope
-    :: ReconstructNestedCtxt Header blk
+    :: (ReconstructNestedCtxt Header blk, EncodeDiskDep (NestedCtxt Header) blk)
     => CodecConfig blk
-    -> IsEBB
+    -> ShortByteString
     -> SizeInBytes  -- ^ Block size
     -> Lazy.ByteString -> Lazy.ByteString
   nodeAddHeaderEnvelope = addReconstructedTypeEnvelope (Proxy @(Header blk))

@@ -58,6 +58,7 @@ import           Codec.Serialise
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable
 import           GHC.Stack
@@ -568,10 +569,13 @@ instance HasNestedContent Header m
 instance ReconstructNestedCtxt Header m
       => ReconstructNestedCtxt Header (DualBlock m a) where
   reconstructPrefixLen _ =
-      reconstructPrefixLen (Proxy @(Header m))
-  reconstructNestedCtxt _ isEBB size bs =
-      case reconstructNestedCtxt (Proxy @(Header m)) isEBB size bs of
+      -- Account for the outer @encodeListLen 3@
+      1 + reconstructPrefixLen (Proxy @(Header m))
+  reconstructNestedCtxt _ prefix size =
+      case reconstructNestedCtxt (Proxy @(Header m)) prefixMain size of
         SomeBlock ctxt -> SomeBlock (mapNestedCtxt CtxtDual ctxt)
+    where
+      prefixMain = Short.pack . drop 1 . Short.unpack $ prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) m
       => EncodeDiskDepIx (NestedCtxt Header) (DualBlock m a) where

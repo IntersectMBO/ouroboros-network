@@ -73,18 +73,25 @@ partition_NS =
     append :: ([] :.: f) a -> ([] :.: f) a -> ([] :.: f) a
     append (Comp as) (Comp as') = Comp (as ++ as')
 
+-- | We only allow up to 23 (so counting from 0, 24 elements in @xs@), because
+-- CBOR stores a 'Word8' in the range 0-23 as a single byte equal to the value
+-- of the 'Word8'. We rely on this in 'reconstructNestedCtxt' and other
+-- places.
 npWithIndices :: SListI xs => NP (K Word8) xs
 npWithIndices = go 0 sList
   where
     go :: Word8 -> SList xs' -> NP (K Word8) xs'
     go !_ SNil  = Nil
+    go 24 SCons = error "npWithIndices out of range"
     go !i SCons = K i :* go (i + 1) sList
 
+-- | We only allow up to 23, see 'npWithIndices'.
 nsFromIndex :: SListI xs => Word8 -> Maybe (NS (K ()) xs)
 nsFromIndex n = go 0 sList
   where
     go :: Word8 -> SList xs' -> Maybe (NS (K ()) xs')
     go !i SCons
+      | i == 24   = error "nsFromIndex out of range"
       | i == n    = Just $ Z $ K ()
       | otherwise = S <$> go (i + 1) sList
     go !_ SNil    = Nothing

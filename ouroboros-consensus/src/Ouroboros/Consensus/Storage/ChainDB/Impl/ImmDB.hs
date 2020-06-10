@@ -77,8 +77,10 @@ import qualified Data.Binary.Get as Get
 import           Data.Binary.Put (Put)
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Functor ((<&>))
 import           Data.Proxy (Proxy (..))
+import           Data.Word (Word8)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -126,7 +128,8 @@ data ImmDB m blk = ImmDB {
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
     , codecConfig        :: !(CodecConfig blk)
     , chunkInfo          :: !ChunkInfo
-    , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv          :: !(ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , prefixLen          :: !Word8
     }
   deriving (Generic)
 
@@ -156,7 +159,8 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
     , immChunkInfo          :: ChunkInfo
     , immValidation         :: ImmDB.ValidationPolicy
     , immCheckIntegrity     :: blk -> Bool
-    , immAddHdrEnv          :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , immAddHdrEnv          :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , immPrefixLen          :: Word8
     , immHasFS              :: HasFS m h
     , immTracer             :: Tracer m (TraceEvent blk)
     , immCacheConfig        :: Index.CacheConfig
@@ -173,6 +177,7 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
+-- * 'immPrefixLen'
 -- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
@@ -186,6 +191,7 @@ defaultArgs fp = ImmDbArgs{
     , immValidation         = error "no default for immValidation"
     , immCheckIntegrity     = error "no default for immCheckIntegrity"
     , immAddHdrEnv          = error "no default for immAddHdrEnv"
+    , immPrefixLen          = error "no default for immPrefixLen"
     , immRegistry           = error "no default for immRegistry"
     }
   where
@@ -249,6 +255,7 @@ openDB ImmDbArgs {..} = do
       , codecConfig        = immCodecConfig
       , chunkInfo          = immChunkInfo
       , addHdrEnv          = immAddHdrEnv
+      , prefixLen          = immPrefixLen
       }
   where
     args = ImmDB.ImmutableDbArgs
@@ -269,13 +276,23 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
         -> ChunkInfo
-        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+        -> (ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+        -> Word8
         -> ImmDB m blk
-mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo addHdrEnv = ImmDB {..}
+mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo addHdrEnv prefixLen = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
+
+-- | Translate a 'BlockComponent' from ChainDB to ImmutableDB
+translateBlockComponent
+  :: (HasHeader blk, ImmDbSerialiseConstraints blk, MonadThrow m)
+  => ImmDB m blk
+  -> BlockComponent (ChainDB m blk)                  b
+  -> BlockComponent (ImmutableDB (HeaderHash blk) m) b
+translateBlockComponent db blockComponent =
+    translateToRawDB (parse db) (prefixLen db) (addHdrEnv db) blockComponent
 
 -- | Return 'True' when the given point is in the ImmutableDB.
 --
@@ -379,7 +396,7 @@ getBlockComponent db blockComponent epochOrSlot = withDB db $ \imm ->
       Left epoch -> ImmDB.getEBBComponent   imm blockComponent' epoch
       Right slot -> ImmDB.getBlockComponent imm blockComponent' slot
   where
-    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
+    blockComponent' = translateBlockComponent db blockComponent
 
 -- | Return the block component of the block corresponding to the given point,
 -- if it is part of the ImmutableDB.
@@ -400,7 +417,7 @@ getBlockComponentWithPoint db blockComponent (RealPoint slot hash) =
     withDB db $ \imm ->
       ImmDB.getBlockOrEBBComponent imm blockComponent' slot hash
   where
-    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
+    blockComponent' = translateBlockComponent db blockComponent
 
 {-------------------------------------------------------------------------------
   Appending a block
@@ -449,7 +466,7 @@ openIterator
 openIterator db registry blockComponent start end =
     withDB db $ \imm -> ImmDB.stream imm registry blockComponent' start end
   where
-    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
+    blockComponent' = translateBlockComponent db blockComponent
 
 -- | Stream headers/blocks from the given 'StreamFrom' to the given
 -- 'StreamTo'.

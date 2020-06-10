@@ -91,7 +91,7 @@ data BlockComponent db a where
   GetIsEBB      :: BlockComponent db IsEBB
   GetBlockSize  :: BlockComponent db Word32
   GetHeaderSize :: BlockComponent db Word16
-  GetNestedType :: Word8
+  GetNestedCtxt :: Word8
                 -> BlockComponent db ShortByteString
   GetPure       :: a
                 -> BlockComponent db a
@@ -125,6 +125,6 @@ castBlockComponent = \case
     GetIsEBB        -> GetIsEBB
     GetBlockSize    -> GetBlockSize
     GetHeaderSize   -> GetHeaderSize
-    GetNestedType n -> GetNestedType n
+    GetNestedCtxt n -> GetNestedCtxt n
     GetPure a       -> GetPure a
     GetApply f bc   -> GetApply (castBlockComponent f) (castBlockComponent bc)

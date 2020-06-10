@@ -64,6 +64,7 @@ import           Control.Monad (join)
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isJust, mapMaybe)
@@ -71,7 +72,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
-import           Data.Word (Word64)
+import           Data.Word (Word64, Word8)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           Streaming.Prelude (Of (..), Stream)
@@ -113,7 +114,8 @@ data VolDB m blk = VolDB {
       volDB              :: !(VolatileDB (HeaderHash blk) m)
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
     , codecConfig        :: !(CodecConfig blk)
-    , addHdrEnv          :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv          :: !(ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+    , prefixLen          :: !Word8
     }
   deriving (Generic)
 
@@ -140,7 +142,8 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
     , volBlocksPerFile      :: BlocksPerFile
     , volGetBinaryBlockInfo :: blk -> BinaryBlockInfo
     , volCodecConfig        :: CodecConfig blk
-    , volAddHdrEnv          :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , volAddHdrEnv          :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , volPrefixLen          :: Word8
     , volValidation         :: VolDB.BlockValidationPolicy
     , volTracer             :: Tracer m (TraceEvent blk)
     }
@@ -154,6 +157,7 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 -- * 'volGetBinaryBlockInfo'
 -- * 'volCodecConfig'
 -- * 'volAddHdrEnv'
+-- * 'volPrefixLen'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
@@ -165,6 +169,7 @@ defaultArgs fp = VolDbArgs {
     , volGetBinaryBlockInfo = error "no default for volGetBinaryBlockInfo"
     , volCodecConfig        = error "no default for volCodecConfig"
     , volAddHdrEnv          = error "no default for volAddHdrEnv"
+    , volPrefixLen          = error "no default for volPrefixLen"
     , volValidation         = error "no default for volValidation"
     }
 
@@ -180,6 +185,7 @@ openDB args@VolDbArgs{..} = do
       , getBinaryBlockInfo = volGetBinaryBlockInfo
       , codecConfig        = volCodecConfig
       , addHdrEnv          = volAddHdrEnv
+      , prefixLen          = volPrefixLen
       }
   where
     volatileDbArgs = VolDB.VolatileDbArgs
@@ -193,9 +199,10 @@ openDB args@VolDbArgs{..} = do
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
-        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+        -> (ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
+        -> Word8
         -> VolDB m blk
-mkVolDB volDB getBinaryBlockInfo codecConfig addHdrEnv = VolDB {..}
+mkVolDB volDB getBinaryBlockInfo codecConfig addHdrEnv prefixLen = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -437,6 +444,15 @@ deriving instance Show (HeaderHash blk) => Show (Path blk)
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
 
+-- | Translate a 'BlockComponent' from ChainDB to VolatileDB
+translateBlockComponent
+  :: (HasHeader blk, VolDbSerialiseConstraints blk, MonadThrow m)
+  => VolDB m blk
+  -> BlockComponent (ChainDB m blk)                  b
+  -> BlockComponent (VolatileDB (HeaderHash blk) m) b
+translateBlockComponent db blockComponent =
+    translateToRawDB (parse db) (prefixLen db) (addHdrEnv db) blockComponent
+
 getKnownBlock
   :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk
@@ -474,7 +490,7 @@ getBlockComponent
 getBlockComponent db blockComponent hash = withDB db $ \vol ->
     VolDB.getBlockComponent vol blockComponent' hash
   where
-    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
+    blockComponent' = translateBlockComponent db blockComponent
 
 {-------------------------------------------------------------------------------
   Parsing

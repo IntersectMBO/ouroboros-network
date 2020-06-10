@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyLedgerConfig (..))
+import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol (TPraos, TPraosCrypto)
 
 {-------------------------------------------------------------------------------

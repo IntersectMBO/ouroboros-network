@@ -394,8 +394,8 @@ iteratorNextImpl dbEnv it@IteratorHandle
           readNextBlock  itChunkHandle entryWithBlockSize itChunk
         GetRawHeader    ->
           readNextHeader itChunkHandle entry
-        GetNestedType n ->
-          readNestedType itChunkHandle entry n
+        GetNestedCtxt n ->
+          readNestedCtxt itChunkHandle entry n
         GetBlock        ->
           return ()
         GetHeader       ->
@@ -441,12 +441,12 @@ iteratorNextImpl dbEnv it@IteratorHandle
           (Secondary.unBlockOffset blockOffset) +
           fromIntegral (Secondary.unHeaderOffset headerOffset)
 
-    readNestedType
+    readNestedCtxt
       :: Handle h
       -> Secondary.Entry hash
       -> Word8
       -> m ShortByteString
-    readNestedType eHnd Secondary.Entry { blockOffset } n =
+    readNestedCtxt eHnd Secondary.Entry { blockOffset } n =
         Short.toShort . Lazy.toStrict <$>
           hGetExactlyAt hasFS eHnd (fromIntegral n) offset
       where
