@@ -3,7 +3,9 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -39,6 +41,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   ) where
 
 import           Control.Monad.Except
+import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Type.Equality ((:~:))
 import           GHC.Generics (Generic)
@@ -48,11 +51,12 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 
 {-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
@@ -235,3 +239,8 @@ class (UpdateLedger blk, ShowQuery (Query blk)) => QueryLedger blk where
   -- | Generalisation of value-level equality of two queries.
   eqQuery :: Query blk result1 -> Query blk result2
           -> Maybe (result1 :~: result2)
+
+instance QueryLedger blk => Eq (Some (Query blk)) where
+  Some qry == Some qry' = isJust (eqQuery qry qry')
+
+deriving instance (forall result. Show (Query blk result)) => Show (Some (Query blk))

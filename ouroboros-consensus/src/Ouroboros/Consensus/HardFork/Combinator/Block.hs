@@ -1,13 +1,15 @@
-{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -16,13 +18,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
     Header(..)
   , CodecConfig(..)
+  , NestedCtxt_(..)
   ) where
 
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
 import           Data.SOP.Strict
-import           Data.Word (Word32)
+import           Data.Word
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -33,6 +36,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -109,6 +113,49 @@ instance CanHardFork xs => HasCodecConfig (HardForkBlock xs) where
       . hcmap (Proxy @SingleEraBlock) getCodecConfig
       . getPerEraBlockConfig
       . hardForkBlockConfigPerEra
+
+
+{-------------------------------------------------------------------------------
+  NestedContent
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ (HardForkBlock xs) :: (* -> *) -> (* -> *) where
+    NCZ :: NestedCtxt_ x                  f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
+    NCS :: NestedCtxt_ (HardForkBlock xs) f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
+
+deriving instance All SingleEraBlock xs => Show (NestedCtxt_ (HardForkBlock xs) Header a)
+
+instance CanHardFork xs => SameDepIndex (NestedCtxt_ (HardForkBlock xs) Header) where
+  sameDepIndex = go
+    where
+      go :: All SingleEraBlock xs'
+         => NestedCtxt_ (HardForkBlock xs') Header a
+         -> NestedCtxt_ (HardForkBlock xs') Header b
+         -> Maybe (a :~: b)
+      go (NCZ ctxt) (NCZ ctxt') = sameDepIndex ctxt ctxt'
+      go (NCS ctxt) (NCS ctxt') = go ctxt ctxt'
+      go _          _           = Nothing
+
+instance CanHardFork xs => HasNestedContent Header (HardForkBlock xs) where
+  unnest =
+      go . getOneEraHeader . getHardForkHeader
+    where
+      go :: All SingleEraBlock xs'
+         => NS Header xs' -> DepPair (NestedCtxt Header (HardForkBlock xs'))
+      go (Z x) = case unnest x of
+                   DepPair (NestedCtxt ctxt) x' ->
+                     DepPair (NestedCtxt (NCZ ctxt)) x'
+      go (S x) = case go x of
+                   DepPair (NestedCtxt ctxt) x' ->
+                     DepPair (NestedCtxt (NCS ctxt)) x'
+
+  nest = \(DepPair ctxt hdr) ->
+      HardForkHeader . OneEraHeader $ go ctxt hdr
+    where
+      go :: All SingleEraBlock xs'
+         => NestedCtxt Header (HardForkBlock xs') a -> a -> NS Header xs'
+      go (NestedCtxt (NCZ ctxt)) x = Z (nest (DepPair (NestedCtxt ctxt) x))
+      go (NestedCtxt (NCS ctxt)) x = S (go (NestedCtxt ctxt) x)
 
 {-------------------------------------------------------------------------------
   ConvertRawHash
@@ -201,7 +248,6 @@ instance All Condense xs => Condense (HardForkBlock xs) where
       . hcmap (Proxy @Condense) (K . condense . unI)
       . getOneEraBlock
       . getHardForkBlock
-
 
 instance All Eq xs => Eq (HardForkBlock xs) where
   (==) = (aux .: Match.matchNS) `on` (getOneEraBlock . getHardForkBlock)

@@ -16,6 +16,7 @@ import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
+import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -62,6 +63,7 @@ instance Arbitrary SlotLength where
 
 deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo
+deriving via Positive Word64 instance Arbitrary BlockNo
 deriving via Word64          instance Arbitrary EpochNo
 
 instance Arbitrary RelativeSlot where

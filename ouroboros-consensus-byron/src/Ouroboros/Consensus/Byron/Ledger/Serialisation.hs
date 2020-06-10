@@ -1,37 +1,44 @@
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Serialisation (
+    -- * Data family instances
+    NestedCtxt_(..)
+  , RawHeader
+  , RawBoundaryHeader
     -- * Serialisation
-    byronBlockEncodingOverhead
+  , byronBlockEncodingOverhead
   , encodeByronBlock
   , decodeByronBlock
-  , encodeByronHeaderWithBlockSize
-  , encodeByronHeaderWithoutBlockSize
-  , decodeByronHeaderWithBlockSize
-  , decodeByronHeaderWithoutBlockSize
-  , encodeWrappedByronHeaderWithBlockSize
-  , encodeWrappedByronHeaderWithoutBlockSize
-  , decodeWrappedByronHeaderWithBlockSize
-  , decodeWrappedByronHeaderWithoutBlockSize
+  , decodeByronRegularBlock
+  , decodeByronBoundaryBlock
+  , encodeByronRegularHeader
+  , decodeByronRegularHeader
+  , encodeByronBoundaryHeader
+  , decodeByronBoundaryHeader
   , encodeByronHeaderHash
   , decodeByronHeaderHash
     -- * Support for on-disk format
-  , byronAddHeaderEnvelope
   , byronBinaryBlockInfo
-    -- * Exceptions
-  , DropEncodedSizeException(..)
-    -- * Low-level API
+    -- * Unsized header
+  , addV1Envelope
+  , dropV1Envelope
   , fakeByronBlockSizeHint
-  , decodeByronRegularBlock
-  , decodeByronBoundaryBlock
-  , ebbEnvelope
+  , encodeUnsizedHeader
+  , decodeUnsizedHeader
   ) where
 
-import           Control.Exception (Exception (..), throw)
+import           Control.Monad.Except
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word (Word32)
@@ -39,8 +46,6 @@ import           Data.Word (Word32)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (..))
 
 import           Cardano.Binary
@@ -67,6 +72,58 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 instance Serialise ByronHash where
   decode = decodeByronHeaderHash
   encode = encodeByronHeaderHash
+
+{-------------------------------------------------------------------------------
+  Type synonyms
+-------------------------------------------------------------------------------}
+
+type RawBoundaryHeader = CC.ABoundaryHeader Strict.ByteString
+type RawHeader         = CC.AHeader         Strict.ByteString
+
+{-------------------------------------------------------------------------------
+  Nested contents
+-------------------------------------------------------------------------------}
+
+-- | Since the Byron header does not contain the size, we include it in the
+-- nested type instead.
+data instance NestedCtxt_ ByronBlock f a where
+  CtxtByronRegular ::
+       SizeInBytes
+    -> NestedCtxt_ ByronBlock Header RawHeader
+
+  -- | In order to reconstruct 'Header ByronBlock' we need the 'SlotNo'
+  --
+  -- We could compute that using 'EpochSlots', but we don't have that available
+  -- here.
+  CtxtByronBoundary ::
+       SizeInBytes
+    -> NestedCtxt_ ByronBlock Header (SlotNo, RawBoundaryHeader)
+
+deriving instance Show (NestedCtxt_ ByronBlock f a)
+
+instance SameDepIndex (NestedCtxt_ ByronBlock f) where
+  sameDepIndex (CtxtByronRegular size) (CtxtByronRegular size') = do
+      guard (size == size')
+      return Refl
+  sameDepIndex (CtxtByronBoundary size) (CtxtByronBoundary size') = do
+      guard (size == size')
+      return Refl
+  sameDepIndex _ _ =
+      Nothing
+
+instance HasNestedContent Header ByronBlock where
+  unnest hdr = case byronHeaderRaw hdr of
+      CC.ABOBBoundaryHdr h -> DepPair (NestedCtxt (CtxtByronBoundary blockSize)) (slotNo, h)
+      CC.ABOBBlockHdr    h -> DepPair (NestedCtxt (CtxtByronRegular  blockSize)) h
+    where
+      blockSize = byronHeaderBlockSizeHint hdr
+      slotNo    = byronHeaderSlotNo        hdr
+
+  nest = \case
+      DepPair (NestedCtxt (CtxtByronBoundary blockSize)) (slotNo, h) ->
+        mkBoundaryByronHeader slotNo h blockSize
+      DepPair (NestedCtxt (CtxtByronRegular blockSize)) h ->
+        mkRegularByronHeader h blockSize
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -168,110 +225,31 @@ decodeByronBoundaryBlock epochSlots =
                . CC.ABOBBoundary)
     <$> CC.fromCBORABoundaryBlock
 
--- | Encode a header with the block size.
+-- | Encodes a raw Byron header /without/ a tag indicating whether it's a
+-- regular header or an EBB header.
 --
--- Headers from disk, version 2 of the node-to-node protocols, and all
--- versions of the node-to-client protocols will include the size of the
--- block. Only version 1 of the node-to-node protocols doesn't include the
--- block size.
---
--- Note: after extracting the header from the binary block in the ChainDB, we
--- add the size hint using 'byronAddHeaderEnvelope'.
-encodeByronHeaderWithBlockSize :: Header ByronBlock -> Encoding
-encodeByronHeaderWithBlockSize =
-    uncurry (flip encodeSizedHeader) . splitSizeHint
+-- Uses the annotation, so cheap.
+encodeByronRegularHeader :: RawHeader -> Encoding
+encodeByronRegularHeader = CBOR.encodePreEncoded . CC.headerAnnotation
 
--- | Encode a header without the block size.
---
--- See 'encodeByronHeaderWithBlockSize' for more info. We drop the block size
--- from the encoding.
-encodeByronHeaderWithoutBlockSize :: Header ByronBlock -> Encoding
-encodeByronHeaderWithoutBlockSize =
-    encodeUnsizedHeader . fst . splitSizeHint
-
--- | Inverse of 'encodeByronHeaderWithBlockSize'
-decodeByronHeaderWithBlockSize
+-- | Inverse of 'encodeByronRegularHeader'
+decodeByronRegularHeader
   :: CC.EpochSlots
-  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
-decodeByronHeaderWithBlockSize epochSlots =
-    const . uncurry (flip joinSizeHint) <$> decodeSizedHeader epochSlots
+  -> Decoder s (Lazy.ByteString -> RawHeader)
+decodeByronRegularHeader epochSlots =
+    flip annotationBytes <$> CC.fromCBORAHeader epochSlots
 
--- | Inverse of 'encodeByronHeaderWithoutBlockSize'
-decodeByronHeaderWithoutBlockSize
-  :: CC.EpochSlots
-  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
-decodeByronHeaderWithoutBlockSize epochSlots =
-    (flip joinSizeHint fakeByronBlockSizeHint .) <$> decodeUnsizedHeader epochSlots
+-- | Encodes a raw Byron EBB header /without/ a tag indicating whether it's a
+-- regular header or an EBB header.
+--
+-- Uses the annotation, so cheap.
+encodeByronBoundaryHeader :: RawBoundaryHeader -> Encoding
+encodeByronBoundaryHeader = CBOR.encodePreEncoded . CC.boundaryHeaderAnnotation
 
--- | Encode wrapped header with the block size.
---
--- Wrapped variant of 'encodeByronHeaderWithBlockSize'.
---
--- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
--- en/decoder, the non-wrapped ones will have to be wrapped using
--- @(un)wrapCBORinCBOR@.
-encodeWrappedByronHeaderWithBlockSize
-  :: Serialised (Header ByronBlock) -> Encoding
-encodeWrappedByronHeaderWithBlockSize = encode
-
--- | Encode wrapped header without the block size.
---
--- Wrapped variant of 'encodeByronHeaderWithoutBlockSize'.
---
--- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
--- en/decoder, the non-wrapped ones will have to be wrapped using
--- @(un)wrapCBORinCBOR@.
-encodeWrappedByronHeaderWithoutBlockSize
-  :: Serialised (Header ByronBlock) -> Encoding
-encodeWrappedByronHeaderWithoutBlockSize = encode . dropEncodedSize
-
--- | Decode wrapped header with the block size
---
--- Wrapped variant of 'decodeByronHeaderWithoutBlockSize'
---
--- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
--- en/decoder, the non-wrapped ones will have to be wrapped using
--- @(un)wrapCBORinCBOR@.
-decodeWrappedByronHeaderWithBlockSize
-  :: Decoder s (Serialised (Header ByronBlock))
-decodeWrappedByronHeaderWithBlockSize = decode
-
--- | Decode wrapped header with the block size
---
--- Wrapped variant of 'decodeByronHeaderWithoutBlockSize'
---
--- NOTE: this uses CBOR-in-CBOR, so to be compatible with the non-wrapped
--- en/decoder, the non-wrapped ones will have to be wrapped using
--- @(un)wrapCBORinCBOR@.
-decodeWrappedByronHeaderWithoutBlockSize
-  :: Decoder s (Serialised (Header ByronBlock))
-decodeWrappedByronHeaderWithoutBlockSize = fakeEncodedSize <$> decode
-
--- | When given the raw header bytes extracted from the block, i.e., the
--- header annotation of 'CC.AHeader' or 'CC.ABoundaryHdr', we still need to
--- prepend some bytes so that we can use 'decodeByronHeader' (when expecting a
--- size hint) to decode it:
-byronAddHeaderEnvelope
-  :: IsEBB
-  -> SizeInBytes  -- ^ Block size
-  -> Lazy.ByteString -> Lazy.ByteString
-byronAddHeaderEnvelope isEBB blockSize bs =
-    CBOR.toLazyByteString $
-      encodeEncodedWithSize $
-        EncodedWithSize blockSize $
-          -- Add the envelope containing the tag distinguishing a regular
-          -- block from an EBB (the envelope expected by
-          -- 'CC.fromCBORABlockOrBoundaryHdr')
-          Serialised (ebbEnvelope isEBB <> bs)
-
--- | A 'CC.ABlockOrBoundary' is a CBOR 2-tuple of a 'Word' (0 = EBB, 1 =
--- regular block) and block/ebb payload. This function returns the bytes that
--- should be prepended to the payload, i.e., the byte indicating it's a CBOR
--- 2-tuple and the 'Word' indicating whether its an EBB or regular block.
-ebbEnvelope :: IsEBB -> Lazy.ByteString
-ebbEnvelope = \case
-  IsEBB    -> "\130\NUL"
-  IsNotEBB -> "\130\SOH"
+-- | Inverse of 'encodeByronBoundaryHeader'
+decodeByronBoundaryHeader :: Decoder s (Lazy.ByteString -> RawBoundaryHeader)
+decodeByronBoundaryHeader =
+    flip annotationBytes <$> CC.fromCBORABoundaryHeader
 
 -- | The 'BinaryBlockInfo' of the given 'ByronBlock'.
 --
@@ -293,88 +271,46 @@ byronBinaryBlockInfo blk = BinaryBlockInfo
     }
 
 {-------------------------------------------------------------------------------
-  Sized header
+  V1 envelope: unsized header
 
   These are auxiliary functions for encoding/decoding the Byron header.
 -------------------------------------------------------------------------------}
 
--- | Intermediate encoding of a sized header
---
--- The reason for this intermediate encoding is that we need to be able to
--- easily go from a version-2 encoding (with size) to a version-1 encoding
--- (without size) /without deserialization/ (see 'dropEncodedSize').
-data EncodedWithSize = EncodedWithSize SizeInBytes (Serialised UnsizedHeader)
+-- | A 'CC.ABlockOrBoundary' is a CBOR 2-tuple of a 'Word' (0 = EBB, 1 =
+-- regular block) and block/ebb payload. This function returns the bytes that
+-- should be prepended to the payload, i.e., the byte indicating it's a CBOR
+-- 2-tuple and the 'Word' indicating whether its an EBB or regular block.
+isEbbEnvelope :: IsEBB -> Lazy.ByteString
+isEbbEnvelope = \case
+  IsEBB    -> "\130\NUL"
+  IsNotEBB -> "\130\SOH"
 
-encodeEncodedWithSize :: EncodedWithSize -> Encoding
-encodeEncodedWithSize (EncodedWithSize size encoded) = mconcat [
-      encodeListLen 2
-    , encode size
-    , encode encoded
-    ]
-
-decodeEncodedWithSize :: Decoder s EncodedWithSize
-decodeEncodedWithSize = do
-    enforceSize "SizedHeader" 2
-    size    <- decode
-    encoded <- decode
-    return $ EncodedWithSize size encoded
-
-encodeSizedHeader :: SizeInBytes -> UnsizedHeader -> Encoding
-encodeSizedHeader size =
-      encodeEncodedWithSize
-    . EncodedWithSize size
-    . mkSerialised encodeUnsizedHeader
-
-decodeSizedHeader :: CC.EpochSlots -> Decoder s (SizeInBytes, UnsizedHeader)
-decodeSizedHeader epochSlots = do
-    EncodedWithSize size encoded <- decodeEncodedWithSize
-    unsized <- fromSerialised (decodeUnsizedHeader epochSlots) encoded
-    return (size, unsized)
-
--- | Change the encoding of a sized header to the encoding of an unsized header
---
--- May throw 'DropEncodedSizeException' as a pure exception. We have no other
--- choice, because this function gets used in the codecs whilst /encoding/
--- a header, and there we have no natural hook to throw any kind of decoding
--- errors.
-dropEncodedSize :: Serialised (Header ByronBlock) -> Serialised UnsizedHeader
-dropEncodedSize = \(Serialised bs) -> Serialised (aux bs)
+addV1Envelope ::
+     (SomeBlock (NestedCtxt Header) ByronBlock, Lazy.ByteString)
+  -> Lazy.ByteString
+addV1Envelope (SomeBlock (NestedCtxt ctxt), bs) = isEbbTag <> bs
   where
-    aux :: Lazy.ByteString
-        -> Lazy.ByteString
-    aux = noErrors
-        . CBOR.deserialiseFromBytes (dropSize <$> decodeEncodedWithSize)
+    isEbbTag = case ctxt of
+      CtxtByronBoundary {} -> isEbbEnvelope IsEBB
+      CtxtByronRegular  {} -> isEbbEnvelope IsNotEBB
 
-    dropSize :: EncodedWithSize -> Lazy.ByteString
-    dropSize (EncodedWithSize _sz (Serialised unsized)) = unsized
-
-    noErrors :: Either CBOR.DeserialiseFailure (Lazy.ByteString, a) -> a
-    noErrors (Right (bs, a))
-         | Lazy.null bs = a
-         | otherwise    = throw $ DropEncodedSizeTrailingBytes bs
-    noErrors (Left err) = throw $ DropEncodedSizeError err
-
--- | Failed to strip off the envelope from an encoded header
---
--- This indicates either a bug or disk corruption.
-data DropEncodedSizeException =
-     DropEncodedSizeError CBOR.DeserialiseFailure
-   | DropEncodedSizeTrailingBytes Lazy.ByteString
-   deriving (Show)
-
-instance Exception DropEncodedSizeException
-
--- | Reintroduce the size wrapper
---
--- Since we don't /have/ a value for the size here, we must fake it.
-fakeEncodedSize :: Serialised UnsizedHeader -> Serialised (Header ByronBlock)
-fakeEncodedSize = \(Serialised bs) -> Serialised (aux bs)
-  where
-    aux :: Lazy.ByteString -> Lazy.ByteString
-    aux bs =
-      CBOR.toLazyByteString $
-        encodeEncodedWithSize $
-          EncodedWithSize fakeByronBlockSizeHint (Serialised bs)
+-- | Drop the V1 EBB-or-regular-header envelope and reconstruct the context.
+-- Since we don't know the block size, use 'fakeByronBlockSizeHint'.
+dropV1Envelope ::
+     Lazy.ByteString
+  -> Except String (SomeBlock (NestedCtxt Header) ByronBlock, Lazy.ByteString)
+dropV1Envelope bs = case Lazy.splitAt 2 bs of
+    (prefix, suffix)
+      | prefix == isEbbEnvelope IsEBB
+      -> return ( SomeBlock . NestedCtxt $ CtxtByronBoundary fakeByronBlockSizeHint
+                , suffix
+                )
+      | prefix == isEbbEnvelope IsNotEBB
+      -> return ( SomeBlock . NestedCtxt $ CtxtByronRegular fakeByronBlockSizeHint
+                , suffix
+                )
+      | otherwise
+      -> throwError "decodeUnsized: invalid prefix"
 
 -- | Fake size (used in compatibility mode)
 fakeByronBlockSizeHint :: SizeInBytes

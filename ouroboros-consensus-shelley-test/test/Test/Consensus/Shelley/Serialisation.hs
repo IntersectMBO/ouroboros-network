@@ -31,11 +31,7 @@ import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Shelley"
-    [ testGroup "Serialisation roundtrips"
-        [ testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         testCodecCfg
-        , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   testCodecCfg
-        , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient testCodecCfg
-        ]
+    [ roundtrip_all testCodecCfg
 
     , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
 
@@ -65,7 +61,7 @@ tests = testGroup "Shelley"
 
 prop_shelleyBinaryBlockInfo :: Block -> Property
 prop_shelleyBinaryBlockInfo blk =
-    encodedHeader === shelleyAddHeaderEnvelope extractedHeader
+    encodedHeader === extractedHeader
   where
     BinaryBlockInfo { headerOffset, headerSize } =
       shelleyBinaryBlockInfo blk

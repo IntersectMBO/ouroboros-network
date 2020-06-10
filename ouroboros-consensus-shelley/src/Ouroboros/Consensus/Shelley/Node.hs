@@ -349,5 +349,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
       TPraosParams { tpraosSlotsPerKESPeriod } =
         tpraosParams $ configConsensus cfg
 
-  nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
   nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo
+
+  -- We don't want any envelope added
+  nodeAddHeaderEnvelope _ _ _ = id

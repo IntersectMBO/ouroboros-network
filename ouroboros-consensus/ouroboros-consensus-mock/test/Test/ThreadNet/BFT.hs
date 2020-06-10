@@ -30,7 +30,10 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
+import           Test.Consensus.Ledger.Mock.Generators ()
+
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation
 import           Test.Util.WrappedClock (NumSlots (..))
 
 data TestSetup = TestSetup
@@ -56,7 +59,9 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "BFT" $
-    [ testProperty "delayed message corner case" $
+    [ roundtrip_all testCodecCfg
+
+    , testProperty "delayed message corner case" $
         once $
         let ncn = NumCoreNodes 2 in
         prop_simple_bft_convergence TestSetup
@@ -88,6 +93,10 @@ tests = testGroup "BFT" $
     , testProperty "simple convergence" $ \setup ->
         prop_simple_bft_convergence setup
     ]
+  where
+    -- We pick a single value for @k@ for the serialisation tests
+    testCodecCfg :: CodecConfig MockBftBlock
+    testCodecCfg = SimpleCodecConfig (SecurityParam 4)
 
 prop_simple_bft_convergence :: TestSetup -> Property
 prop_simple_bft_convergence TestSetup

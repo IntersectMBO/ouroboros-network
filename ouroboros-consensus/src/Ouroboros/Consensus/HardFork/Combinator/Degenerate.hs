@@ -35,7 +35,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
@@ -631,8 +631,10 @@ instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
   nodeGetBinaryBlockInfo (DBlk blk) =
       nodeGetBinaryBlockInfo (project' (Proxy @(I b)) blk :: b)
 
-  nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
-  nodeExceptionIsFatal  _ = nodeExceptionIsFatal  (Proxy @b)
+  nodeAddHeaderEnvelope (DCCfg cfg) =
+      nodeAddHeaderEnvelope (project cfg)
+
+  nodeExceptionIsFatal _ = nodeExceptionIsFatal (Proxy @b)
 
   nodeInitChainDB cfg initDB =
       nodeInitChainDB

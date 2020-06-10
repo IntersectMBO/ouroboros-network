@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -19,9 +20,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
     Isomorphic(..)
   , project'
   , inject'
-    -- * Queries
+    -- * Dependent types
   , projQuery
   , injQuery
+  , projNestedCtxt
+  , injNestedCtxt
     -- * Convenience exports
   , Proxy(..)
   , I(..)
@@ -38,8 +41,7 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Block.Forge
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
@@ -461,10 +463,14 @@ instance Isomorphic WrapLedgerView where
           . Telescope.TZ
           . Current History.initBound
 
-{-------------------------------------------------------------------------------
-  Query
+instance Isomorphic (SomeBlock (NestedCtxt f)) where
+  project (SomeBlock ctxt) = SomeBlock $ projNestedCtxt ctxt
+  inject  (SomeBlock ctxt) = SomeBlock $ injNestedCtxt  ctxt
 
-  This doesn't quite fit the pattern: we need to do some reasoning about types.
+{-------------------------------------------------------------------------------
+  Dependent types
+
+  TODO: Class?
 -------------------------------------------------------------------------------}
 
 -- | Project 'Query'
@@ -488,3 +494,13 @@ projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . aux
 injQuery :: Query b result
          -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
 injQuery = HardForkQuery . QZ
+
+projNestedCtxt :: NestedCtxt f (HardForkBlock '[blk]) a -> NestedCtxt f blk a
+projNestedCtxt = NestedCtxt . aux . flipNestedCtxt
+  where
+    aux :: NestedCtxt_ (HardForkBlock '[blk]) f a -> NestedCtxt_ blk f a
+    aux (NCZ ctxt) = ctxt
+    aux (NCS ctxt) = case ctxt of {}
+
+injNestedCtxt :: NestedCtxt f blk a -> NestedCtxt f (HardForkBlock '[blk]) a
+injNestedCtxt = NestedCtxt . NCZ . flipNestedCtxt

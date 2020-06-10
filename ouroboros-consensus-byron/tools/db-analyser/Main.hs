@@ -15,7 +15,6 @@ import           Data.Foldable (asum)
 import           Data.Functor.Identity
 import           Data.IORef
 import           Data.List (foldl', intercalate)
-import           Data.Proxy (Proxy (..))
 import           Data.Word
 import           GHC.Natural (Natural)
 import           Options.Applicative
@@ -352,7 +351,7 @@ withImmDB :: FilePath
           -> IO a
 withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
-    pb = Proxy @ByronBlock
+    ccfg = getCodecConfig $ configBlock cfg
 
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
@@ -360,7 +359,7 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
         , immCodecConfig        = getCodecConfig $ configBlock cfg
         , immChunkInfo          = chunkInfo
         , immValidation         = ValidateMostRecentChunk
-        , immCheckIntegrity     = nodeCheckIntegrity      cfg
-        , immAddHdrEnv          = nodeAddHeaderEnvelope   pb
+        , immCheckIntegrity     = nodeCheckIntegrity cfg
+        , immAddHdrEnv          = nodeAddHeaderEnvelope ccfg
         , immRegistry           = registry
         }

@@ -4,10 +4,12 @@
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -15,13 +17,16 @@
 module Test.Consensus.HardFork.Combinator.B (
     ProtocolB
   , BlockB(..)
+  , binaryBlockInfoB
+  , headerIdentifierB
   , safeZoneB
-    -- * Additional types
     -- * Type family instances
-  , ConsensusConfig(..)
   , BlockConfig(..)
-  , LedgerState(..)
+  , ConsensusConfig(..)
   , GenTx(..)
+  , Header(..)
+  , LedgerState(..)
+  , NestedCtxt_(..)
   , TxId(..)
   ) where
 
@@ -32,6 +37,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.ProtocolMagic
@@ -48,14 +54,14 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -96,21 +102,24 @@ instance ConsensusProtocol ProtocolB where
 
 data BlockB = BlkB {
       blkB_header :: Header BlockB
-    , blkB_body   :: Body   BlockB
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise)
 
-instance HasBlockBody BlockB where
-  data Body BlockB = BodyB
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (NoUnexpectedThunks, Serialise)
+binaryBlockInfoB :: BlockB -> BinaryBlockInfo
+binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
+      headerOffset = 2 -- See 'binaryBlockInfoA' for explanation
+    , headerSize   = fromIntegral $ Lazy.length (serialise blkB_header)
+    }
 
-  getBody       = blkB_body
-  assembleBlock = Just .: BlkB
+headerIdentifierB :: Word32
+headerIdentifierB = 0x02020202
 
 instance GetHeader BlockB where
-  newtype Header BlockB = HdrB { getHdrB :: HeaderFields BlockB }
+  data Header BlockB = HdrB {
+        hdrB_tag    :: Word32
+      , hdrB_fields :: HeaderFields BlockB
+      }
     deriving stock    (Show, Eq, Generic)
     deriving anyclass (NoUnexpectedThunks, Serialise)
 
@@ -148,10 +157,10 @@ instance HasHeader BlockB where
   blockInvariant = const True
 
 instance HasHeader (Header BlockB) where
-  blockHash      =            headerFieldHash     . getHdrB
-  blockPrevHash  = castHash . headerFieldPrevHash . getHdrB
-  blockSlot      =            headerFieldSlot     . getHdrB
-  blockNo        =            headerFieldNo       . getHdrB
+  blockHash      =            headerFieldHash     . hdrB_fields
+  blockPrevHash  = castHash . headerFieldPrevHash . hdrB_fields
+  blockSlot      =            headerFieldSlot     . hdrB_fields
+  blockNo        =            headerFieldNo       . hdrB_fields
   blockInvariant = const True
 
 instance HasAnnTip BlockB where
@@ -181,13 +190,15 @@ instance UpdateLedger BlockB
 
 instance CanForge BlockB where
   forgeBlock _ _ bno (Ticked sno st) _txs _ = return $ BlkB {
-      blkB_header = HdrB HeaderFields {
-          headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
-        , headerFieldPrevHash = ledgerTipHash st
-        , headerFieldSlot     = sno
-        , headerFieldNo       = bno
+      blkB_header = HdrB {
+          hdrB_tag    = headerIdentifierB
+        , hdrB_fields = HeaderFields {
+              headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldPrevHash = ledgerTipHash st
+            , headerFieldSlot     = sno
+            , headerFieldNo       = bno
+            }
         }
-    , blkB_body = BodyB
     }
 
 instance BlockSupportsProtocol BlockB where
@@ -243,6 +254,33 @@ instance ConvertRawHash BlockB where
   toRawHash   _ = id
   fromRawHash _ = id
   hashSize    _ = 8 -- We use the SlotNo as the hash, which is Word64
+
+data instance NestedCtxt_ BlockB f a where
+  CtxtB :: NestedCtxt_ BlockB f (f BlockB)
+
+deriving instance Show (NestedCtxt_ BlockB f a)
+instance SameDepIndex (NestedCtxt_ BlockB f)
+
+instance TrivialDependency (NestedCtxt_ BlockB f) where
+  type TrivialIndex (NestedCtxt_ BlockB f) = f BlockB
+  hasSingleIndex CtxtB CtxtB = Refl
+  indexIsTrivial = CtxtB
+
+instance EncodeDisk BlockB (Header BlockB)
+instance DecodeDisk BlockB (Lazy.ByteString -> Header BlockB) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDiskDepIx (NestedCtxt Header) BlockB
+instance EncodeDiskDep   (NestedCtxt Header) BlockB
+
+instance DecodeDiskDepIx (NestedCtxt Header) BlockB
+instance DecodeDiskDep   (NestedCtxt Header) BlockB
+
+instance HasNestedContent Header BlockB where
+  -- Use defaults
+
+instance ReconstructNestedCtxt Header BlockB
+  -- Use defaults
 
 instance SingleEraBlock BlockB where
   singleEraInfo _     = SingleEraInfo "B"

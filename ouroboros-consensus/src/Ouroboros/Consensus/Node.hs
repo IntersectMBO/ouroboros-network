@@ -380,24 +380,24 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
               chunkInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile        = mkBlocksPerFile 1000
-    , ChainDB.cdbChunkInfo            = chunkInfo
-    , ChainDB.cdbGenesis              = return initLedger
-    , ChainDB.cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
-    , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    pb
-    , ChainDB.cdbDiskPolicy           = defaultDiskPolicy k
-    , ChainDB.cdbCheckIntegrity       = nodeCheckIntegrity       cfg
-    , ChainDB.cdbParamsLgrDB          = ledgerDbDefaultParams k
-    , ChainDB.cdbTopLevelConfig       = cfg
-    , ChainDB.cdbRegistry             = registry
-    , ChainDB.cdbTracer               = tracer
-    , ChainDB.cdbImmValidation        = ValidateMostRecentChunk
-    , ChainDB.cdbVolValidation        = NoValidation
-    , ChainDB.cdbCheckInFuture        = inFuture
+    { ChainDB.cdbBlocksPerFile      = mkBlocksPerFile 1000
+    , ChainDB.cdbChunkInfo          = chunkInfo
+    , ChainDB.cdbGenesis            = return initLedger
+    , ChainDB.cdbGetBinaryBlockInfo = nodeGetBinaryBlockInfo
+    , ChainDB.cdbAddHdrEnv          = nodeAddHeaderEnvelope ccfg
+    , ChainDB.cdbDiskPolicy         = defaultDiskPolicy k
+    , ChainDB.cdbCheckIntegrity     = nodeCheckIntegrity cfg
+    , ChainDB.cdbParamsLgrDB        = ledgerDbDefaultParams k
+    , ChainDB.cdbTopLevelConfig     = cfg
+    , ChainDB.cdbRegistry           = registry
+    , ChainDB.cdbTracer             = tracer
+    , ChainDB.cdbImmValidation      = ValidateMostRecentChunk
+    , ChainDB.cdbVolValidation      = NoValidation
+    , ChainDB.cdbCheckInFuture      = inFuture
     }
   where
-    k  = configSecurityParam cfg
-    pb = Proxy @blk
+    k    = configSecurityParam cfg
+    ccfg = getCodecConfig $ configBlock cfg
 
 mkNodeArgs
   :: forall blk. RunNode blk

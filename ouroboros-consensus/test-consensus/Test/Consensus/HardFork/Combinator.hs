@@ -6,6 +6,8 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -16,9 +18,13 @@
 module Test.Consensus.HardFork.Combinator (tests) where
 
 import           Codec.Serialise
+import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.Coerce
 import qualified Data.Map as Map
+import           Data.Maybe (isJust)
+import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict hiding (shape)
 import           Data.Type.Equality
 import           Data.Void
@@ -50,6 +56,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
@@ -59,7 +66,7 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
+import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as Default
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
@@ -80,10 +87,13 @@ import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
+import           Test.Consensus.HardFork.Combinator.Common
 
 tests :: TestTree
 tests = testGroup "HardForkCombinator" [
-      testProperty "simple convergence" $
+      testProperty "reconstructNestedCtxt"
+        prop_reconstructNestedCtxt
+    , testProperty "simple convergence" $
         prop_simple_hfc_convergence
     ]
 
@@ -133,6 +143,49 @@ testSetupNumSlots testSetup@TestSetup{..} =
     eraSizeA           = testSetupEraSizeA testSetup
     EpochSize epoSizeA = testSetupEpochSize
     EpochSize epoSizeB = testSetupEpochSize
+
+prop_reconstructNestedCtxt :: Property
+prop_reconstructNestedCtxt = once $ conjoin [
+      aux blockA (\ctxt -> isJust $ sameDepIndex ctxt (NestedCtxt (NCZ CtxtA)))
+    , aux blockB (\ctxt -> isJust $ sameDepIndex ctxt (NestedCtxt (NCS (NCZ CtxtB))))
+    ]
+  where
+    aux :: TestBlock
+        -> (forall a. NestedCtxt Header TestBlock a -> Bool)
+        -> Property
+    aux blk p =
+        case reconstructNestedCtxt
+               (Proxy @(Header TestBlock))
+               IsNotEBB
+               (fromIntegral $ Lazy.length (serialise blk))
+               ( Lazy.take (fromIntegral headerSize)
+               . Lazy.drop (fromIntegral headerOffset)
+               . serialise
+               $ blk) of
+            SomeBlock ctxt ->
+              counterexample ("ctxt: " ++ show ctxt) $
+                p ctxt
+      where
+        BinaryBlockInfo{..} = binaryBlockInfo blk
+
+    blockA :: TestBlock
+    blockA = toNS (Proxy @I) $ Left $ I $
+       BlkA {
+             blkA_header = HdrA {
+                 hdrA_tag    = headerIdentifierA
+               , hdrA_fields = zeroHeaderFields
+               }
+           , blkA_body = []
+           }
+
+    blockB :: TestBlock
+    blockB = toNS (Proxy @I) $ Right $ I $
+       BlkB {
+             blkB_header = HdrB {
+                 hdrB_tag    = headerIdentifierB
+               , hdrB_fields = zeroHeaderFields
+               }
+           }
 
 prop_simple_hfc_convergence :: TestSetup -> Property
 prop_simple_hfc_convergence testSetup@TestSetup{..} =
@@ -363,25 +416,60 @@ instance RunNode TestBlock where
                             . History.getShape
                             . hardForkLedgerConfigShape
                             . configLedger
-  nodeGetBinaryBlockInfo    = hardForkBlockBinaryBlockInfo
+  nodeGetBinaryBlockInfo    = binaryBlockInfo
+
+binaryBlockInfo :: TestBlock -> BinaryBlockInfo
+binaryBlockInfo =
+    Default.binaryBlockInfo
+       $ fn (mapIK binaryBlockInfoA)
+      :* fn (mapIK binaryBlockInfoB)
+      :* Nil
 
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
-deriving via SerialiseHeaderBody '[BlockA, BlockB]
+deriving via Default.SerialiseOne I '[BlockA, BlockB]
          instance Serialise TestBlock
 
-deriving via SerialiseOne Header '[BlockA, BlockB]
+deriving via Default.SerialiseOne Header '[BlockA, BlockB]
          instance Serialise (Header TestBlock)
 
-deriving via SerialiseOne WrapTipInfo '[BlockA, BlockB]
+deriving via Default.SerialiseOne WrapTipInfo '[BlockA, BlockB]
          instance Serialise (OneEraTipInfo '[BlockA, BlockB])
 
 -- NOTE: Perhaps interestingly, the hard fork's TipInfo _can_ distinguish
 -- between the eras, because it's an NS of the TipInfos of the underlying
 -- eras. Not sure if that's helpful/harmful/neither
 deriving instance Serialise (AnnTip TestBlock)
+
+instance EncodeDiskDepIx (NestedCtxt Header) TestBlock where
+  encodeDiskDepIx = Default.encodeNestedCtxt
+
+instance EncodeDiskDep (NestedCtxt Header) TestBlock where
+  encodeDiskDep = Default.encodeNested
+
+instance DecodeDiskDepIx (NestedCtxt Header) TestBlock where
+  decodeDiskDepIx = Default.decodeNestedCtxt
+
+instance DecodeDiskDep (NestedCtxt Header) TestBlock where
+  decodeDiskDep = Default.decodeNested
+
+instance ReconstructNestedCtxt Header TestBlock where
+  reconstructPrefixLen = Default.reconstructPrefixLen
+
+  -- TODO: Once the Imm DB gives us the prefix, this should be a HFC default
+  reconstructNestedCtxt _proxy _isEBB _size bs
+    | Base16.encode tag == "01010101" = SomeBlock (NestedCtxt (NCZ CtxtA))
+    | Base16.encode tag == "02020202" = SomeBlock (NestedCtxt (NCS (NCZ CtxtB)))
+    | otherwise =
+        error $ "reconstructNestedCtxt: unrecognized encoding "
+             ++ Char8.unpack (Base16.encode bs)
+             ++ " (tag " ++ Char8.unpack (Base16.encode tag) ++ ")"
+    where
+      tag = Lazy.take 4 $ Lazy.drop 3 (bs)
+
+instance DecodeDisk TestBlock (Header TestBlock)
 
 instance ImmDbSerialiseConstraints TestBlock
 instance LgrDbSerialiseConstraints TestBlock

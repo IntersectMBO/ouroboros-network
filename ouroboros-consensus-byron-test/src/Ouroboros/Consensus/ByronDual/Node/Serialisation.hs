@@ -69,8 +69,10 @@ instance DecodeDisk DualByronBlock (Lazy.ByteString -> DualByronBlock) where
 
 instance EncodeDisk DualByronBlock (Header DualByronBlock) where
   encodeDisk ccfg = encodeDisk (dualCodecConfigMain ccfg) . dualHeaderMain
+instance DecodeDisk DualByronBlock (Header DualByronBlock) where
+  decodeDisk ccfg = DualHeader <$> decodeDisk (dualCodecConfigMain ccfg)
 instance DecodeDisk DualByronBlock (Lazy.ByteString -> Header DualByronBlock) where
-  decodeDisk ccfg = (DualHeader .) <$> decodeDisk (dualCodecConfigMain ccfg)
+  decodeDisk ccfg = const <$> decodeDisk ccfg
 
 instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState

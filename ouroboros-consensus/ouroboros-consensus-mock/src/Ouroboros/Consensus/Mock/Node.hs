@@ -49,3 +49,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeCheckIntegrity        = \_ _ -> True
   nodeGetBinaryBlockInfo    = simpleBlockBinaryBlockInfo
+
+  -- We don't want any envelope added
+  nodeAddHeaderEnvelope _ _ _ = id

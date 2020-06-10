@@ -225,7 +225,7 @@ instance RunNode DualByronBlock where
   nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
 
   -- The header is just the concrete header, so we can just reuse the Byron def
-  nodeAddHeaderEnvelope  = \_ -> nodeAddHeaderEnvelope pb
+  nodeAddHeaderEnvelope  = nodeAddHeaderEnvelope . dualCodecConfigMain
   nodeGetBinaryBlockInfo = dualBinaryBlockInfo nodeGetBinaryBlockInfo
 
   nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb

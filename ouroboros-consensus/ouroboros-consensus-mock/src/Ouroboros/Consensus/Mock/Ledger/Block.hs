@@ -6,6 +6,7 @@
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -30,6 +31,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , SimpleStdHeader(..)
   , SimpleBody(..)
   , SimpleHash
+  , Query(..)
     -- * Working with 'SimpleBlock'
   , mkSimpleHeader
   , matchesSimpleHeader
@@ -46,10 +48,9 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
+  , TxId(..)
   , mkSimpleGenTx
   , txSize
-    -- * 'TxId'
-  , unSimpleGenTxId
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -405,14 +406,18 @@ txSize = fromIntegral . Lazy.length . serialise
 -------------------------------------------------------------------------------}
 
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
-  data Query (SimpleBlock c ext) result
-    deriving (Show)
+  data Query (SimpleBlock c ext) result where
+      QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
-  answerQuery _ = \case {}
-  eqQuery       = \case {}
+  answerQuery _cfg QueryLedgerTip = ledgerTipPoint
 
-instance ShowQuery (Query (SimpleBlock c ext)) where
-  showResult = \case {}
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+
+deriving instance Show (Query (SimpleBlock c ext) result)
+
+instance (SimpleCrypto c, Typeable ext)
+      => ShowQuery (Query (SimpleBlock c ext)) where
+  showResult QueryLedgerTip = show
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

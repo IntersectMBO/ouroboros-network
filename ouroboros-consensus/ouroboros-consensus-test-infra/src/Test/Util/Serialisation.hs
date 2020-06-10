@@ -1,14 +1,19 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
+
 module Test.Util.Serialisation (
-    roundtrip_SerialiseDisk
+    roundtrip_all
+  , roundtrip_SerialiseDisk
   , roundtrip_SerialiseNodeToNode
   , roundtrip_SerialiseNodeToClient
+  , roundtrip_envelopes
   , WithVersion (..)
     -- * SomeResult
   , SomeResult (..)
@@ -16,15 +21,18 @@ module Test.Util.Serialisation (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode)
+import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 
-import           Ouroboros.Network.Block (HeaderHash, Serialised,
+import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
                      fromSerialised, mkSerialised)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HasAnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
@@ -45,6 +53,50 @@ import           Test.Util.Roundtrip
 -- | Constraints needed in practice for something to be passed in as an
 -- 'Arbitrary' argument to a QuickCheck property.
 type Arbitrary' a = (Arbitrary a, Eq a, Show a)
+
+roundtrip_all
+  :: forall blk.
+     ( SerialiseDiskConstraints blk
+     , SerialiseNodeToNodeConstraints blk
+     , SerialiseNodeToClientConstraints blk
+
+     , Show (NodeToNodeVersion blk)
+     , Show (NodeToClientVersion blk)
+
+     , HasAnnTip blk
+
+     , Arbitrary' blk
+     , Arbitrary' (Header blk)
+     , Arbitrary' (HeaderHash blk)
+     , Arbitrary' (LedgerState blk)
+     , Arbitrary' (AnnTip blk)
+     , Arbitrary' (ConsensusState (BlockProtocol blk))
+
+     , ArbitraryWithVersion (NodeToNodeVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (NodeToNodeVersion blk) blk
+     , ArbitraryWithVersion (NodeToNodeVersion blk) (Header blk)
+     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTxId blk)
+     , ArbitraryWithVersion (NodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+
+     , ArbitraryWithVersion (NodeToClientVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (NodeToClientVersion blk) blk
+     , ArbitraryWithVersion (NodeToClientVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (NodeToClientVersion blk) (ApplyTxErr blk)
+     , ArbitraryWithVersion (NodeToClientVersion blk) (Some (Query blk))
+     , ArbitraryWithVersion (NodeToClientVersion blk) (SomeResult blk)
+
+     , EncodeDiskDep (NestedCtxt Header) blk
+     )
+  => CodecConfig blk
+  -> TestTree
+roundtrip_all ccfg =
+    testGroup "Roundtrip" [
+        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk           ccfg
+      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode     ccfg
+      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient   ccfg
+      , testProperty "envelopes"          $ roundtrip_envelopes               ccfg
+      ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseDiskConstraints'?
@@ -69,9 +121,9 @@ roundtrip_SerialiseDisk ccfg =
         roundtrip' @(Header blk) (encodeDisk ccfg) (decodeDisk ccfg)
     , testProperty "roundtrip HeaderHash" $
         roundtrip @(HeaderHash blk) encode decode
-    , -- Since the 'LedgerState' is a large data structure, we lower the
+      -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
-      adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
+    , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
       rt (Proxy @(LedgerState blk)) "LedgerState"
     , rt (Proxy @(AnnTip blk)) "AnnTip"
     , rt (Proxy @(ConsensusState (BlockProtocol blk))) "ConsensusState"
@@ -274,6 +326,43 @@ roundtrip_SerialiseNodeToClient ccfg =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
           roundtrip @a (enc version) (dec version) a
+
+{-------------------------------------------------------------------------------
+  Checking envelopes
+-------------------------------------------------------------------------------}
+
+-- | This is similar to the roundtrip tests for headers, except we don't
+-- start with a header but some fixed bytestring in the payload. This makes
+-- debugging a bit easier as we can focus on just the envelope.
+roundtrip_envelopes ::
+     forall blk. (
+       EncodeDiskDep (NestedCtxt Header) blk
+     , SerialiseNodeToNode blk (Serialised (Header blk))
+     )
+  => CodecConfig blk
+  -> WithVersion (NodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+  -> Property
+roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
+    roundtrip
+      (encodeNodeToNode ccfg v . unBase16)
+      (Base16 <$> decodeNodeToNode ccfg v)
+      (Base16 encoded)
+  where
+    -- We don't use mkSerialised because we're faking the payload
+    encoded :: Serialised (Header blk)
+    encoded = Serialised . CBOR.toLazyByteString $ encodeDisk ccfg $ depPair
+
+    depPair :: GenDepPair Serialised (NestedCtxt Header blk)
+    depPair = GenDepPair ctxt (Serialised bs)
+
+    bs :: Lazy.ByteString
+    bs = "<PAYLOAD>" -- Something we can easily recognize in test failures
+
+newtype Base16 a = Base16 { unBase16 :: a }
+  deriving (Eq)
+
+instance Show (Base16 (Serialised (Header blk))) where
+  show (Base16 (Serialised bs)) = Char8.unpack $ Base16.encode bs
 
 {-------------------------------------------------------------------------------
   Serialised helpers

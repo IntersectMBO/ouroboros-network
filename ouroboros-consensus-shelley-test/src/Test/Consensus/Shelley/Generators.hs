@@ -32,6 +32,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -84,41 +85,6 @@ import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
 
 import           Test.Consensus.Shelley.Examples (mkDummyHash)
 import           Test.Consensus.Shelley.MockCrypto
-
-{-------------------------------------------------------------------------------
-  Orphans
--------------------------------------------------------------------------------}
-
-instance Eq (Some (Query Block)) where
-  Some GetLedgerTip == Some GetLedgerTip = True
-  Some GetLedgerTip == _ = False
-  Some GetEpochNo == Some GetEpochNo = True
-  Some GetEpochNo == _ = False
-  Some (GetNonMyopicMemberRewards creds) == Some (GetNonMyopicMemberRewards creds') =
-    creds == creds'
-  Some (GetNonMyopicMemberRewards _) == _ = False
-  Some GetCurrentPParams == Some GetCurrentPParams = True
-  Some GetCurrentPParams == _ = False
-  Some GetProposedPParamsUpdates == Some GetProposedPParamsUpdates = True
-  Some GetProposedPParamsUpdates == _ = False
-  Some GetStakeDistribution == Some GetStakeDistribution = True
-  Some GetStakeDistribution == _ = False
-  Some (GetFilteredUTxO addrs) == Some (GetFilteredUTxO addrs') =
-    addrs == addrs'
-  Some (GetFilteredUTxO _) == _ = False
-  Some GetUTxO == Some GetUTxO = True
-  Some GetUTxO == _            = False
-  Some GetCurrentLedgerState == Some GetCurrentLedgerState = True
-  Some GetCurrentLedgerState == _ = False
-  Some (GetCBOR query) == Some (GetCBOR query') =
-    Some query == Some query'
-  Some (GetCBOR _) == _ = False
-  Some (GetFilteredDelegationsAndRewardAccounts creds) == Some (GetFilteredDelegationsAndRewardAccounts creds') =
-    creds == creds'
-  Some (GetFilteredDelegationsAndRewardAccounts _) == _ = False
-
-deriving instance Show (Some (Query Block))
-
 
 {-------------------------------------------------------------------------------
   Generators
@@ -268,6 +234,9 @@ instance Arbitrary ShelleyNodeToClientVersion where
 -- Convenient to have
 instance Arbitrary Natural where
   arbitrary = fromInteger <$> choose (0, 1000)
+
+instance Arbitrary (SomeBlock (NestedCtxt f) Block) where
+  arbitrary = return (SomeBlock indexIsTrivial)
 
 {-------------------------------------------------------------------------------
   Generators for cardano-ledger-specs

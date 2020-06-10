@@ -48,6 +48,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (DropNestedCtxtFailure)
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -226,11 +228,10 @@ instance RunNode ByronBlock where
     where
       genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
-  nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
-  nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
-  nodeGetBinaryBlockInfo    = byronBinaryBlockInfo
+  nodeCheckIntegrity     = verifyBlockIntegrity . configBlock
+  nodeGetBinaryBlockInfo = byronBinaryBlockInfo
   nodeExceptionIsFatal _ e
-    | Just (_ :: DropEncodedSizeException) <- fromException e
+    | Just (_ :: DropNestedCtxtFailure) <- fromException e
     = Just DatabaseCorruption
     | otherwise
     = Nothing

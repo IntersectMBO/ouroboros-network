@@ -3,11 +3,13 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 module Ouroboros.Consensus.Shelley.Ledger.Block (
@@ -17,10 +19,10 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , GetHeader (..)
   , Header (..)
   , mkShelleyHeader
+  , NestedCtxt_(..)
     -- * Serialisation
   , encodeShelleyBlock
   , decodeShelleyBlock
-  , shelleyAddHeaderEnvelope
   , shelleyBinaryBlockInfo
   , encodeShelleyHeader
   , decodeShelleyHeader
@@ -178,6 +180,23 @@ toShelleyPrevHash GenesisHash                 = SL.GenesisHash
 toShelleyPrevHash (BlockHash (ShelleyHash h)) = SL.BlockHash h
 
 {-------------------------------------------------------------------------------
+  NestedCtxt
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ (ShelleyBlock c) f a where
+  CtxtShelley :: NestedCtxt_ (ShelleyBlock c) f (f (ShelleyBlock c))
+
+deriving instance Show (NestedCtxt_ (ShelleyBlock c) f a)
+
+instance TrivialDependency (NestedCtxt_ (ShelleyBlock c) f) where
+  type TrivialIndex (NestedCtxt_ (ShelleyBlock c) f) = f (ShelleyBlock c)
+  hasSingleIndex CtxtShelley CtxtShelley = Refl
+  indexIsTrivial = CtxtShelley
+
+instance SameDepIndex (NestedCtxt_ (ShelleyBlock c) f)
+instance HasNestedContent f (ShelleyBlock c)
+
+{-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
@@ -200,12 +219,6 @@ encodeShelleyBlock = toCBOR
 
 decodeShelleyBlock :: Crypto c => Decoder s (Lazy.ByteString -> ShelleyBlock c)
 decodeShelleyBlock = (. Full) . runAnnotator <$> fromCBOR
-
--- | When given the raw header bytes extracted from the block (see
--- 'encodeShelleyBlockWithInfo'), we have a bytestring exactly corresponding
--- to the header, no modifications needed.
-shelleyAddHeaderEnvelope :: Lazy.ByteString -> Lazy.ByteString
-shelleyAddHeaderEnvelope = id
 
 shelleyBinaryBlockInfo :: Crypto c => ShelleyBlock c -> BinaryBlockInfo
 shelleyBinaryBlockInfo blk = BinaryBlockInfo {
