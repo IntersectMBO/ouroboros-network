@@ -6,6 +6,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -41,6 +42,7 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , summaryInit
   ) where
 
+import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise
 import           Control.Exception (Exception)
 import           Control.Monad.Except
@@ -54,6 +56,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 import           Cardano.Slotting.Slot
 
@@ -75,7 +78,7 @@ data Bound = Bound {
     , boundEpoch :: !EpochNo
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoUnexpectedThunks)
 
 initBound :: Bound
 initBound = Bound {
@@ -479,3 +482,22 @@ invariantSummary = \(Summary summary) ->
         mCurEnd   :: EraEnd
         curParams :: EraParams
         EraSummary curStart mCurEnd curParams = curSummary
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance Serialise Bound where
+  encode Bound{..} = mconcat [
+        encodeListLen 3
+      , encode boundTime
+      , encode boundSlot
+      , encode boundEpoch
+      ]
+
+  decode = do
+      enforceSize "Bound" 3
+      boundTime  <- decode
+      boundSlot  <- decode
+      boundEpoch <- decode
+      return Bound{..}

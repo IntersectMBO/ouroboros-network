@@ -17,14 +17,10 @@
 
 module Test.Consensus.HardFork.Combinator (tests) where
 
-import           Codec.Serialise
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.Coerce
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict hiding (shape)
-import           Data.Type.Equality
-import           Data.Void
 import           Data.Word
 
 import           Cardano.Slotting.Slot
@@ -47,16 +43,12 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed (..))
@@ -64,11 +56,11 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
-import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as Default
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as HFC
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.History (EraParams (..),
                      defaultSafeZone)
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -250,24 +242,24 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
           configConsensus = HardForkConsensusConfig {
               hardForkConsensusConfigK      = k
             , hardForkConsensusConfigShape  = shape
-            , hardForkConsensusConfigPerEra =
-                toNP (Proxy @WrapPartialConsensusConfig)
-                  (WrapPartialConsensusConfig $ consensusConfigA nid)
-                  (WrapPartialConsensusConfig $ consensusConfigB nid)
+            , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+                   (WrapPartialConsensusConfig $ consensusConfigA nid)
+                :* (WrapPartialConsensusConfig $ consensusConfigB nid)
+                :* Nil
             }
         , configLedger = HardForkLedgerConfig {
               hardForkLedgerConfigK      = k
             , hardForkLedgerConfigShape  = shape
-            , hardForkLedgerConfigPerEra =
-                toNP (Proxy @WrapPartialLedgerConfig)
-                  (WrapPartialLedgerConfig $ ledgerConfigA nid)
-                  (WrapPartialLedgerConfig $ ledgerConfigB nid)
+            , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+                   (WrapPartialLedgerConfig $ ledgerConfigA nid)
+                :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
+                :* Nil
             }
         , configBlock = HardForkBlockConfig {
-              hardForkBlockConfigPerEra =
-                toNP (Proxy @BlockConfig)
-                  (blockConfigA nid)
-                  (blockConfigB nid)
+              hardForkBlockConfigPerEra = PerEraBlockConfig $
+                   blockConfigA nid
+                :* blockConfigB nid
+                :* Nil
             }
         }
 
@@ -356,137 +348,42 @@ instance CanHardFork '[BlockA, BlockB] where
       , translateConsensusState = PCons consensusState_AtoB PNil
       }
 
-instance HasNetworkProtocolVersion TestBlock where
+versionN2N :: BlockNodeToNodeVersion TestBlock
+versionN2N = HardForkNodeToNodeEnabled $
+                  WrapNodeToNodeVersion ()
+               :* WrapNodeToNodeVersion ()
+               :* Nil
+
+versionN2C :: BlockNodeToClientVersion TestBlock
+versionN2C = HardForkNodeToClientEnabled $
+                  WrapNodeToClientVersion ()
+               :* WrapNodeToClientVersion ()
+               :* Nil
 
 instance TranslateNetworkProtocolVersion TestBlock where
-  nodeToNodeProtocolVersion   _ _ = NodeToNodeV_1
-  nodeToClientProtocolVersion _ _ = NodeToClientV_2
+  supportedNodeToNodeVersions     _   = versionN2N :| []
+  supportedNodeToClientVersions   _   = versionN2C :| []
+  mostRecentSupportedNodeToNode   _   = versionN2N
+  mostRecentSupportedNodeToClient _   = versionN2C
+  nodeToNodeProtocolVersion       _ _ = NodeToNodeV_1
+  nodeToClientProtocolVersion     _ _ = NodeToClientV_2
+
+instance SerialiseHFC '[BlockA, BlockB]
+  -- Use defaults
 
 instance RunNode TestBlock where
-  nodeBlockFetchSize        = const 0
-  nodeCheckIntegrity        = \_ _ -> True
-
-  nodeImmDbChunkInfo        = simpleChunkInfo
-                            . eraEpochSize
-                            . unK . hd
-                            . History.getShape
-                            . hardForkLedgerConfigShape
-                            . configLedger
-  nodeGetBinaryBlockInfo    = binaryBlockInfo
-
-binaryBlockInfo :: TestBlock -> BinaryBlockInfo
-binaryBlockInfo =
-    Default.binaryBlockInfo
-       $ fn (mapIK binaryBlockInfoA)
-      :* fn (mapIK binaryBlockInfoB)
-      :* Nil
-
-{-------------------------------------------------------------------------------
-  Serialisation
--------------------------------------------------------------------------------}
-
-deriving via Default.SerialiseOne I '[BlockA, BlockB]
-         instance Serialise TestBlock
-
-deriving via Default.SerialiseOne Header '[BlockA, BlockB]
-         instance Serialise (Header TestBlock)
-
-deriving via Default.SerialiseOne WrapTipInfo '[BlockA, BlockB]
-         instance Serialise (OneEraTipInfo '[BlockA, BlockB])
-
--- NOTE: Perhaps interestingly, the hard fork's TipInfo _can_ distinguish
--- between the eras, because it's an NS of the TipInfos of the underlying
--- eras. Not sure if that's helpful/harmful/neither
-deriving instance Serialise (AnnTip TestBlock)
-
-instance EncodeDiskDepIx (NestedCtxt Header) TestBlock where
-  encodeDiskDepIx = Default.encodeNestedCtxt
-
-instance EncodeDiskDep (NestedCtxt Header) TestBlock where
-  encodeDiskDep = Default.encodeNested
-
-instance DecodeDiskDepIx (NestedCtxt Header) TestBlock where
-  decodeDiskDepIx = Default.decodeNestedCtxt
-
-instance DecodeDiskDep (NestedCtxt Header) TestBlock where
-  decodeDiskDep = Default.decodeNested
-
-instance DecodeDisk TestBlock (Header TestBlock)
-
-instance ImmDbSerialiseConstraints TestBlock
-instance LgrDbSerialiseConstraints TestBlock
-instance VolDbSerialiseConstraints TestBlock
-instance SerialiseDiskConstraints  TestBlock
-
---  We use the default instances relying on 'Serialise' where possible.
-instance EncodeDisk TestBlock TestBlock
-instance DecodeDisk TestBlock (Lazy.ByteString -> TestBlock) where
-  decodeDisk _ = const <$> decode
-
-instance EncodeDisk TestBlock (Header TestBlock)
-instance DecodeDisk TestBlock (Lazy.ByteString -> Header TestBlock) where
-  decodeDisk _ = const <$> decode
-
-instance EncodeDisk TestBlock (LedgerState TestBlock) where
-  encodeDisk _ = encode . fromTelescope' (Proxy @LedgerState)
-instance DecodeDisk TestBlock (LedgerState TestBlock) where
-  decodeDisk _ = toTelescope' (Proxy @LedgerState) <$> decode
-
-instance EncodeDisk TestBlock (HardForkConsensusState '[BlockA, BlockB]) where
-  encodeDisk _ = encode . fromTelescope' (Proxy @WrapConsensusState)
-instance DecodeDisk TestBlock (HardForkConsensusState '[BlockA, BlockB]) where
-  decodeDisk _ = toTelescope' (Proxy @WrapConsensusState) <$> decode
-
-instance EncodeDisk TestBlock (AnnTip TestBlock)
-instance DecodeDisk TestBlock (AnnTip TestBlock)
-
-instance SerialiseNodeToNodeConstraints TestBlock
-
-instance SerialiseNodeToNode TestBlock TestBlock where
-  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
-  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
-
-instance SerialiseNodeToNode TestBlock (Serialised TestBlock)
-
-instance SerialiseNodeToNode TestBlock (Header TestBlock) where
-  encodeNodeToNode ccfg _ = encodeDisk ccfg . unnest
-  decodeNodeToNode ccfg _ = nest <$> decodeDisk ccfg
-
-instance SerialiseNodeToNode TestBlock (SerialisedHeader TestBlock) where
-  encodeNodeToNode ccfg _ = encodeDisk ccfg
-  decodeNodeToNode ccfg _ = decodeDisk ccfg
-
-instance SerialiseNodeToNode TestBlock (GenTx TestBlock) where
-  encodeNodeToNode _ _ = encode . fromNS (Proxy @GenTx)
-  decodeNodeToNode _ _ = toNS (Proxy @GenTx) <$> decode
-
-instance SerialiseNodeToNode TestBlock (GenTxId TestBlock) where
-  encodeNodeToNode _ _ = encode . fromNS (Proxy @WrapGenTxId)
-  decodeNodeToNode _ _ = toNS (Proxy @WrapGenTxId) <$> decode
-
-instance SerialiseNodeToClientConstraints TestBlock
-
-instance SerialiseNodeToClient TestBlock TestBlock where
-  encodeNodeToClient _ _ = defaultEncodeCBORinCBOR
-  decodeNodeToClient _ _ = defaultDecodeCBORinCBOR
-
-instance SerialiseNodeToClient TestBlock (Serialised TestBlock)
-
-instance SerialiseNodeToClient TestBlock (GenTx TestBlock) where
-  encodeNodeToClient _ _ = encode . fromNS (Proxy @GenTx)
-  decodeNodeToClient _ _ = toNS (Proxy @GenTx) <$> decode
-
-instance SerialiseNodeToClient TestBlock (HardForkApplyTxErr '[BlockA, BlockB]) where
-  encodeNodeToClient _ _ = encode . Match.mismatchTwo . mustBeMismatch
-  decodeNodeToClient _ _ = (fromMismatch . Match.mkMismatchTwo) <$> decode
-
-instance SerialiseNodeToClient TestBlock (SomeBlock Query TestBlock) where
-  encodeNodeToClient _ _ (SomeBlock q) = absurd $ thereIsNoQuery q
-  decodeNodeToClient _ _ = fail "there are no queries to be decoded"
-
-instance SerialiseResult TestBlock (Query TestBlock) where
-  encodeResult _ _ = absurd . thereIsNoQuery
-  decodeResult _ _ = absurd . thereIsNoQuery
+  nodeBlockFetchSize     = const 0
+  nodeCheckIntegrity     = \_ _ -> True
+  nodeImmDbChunkInfo     = simpleChunkInfo
+                         . eraEpochSize
+                         . unK . hd
+                         . History.getShape
+                         . hardForkLedgerConfigShape
+                         . configLedger
+  nodeGetBinaryBlockInfo = HFC.binaryBlockInfo
+                              $ fn (mapIK binaryBlockInfoA)
+                             :* fn (mapIK binaryBlockInfoB)
+                             :* Nil
 
 {-------------------------------------------------------------------------------
   Translation
@@ -502,105 +399,3 @@ ledgerView_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapLedgerView ()
 
 consensusState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapConsensusState) BlockA BlockB
 consensusState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapConsensusState ()
-
-{-------------------------------------------------------------------------------
-  Auxiliary functions required for RunNode
--------------------------------------------------------------------------------}
-
-mustBeMismatch :: HardForkApplyTxErr '[BlockA, BlockB]
-               -> Mismatch SingleEraInfo LedgerEraInfo '[BlockA, BlockB]
-mustBeMismatch = getMismatchEraInfo . go
-  where
-    go :: HardForkApplyTxErr '[BlockA, BlockB]
-       -> MismatchEraInfo '[BlockA, BlockB]
-    go (HardForkApplyTxErrWrongEra e) = e
-    go (HardForkApplyTxErrFromEra (OneEraApplyTxErr e)) =
-        case e of
-          Z (WrapApplyTxErr errA)     -> absurd errA
-          S (Z (WrapApplyTxErr errB)) -> absurd errB
-          S (S err)                   -> case err of {}
-
-fromMismatch :: Mismatch SingleEraInfo LedgerEraInfo '[BlockA, BlockB]
-             -> HardForkApplyTxErr '[BlockA, BlockB]
-fromMismatch = HardForkApplyTxErrWrongEra . MismatchEraInfo
-
-thereIsNoQuery :: Query TestBlock result -> Void
-thereIsNoQuery qry = getHardForkQuery qry $ \Refl -> go
-  where
-    go :: HardForkQuery '[BlockA, BlockB] result -> Void
-    go (QZ q)      = goA q
-    go (QS (QZ q)) = goB q
-    go (QS (QS q)) = case q of {}
-
-    goA :: Query BlockA result -> Void
-    goA q = case q of {}
-
-    goB :: Query BlockB result -> Void
-    goB q = case q of {}
-
-{-------------------------------------------------------------------------------
-  Serialisation auxiliary
--------------------------------------------------------------------------------}
-
-deriving newtype instance Serialise a => Serialise (I a)
-
-{-------------------------------------------------------------------------------
-  Serialisation auxiliary functions
--------------------------------------------------------------------------------}
-
-fromNS :: Coercible a (NS f '[x, y])
-       => proxy f -> a -> Either (f x) (f y)
-fromNS _ = aux . coerce
-  where
-    aux :: NS f '[x, y] -> Either (f x) (f y)
-    aux (Z fx)     = Left fx
-    aux (S (Z fy)) = Right fy
-    aux (S (S x))  = case x of {}
-
-toNS :: Coercible a (NS f '[x, y])
-     => proxy f -> Either (f x) (f y) -> a
-toNS _ = coerce . aux
-  where
-    aux :: Either (f x) (f y) -> NS f '[x, y]
-    aux (Left  fx) = Z fx
-    aux (Right fy) = S (Z fy)
-
-toNP :: Coercible a (NP f '[x, y])
-     => proxy f -> f x -> f y -> a
-toNP _ = coerce .: aux
-  where
-    aux :: f x -> f y -> NP f '[x, y]
-    aux fx fy = fx :* fy :* Nil
-
-fromTelescope :: Coercible a (HardForkState_ g f '[x, y])
-              => proxy g
-              -> proxy f
-              -> a -> Either (Current f x) (Past g x, Current f y)
-fromTelescope _ _ = aux . getHardForkState . coerce
-  where
-    aux :: Telescope (Past g) (Current f) '[x, y]
-        -> Either (Current f x) (Past g x, Current f y)
-    aux (TZ fx)         = Left fx
-    aux (TS gx (TZ fy)) = Right (gx, fy)
-    aux (TS _ (TS _ t)) = case t of {}
-
-fromTelescope' :: Coercible a (HardForkState f '[x, y])
-               => proxy f
-               -> a -> Either (Current f x) (Past f x, Current f y)
-fromTelescope' p = fromTelescope p p
-
-toTelescope :: Coercible a (HardForkState_ g f '[x, y])
-            => proxy g
-            -> proxy f
-            -> Either (Current f x) (Past g x, Current f y) -> a
-toTelescope _ _ = coerce . HardForkState . aux
-  where
-    aux :: Either (Current f x) (Past g x, Current f y)
-        -> Telescope (Past g) (Current f) '[x, y]
-    aux (Left fx)        = TZ fx
-    aux (Right (gx, fy)) = TS gx (TZ fy)
-
-toTelescope' :: Coercible a (HardForkState f '[x, y])
-             => proxy f
-             -> Either (Current f x) (Past f x, Current f y) -> a
-toTelescope' p = toTelescope p p

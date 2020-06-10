@@ -28,6 +28,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
     -- ** Bifunctor analogues of SOP functions
   , bihap
   , bihmap
+  , bihzipWith
   , bihczipWith
     -- * Extension, retraction, alignment
   , Extend(..)
@@ -41,6 +42,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
   , alignExtend
   , alignExtendNS
     -- * Additional API
+  , SimpleTelescope(..)
   , ScanNext(..)
   , scanl
   ) where
@@ -216,6 +218,13 @@ bihcmap :: All c xs
         -> Telescope g f xs -> Telescope g' f' xs
 bihcmap p g f = bihap (hcpure p (fn g)) (hcpure p (fn f))
 
+-- | Bifunctor equivalent of 'hzipWith'
+bihzipWith :: SListI xs
+           => (forall x. h x -> g x -> g' x)
+           -> (forall x. h x -> f x -> f' x)
+           -> NP h xs -> Telescope g f xs -> Telescope g' f' xs
+bihzipWith g f ns = bihap (hmap (fn . g) ns) (hmap (fn . f) ns)
+
 -- | Bifunctor equivalent of 'hczipWith'
 bihczipWith :: All c xs
             => proxy c
@@ -236,9 +245,10 @@ newtype SimpleTelescope f xs = SimpleTelescope {
       getSimpleTelescope :: Telescope f f xs
     }
 
-type instance Prod    SimpleTelescope   = NP
-type instance SListIN SimpleTelescope   = SListI
-type instance AllN    SimpleTelescope c = All c
+type instance Prod       SimpleTelescope   = NP
+type instance SListIN    SimpleTelescope   = SListI
+type instance AllN       SimpleTelescope c = All c
+type instance CollapseTo SimpleTelescope a = [a]
 
 instance HAp SimpleTelescope where
   hap fs = SimpleTelescope . bihap fs fs . getSimpleTelescope
@@ -251,6 +261,13 @@ instance HSequence SimpleTelescope where
   hsequence'      = fmap SimpleTelescope . bihsequence'        . getSimpleTelescope
   hctraverse' p f = fmap SimpleTelescope . bihctraverse' p f f . getSimpleTelescope
   htraverse'    f = fmap SimpleTelescope . bihtraverse'    f f . getSimpleTelescope
+
+instance HCollapse SimpleTelescope where
+  hcollapse (SimpleTelescope t) = go t
+    where
+      go :: Telescope (K a) (K a) xs -> [a]
+      go (TZ (K x))    = [x]
+      go (TS (K x) xs) = x : go xs
 
 {-------------------------------------------------------------------------------
   Utilities

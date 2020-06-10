@@ -18,6 +18,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query (
   , HardForkQuery(..)
   , HardForkQueryResult
   , getHardForkQuery
+  , hardForkQueryInfo
   ) where
 
 import           Data.Bifunctor

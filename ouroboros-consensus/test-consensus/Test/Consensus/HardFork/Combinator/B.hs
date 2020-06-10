@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -53,11 +54,15 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
@@ -115,8 +120,8 @@ instance GetHeader BlockB where
   newtype Header BlockB = HdrB {
         hdrB_fields :: HeaderFields BlockB
       }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (NoUnexpectedThunks, Serialise)
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (NoUnexpectedThunks, Serialise)
 
   getHeader          = blkB_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
@@ -293,3 +298,77 @@ instance Condense BlockB                where condense = show
 instance Condense (Header BlockB)       where condense = show
 instance Condense (GenTx BlockB)        where condense = show
 instance Condense (TxId (GenTx BlockB)) where condense = show
+
+{-------------------------------------------------------------------------------
+  Top-level serialisation constraints
+-------------------------------------------------------------------------------}
+
+instance SerialiseConstraintsHFC          BlockB
+instance ImmDbSerialiseConstraints        BlockB
+instance VolDbSerialiseConstraints        BlockB
+instance LgrDbSerialiseConstraints        BlockB
+instance SerialiseDiskConstraints         BlockB
+instance SerialiseNodeToNodeConstraints   BlockB
+instance SerialiseNodeToClientConstraints BlockB
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+deriving instance Serialise (AnnTip BlockB)
+
+instance EncodeDisk BlockB (LedgerState BlockB)
+instance DecodeDisk BlockB (LedgerState BlockB)
+
+instance EncodeDisk BlockB BlockB
+instance DecodeDisk BlockB (Lazy.ByteString -> BlockB) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk BlockB (AnnTip BlockB)
+instance DecodeDisk BlockB (AnnTip BlockB)
+
+instance EncodeDisk BlockB ()
+instance DecodeDisk BlockB ()
+
+instance HasNetworkProtocolVersion BlockB
+
+{-------------------------------------------------------------------------------
+  SerialiseNodeToNode
+-------------------------------------------------------------------------------}
+
+instance SerialiseNodeToNode BlockB BlockB
+instance SerialiseNodeToNode BlockB Hash
+instance SerialiseNodeToNode BlockB (Serialised BlockB)
+instance SerialiseNodeToNode BlockB (SerialisedHeader BlockB)
+instance SerialiseNodeToNode BlockB (GenTx BlockB)
+instance SerialiseNodeToNode BlockB (GenTxId BlockB)
+
+-- Must be compatible with @(SerialisedHeader BlockB)@, which uses
+-- the @Serialise (SerialisedHeader BlockB)@ instance below
+instance SerialiseNodeToNode BlockB (Header BlockB) where
+  encodeNodeToNode _ _ = wrapCBORinCBOR   encode
+  decodeNodeToNode _ _ = unwrapCBORinCBOR (const <$> decode)
+
+instance Serialise (SerialisedHeader BlockB) where
+  encode = encodeTrivialSerialisedHeader
+  decode = decodeTrivialSerialisedHeader
+
+{-------------------------------------------------------------------------------
+  SerialiseNodeToClient
+-------------------------------------------------------------------------------}
+
+instance SerialiseNodeToClient BlockB BlockB
+instance SerialiseNodeToClient BlockB (Serialised BlockB)
+instance SerialiseNodeToClient BlockB (GenTx BlockB)
+
+instance SerialiseNodeToClient BlockB Void where
+  encodeNodeToClient _ _ = absurd
+  decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
+
+instance SerialiseNodeToClient BlockB (SomeBlock Query BlockB) where
+  encodeNodeToClient _ _ (SomeBlock q) = case q of {}
+  decodeNodeToClient _ _ = fail "there are no queries to be decoded"
+
+instance SerialiseResult BlockB (Query BlockB) where
+  encodeResult _ _ = \case {}
+  decodeResult _ _ = \case {}

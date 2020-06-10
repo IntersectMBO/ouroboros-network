@@ -279,6 +279,8 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
   reconstructPrefixLen :: proxy (f blk) -> Word8
 
   -- | Reconstruct the type of nested contents
+  --
+  -- TODO: Allow to fail.
   reconstructNestedCtxt ::
        proxy (f blk)
     -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block

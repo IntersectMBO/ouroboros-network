@@ -20,8 +20,6 @@ module Ouroboros.Consensus.Block.NestedContent (
   , castNestedCtxt
   , mapNestedCtxt
     -- * Existentials
-  , flipSomeNestedCtxt
-  , unflipSomeNestedCtxt
   , castSomeNestedCtxt
   , mapSomeNestedCtxt
     -- * Convenience re-exports
@@ -33,7 +31,6 @@ import           Data.Proxy
 import           Data.Type.Equality
 
 import           Ouroboros.Consensus.Block.Abstract (SomeBlock (..))
-import           Ouroboros.Consensus.Util (Some (..))
 import           Ouroboros.Consensus.Util.DepPair
 
 {-------------------------------------------------------------------------------
@@ -150,12 +147,6 @@ deriving instance HasNestedContent f blk => Show (SomeBlock (NestedCtxt f) blk)
 instance SameDepIndex (NestedCtxt_ blk f)
       => Eq (SomeBlock (NestedCtxt f) blk) where
   SomeBlock ctxt == SomeBlock ctxt' = isJust (sameDepIndex ctxt ctxt')
-
-flipSomeNestedCtxt :: Some (NestedCtxt_ blk f) -> SomeBlock (NestedCtxt f) blk
-flipSomeNestedCtxt (Some ctxt) = SomeBlock (NestedCtxt ctxt)
-
-unflipSomeNestedCtxt :: SomeBlock (NestedCtxt f) blk -> Some (NestedCtxt_ blk f)
-unflipSomeNestedCtxt (SomeBlock ctxt) = Some (flipNestedCtxt ctxt)
 
 castSomeNestedCtxt :: (forall a. NestedCtxt_ blk f a -> NestedCtxt_ blk' f a)
                    -> SomeBlock (NestedCtxt f) blk
