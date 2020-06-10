@@ -7,7 +7,6 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Codec
   ( codecChainSync
-  , codecChainSyncSerialised
   , codecChainSyncId
 
   , byteLimitsChainSync
@@ -17,7 +16,7 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
 
-import           Ouroboros.Network.Block (Point, Serialised (..), castPoint)
+import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -60,9 +59,11 @@ timeLimitsChainSync consensusTimeout = ProtocolTimeLimits stateToLimit
     stateToLimit (ServerAgency (TokNext TokMustReply)) = consensusTimeout
     stateToLimit (ServerAgency TokIntersect)           = shortWait
 
--- | The main CBOR 'Codec' for the 'ChainSync' protocol.
+-- | Codec for chain sync that encodes/decodes headers
 --
-codecChainSyncUnwrapped
+-- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- with a header type that has annotations.
+codecChainSync
   :: forall header tip m.
      (MonadST m)
   => (header -> CBOR.Encoding)
@@ -73,9 +74,9 @@ codecChainSyncUnwrapped
   -> (forall s. CBOR.Decoder s tip)
   -> Codec (ChainSync header tip)
            CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSyncUnwrapped encodeHeader decodeHeader
-                        encodePoint  decodePoint
-                        encodeTip    decodeTip =
+codecChainSync encodeHeader decodeHeader
+               encodePoint  decodePoint
+               encodeTip    decodeTip =
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr  :: PeerRole)
@@ -171,41 +172,6 @@ codecChainSyncUnwrapped encodeHeader decodeHeader
           fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
         (_, _, ServerAgency TokIntersect) ->
           fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
-
--- | Codec for chain sync that encodes/decodes headers
---
--- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
--- with a header type that has annotations.
-codecChainSync
-  :: forall header tip m.
-     (MonadST m)
-  => (header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s header)
-  -> (Point header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Point header))
-  -> (tip -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s tip)
-  -> Codec (ChainSync header tip)
-           CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSync = codecChainSyncUnwrapped
-
--- | Codec for chain sync that doesn't encode/decode headers
-codecChainSyncSerialised
-  :: forall header tip m.
-     (MonadST m)
-  => (Serialised header -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (Serialised header))
-  -> (Point header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Point header))
-  -> (tip -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s tip)
-  -> Codec (ChainSync (Serialised header) tip)
-           CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSyncSerialised encodeHeaderWrapped decodeHeaderWrapped
-                         encodePoint decodePoint =
-    codecChainSyncUnwrapped
-      encodeHeaderWrapped       decodeHeaderWrapped
-      (encodePoint . castPoint) (castPoint <$> decodePoint)
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
 encodeList _   [] = CBOR.encodeListLen 0

@@ -12,7 +12,6 @@ import           Control.Monad
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
-import           Data.Proxy
 
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
@@ -224,11 +223,4 @@ instance RunNode DualByronBlock where
   -- concrete implementation
   nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
 
-  -- The header is just the concrete header, so we can just reuse the Byron def
-  nodeAddHeaderEnvelope  = nodeAddHeaderEnvelope . dualCodecConfigMain
   nodeGetBinaryBlockInfo = dualBinaryBlockInfo nodeGetBinaryBlockInfo
-
-  nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb
-
-pb :: Proxy ByronBlock
-pb = Proxy

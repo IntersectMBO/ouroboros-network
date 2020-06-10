@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -678,6 +679,23 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
       }
 
 {-------------------------------------------------------------------------------
+  NestedCtxt
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ TestBlock f a where
+  CtxtTestBlock :: NestedCtxt_ TestBlock f (f TestBlock)
+
+deriving instance Show (NestedCtxt_ TestBlock f a)
+
+instance TrivialDependency (NestedCtxt_ TestBlock f) where
+  type TrivialIndex (NestedCtxt_ TestBlock f) = f TestBlock
+  hasSingleIndex CtxtTestBlock CtxtTestBlock = Refl
+  indexIsTrivial = CtxtTestBlock
+
+instance SameDepIndex (NestedCtxt_ TestBlock f)
+instance HasNestedContent f TestBlock
+
+{-------------------------------------------------------------------------------
   Test infrastructure: serialisation
 -------------------------------------------------------------------------------}
 
@@ -702,6 +720,12 @@ instance EncodeDisk TestBlock (AnnTip TestBlock) where
 
 instance DecodeDisk TestBlock (AnnTip TestBlock) where
   decodeDisk _ = decodeAnnTipIsEBB decode
+
+instance ReconstructNestedCtxt       Header  TestBlock
+instance EncodeDiskDepIx (NestedCtxt Header) TestBlock
+instance EncodeDiskDep   (NestedCtxt Header) TestBlock
+instance DecodeDiskDepIx (NestedCtxt Header) TestBlock
+instance DecodeDiskDep   (NestedCtxt Header) TestBlock
 
 -- ConsensusState
 instance EncodeDisk TestBlock ()

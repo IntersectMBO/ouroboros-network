@@ -31,6 +31,7 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Local shorthand to make the instances more readable
@@ -80,11 +81,13 @@ instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (MockBlock ext) wh
   decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (Header (MockBlock ext)) where
-  encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
-  decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
+  encodeNodeToNode ccfg _ = encodeDisk ccfg . unnest
+  decodeNodeToNode ccfg _ = nest <$> decodeDisk ccfg
 
 instance SerialiseNodeToNode (MockBlock ext) (Serialised (MockBlock ext))
-instance SerialiseNodeToNode (MockBlock ext) (Serialised (Header (MockBlock ext)))
+instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (SerialisedHeader (MockBlock ext)) where
+  encodeNodeToNode ccfg _ = encodeDisk ccfg
+  decodeNodeToNode ccfg _ = decodeDisk ccfg
 instance SerialiseNodeToNode (MockBlock ext) (GenTx (MockBlock ext))
 instance SerialiseNodeToNode (MockBlock ext) (GenTxId (MockBlock ext))
 
@@ -136,3 +139,5 @@ instance HasNestedContent f (SimpleBlock c ext)
 instance Serialise ext => ReconstructNestedCtxt Header        (MockBlock ext)
 instance Serialise ext => EncodeDiskDepIx (NestedCtxt Header) (MockBlock ext)
 instance Serialise ext => EncodeDiskDep   (NestedCtxt Header) (MockBlock ext)
+instance Serialise ext => DecodeDiskDepIx (NestedCtxt Header) (MockBlock ext)
+instance Serialise ext => DecodeDiskDep   (NestedCtxt Header) (MockBlock ext)

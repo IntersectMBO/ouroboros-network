@@ -457,7 +457,7 @@ codecSerialised
   => Codec (ChainSync (Serialised block) (Tip block))
            S.DeserialiseFailure
            m ByteString
-codecSerialised = codecChainSyncSerialised
+codecSerialised = codecChainSync
     S.encode             S.decode
     S.encode             S.decode
     (encodeTip S.encode) (decodeTip S.decode)

@@ -65,8 +65,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.chunkFileParser
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
 import           Control.Monad.Except
@@ -77,10 +75,8 @@ import qualified Data.Binary.Get as Get
 import           Data.Binary.Put (Put)
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Functor ((<&>))
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word8)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -128,8 +124,6 @@ data ImmDB m blk = ImmDB {
     , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
     , codecConfig        :: !(CodecConfig blk)
     , chunkInfo          :: !ChunkInfo
-    , addHdrEnv          :: !(ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , prefixLen          :: !Word8
     }
   deriving (Generic)
 
@@ -139,7 +133,8 @@ deriving instance HasCodecConfig blk => NoUnexpectedThunks (ImmDB m blk)
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmDB.
 class ( EncodeDisk blk blk
       , DecodeDisk blk (Lazy.ByteString -> blk)
-      , DecodeDisk blk (Lazy.ByteString -> Header blk)
+      , DecodeDiskDep (NestedCtxt Header) blk
+      , ReconstructNestedCtxt Header blk
       ) => ImmDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the ImmDB wrapper.
@@ -159,8 +154,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
     , immChunkInfo          :: ChunkInfo
     , immValidation         :: ImmDB.ValidationPolicy
     , immCheckIntegrity     :: blk -> Bool
-    , immAddHdrEnv          :: ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
-    , immPrefixLen          :: Word8
     , immHasFS              :: HasFS m h
     , immTracer             :: Tracer m (TraceEvent blk)
     , immCacheConfig        :: Index.CacheConfig
@@ -176,8 +169,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immChunkInfo'
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
--- * 'immAddHdrEnv'
--- * 'immPrefixLen'
 -- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
@@ -190,8 +181,6 @@ defaultArgs fp = ImmDbArgs{
     , immChunkInfo          = error "no default for immChunkInfo"
     , immValidation         = error "no default for immValidation"
     , immCheckIntegrity     = error "no default for immCheckIntegrity"
-    , immAddHdrEnv          = error "no default for immAddHdrEnv"
-    , immPrefixLen          = error "no default for immPrefixLen"
     , immRegistry           = error "no default for immRegistry"
     }
   where
@@ -254,8 +243,6 @@ openDB ImmDbArgs {..} = do
       , getBinaryBlockInfo = immGetBinaryBlockInfo
       , codecConfig        = immCodecConfig
       , chunkInfo          = immChunkInfo
-      , addHdrEnv          = immAddHdrEnv
-      , prefixLen          = immPrefixLen
       }
   where
     args = ImmDB.ImmutableDbArgs
@@ -276,10 +263,8 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
         -> ChunkInfo
-        -> (ShortByteString -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> Word8
         -> ImmDB m blk
-mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo addHdrEnv prefixLen = ImmDB {..}
+mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -291,8 +276,7 @@ translateBlockComponent
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk)                  b
   -> BlockComponent (ImmutableDB (HeaderHash blk) m) b
-translateBlockComponent db blockComponent =
-    translateToRawDB (parse db) (prefixLen db) (addHdrEnv db) blockComponent
+translateBlockComponent ImmDB { codecConfig } = translateToRawDB codecConfig
 
 -- | Return 'True' when the given point is in the ImmutableDB.
 --
@@ -652,31 +636,6 @@ mustExist :: Either EpochNo SlotNo
           -> Either ChainDbFailure b
 mustExist epochOrSlot Nothing  = Left  $ ImmDbMissingBlock epochOrSlot
 mustExist _           (Just b) = Right $ b
-
--- TODO unify with VolDB.parse
-parse
-  :: forall m blk b.
-     (HasHeader blk, ImmDbSerialiseConstraints blk, MonadThrow m)
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> BlockRef blk
-  -> Lazy.ByteString
-  -> m b  -- ^ Throws 'ChainDbFailure'
-parse ImmDB { codecConfig } blockOrHeader blockRef bytes =
-    aux (CBOR.deserialiseFromBytes dec bytes)
-  where
-    dec :: forall s. Decoder s (Lazy.ByteString -> b)
-    dec = case blockOrHeader of
-      Block  -> decodeDisk codecConfig
-      Header -> decodeDisk codecConfig
-
-    aux :: Either CBOR.DeserialiseFailure
-                  (Lazy.ByteString, Lazy.ByteString -> b)
-        -> m b
-    aux (Right (bs, b))
-      | Lazy.null bs = return $ b bytes
-      | otherwise    = throwM $ ImmDbTrailingData blockRef bs
-    aux (Left err)   = throwM $ ImmDbParseFailure blockRef err
 
 {-------------------------------------------------------------------------------
   Wrappers

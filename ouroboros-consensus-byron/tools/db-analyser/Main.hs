@@ -351,8 +351,6 @@ withImmDB :: FilePath
           -> IO a
 withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
-    ccfg = getCodecConfig $ configBlock cfg
-
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
           immGetBinaryBlockInfo = nodeGetBinaryBlockInfo
@@ -360,6 +358,5 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
         , immChunkInfo          = chunkInfo
         , immValidation         = ValidateMostRecentChunk
         , immCheckIntegrity     = nodeCheckIntegrity cfg
-        , immAddHdrEnv          = nodeAddHeaderEnvelope ccfg
         , immRegistry           = registry
         }

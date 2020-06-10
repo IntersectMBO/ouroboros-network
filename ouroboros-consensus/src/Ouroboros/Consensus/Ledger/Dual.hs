@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Lifted functions
   , dualExtValidationErrorMain
   , dualTopLevelConfigMain
+  , ctxtDualMain
     -- * Type class family instances
   , Header(..)
   , BlockConfig(..)
@@ -36,6 +37,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , LedgerState(..)
   , GenTx(..)
   , TxId(..)
+  , NestedCtxt_(..)
     -- * Serialisation
   , encodeDualBlock
   , decodeDualBlock

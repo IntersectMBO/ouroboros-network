@@ -350,6 +350,3 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
         tpraosParams $ configConsensus cfg
 
   nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo
-
-  -- We don't want any envelope added
-  nodeAddHeaderEnvelope _ _ _ = id

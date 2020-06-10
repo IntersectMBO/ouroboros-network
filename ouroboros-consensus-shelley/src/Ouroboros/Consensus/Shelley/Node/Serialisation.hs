@@ -4,6 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node.Serialisation () where
 
+import           Codec.Serialise (decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
 
 import           Cardano.Binary (fromCBOR, toCBOR)
@@ -16,6 +17,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -86,9 +88,10 @@ instance Crypto c => SerialiseNodeToNode (ShelleyBlock c) (Header (ShelleyBlock 
   encodeNodeToNode _ _ = wrapCBORinCBOR   encodeShelleyHeader
   decodeNodeToNode _ _ = unwrapCBORinCBOR decodeShelleyHeader
 
--- | 'Serialised' uses CBOR-in-CBOR by default.
-instance SerialiseNodeToNode (ShelleyBlock c) (Serialised (Header (ShelleyBlock c)))
-  -- Default instance
+-- | We use CBOR-in-CBOR
+instance SerialiseNodeToNode (ShelleyBlock c) (SerialisedHeader (ShelleyBlock c)) where
+  encodeNodeToNode _ _ (GenDepPair _ serialised) = encode serialised
+  decodeNodeToNode _ _ = GenDepPair indexIsTrivial <$> decode
 
 -- | The @To/FromCBOR@ instances defined in @cardano-ledger-specs@ use
 -- CBOR-in-CBOR to get the annotation.

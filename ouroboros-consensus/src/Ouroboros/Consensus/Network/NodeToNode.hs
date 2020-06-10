@@ -79,6 +79,10 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (ReconstructNestedCtxt)
+
 {-------------------------------------------------------------------------------
   Handlers
 -------------------------------------------------------------------------------}
@@ -97,7 +101,7 @@ data Handlers m peer blk = Handlers {
     , hChainSyncServer
         :: NodeToNodeVersion blk
         -> ResourceRegistry m
-        -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
+        -> ChainSyncServer (SerialisedHeader blk) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , hBlockFetchClient
@@ -127,6 +131,7 @@ mkHandlers
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
+     , ReconstructNestedCtxt Header blk
      , HasNetworkProtocolVersion blk
      )
   => NodeArgs   m remotePeer localPeer blk
@@ -177,11 +182,11 @@ mkHandlers
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
 data Codecs blk e m bCS bSCS bBF bSBF bTX = Codecs {
-      cChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))              e m bCS
-    , cChainSyncCodecSerialised  :: Codec (ChainSync (Serialised (Header blk)) (Tip blk)) e m bSCS
-    , cBlockFetchCodec           :: Codec (BlockFetch blk)                                e m bBF
-    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))                   e m bSBF
-    , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))        e m bTX
+      cChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))           e m bCS
+    , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Tip blk)) e m bSCS
+    , cBlockFetchCodec           :: Codec (BlockFetch blk)                             e m bBF
+    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))                e m bSBF
+    , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))     e m bTX
     }
 
 -- | Protocol codecs for the node-to-node protocols
@@ -201,7 +206,7 @@ defaultCodecs ccfg version = Codecs {
           (decodeTip   dec)
 
     , cChainSyncCodecSerialised =
-        codecChainSyncSerialised
+        codecChainSync
           enc
           dec
           (encodePoint enc)
@@ -217,7 +222,7 @@ defaultCodecs ccfg version = Codecs {
           dec
 
     , cBlockFetchCodecSerialised =
-        codecBlockFetchSerialised
+        codecBlockFetch
           enc
           dec
           enc
@@ -241,7 +246,7 @@ defaultCodecs ccfg version = Codecs {
 identityCodecs :: Monad m
                => Codecs blk CodecFailure m
                     (AnyMessage (ChainSync (Header blk) (Tip blk)))
-                    (AnyMessage (ChainSync (Serialised (Header blk)) (Tip blk)))
+                    (AnyMessage (ChainSync (SerialisedHeader blk) (Tip blk)))
                     (AnyMessage (BlockFetch blk))
                     (AnyMessage (BlockFetch (Serialised blk)))
                     (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
@@ -263,7 +268,7 @@ type Tracers m peer blk e =
 
 data Tracers' peer blk e f = Tracers {
       tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Tip blk))))
-    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))))
+    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Tip blk))))
     , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk)))
     , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk))))
     , tTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
@@ -299,6 +304,7 @@ showTracers :: ( Show blk
                , Show (GenTx blk)
                , Show (GenTxId blk)
                , HasHeader blk
+               , HasNestedContent Header blk
                )
             => Tracer m String -> Tracers m peer blk e
 showTracers tr = Tracers {

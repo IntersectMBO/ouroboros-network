@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -24,6 +25,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , GenTx(..)
   , TxId(..)
   , CodecConfig(..)
+  , NestedCtxt_(..)
     -- * Newtype wrappers
   , DegenForkConsensusState(..)
   , DegenForkHeaderHash(..)
@@ -59,6 +61,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -363,6 +366,8 @@ instance SingleEraBlock b => ConvertRawHash (DegenFork b) where
 
   As discussed in the module header, for this we delegate to @b@, rather than
   to @HardForkBlock '[b]@
+
+  -- TODO go through @HardForkBlock '[b]@
 -------------------------------------------------------------------------------}
 
 -- Disk
@@ -401,14 +406,6 @@ instance (SerialiseDiskConstraints b, NoHardForks b)
 instance (SerialiseDiskConstraints b, NoHardForks b)
       => DecodeDisk (DegenFork b) (Lazy.ByteString -> DegenFork b) where
   decodeDisk = defaultDecodeDisk (Proxy @(Lazy.ByteString -> b))
-
-instance (SerialiseDiskConstraints b, NoHardForks b)
-       => EncodeDisk (DegenFork b) (Header (DegenFork b)) where
-  encodeDisk = defaultEncodeDisk (Proxy @(Header b))
-
-instance (SerialiseDiskConstraints b, NoHardForks b)
-       => DecodeDisk (DegenFork b) (Lazy.ByteString -> Header (DegenFork b)) where
-  decodeDisk = defaultDecodeDisk (Proxy @(((->) Lazy.ByteString :.: Header) b))
 
 instance (SerialiseDiskConstraints b, NoHardForks b)
       => EncodeDisk (DegenFork b) (DegenForkConsensusState b) where
@@ -496,15 +493,15 @@ instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
         decodeNodeToNode @b @(Serialised b) (project ccfg) version
 
 instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
-       => SerialiseNodeToNode (DegenFork b) (Serialised (Header (DegenFork b))) where
-  encodeNodeToNode (DCCfg ccfg) version (Serialised bytes) =
+       => SerialiseNodeToNode (DegenFork b) (SerialisedHeader (DegenFork b)) where
+  encodeNodeToNode (DCCfg ccfg) version serialisedHeader =
       encodeNodeToNode
         (project ccfg)
         version
-        (Serialised bytes :: Serialised (Header b))
+        (depPairFirst (projNestedCtxt . mapNestedCtxt unDCtxt) serialisedHeader)
   decodeNodeToNode (DCCfg ccfg) version =
-      (\(Serialised bytes) -> Serialised bytes) <$>
-        decodeNodeToNode @b @(Serialised (Header b)) (project ccfg) version
+      depPairFirst (mapNestedCtxt DCtxt . injNestedCtxt) <$>
+        decodeNodeToNode (project ccfg) version
 
 instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
        => SerialiseNodeToNode (DegenFork b) (GenTx (DegenFork b)) where
@@ -602,6 +599,49 @@ instance (SerialiseNodeToClientConstraints b, NoHardForks b)
         Right <$> decodeResult (project ccfg) version qry'
 
 {-------------------------------------------------------------------------------
+  Nested contents
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ (DegenFork b) f a where
+  DCtxt :: NestedCtxt_ (HardForkBlock '[b]) f a
+        -> NestedCtxt_ (DegenFork b)        f a
+
+unDCtxt
+  :: NestedCtxt_ (DegenFork b)        f a
+  -> NestedCtxt_ (HardForkBlock '[b]) f a
+unDCtxt (DCtxt ctxt) = ctxt
+
+deriving instance SingleEraBlock b => Show (NestedCtxt_ (DegenFork b) Header a)
+
+instance SingleEraBlock b => SameDepIndex (NestedCtxt_ (DegenFork b) Header) where
+  sameDepIndex (DCtxt ctxt1) (DCtxt ctxt2) =
+      sameDepIndex ctxt1 ctxt2
+
+instance SingleEraBlock b => HasNestedContent Header (DegenFork b) where
+  unnest hdr = case unnest (unDHdr hdr) of
+      DepPair ctxt a -> DepPair (mapNestedCtxt DCtxt ctxt) a
+  nest (DepPair ctxt a) =
+      DHdr $ nest (DepPair (mapNestedCtxt unDCtxt ctxt) a)
+
+instance NoHardForks b => ReconstructNestedCtxt Header (DegenFork b) where
+  reconstructPrefixLen _ =
+      reconstructPrefixLen (Proxy @(Header b))
+
+  reconstructNestedCtxt _ prefix blockSize =
+      mapSomeNestedCtxt DCtxt . inject $
+        reconstructNestedCtxt (Proxy @(Header b)) prefix blockSize
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => EncodeDiskDep (NestedCtxt Header) (DegenFork b) where
+  encodeDiskDep (DCCfg ccfg) =
+      encodeDiskDep (project ccfg) . projNestedCtxt . mapNestedCtxt unDCtxt
+
+instance (SerialiseDiskConstraints b, NoHardForks b)
+      => DecodeDiskDep (NestedCtxt Header) (DegenFork b) where
+  decodeDiskDep (DCCfg ccfg) =
+      decodeDiskDep (project ccfg) . projNestedCtxt . mapNestedCtxt unDCtxt
+
+{-------------------------------------------------------------------------------
   RunNode instance
 
   As discussed in the module header, for this we delegate to @b@, rather than
@@ -630,13 +670,6 @@ instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
 
   nodeGetBinaryBlockInfo (DBlk blk) =
       nodeGetBinaryBlockInfo (project' (Proxy @(I b)) blk :: b)
-
-  nodeReconstructPrefixLen _ = nodeReconstructPrefixLen (Proxy @b)
-
-  nodeAddHeaderEnvelope (DCCfg cfg) =
-      nodeAddHeaderEnvelope (project cfg)
-
-  nodeExceptionIsFatal _ = nodeExceptionIsFatal (Proxy @b)
 
   nodeInitChainDB cfg initDB =
       nodeInitChainDB
