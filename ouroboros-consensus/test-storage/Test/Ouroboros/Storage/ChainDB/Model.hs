@@ -514,7 +514,7 @@ getBlockComponent blk = \case
     GetIsEBB        -> headerToIsEBB (getHeader blk)
     GetBlockSize    -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize   -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedType n -> Short.toShort $ Lazy.toStrict $
+    GetNestedCtxt n -> Short.toShort $ Lazy.toStrict $
                        Lazy.take (fromIntegral n) $ serialise blk
 
     GetPure a       -> a

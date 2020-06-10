@@ -44,7 +44,7 @@ translateToRawDB parse addHdrEnv = \case
     GetIsEBB        -> GetIsEBB
     GetBlockSize    -> GetBlockSize
     GetHeaderSize   -> GetHeaderSize
-    GetNestedType n -> GetNestedType n
+    GetNestedCtxt n -> GetNestedCtxt n
     GetPure a       -> GetPure a
     GetApply f bc   -> GetApply
       (translateToRawDB parse addHdrEnv f)

@@ -257,7 +257,7 @@ extractBlockComponent (BlockInfo {..}, bytes) = go
       GetIsEBB        -> bisEBB
       GetBlockSize    -> fromIntegral $ BL.length bytes
       GetHeaderSize   -> bheaderSize
-      GetNestedType n -> Short.toShort $ BL.toStrict $
+      GetNestedCtxt n -> Short.toShort $ BL.toStrict $
                          BL.take (fromIntegral n) bytes
       GetPure a       -> a
       GetApply f bc   -> go f $ go bc

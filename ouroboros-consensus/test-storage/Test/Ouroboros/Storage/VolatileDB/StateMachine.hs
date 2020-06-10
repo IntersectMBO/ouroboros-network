@@ -104,7 +104,7 @@ allComponents = (,,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
-    <*> GetNestedType 2
+    <*> GetNestedCtxt 2
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents =

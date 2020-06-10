@@ -314,9 +314,9 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         GetHeaderSize   -> return $
           fromIntegral $ Lazy.length $ toLazyByteString $ encodeDisk codecConfig hdr
         -- We don't know with which bytes the block starts, forward it.
-        -- TODO When we replace 'GetNestedType' with the proper type, we can
+        -- TODO When we replace 'GetNestedCtxt' with the proper type, we can
         -- probably return the right value here.
-        GetNestedType n -> getBlockComponent (GetNestedType n)
+        GetNestedCtxt n -> getBlockComponent (GetNestedCtxt n)
         GetPure a       -> return a
         GetApply f bc   ->
           getBlockComponentFromHeader hdr f <*>

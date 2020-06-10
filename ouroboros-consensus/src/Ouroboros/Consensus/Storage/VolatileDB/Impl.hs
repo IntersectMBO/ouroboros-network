@@ -221,7 +221,7 @@ getBlockComponentImpl env blockComponent blockId =
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetNestedType n -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetNestedCtxt n -> withFile hasFS ibFile ReadMode $ \hndl -> do
           bytes <- hGetExactlyAt hasFS hndl (fromIntegral n) (AbsOffset 0)
           return $ Short.toShort $ Lazy.toStrict bytes
       where
