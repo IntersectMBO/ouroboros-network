@@ -8,7 +8,10 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -32,6 +35,13 @@ module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
   , EncodeDiskDep(..)
   , DecodeDiskDepIx(..)
   , DecodeDiskDep(..)
+    -- * Serialised header
+  , SerialisedHeader(..)
+  , serialisedHeaderToPair
+  , serialisedHeaderFromPair
+  , castSerialisedHeader
+  , encodeTrivialSerialisedHeader
+  , decodeTrivialSerialisedHeader
     -- * Reconstruct nested type
   , ReconstructNestedCtxt (..)
     -- * Re-exported for convenience
@@ -180,6 +190,82 @@ instance DecodeDiskDepIx f blk => DecodeDisk blk (GenDepPair Serialised (f blk))
       SomeBlock fa <- decodeDiskDepIx ccfg
       serialised   <- decode
       return $ GenDepPair fa serialised
+
+{-------------------------------------------------------------------------------
+  Serialised header
+
+  TODO: Not entirely sure we /want/ default instances for EncodeDisk/DecodeDisk
+  for 'SerialisedHeader'.
+-------------------------------------------------------------------------------}
+
+-- | A 'Serialised' header along with context identifying what kind of header
+-- it is.
+--
+-- The 'SerialiseNodeToNodeDep' for 'Header' will decide how to actually
+-- encode this.
+newtype SerialisedHeader blk = SerialisedHeaderFromDepPair {
+      serialisedHeaderToDepPair :: GenDepPair Serialised (NestedCtxt Header blk)
+    }
+
+deriving instance HasNestedContent Header blk => Show (SerialisedHeader blk)
+
+-- | Only needed for the 'ChainSyncServer'
+type instance HeaderHash (SerialisedHeader blk) = HeaderHash blk
+instance StandardHash blk => StandardHash (SerialisedHeader blk)
+
+serialisedHeaderToPair ::
+     SerialisedHeader blk
+  -> (SomeBlock (NestedCtxt Header) blk, Lazy.ByteString)
+serialisedHeaderToPair hdr =
+    case serialisedHeaderToDepPair hdr of
+      GenDepPair ctxt (Serialised bs) -> (SomeBlock ctxt, bs)
+
+serialisedHeaderFromPair ::
+     (SomeBlock (NestedCtxt Header) blk, Lazy.ByteString)
+  -> SerialisedHeader blk
+serialisedHeaderFromPair (SomeBlock ctxt, bs) =
+    SerialisedHeaderFromDepPair $
+      GenDepPair ctxt (Serialised bs)
+
+castSerialisedHeader ::
+     (forall a. NestedCtxt_ blk Header a -> NestedCtxt_ blk' Header a)
+  -> SerialisedHeader blk -> SerialisedHeader blk'
+castSerialisedHeader f =
+      SerialisedHeaderFromDepPair
+    . depPairFirst (castNestedCtxt f)
+    . serialisedHeaderToDepPair
+
+instance EncodeDiskDepIx (NestedCtxt Header) blk
+      => EncodeDisk blk (SerialisedHeader blk) where
+  encodeDisk ccfg = encodeDisk ccfg . serialisedHeaderToDepPair
+
+instance DecodeDiskDepIx (NestedCtxt Header) blk
+      => DecodeDisk blk (SerialisedHeader blk) where
+  decodeDisk ccfg = SerialisedHeaderFromDepPair <$> decodeDisk ccfg
+
+-- | Encode the header without the 'NestedCtxt'
+--
+-- Uses CBOR-in-CBOR
+encodeTrivialSerialisedHeader ::
+     forall blk. TrivialDependency (NestedCtxt_ blk Header)
+  => SerialisedHeader blk -> Encoding
+encodeTrivialSerialisedHeader =
+      encode
+    . Serialised
+    . snd
+    . serialisedHeaderToPair
+  where
+    _ = keepRedundantConstraint (Proxy @(TrivialDependency (NestedCtxt_ blk Header)))
+
+-- | Inverse to 'encodeTrivialSerialisedHeader'
+decodeTrivialSerialisedHeader ::
+     forall blk. TrivialDependency (NestedCtxt_ blk Header)
+  => forall s. Decoder s (SerialisedHeader blk)
+decodeTrivialSerialisedHeader =
+    ( serialisedHeaderFromPair
+    . (SomeBlock (NestedCtxt indexIsTrivial), )
+    . unSerialised
+    ) <$> decode
 
 {-------------------------------------------------------------------------------
   Reconstruct nested type

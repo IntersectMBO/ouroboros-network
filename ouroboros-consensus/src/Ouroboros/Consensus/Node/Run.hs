@@ -33,8 +33,9 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
-                     SerialisedHeader, VolDbSerialiseConstraints)
+                     VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
