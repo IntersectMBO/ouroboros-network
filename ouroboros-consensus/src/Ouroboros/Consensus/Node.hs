@@ -126,11 +126,11 @@ data RunNodeArgs blk = RunNodeArgs {
 
       -- | node-to-node protocol versions to run.
       --
-    , rnNodeToNodeVersions   :: NonEmpty (NodeToNodeVersion blk)
+    , rnNodeToNodeVersions   :: NonEmpty (BlockNodeToNodeVersion blk)
 
       -- | node-to-client protocol versions to run.
       --
-    , rnNodeToClientVersions :: NonEmpty (NodeToClientVersion blk)
+    , rnNodeToClientVersions :: NonEmpty (BlockNodeToClientVersion blk)
 
       -- | Hook called after the initialisation of the 'NodeKernel'
       --
@@ -241,7 +241,7 @@ run runargs@RunNodeArgs{..} =
     mkNodeToNodeApps
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
-      -> NodeToNodeVersion blk
+      -> BlockNodeToNodeVersion blk
       -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
@@ -255,7 +255,7 @@ run runargs@RunNodeArgs{..} =
     mkNodeToClientApps
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
-      -> NodeToClientVersion blk
+      -> BlockNodeToClientVersion blk
       -> NTC.Apps IO LocalConnectionId ByteString ByteString ByteString ()
     mkNodeToClientApps nodeArgs nodeKernel version =
         NTC.mkApps
@@ -265,10 +265,10 @@ run runargs@RunNodeArgs{..} =
 
     mkDiffusionApplications
       :: MiniProtocolParameters
-      -> (   NodeToNodeVersion   blk
+      -> (   BlockNodeToNodeVersion blk
           -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
          )
-      -> (   NodeToClientVersion blk
+      -> (   BlockNodeToClientVersion blk
           -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()
          )
       -> DiffusionApplications

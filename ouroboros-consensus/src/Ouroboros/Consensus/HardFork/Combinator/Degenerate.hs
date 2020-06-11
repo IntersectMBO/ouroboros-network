@@ -447,7 +447,7 @@ defaultEncodeNodeToNode
      , SerialiseNodeToNode b (f b)
      )
   => Proxy (f b)
-  -> CodecConfig (DegenFork b) -> NodeToNodeVersion (DegenFork b)
+  -> CodecConfig (DegenFork b) -> BlockNodeToNodeVersion (DegenFork b)
   -> x -> Encoding
 defaultEncodeNodeToNode p (DCCfg ccfg) version x =
     encodeNodeToNode (project ccfg) version (project' p x :: f b)
@@ -460,7 +460,7 @@ defaultDecodeNodeToNode
      , SerialiseNodeToNode b (f b)
      )
   => Proxy (f b)
-  -> CodecConfig (DegenFork b) -> NodeToNodeVersion (DegenFork b)
+  -> CodecConfig (DegenFork b) -> BlockNodeToNodeVersion (DegenFork b)
   -> forall s. Decoder s x
 defaultDecodeNodeToNode _ (DCCfg ccfg) version =
     coerce . inject <$> decodeNodeToNode @b @(f b) (project ccfg) version
@@ -525,7 +525,7 @@ defaultEncodeNodeToClient
      , SerialiseNodeToClient b (f b)
      )
   => Proxy (f b)
-  -> CodecConfig (DegenFork b) -> NodeToClientVersion (DegenFork b)
+  -> CodecConfig (DegenFork b) -> BlockNodeToClientVersion (DegenFork b)
   -> x -> Encoding
 defaultEncodeNodeToClient p (DCCfg ccfg) version x =
     encodeNodeToClient (project ccfg) version (project' p x :: f b)
@@ -538,7 +538,7 @@ defaultDecodeNodeToClient
      , SerialiseNodeToClient b (f b)
      )
   => Proxy (f b)
-  -> CodecConfig (DegenFork b) -> NodeToClientVersion (DegenFork b)
+  -> CodecConfig (DegenFork b) -> BlockNodeToClientVersion (DegenFork b)
   -> forall s. Decoder s x
 defaultDecodeNodeToClient _ (DCCfg ccfg) version =
     coerce . inject <$> decodeNodeToClient @b @(f b) (project ccfg) version
@@ -651,16 +651,16 @@ projCfg :: NoHardForks b => TopLevelConfig (DegenFork b) -> TopLevelConfig b
 projCfg = project . castTopLevelConfig
 
 instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) where
-  type NodeToNodeVersion   (DegenFork b) = NodeToNodeVersion   b
-  type NodeToClientVersion (DegenFork b) = NodeToClientVersion b
+  type BlockNodeToNodeVersion   (DegenFork b) = BlockNodeToNodeVersion   b
+  type BlockNodeToClientVersion (DegenFork b) = BlockNodeToClientVersion b
 
-  -- | Enumerate all supported node-to-node versions
-  supportedNodeToNodeVersions   _ = supportedNodeToNodeVersions   (Proxy @b)
-  supportedNodeToClientVersions _ = supportedNodeToClientVersions (Proxy @b)
-  mostRecentNodeToNodeVersion   _ = mostRecentNodeToNodeVersion   (Proxy @b)
-  mostRecentNodeToClientVersion _ = mostRecentNodeToClientVersion (Proxy @b)
-  nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     (Proxy @b)
-  nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
+instance TranslateNetworkProtocolVersion b => TranslateNetworkProtocolVersion (DegenFork b) where
+  supportedNodeToNodeVersions     _ = supportedNodeToNodeVersions     (Proxy @b)
+  supportedNodeToClientVersions   _ = supportedNodeToClientVersions   (Proxy @b)
+  mostRecentSupportedNodeToNode   _ = mostRecentSupportedNodeToNode   (Proxy @b)
+  mostRecentSupportedNodeToClient _ = mostRecentSupportedNodeToClient (Proxy @b)
+  nodeToNodeProtocolVersion       _ = nodeToNodeProtocolVersion       (Proxy @b)
+  nodeToClientProtocolVersion     _ = nodeToClientProtocolVersion     (Proxy @b)
 
 instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
   nodeBlockFetchSize (DHdr hdr) = nodeBlockFetchSize (project hdr)

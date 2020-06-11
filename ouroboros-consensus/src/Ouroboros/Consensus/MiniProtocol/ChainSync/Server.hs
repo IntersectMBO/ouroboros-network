@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-                     (NodeToNodeVersion)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -43,7 +42,7 @@ chainSyncHeadersServer
        )
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> NodeToNodeVersion blk
+    -> BlockNodeToNodeVersion blk
     -> ResourceRegistry m
     -> ChainSyncServer (SerialisedHeader blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB _version registry =

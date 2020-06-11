@@ -41,15 +41,16 @@ pb :: Proxy ByronBlock
 pb = Proxy
 
 instance HasNetworkProtocolVersion DualByronBlock where
-  type NodeToNodeVersion   DualByronBlock = NodeToNodeVersion   ByronBlock
-  type NodeToClientVersion DualByronBlock = NodeToClientVersion ByronBlock
+  type BlockNodeToNodeVersion   DualByronBlock = BlockNodeToNodeVersion   ByronBlock
+  type BlockNodeToClientVersion DualByronBlock = BlockNodeToClientVersion ByronBlock
 
-  supportedNodeToNodeVersions   _ = supportedNodeToNodeVersions   pb
-  supportedNodeToClientVersions _ = supportedNodeToClientVersions pb
-  mostRecentNodeToNodeVersion   _ = mostRecentNodeToNodeVersion   pb
-  mostRecentNodeToClientVersion _ = mostRecentNodeToClientVersion pb
-  nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     pb
-  nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   pb
+instance TranslateNetworkProtocolVersion DualByronBlock where
+  supportedNodeToNodeVersions     _ = supportedNodeToNodeVersions     pb
+  supportedNodeToClientVersions   _ = supportedNodeToClientVersions   pb
+  mostRecentSupportedNodeToNode   _ = mostRecentSupportedNodeToNode   pb
+  mostRecentSupportedNodeToClient _ = mostRecentSupportedNodeToClient pb
+  nodeToNodeProtocolVersion       _ = nodeToNodeProtocolVersion       pb
+  nodeToClientProtocolVersion     _ = nodeToClientProtocolVersion     pb
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

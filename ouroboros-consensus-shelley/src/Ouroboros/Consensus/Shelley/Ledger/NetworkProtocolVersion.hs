@@ -23,16 +23,17 @@ data ShelleyNodeToClientVersion = ShelleyNodeToClientVersion1
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock c) where
-  type NodeToNodeVersion   (ShelleyBlock c) = ShelleyNodeToNodeVersion
-  type NodeToClientVersion (ShelleyBlock c) = ShelleyNodeToClientVersion
+  type BlockNodeToNodeVersion   (ShelleyBlock c) = ShelleyNodeToNodeVersion
+  type BlockNodeToClientVersion (ShelleyBlock c) = ShelleyNodeToClientVersion
 
+instance TranslateNetworkProtocolVersion (ShelleyBlock c) where
   supportedNodeToNodeVersions   _ = ShelleyNodeToNodeVersion1
                                   :| []
   supportedNodeToClientVersions _ = ShelleyNodeToClientVersion1
                                   :| []
 
-  mostRecentNodeToNodeVersion   _ = ShelleyNodeToNodeVersion1
-  mostRecentNodeToClientVersion _ = ShelleyNodeToClientVersion1
+  mostRecentSupportedNodeToNode   _ = ShelleyNodeToNodeVersion1
+  mostRecentSupportedNodeToClient _ = ShelleyNodeToClientVersion1
 
   nodeToNodeProtocolVersion _ ShelleyNodeToNodeVersion1 = N.NodeToNodeV_1
 

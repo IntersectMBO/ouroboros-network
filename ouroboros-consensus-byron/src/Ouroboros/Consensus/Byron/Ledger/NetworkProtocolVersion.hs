@@ -33,16 +33,17 @@ data ByronNodeToClientVersion =
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion ByronBlock where
-  type NodeToNodeVersion   ByronBlock = ByronNodeToNodeVersion
-  type NodeToClientVersion ByronBlock = ByronNodeToClientVersion
+  type BlockNodeToNodeVersion   ByronBlock = ByronNodeToNodeVersion
+  type BlockNodeToClientVersion ByronBlock = ByronNodeToClientVersion
 
+instance TranslateNetworkProtocolVersion ByronBlock where
   supportedNodeToNodeVersions   _ = ByronNodeToNodeVersion1
                                   :| []
   supportedNodeToClientVersions _ = ByronNodeToClientVersion1
                                   :| [ ByronNodeToClientVersion2 ]
 
-  mostRecentNodeToNodeVersion   _ = ByronNodeToNodeVersion1
-  mostRecentNodeToClientVersion _ = ByronNodeToClientVersion2
+  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion1
+  mostRecentSupportedNodeToClient _ = ByronNodeToClientVersion2
 
   nodeToNodeProtocolVersion _ ByronNodeToNodeVersion1 = N.NodeToNodeV_1
   nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = error "version 2 not yet supported"
