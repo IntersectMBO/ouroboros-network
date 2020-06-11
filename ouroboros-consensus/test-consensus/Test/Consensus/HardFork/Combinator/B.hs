@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Condense
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -282,5 +283,13 @@ instance SingleEraBlock BlockB where
 instance HasTxs BlockB where
   extractTxs = const []
 
-instance Condense BlockB where
-  condense = show
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance CondenseConstraints BlockB
+
+instance Condense BlockB                where condense = show
+instance Condense (Header BlockB)       where condense = show
+instance Condense (GenTx BlockB)        where condense = show
+instance Condense (TxId (GenTx BlockB)) where condense = show

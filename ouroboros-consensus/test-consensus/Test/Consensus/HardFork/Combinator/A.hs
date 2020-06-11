@@ -62,6 +62,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Condense
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -409,5 +410,13 @@ instance SingleEraBlock BlockA where
 instance HasTxs BlockA where
   extractTxs = blkA_body
 
-instance Condense BlockA where
-  condense = show
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance CondenseConstraints BlockA
+
+instance Condense BlockA                where condense = show
+instance Condense (Header BlockA)       where condense = show
+instance Condense (GenTx BlockA)        where condense = show
+instance Condense (TxId (GenTx BlockA)) where condense = show
