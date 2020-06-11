@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -241,13 +240,6 @@ instance CanHardFork xs => BasicEnvelopeValidation (HardForkBlock xs) where
 {-------------------------------------------------------------------------------
   Other instances (primarily for the benefit of tests)
 -------------------------------------------------------------------------------}
-
-instance All Condense xs => Condense (HardForkBlock xs) where
-  condense =
-        hcollapse
-      . hcmap (Proxy @Condense) (K . condense . unI)
-      . getOneEraBlock
-      . getHardForkBlock
 
 instance All Eq xs => Eq (HardForkBlock xs) where
   (==) = (aux .: Match.matchNS) `on` (getOneEraBlock . getHardForkBlock)
