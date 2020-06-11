@@ -65,7 +65,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-                     (NodeToNodeVersion)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
@@ -344,7 +343,7 @@ chainSyncClient
     -> Tracer m (TraceChainSyncClientEvent blk)
     -> TopLevelConfig blk
     -> ChainDbView m blk
-    -> NodeToNodeVersion blk
+    -> BlockNodeToNodeVersion blk
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg

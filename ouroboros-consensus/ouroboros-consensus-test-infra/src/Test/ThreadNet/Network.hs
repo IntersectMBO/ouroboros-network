@@ -852,7 +852,7 @@ runThreadNetwork ThreadNetworkArgs
         binaryProtocolCodecs =
           NTN.defaultCodecs
             (getCodecConfig (configBlock cfg))
-            (mostRecentNodeToNodeVersion (Proxy @blk))
+            (mostRecentSupportedNodeToNode (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -882,7 +882,7 @@ data RestartCause
 -- | Fork two directed edges, one in each direction between the two vertices
 --
 forkBothEdges
-  :: (IOLike m, HasNetworkProtocolVersion blk, HasCallStack)
+  :: (IOLike m, TranslateNetworkProtocolVersion blk, HasCallStack)
   => ResourceRegistry m
   -> WrappedClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
@@ -929,7 +929,7 @@ forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
 -- edge via the @async@ interface rather than relying on some sort of mock
 -- socket semantics to convey the cancellation.
 directedEdge ::
-  forall m blk. (IOLike m, HasNetworkProtocolVersion blk)
+  forall m blk. (IOLike m, TranslateNetworkProtocolVersion blk)
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> WrappedClock m
   -> EdgeStatusVar m
@@ -973,7 +973,7 @@ directedEdge tr clock edgeStatusVar client server =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk. (IOLike m, HasNetworkProtocolVersion blk)
+  forall m blk. (IOLike m, TranslateNetworkProtocolVersion blk)
   => EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ client threads on this node
@@ -990,14 +990,14 @@ directedEdgeInner edgeStatusVar
 
     let miniProtocol ::
              (  LimitedApp' m NodeId blk
-             -> NodeToNodeVersion blk
+             -> BlockNodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
              -> m ()
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
-             -> NodeToNodeVersion blk
+             -> BlockNodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
              -> m ()
@@ -1007,8 +1007,8 @@ directedEdgeInner edgeStatusVar
         miniProtocol client server = do
            (chan, dualChan) <- createConnectedChannels
            pure
-             ( client app1 (mostRecentNodeToNodeVersion (Proxy @blk)) (fromCoreNodeId node2) chan
-             , server app2 (mostRecentNodeToNodeVersion (Proxy @blk)) (fromCoreNodeId node1) dualChan
+             ( client app1 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node2) chan
+             , server app2 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests

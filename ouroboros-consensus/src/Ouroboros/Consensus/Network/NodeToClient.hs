@@ -149,8 +149,8 @@ type ClientCodecs blk  m =
 -- anything different based on the version, so @_version@ is unused; it's just
 -- that not all codecs are used, depending on the version number.
 defaultCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
-              => CodecConfig         blk
-              -> NodeToClientVersion blk
+              => CodecConfig blk
+              -> BlockNodeToClientVersion blk
               -> DefaultCodecs blk m
 defaultCodecs ccfg version = Codecs {
       cChainSyncCodec =
@@ -189,8 +189,8 @@ defaultCodecs ccfg version = Codecs {
 -- / deserialise blocks in /chain-sync/ protocol.
 --
 clientCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
-             => CodecConfig         blk
-             -> NodeToClientVersion blk
+             => CodecConfig blk
+             -> BlockNodeToClientVersion blk
              -> ClientCodecs blk m
 clientCodecs ccfg version = Codecs {
       cChainSyncCodec =

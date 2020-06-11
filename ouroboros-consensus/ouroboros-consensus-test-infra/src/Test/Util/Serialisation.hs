@@ -61,8 +61,8 @@ roundtrip_all
      , SerialiseNodeToNodeConstraints blk
      , SerialiseNodeToClientConstraints blk
 
-     , Show (NodeToNodeVersion blk)
-     , Show (NodeToClientVersion blk)
+     , Show (BlockNodeToNodeVersion blk)
+     , Show (BlockNodeToClientVersion blk)
 
      , HasAnnTip blk
 
@@ -73,19 +73,19 @@ roundtrip_all
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ConsensusState (BlockProtocol blk))
 
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (HeaderHash blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) blk
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (Header blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTx blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTxId blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
 
-     , ArbitraryWithVersion (NodeToClientVersion blk) (HeaderHash blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) blk
-     , ArbitraryWithVersion (NodeToClientVersion blk) (GenTx blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) (Some (Query blk))
-     , ArbitraryWithVersion (NodeToClientVersion blk) (SomeResult blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (Some (Query blk))
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
   => CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
@@ -162,12 +162,12 @@ type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
 roundtrip_SerialiseNodeToNode
   :: forall blk.
      ( SerialiseNodeToNodeConstraints blk
-     , Show (NodeToNodeVersion blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (HeaderHash blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) blk
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (Header blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTx blk)
-     , ArbitraryWithVersion (NodeToNodeVersion blk) (GenTxId blk)
+     , Show (BlockNodeToNodeVersion blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
 
        -- Needed for testing the @Serialised blk@
      , EncodeDisk blk blk
@@ -236,16 +236,16 @@ roundtrip_SerialiseNodeToNode ccfg =
     ]
   where
     enc :: SerialiseNodeToNode blk a
-        => NodeToNodeVersion blk -> a -> Encoding
+        => BlockNodeToNodeVersion blk -> a -> Encoding
     enc = encodeNodeToNode ccfg
 
     dec :: SerialiseNodeToNode blk a
-        => NodeToNodeVersion blk -> forall s. Decoder s a
+        => BlockNodeToNodeVersion blk -> forall s. Decoder s a
     dec = decodeNodeToNode ccfg
 
     rt
       :: forall a.
-         ( Arbitrary (WithVersion (NodeToNodeVersion blk) a)
+         ( Arbitrary (WithVersion (BlockNodeToNodeVersion blk) a)
          , Eq a
          , Show a
          , SerialiseNodeToNode blk a
@@ -260,13 +260,13 @@ roundtrip_SerialiseNodeToNode ccfg =
 roundtrip_SerialiseNodeToClient
   :: forall blk.
      ( SerialiseNodeToClientConstraints blk
-     , Show (NodeToClientVersion blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) (HeaderHash blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) blk
-     , ArbitraryWithVersion (NodeToClientVersion blk) (GenTx blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (NodeToClientVersion blk) (Some (Query blk))
-     , ArbitraryWithVersion (NodeToClientVersion blk) (SomeResult blk)
+     , Show (BlockNodeToClientVersion blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (HeaderHash blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (Some (Query blk))
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
 
        -- Needed for testing the @Serialised blk@
      , EncodeDisk blk blk
@@ -303,16 +303,16 @@ roundtrip_SerialiseNodeToClient ccfg =
     ]
   where
     enc :: SerialiseNodeToClient blk a
-        => NodeToClientVersion blk -> a -> Encoding
+        => BlockNodeToClientVersion blk -> a -> Encoding
     enc = encodeNodeToClient ccfg
 
     dec :: SerialiseNodeToClient blk a
-        => NodeToClientVersion blk -> forall s. Decoder s a
+        => BlockNodeToClientVersion blk -> forall s. Decoder s a
     dec = decodeNodeToClient ccfg
 
     rt
       :: forall a.
-         ( Arbitrary (WithVersion (NodeToClientVersion blk) a)
+         ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) a)
          , Eq a
          , Show a
          , SerialiseNodeToClient blk a
@@ -336,7 +336,7 @@ roundtrip_envelopes ::
      , HasNestedContent Header blk
      )
   => CodecConfig blk
-  -> WithVersion (NodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+  -> WithVersion (BlockNodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
   -> Property
 roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
     roundtrip

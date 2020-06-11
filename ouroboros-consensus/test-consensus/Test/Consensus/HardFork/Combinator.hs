@@ -358,6 +358,10 @@ instance CanHardFork '[BlockA, BlockB] where
 
 instance HasNetworkProtocolVersion TestBlock where
 
+instance TranslateNetworkProtocolVersion TestBlock where
+  nodeToNodeProtocolVersion   _ _ = NodeToNodeV_1
+  nodeToClientProtocolVersion _ _ = NodeToClientV_2
+
 instance RunNode TestBlock where
   nodeBlockFetchSize        = const 0
   nodeCheckIntegrity        = \_ _ -> True

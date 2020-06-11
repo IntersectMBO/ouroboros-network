@@ -34,6 +34,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
+instance TranslateNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
+  nodeToNodeProtocolVersion   _ _ = NodeToNodeV_1
+  nodeToClientProtocolVersion _ _ = NodeToClientV_2
+
 instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with

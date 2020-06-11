@@ -49,18 +49,20 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 -- | Serialise a type @a@ so that it can be sent across network via a
 -- node-to-node protocol.
 class SerialiseNodeToNode blk a where
-  encodeNodeToNode :: CodecConfig blk -> NodeToNodeVersion blk -> a -> Encoding
-  decodeNodeToNode :: CodecConfig blk -> NodeToNodeVersion blk -> forall s. Decoder s a
+  encodeNodeToNode :: CodecConfig blk -> BlockNodeToNodeVersion blk -> a -> Encoding
+  decodeNodeToNode :: CodecConfig blk -> BlockNodeToNodeVersion blk -> forall s. Decoder s a
 
   -- When the config is not needed, we provide a default, unversioned
   -- implementation using 'Serialise'
+
   default encodeNodeToNode
     :: Serialise a
-    => CodecConfig blk -> NodeToNodeVersion blk -> a -> Encoding
+    => CodecConfig blk -> BlockNodeToNodeVersion blk -> a -> Encoding
   encodeNodeToNode _ccfg _version = encode
+
   default decodeNodeToNode
     :: Serialise a
-    => CodecConfig blk -> NodeToNodeVersion blk -> forall s. Decoder s a
+    => CodecConfig blk -> BlockNodeToNodeVersion blk -> forall s. Decoder s a
   decodeNodeToNode _ccfg _version = decode
 
 {-------------------------------------------------------------------------------
@@ -70,18 +72,20 @@ class SerialiseNodeToNode blk a where
 -- | Serialise a type @a@ so that it can be sent across the network via
 -- node-to-client protocol.
 class SerialiseNodeToClient blk a where
-  encodeNodeToClient :: CodecConfig blk -> NodeToClientVersion blk -> a -> Encoding
-  decodeNodeToClient :: CodecConfig blk -> NodeToClientVersion blk -> forall s. Decoder s a
+  encodeNodeToClient :: CodecConfig blk -> BlockNodeToClientVersion blk -> a -> Encoding
+  decodeNodeToClient :: CodecConfig blk -> BlockNodeToClientVersion blk -> forall s. Decoder s a
 
   -- When the config is not needed, we provide a default, unversioned
   -- implementation using 'Serialise'
+
   default encodeNodeToClient
     :: Serialise a
-    => CodecConfig blk -> NodeToClientVersion blk -> a -> Encoding
+    => CodecConfig blk -> BlockNodeToClientVersion blk -> a -> Encoding
   encodeNodeToClient _ccfg _version = encode
+
   default decodeNodeToClient
     :: Serialise a
-    => CodecConfig blk -> NodeToClientVersion blk -> forall s. Decoder s a
+    => CodecConfig blk -> BlockNodeToClientVersion blk -> forall s. Decoder s a
   decodeNodeToClient _ccfg _version = decode
 
 {-------------------------------------------------------------------------------
@@ -96,13 +100,13 @@ class SerialiseResult blk query where
   encodeResult
     :: forall result.
        CodecConfig blk
-    -> NodeToClientVersion blk
+    -> BlockNodeToClientVersion blk
     -> query result
     -> result -> Encoding
   decodeResult
     :: forall result.
        CodecConfig blk
-    -> NodeToClientVersion blk
+    -> BlockNodeToClientVersion blk
     -> query result
     -> forall s. Decoder s result
 

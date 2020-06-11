@@ -63,16 +63,16 @@ class ( SerialiseNodeToClient blk (HeaderHash blk)
       , SerialiseResult       blk (Query blk)
       ) => SerialiseNodeToClientConstraints blk
 
-class ( LedgerSupportsProtocol    blk
-      , HasHardForkHistory        blk
-      , LedgerSupportsMempool     blk
-      , HasTxId            (GenTx blk)
-      , QueryLedger               blk
-      , HasNetworkProtocolVersion blk
-      , CanForge                  blk
-      , ConfigSupportsNode        blk
-      , HasCodecConfig            blk
-      , ConvertRawHash            blk
+class ( LedgerSupportsProtocol           blk
+      , HasHardForkHistory               blk
+      , LedgerSupportsMempool            blk
+      , HasTxId                   (GenTx blk)
+      , QueryLedger                      blk
+      , TranslateNetworkProtocolVersion  blk
+      , CanForge                         blk
+      , ConfigSupportsNode               blk
+      , HasCodecConfig                   blk
+      , ConvertRawHash                   blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk

@@ -9,7 +9,7 @@ module Cardano.Client.Subscription (
   , ConnectionId
   , LocalAddress
   , NodeToClientProtocols (..)
-  , NodeToClientVersion
+  , BlockNodeToClientVersion
   , MuxPeer (..)
   , MuxTrace
   , RunMiniProtocol (..)
@@ -29,7 +29,8 @@ import           Data.Void (Void)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
 
 import           Ouroboros.Network.Mux (MuxMode (..), MuxPeer (..),
-                     OuroborosApplication, RunMiniProtocol (..), RunOrStop (..))
+                     OuroborosApplication, RunMiniProtocol (..),
+                     RunOrStop (..))
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      ConnectionId, LocalAddress,
                      NetworkClientSubcriptionTracers,
@@ -48,7 +49,7 @@ import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
                      cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
                      clientCodecs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-                     (NodeToClientVersion, nodeToClientProtocolVersion,
+                     (BlockNodeToClientVersion, nodeToClientProtocolVersion,
                      supportedNodeToClientVersions)
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
@@ -58,7 +59,7 @@ subscribe ::
   -> TopLevelConfig blk
   -> NetworkClientSubcriptionTracers
   -> ClientSubscriptionParams ()
-  -> (NodeToClientVersion blk
+  -> (BlockNodeToClientVersion blk
       -> ClientCodecs blk IO
       -> ConnectionId LocalAddress
       -> NodeToClientProtocols 'InitiatorMode BSL.ByteString IO x y)
@@ -86,7 +87,7 @@ versionedProtocols ::
      )
   => Proxy blk
   -> TopLevelConfig blk
-  -> (NodeToClientVersion blk
+  -> (BlockNodeToClientVersion blk
       -> ClientCodecs blk m
       -> ConnectionId LocalAddress
       -> STM m RunOrStop
