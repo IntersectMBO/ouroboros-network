@@ -34,6 +34,8 @@ class ( LedgerSupportsProtocol blk
       , HasCodecConfig blk
       , ReconstructNestedCtxt Header blk
         -- Instances required to support testing
+      , Eq   (GenTx blk)
+      , Eq   (ApplyTxErr blk)
       , Show blk
       , Show (Header blk)
       ) => SingleEraBlock blk where

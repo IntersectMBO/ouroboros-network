@@ -221,7 +221,7 @@ safeZoneB (SecurityParam k) = History.defaultSafeZone k
 
 instance LedgerSupportsMempool BlockB where
   data GenTx BlockB
-    deriving (Show, Generic, NoUnexpectedThunks, Serialise)
+    deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
 
   type ApplyTxErr BlockB = Void
 

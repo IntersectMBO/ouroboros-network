@@ -321,6 +321,8 @@ deriving via LiftNS WrapTipInfo       xs instance CanHardFork xs => Show (OneEra
 deriving via LiftNS WrapEnvelopeErr   xs instance CanHardFork xs => Eq   (OneEraEnvelopeErr xs)
 deriving via LiftNS WrapEnvelopeErr   xs instance CanHardFork xs => Show (OneEraEnvelopeErr xs)
 
+deriving via LiftNS GenTx             xs instance CanHardFork xs => Eq   (OneEraGenTx xs)
+
 deriving via LiftNS WrapGenTxId       xs instance CanHardFork xs => Eq   (OneEraGenTxId xs)
 deriving via LiftNS WrapGenTxId       xs instance CanHardFork xs => Ord  (OneEraGenTxId xs)
 
@@ -331,6 +333,8 @@ deriving via LiftNS WrapValidationErr xs instance CanHardFork xs => Eq   (OneEra
 deriving via LiftNS WrapValidationErr xs instance CanHardFork xs => Show (OneEraValidationErr xs)
 
 deriving via LiftNP WrapForgeState    xs instance CanHardFork xs => Show (PerEraForgeState xs)
+
+deriving via LiftNS WrapApplyTxErr    xs instance CanHardFork xs => Eq   (OneEraApplyTxErr xs)
 
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Eq   (MismatchEraInfo xs)
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Show (MismatchEraInfo xs)

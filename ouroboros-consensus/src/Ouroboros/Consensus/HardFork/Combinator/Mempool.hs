@@ -64,11 +64,13 @@ hardForkApplyTxErrFromEither (Left  err) = HardForkApplyTxErrWrongEra err
 
 deriving stock instance CanHardFork xs => Show (HardForkApplyTxErr xs)
 
+deriving stock instance CanHardFork xs => Eq (HardForkApplyTxErr xs)
+
 instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
   newtype GenTx (HardForkBlock xs) = HardForkGenTx {
         getHardForkGenTx :: OneEraGenTx xs
       }
-    deriving (Show, NoUnexpectedThunks)
+    deriving (Eq, Show, NoUnexpectedThunks)
 
   type ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
 

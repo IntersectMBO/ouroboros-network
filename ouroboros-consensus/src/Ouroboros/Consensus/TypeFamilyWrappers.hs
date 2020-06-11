@@ -84,6 +84,7 @@ newtype WrapNodeToClientVersion blk = WrapNodeToClientVersion { unwrapNodeToClie
   Instances
 -------------------------------------------------------------------------------}
 
+deriving instance Eq (ApplyTxErr               blk) => Eq (WrapApplyTxErr  blk)
 deriving instance Eq (GenTxId                  blk) => Eq (WrapGenTxId     blk)
 deriving instance Eq (LedgerError              blk) => Eq (WrapLedgerErr   blk)
 deriving instance Eq (OtherHeaderEnvelopeError blk) => Eq (WrapEnvelopeErr blk)
