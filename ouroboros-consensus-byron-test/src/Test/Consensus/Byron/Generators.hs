@@ -6,7 +6,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Consensus.Byron.Generators (
-    epochSlots
+    k
+  , epochSlots
   , protocolMagicId
   , RegularBlock (..)
   ) where
