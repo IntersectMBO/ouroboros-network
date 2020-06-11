@@ -31,7 +31,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
-import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -118,6 +117,7 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
           . Serialised
           . addV1Envelope
           . aux
+          . serialisedHeaderToDepPair
         where
           aux :: GenDepPair Serialised (f blk)
               -> (SomeBlock f blk, Lazy.ByteString)
@@ -128,7 +128,8 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
   decodeNodeToNode ccfg version = case version of
       ByronNodeToNodeVersion1 -> do
           bs <- unSerialised <$> decode
-          either fail return $ runExcept $ aux <$> dropV1Envelope bs
+          either fail (return . SerialisedHeaderFromDepPair) $
+            runExcept $ aux <$> dropV1Envelope bs
         where
           aux :: (SomeBlock f blk, Lazy.ByteString)
               -> GenDepPair Serialised (f blk)

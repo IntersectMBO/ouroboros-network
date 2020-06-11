@@ -50,6 +50,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
@@ -466,6 +467,21 @@ instance Isomorphic WrapLedgerView where
 instance Isomorphic (SomeBlock (NestedCtxt f)) where
   project (SomeBlock ctxt) = SomeBlock $ projNestedCtxt ctxt
   inject  (SomeBlock ctxt) = SomeBlock $ injNestedCtxt  ctxt
+
+{-------------------------------------------------------------------------------
+  Serialised
+-------------------------------------------------------------------------------}
+
+instance Isomorphic SerialisedHeader where
+  project =
+        SerialisedHeaderFromDepPair
+      . depPairFirst projNestedCtxt
+      . serialisedHeaderToDepPair
+
+  inject =
+        SerialisedHeaderFromDepPair
+      . depPairFirst injNestedCtxt
+      . serialisedHeaderToDepPair
 
 {-------------------------------------------------------------------------------
   Dependent types

@@ -61,7 +61,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -498,9 +497,9 @@ instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
       encodeNodeToNode
         (project ccfg)
         version
-        (depPairFirst (projNestedCtxt . mapNestedCtxt unDCtxt) serialisedHeader)
+        (project $ castSerialisedHeader unDCtxt serialisedHeader)
   decodeNodeToNode (DCCfg ccfg) version =
-      depPairFirst (mapNestedCtxt DCtxt . injNestedCtxt) <$>
+      (castSerialisedHeader DCtxt . inject) <$>
         decodeNodeToNode (project ccfg) version
 
 instance (SerialiseNodeToNodeConstraints b, NoHardForks b)

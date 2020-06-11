@@ -25,6 +25,7 @@ import           Codec.Serialise (decode, encode)
 import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as Char8
+import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 
@@ -42,7 +43,6 @@ import           Ouroboros.Consensus.Node.Run (SerialiseNodeToClientConstraints,
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract (ConsensusState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
-import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
 
@@ -201,8 +201,8 @@ roundtrip_SerialiseNodeToNode ccfg =
     , testProperty "roundtrip Serialised Header" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (enc version . encodeDepPair ccfg . unnest)
-            (nest <$> (decodeDepPair ccfg =<< dec version))
+            (enc version . SerialisedHeaderFromDepPair . encodeDepPair ccfg . unnest)
+            (nest <$> (decodeDepPair ccfg . serialisedHeaderToDepPair =<< dec version))
             hdr
       -- Check the compatibility between 'encodeNodeToNode' for @'Serialised'
       -- blk@ and 'decodeNodeToNode' for @blk@.
@@ -224,14 +224,14 @@ roundtrip_SerialiseNodeToNode ccfg =
     , testProperty "roundtrip Serialised Header compat 1" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (enc version . encodeDepPair ccfg . unnest)
+            (enc version . SerialisedHeaderFromDepPair . encodeDepPair ccfg . unnest)
             (dec version)
             hdr
     , testProperty "roundtrip Serialised Header compat 2" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
             (enc version)
-            (nest <$> (decodeDepPair ccfg =<< dec version))
+            (nest <$> (decodeDepPair ccfg . serialisedHeaderToDepPair =<< dec version))
             hdr
     ]
   where
@@ -345,7 +345,8 @@ roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
       (Base16 serialisedHeader)
   where
     serialisedHeader :: SerialisedHeader blk
-    serialisedHeader = GenDepPair ctxt (Serialised bs)
+    serialisedHeader = SerialisedHeaderFromDepPair $
+        GenDepPair ctxt (Serialised bs)
 
     bs :: Lazy.ByteString
     bs = "<PAYLOAD>" -- Something we can easily recognize in test failures
@@ -353,15 +354,22 @@ roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
 newtype Base16 a = Base16 { unBase16 :: a }
 
 instance HasNestedContent Header blk => Show (Base16 (SerialisedHeader blk)) where
-  show (Base16 (GenDepPair ctxt (Serialised bs))) =
-      "(" <> show ctxt <> "," <> Char8.unpack (Base16.encode bs) <> ")"
+  show = aux . serialisedHeaderToDepPair . unBase16
+    where
+      aux :: GenDepPair Serialised (NestedCtxt Header blk) -> String
+      aux (GenDepPair ctxt (Serialised bs)) =
+          "(" <> show ctxt <> "," <> Char8.unpack (Base16.encode bs) <> ")"
 
 instance HasNestedContent Header blk => Eq (Base16 (SerialisedHeader blk)) where
-  Base16 (GenDepPair ctxt (Serialised bs)) ==
-    Base16 (GenDepPair ctxt' (Serialised bs')) =
-      case sameDepIndex ctxt ctxt' of
-        Just Refl -> bs == bs'
-        Nothing   -> False
+  (==) = aux `on` (serialisedHeaderToDepPair . unBase16)
+    where
+      aux :: GenDepPair Serialised (NestedCtxt Header blk)
+          -> GenDepPair Serialised (NestedCtxt Header blk)
+          -> Bool
+      aux (GenDepPair ctxt bs) (GenDepPair ctxt' bs') =
+          case sameDepIndex ctxt ctxt' of
+            Just Refl -> bs == bs'
+            Nothing   -> False
 
 {-------------------------------------------------------------------------------
   Serialised helpers

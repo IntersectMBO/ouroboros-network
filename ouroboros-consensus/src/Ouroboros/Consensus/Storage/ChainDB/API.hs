@@ -32,7 +32,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , newBlockReader
     -- * Serialised block/header with its point
   , WithPoint(..)
-  , SerialisedHeader
   , getSerialisedBlockWithPoint
   , getSerialisedHeaderWithPoint
   , getPoint
@@ -452,17 +451,6 @@ getSerialisedBlockWithPoint
 getSerialisedBlockWithPoint =
     WithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
 
--- | A 'Serialised' header along with context identifying what kind of header
--- it is.
---
--- The 'SerialiseNodeToNodeDep' for 'Header' will decide how to actually
--- encode this.
-type SerialisedHeader blk = GenDepPair Serialised (NestedCtxt Header blk)
-
--- | Only needed for the 'ChainSyncServer'
-type instance HeaderHash (SerialisedHeader blk) = HeaderHash blk
-instance StandardHash blk => StandardHash (SerialisedHeader blk)
-
 getSerialisedHeader
   :: forall m blk. ReconstructNestedCtxt Header blk
   => BlockComponent (ChainDB m blk) (SerialisedHeader blk)
@@ -480,8 +468,10 @@ getSerialisedHeader =
       -> Lazy.ByteString
       -> SerialisedHeader blk
     mkSerialisedHeader prefix blockSize rawHdr =
-        case reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize of
-          SomeBlock ctxt -> GenDepPair ctxt (Serialised rawHdr)
+        serialisedHeaderFromPair (
+            reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize
+          , rawHdr
+          )
 
 getSerialisedHeaderWithPoint
   :: ReconstructNestedCtxt Header blk

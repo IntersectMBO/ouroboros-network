@@ -23,7 +23,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
-import           Ouroboros.Consensus.Storage.ChainDB.API (SerialisedHeader)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -195,9 +194,9 @@ extractEpochSlots = getByronEpochSlots . dualCodecConfigMain
 -- can safely cast the serialised forms.
 dualWrappedMain :: SerialisedHeader DualByronBlock
                 -> SerialisedHeader ByronBlock
-dualWrappedMain = depPairFirst (mapNestedCtxt ctxtDualMain)
+dualWrappedMain = castSerialisedHeader ctxtDualMain
 
 -- | Inverse of 'dualWrappedMain'.
 rewrapMain :: SerialisedHeader ByronBlock
            -> SerialisedHeader DualByronBlock
-rewrapMain = depPairFirst (mapNestedCtxt CtxtDual)
+rewrapMain = castSerialisedHeader CtxtDual

@@ -19,8 +19,8 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
-                     SerialisedHeader, WithPoint (..),
-                     getSerialisedBlockWithPoint, getSerialisedHeaderWithPoint)
+                     WithPoint (..), getSerialisedBlockWithPoint,
+                     getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
