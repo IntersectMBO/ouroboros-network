@@ -1159,17 +1159,17 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
         pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
         NE.:|
       [ miniProtocol "ChainSync"
-          (wrapMPEE MPEEChainSyncClient NTN.aChainSyncClient)
-          NTN.aChainSyncServer
+          (wrapMPEE "CSC" MPEEChainSyncClient NTN.aChainSyncClient)
+          (wrapE "CSS" NTN.aChainSyncServer)
           chainSyncMiddle
         -- TODO do not swallow exceptions from these protocols
       , miniProtocol "BlockFetch"
-          NTN.aBlockFetchClient
-          NTN.aBlockFetchServer
+          (wrapE "BFC" NTN.aBlockFetchClient)
+          (wrapE "BFS" NTN.aBlockFetchServer)
           (\_ -> pure ())
       , miniProtocol "TxSubmission"
-          NTN.aTxSubmissionClient
-          NTN.aTxSubmissionServer
+          (wrapE "TxSubC" NTN.aTxSubmissionClient)
+          (wrapE "TxSubS" NTN.aTxSubmissionServer)
           (\_ -> pure ())
       ]
   where
@@ -1183,11 +1183,21 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
     -- TODO only wrap actually expected exceptions
     wrapMPEE ::
          Exception e
-      => (e -> MiniProtocolExpectedException)
+      => String
+      -> (e -> MiniProtocolExpectedException)
       -> (app -> version -> peer -> chan -> m a)
       -> (app -> version -> peer -> chan -> m a)
-    wrapMPEE f m = \app version them chan ->
-        catch (m app version them chan) $ throwM . f
+    wrapMPEE s f m = \app version them chan ->
+        catch (m app version them chan) $ \e -> case fromException e of
+          Nothing -> throwM $ WrapE s e
+          Just x  -> throwM $ f x
+
+    wrapE ::
+         String
+      -> (app -> version -> peer -> chan -> m a)
+      -> (app -> version -> peer -> chan -> m a)
+    wrapE s m = \app version them chan ->
+        catch (m app version them chan) $ throwM . WrapE s
 
     -- terminates when the vertex starts 'VFalling'
     --
@@ -1545,6 +1555,11 @@ data MiniProtocolFatalException = MiniProtocolFatalException
   deriving (Show)
 
 instance Exception MiniProtocolFatalException
+
+data WrapE = WrapE String SomeException
+  deriving (Show)
+
+instance Exception WrapE
 
 -- | Our scheme for Just-In-Time EBBs makes some assumptions
 --

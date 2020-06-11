@@ -51,12 +51,15 @@ mkCodecCborStrictBS
   -> (forall (pr :: PeerRole) (st :: ps) s.
              PeerHasAgency pr st
           -> CBOR.Decoder s (SomeMessage st))
-
+  -> (forall (pr :: PeerRole) (st :: ps).
+             PeerHasAgency pr st
+          -> String)
   -> Codec ps DeserialiseFailure m BS.ByteString
-mkCodecCborStrictBS cborMsgEncode cborMsgDecode =
+mkCodecCborStrictBS cborMsgEncode cborMsgDecode showToken' =
     Codec {
       encode = \stok msg -> convertCborEncoder (cborMsgEncode stok) msg,
-      decode = \stok     -> convertCborDecoder (cborMsgDecode stok)
+      decode = \stok     -> convertCborDecoder (cborMsgDecode stok),
+      showToken = showToken'
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> BS.ByteString
@@ -106,11 +109,15 @@ mkCodecCborLazyBS
              PeerHasAgency pr st
           -> CBOR.Decoder s (SomeMessage st))
 
+  -> (forall (pr :: PeerRole) (st :: ps).
+             PeerHasAgency pr st
+          -> String)
   -> Codec ps CBOR.DeserialiseFailure m LBS.ByteString
-mkCodecCborLazyBS  cborMsgEncode cborMsgDecode =
+mkCodecCborLazyBS  cborMsgEncode cborMsgDecode showToken' =
     Codec {
       encode = \stok msg -> convertCborEncoder (cborMsgEncode stok) msg,
-      decode = \stok     -> convertCborDecoder (cborMsgDecode stok)
+      decode = \stok     -> convertCborDecoder (cborMsgDecode stok),
+      showToken = showToken'
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> LBS.ByteString

@@ -36,7 +36,7 @@ codecKeepAlive
      , MonadST m
      )
   => Codec KeepAlive CBOR.DeserialiseFailure m ByteString
-codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
+codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg show
    where
      encodeMsg :: forall (pr :: PeerRole) st st'.
                   PeerHasAgency pr st

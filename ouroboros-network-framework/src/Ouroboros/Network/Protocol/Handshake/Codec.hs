@@ -106,7 +106,7 @@ codecHandshake
      )
   => CodecCBORTerm (failure, Maybe Int) vNumber
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
-codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
+codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg show
     where
       encodeMsg
         :: forall (pr :: PeerRole) st st'.

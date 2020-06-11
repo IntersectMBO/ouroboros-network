@@ -32,7 +32,7 @@ codecLocalTxSubmission
   -> (forall s . CBOR.Decoder s reject)
   -> Codec (LocalTxSubmission tx reject) CBOR.DeserialiseFailure m ByteString
 codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS encode decode show
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st
@@ -87,7 +87,7 @@ codecLocalTxSubmissionId
             CodecFailure m
            (AnyMessage (LocalTxSubmission tx reject))
 codecLocalTxSubmissionId =
-    Codec encode decode
+    Codec encode decode show
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st

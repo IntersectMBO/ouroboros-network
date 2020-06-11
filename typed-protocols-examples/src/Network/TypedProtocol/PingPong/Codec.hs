@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,7 +15,7 @@ codecPingPong
   :: forall m. Monad m
   => Codec PingPong CodecFailure m String
 codecPingPong =
-    Codec{encode, decode}
+    Codec{encode, decode, showToken = show}
   where
     encode :: forall pr (st :: PingPong) (st' :: PingPong)
            .  PeerHasAgency pr st
@@ -38,7 +39,6 @@ codecPingPong =
             where failure = CodecFailure ("unexpected server message: " ++ str)
           (ClientAgency _      , _     ) -> DecodeFail failure
             where failure = CodecFailure ("unexpected client message: " ++ str)
-
 
 decodeTerminatedFrame :: forall m a.
                          Monad m

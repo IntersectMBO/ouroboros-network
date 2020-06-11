@@ -226,9 +226,9 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
     ts_end <- getMonotonicTime
     case app_e of
          Left HandshakeTimeout -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError ExceededTimeLimit
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError (ExceededTimeLimit "connectToNode'")
                  (diffTime ts_end ts_start)
-             throwIO ExceededTimeLimit
+             throwIO (ExceededTimeLimit "connectToNode'")
 
          Left (HandshakeProtocolLimit err) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
@@ -347,8 +347,8 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
 
         case app_e of
              Left HandshakeTimeout -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError ExceededTimeLimit
-                 throwIO ExceededTimeLimit
+                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError (ExceededTimeLimit "beginConnection")
+                 throwIO (ExceededTimeLimit "beginConnection")
 
              Left (HandshakeProtocolLimit err) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err

@@ -28,7 +28,7 @@ codecReqResp
      , Serialise resp
      )
   => Codec (ReqResp req resp) CBOR.DeserialiseFailure m ByteString
-codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
+codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg show
  where
   encodeMsg :: forall (pr :: PeerRole) st st'.
                 PeerHasAgency pr st

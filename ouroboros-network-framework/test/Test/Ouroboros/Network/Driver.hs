@@ -117,9 +117,9 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
               c2 sendPeer)
 
       case res :: Either ProtocolLimitFailure ([DiffTime], ()) of
-        Right _                -> pure $ shouldFail reqPayloads == Nothing
-        Left ExceededSizeLimit -> pure $ shouldFail reqPayloads == Just ExceededSizeLimit
-        Left ExceededTimeLimit -> pure $ shouldFail reqPayloads == Just ExceededTimeLimit
+        Right _                  -> pure $ shouldFail reqPayloads == Nothing
+        Left ExceededSizeLimit   -> pure $ shouldFail reqPayloads == Just ExceededSizeLimit
+        Left ExceededTimeLimit{} -> pure $ shouldFail reqPayloads == Just (ExceededTimeLimit "magic dummy")
 
     where
       sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
@@ -148,7 +148,7 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
           if length msg' > fromIntegral limit 
           then Just ExceededSizeLimit
           else if delay >= serverTimeout
-          then Just ExceededTimeLimit
+          then Just (ExceededTimeLimit "magic dummy")
           else shouldFail cmds
 
 data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word (String, DiffTime)

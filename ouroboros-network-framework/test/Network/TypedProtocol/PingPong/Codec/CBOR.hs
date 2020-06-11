@@ -24,7 +24,7 @@ codecPingPong
   :: forall m.
      MonadST m
   => Codec PingPong CBOR.DeserialiseFailure m ByteString
-codecPingPong = mkCodecCborLazyBS encodeMsg decodeMsg
+codecPingPong = mkCodecCborLazyBS encodeMsg decodeMsg show
  where
   encodeMsg :: forall (pr :: PeerRole) st st'.
                PeerHasAgency pr st

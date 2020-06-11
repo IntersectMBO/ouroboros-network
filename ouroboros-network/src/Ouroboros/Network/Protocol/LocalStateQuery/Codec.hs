@@ -41,7 +41,7 @@ codecLocalStateQuery
 codecLocalStateQuery encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS encode decode show
   where
     encodeFailure :: AcquireFailure -> CBOR.Encoding
     encodeFailure AcquireFailurePointTooOld     = CBOR.encodeWord8 0
@@ -163,7 +163,7 @@ codecLocalStateQueryId
            CodecFailure m
            (AnyMessage (LocalStateQuery block query))
 codecLocalStateQueryId eqQuery =
-  Codec encode decode
+  Codec encode decode show
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

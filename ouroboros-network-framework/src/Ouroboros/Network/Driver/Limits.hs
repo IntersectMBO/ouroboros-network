@@ -62,7 +62,7 @@ data ProtocolTimeLimits ps = ProtocolTimeLimits {
      }
 
 data ProtocolLimitFailure = ExceededSizeLimit
-                          | ExceededTimeLimit
+                          | ExceededTimeLimit String
   deriving (Eq, Show)
 
 instance Exception ProtocolLimitFailure
@@ -78,7 +78,7 @@ driverWithLimits :: forall ps failure bytes m.
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
 driverWithLimits tracer timeoutFn
-                 Codec{encode, decode}
+                 Codec{encode, decode, showToken}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
                  ProtocolTimeLimits{timeLimitForState}
                  channel@Channel{send} =
@@ -109,7 +109,7 @@ driverWithLimits tracer timeoutFn
           return x
         Just (Left (Just failure)) -> throwM failure
         Just (Left Nothing)        -> throwM ExceededSizeLimit
-        Nothing                    -> throwM ExceededTimeLimit
+        Nothing                    -> throwM (ExceededTimeLimit (showToken stok))
 
 runDecoderWithLimit
     :: forall m bytes failure a. Monad m

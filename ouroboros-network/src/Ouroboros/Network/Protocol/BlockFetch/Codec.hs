@@ -70,7 +70,7 @@ codecBlockFetch
   -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetch encodeBlock decodeBlock
                 encodeBlockHash decodeBlockHash =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS encode decode show
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
@@ -127,11 +127,10 @@ codecBlockFetch encodeBlock decodeBlock
   decodePoint :: forall s. CBOR.Decoder s (Point block)
   decodePoint = Block.decodePoint decodeBlockHash
 
-
 codecBlockFetchId
   :: forall block m. Monad m
   => Codec (BlockFetch block) CodecFailure m (AnyMessage (BlockFetch block))
-codecBlockFetchId = Codec encode decode
+codecBlockFetchId = Codec encode decode show
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

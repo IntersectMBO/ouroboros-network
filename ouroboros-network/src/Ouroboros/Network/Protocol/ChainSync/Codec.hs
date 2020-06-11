@@ -77,7 +77,7 @@ codecChainSync
 codecChainSync encodeHeader decodeHeader
                encodePoint  decodePoint
                encodeTip    decodeTip =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS encode decode show
   where
     encode :: forall (pr  :: PeerRole)
                      (st  :: ChainSync header tip)
@@ -191,7 +191,7 @@ decodeList dec = do
 codecChainSyncId :: forall header tip m. Monad m
                  => Codec (ChainSync header tip)
                           CodecFailure m (AnyMessage (ChainSync header tip))
-codecChainSyncId = Codec encode decode
+codecChainSyncId = Codec encode decode show
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

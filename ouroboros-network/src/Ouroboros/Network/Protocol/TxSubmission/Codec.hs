@@ -71,7 +71,7 @@ codecTxSubmission
   -> Codec (TxSubmission txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission encodeTxId decodeTxId
                   encodeTx   decodeTx =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS encode decode show
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st
@@ -192,7 +192,7 @@ codecTxSubmission encodeTxId decodeTxId
 codecTxSubmissionId
   :: forall txid tx m. Monad m
   => Codec (TxSubmission txid tx) CodecFailure m (AnyMessage (TxSubmission txid tx))
-codecTxSubmissionId = Codec encode decode
+codecTxSubmissionId = Codec encode decode show
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

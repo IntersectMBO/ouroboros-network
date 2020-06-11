@@ -128,7 +128,12 @@ data Codec ps failure m bytes = Codec {
 
        decode :: forall (pr :: PeerRole) (st :: ps).
                  PeerHasAgency pr st
-              -> m (DecodeStep bytes failure m (SomeMessage st))
+              -> m (DecodeStep bytes failure m (SomeMessage st)),
+
+       showToken :: forall (pr :: PeerRole) (st :: ps).
+                    PeerHasAgency pr st
+                 -> String
+
      }
 
 hoistCodec
@@ -145,9 +150,10 @@ isoCodec :: Functor m
          -> (bytes' -> bytes)
          -> Codec ps failure m bytes
          -> Codec ps failure m bytes'
-isoCodec f finv Codec {encode, decode} = Codec {
+isoCodec f finv Codec {encode, decode, showToken} = Codec {
       encode = \tok msg -> f $ encode tok msg,
-      decode = \tok -> isoDecodeStep f finv <$> decode tok
+      decode = \tok -> isoDecodeStep f finv <$> decode tok,
+      showToken = showToken
     }
 
 mapFailureCodec
@@ -155,9 +161,10 @@ mapFailureCodec
   => (failure -> failure')
   -> Codec ps failure  m bytes
   -> Codec ps failure' m bytes
-mapFailureCodec f Codec {encode, decode} = Codec {
+mapFailureCodec f Codec {encode, decode, showToken} = Codec {
     encode = encode,
-    decode = \tok -> mapFailureDecodeStep f <$> decode tok
+    decode = \tok -> mapFailureDecodeStep f <$> decode tok,
+    showToken = showToken
   }
 
 -- The types here are pretty fancy. The decode is polymorphic in the protocol

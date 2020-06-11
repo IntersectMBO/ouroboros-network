@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
@@ -19,7 +20,7 @@ codecReqResp ::
   . (Monad m, Show req, Show resp, Read req, Read resp)
   => Codec (ReqResp req resp) CodecFailure m String
 codecReqResp =
-    Codec{encode, decode}
+    Codec{encode, decode, showToken = show}
   where
     encode :: forall req' resp'
                      (pr  :: PeerRole)
