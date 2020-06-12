@@ -58,8 +58,8 @@ import qualified Cardano.Chain.ValidationMode as CC
 import           Ouroboros.Network.Block (Point (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -372,11 +372,11 @@ encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (Some (Query ByronBlock))
+decodeByronQuery :: Decoder s (SomeBlock Query ByronBlock)
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
-      0 -> return $ Some GetUpdateInterfaceState
+      0 -> return $ SomeBlock GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
 encodeByronResult :: Query ByronBlock result -> result -> Encoding

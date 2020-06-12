@@ -25,7 +25,6 @@ import           Cardano.Crypto.Hash
 import           Test.QuickCheck
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -96,8 +95,8 @@ instance Arbitrary a => Arbitrary (WithVersion () a) where
 instance Arbitrary (SomeBlock (NestedCtxt Header) (SimpleBlock c ext)) where
   arbitrary = return $ SomeBlock indexIsTrivial
 
-instance Arbitrary (Some (Query (SimpleBlock c ext))) where
-  arbitrary = return $ Some QueryLedgerTip
+instance Arbitrary (SomeBlock Query (SimpleBlock c ext)) where
+  arbitrary = return $ SomeBlock QueryLedgerTip
 
 instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c ext)) where
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary

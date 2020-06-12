@@ -51,7 +51,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
@@ -240,7 +239,7 @@ class (UpdateLedger blk, ShowQuery (Query blk)) => QueryLedger blk where
   eqQuery :: Query blk result1 -> Query blk result2
           -> Maybe (result1 :~: result2)
 
-instance QueryLedger blk => Eq (Some (Query blk)) where
-  Some qry == Some qry' = isJust (eqQuery qry qry')
+instance QueryLedger blk => Eq (SomeBlock Query blk) where
+  SomeBlock qry == SomeBlock qry' = isJust (eqQuery qry qry')
 
-deriving instance (forall result. Show (Query blk result)) => Show (Some (Query blk))
+deriving instance (forall result. Show (Query blk result)) => Show (SomeBlock Query blk)

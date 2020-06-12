@@ -171,9 +171,9 @@ instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where
   encodeNodeToClient _ _ = encodeByronApplyTxError
   decodeNodeToClient _ _ = decodeByronApplyTxError
 
-instance SerialiseNodeToClient ByronBlock (Some (Query ByronBlock)) where
-  encodeNodeToClient _ _ (Some q) = encodeByronQuery q
-  decodeNodeToClient _ _          = decodeByronQuery
+instance SerialiseNodeToClient ByronBlock (SomeBlock Query ByronBlock) where
+  encodeNodeToClient _ _ (SomeBlock q) = encodeByronQuery q
+  decodeNodeToClient _ _               = decodeByronQuery
 
 instance SerialiseResult ByronBlock (Query ByronBlock) where
   encodeResult _ _ = encodeByronResult

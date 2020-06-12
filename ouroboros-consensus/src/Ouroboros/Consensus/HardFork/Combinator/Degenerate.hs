@@ -565,16 +565,16 @@ instance (SerialiseNodeToClientConstraints b, NoHardForks b)
   decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(WrapApplyTxErr b))
 
 instance (SerialiseNodeToClientConstraints b, NoHardForks b)
-       => SerialiseNodeToClient (DegenFork b) (Some (Query (DegenFork b))) where
-  encodeNodeToClient (DCCfg ccfg) version (Some (DQry qry)) =
+       => SerialiseNodeToClient (DegenFork b) (SomeBlock Query (DegenFork b)) where
+  encodeNodeToClient (DCCfg ccfg) version (SomeBlock (DQry qry)) =
       projQuery qry $ \_pf qry' ->
         encodeNodeToClient
           (project ccfg)
           version
-          (Some qry')
+          (SomeBlock qry')
   decodeNodeToClient (DCCfg ccfg) version =
-      (\(Some qry) -> Some (DQry $ injQuery qry)) <$>
-        decodeNodeToClient @b @(Some (Query b)) (project ccfg) version
+      (\(SomeBlock qry) -> SomeBlock (DQry $ injQuery qry)) <$>
+        decodeNodeToClient @b @(SomeBlock Query b) (project ccfg) version
 
 instance (SerialiseNodeToClientConstraints b, NoHardForks b)
        => SerialiseResult (DegenFork b) (Query (DegenFork b)) where

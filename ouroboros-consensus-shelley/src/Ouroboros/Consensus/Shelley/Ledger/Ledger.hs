@@ -62,8 +62,8 @@ import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot hiding (at)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
@@ -568,22 +568,22 @@ encodeShelleyQuery query = case query of
     GetFilteredDelegationsAndRewardAccounts creds ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
 
-decodeShelleyQuery :: Crypto c => Decoder s (Some (Query (ShelleyBlock c)))
+decodeShelleyQuery :: Crypto c => Decoder s (SomeBlock Query (ShelleyBlock c))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
     case (len, tag) of
-      (1, 0)  -> return $ Some GetLedgerTip
-      (1, 1)  -> return $ Some GetEpochNo
-      (2, 2)  -> Some . GetNonMyopicMemberRewards <$> fromCBOR
-      (1, 3)  -> return $ Some GetCurrentPParams
-      (1, 4)  -> return $ Some GetProposedPParamsUpdates
-      (1, 5)  -> return $ Some GetStakeDistribution
-      (2, 6)  -> Some . GetFilteredUTxO <$> fromCBOR
-      (1, 7)  -> return $ Some GetUTxO
-      (1, 8)  -> return $ Some GetCurrentLedgerState
-      (2, 9)  -> (\(Some q) -> Some (GetCBOR q)) <$> decodeShelleyQuery
-      (2, 10) -> Some . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (1, 0)  -> return $ SomeBlock GetLedgerTip
+      (1, 1)  -> return $ SomeBlock GetEpochNo
+      (2, 2)  -> SomeBlock . GetNonMyopicMemberRewards <$> fromCBOR
+      (1, 3)  -> return $ SomeBlock GetCurrentPParams
+      (1, 4)  -> return $ SomeBlock GetProposedPParamsUpdates
+      (1, 5)  -> return $ SomeBlock GetStakeDistribution
+      (2, 6)  -> SomeBlock . GetFilteredUTxO <$> fromCBOR
+      (1, 7)  -> return $ SomeBlock GetUTxO
+      (1, 8)  -> return $ SomeBlock GetCurrentLedgerState
+      (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
+      (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"

@@ -173,8 +173,8 @@ defaultCodecs ccfg version = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . Some)
-          dec
+          (enc . SomeBlock)
+          ((\(SomeBlock qry) -> Some qry) <$> dec)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
@@ -216,8 +216,8 @@ clientCodecs ccfg version = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . Some)
-          dec
+          (enc . SomeBlock)
+          ((\(SomeBlock qry) -> Some qry) <$> dec)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }

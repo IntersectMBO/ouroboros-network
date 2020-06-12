@@ -82,7 +82,7 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (Some (Query blk))
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeBlock Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
   => CodecConfig blk
@@ -260,7 +260,7 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (Some (Query blk))
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeBlock Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
 
        -- Needed for testing the @Serialised blk@
@@ -270,10 +270,10 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                "blk"
-    , rt (Proxy @(GenTx blk))        "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))   "ApplTxErr"
-    , rt (Proxy @(Some (Query blk))) "Query"
+    [ rt (Proxy @blk)                   "blk"
+    , rt (Proxy @(GenTx blk))           "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))      "ApplTxErr"
+    , rt (Proxy @(SomeBlock Query blk)) "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->

@@ -30,7 +30,6 @@ import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      Point, SlotNo (..), mkSerialised)
 import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -139,17 +138,17 @@ instance Arbitrary (ApplyTxError TPraosMockCrypto) where
   arbitrary = ApplyTxError <$> arbitrary
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
-instance Arbitrary (Some (Query Block)) where
+instance Arbitrary (SomeBlock Query Block) where
   arbitrary = oneof
-    [ pure $ Some GetLedgerTip
-    , pure $ Some GetEpochNo
-    , Some . GetNonMyopicMemberRewards <$> arbitrary
-    , pure $ Some GetCurrentPParams
-    , pure $ Some GetProposedPParamsUpdates
-    , pure $ Some GetStakeDistribution
-    , pure $ Some GetCurrentLedgerState
-    , (\(Some q) -> Some (GetCBOR q)) <$> arbitrary
-    , Some . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
+    [ pure $ SomeBlock GetLedgerTip
+    , pure $ SomeBlock GetEpochNo
+    , SomeBlock . GetNonMyopicMemberRewards <$> arbitrary
+    , pure $ SomeBlock GetCurrentPParams
+    , pure $ SomeBlock GetProposedPParamsUpdates
+    , pure $ SomeBlock GetStakeDistribution
+    , pure $ SomeBlock GetCurrentLedgerState
+    , (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> arbitrary
+    , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
 
 instance Arbitrary (SomeResult Block) where
