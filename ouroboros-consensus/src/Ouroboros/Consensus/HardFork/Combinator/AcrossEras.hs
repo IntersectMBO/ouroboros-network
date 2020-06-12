@@ -44,6 +44,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Value for two /different/ eras
   , MismatchEraInfo(..)
   , mismatchOneEra
+  , mismatchFutureEra
   , EraMismatch(..)
   , mkEraMismatch
     -- * Utility
@@ -135,6 +136,14 @@ newtype MismatchEraInfo xs = MismatchEraInfo {
 
 mismatchOneEra :: MismatchEraInfo '[b] -> Void
 mismatchOneEra = Match.mismatchOne . getMismatchEraInfo
+
+-- | A mismatch _must_ involve a future era
+mismatchFutureEra :: SListI xs
+                  => MismatchEraInfo (x ': xs) -> NS SingleEraInfo xs
+mismatchFutureEra =
+      either id (hmap getLedgerEraInfo)
+    . Match.mismatchNotFirst
+    . getMismatchEraInfo
 
 {-------------------------------------------------------------------------------
   Untyped version of 'MismatchEraInfo'

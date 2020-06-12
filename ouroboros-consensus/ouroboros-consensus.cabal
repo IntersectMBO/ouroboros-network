@@ -75,6 +75,10 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                        Ouroboros.Consensus.HardFork.Combinator.Serialisation
+                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
+                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient
+                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode
                        Ouroboros.Consensus.HardFork.Combinator.State
                        Ouroboros.Consensus.HardFork.Combinator.State.Infra
                        Ouroboros.Consensus.HardFork.Combinator.State.Instances

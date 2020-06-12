@@ -17,6 +17,8 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Mempool (
     HardForkApplyTxErr(..)
+  , hardForkApplyTxErrToEither
+  , hardForkApplyTxErrFromEither
   , GenTx(..)
   , TxId(..)
   ) where
@@ -49,6 +51,16 @@ data HardForkApplyTxErr xs =
     -- | We tried to apply a block from the wrong era
   | HardForkApplyTxErrWrongEra !(MismatchEraInfo xs)
   deriving (Generic)
+
+hardForkApplyTxErrToEither :: HardForkApplyTxErr xs
+                           -> Either (MismatchEraInfo xs) (OneEraApplyTxErr xs)
+hardForkApplyTxErrToEither (HardForkApplyTxErrFromEra  err) = Right err
+hardForkApplyTxErrToEither (HardForkApplyTxErrWrongEra err) = Left  err
+
+hardForkApplyTxErrFromEither :: Either (MismatchEraInfo xs) (OneEraApplyTxErr xs)
+                             -> HardForkApplyTxErr xs
+hardForkApplyTxErrFromEither (Right err) = HardForkApplyTxErrFromEra  err
+hardForkApplyTxErrFromEither (Left  err) = HardForkApplyTxErrWrongEra err
 
 deriving stock instance CanHardFork xs => Show (HardForkApplyTxErr xs)
 

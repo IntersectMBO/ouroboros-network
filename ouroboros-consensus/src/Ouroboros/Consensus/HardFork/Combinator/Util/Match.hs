@@ -21,9 +21,12 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
   , matchNS
   , matchTelescope
     -- * Utilities
+  , mismatchToNS
   , mismatchOne
   , mismatchTwo
   , mkMismatchTwo
+  , mismatchNotEmpty
+  , mismatchNotFirst
     -- * SOP operators
   , bihap
   , bihmap
@@ -81,9 +84,10 @@ matchTelescope = go
 
 -- | We cannot give a mismatch if we have only one type variable
 mismatchOne :: Mismatch f g '[x] -> Void
-mismatchOne (ML _ ns) = case ns of {}
-mismatchOne (MR ns _) = case ns of {}
-mismatchOne (MS m)    = case m  of {}
+mismatchOne = either aux aux . mismatchNotFirst
+  where
+    aux :: NS f '[] -> Void
+    aux ns = case ns of {}
 
 -- | If we only have two eras, only two possibilities for a mismatch
 mismatchTwo :: Mismatch f g '[x, y] -> Either (f x, g y) (f y, g x)
@@ -94,6 +98,41 @@ mismatchTwo (MS m)     = absurd $ mismatchOne m
 mkMismatchTwo :: Either (f x, g y) (f y, g x) -> Mismatch f g '[x, y]
 mkMismatchTwo (Left  (fx, gy)) = ML fx (Z gy)
 mkMismatchTwo (Right (fy, gx)) = MR (Z fy) gx
+
+-- | Project two 'NS' from a 'Mismatch'
+--
+-- We should have the property that
+--
+-- > uncurry matchNS (mismatchToNS m) == Left m
+mismatchToNS :: Mismatch f g xs -> (NS f xs, NS g xs)
+mismatchToNS = go
+  where
+    go :: Mismatch f g xs -> (NS f xs, NS g xs)
+    go (ML fx gy) = (Z fx, S gy)
+    go (MR fy gx) = (S fy, Z gx)
+    go (MS m)     = bimap S S $ go m
+
+mismatchNotEmpty :: Mismatch f g xs
+                 -> (forall x xs'. xs ~ (x ': xs')
+                                => Mismatch f g (x ': xs') -> a)
+                 -> a
+mismatchNotEmpty = go
+  where
+    go :: Mismatch f g xs
+       -> (forall x xs'. xs ~ (x ': xs') => Mismatch f g (x ': xs') -> a)
+       -> a
+    go (ML fx gy) k = k (ML fx gy)
+    go (MR fy gx) k = k (MR fy gx)
+    go (MS m)     k = go m (k . MS)
+
+mismatchNotFirst :: Mismatch f g (x ': xs) -> Either (NS f xs) (NS g xs)
+mismatchNotFirst = go
+  where
+    go :: Mismatch f g (x' ': xs') -> Either (NS f xs') (NS g xs')
+    go (ML _  gy) = Right gy
+    go (MR fy _ ) = Left fy
+    go (MS m)     = mismatchNotEmpty m $ \m' ->
+                      bimap S S $ go m'
 
 {-------------------------------------------------------------------------------
   Subset of the (generalized) SOP operators

@@ -2,20 +2,33 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.State.Instances () where
+module Ouroboros.Consensus.HardFork.Combinator.State.Instances (
+    -- * Serialisation support
+    encodeCurrent
+  , decodeCurrent
+  , encodePast
+  , decodePast
+  ) where
 
 import           Prelude hiding (sequence)
 
+import           Codec.CBOR.Decoding (Decoder, decodeListLen)
+import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
 import           Data.SOP.Strict hiding (shape)
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.SOP
@@ -83,9 +96,65 @@ deriving via LiftNamedTelescope "HardForkState" (Past g) (Current f) xs
 {-------------------------------------------------------------------------------
   Serialisation
 
-  This is primarily useful for tests.
+  The 'Serialise' instances are primarily useful for the tests, but the general
+  encoders/decoders are used by the HFC to store the ledger state.
 -------------------------------------------------------------------------------}
 
-deriving instance Serialise (f blk) => Serialise (Current  f blk)
-deriving instance Serialise (f blk) => Serialise (Past     f blk)
-deriving instance Serialise (f blk) => Serialise (Snapshot f blk)
+encodeCurrent :: (f blk -> Encoding) -> Current f blk -> Encoding
+encodeCurrent f Current{..} = mconcat [
+      encodeListLen 2
+    , encode currentStart
+    , f currentState
+    ]
+
+decodeCurrent :: Decoder s (f blk) -> Decoder s (Current f blk)
+decodeCurrent f = do
+    enforceSize "decodeCurrent" 2
+    currentStart <- decode
+    currentState <- f
+    return Current{..}
+
+encodePast :: (f blk -> Encoding) -> Past f blk -> Encoding
+encodePast f Past{..} = mconcat [
+      encodeListLen 3
+    , encode pastStart
+    , encode pastEnd
+    , encodeSnapshot f pastSnapshot
+    ]
+
+decodePast :: Decoder s (f blk) -> Decoder s (Past f blk)
+decodePast f = do
+    enforceSize "decodePast" 3
+    pastStart    <- decode
+    pastEnd      <- decode
+    pastSnapshot <- decodeSnapshot f
+    return Past{..}
+
+encodeSnapshot :: (f blk -> Encoding) -> Snapshot f blk -> Encoding
+encodeSnapshot f = \case
+    NoSnapshot    -> encodeListLen 0
+    Snapshot n ss -> mconcat [
+        encodeListLen 2
+      , encode n
+      , f ss
+      ]
+
+decodeSnapshot :: Decoder s (f blk) -> Decoder s (Snapshot f blk)
+decodeSnapshot f = do
+    n <- decodeListLen
+    case n of
+      0 -> return NoSnapshot
+      2 -> Snapshot <$> decode <*> f
+      _ -> fail "decodeSnapshot: invalid tag"
+
+instance Serialise (f blk) => Serialise (Current f blk) where
+  encode = encodeCurrent encode
+  decode = decodeCurrent decode
+
+instance Serialise (f blk) => Serialise (Past f blk) where
+  encode = encodePast encode
+  decode = decodePast decode
+
+instance Serialise (f blk) => Serialise (Snapshot f blk) where
+  encode = encodeSnapshot encode
+  decode = decodeSnapshot decode
