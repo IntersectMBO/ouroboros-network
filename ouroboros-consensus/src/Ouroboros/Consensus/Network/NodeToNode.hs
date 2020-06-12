@@ -31,7 +31,6 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -200,33 +199,33 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint encHash)
-          (decodePoint decHash)
-          (encodeTip   encHash)
-          (decodeTip   decHash)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cChainSyncCodecSerialised =
         codecChainSync
           enc
           dec
-          (encodePoint encHash)
-          (decodePoint decHash)
-          (encodeTip   encHash)
-          (decodeTip   decHash)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cBlockFetchCodec =
         codecBlockFetch
           enc
           dec
-          encHash
-          decHash
+          (encodeRawHash p)
+          (decodeRawHash p)
 
     , cBlockFetchCodecSerialised =
         codecBlockFetch
           enc
           dec
-          encHash
-          decHash
+          (encodeRawHash p)
+          (decodeRawHash p)
 
     , cTxSubmissionCodec =
         codecTxSubmission
@@ -236,17 +235,14 @@ defaultCodecs ccfg version = Codecs {
           dec
     }
   where
+    p :: Proxy blk
+    p = Proxy
+
     enc :: SerialiseNodeToNode blk a => a -> Encoding
     enc = encodeNodeToNode ccfg version
 
     dec :: SerialiseNodeToNode blk a => forall s. Decoder s a
     dec = decodeNodeToNode ccfg version
-
-    encHash :: HeaderHash blk -> Encoding
-    encHash = Serialise.encode . toRawHash (Proxy @blk)
-
-    decHash :: forall s. Decoder s (HeaderHash blk)
-    decHash = fromRawHash (Proxy @blk) <$> Serialise.decode
 
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m
