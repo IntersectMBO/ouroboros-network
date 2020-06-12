@@ -10,6 +10,7 @@ module Test.ThreadNet.Infra.Shelley (
     CoreNode(..)
   , CoreNodeKeyInfo(..)
   , genCoreNode
+  , mkLeaderCredentials
   , mkGenesisConfig
   , coreNodeKeys
   , mkProtocolRealTPraos
@@ -140,25 +141,37 @@ genCoreNode startKESPeriod = do
       seed <- mkSeedFromBytes <$> getRandomBytes sz
       pure $ go seed
 
+mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
+mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
+    TPraosLeaderCredentials {
+        tpraosLeaderCredentialsSignKey    = HotKey 0 cnKES
+      , tpraosLeaderCredentialsIsCoreNode = TPraosIsCoreNode {
+          tpraosIsCoreNodeOpCert     = cnOCert
+        , tpraosIsCoreNodeColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+        , tpraosIsCoreNodeSignKeyVRF = cnVRF
+        }
+      }
+
 mkGenesisConfig
   :: forall c. TPraosCrypto c
   => SecurityParam
-  -> Double -- ^ Decentralisation param
+  -> Double  -- ^ Decentralisation param
+  -> SlotLength
   -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig (SecurityParam k) d maxKESEvolutions coreNodes = ShelleyGenesis {
+mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
-    , sgSecurityParam         = k
-    , sgEpochLength           = EpochSize (10 * k)
+    , sgSecurityParam         = maxRollbacks k
+    , sgEpochLength           = EpochSize (10 * maxRollbacks k)
     , sgSlotsPerKESPeriod     = 10 -- TODO
     , sgMaxKESEvolutions      = maxKESEvolutions
-    , sgSlotLength            = 2 -- TODO
+    , sgSlotLength            = getSlotLength slotLength
     , sgUpdateQuorum          = 1  -- TODO
     , sgMaxLovelaceSupply     = maxLovelaceSupply
     , sgProtocolParams        = pparams
@@ -251,18 +264,12 @@ mkProtocolRealTPraos
   => ShelleyGenesis c
   -> CoreNode c
   -> ProtocolInfo m (ShelleyBlock c)
-mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
-    protocolInfoShelley genesis maxMajorPV protVer (Just credentials)
+mkProtocolRealTPraos genesis coreNode =
+    protocolInfoShelley
+      genesis
+      maxMajorPV
+      protVer
+      (Just (mkLeaderCredentials coreNode))
   where
     protVer = SL.ProtVer 0 0
     maxMajorPV = 1000 -- TODO
-
-    credentials :: TPraosLeaderCredentials c
-    credentials = TPraosLeaderCredentials {
-        tpraosLeaderCredentialsSignKey    = HotKey 0 cnKES
-      , tpraosLeaderCredentialsIsCoreNode = TPraosIsCoreNode {
-          tpraosIsCoreNodeOpCert     = cnOCert
-        , tpraosIsCoreNodeColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-        , tpraosIsCoreNodeSignKeyVRF = cnVRF
-        }
-      }

@@ -119,7 +119,13 @@ prop_simple_real_tpraos_convergence TestSetup
         NumCoreNodes n = numCoreNodes
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
-    genesisConfig = mkGenesisConfig setupK setupD maxKESEvolution coreNodes
+    genesisConfig =
+        mkGenesisConfig
+          setupK
+          setupD
+          tpraosSlotLength
+          maxKESEvolution
+          coreNodes
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig

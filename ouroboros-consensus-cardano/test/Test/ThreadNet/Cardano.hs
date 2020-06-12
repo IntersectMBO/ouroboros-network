@@ -132,7 +132,12 @@ prop_simple_cardano_convergence TestSetup
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
     genesisConfig =
-        mkGenesisConfig setupK setupD maxKESEvolution coreNodes
+        mkGenesisConfig
+          setupK
+          setupD
+          tpraosSlotLength
+          maxKESEvolution
+          coreNodes
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig
