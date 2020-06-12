@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.ThreadNet.RealPBFT.ProtocolInfo (
+module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   theProposedProtocolVersion,
   theProposedSoftwareVersion,
   mkProtocolRealPBFT,

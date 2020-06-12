@@ -17,13 +17,11 @@ module Test.ThreadNet.RealPBFT (
   ) where
 
 import           Control.Monad (join)
-import           Control.Monad.Except (runExceptT)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
-import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
 
 import           Numeric.Search.Range (searchFromTo)
@@ -57,10 +55,8 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
-import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
-import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -83,8 +79,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import qualified Test.Util.Stream as Stream
 import           Test.Util.WrappedClock (NumSlots (..))
 
-import           Test.ThreadNet.RealPBFT.ProtocolInfo
-import           Test.ThreadNet.RealPBFT.TrackUpdates
+import           Test.ThreadNet.Infra.Byron
 
 data TestSetup = TestSetup
   { setupEBBs         :: ProduceEBBs
@@ -1056,58 +1051,6 @@ hasAllEBBs k produceEBBs outcomes (nid, c) =
               denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe blockIsEBB $ Chain.toOldestFirst c
-
-{-------------------------------------------------------------------------------
-  Generating the genesis configuration
--------------------------------------------------------------------------------}
-
-realPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
-realPBftParams paramK numCoreNodes = PBftParams
-  { pbftNumNodes           = numCoreNodes
-  , pbftSecurityParam      = paramK
-  , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
-    -- crucially: @floor (k * t) >= ceil (k / n)@
-  }
-    where
-      epsilon = 1/10000   -- avoid problematic floating point round-off
-
-      n :: Num a => a
-      n = fromIntegral x where NumCoreNodes x = numCoreNodes
-
-      k :: Num a => a
-      k = fromIntegral x where SecurityParam x = paramK
-
--- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
--- men (= CoreNodes for us) to 4, we generate a dummy config with the given
--- number of rich men.
-generateGenesisConfig :: SlotLength
-                      -> PBftParams
-                      -> (Genesis.Config, Genesis.GeneratedSecrets)
-generateGenesisConfig slotLen params =
-    either (error . show) id $
-      Crypto.deterministic "this is fake entropy for testing" $
-        runExceptT $
-          Genesis.generateGenesisConfigWithEntropy startTime spec
-  where
-    startTime = UTCTime (ModifiedJulianDay 0) 0
-    PBftParams{pbftNumNodes, pbftSecurityParam} = params
-    NumCoreNodes numCoreNodes = pbftNumNodes
-
-    spec :: Genesis.GenesisSpec
-    spec = Dummy.dummyGenesisSpec
-        { Genesis.gsInitializer = Dummy.dummyGenesisInitializer
-          { Genesis.giTestBalance =
-              (Genesis.giTestBalance Dummy.dummyGenesisInitializer)
-                -- The nodes are the richmen
-                { Genesis.tboRichmen = fromIntegral numCoreNodes }
-          }
-        , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
-        , Genesis.gsProtocolParameters = gsProtocolParameters
-          { Update.ppSlotDuration = toByronSlotLength slotLen
-          }
-        }
-      where
-        gsProtocolParameters = Genesis.gsProtocolParameters Dummy.dummyGenesisSpec
 
 {-------------------------------------------------------------------------------
   Generating node join plans that ensure sufficiently dense chains

@@ -27,6 +27,11 @@ library
 
                        Test.Consensus.Byron.Examples
                        Test.Consensus.Byron.Generators
+                       Test.ThreadNet.Infra.Byron
+                       Test.ThreadNet.Infra.Byron.Genesis
+                       Test.ThreadNet.Infra.Byron.ProtocolInfo
+                       Test.ThreadNet.Infra.Byron.TrackUpdates
+                       Test.ThreadNet.TxGen.Byron
 
   build-depends:       base              >=4.9   && <4.13
                      , bytestring        >=0.10  && <0.11
@@ -73,9 +78,6 @@ test-suite test
                        Test.Consensus.Byron.Serialisation
                        Test.ThreadNet.DualPBFT
                        Test.ThreadNet.RealPBFT
-                       Test.ThreadNet.RealPBFT.ProtocolInfo
-                       Test.ThreadNet.RealPBFT.TrackUpdates
-                       Test.ThreadNet.TxGen.Byron
 
   build-depends:       base
                      , binary
