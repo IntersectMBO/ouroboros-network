@@ -6,6 +6,7 @@
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
   , CodecConfig (..)
+  , mkShelleyBlockConfig
   ) where
 
 import           GHC.Generics (Generic)
@@ -13,11 +14,12 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Magic (NetworkMagic)
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.PParams as SL (ProtVer)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -43,3 +45,11 @@ instance HasCodecConfig (ShelleyBlock c) where
     deriving (Generic, NoUnexpectedThunks)
 
   getCodecConfig = const ShelleyCodecConfig
+
+mkShelleyBlockConfig :: SL.ProtVer -> SL.ShelleyGenesis c -> BlockConfig (ShelleyBlock c)
+mkShelleyBlockConfig protVer genesis = ShelleyConfig {
+      shelleyProtocolVersion = protVer
+    , shelleySystemStart     = SystemStart  $ SL.sgSystemStart     genesis
+    , shelleyNetworkMagic    = NetworkMagic $ SL.sgNetworkMagic    genesis
+    , shelleyProtocolMagicId =                SL.sgProtocolMagicId genesis
+    }

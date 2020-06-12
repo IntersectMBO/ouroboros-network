@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , TPraosLeaderCredentials (..)
   , SL.ProtVer
   , SL.emptyGenesisStaking
+  , shelleyMaintainForgeState
   ) where
 
 import           Control.Monad.Reader (runReader)
@@ -33,10 +34,8 @@ import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin))
 
 import           Ouroboros.Network.Block (genesisPoint)
-import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -82,6 +81,27 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
   }
 
+
+shelleyMaintainForgeState
+  :: forall m c. (MonadRandom m, TPraosCrypto c)
+  => TPraosParams
+  -> TPraosLeaderCredentials c
+  -> MaintainForgeState m (ShelleyBlock c)
+shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials key isACoreNode) =
+    MaintainForgeState {
+        initForgeState   = TPraosForgeState key
+      , updateForgeState = evolveKey isACoreNode
+      }
+  where
+    evolveKey :: TPraosIsCoreNode c
+              -> Update m (TPraosForgeState c) -> SlotNo -> m ()
+    evolveKey TPraosIsCoreNode{..} upd curSlot =
+        evolveKESKeyIfNecessary upd (SL.KESPeriod kesEvolution)
+      where
+        kesPeriodNat = fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
+        SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+        kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
+
 protocolInfoShelley
   :: forall m c. (MonadRandom m, TPraosCrypto c)
   => SL.ShelleyGenesis c
@@ -117,49 +137,18 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     epochInfo :: EpochInfo Identity
     epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
 
-    securityParam :: SecurityParam
-    securityParam = SecurityParam $ SL.sgSecurityParam genesis
-
     tpraosParams :: TPraosParams
-    tpraosParams = TPraosParams {
-        tpraosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
-      , tpraosLeaderF           = SL.sgActiveSlotCoeff   genesis
-      , tpraosSecurityParam     = securityParam
-      , tpraosMaxKESEvo         = SL.sgMaxKESEvolutions  genesis
-      , tpraosQuorum            = SL.sgUpdateQuorum      genesis
-      , tpraosMaxMajorPV        = maxMajorPV
-      , tpraosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
-      , tpraosNetworkId         = SL.sgNetworkId         genesis
-      }
+    tpraosParams = mkTPraosParams maxMajorPV genesis
 
     mkLeaderCreds :: TPraosLeaderCredentials c
                   -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
-    mkLeaderCreds (TPraosLeaderCredentials key isACoreNode) = (
+    mkLeaderCreds creds@(TPraosLeaderCredentials _ isACoreNode) = (
           isACoreNode
-        , MaintainForgeState {
-              initForgeState   = TPraosForgeState key
-            , updateForgeState = evolveKey isACoreNode
-            }
+        , shelleyMaintainForgeState tpraosParams creds
         )
 
-    evolveKey :: TPraosIsCoreNode c
-              -> Update m (TPraosForgeState c) -> SlotNo -> m ()
-    evolveKey TPraosIsCoreNode{..} upd curSlot =
-        evolveKESKeyIfNecessary upd (SL.KESPeriod kesEvolution)
-      where
-        TPraosParams{..} = tpraosParams
-
-        kesPeriodNat = fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
-        SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
-        kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
-
     blockConfig :: BlockConfig (ShelleyBlock c)
-    blockConfig = ShelleyConfig {
-        shelleyProtocolVersion = protVer
-      , shelleySystemStart     = SystemStart $ SL.sgSystemStart genesis
-      , shelleyNetworkMagic    = NetworkMagic $ SL.sgNetworkMagic  genesis
-      , shelleyProtocolMagicId = SL.sgProtocolMagicId genesis
-      }
+    blockConfig = mkShelleyBlockConfig protVer genesis
 
     initLedgerState :: LedgerState (ShelleyBlock c)
     initLedgerState = ShelleyLedgerState {

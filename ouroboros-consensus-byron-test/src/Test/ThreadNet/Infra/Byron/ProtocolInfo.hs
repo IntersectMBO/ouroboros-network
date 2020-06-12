@@ -1,10 +1,11 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.ThreadNet.RealPBFT.ProtocolInfo (
+module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   theProposedProtocolVersion,
   theProposedSoftwareVersion,
   mkProtocolRealPBFT,
+  mkLeaderCredentials,
   ) where
 
 import           Data.Foldable (find)
@@ -32,8 +33,7 @@ mkProtocolRealPBFT :: (Monad m, HasCallStack)
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
                    -> ProtocolInfo m ByronBlock
-mkProtocolRealPBFT params (CoreNodeId i)
-                   genesisConfig genesisSecrets =
+mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
     protocolInfoByron
       genesisConfig
       (Just $ PBftSignatureThreshold pbftSignatureThreshold)
@@ -42,14 +42,27 @@ mkProtocolRealPBFT params (CoreNodeId i)
       (Just leaderCredentials)
   where
     leaderCredentials :: PBftLeaderCredentials
-    leaderCredentials = either (error . show) id $
-        mkPBftLeaderCredentials
+    leaderCredentials =
+        mkLeaderCredentials
           genesisConfig
-          dlgKey
-          dlgCert
+          genesisSecrets
+          coreNodeId
 
     PBftParams{pbftSignatureThreshold} = params
 
+mkLeaderCredentials
+  :: HasCallStack
+  => Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> CoreNodeId
+  -> PBftLeaderCredentials
+mkLeaderCredentials genesisConfig genesisSecrets (CoreNodeId i) =
+    either (error . show) id $
+      mkPBftLeaderCredentials
+        genesisConfig
+        dlgKey
+        dlgCert
+  where
     dlgKey :: Crypto.SigningKey
     dlgKey = fromMaybe (error "dlgKey") $
        find (\sec -> Delegation.delegateVK dlgCert == Crypto.toVerification sec)

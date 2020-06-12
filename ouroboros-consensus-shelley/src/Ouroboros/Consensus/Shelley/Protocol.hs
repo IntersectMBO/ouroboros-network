@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosToSign (..)
   , TPraosValidateView
   , TPraosParams (..)
+  , mkTPraosParams
   , TPraosProof (..)
   , TPraosIsCoreNode (..)
   , mkShelleyGlobals
@@ -65,6 +66,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
@@ -186,6 +188,23 @@ data TPraosParams = TPraosParams {
     , tpraosNetworkId         :: !SL.Network
     }
   deriving (Generic, NoUnexpectedThunks)
+
+mkTPraosParams
+  :: Natural -- ^ Max major protocol version
+  -> SL.ShelleyGenesis c
+  -> TPraosParams
+mkTPraosParams maxMajorPV genesis = TPraosParams {
+      tpraosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
+    , tpraosLeaderF           = SL.sgActiveSlotCoeff   genesis
+    , tpraosMaxKESEvo         = SL.sgMaxKESEvolutions  genesis
+    , tpraosQuorum            = SL.sgUpdateQuorum      genesis
+    , tpraosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
+    , tpraosNetworkId         = SL.sgNetworkId         genesis
+    , tpraosSecurityParam     = securityParam
+    , tpraosMaxMajorPV        = maxMajorPV
+    }
+  where
+    securityParam = SecurityParam $ SL.sgSecurityParam genesis
 
 data TPraosIsCoreNode c = TPraosIsCoreNode {
       -- | Certificate delegating rights from the stake pool cold key (or

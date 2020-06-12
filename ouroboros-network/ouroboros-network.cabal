@@ -140,6 +140,7 @@ library
                        contra-tracer,
 
                        async             >=2.2 && <2.3,
+                       base16-bytestring,
                        binary            >=0.8 && <0.9,
                        bytestring        >=0.10 && <0.11,
                        cardano-binary,

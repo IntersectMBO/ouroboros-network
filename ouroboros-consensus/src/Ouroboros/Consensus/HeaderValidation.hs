@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -20,6 +21,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , annTipHash
   , annTipPoint
   , castAnnTip
+  , mapAnnTip
   , HasAnnTip(..)
   , getAnnTip
     -- * Header state
@@ -100,6 +102,9 @@ annTipPoint annTip@AnnTip{..} = BlockPoint annTipSlotNo (annTipHash annTip)
 
 castAnnTip :: TipInfo blk ~ TipInfo blk' => AnnTip blk -> AnnTip blk'
 castAnnTip AnnTip{..} = AnnTip{..}
+
+mapAnnTip :: (TipInfo blk -> TipInfo blk') -> AnnTip blk -> AnnTip blk'
+mapAnnTip f AnnTip { annTipInfo, .. } = AnnTip { annTipInfo = f annTipInfo, .. }
 
 class ( StandardHash blk
       , Show               (TipInfo blk)

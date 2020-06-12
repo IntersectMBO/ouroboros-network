@@ -52,8 +52,6 @@ import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
-import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
@@ -73,6 +71,8 @@ import           Ouroboros.Consensus.Shelley.Protocol (TPraos,
                      TPraosStandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Cardano.Node
 
 {-------------------------------------------------------------------------------
   Supported protocols
@@ -89,7 +89,7 @@ type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft PBftMockCrypto
 type ProtocolRealPBFT       = PBft PBftByronCrypto
 type ProtocolRealTPraos     = TPraos TPraosStandardCrypto
-type ProtocolCardano        = DegenForkProtocol (ShelleyBlock TPraosStandardCrypto)
+type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraosStandardCrypto]
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -148,10 +148,19 @@ data Protocol (m :: * -> *) blk p where
 
   -- | Run the protocols of /the/ Cardano block
   ProtocolCardano
-    :: ShelleyGenesis TPraosStandardCrypto
-    -> ProtVer
+       -- Byron
+    :: Genesis.Config
+    -> Maybe PBftSignatureThreshold
+    -> Update.ProtocolVersion
+    -> Update.SoftwareVersion
+    -> Maybe PBftLeaderCredentials
+       -- Shelley
+    -> ShelleyGenesis TPraosStandardCrypto
+    -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
     -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
+       -- Hard fork
+    -> HardCodedTransition
     -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
@@ -188,12 +197,14 @@ protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
 protocolInfo (ProtocolRealTPraos genesis protVer maxMajorPV mbLeaderCredentials) =
     protocolInfoShelley genesis maxMajorPV protVer mbLeaderCredentials
 
-protocolInfo (ProtocolCardano genesis protVer maxMajorPV mbLeaderCredentials) =
-    castProtocolInfo $ inject shelleyProtocolInfo
-  where
-    shelleyProtocolInfo :: ProtocolInfo m (ShelleyBlock TPraosStandardCrypto)
-    shelleyProtocolInfo =
-      protocolInfoShelley genesis maxMajorPV protVer mbLeaderCredentials
+protocolInfo (ProtocolCardano
+               genesisByron mthr prv swv mbLeaderCredentialsByron
+               genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
+               hardCodedTransition) =
+    protocolInfoCardano
+      genesisByron mthr prv swv mbLeaderCredentialsByron
+      genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
+      hardCodedTransition
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
@@ -233,7 +244,9 @@ data ProtocolClient blk p where
          ProtocolRealTPraos
 
   ProtocolClientCardano
-    :: ProtocolClient
+    :: EpochSlots
+    -> SecurityParam
+    -> ProtocolClient
          (CardanoBlock TPraosStandardCrypto)
          ProtocolCardano
 
@@ -257,6 +270,5 @@ protocolClientInfo (ProtocolClientRealPBFT epochSlots secParam) =
 protocolClientInfo ProtocolClientRealTPraos =
     protocolClientInfoShelley
 
-protocolClientInfo ProtocolClientCardano =
-    castProtocolClientInfo $
-      inject protocolClientInfoShelley
+protocolClientInfo (ProtocolClientCardano epochSlots secParam) =
+    protocolClientInfoCardano epochSlots secParam

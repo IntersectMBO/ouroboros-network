@@ -4,7 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.ThreadNet.RealPBFT.TrackUpdates (
+module Test.ThreadNet.Infra.Byron.TrackUpdates (
   mkProtocolRealPBftAndHardForkTxs,
   ProtocolVersionUpdateLabel (..),
   SoftwareVersionUpdateLabel (..),
@@ -57,7 +57,7 @@ import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeTopology
 
-import           Test.ThreadNet.RealPBFT.ProtocolInfo
+import           Test.ThreadNet.Infra.Byron.ProtocolInfo
 
 import           Test.Util.WrappedClock (NumSlots (..))
 

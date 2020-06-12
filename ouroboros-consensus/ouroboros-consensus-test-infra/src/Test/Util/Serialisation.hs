@@ -14,6 +14,8 @@ module Test.Util.Serialisation (
   , roundtrip_SerialiseNodeToNode
   , roundtrip_SerialiseNodeToClient
   , roundtrip_envelopes
+  , roundtrip_ConvertRawHash
+  , prop_hashSize
   , WithVersion (..)
     -- * SomeResult
   , SomeResult (..)
@@ -21,7 +23,7 @@ module Test.Util.Serialisation (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (decode, encode)
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as Char8
@@ -30,10 +32,10 @@ import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
-                     fromSerialised, mkSerialised)
+                     StandardHash, fromSerialised, mkSerialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation (AnnTip, HasAnnTip)
+import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
@@ -55,16 +57,20 @@ import           Test.Util.Roundtrip
 -- 'Arbitrary' argument to a QuickCheck property.
 type Arbitrary' a = (Arbitrary a, Eq a, Show a)
 
+-- | All roundtrip tests
+--
+-- NOTE: we don't include 'prop_hashSize' because the hard fork from Byron
+-- (real crypto) to Shelley (mock crypto) has differently sized hashes.
 roundtrip_all
   :: forall blk.
-     ( SerialiseDiskConstraints blk
+     ( StandardHash blk
+
+     , SerialiseDiskConstraints blk
      , SerialiseNodeToNodeConstraints blk
      , SerialiseNodeToClientConstraints blk
 
      , Show (BlockNodeToNodeVersion blk)
      , Show (BlockNodeToClientVersion blk)
-
-     , HasAnnTip blk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
@@ -90,10 +96,11 @@ roundtrip_all
   -> TestTree
 roundtrip_all ccfg dictNestedHdr =
     testGroup "Roundtrip" [
-        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk           ccfg dictNestedHdr
-      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode     ccfg
-      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient   ccfg
-      , testProperty "envelopes"          $ roundtrip_envelopes               ccfg
+        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         ccfg dictNestedHdr
+      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   ccfg
+      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient ccfg
+      , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
+      , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
       ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
@@ -101,11 +108,9 @@ roundtrip_all ccfg dictNestedHdr =
 roundtrip_SerialiseDisk
   :: forall blk.
      ( SerialiseDiskConstraints blk
-     , HasAnnTip blk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
-     , Arbitrary' (HeaderHash blk)
      , Arbitrary' (LedgerState blk)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ConsensusState (BlockProtocol blk))
@@ -124,8 +129,6 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
                 (encodeDiskDep ccfg ctxt)
                 (decodeDiskDep ccfg ctxt)
                 nestedHdr
-    , testProperty "roundtrip HeaderHash" $
-        roundtrip @(HeaderHash blk) encode decode
       -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
@@ -272,7 +275,7 @@ roundtrip_SerialiseNodeToClient
 roundtrip_SerialiseNodeToClient ccfg =
     [ rt (Proxy @blk)                   "blk"
     , rt (Proxy @(GenTx blk))           "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))      "ApplTxErr"
+    , rt (Proxy @(ApplyTxErr blk))      "ApplyTxErr"
     , rt (Proxy @(SomeBlock Query blk)) "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
@@ -364,6 +367,22 @@ instance HasNestedContent Header blk => Eq (Base16 (SerialisedHeader blk)) where
           case sameDepIndex ctxt ctxt' of
             Just Refl -> bs == bs'
             Nothing   -> False
+
+{-------------------------------------------------------------------------------
+  ConvertRawHash
+-------------------------------------------------------------------------------}
+
+roundtrip_ConvertRawHash
+  :: (StandardHash blk, ConvertRawHash blk)
+  => Proxy blk -> HeaderHash blk -> Property
+roundtrip_ConvertRawHash p h =
+    h === fromRawHash p (toRawHash p h)
+
+prop_hashSize
+  :: ConvertRawHash blk
+  => Proxy blk -> HeaderHash blk -> Property
+prop_hashSize p h =
+    hashSize p === fromIntegral (Strict.length (toRawHash p h))
 
 {-------------------------------------------------------------------------------
   Serialised helpers

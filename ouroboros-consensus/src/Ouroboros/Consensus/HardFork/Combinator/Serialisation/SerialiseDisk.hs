@@ -13,11 +13,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk (
 
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
-import qualified Data.ByteString.Short as Short
 import           Data.SOP.Dict
 import           Data.SOP.Strict
-import           Data.Word
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -43,39 +40,8 @@ instance SerialiseHFC xs => LgrDbSerialiseConstraints (HardForkBlock xs)
 -------------------------------------------------------------------------------}
 
 instance SerialiseHFC xs => ReconstructNestedCtxt Header (HardForkBlock xs) where
-  reconstructPrefixLen _ =
-      -- We insert two bytes at the front
-      2 + maximum (hcollapse perEra)
-    where
-      perEra :: NP (K Word8) xs
-      perEra = hcpure proxySingle reconstructOne
-
-      reconstructOne :: forall blk. SingleEraBlock blk
-                     => K Word8 blk
-      reconstructOne = K $ reconstructPrefixLen (Proxy @(Header blk))
-
-  reconstructNestedCtxt _ prefix blockSize =
-     case nsFromIndex tag of
-       Nothing -> error $ "invalid HardForkBlock with tag: " <> show tag
-       Just ns -> injSomeBlock $ hcmap proxySingle reconstructOne ns
-    where
-      tag :: Word8
-      tag = Short.index prefix 1
-
-      prefixOne :: ShortByteString
-      prefixOne = Short.pack . drop 2 . Short.unpack $ prefix
-
-      reconstructOne :: forall blk. SingleEraBlock blk
-                     => K () blk -> SomeBlock (NestedCtxt Header) blk
-      reconstructOne _ =
-          reconstructNestedCtxt (Proxy @(Header blk)) prefixOne blockSize
-
-      injSomeBlock :: NS (SomeBlock (NestedCtxt Header)) xs'
-                   -> SomeBlock (NestedCtxt Header) (HardForkBlock xs')
-      injSomeBlock (Z x) = case x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
-      injSomeBlock (S x) = case injSomeBlock x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
+  reconstructPrefixLen  = reconstructHfcPrefixLen
+  reconstructNestedCtxt = reconstructHfcNestedCtxt
 
 -- | 'BinaryBlockInfo' compatible with the HFC defaults
 --
