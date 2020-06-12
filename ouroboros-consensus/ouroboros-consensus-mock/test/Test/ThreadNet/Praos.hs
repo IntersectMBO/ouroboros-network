@@ -69,7 +69,7 @@ data TestSetup = TestSetup
   , setupTestConfig   :: TestConfig
   , setupDelaySeed    :: Seed
   , setupEpochSize    :: EpochSize
-  , setupEta0         :: Eta
+  , setupEta0         :: Natural
   , setupNodeJoinPlan :: NodeJoinPlan
   , setupPreDelta     :: Word64
   , setupSlotLength   :: SlotLength
@@ -79,20 +79,34 @@ data TestSetup = TestSetup
 instance Arbitrary TestSetup where
   arbitrary = do
       -- TODO k > 1 as a workaround for Issue #1511.
-      k          <- pure (SecurityParam 5) `asTypeOf` (SecurityParam <$> choose (2, 10))   -- TODO
+      k          <- SecurityParam <$> choose (2, 10)
       epochSize  <- EpochSize     <$> choose (1, 10)
       delaySeed  <- arbitrary
-      eta0       <- arbitrary
+      eta0       <- fromIntegral <$> choose (minBound, maxBound :: Word64)
       slotLength <- arbitrary
+        `suchThat` (\x -> getSlotLength x < getSlotLength (slotLengthFromSec 5))
 
-      testConfig <- arbitrary
-      let TestConfig{numCoreNodes, numSlots} = testConfig
+      initSeed       <- arbitrary
+      numCoreNodes   <- arbitrary
+      let numSlots    = NumSlots (2 * w)
+            where
+              NumSlots w = stabilityNumSlots PraosParams
+                { praosLeaderF       = fixedActiveSlotCoeff
+                , praosSecurityParam = k
+                , praosSlotsPerEpoch = unEpochSize epochSize
+                }
+      nodeTopology   <- genNodeTopology numCoreNodes
+      let testConfig  = TestConfig
+            { initSeed
+            , nodeTopology
+            , numCoreNodes
+            , numSlots
+            }
 
       -- crudely ensure new nodes have a relatively recent chain, since the Praos
       -- paper assumes that
       let truncForJoin (NumSlots n) = NumSlots $ n `min` maxRollbacks k
-
-      nodeJoinPlan   <- genNodeJoinPlan numCoreNodes (truncForJoin numSlots)
+      nodeJoinPlan <- genNodeJoinPlan numCoreNodes (truncForJoin numSlots)
 
       pure $ TestSetup
         k
@@ -106,15 +120,6 @@ instance Arbitrary TestSetup where
 
   -- TODO shrink
 
-newtype Eta = Eta Natural
-  deriving (Eq, Show)
-
-instance Arbitrary Eta where
-  arbitrary = do
-      w <- choose (minBound, maxBound)
-      pure $ Eta $ fromIntegral (w :: Word64)
-  shrink = const []
-
 tests :: TestTree
 tests = testGroup "Praos" $
     concatMap
@@ -122,8 +127,8 @@ tests = testGroup "Praos" $
          -- TODO checkCoverage seems to cause QuickCheck to stop once it's
          -- confident about coverage. EG it only ran 200 tests despite
          -- --quickcheck-num 300
-         [ testProperty s prop
-         , testProperty ("cover " ++ s) (checkCoverage prop)
+         [ testProperty s prop {-
+         , testProperty ("cover " ++ s) (checkCoverage prop) -}
          ])
     [ (,) "simple convergence"
         $ \setup -> prop_simple_praos_convergence setup
@@ -148,7 +153,7 @@ tests = testGroup "Praos" $
           }
         , setupDelaySeed    = Seed (0, 0, 0, 0, 0)
         , setupEpochSize    = epochSize
-        , setupEta0         = Eta 0
+        , setupEta0         = 0
         , setupNodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , setupPreDelta     = 1
         , setupSlotLength   = slotLengthFromSec 2
@@ -163,7 +168,7 @@ prop_simple_praos_convergence :: TestSetup -> Property
 prop_simple_praos_convergence TestSetup
   { setupK            = k
   , setupDelaySeed    = delaySeed
-  , setupEta0         = Eta eta0
+  , setupEta0         = eta0
   , setupTestConfig   = testConfig
   , setupEpochSize    = epochSize
   , setupNodeJoinPlan = nodeJoinPlan
@@ -196,6 +201,16 @@ prop_simple_praos_convergence TestSetup
     classify noViolations          "NoViolations" $
     classify chainGrowthViolation  "CG Violation" $
     classify commonPrefixViolation "CP Violation" $
+    tabulate "k,epochSize,numCoreNodes,numSlots,CP,CG"
+      [ unwords
+        [ show (maxRollbacks k)
+        , show (unEpochSize epochSize)
+        , show (let NumCoreNodes n = numCoreNodes in n)
+        , show (let NumSlots n = numSlots testConfig in n)
+        , show commonPrefixViolation
+        , show chainGrowthViolation
+        ]
+      ] $
     tabulate "numCoreNodes, preDelta, activeSlotCoeff, k"
       [ intercalate ", "
         [ show (let NumCoreNodes n = numCoreNodes in n)
@@ -234,7 +249,7 @@ prop_simple_praos_convergence TestSetup
     params = PraosParams
       { praosSecurityParam = k
       , praosSlotsPerEpoch = unEpochSize epochSize
-      , praosLeaderF       = 0.5
+      , praosLeaderF       = fixedActiveSlotCoeff
       }
 
     TestConfig{numCoreNodes} = testConfig
@@ -425,6 +440,9 @@ inferDelta testConfig testOutput =
 -- properties.
 fixedPreDelta :: Word64
 fixedPreDelta = 3
+
+fixedActiveSlotCoeff :: Double
+fixedActiveSlotCoeff = 0.2
 
 {-------------------------------------------------------------------------------
   Message delay calculators
