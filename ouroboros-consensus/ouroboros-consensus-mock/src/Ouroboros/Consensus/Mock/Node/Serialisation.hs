@@ -17,8 +17,6 @@ module Ouroboros.Consensus.Mock.Node.Serialisation (
 import           Codec.Serialise (Serialise, decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
 
-import           Cardano.Crypto.Hash (Hash, ShortHash)
-
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
@@ -96,8 +94,6 @@ instance SerialiseNodeToNode (MockBlock ext) (GenTxId (MockBlock ext))
 -------------------------------------------------------------------------------}
 
 instance Serialise ext => SerialiseNodeToClientConstraints (MockBlock ext)
-
-instance SerialiseNodeToClient (MockBlock ext) (Hash ShortHash (Header (MockBlock ext)))
 
 instance Serialise ext => SerialiseNodeToClient (MockBlock ext) (MockBlock ext) where
   encodeNodeToClient _ _ = defaultEncodeCBORinCBOR

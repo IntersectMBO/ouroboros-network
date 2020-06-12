@@ -32,8 +32,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode, encode))
 import           Data.SOP.BasicFunctors
 
-import           Ouroboros.Network.Block (HeaderHash, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
+import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
@@ -143,13 +142,6 @@ instance SerialiseNodeToClient blk blk
       encodeNodeToClient cfg version h
   decodeNodeToClient cfg version =
       I <$> decodeNodeToClient cfg version
-
-instance SerialiseNodeToClient blk (HeaderHash     blk)
-      => SerialiseNodeToClient blk (WrapHeaderHash blk) where
-  encodeNodeToClient cfg version (WrapHeaderHash h) =
-      encodeNodeToClient cfg version h
-  decodeNodeToClient cfg version =
-      WrapHeaderHash <$> decodeNodeToClient cfg version
 
 instance SerialiseNodeToNode blk (GenTxId     blk)
       => SerialiseNodeToNode blk (WrapGenTxId blk) where

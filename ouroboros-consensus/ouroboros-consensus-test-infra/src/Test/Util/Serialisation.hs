@@ -79,7 +79,6 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
 
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (HeaderHash blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
@@ -258,7 +257,6 @@ roundtrip_SerialiseNodeToClient
   :: forall blk.
      ( SerialiseNodeToClientConstraints blk
      , Show (BlockNodeToClientVersion blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (HeaderHash blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
@@ -272,8 +270,7 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @(HeaderHash blk))   "HeaderHash"
-    , rt (Proxy @blk)                "blk"
+    [ rt (Proxy @blk)                "blk"
     , rt (Proxy @(GenTx blk))        "GenTx"
     , rt (Proxy @(ApplyTxErr blk))   "ApplTxErr"
     , rt (Proxy @(Some (Query blk))) "Query"

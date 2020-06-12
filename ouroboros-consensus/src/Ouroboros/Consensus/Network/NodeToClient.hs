@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Network.NodeToClient (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.Serialise as Serialise
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
@@ -157,10 +158,10 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
+          (encodeTip   encHash)
+          (decodeTip   decHash)
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
@@ -171,8 +172,8 @@ defaultCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint enc)
-          (decodePoint dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
           (enc . Some)
           dec
           (encodeResult ccfg version)
@@ -184,6 +185,12 @@ defaultCodecs ccfg version = Codecs {
 
     dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
     dec = decodeNodeToClient ccfg version
+
+    encHash :: HeaderHash blk -> Encoding
+    encHash = Serialise.encode . toRawHash (Proxy @blk)
+
+    decHash :: forall s. Decoder s (HeaderHash blk)
+    decHash = fromRawHash (Proxy @blk) <$> Serialise.decode
 
 -- | Protocol codecs for the node-to-client protocols which serialise
 -- / deserialise blocks in /chain-sync/ protocol.
@@ -197,10 +204,10 @@ clientCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
+          (encodeTip   encHash)
+          (decodeTip   decHash)
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
@@ -211,8 +218,8 @@ clientCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint enc)
-          (decodePoint dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
           (enc . Some)
           dec
           (encodeResult ccfg version)
@@ -224,6 +231,12 @@ clientCodecs ccfg version = Codecs {
 
     dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
     dec = decodeNodeToClient ccfg version
+
+    encHash :: HeaderHash blk -> Encoding
+    encHash = Serialise.encode . toRawHash (Proxy @blk)
+
+    decHash :: forall s. Decoder s (HeaderHash blk)
+    decHash = fromRawHash (Proxy @blk) <$> Serialise.decode
 
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)

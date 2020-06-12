@@ -148,11 +148,6 @@ instance SerialiseNodeToNode ByronBlock (GenTxId ByronBlock) where
 
 instance SerialiseNodeToClientConstraints ByronBlock
 
--- | @'HeaderHash' 'ByronBlock'@
-instance SerialiseNodeToClient ByronBlock ByronHash where
-  encodeNodeToClient _ _ = encodeByronHeaderHash
-  decodeNodeToClient _ _ = decodeByronHeaderHash
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance SerialiseNodeToClient ByronBlock ByronBlock where

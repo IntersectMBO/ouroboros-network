@@ -466,8 +466,6 @@ instance SerialiseNodeToNode TestBlock (GenTxId TestBlock) where
 
 instance SerialiseNodeToClientConstraints TestBlock
 
-instance SerialiseNodeToClient TestBlock (OneEraHash '[BlockA, BlockB])
-
 instance SerialiseNodeToClient TestBlock TestBlock where
   encodeNodeToClient _ _ = defaultEncodeCBORinCBOR
   decodeNodeToClient _ _ = defaultDecodeCBORinCBOR

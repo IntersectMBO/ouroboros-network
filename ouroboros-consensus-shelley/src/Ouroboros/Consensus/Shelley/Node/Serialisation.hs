@@ -102,11 +102,6 @@ instance Crypto c => SerialiseNodeToNode (ShelleyBlock c) (GenTxId (ShelleyBlock
 
 instance Crypto c => SerialiseNodeToClientConstraints (ShelleyBlock c)
 
--- | @'HeaderHash' '(ShelleyBlock c)'@
-instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (ShelleyHash c) where
-  encodeNodeToClient _ _ = toCBOR
-  decodeNodeToClient _ _ = fromCBOR
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (ShelleyBlock c) where
