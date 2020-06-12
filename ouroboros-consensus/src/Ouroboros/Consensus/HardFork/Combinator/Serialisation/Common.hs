@@ -66,9 +66,11 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
-import           Control.Exception (throw)
 import           Control.Exception (Exception)
+import           Control.Exception (throw)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.SOP.Strict
 import           Data.Word
 
@@ -212,6 +214,50 @@ class ( CanHardFork xs
       aux :: SerialiseDiskConstraints blk
           => CodecConfig blk -> AnnDecoder I blk
       aux cfg' = AnnDecoder $ (\f -> I . f) <$> decodeDisk cfg'
+
+  -- | Used as the implementation of 'reconstructPrefixLen' for
+  -- 'HardForkBlock'.
+  reconstructHfcPrefixLen :: proxy (Header (HardForkBlock xs)) -> Word8
+  reconstructHfcPrefixLen _ =
+      -- We insert two bytes at the front
+      2 + maximum (hcollapse perEra)
+    where
+      perEra :: NP (K Word8) xs
+      perEra = hcpure proxySingle reconstructOne
+
+      reconstructOne :: forall blk. SingleEraBlock blk
+                     => K Word8 blk
+      reconstructOne = K $ reconstructPrefixLen (Proxy @(Header blk))
+
+  -- | Used as the implementation of 'reconstructNestedCtxt' for
+  -- 'HardForkBlock'.
+  reconstructHfcNestedCtxt ::
+       proxy (Header (HardForkBlock xs))
+    -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
+    -> SizeInBytes      -- ^ Block size
+    -> SomeBlock (NestedCtxt Header) (HardForkBlock xs)
+  reconstructHfcNestedCtxt _ prefix blockSize =
+     case nsFromIndex tag of
+       Nothing -> error $ "invalid HardForkBlock with tag: " <> show tag
+       Just ns -> injSomeBlock $ hcmap proxySingle reconstructOne ns
+    where
+      tag :: Word8
+      tag = Short.index prefix 1
+
+      prefixOne :: ShortByteString
+      prefixOne = Short.pack . drop 2 . Short.unpack $ prefix
+
+      reconstructOne :: forall blk. SingleEraBlock blk
+                     => K () blk -> SomeBlock (NestedCtxt Header) blk
+      reconstructOne _ =
+          reconstructNestedCtxt (Proxy @(Header blk)) prefixOne blockSize
+
+      injSomeBlock :: NS (SomeBlock (NestedCtxt Header)) xs'
+                   -> SomeBlock (NestedCtxt Header) (HardForkBlock xs')
+      injSomeBlock (Z x) = case x of
+          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
+      injSomeBlock (S x) = case injSomeBlock x of
+          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
 
 {-------------------------------------------------------------------------------
   Exceptions
