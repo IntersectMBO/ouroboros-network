@@ -66,11 +66,6 @@ instance Crypto c =>  DecodeDisk (ShelleyBlock c) (AnnTip (ShelleyBlock c)) wher
 
 instance Crypto c => SerialiseNodeToNodeConstraints (ShelleyBlock c)
 
--- | @'HeaderHash' '(ShelleyBlock c)'@
-instance Crypto c => SerialiseNodeToNode (ShelleyBlock c) (ShelleyHash c) where
-  encodeNodeToNode _ _ = toCBOR
-  decodeNodeToNode _ _ = fromCBOR
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance Crypto c => SerialiseNodeToNode (ShelleyBlock c) (ShelleyBlock c) where

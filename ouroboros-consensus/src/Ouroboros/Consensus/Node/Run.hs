@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 -------------------------------------------------------------------------------}
 
 -- | Serialisation constraints needed by the node-to-node protocols
-class ( SerialiseNodeToNode blk (HeaderHash blk)
+class ( ConvertRawHash blk
       , SerialiseNodeToNode blk blk
       , SerialiseNodeToNode blk (Header blk)
       , SerialiseNodeToNode blk (Serialised blk)

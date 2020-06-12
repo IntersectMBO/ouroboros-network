@@ -99,11 +99,6 @@ instance DecodeDisk DualByronBlock (AnnTip DualByronBlock) where
 
 instance SerialiseNodeToNodeConstraints DualByronBlock
 
--- | @'HeaderHash' 'DualByronBlock'@
-instance SerialiseNodeToNode DualByronBlock ByronHash where
-  encodeNodeToNode _ _ = encodeByronHeaderHash
-  decodeNodeToNode _ _ = decodeByronHeaderHash
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance SerialiseNodeToNode DualByronBlock DualByronBlock where

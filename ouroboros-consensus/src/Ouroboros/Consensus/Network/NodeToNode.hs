@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
+import qualified Codec.Serialise as Serialise
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -199,33 +200,33 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
+          (encodeTip   encHash)
+          (decodeTip   decHash)
 
     , cChainSyncCodecSerialised =
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint encHash)
+          (decodePoint decHash)
+          (encodeTip   encHash)
+          (decodeTip   decHash)
 
     , cBlockFetchCodec =
         codecBlockFetch
           enc
           dec
-          enc
-          dec
+          encHash
+          decHash
 
     , cBlockFetchCodecSerialised =
         codecBlockFetch
           enc
           dec
-          enc
-          dec
+          encHash
+          decHash
 
     , cTxSubmissionCodec =
         codecTxSubmission
@@ -240,6 +241,12 @@ defaultCodecs ccfg version = Codecs {
 
     dec :: SerialiseNodeToNode blk a => forall s. Decoder s a
     dec = decodeNodeToNode ccfg version
+
+    encHash :: HeaderHash blk -> Encoding
+    encHash = Serialise.encode . toRawHash (Proxy @blk)
+
+    decHash :: forall s. Decoder s (HeaderHash blk)
+    decHash = fromRawHash (Proxy @blk) <$> Serialise.decode
 
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m

@@ -73,7 +73,6 @@ roundtrip_all
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ConsensusState (BlockProtocol blk))
 
-     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (HeaderHash blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
@@ -163,7 +162,6 @@ roundtrip_SerialiseNodeToNode
   :: forall blk.
      ( SerialiseNodeToNodeConstraints blk
      , Show (BlockNodeToNodeVersion blk)
-     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (HeaderHash blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
@@ -180,8 +178,7 @@ roundtrip_SerialiseNodeToNode
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToNode ccfg =
-    [ rt (Proxy @(HeaderHash blk)) "HeaderHash"
-    , rt (Proxy @blk)              "blk"
+    [ rt (Proxy @blk)              "blk"
     , rt (Proxy @(Header blk))     "Header"
     , rt (Proxy @(GenTx blk))      "GenTx"
     , rt (Proxy @(GenTxId blk))    "GenTxId"

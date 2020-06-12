@@ -466,11 +466,6 @@ defaultDecodeNodeToNode _ (DCCfg ccfg) version =
     coerce . inject <$> decodeNodeToNode @b @(f b) (project ccfg) version
 
 instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
-       => SerialiseNodeToNode (DegenFork b) (DegenForkHeaderHash b) where
-  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(WrapHeaderHash b))
-  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(WrapHeaderHash b))
-
-instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
        => SerialiseNodeToNode (DegenFork b) (DegenFork b) where
   encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(I b))
   decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(I b))

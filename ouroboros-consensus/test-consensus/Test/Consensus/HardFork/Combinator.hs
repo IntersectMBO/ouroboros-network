@@ -442,8 +442,6 @@ instance DecodeDisk TestBlock (AnnTip TestBlock)
 
 instance SerialiseNodeToNodeConstraints TestBlock
 
-instance SerialiseNodeToNode TestBlock (OneEraHash '[BlockA, BlockB])
-
 instance SerialiseNodeToNode TestBlock TestBlock where
   encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
   decodeNodeToNode _ _ = defaultDecodeCBORinCBOR

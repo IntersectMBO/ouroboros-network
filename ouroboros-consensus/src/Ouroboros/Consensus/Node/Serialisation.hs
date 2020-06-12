@@ -144,13 +144,6 @@ instance SerialiseNodeToClient blk blk
   decodeNodeToClient cfg version =
       I <$> decodeNodeToClient cfg version
 
-instance SerialiseNodeToNode blk (HeaderHash     blk)
-      => SerialiseNodeToNode blk (WrapHeaderHash blk) where
-  encodeNodeToNode cfg version (WrapHeaderHash h) =
-      encodeNodeToNode cfg version h
-  decodeNodeToNode cfg version =
-      WrapHeaderHash <$> decodeNodeToNode cfg version
-
 instance SerialiseNodeToClient blk (HeaderHash     blk)
       => SerialiseNodeToClient blk (WrapHeaderHash blk) where
   encodeNodeToClient cfg version (WrapHeaderHash h) =

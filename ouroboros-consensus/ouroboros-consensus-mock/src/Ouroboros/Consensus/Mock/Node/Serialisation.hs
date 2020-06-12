@@ -73,8 +73,6 @@ instance DecodeDisk (MockBlock ext) (AnnTip (MockBlock ext)) where
 
 instance Serialise ext => SerialiseNodeToNodeConstraints (MockBlock ext)
 
-instance SerialiseNodeToNode (MockBlock ext) (Hash ShortHash (Header (MockBlock ext)))
-
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (MockBlock ext) where
   encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
   decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
