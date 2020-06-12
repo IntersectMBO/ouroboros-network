@@ -57,13 +57,14 @@ import           Data.Type.Equality ((:~:) (Refl), apply)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot hiding (at)
 
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
@@ -82,13 +83,13 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
-import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
@@ -106,7 +107,7 @@ data ShelleyLedgerError c
 instance Crypto c => NoUnexpectedThunks (ShelleyLedgerError c)
 
 data ShelleyLedgerConfig c = ShelleyLedgerConfig {
-      shelleyLedgerGenesis   :: !(ShelleyGenesis c)
+      shelleyLedgerGenesis   :: !(SL.ShelleyGenesis c)
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
     , shelleyLedgerGlobals   :: !SL.Globals
@@ -118,21 +119,22 @@ data ShelleyLedgerConfig c = ShelleyLedgerConfig {
 
 
 mkShelleyLedgerConfig
-  :: ShelleyGenesis c
+  :: SL.ShelleyGenesis c
   -> EpochInfo Identity
+  -> Natural
   -> ShelleyLedgerConfig c
-mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
+mkShelleyLedgerConfig genesis epochInfo maxMajorPV = ShelleyLedgerConfig {
       shelleyLedgerGenesis   = genesis
     , shelleyLedgerGlobals   = shelleyGlobals
     , shelleyLedgerEraParams = shelleyEraParams
     }
   where
-    SecurityParam k = sgSecurityParam genesis
+    SecurityParam k = SecurityParam $ SL.sgSecurityParam genesis
 
     shelleyEraParams :: HardFork.EraParams
     shelleyEraParams = HardFork.EraParams {
-          eraEpochSize  = sgEpochLength genesis
-        , eraSlotLength = sgSlotLength  genesis
+          eraEpochSize  = SL.sgEpochLength genesis
+        , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
         , eraSafeZone   = HardFork.SafeZone stabilityWindow
                                             HardFork.NoLowerBound
         }
@@ -140,25 +142,25 @@ mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
     shelleyGlobals :: SL.Globals
     shelleyGlobals = SL.Globals {
           epochInfo         = epochInfo
-        , slotsPerKESPeriod = sgSlotsPerKESPeriod genesis
+        , slotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
         , stabilityWindow
         , randomnessStabilisationWindow
         , securityParameter = k
-        , maxKESEvo         = sgMaxKESEvolutions  genesis
-        , quorum            = sgUpdateQuorum      genesis
-        , maxMajorPV        = sgMaxMajorPV        genesis
-        , maxLovelaceSupply = sgMaxLovelaceSupply genesis
-        , activeSlotCoeff   = sgActiveSlotCoeff   genesis
-        , networkId         = sgNetworkId         genesis
+        , maxMajorPV        = maxMajorPV
+        , maxKESEvo         = SL.sgMaxKESEvolutions  genesis
+        , quorum            = SL.sgUpdateQuorum      genesis
+        , maxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
+        , activeSlotCoeff   = SL.sgActiveSlotCoeff   genesis
+        , networkId         = SL.sgNetworkId         genesis
         }
 
     stabilityWindow =
-      computeStabilityWindow (sgSecurityParam genesis)
-                             (sgActiveSlotCoeff genesis)
+      computeStabilityWindow (SecurityParam $ SL.sgSecurityParam genesis)
+                             (SL.sgActiveSlotCoeff genesis)
 
     randomnessStabilisationWindow =
-      computeRandomnessStabilisationWindow (sgSecurityParam genesis)
-                                           (sgActiveSlotCoeff genesis)
+      computeRandomnessStabilisationWindow (SecurityParam $ SL.sgSecurityParam genesis)
+                                           (SL.sgActiveSlotCoeff genesis)
 
 
 type instance LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
@@ -287,8 +289,9 @@ instance HasHardForkHistory (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
-      unNonMyopicMemberRewards :: Map (SL.Credential 'SL.Staking c)
-                                      (Map (SL.KeyHash 'SL.StakePool c) SL.Coin)
+      unNonMyopicMemberRewards ::
+        Map (Either SL.Coin (SL.Credential 'SL.Staking c))
+            (Map (SL.KeyHash 'SL.StakePool c) SL.Coin)
     }
   deriving stock   (Show)
   deriving newtype (Eq)
@@ -306,7 +309,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     -- | Calculate the Non-Myopic Pool Member Rewards for a set of
     -- credentials. See 'SL.getNonMyopicMemberRewards'
     GetNonMyopicMemberRewards
-      :: Set (SL.Credential 'SL.Staking c)
+      :: Set (Either SL.Coin (SL.Credential 'SL.Staking c))
       -> Query (ShelleyBlock c) (NonMyopicMemberRewards c)
     GetCurrentPParams
       :: Query (ShelleyBlock c) SL.PParams

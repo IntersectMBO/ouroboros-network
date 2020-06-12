@@ -31,6 +31,8 @@ library
   build-depends:       base              >=4.9   && <4.13
                      , cryptonite
 
+                     , cardano-prelude
+
                      , cardano-crypto-class
                      , cardano-ledger
                      , shelley-spec-ledger

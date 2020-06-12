@@ -26,7 +26,6 @@ library
   hs-source-dirs:      src
 
   exposed-modules:
-                       Ouroboros.Consensus.Shelley.Genesis
                        Ouroboros.Consensus.Shelley.Ledger
                        Ouroboros.Consensus.Shelley.Ledger.Block
                        Ouroboros.Consensus.Shelley.Ledger.Config

@@ -435,7 +435,7 @@ computeStabilityWindow
   -> SL.ActiveSlotCoeff
   -> Word64
 computeStabilityWindow securityParam asc =
-    ceiling $ fromIntegral @_ @Double (3 * k) / fromRational f
+    ceiling $ fromIntegral @_ @Double (3 * k) / fromRational (toRational f)
   where
     SecurityParam k = securityParam
     f = SL.intervalValue . SL.activeSlotVal $ asc
@@ -450,7 +450,7 @@ computeRandomnessStabilisationWindow
   -> SL.ActiveSlotCoeff
   -> Word64
 computeRandomnessStabilisationWindow securityParam asc =
-    ceiling $ fromIntegral @_ @Double (4 * k) / fromRational f
+    ceiling $ fromIntegral @_ @Double (4 * k) / fromRational (toRational f)
   where
     SecurityParam k = securityParam
     f = SL.intervalValue . SL.activeSlotVal $ asc

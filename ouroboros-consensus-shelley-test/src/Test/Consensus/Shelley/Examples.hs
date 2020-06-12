@@ -32,19 +32,19 @@ import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (HeaderHash, blockHash, genesisPoint)
-import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Time
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
@@ -55,7 +55,6 @@ import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto)
 import qualified Test.Shelley.Spec.Ledger.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
 
-import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
@@ -72,28 +71,30 @@ import           Test.Consensus.Shelley.MockCrypto
 testEpochInfo :: EpochInfo Identity
 testEpochInfo = SL.epochInfo SL.testGlobals
 
+testMaxMajorPV :: Natural
+testMaxMajorPV = SL.maxMajorPV SL.testGlobals
+
 -- | These are dummy values.
-testShelleyGenesis :: ShelleyGenesis c
-testShelleyGenesis = ShelleyGenesis {
-      sgSystemStart       = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
-    , sgNetworkMagic      = NetworkMagic 0
+testShelleyGenesis :: SL.ShelleyGenesis c
+testShelleyGenesis = SL.ShelleyGenesis {
+      sgSystemStart       = UTCTime (fromGregorian 2020 5 14) 0
+    , sgNetworkMagic      = 0
     , sgNetworkId         = SL.Testnet
     , sgProtocolMagicId   = ProtocolMagicId 0
       -- Chosen to match SL.activeSlotCoeff
     , sgActiveSlotsCoeff  = 0.9
-    , sgSecurityParam     = SecurityParam $ SL.securityParameter SL.testGlobals
+    , sgSecurityParam     = SL.securityParameter SL.testGlobals
     , sgEpochLength       = runIdentity $ epochInfoSize testEpochInfo 0
     , sgSlotsPerKESPeriod = SL.slotsPerKESPeriod SL.testGlobals
     , sgMaxKESEvolutions  = SL.maxKESEvo SL.testGlobals
       -- Not important
-    , sgSlotLength        = slotLengthFromSec 2
+    , sgSlotLength        = secondsToNominalDiffTime 2
     , sgUpdateQuorum      = SL.quorum  SL.testGlobals
-    , sgMaxMajorPV        = SL.maxMajorPV SL.testGlobals
     , sgMaxLovelaceSupply = SL.maxLovelaceSupply SL.testGlobals
     , sgProtocolParams    = SL.emptyPParams
     , sgGenDelegs         = Map.empty
     , sgInitialFunds      = Map.empty
-    , sgStaking           = emptyGenesisStaking
+    , sgStaking           = SL.emptyGenesisStaking
     }
 
 mkDummyHash :: forall c a. Crypto c => Proxy c -> Int -> SL.Hash c a
@@ -155,7 +156,7 @@ exampleLedgerState = reapplyLedgerBlock
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A
-    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo
+    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
 
 exampleHeaderState :: HeaderState Block
 exampleHeaderState = genesisHeaderState st
