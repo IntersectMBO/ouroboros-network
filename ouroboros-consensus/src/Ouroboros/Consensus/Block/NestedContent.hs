@@ -20,7 +20,6 @@ module Ouroboros.Consensus.Block.NestedContent (
   , castNestedCtxt
   , mapNestedCtxt
     -- * Existentials
-  , SomeBlock(..)
   , flipSomeNestedCtxt
   , unflipSomeNestedCtxt
   , castSomeNestedCtxt
@@ -33,6 +32,7 @@ import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Type.Equality
 
+import           Ouroboros.Consensus.Block.Abstract (SomeBlock (..))
 import           Ouroboros.Consensus.Util (Some (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -144,13 +144,6 @@ deriving instance (HasNestedContent f blk, forall a. Show (g a))
 {-------------------------------------------------------------------------------
   Existentials
 -------------------------------------------------------------------------------}
-
--- | Hide the type argument of a block-indexed GADT
---
--- @SomeBlock f blk@ is isomorphic to @Some (f blk)@, but is more convenient
--- in partial applications.
-data SomeBlock (f :: * -> * -> *) blk where
-  SomeBlock :: f blk a -> SomeBlock f blk
 
 deriving instance HasNestedContent f blk => Show (SomeBlock (NestedCtxt f) blk)
 

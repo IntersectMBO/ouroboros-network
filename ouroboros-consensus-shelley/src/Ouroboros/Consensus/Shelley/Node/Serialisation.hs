@@ -122,9 +122,9 @@ instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (SL.ApplyTxError c) 
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
-instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (Some (Query (ShelleyBlock c))) where
-  encodeNodeToClient _ _ (Some q) = encodeShelleyQuery q
-  decodeNodeToClient _ _          = decodeShelleyQuery
+instance Crypto c => SerialiseNodeToClient (ShelleyBlock c) (SomeBlock Query (ShelleyBlock c)) where
+  encodeNodeToClient _ _ (SomeBlock q) = encodeShelleyQuery q
+  decodeNodeToClient _ _               = decodeShelleyQuery
 
 instance Crypto c => SerialiseResult (ShelleyBlock c) (Query (ShelleyBlock c)) where
   encodeResult _ _ = encodeShelleyResult

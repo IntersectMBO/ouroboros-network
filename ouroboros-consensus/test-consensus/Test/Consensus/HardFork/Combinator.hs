@@ -480,8 +480,8 @@ instance SerialiseNodeToClient TestBlock (HardForkApplyTxErr '[BlockA, BlockB]) 
   encodeNodeToClient _ _ = encode . Match.mismatchTwo . mustBeMismatch
   decodeNodeToClient _ _ = (fromMismatch . Match.mkMismatchTwo) <$> decode
 
-instance SerialiseNodeToClient TestBlock (Some (Query TestBlock)) where
-  encodeNodeToClient _ _ (Some q) = absurd $ thereIsNoQuery q
+instance SerialiseNodeToClient TestBlock (SomeBlock Query TestBlock) where
+  encodeNodeToClient _ _ (SomeBlock q) = absurd $ thereIsNoQuery q
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 
 instance SerialiseResult TestBlock (Query TestBlock) where

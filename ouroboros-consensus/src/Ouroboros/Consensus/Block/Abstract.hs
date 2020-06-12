@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -21,6 +22,8 @@ module Ouroboros.Consensus.Block.Abstract (
   , ConvertRawHash(..)
   , encodeRawHash
   , decodeRawHash
+    -- * Existentials
+  , SomeBlock(..)
   ) where
 
 import qualified Codec.Serialise as Serialise
@@ -147,3 +150,14 @@ encodeRawHash p = Serialise.encode . toRawHash p
 decodeRawHash :: ConvertRawHash blk
               => proxy blk -> forall s. Decoder s (HeaderHash blk)
 decodeRawHash p = fromRawHash p <$> Serialise.decode
+
+{-------------------------------------------------------------------------------
+  Existentials
+-------------------------------------------------------------------------------}
+
+-- | Hide the type argument of a block-indexed GADT
+--
+-- @SomeBlock f blk@ is isomorphic to @Some (f blk)@, but is more convenient
+-- in partial applications.
+data SomeBlock (f :: * -> * -> *) blk where
+  SomeBlock :: f blk a -> SomeBlock f blk
