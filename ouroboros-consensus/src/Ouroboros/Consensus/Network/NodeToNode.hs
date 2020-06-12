@@ -199,33 +199,33 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cChainSyncCodecSerialised =
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cBlockFetchCodec =
         codecBlockFetch
           enc
           dec
-          enc
-          dec
+          (encodeRawHash p)
+          (decodeRawHash p)
 
     , cBlockFetchCodecSerialised =
         codecBlockFetch
           enc
           dec
-          enc
-          dec
+          (encodeRawHash p)
+          (decodeRawHash p)
 
     , cTxSubmissionCodec =
         codecTxSubmission
@@ -235,6 +235,9 @@ defaultCodecs ccfg version = Codecs {
           dec
     }
   where
+    p :: Proxy blk
+    p = Proxy
+
     enc :: SerialiseNodeToNode blk a => a -> Encoding
     enc = encodeNodeToNode ccfg version
 

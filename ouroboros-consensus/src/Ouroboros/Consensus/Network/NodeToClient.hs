@@ -157,10 +157,10 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
@@ -171,14 +171,17 @@ defaultCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint enc)
-          (decodePoint dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
           (enc . Some)
           dec
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    p :: Proxy blk
+    p = Proxy
+
     enc :: SerialiseNodeToClient blk a => a -> Encoding
     enc = encodeNodeToClient ccfg version
 
@@ -197,10 +200,10 @@ clientCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
-          (encodePoint enc)
-          (decodePoint dec)
-          (encodeTip   enc)
-          (decodeTip   dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
+          (encodeTip   (encodeRawHash p))
+          (decodeTip   (decodeRawHash p))
 
     , cTxSubmissionCodec =
         codecLocalTxSubmission
@@ -211,14 +214,17 @@ clientCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint enc)
-          (decodePoint dec)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
           (enc . Some)
           dec
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    p :: Proxy blk
+    p = Proxy
+
     enc :: SerialiseNodeToClient blk a => a -> Encoding
     enc = encodeNodeToClient ccfg version
 

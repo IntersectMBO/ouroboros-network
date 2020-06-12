@@ -74,11 +74,6 @@ instance DecodeDisk ByronBlock (AnnTip ByronBlock) where
 
 instance SerialiseNodeToNodeConstraints ByronBlock
 
--- | @'HeaderHash' 'ByronBlock'@
-instance SerialiseNodeToNode ByronBlock ByronHash where
-  encodeNodeToNode _ _ = encodeByronHeaderHash
-  decodeNodeToNode _ _ = decodeByronHeaderHash
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance SerialiseNodeToNode ByronBlock ByronBlock where
@@ -152,11 +147,6 @@ instance SerialiseNodeToNode ByronBlock (GenTxId ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance SerialiseNodeToClientConstraints ByronBlock
-
--- | @'HeaderHash' 'ByronBlock'@
-instance SerialiseNodeToClient ByronBlock ByronHash where
-  encodeNodeToClient _ _ = encodeByronHeaderHash
-  decodeNodeToClient _ _ = decodeByronHeaderHash
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

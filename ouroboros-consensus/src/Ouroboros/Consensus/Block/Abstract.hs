@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Block.Abstract (
@@ -18,8 +19,13 @@ module Ouroboros.Consensus.Block.Abstract (
   , blockToIsEBB
     -- * Raw hash
   , ConvertRawHash(..)
+  , encodeRawHash
+  , decodeRawHash
   ) where
 
+import qualified Codec.Serialise as Serialise
+import           Codec.Serialise.Decoding (Decoder)
+import           Codec.Serialise.Encoding (Encoding)
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
@@ -133,3 +139,11 @@ class ConvertRawHash blk where
 
   -- | The size of the hash in number of bytes
   hashSize    :: proxy blk -> Word32
+
+encodeRawHash :: ConvertRawHash blk
+              => proxy blk -> HeaderHash blk -> Encoding
+encodeRawHash p = Serialise.encode . toRawHash p
+
+decodeRawHash :: ConvertRawHash blk
+              => proxy blk -> forall s. Decoder s (HeaderHash blk)
+decodeRawHash p = fromRawHash p <$> Serialise.decode

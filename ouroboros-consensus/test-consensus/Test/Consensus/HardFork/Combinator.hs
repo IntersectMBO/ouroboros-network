@@ -442,8 +442,6 @@ instance DecodeDisk TestBlock (AnnTip TestBlock)
 
 instance SerialiseNodeToNodeConstraints TestBlock
 
-instance SerialiseNodeToNode TestBlock (OneEraHash '[BlockA, BlockB])
-
 instance SerialiseNodeToNode TestBlock TestBlock where
   encodeNodeToNode _ _ = defaultEncodeCBORinCBOR
   decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
@@ -467,8 +465,6 @@ instance SerialiseNodeToNode TestBlock (GenTxId TestBlock) where
   decodeNodeToNode _ _ = toNS (Proxy @WrapGenTxId) <$> decode
 
 instance SerialiseNodeToClientConstraints TestBlock
-
-instance SerialiseNodeToClient TestBlock (OneEraHash '[BlockA, BlockB])
 
 instance SerialiseNodeToClient TestBlock TestBlock where
   encodeNodeToClient _ _ = defaultEncodeCBORinCBOR

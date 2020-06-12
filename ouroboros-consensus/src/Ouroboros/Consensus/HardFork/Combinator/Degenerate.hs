@@ -466,11 +466,6 @@ defaultDecodeNodeToNode _ (DCCfg ccfg) version =
     coerce . inject <$> decodeNodeToNode @b @(f b) (project ccfg) version
 
 instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
-       => SerialiseNodeToNode (DegenFork b) (DegenForkHeaderHash b) where
-  encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(WrapHeaderHash b))
-  decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(WrapHeaderHash b))
-
-instance (SerialiseNodeToNodeConstraints b, NoHardForks b)
        => SerialiseNodeToNode (DegenFork b) (DegenFork b) where
   encodeNodeToNode = defaultEncodeNodeToNode (Proxy @(I b))
   decodeNodeToNode = defaultDecodeNodeToNode (Proxy @(I b))
@@ -542,11 +537,6 @@ defaultDecodeNodeToClient
   -> forall s. Decoder s x
 defaultDecodeNodeToClient _ (DCCfg ccfg) version =
     coerce . inject <$> decodeNodeToClient @b @(f b) (project ccfg) version
-
-instance (SerialiseNodeToClientConstraints b, NoHardForks b)
-       => SerialiseNodeToClient (DegenFork b) (DegenForkHeaderHash b) where
-  encodeNodeToClient = defaultEncodeNodeToClient (Proxy @(WrapHeaderHash b))
-  decodeNodeToClient = defaultDecodeNodeToClient (Proxy @(WrapHeaderHash b))
 
 instance (SerialiseNodeToClientConstraints b, NoHardForks b)
        => SerialiseNodeToClient (DegenFork b) (DegenFork b) where

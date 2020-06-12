@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Node.Run (
   , RunNode (..)
   ) where
 
-import           Ouroboros.Network.Block (HeaderHash, Serialised)
+import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 -------------------------------------------------------------------------------}
 
 -- | Serialisation constraints needed by the node-to-node protocols
-class ( SerialiseNodeToNode blk (HeaderHash blk)
+class ( ConvertRawHash blk
       , SerialiseNodeToNode blk blk
       , SerialiseNodeToNode blk (Header blk)
       , SerialiseNodeToNode blk (Serialised blk)
@@ -54,7 +54,7 @@ class ( SerialiseNodeToNode blk (HeaderHash blk)
       ) => SerialiseNodeToNodeConstraints blk
 
 -- | Serialisation constraints needed by the node-to-client protocols
-class ( SerialiseNodeToClient blk (HeaderHash blk)
+class ( ConvertRawHash blk
       , SerialiseNodeToClient blk blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
