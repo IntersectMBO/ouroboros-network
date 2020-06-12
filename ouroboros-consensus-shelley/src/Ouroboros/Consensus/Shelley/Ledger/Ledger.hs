@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     -- * Ledger config
   , ShelleyLedgerConfig (..)
   , mkShelleyLedgerConfig
+  , shelleyEraParams
     -- * Auxiliary
   , getPParams
     -- * Serialisation
@@ -117,6 +118,18 @@ data ShelleyLedgerConfig c = ShelleyLedgerConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+shelleyEraParams :: SL.ShelleyGenesis c -> HardFork.EraParams
+shelleyEraParams genesis = HardFork.EraParams {
+      eraEpochSize  = SL.sgEpochLength genesis
+    , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
+    , eraSafeZone   = HardFork.SafeZone stabilityWindow
+                                        HardFork.NoLowerBound
+    }
+  where
+    stabilityWindow =
+      computeStabilityWindow
+        (SecurityParam (SL.sgSecurityParam genesis))
+        (SL.sgActiveSlotCoeff genesis)
 
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis c
@@ -126,18 +139,10 @@ mkShelleyLedgerConfig
 mkShelleyLedgerConfig genesis epochInfo maxMajorPV = ShelleyLedgerConfig {
       shelleyLedgerGenesis   = genesis
     , shelleyLedgerGlobals   = shelleyGlobals
-    , shelleyLedgerEraParams = shelleyEraParams
+    , shelleyLedgerEraParams = shelleyEraParams genesis
     }
   where
     SecurityParam k = SecurityParam $ SL.sgSecurityParam genesis
-
-    shelleyEraParams :: HardFork.EraParams
-    shelleyEraParams = HardFork.EraParams {
-          eraEpochSize  = SL.sgEpochLength genesis
-        , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
-        , eraSafeZone   = HardFork.SafeZone stabilityWindow
-                                            HardFork.NoLowerBound
-        }
 
     shelleyGlobals :: SL.Globals
     shelleyGlobals = SL.Globals {
