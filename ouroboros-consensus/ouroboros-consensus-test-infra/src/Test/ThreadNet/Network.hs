@@ -64,6 +64,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
@@ -831,6 +832,7 @@ runThreadNetwork ThreadNetworkArgs
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+           (AnyMessage KeepAlive)
     customNodeToNodeCodecs cfg = NTN.Codecs
         { cChainSyncCodec =
             mapFailureCodec (CodecBytesFailure "ChainSync") $
@@ -847,6 +849,9 @@ runThreadNetwork ThreadNetworkArgs
         , cTxSubmissionCodec =
             mapFailureCodec CodecIdFailure $
               NTN.cTxSubmissionCodec NTN.identityCodecs
+        , cKeepAliveCodec =
+            mapFailureCodec CodecIdFailure $
+              NTN.cKeepAliveCodec NTN.identityCodecs
         }
       where
         binaryProtocolCodecs =
@@ -1028,6 +1033,9 @@ directedEdgeInner edgeStatusVar
       , miniProtocol
           NTN.aTxSubmissionClient
           NTN.aTxSubmissionServer
+      , miniProtocol
+          NTN.aKeepAliveClient
+          NTN.aKeepAliveServer
       ]
   where
     getApp v = readTVar v >>= \case
@@ -1277,6 +1285,7 @@ type LimitedApp' m peer blk =
         Lazy.ByteString
         Lazy.ByteString
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+        (AnyMessage KeepAlive)
         ()
 
 {-------------------------------------------------------------------------------

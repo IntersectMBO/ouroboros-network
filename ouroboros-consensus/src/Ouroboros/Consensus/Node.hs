@@ -248,7 +248,7 @@ run runargs@RunNodeArgs{..} =
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
+      -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
@@ -281,7 +281,7 @@ run runargs@RunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
+          -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
           -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()

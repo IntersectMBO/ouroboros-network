@@ -32,6 +32,7 @@ module Ouroboros.Network.DeltaQ (
     -- and 'DeltaQ' primitives.
     PeerGSV(..),
     gsvRequestResponseDuration,
+    defaultGSV
   ) where
 
 import           Data.Semigroup ((<>))
@@ -268,4 +269,11 @@ gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
     deltaqQ99thPercentile $
         gsvTrailingEdgeArrive outboundGSV reqSize
      <> gsvTrailingEdgeArrive inboundGSV respSize
+
+
+defaultGSV :: PeerGSV
+defaultGSV = PeerGSV { outboundGSV, inboundGSV }
+  where
+    inboundGSV  = ballisticGSV 0 2e-6 (degenerateDistribution 0)
+    outboundGSV = inboundGSV
 

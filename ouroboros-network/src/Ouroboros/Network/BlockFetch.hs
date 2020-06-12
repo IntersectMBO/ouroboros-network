@@ -92,6 +92,7 @@ module Ouroboros.Network.BlockFetch (
     newFetchClientRegistry,
     bracketFetchClient,
     bracketSyncWithFetchClient,
+    bracketKeepAliveClient,
 
     -- * Re-export types used by 'BlockFetchConsensusInterface'
     FetchMode (..),
@@ -116,8 +117,8 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientPolicy(..)
                    , FetchClientRegistry, newFetchClientRegistry
                    , readFetchClientsStatus, readFetchClientsStateVars
-                   , bracketFetchClient, bracketSyncWithFetchClient
-                   , setFetchClientContext )
+                   , bracketFetchClient, bracketKeepAliveClient
+                   , bracketSyncWithFetchClient, setFetchClientContext )
 
 
 -- | The consensus layer functionality that the block fetch logic requires.

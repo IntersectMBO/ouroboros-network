@@ -10,41 +10,51 @@ module Ouroboros.Network.KeepAlive
   , keepAliveServer
   ) where
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (DiffTime)
+import qualified Control.Monad.Class.MonadSTM as Lazy
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import qualified Data.Map.Strict as M
 
-import           Ouroboros.Network.Mux (RunOrStop (..), ScheduledStop)
+import           Ouroboros.Network.Mux (RunOrStop (..))
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }
 
-
 keepAliveClient
-    :: forall m.
+    :: forall m peer.
        ( MonadSTM   m
+       , MonadMonotonicTime m
        , MonadTimer m
+       , Ord peer
        )
-    => ScheduledStop m
+    => peer
+    -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
+    -> StrictTVar m (Maybe Time)
     -> KeepAliveClient m ()
-keepAliveClient shouldStopSTM KeepAliveInterval { keepAliveInterval } =
+keepAliveClient _peer _dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
     SendMsgKeepAlive go
   where
-    decisionSTM :: TVar m Bool
+    decisionSTM :: Lazy.TVar m Bool
                 -> STM  m RunOrStop
-    decisionSTM delayVar =
-      do
-       readTVar delayVar >>= fmap (const Run) . check
-      `orElse`
-      shouldStopSTM
+    decisionSTM delayVar = Lazy.readTVar delayVar >>= fmap (const Run) . check
 
     go :: m (KeepAliveClient m ())
     go = do
+      _endTime <- getMonotonicTime
+      startTime_m <- atomically $ readTVar startTimeV
+      case startTime_m of
+           Just _startTime -> return () -- TODO add sample
+           Nothing        -> return ()
+
       delayVar <- registerDelay keepAliveInterval
       decision <- atomically (decisionSTM delayVar)
+      now <- getMonotonicTime
+      atomically $ writeTVar startTimeV $ Just now
       case decision of
         Run  -> pure (SendMsgKeepAlive go)
         Stop -> pure (SendMsgDone (pure ()))
