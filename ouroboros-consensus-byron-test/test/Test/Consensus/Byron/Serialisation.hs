@@ -14,7 +14,6 @@
 module Test.Consensus.Byron.Serialisation (tests) where
 
 import           Codec.CBOR.Write (toLazyByteString)
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity
 import           Data.Proxy (Proxy (..))
@@ -23,9 +22,8 @@ import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
 
-import           Ouroboros.Network.Block (HeaderHash)
 
-import           Ouroboros.Consensus.Block (ConvertRawHash (..), getCodecConfig)
+import           Ouroboros.Consensus.Block (getCodecConfig)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()
@@ -52,11 +50,9 @@ tests :: TestTree
 tests = testGroup "Byron"
     [ roundtrip_all testCodecCfg dictNestedHdr
 
+    , testProperty "hashSize" $ prop_hashSize (Proxy @ByronBlock)
+
     , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
-    , testGroup "ConvertRawHashInfo sanity check"
-        [ testProperty "fromRawHash/toRawHash" prop_fromRawHash_toRawHash
-        , testProperty "hashSize sanity check" prop_hashSize
-        ]
 
     , testGroup "Integrity"
         [ testProperty "detect corruption in RegularBlock" prop_detectCorruption_RegularBlock
@@ -88,24 +84,6 @@ prop_byronBinaryBlockInfo blk =
     headerAnnotation = Lazy.fromStrict $ case byronBlockRaw blk of
       ABOBBoundary b -> CC.Block.boundaryHeaderAnnotation $ CC.Block.boundaryHeader b
       ABOBBlock    b -> CC.Block.headerAnnotation         $ CC.Block.blockHeader    b
-
-{-------------------------------------------------------------------------------
-  ConvertRawHash
--------------------------------------------------------------------------------}
-
-prop_fromRawHash_toRawHash
-  :: HeaderHash ByronBlock -> Property
-prop_fromRawHash_toRawHash h =
-    h === fromRawHash p (toRawHash p h)
-  where
-    p = Proxy @ByronBlock
-
-prop_hashSize
-  :: HeaderHash ByronBlock -> Property
-prop_hashSize h =
-    hashSize p === fromIntegral (Strict.length (toRawHash p h))
-  where
-    p = Proxy @ByronBlock
 
 {-------------------------------------------------------------------------------
   Integrity

@@ -2,18 +2,13 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.Shelley.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
-import           Ouroboros.Network.Block (HeaderHash)
-
-import           Ouroboros.Consensus.Block (ConvertRawHash (..))
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
 
@@ -35,10 +30,15 @@ tests :: TestTree
 tests = testGroup "Shelley"
     [ roundtrip_all testCodecCfg dictNestedHdr
 
-    , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
+      -- 'roundtrip_ConvertRawHash' for mock crypto is included in
+      -- 'roundtrip_all', but 'prop_hashSize' is not
+    , testProperty "hashSize mock crypto" $ prop_hashSize pMock
 
-    , testHashInfo (Proxy @TPraosStandardCrypto) "Real crypto"
-    , testHashInfo (Proxy @TPraosMockCrypto)     "Mock crypto"
+      -- Test for real crypto too
+    , testProperty "hashSize real crypto"       $ prop_hashSize pReal
+    , testProperty "ConvertRawHash real crypto" $ roundtrip_ConvertRawHash pReal
+
+    , testProperty "BinaryBlockInfo sanity check" prop_shelleyBinaryBlockInfo
 
     , testGroup "Integrity"
         [ testProperty "generate non-corrupt blocks"  prop_blockIntegrity
@@ -48,11 +48,11 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    testHashInfo :: forall c. Crypto c => Proxy c -> String -> TestTree
-    testHashInfo _ name = testGroup ("ConvertRawHash sanity check: " <> name)
-      [ testProperty "fromRawHash/toRawHash" (prop_fromRawHash_toRawHash @c)
-      , testProperty "hashSize"              (prop_hashSize  @c)
-      ]
+    pMock :: Proxy (ShelleyBlock TPraosMockCrypto)
+    pMock = Proxy
+
+    pReal :: Proxy (ShelleyBlock TPraosStandardCrypto)
+    pReal = Proxy
 
     testCodecCfg :: CodecConfig Block
     testCodecCfg = ShelleyCodecConfig
@@ -80,26 +80,6 @@ prop_shelleyBinaryBlockInfo blk =
 
     encodedHeader :: Lazy.ByteString
     encodedHeader = CBOR.toLazyByteString $ encodeShelleyHeader (getHeader blk)
-
-{-------------------------------------------------------------------------------
-  ConvertRawHash
--------------------------------------------------------------------------------}
-
-prop_fromRawHash_toRawHash
-  :: forall c. Crypto c
-  => HeaderHash (ShelleyBlock c) -> Property
-prop_fromRawHash_toRawHash h =
-    h === fromRawHash p (toRawHash p h)
-  where
-    p = Proxy @(ShelleyBlock c)
-
-prop_hashSize
-  :: forall c. Crypto c
-  => HeaderHash (ShelleyBlock c) -> Property
-prop_hashSize h =
-    hashSize p === fromIntegral (Strict.length (toRawHash p h))
-  where
-    p = Proxy @(ShelleyBlock c)
 
 {-------------------------------------------------------------------------------
   Integrity
