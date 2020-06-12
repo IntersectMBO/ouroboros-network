@@ -6,7 +6,6 @@ module Test.ThreadNet.Infra.Byron.Genesis (
   ) where
 
 import           Control.Monad.Except (runExceptT)
-import           Data.Time (Day (..), UTCTime (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -20,6 +19,8 @@ import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+
+import           Test.Util.Time
 
 {-------------------------------------------------------------------------------
   Generating the genesis configuration
@@ -51,9 +52,8 @@ generateGenesisConfig slotLen params =
     either (error . show) id $
       Crypto.deterministic "this is fake entropy for testing" $
         runExceptT $
-          Genesis.generateGenesisConfigWithEntropy startTime spec
+          Genesis.generateGenesisConfigWithEntropy dawnOfTime spec
   where
-    startTime = UTCTime (ModifiedJulianDay 0) 0
     PBftParams{pbftNumNodes, pbftSecurityParam} = params
     NumCoreNodes numCoreNodes = pbftNumNodes
 
