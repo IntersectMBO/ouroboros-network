@@ -74,7 +74,9 @@ import qualified Codec.CBOR.Read as Read
 import qualified Codec.CBOR.Write as Write
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (when)
+import qualified Data.ByteString.Base16.Lazy as B16
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as BSC
 import           Data.Coerce (Coercible, coerce)
 import           Data.FingerTree.Strict (Measured)
 import           Data.Proxy (Proxy)
@@ -439,7 +441,10 @@ instance Monoid BlockMeasure where
 -- putting them on the wire.
 newtype Serialised a = Serialised
   { unSerialised :: Lazy.ByteString }
-  deriving (Eq, Show)
+  deriving (Eq)
+
+instance Show (Serialised a) where
+  show (Serialised bytes) = BSC.unpack (B16.encode bytes)
 
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
