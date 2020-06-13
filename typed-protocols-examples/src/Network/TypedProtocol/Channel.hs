@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
@@ -18,6 +20,9 @@ module Network.TypedProtocol.Channel
   ) where
 
 import           Control.Monad ((>=>))
+#if !MIN_VERSION_base(4,13,0)
+import           Control.Monad.Fail (MonadFail)
+#endif
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString      as BS
@@ -167,7 +172,7 @@ createConnectedBufferedChannels sz = do
 --
 -- This is primarily useful for testing protocols.
 --
-createPipelineTestChannels :: MonadSTM m
+createPipelineTestChannels :: (MonadFail (STM m), MonadSTM m)
                            => Natural -> m (Channel m a, Channel m a)
 createPipelineTestChannels sz = do
     -- Create two TBQueues to act as the channel buffers (one for each

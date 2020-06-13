@@ -380,7 +380,7 @@ prop_codec_splits splits runM codec msg =
 -- 'PeerHasAgency' for protocol B of some @st :: ps@.
 data SamePeerHasAgency (pr :: PeerRole) (ps :: *) where
   SamePeerHasAgency
-    :: forall (pr :: PeerRole) (st :: ps).
+    :: forall (pr :: PeerRole) ps (st :: ps).
        PeerHasAgency pr st
     -> SamePeerHasAgency pr ps
 
