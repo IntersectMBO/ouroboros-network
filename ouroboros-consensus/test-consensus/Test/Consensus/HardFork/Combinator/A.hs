@@ -77,6 +77,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util (repeatedlyM)
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -209,7 +210,22 @@ type instance LedgerCfg (LedgerState BlockA) =
 
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
-  applyChainTick _ = Ticked
+  applyChainTick (ei, _pcfg) slot st =
+      assertWithMsg (validTransition ei slot st) $
+        Ticked slot st
+
+validTransition :: EpochInfo Identity
+                -> SlotNo
+                -> LedgerState BlockA
+                -> Either String ()
+validTransition ei tipSlotNo st =
+    case lgrA_transition st of
+      Just (_, transition) | tipEpochNo >= transition ->
+        Left "This should have been a B ledger!"
+      _otherwise ->
+        Right ()
+  where
+    tipEpochNo = runIdentity $ epochInfoEpoch ei tipSlotNo
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
