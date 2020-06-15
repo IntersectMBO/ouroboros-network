@@ -16,6 +16,7 @@
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Ledger integration
     LedgerState(..)
+  , ByronLedgerConfig(..)
   , Query(..)
   , initByronLedgerState
   , byronEraParams
@@ -78,7 +79,12 @@ import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
-type instance LedgerCfg (LedgerState ByronBlock) = Gen.Config
+data ByronLedgerConfig = ByronLedgerConfig {
+      byronLedgerConfigGenesis :: !Gen.Config
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+type instance LedgerCfg (LedgerState ByronBlock) = ByronLedgerConfig
 
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
@@ -87,7 +93,7 @@ instance IsLedger (LedgerState ByronBlock) where
       Ticked slotNo ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
         , byronLedgerState       = CC.applyChainTick
-                                      cfg
+                                      (byronLedgerConfigGenesis cfg)
                                       (toByronSlotNo slotNo)
                                       byronLedgerState
         }
@@ -227,7 +233,7 @@ instance LedgerSupportsProtocol ByronBlock where
             return $ toPBftLedgerView $
                        CC.previewDelegationMap (toByronSlotNo for) ls
     where
-      SecurityParam k = genesisSecurityParam cfg
+      SecurityParam k = genesisSecurityParam (byronLedgerConfigGenesis cfg)
       tip             = fromByronSlotNo $ CC.cvsLastSlot ls
 
       -- The lower bound is inclusive
@@ -261,7 +267,8 @@ byronEraParams genesis = HardFork.EraParams {
 
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[ByronBlock]
-  hardForkSummary = neverForksHardForkSummary byronEraParams
+  hardForkSummary = neverForksHardForkSummary
+                      (byronEraParams . byronLedgerConfigGenesis)
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -298,8 +305,10 @@ applyByronBlock validationMode
                 cfg
                 (ByronBlock blk _ (ByronHash blkHash))
                 (Ticked _slot ls) = case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
+    CC.ABOBBlock    blk' -> applyABlock validationMode genesis blk' blkHash ls
+    CC.ABOBBoundary blk' -> applyABoundaryBlock        genesis blk'         ls
+  where
+    genesis = byronLedgerConfigGenesis cfg
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config

@@ -228,7 +228,7 @@ applyByronGenTx validationMode cfg genTx (Ticked slot st) =
     (\state -> Ticked slot $ st {byronLedgerState = state}) <$>
       CC.applyMempoolPayload
         validationMode
-        cfg
+        (byronLedgerConfigGenesis cfg)
         (toByronSlotNo slot)
         (toMempoolPayload genTx)
         (byronLedgerState st)
