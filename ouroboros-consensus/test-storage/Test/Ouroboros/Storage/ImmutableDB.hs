@@ -60,6 +60,7 @@ openTestDB registry hasFS =
       , cacheConfig = Index.CacheConfig 2 60
       , valPol      = ValidateMostRecentChunk
       , parser
+      , prefixLen  = PrefixLen 10
       }
   where
     parser = chunkFileParser

@@ -182,6 +182,7 @@ openDB args@VolDbArgs{..} = do
       , maxBlocksPerFile = volBlocksPerFile
       , tracer           = volTracer
       , parser           = blockFileParser args
+      , prefixLen        = reconstructPrefixLen (Proxy @(Header blk))
       }
 
 -- | For testing purposes

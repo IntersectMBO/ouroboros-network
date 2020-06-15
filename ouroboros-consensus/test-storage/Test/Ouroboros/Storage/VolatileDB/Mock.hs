@@ -6,6 +6,7 @@ module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 
 import           Test.Ouroboros.Storage.VolatileDB.Model
@@ -17,7 +18,7 @@ openDBMock maxBlocksPerFile = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, db dbVar)
   where
-    dbModel = initDBModel maxBlocksPerFile
+    dbModel = initDBModel maxBlocksPerFile (PrefixLen 0)
 
     db :: StrictTVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {

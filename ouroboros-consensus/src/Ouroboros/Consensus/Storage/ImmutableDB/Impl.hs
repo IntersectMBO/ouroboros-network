@@ -178,6 +178,7 @@ data ImmutableDbArgs m h hash e = ImmutableDbArgs
     , cacheConfig :: Index.CacheConfig
     , valPol      :: ValidationPolicy
     , parser      :: ChunkFileParser e m (BlockSummary hash) hash
+    , prefixLen   :: PrefixLen
     }
 
 {------------------------------------------------------------------------------
@@ -252,6 +253,7 @@ openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
           , tracer           = tracer
           , registry         = registry
           , cacheConfig      = cacheConfig
+          , prefixLen        = prefixLen
           }
         db = mkDBRecord dbEnv
         internal = Internal
@@ -370,7 +372,7 @@ getBlockComponentImpl
   -> BlockComponent (ImmutableDB hash m) b
   -> SlotNo
   -> m (Maybe b)
-getBlockComponentImpl dbEnv@ImmutableDBEnv { chunkInfo } blockComponent slot =
+getBlockComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent slot =
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
       let inTheFuture = case forgetTipInfo <$> currentTip of
             Origin                -> True
@@ -386,7 +388,7 @@ getBlockComponentImpl dbEnv@ImmutableDBEnv { chunkInfo } blockComponent slot =
 
       let curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
           chunkSlot    = chunkSlotForRegularBlock chunkInfo slot
-      getChunkSlot hasFS chunkInfo currentIndex curChunkInfo
+      getChunkSlot hasFS chunkInfo prefixLen currentIndex curChunkInfo
         blockComponent chunkSlot
 
 getEBBComponentImpl
@@ -395,7 +397,7 @@ getEBBComponentImpl
   -> BlockComponent (ImmutableDB hash m) b
   -> EpochNo
   -> m (Maybe b)
-getEBBComponentImpl dbEnv@ImmutableDBEnv { chunkInfo } blockComponent epoch =
+getEBBComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent epoch =
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
       let chunk       = unsafeEpochNoToChunkNo epoch
           inTheFuture = case forgetTipInfo <$> currentTip of
@@ -407,20 +409,21 @@ getEBBComponentImpl dbEnv@ImmutableDBEnv { chunkInfo } blockComponent epoch =
         throwUserError $ ReadFutureEBBError epoch currentChunk
 
       let curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
-      getChunkSlot hasFS chunkInfo currentIndex curChunkInfo
+      getChunkSlot hasFS chunkInfo prefixLen currentIndex curChunkInfo
         blockComponent (chunkSlotForBoundaryBlock chunkInfo epoch)
 
 extractBlockComponent
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
   -> ChunkInfo
+  -> PrefixLen
   -> ChunkNo
   -- ^ Most recent chunk file (used to determine size of final block)
   -> CurrentChunkInfo
   -> (Secondary.Entry hash, BlockSize)
   -> BlockComponent (ImmutableDB hash m) b
   -> m b
-extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \case
+extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
     GetSlot  -> return $ slotNoOfBlockOrEBB chunkInfo blockOrEBB
     GetIsEBB -> return $ case blockOrEBB of
@@ -446,9 +449,9 @@ extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \c
     GetPure a -> return a
 
     GetApply f bc ->
-      extractBlockComponent hasFS chunkInfo chunk curChunkInfo
+      extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
         (entry, blockSize) f <*>
-      extractBlockComponent hasFS chunkInfo chunk curChunkInfo
+      extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
         (entry, blockSize) bc
 
     -- In case the requested chunk is the current chunk, we will be reading
@@ -505,11 +508,12 @@ extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \c
         offset = AbsOffset $
           unBlockOffset blockOffset +
           fromIntegral (unHeaderOffset headerOffset)
-    GetNestedCtxt (PrefixLen n) ->
+    GetNestedCtxt ->
         withFile hasFS chunkFile ReadMode $ \eHnd -> do
-          bytes <- hGetExactlyAt hasFS eHnd (fromIntegral n) offset
+          bytes <- hGetExactlyAt hasFS eHnd size offset
           return $ Short.toShort $ Lazy.toStrict bytes
       where
+        size   = fromIntegral $ getPrefixLen prefixLen
         offset = AbsOffset $ unBlockOffset blockOffset
     GetBlock  -> return ()
     GetHeader -> return ()
@@ -547,10 +551,10 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
           return Nothing
         Right (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) ->
           Just <$>
-            extractBlockComponent hasFS chunkInfo chunk curChunkInfo
+            extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
               (entry, blockSize) blockComponent
   where
-    ImmutableDBEnv { chunkInfo } = dbEnv
+    ImmutableDBEnv { chunkInfo, prefixLen } = dbEnv
 
 -- | Get the block component corresponding to the given 'ChunkSlot'.
 --
@@ -559,12 +563,13 @@ getChunkSlot
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
   -> ChunkInfo
+  -> PrefixLen
   -> Index m hash h
   -> CurrentChunkInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> ChunkSlot
   -> m (Maybe b)
-getChunkSlot hasFS chunkInfo index curChunkInfo blockComponent chunkSlot =
+getChunkSlot hasFS chunkInfo prefixLen index curChunkInfo blockComponent chunkSlot =
     -- Check the primary index first
     Index.readOffset index chunk relativeSlot >>= \case
       -- Empty slot
@@ -575,7 +580,7 @@ getChunkSlot hasFS chunkInfo index curChunkInfo blockComponent chunkSlot =
         -- TODO only read the hash in case of 'GetHash'?
         (entry, blockSize) <- Index.readEntry index chunk isEBB secondaryOffset
         Just <$>
-          extractBlockComponent hasFS chunkInfo chunk curChunkInfo
+          extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
             (entry, blockSize) blockComponent
   where
     ChunkSlot chunk relativeSlot = chunkSlot

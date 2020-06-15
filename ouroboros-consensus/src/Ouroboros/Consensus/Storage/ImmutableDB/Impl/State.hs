@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Ouroboros.Consensus.Storage.Common (PrefixLen)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -65,6 +66,7 @@ data ImmutableDBEnv m hash = forall h e. Eq h => ImmutableDBEnv
     , tracer           :: !(Tracer m (TraceEvent e hash))
     , registry         :: !(ResourceRegistry m)
     , cacheConfig      :: !Index.CacheConfig
+    , prefixLen        :: !PrefixLen
     }
 
 data InternalState m hash h =

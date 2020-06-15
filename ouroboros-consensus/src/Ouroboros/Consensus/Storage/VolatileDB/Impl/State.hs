@@ -39,6 +39,7 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
                      allocateTemp, modifyWithTempRegistry)
 
+import           Ouroboros.Consensus.Storage.Common (PrefixLen)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -55,6 +56,7 @@ data VolatileDBEnv m blockId = forall h e. Eq h => VolatileDBEnv {
       hasFS            :: !(HasFS m h)
     , varInternalState :: !(RAWLock m (InternalState blockId h))
     , maxBlocksPerFile :: !BlocksPerFile
+    , prefixLen        :: !PrefixLen
     , parser           :: !(Parser e m blockId)
     , tracer           :: !(Tracer m (TraceEvent e blockId))
     }

@@ -104,7 +104,7 @@ allComponents = (,,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
-    <*> GetNestedCtxt (PrefixLen 10)
+    <*> GetNestedCtxt
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents =
@@ -177,6 +177,7 @@ deriving instance ToExpr FsPath
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr IsEBB
 deriving instance ToExpr BlocksPerFile
+deriving instance ToExpr PrefixLen
 deriving instance ToExpr (BlockInfo BlockId)
 deriving instance ToExpr (BlocksInFile BlockId)
 deriving instance ToExpr (DBModel BlockId)
@@ -579,7 +580,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
           (tagFilterByPredecessor events)
         $ prop
   where
-    dbm = initDBModel testMaxBlocksPerFile
+    dbm = initDBModel testMaxBlocksPerFile testPrefixLen
     smUnused = sm (unusedEnv @()) dbm
 
     groupIsMember n
@@ -604,6 +605,7 @@ test cmds = do
           , maxBlocksPerFile = testMaxBlocksPerFile
           , tracer
           , parser
+          , prefixLen = testPrefixLen
           }
 
     (hist, res, trace) <- bracket
@@ -627,10 +629,13 @@ test cmds = do
           res === Ok
     return (hist, prop)
   where
-    dbm = initDBModel testMaxBlocksPerFile
+    dbm = initDBModel testMaxBlocksPerFile testPrefixLen
 
 testMaxBlocksPerFile :: BlocksPerFile
 testMaxBlocksPerFile = mkBlocksPerFile 3
+
+testPrefixLen :: PrefixLen
+testPrefixLen = PrefixLen 10
 
 unusedEnv :: VolatileDBEnv h
 unusedEnv = error "VolatileDBEnv used during command generation"
@@ -866,5 +871,5 @@ showLabelledExamples' mReplay numTests = do
             collects (tag . execCmds (initModel smUnused) $ cmds) $
                 property True
   where
-    dbm      = initDBModel testMaxBlocksPerFile
+    dbm      = initDBModel testMaxBlocksPerFile testPrefixLen
     smUnused = sm (unusedEnv @()) dbm

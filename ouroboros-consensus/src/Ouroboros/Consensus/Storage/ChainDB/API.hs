@@ -456,12 +456,10 @@ getSerialisedHeader
   => BlockComponent (ChainDB m blk) (SerialisedHeader blk)
 getSerialisedHeader =
     mkSerialisedHeader
-      <$> GetNestedCtxt prefixLen
+      <$> GetNestedCtxt
       <*> GetBlockSize
       <*> GetRawHeader
   where
-    prefixLen = reconstructPrefixLen (Proxy @(Header blk))
-
     mkSerialisedHeader
       :: ShortByteString
       -> SizeInBytes

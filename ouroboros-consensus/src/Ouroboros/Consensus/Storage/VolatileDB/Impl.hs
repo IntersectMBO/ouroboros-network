@@ -142,6 +142,7 @@ data VolatileDbArgs m h blockId e = VolatileDbArgs
     , maxBlocksPerFile :: BlocksPerFile
     , tracer           :: Tracer m (TraceEvent e blockId)
     , parser           :: Parser e m blockId
+    , prefixLen        :: PrefixLen
     }
 
 openDB :: ( HasCallStack
@@ -156,11 +157,12 @@ openDB VolatileDbArgs {..} = runWithTempRegistry $ do
     ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
     stVar <- lift $ RAWLock.new (DbOpen ost)
     let env = VolatileDBEnv {
-            hasFS          = hasFS
-          , varInternalState  = stVar
+            hasFS            = hasFS
+          , varInternalState = stVar
           , maxBlocksPerFile = maxBlocksPerFile
           , parser           = parser
           , tracer           = tracer
+          , prefixLen        = prefixLen
           }
         volDB = VolatileDB {
             closeDB             = closeDBImpl             env
@@ -190,7 +192,7 @@ getBlockComponentImpl
   -> BlockComponent (VolatileDB blockId m) b
   -> blockId
   -> m (Maybe b)
-getBlockComponentImpl env blockComponent blockId =
+getBlockComponentImpl env@VolatileDBEnv { prefixLen } blockComponent blockId =
     withOpenState env $ \hasFS OpenState { currentRevMap } ->
       case Map.lookup blockId currentRevMap of
         Nothing                -> return Nothing
@@ -204,27 +206,28 @@ getBlockComponentImpl env blockComponent blockId =
       -> BlockComponent (VolatileDB blockId m) b'
       -> m b'
     getBlockComponent hasFS ib = \case
-        GetHash         -> return blockId
-        GetSlot         -> return bslot
-        GetIsEBB        -> return bisEBB
-        GetBlockSize    -> return $ fromIntegral $ unBlockSize ibBlockSize
-        GetHeaderSize   -> return bheaderSize
-        GetPure a       -> return a
-        GetApply f bc   ->
+        GetHash       -> return blockId
+        GetSlot       -> return bslot
+        GetIsEBB      -> return bisEBB
+        GetBlockSize  -> return $ fromIntegral $ unBlockSize ibBlockSize
+        GetHeaderSize -> return bheaderSize
+        GetPure a     -> return a
+        GetApply f bc ->
           getBlockComponent hasFS ib f <*> getBlockComponent hasFS ib bc
-        GetBlock        -> return ()
-        GetRawBlock     -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetBlock      -> return ()
+        GetRawBlock   -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = unBlockSize ibBlockSize
               offset = ibBlockOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetHeader       -> return ()
-        GetRawHeader    -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetHeader     -> return ()
+        GetRawHeader  -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetNestedCtxt n -> withFile hasFS ibFile ReadMode $ \hndl -> do
-          let offset = ibBlockOffset
-          bytes <- hGetExactlyAt hasFS hndl (fromIntegral (getPrefixLen n)) (AbsOffset offset)
+        GetNestedCtxt -> withFile hasFS ibFile ReadMode $ \hndl -> do
+          let size   = fromIntegral (getPrefixLen prefixLen)
+              offset = ibBlockOffset
+          bytes <- hGetExactlyAt hasFS hndl size (AbsOffset offset)
           return $ Short.toShort $ Lazy.toStrict bytes
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib
