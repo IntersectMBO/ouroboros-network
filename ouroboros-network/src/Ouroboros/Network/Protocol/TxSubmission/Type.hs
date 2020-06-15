@@ -228,7 +228,7 @@ instance Protocol (TxSubmission txid tx) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
-{-# WARNING MsgKThxBye "MsgKThxBye: should only be used with not yet introduced NodeToNodeV_2" #-}
+{-# WARNING MsgKThxBye "MsgKThxBye: must not be used with NodeToNodeV_1" #-}
 
 
 -- | The value level equivalent of 'StBlockingStyle'.

@@ -207,7 +207,7 @@ instance TPraosCrypto sc => TranslateNetworkProtocolVersion (CardanoBlock sc) wh
 
   nodeToNodeProtocolVersion _ = \case
       CardanoNodeToNodeVersion1 -> NodeToNodeV_1
-      CardanoNodeToNodeVersion2 -> error "NodeToNodeV_2"
+      CardanoNodeToNodeVersion2 -> NodeToNodeV_2
       v                         -> error $ "unsupported version: " <> show v
 
   nodeToClientProtocolVersion _ = \case
