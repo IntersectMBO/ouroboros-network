@@ -136,7 +136,7 @@ multiply m sl = fromIntegral m * getSlotLength sl
 
 -- | Find the non-negative difference
 safeSub :: (Num a, Ord a) => a -> a -> Maybe a
-safeSub x y = if y > x then Nothing else Just (x - y)
+safeSub x y = if x < y then Nothing else Just (x - y)
 
 calcEraSlots :: EpochSize -> EraSize -> NumSlots
 calcEraSlots (EpochSize slotPerEpoch) (EraSize epochPerEra) =
