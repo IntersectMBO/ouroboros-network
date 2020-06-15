@@ -165,27 +165,21 @@ nodeToClientProtocols
   -> NodeToClientVersion
   -> OuroborosApplication appType addr bytes m a b
 nodeToClientProtocols protocols version =
-    case version of
-      NodeToClientV_1 -> OuroborosApplication $ \connectionId shouldStopSTM ->
-        case protocols connectionId shouldStopSTM of
-          NodeToClientProtocols {
-              localChainSyncProtocol,
-              localTxSubmissionProtocol
-            } ->
-            [ localChainSyncMiniProtocol localChainSyncProtocol
-            , localTxSubmissionMiniProtocol localTxSubmissionProtocol
-            ]
-      NodeToClientV_2 -> OuroborosApplication $ \connectionId shouldStopSTM ->
-        case protocols connectionId shouldStopSTM of
-          NodeToClientProtocols {
-              localChainSyncProtocol,
-              localTxSubmissionProtocol,
-              localStateQueryProtocol
-            } ->
-            [ localChainSyncMiniProtocol localChainSyncProtocol
-            , localTxSubmissionMiniProtocol localTxSubmissionProtocol
-            , localStateQueryMiniProtocol localStateQueryProtocol
-            ]
+    OuroborosApplication $ \connectionId shouldStopSTM ->
+      case protocols connectionId shouldStopSTM of
+        NodeToClientProtocols {
+            localChainSyncProtocol,
+            localTxSubmissionProtocol,
+            localStateQueryProtocol
+          } ->
+          [ localChainSyncMiniProtocol localChainSyncProtocol
+          , localTxSubmissionMiniProtocol localTxSubmissionProtocol
+          ] <>
+          [ localStateQueryMiniProtocol localStateQueryProtocol
+          | case version of
+              NodeToClientV_1 -> False
+              _               -> True
+          ]
   where
     localChainSyncMiniProtocol localChainSyncProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,

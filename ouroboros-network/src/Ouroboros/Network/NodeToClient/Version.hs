@@ -26,6 +26,8 @@ data NodeToClientVersion
     = NodeToClientV_1
     | NodeToClientV_2
     -- ^ added local-query mini-protocol
+    | NodeToClientV_3
+    -- ^ enabled @CardanoNodeToClientVersion3@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -40,6 +42,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
       encodeTerm NodeToClientV_1 = CBOR.TInt 1
       encodeTerm NodeToClientV_2 = CBOR.TInt (2 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_3 = CBOR.TInt (3 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -47,6 +50,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             ) of
         (1, False) -> Right NodeToClientV_1
         (2, True)  -> Right NodeToClientV_2
+        (3, True)  -> Right NodeToClientV_3
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
