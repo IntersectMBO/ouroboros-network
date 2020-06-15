@@ -51,7 +51,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -73,6 +72,7 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
+import           Test.Util.Random (Seed (..))
 import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.Consensus.HardFork.Combinator.A

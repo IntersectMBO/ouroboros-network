@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util.Random
 
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -59,6 +58,7 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.ThreadNet.Infra.Byron.ProtocolInfo
 
+import           Test.Util.Random
 import           Test.Util.WrappedClock (NumSlots (..))
 
 -- | The expectation and observation regarding whether the hard-fork proposal

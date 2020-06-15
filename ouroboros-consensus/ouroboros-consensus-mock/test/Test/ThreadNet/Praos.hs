@@ -20,7 +20,6 @@ import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.Praos (protocolInfoPraos)
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
@@ -32,6 +31,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 import           Test.Util.WrappedClock (NumSlots (..))
 
 data TestSetup = TestSetup

@@ -11,7 +11,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import           Ouroboros.Consensus.Util.Random
+
+import           Test.Util.Random
 
 {-------------------------------------------------------------------------------
   TxGen class

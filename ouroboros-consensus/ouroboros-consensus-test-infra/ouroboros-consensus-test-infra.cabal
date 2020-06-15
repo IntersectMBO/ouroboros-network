@@ -26,6 +26,7 @@ library
                        Test.ThreadNet.Rekeying
                        Test.ThreadNet.TxGen
                        Test.ThreadNet.Util
+                       Test.ThreadNet.Util.BlockProduction
                        Test.ThreadNet.Util.Expectations
                        Test.ThreadNet.Util.HasCreator
                        Test.ThreadNet.Util.NodeJoinPlan
@@ -51,6 +52,7 @@ library
                        Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
+                       Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Roundtrip

@@ -24,7 +24,6 @@ import           Ouroboros.Consensus.Mock.Node.Serialisation
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util (Dict (..))
-import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
@@ -37,6 +36,7 @@ import           Test.ThreadNet.Util.SimpleBlock
 import           Test.Consensus.Ledger.Mock.Generators ()
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 import           Test.Util.Serialisation
 import           Test.Util.WrappedClock (NumSlots (..))
 

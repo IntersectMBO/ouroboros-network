@@ -36,9 +36,9 @@ import           Cardano.Slotting.Slot (EpochSize (..))
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 import           Test.Util.Time (dawnOfTime)
 
 import qualified Shelley.Spec.Ledger.Address as SL

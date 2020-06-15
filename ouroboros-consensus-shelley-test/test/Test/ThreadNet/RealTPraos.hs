@@ -16,12 +16,12 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 
 import qualified Shelley.Spec.Ledger.OCert as SL
 

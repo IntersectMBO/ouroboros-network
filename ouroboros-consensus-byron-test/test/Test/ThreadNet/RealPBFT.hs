@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.Random
 
 import qualified Cardano.Binary
 import qualified Cardano.Chain.Block as Block
@@ -76,6 +75,7 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 import qualified Test.Util.Stream as Stream
 import           Test.Util.WrappedClock (NumSlots (..))
 

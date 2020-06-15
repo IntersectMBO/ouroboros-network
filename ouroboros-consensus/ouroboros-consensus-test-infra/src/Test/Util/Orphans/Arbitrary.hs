@@ -23,12 +23,12 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
+import           Test.Util.Random (Seed (..))
 import           Test.Util.Time
 
 minNumCoreNodes :: Word64

@@ -23,7 +23,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util.Random
 
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
@@ -49,6 +48,7 @@ import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random
 
 data TestSetup = TestSetup
   { setupD          :: Double

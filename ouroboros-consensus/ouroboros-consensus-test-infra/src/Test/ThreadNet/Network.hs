@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -90,7 +89,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
@@ -104,6 +102,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util.BlockProduction
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
@@ -112,6 +111,7 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import qualified Test.Util.LogicalClock as LogicalClock
+import           Test.Util.Random
 import           Test.Util.Time
 import           Test.Util.Tracer
 import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
