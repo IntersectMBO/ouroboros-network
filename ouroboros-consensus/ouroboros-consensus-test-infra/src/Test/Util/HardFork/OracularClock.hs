@@ -12,9 +12,10 @@ module Test.Util.HardFork.OracularClock (
   , onSlotChange
   , withinEachSlot
   , withinTheCurrentSlot
+  , EndOfDaysException (..)
   ) where
 
-import           Control.Monad (replicateM_, void)
+import           Control.Monad (replicateM_, when, void)
 import           Data.Foldable (toList)
 import           Data.Time
 import           GHC.Stack
@@ -38,11 +39,13 @@ import           Test.Util.Stream
 -- This clock's closure contains a 'BTime.SystemTime', a 'Future', and a
 -- 'NumSlots'. As the system time advances, the clock maintains a notion of the
 -- current 'SlotNo'. Once all 'NumSlots' have passed, the clock is /exhausted/
--- and most of its methods block indefinitely from then on.
+-- and all of its methods raise 'EndOfDaysException' after a minimal
+-- 'threadDelay'.
 --
--- Most notably, 'waitUntilDone' instead blocks until the the clock is
--- exhausted; so the continuation of that call should expect other threads
--- using the rest of this clock's methods to be stuck (and eg reap them).
+-- Most notably, 'waitUntilDone' (when called before the clock is exhausted)
+-- blocks until the the clock is exhausted; so the continuation of that call
+-- should expect other threads using the rest of this clock's methods to be
+-- stuck (and eg reap them).
 --
 -- Note: though the wallclock-slot correspondence depends on the ledger state,
 -- we have designed our ledgers so that all nodes necessarily use the same
@@ -51,19 +54,17 @@ import           Test.Util.Stream
 data OracularClock m = OracularClock
     { -- | Returns 'True' if the requested slot is already over
       --
-      -- Note: blocks indefinitely if clock becomes exhausted before requested
-      -- slot.
+      -- Eventually raises 'EndOfDaysException'.
       blockUntilSlot :: SlotNo -> m Bool
 
       -- | The current delay duration until the onset of the next slot
       --
-      -- Note: blocks indefinitely if the clock is already exhausted.
+      -- Eventually raises 'EndOfDaysException'.
     , delayUntilNextSlot :: m NominalDiffTime
 
       -- | A mock system time
       --
-      -- Note: this 'BTime.systemTimeCurrent' blocks indefinitely if clock is
-      -- already exhausted.
+      -- Note: 'BTime.systemTimeCurrent' eventually raises 'EndOfDaysException'.
     , finiteSystemTime :: BTime.SystemTime m
 
       -- | Convert 'Control.Monad.Class.MonadTime.getCurrentTime' to 'SlotNo'
@@ -81,7 +82,7 @@ data OracularClock m = OracularClock
       --
       -- Note: we do use a ticker thread for 'onSlotChange'.
       --
-      -- Note: blocks indefinitely if the clock is already exhausted.
+      -- Eventually raises 'EndOfDaysException'.
     , getCurrentSlot :: m SlotNo
 
       -- | See 'onSlotChange'
@@ -92,6 +93,9 @@ data OracularClock m = OracularClock
                     -> m (m ())
 
       -- | Block until the clock is exhausted
+      --
+      -- Eventually raises 'EndOfDaysException' if invoked after clock is
+      -- exhausted.
     , waitUntilDone :: m ()
     }
 
@@ -176,6 +180,7 @@ new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
 
     slotVar <- newTVarM 0
     doneVar <- newTVarM False
+    exnVar  <- newTVarM False
     void $ forkThread registry "OracularClock.ticker" $ do
       -- The first slot has already begun, so let other threads execute until
       -- the slot ends
@@ -188,24 +193,38 @@ new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
       -- over)
       atomically $ writeTVar doneVar True
 
+      -- block for a non-zero amount of time after the end of the test
+      --
+      -- Normal finalizers etc should complete during this time and terminate
+      -- threads blocked on this @exnVar@. If not, those threads eventually
+      -- throw 'EndOfDaysException'. (Recall that 'OracularClock' is for
+      -- testing, and we're in the infinitely-fast @io-sim:SimM@ monad.)
+      threadDelay 1
+      atomically $ writeTVar exnVar True
+
+    let exhaustedM = do
+            -- throw if this thread isn't terminated in time
+            readTVar exnVar >>= check
+            throwM EndOfDaysException
+
     let readCurrentSlotSTM = do
-            -- block forever if clock is exhausted
-            readTVar doneVar >>= check . not
+            -- check if clock is exhausted
+            done <- readTVar doneVar
+            when done exhaustedM
 
             readTVar slotVar
 
     let finiteSystemTimeCurrent = do
             t <- systemTimeCurrent
 
-            -- block forever if clock is exhausted (this checks the time
-            -- directly, without relying on 'doneVar')
-            atomically $ do
-              let totalDelta =
-                      (sum . map BTime.getSlotLength) $
-                      (take (fromIntegral n) . toList) $
-                      futureSlotLengths future
-                  tFinal = BTime.RelativeTime totalDelta
-              check $ t < tFinal
+            -- check if clock is exhausted (this checks the time directly,
+            -- without relying on 'doneVar')
+            let totalDelta =
+                    (sum . map BTime.getSlotLength) $
+                    (take (fromIntegral n) . toList) $
+                    futureSlotLengths future
+                tFinal = BTime.RelativeTime totalDelta
+            when (t >= tFinal) $ atomically exhaustedM
 
             pure t
 
@@ -238,5 +257,23 @@ new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
               Nothing
               readCurrentSlotSTM
               action
-      , waitUntilDone = atomically $ readTVar doneVar >>= check
+      , waitUntilDone = atomically $ do
+            -- throw if the caller is too late
+            exn <- readTVar exnVar
+            when exn $ throwM EndOfDaysException
+
+            readTVar doneVar >>= check
       }
+
+-----
+
+-- | A thread used an 'OracularClock' well after it was exhausted
+--
+-- A thread using an exhausted 'OracularClock' first briefly delays, so that
+-- finalizers etc have a chance to terminate it. If that tear down isn't prompt
+-- enough, the thread then throws this exception, which we don't catch
+-- anywhere.
+data EndOfDaysException = EndOfDaysException
+  deriving (Show)
+
+instance Exception EndOfDaysException
