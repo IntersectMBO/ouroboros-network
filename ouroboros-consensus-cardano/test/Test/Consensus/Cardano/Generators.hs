@@ -11,6 +11,7 @@ module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
   ) where
 
+import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 import           Data.Coerce
 import qualified Data.List.NonEmpty as NE
 import           Data.Proxy
@@ -60,8 +61,14 @@ instance Arbitrary (CardanoBlock TPraosMockCrypto) where
 instance Arbitrary (CardanoHeader TPraosMockCrypto) where
   arbitrary = getHeader <$> arbitrary
 
+-- TODO if we try to use arbitrary instances for `SlotNo` and `EpochNo` here, we
+-- hit a conflict, since they exist both in byron generators and shelley
+-- generators.
 instance Arbitrary Bound where
-  arbitrary = Bound <$> (RelativeTime <$> arbitrary) <*> arbitrary <*> arbitrary
+  arbitrary =
+    Bound <$> (RelativeTime <$> arbitrary)
+          <*> (SlotNo <$> arbitrary)
+          <*> (EpochNo <$> arbitrary)
 
 arbitraryHardForkState
   :: forall f sc a.

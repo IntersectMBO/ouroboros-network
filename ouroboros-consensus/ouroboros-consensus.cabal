@@ -367,6 +367,7 @@ test-suite test-consensus
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.Orphans.ToExpr
@@ -493,6 +494,7 @@ test-suite test-storage
                        Test.Util.FS.Sim.STM
                        Test.Util.LogicalClock
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.Orphans.ToExpr
