@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -15,14 +16,16 @@ codecPingPong
 codecPingPong =
     Codec{encode, decode}
   where
-    encode :: PeerHasAgency pr st
+    encode :: forall pr (st :: PingPong) (st' :: PingPong)
+           .  PeerHasAgency pr st
            -> Message PingPong st st'
            -> String
     encode (ClientAgency TokIdle) MsgPing = "ping\n"
     encode (ClientAgency TokIdle) MsgDone = "done\n"
     encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
-    decode :: PeerHasAgency pr st
+    decode :: forall pr (st :: PingPong)
+           .  PeerHasAgency pr st
            -> m (DecodeStep String CodecFailure m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
