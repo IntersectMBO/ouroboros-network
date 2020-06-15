@@ -49,7 +49,7 @@ import           Test.Util.Stream
 -- correspondence in the absence of a Common Prefix violation. So this clock
 -- can indeed know /the/ future.
 data OracularClock m = OracularClock
-    { -- | Returns 'False' if the requested slot is already over
+    { -- | Returns 'True' if the requested slot is already over
       --
       -- Note: blocks indefinitely if clock becomes exhausted before requested
       -- slot.
