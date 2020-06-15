@@ -221,13 +221,13 @@ new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
             EQ -> pure False
             GT -> pure True   -- ie " too late "
       , delayUntilNextSlot = do
-          (_slot, inSlot, slotLength) <- getPresent
-          pure $ BTime.getSlotLength slotLength - inSlot
+          (_slot, leftInSlot, _slotLength) <- getPresent
+          pure leftInSlot
       , finiteSystemTime = systemTime
           { BTime.systemTimeCurrent = finiteSystemTimeCurrent
           }
       , getCurrentSlot = do
-          (slot, _inSlot, _slotLength) <- getPresent
+          (slot, _leftInSlot, _slotLength) <- getPresent
           pure slot
       , onSlotChange_ = \rr threadLabel action ->
           cancelThread <$>

@@ -84,7 +84,7 @@ futureTimeToSlot :: Future
 futureTimeToSlot = \future d -> go 0 d future
   where
     done acc d slotLength =
-        (SlotNo $ acc + n, timeInSlot, slotLength)
+        (SlotNo $ acc + n, getSlotLength slotLength - timeInSlot, slotLength)
       where
         n          = divide d slotLength
         timeInSlot = d - multiply n slotLength
