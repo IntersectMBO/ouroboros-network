@@ -20,7 +20,7 @@ import           Numeric.Natural
 import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
-import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 import           Cardano.Crypto.Hash.Class (Hash)
 import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
@@ -56,10 +56,11 @@ class ( Crypto c
 data TPraosStandardCrypto
 
 instance Crypto TPraosStandardCrypto where
-  type DSIGN TPraosStandardCrypto = Ed25519DSIGN
-  type KES   TPraosStandardCrypto = Sum7KES Ed25519DSIGN Blake2b_256
-  type VRF   TPraosStandardCrypto = SimpleVRF
-  type HASH  TPraosStandardCrypto = Blake2b_256
+  type DSIGN    TPraosStandardCrypto = Ed25519DSIGN
+  type KES      TPraosStandardCrypto = Sum7KES Ed25519DSIGN Blake2b_256
+  type VRF      TPraosStandardCrypto = SimpleVRF
+  type HASH     TPraosStandardCrypto = Blake2b_256
+  type ADDRHASH TPraosStandardCrypto = Blake2b_224
 
 instance TPraosCrypto TPraosStandardCrypto
 

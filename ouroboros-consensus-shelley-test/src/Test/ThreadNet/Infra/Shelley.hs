@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
@@ -81,7 +82,10 @@ data CoreNodeKeyInfo = CoreNodeKeyInfo
       ::  ( SL.KeyPair 'SL.Payment TPraosMockCrypto
           , SL.KeyPair 'SL.Staking TPraosMockCrypto
           )
-  , cnkiCoreNode :: (SL.KeyPair 'SL.Genesis TPraosMockCrypto, Gen.AllPoolKeys)
+  , cnkiCoreNode ::
+      ( SL.KeyPair 'SL.Genesis TPraosMockCrypto
+      , Gen.AllIssuerKeys 'SL.GenesisDelegate
+      )
   }
 
 coreNodeKeys
@@ -91,7 +95,7 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
   = CoreNodeKeyInfo
       { cnkiCoreNode =
           ( mkDSIGNKeyPair cnGenesisKey
-          , Gen.AllPoolKeys
+          , Gen.AllIssuerKeys
             { Gen.cold = mkDSIGNKeyPair cnDelegateKey
             , Gen.vrf  = mkVRFKeyPair cnVRF
             , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
@@ -228,9 +232,15 @@ mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
           [ (pk, pp)
           | pp@(SL.PoolParams { _poolPubKey = pk }) <- Map.elems coreNodeToPoolMapping
           ]
-      , sgsStake = Map.mapKeysMonotonic SL.coerceKeyRole
-                 . Map.map SL._poolPubKey
-                 $ coreNodeToPoolMapping
+        -- The staking key maps to the key hash of the pool, which is set to the
+        -- "delegate key" in order that nodes may issue blocks both as delegates
+        -- and as stake pools.
+      , sgsStake = Map.fromList
+          [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnStakingKey
+            , SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+            )
+          | CoreNode {cnDelegateKey, cnStakingKey} <- coreNodes
+          ]
       }
       where
         coreNodeToPoolMapping :: Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c)
@@ -246,13 +256,16 @@ mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
                 , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
-                , SL._poolOwners = Set.singleton $ SL.coerceKeyRole poolHash
+                , SL._poolOwners = Set.singleton poolOwnerHash
                 , SL._poolRelays = Seq.empty
                 , SL._poolMD = SL.SNothing
                 }
               )
             | CoreNode { cnDelegateKey, cnStakingKey, cnVRF } <- coreNodes
+              -- The pool and owner hashes are derived from the same key, but
+              -- use different hashing schemes
             , let poolHash = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+            , let poolOwnerHash = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
             , let vrfHash = SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
             ]
 

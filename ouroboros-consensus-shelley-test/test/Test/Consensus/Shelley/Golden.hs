@@ -148,7 +148,7 @@ testResults = testGroup "Results"
 
     currentPParamsTerm :: FlatTerm
     currentPParamsTerm =
-      [ TkListLen 17
+      [ TkListLen 18
       , TkInt 0
       , TkInt 0
       , TkInt 0
@@ -175,6 +175,7 @@ testResults = testGroup "Results"
       , TkInt 0
       , TkInt 1
       , TkListLen 1
+      , TkInt 0
       , TkInt 0
       , TkInt 0
       , TkInt 0
@@ -266,7 +267,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "A~\SYNV"
+    , TkBytes "\ETXv\132]"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -425,7 +426,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkBytes "{}"
     , TkMapLen 0
     , TkMapLen 0
-    , TkListLen 17
+    , TkListLen 18
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -456,7 +457,8 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
-    , TkListLen 17
+    , TkInt 0
+    , TkListLen 18
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -487,6 +489,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
+    , TkInt 0
     , TkListLen 3
     , TkMapLen 0
     , TkInt 0
@@ -612,7 +615,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "A~\SYNV"
+    , TkBytes "\ETXv\132]"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -771,7 +774,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkBytes "{}"
     , TkMapLen 0
     , TkMapLen 0
-    , TkListLen 17
+    , TkListLen 18
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -802,7 +805,8 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
-    , TkListLen 17
+    , TkInt 0
+    , TkListLen 18
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -833,6 +837,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 100
+    , TkInt 0
     , TkListLen 3
     , TkMapLen 0
     , TkInt 0

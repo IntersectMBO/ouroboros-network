@@ -17,7 +17,8 @@ let
   shell = ouroborosNetworkHaskellPackages.shellFor {
     name = "cabal-dev-shell";
 
-    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
+    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps)
+                ++ [ ps.cardano-crypto-class ];
 
     # These programs will be available inside the nix-shell.
     buildInputs = (with haskellPackages; [
