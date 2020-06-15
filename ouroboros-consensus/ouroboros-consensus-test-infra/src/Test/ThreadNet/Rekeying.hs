@@ -12,10 +12,10 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.Network
 
+import           Test.Util.Random
 import           Test.Util.Stream
 
 -- | Functionality used by test node in order to update its operational key

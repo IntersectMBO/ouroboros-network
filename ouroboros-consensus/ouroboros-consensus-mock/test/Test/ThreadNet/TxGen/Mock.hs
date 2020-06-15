@@ -13,9 +13,9 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Mock.Ledger
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.TxGen
+import           Test.Util.Random
 
 {-------------------------------------------------------------------------------
   TxGen SimpleBlock

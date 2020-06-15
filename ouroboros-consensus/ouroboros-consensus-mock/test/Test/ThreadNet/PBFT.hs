@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
@@ -43,6 +42,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Random (Seed (..))
 import           Test.Util.WrappedClock (NumSlots (..))
 
 data TestSetup = TestSetup

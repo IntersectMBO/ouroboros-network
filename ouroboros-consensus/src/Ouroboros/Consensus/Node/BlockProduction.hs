@@ -6,11 +6,12 @@
 module Ouroboros.Consensus.Node.BlockProduction (
     BlockProduction(..)
   , blockProductionIO
-  , blockProductionIOLike
+    -- * Get leader proof
+  , defaultGetLeaderProof
   ) where
 
-import           Control.Monad.Trans (lift)
-import           Control.Tracer (Tracer, natTracer)
+import           Control.Tracer (Tracer)
+import           Crypto.Random (MonadRandom)
 
 import           Ouroboros.Network.Block
 
@@ -20,7 +21,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Random
 
 -- | Stateful wrapper around block production
 data BlockProduction m blk = BlockProduction {
@@ -67,48 +67,6 @@ blockProductionIO cfg canBeLeader mfs = do
       , produceBlock = \bno ledgerState txs proof -> do
           forgeState <- readMVar varForgeState
           forgeBlock cfg forgeState bno ledgerState txs proof
-      }
-
--- | Block production in 'IOLike'
---
--- Unlike 'IO', 'IOLike' does not give us 'MonadRandom', and so we need to
--- simulate it.
-blockProductionIOLike :: forall m blk.
-                         (IOLike m, BlockSupportsProtocol blk, CanForge blk)
-                      => TopLevelConfig blk
-                      -> CanBeLeader (BlockProtocol blk)
-                      -> MaintainForgeState (ChaChaT m) blk
-                      -> StrictTVar m ChaChaDRG
-                      -> (   ForgeState blk
-                          -> BlockNo
-                          -> TickedLedgerState blk
-                          -> [GenTx blk]
-                          -> IsLeader (BlockProtocol blk)
-                          -> ChaChaT m blk)
-                      -> m (BlockProduction m blk)
-blockProductionIOLike cfg canBeLeader mfs varRNG forge = do
-    varForgeState <- newMVar (initForgeState mfs)
-    let upd :: Update (ChaChaT m) (ForgeState blk)
-        upd = updateFromMVar (castStrictMVar varForgeState)
-    return $ BlockProduction {
-        getLeaderProof = \tracer ledgerState consensusState ->
-          simMonadRandom varRNG $
-            defaultGetLeaderProof
-              cfg
-              canBeLeader
-              mfs
-              (traceUpdate (natTracer lift tracer) upd)
-              ledgerState
-              consensusState
-      , produceBlock = \bno ledgerState txs proof -> do
-          forgeState <- readMVar varForgeState
-          simMonadRandom varRNG $
-            forge
-              forgeState
-              bno
-              ledgerState
-              txs
-              proof
       }
 
 {-------------------------------------------------------------------------------

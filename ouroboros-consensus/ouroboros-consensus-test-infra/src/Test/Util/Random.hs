@@ -9,24 +9,23 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Util.Random (
-      -- * Producing values in MonadRandom
-      generateElement
-      -- * Connecting MonadRandom to Gen
-    , Seed (..)
-    , withSeed
-    , seedToChaCha
-    , nullSeed
-      -- * Adding DRNG to a monad stack
-    , ChaChaT -- opaque
-    , runChaChaT
-    , simMonadRandom
-      -- * Convenience re-exports
-    , MonadRandom (..)
-    , MonadTrans(..)
-    , ChaChaDRG
-    )
-    where
+module Test.Util.Random (
+    -- * Producing values in MonadRandom
+    generateElement
+    -- * Connecting MonadRandom to Gen
+  , Seed (..)
+  , withSeed
+  , seedToChaCha
+  , nullSeed
+    -- * Adding DRNG to a monad stack
+  , ChaChaT -- opaque
+  , runChaChaT
+  , simMonadRandom
+    -- * Convenience re-exports
+  , MonadRandom (..)
+  , MonadTrans(..)
+  , ChaChaDRG
+  ) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Reader
