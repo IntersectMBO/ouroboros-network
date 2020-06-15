@@ -15,7 +15,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
     -- * Serialisation support
   , recover
     -- * EpochInfo
-  , eraTransitionInfo
   , mostRecentTransitionInfo
   , reconstructSummaryLedger
   , epochInfoLedger
@@ -87,23 +86,30 @@ recover =
   Reconstruct EpochInfo
 -------------------------------------------------------------------------------}
 
-eraTransitionInfo :: SingleEraBlock          blk
-                  => WrapPartialLedgerConfig blk
-                  -> LedgerState             blk
-                  -> K TransitionInfo        blk
-eraTransitionInfo cfg st = K $
-    case singleEraTransition' cfg st of
-      Nothing -> TransitionUnknown (ledgerTipSlot st)
-      Just e  -> TransitionKnown e
-
 mostRecentTransitionInfo :: CanHardFork xs
                          => HardForkLedgerConfig xs
                          -> HardForkState_ g LedgerState xs
                          -> TransitionInfo
 mostRecentTransitionInfo HardForkLedgerConfig{..} st =
-    hcollapse $ hczipWith proxySingle eraTransitionInfo cfgs (tip st)
+    hcollapse $
+      hczipWith3
+        proxySingle
+        getTransition
+        cfgs
+        (History.getShape hardForkLedgerConfigShape)
+        (Telescope.tip (getHardForkState st))
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+
+    getTransition :: SingleEraBlock          blk
+                  => WrapPartialLedgerConfig blk
+                  -> K History.EraParams     blk
+                  -> Current LedgerState     blk
+                  -> K TransitionInfo        blk
+    getTransition cfg (K eraParams) Current{..} = K $
+        case singleEraTransition' cfg eraParams currentStart currentState of
+          Nothing -> TransitionUnknown (ledgerTipSlot currentState)
+          Just e  -> TransitionKnown e
 
 reconstructSummaryLedger :: CanHardFork xs
                          => HardForkLedgerConfig xs
@@ -177,7 +183,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
                -> Current LedgerState         blk
                -> (Maybe :.: K History.Bound) blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
-        transition <- singleEraTransition' pcfg (currentState cur)
+        transition <- singleEraTransition'
+                        pcfg
+                        eraParams
+                        (currentStart cur)
+                        (currentState cur)
         let endBound = History.mkUpperBound
                          eraParams
                          (currentStart cur)

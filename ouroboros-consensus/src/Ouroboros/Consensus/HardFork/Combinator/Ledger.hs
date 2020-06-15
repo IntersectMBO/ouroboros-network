@@ -273,7 +273,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
                       forecastOne
                       pcfgs
                       (History.getShape hardForkLedgerConfigShape)
-                      st'
+                      (getHardForkState st')
       return $ mkHardForkForecast
                  (InPairs.requiringBoth cfgs $
                     translateLedgerView hardForkEraTranslation)
@@ -287,20 +287,30 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       --
       -- See comment of 'hardForkEraTransition' for justification of the
       -- use of @st'@ to determine the transition/tip.
-      forecastOne :: SingleEraBlock                         blk
-                  => WrapPartialLedgerConfig                blk
-                  -> K EraParams                            blk
-                  -> LedgerState                            blk
-                  -> (Maybe :.: AnnForecast WrapLedgerView) blk
-      forecastOne pcfg (K eraParams) st' = Comp $
-          ann <$> ledgerViewForecastAt (completeLedgerConfig' ei pcfg) st' p
+      forecastOne :: forall blk. SingleEraBlock                       blk
+                  => WrapPartialLedgerConfig                          blk
+                  -> K EraParams                                      blk
+                  -> Current LedgerState                              blk
+                  -> (Maybe :.: Current (AnnForecast WrapLedgerView)) blk
+      forecastOne pcfg (K eraParams) Current{..} = Comp $
+          ann <$> ledgerViewForecastAt cfg currentState p
         where
+          cfg :: LedgerConfig blk
+          cfg = completeLedgerConfig' ei pcfg
+
           ann :: Forecast (LedgerView (BlockProtocol blk))
-              -> AnnForecast WrapLedgerView blk
-          ann forecast = AnnForecast {
-                annForecast          = WrapLedgerView <$> forecast
-              , annForecastNext      = singleEraTransition' pcfg st'
-              , annForecastEraParams = eraParams
+              -> Current (AnnForecast WrapLedgerView) blk
+          ann forecast = Current {
+                currentStart = currentStart
+              , currentState = AnnForecast {
+                    annForecast          = WrapLedgerView <$> forecast
+                  , annForecastEraParams = eraParams
+                  , annForecastNext      = singleEraTransition'
+                                             pcfg
+                                             eraParams
+                                             currentStart
+                                             currentState
+                  }
               }
 
 {-------------------------------------------------------------------------------
@@ -323,10 +333,10 @@ data AnnForecast f blk = AnnForecast {
 
 -- | Change a telescope of a forecast into a forecast of a telescope
 mkHardForkForecast :: InPairs (Translate f) xs
-                   -> HardForkState_ g (AnnForecast f) xs
+                   -> Telescope (Past g) (Current (AnnForecast f)) xs
                    -> Forecast (HardForkLedgerView_ f xs)
-mkHardForkForecast = \tr (HardForkState st) ->
-    go tr st
+mkHardForkForecast =
+    go
   where
     go :: InPairs (Translate f) xs
        -> Telescope (Past g) (Current (AnnForecast f)) xs

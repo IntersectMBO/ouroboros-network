@@ -84,7 +84,7 @@ instance SingleEraBlock ByronBlock where
   -- This will be replaced with a proper implementation that looks for the
   -- right transaction in the ledger. See:
   -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
-  singleEraTransition pcfg _ledgerState =
+  singleEraTransition pcfg _eraParams _eraStart _ledgerState =
       case transitionEpoch pcfg of
         NoHardCodedTransition       -> Nothing
         HardCodedTransitionAt epoch -> Just epoch
@@ -124,7 +124,7 @@ instance HasPartialLedgerConfig ByronBlock where
 
 instance TPraosCrypto sc => SingleEraBlock (ShelleyBlock sc) where
   -- No transition from Shelley to Goguen yet
-  singleEraTransition _cfg _st = Nothing
+  singleEraTransition _cfg _eraParams _eraStart _st = Nothing
 
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Shelley"

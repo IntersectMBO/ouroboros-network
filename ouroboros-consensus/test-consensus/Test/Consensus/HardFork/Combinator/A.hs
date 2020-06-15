@@ -417,7 +417,7 @@ instance ReconstructNestedCtxt Header BlockA
 
 instance SingleEraBlock BlockA where
   singleEraInfo _     = SingleEraInfo "A"
-  singleEraTransition = \cfg st -> do
+  singleEraTransition = \cfg _eraParams _eraStart st -> do
       (confirmedInSlot, transition) <- lgrA_transition st
       let confirmationDepth =
             case ledgerTipSlot st of
