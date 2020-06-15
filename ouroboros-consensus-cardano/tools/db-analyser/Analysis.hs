@@ -225,7 +225,7 @@ mkCardanoProtocolInfo byronConfig shelleyConfig =
       (TriggerHardForkAtVersion 2)
 
 castHeaderHash :: HeaderHash ByronBlock -> HeaderHash (CardanoBlock c)
-castHeaderHash = OneEraHash . toRawHash (Proxy @ByronBlock)
+castHeaderHash = OneEraHash . toShortRawHash (Proxy @ByronBlock)
 
 castChainHash :: ChainHash ByronBlock -> ChainHash (CardanoBlock c)
 castChainHash GenesisHash   = GenesisHash

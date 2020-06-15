@@ -39,6 +39,7 @@ module Ouroboros.Consensus.Util (
   , safeMaximumOn
     -- * Hashes
   , hashFromBytesE
+  , hashFromBytesShortE
     -- * Bytestrings
   , byteStringChunks
   , lazyByteStringChunks
@@ -63,9 +64,11 @@ module Ouroboros.Consensus.Util (
   , Trivial(..)
   ) where
 
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes)
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
+                     hashFromBytesShort)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Foldable (asum, toList)
 import           Data.Function (on)
 import           Data.Functor.Identity
@@ -198,16 +201,29 @@ safeMaximumOn f = safeMaximumBy (compare `on` f)
   Hashes
 -------------------------------------------------------------------------------}
 
--- | Calls 'hashFromBytes' and throws an error if the input is of the wrong length.
+-- | Calls 'hashFromBytes' and throws an error if the input is of the wrong
+-- length.
 hashFromBytesE
   :: forall h a. (HashAlgorithm h, HasCallStack)
   => Strict.ByteString
   -> Hash h a
-hashFromBytesE bs = fromMaybe
-  (error $ "hashFromBytes called with ByteString of the wrong length: "
-           <> show bs)
-  $ hashFromBytes bs
+hashFromBytesE bs = fromMaybe (error msg) $ hashFromBytes bs
+  where
+    msg =
+      "hashFromBytes called with ByteString of the wrong length: " <>
+      show bs
 
+-- | Calls 'hashFromBytesShort' and throws an error if the input is of the
+-- wrong length.
+hashFromBytesShortE
+  :: forall h a. (HashAlgorithm h, HasCallStack)
+  => ShortByteString
+  -> Hash h a
+hashFromBytesShortE bs = fromMaybe (error msg) $ hashFromBytesShort bs
+  where
+    msg =
+      "hashFromBytesShort called with ShortByteString of the wrong length: " <>
+      show bs
 {-------------------------------------------------------------------------------
   Bytestrings
 -------------------------------------------------------------------------------}

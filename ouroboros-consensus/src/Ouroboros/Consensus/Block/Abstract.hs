@@ -63,6 +63,8 @@ import qualified Codec.Serialise as Serialise
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Data.ByteString as Strict
+import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
@@ -192,25 +194,43 @@ headerPoint = castPoint . blockPoint
 -------------------------------------------------------------------------------}
 
 -- | Convert a hash from/to raw bytes
+--
+-- Variants of 'toRawHash' and 'fromRawHash' for 'ShortByteString' are
+-- included. Override the default implementations to avoid an extra step in
+-- case the 'HeaderHash' is a 'ShortByteString' under the hood.
 class ConvertRawHash blk where
   -- | Get the raw bytes from a hash
-  toRawHash   :: proxy blk -> HeaderHash blk -> Strict.ByteString
+  toRawHash :: proxy blk -> HeaderHash blk -> Strict.ByteString
+  toRawHash p = Short.fromShort . toShortRawHash p
 
   -- | Construct the hash from a raw hash
   --
   -- PRECONDITION: the bytestring's size must match 'hashSize'
   fromRawHash :: proxy blk -> Strict.ByteString -> HeaderHash blk
+  fromRawHash p = fromShortRawHash p . Short.toShort
+
+  -- | Variant of 'toRawHash' for 'ShortByteString'
+  toShortRawHash :: proxy blk -> HeaderHash blk -> ShortByteString
+  toShortRawHash p = Short.toShort . toRawHash p
+
+  -- | Variant of 'fromRawHash' for 'ShortByteString'
+  fromShortRawHash :: proxy blk -> ShortByteString -> HeaderHash blk
+  fromShortRawHash p = fromRawHash p . Short.fromShort
 
   -- | The size of the hash in number of bytes
-  hashSize    :: proxy blk -> Word32
+  hashSize :: proxy blk -> Word32
+
+  {-# MINIMAL hashSize
+            , (toRawHash | toShortRawHash)
+            , (fromRawHash | fromShortRawHash) #-}
 
 encodeRawHash :: ConvertRawHash blk
               => proxy blk -> HeaderHash blk -> Encoding
-encodeRawHash p = Serialise.encode . toRawHash p
+encodeRawHash p = Serialise.encode . toShortRawHash p
 
 decodeRawHash :: ConvertRawHash blk
               => proxy blk -> forall s. Decoder s (HeaderHash blk)
-decodeRawHash p = fromRawHash p <$> Serialise.decode
+decodeRawHash p = fromShortRawHash p <$> Serialise.decode
 
 {-------------------------------------------------------------------------------
   Existentials

@@ -225,14 +225,14 @@ instance Isomorphic WrapHeaderHash where
           => WrapHeaderHash (HardForkBlock '[blk]) -> WrapHeaderHash blk
   project =
         WrapHeaderHash
-      . fromRawHash (Proxy @blk) . getOneEraHash
+      . fromShortRawHash (Proxy @blk) . getOneEraHash
       . unwrapHeaderHash
 
   inject :: forall blk. ConvertRawHash blk
       => WrapHeaderHash blk -> WrapHeaderHash (HardForkBlock '[blk])
   inject =
         WrapHeaderHash
-      . OneEraHash . toRawHash (Proxy @blk)
+      . OneEraHash . toShortRawHash (Proxy @blk)
       . unwrapHeaderHash
 
 instance Isomorphic ChainHash where

@@ -57,7 +57,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
 
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except (throwError)
-import qualified Data.ByteString as Strict
+import           Data.ByteString.Short (ShortByteString)
 import           Data.SOP.Strict hiding (shift)
 import           Data.Text (Text)
 import           Data.Void
@@ -122,7 +122,7 @@ newtype OneEraApplyTxErr    xs = OneEraApplyTxErr    { getOneEraApplyTxErr    ::
 -- of the hash would necessarily have to increase, and that leads to trouble.
 -- So, the type parameter @xs@ here is merely a phantom one, and we just store
 -- the underlying raw hash.
-newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: Strict.ByteString }
+newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: ShortByteString }
   deriving newtype (Eq, Ord, Show, NoUnexpectedThunks, Serialise)
 
 {-------------------------------------------------------------------------------

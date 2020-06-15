@@ -7,8 +7,8 @@ module Test.Consensus.Ledger.Mock (tests) where
 
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise, encode)
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Short as Short
 import           Data.Proxy
 import           Data.Typeable
 
@@ -37,7 +37,7 @@ tests = testGroup "Mock"
     props _ title = testGroup title
       [ testProperty "BinaryBlockInfo sanity check" (prop_simpleBlockBinaryBlockInfo @c @())
       , testGroup "ConvertRawHash sanity check"
-          [ testProperty "fromRawHash/toRawHash" (prop_simpleBlock_fromRawHash_toRawHash @c @())
+          [ testProperty "ConvertRawHash roundtrip" (prop_simpleBlock_roundtrip_ConvertRawHash @c @())
           , testProperty "hashSize sanity check" (prop_simpleBlock_hashSize @c @())
           ]
       ]
@@ -69,11 +69,11 @@ prop_simpleBlockBinaryBlockInfo blk =
   ConvertRawHash
 -------------------------------------------------------------------------------}
 
-prop_simpleBlock_fromRawHash_toRawHash
+prop_simpleBlock_roundtrip_ConvertRawHash
   :: forall c ext. SimpleCrypto c
   => HeaderHash (SimpleBlock c ext) -> Property
-prop_simpleBlock_fromRawHash_toRawHash h =
-    h === fromRawHash p (toRawHash p h)
+prop_simpleBlock_roundtrip_ConvertRawHash h =
+    h === fromShortRawHash p (toShortRawHash p h)
   where
     p = Proxy @(SimpleBlock c ext)
 
@@ -81,7 +81,7 @@ prop_simpleBlock_hashSize
   :: forall c ext. SimpleCrypto c
   => HeaderHash (SimpleBlock c ext) -> Property
 prop_simpleBlock_hashSize h =
-      counterexample ("rawHash: " ++ show (toRawHash p h))
-    $ hashSize p === fromIntegral (Strict.length (toRawHash p h))
+      counterexample ("rawHash: " ++ show (toShortRawHash p h))
+    $ hashSize p === fromIntegral (Short.length (toShortRawHash p h))
   where
     p = Proxy @(SimpleBlock c ext)

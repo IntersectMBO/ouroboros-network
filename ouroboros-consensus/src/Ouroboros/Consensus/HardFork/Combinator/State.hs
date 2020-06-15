@@ -74,7 +74,7 @@ getTip getLedgerTip =
              => Point blk -> Point (HardForkBlock xs)
     injPoint GenesisPoint     = GenesisPoint
     injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
-                                  toRawHash (Proxy @blk) h
+                                  toShortRawHash (Proxy @blk) h
 
 {-------------------------------------------------------------------------------
   Recovery

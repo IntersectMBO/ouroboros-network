@@ -205,7 +205,7 @@ hashInfo p = HashInfo { hashSize, getHash, putHash }
       return $! fromRawHash p bytes
 
     putHash :: HeaderHash blk -> Put
-    putHash = Put.putByteString . toRawHash p
+    putHash = Put.putShortByteString . toShortRawHash p
 
 withImmDB
   :: ( IOLike m

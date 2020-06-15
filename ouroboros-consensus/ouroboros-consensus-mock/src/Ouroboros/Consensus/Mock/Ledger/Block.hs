@@ -92,7 +92,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
-import           Ouroboros.Consensus.Util (hashFromBytesE, (.:))
+import           Ouroboros.Consensus.Util (hashFromBytesShortE, (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -229,9 +229,9 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => StandardHash (SimpleBlock' c ext ext')
 
 instance SimpleCrypto c => ConvertRawHash (SimpleBlock' c ext ext') where
-  toRawHash   _ = Hash.hashToBytes
-  fromRawHash _ = hashFromBytesE
-  hashSize    _ = fromIntegral $ Hash.sizeHash (Proxy @(SimpleHash c))
+  toShortRawHash   _ = Hash.hashToBytesShort
+  fromShortRawHash _ = hashFromBytesShortE
+  hashSize         _ = fromIntegral $ Hash.sizeHash (Proxy @(SimpleHash c))
 
 {-------------------------------------------------------------------------------
   HasMockTxs instance
