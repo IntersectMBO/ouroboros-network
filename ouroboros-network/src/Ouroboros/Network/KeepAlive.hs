@@ -8,12 +8,15 @@ module Ouroboros.Network.KeepAlive
   ( KeepAliveInterval (..)
   , keepAliveClient
   , keepAliveServer
+
+  , TraceKeepAliveClient
   ) where
 
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer, traceWith)
 import qualified Data.Map.Strict as M
 
 import           Ouroboros.Network.Mux (RunOrStop (..))
@@ -24,6 +27,10 @@ import           Ouroboros.Network.Protocol.KeepAlive.Server
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }
 
+data TraceKeepAliveClient =
+    AddSample DiffTime
+    deriving Show
+
 keepAliveClient
     :: forall m peer.
        ( MonadSTM   m
@@ -31,12 +38,13 @@ keepAliveClient
        , MonadTimer m
        , Ord peer
        )
-    => peer
+    => Tracer m TraceKeepAliveClient
+    -> peer
     -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
     -> StrictTVar m (Maybe Time)
     -> KeepAliveClient m ()
-keepAliveClient _peer _dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
+keepAliveClient tracer _peer _dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
     SendMsgKeepAlive go
   where
     decisionSTM :: Lazy.TVar m Bool
@@ -45,10 +53,12 @@ keepAliveClient _peer _dqCtx KeepAliveInterval { keepAliveInterval } startTimeV 
 
     go :: m (KeepAliveClient m ())
     go = do
-      _endTime <- getMonotonicTime
+      endTime <- getMonotonicTime
       startTime_m <- atomically $ readTVar startTimeV
       case startTime_m of
-           Just _startTime -> return () -- TODO add sample
+           Just startTime -> do
+               traceWith tracer $ AddSample $ diffTime startTime endTime
+               return () -- TODO add sample
            Nothing        -> return ()
 
       delayVar <- registerDelay keepAliveInterval

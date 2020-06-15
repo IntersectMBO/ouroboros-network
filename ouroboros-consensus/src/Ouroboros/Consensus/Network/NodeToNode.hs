@@ -194,7 +194,7 @@ mkHandlers
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             (nodeToNodeProtocolVersion (Proxy :: Proxy blk) version)
-      , hKeepAliveClient = \_version -> keepAliveClient
+      , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers)
       , hKeepAliveServer = \_version _peer -> keepAliveServer
       }
 
