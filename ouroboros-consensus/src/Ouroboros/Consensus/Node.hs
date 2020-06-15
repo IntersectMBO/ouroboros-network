@@ -39,6 +39,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Proxy (Proxy (..))
+import           System.Random (randomRIO)
 
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
@@ -226,6 +227,11 @@ run runargs@RunNodeArgs{..} =
                        rnDiffusionArguments
                        diffusionApplications
   where
+    randomElem :: [a] -> IO a
+    randomElem xs = do
+      ix <- randomRIO (0, length xs - 1)
+      return $ xs !! ix
+
     nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
@@ -248,8 +254,17 @@ run runargs@RunNodeArgs{..} =
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
-          (Just 70) -- timeout after waiting this long for the next header
-                    -- 70s allows for 3 slots (3 * 20s)
+          -- These values approximately correspond to false positive thresholds
+          -- for streaks of empty slots with 99% probability, 99.9% probability up to
+          -- 99.999% probability.
+          -- t = T_s [log (1-Y) / log (1-f)]
+          -- Y = [0.99, 0.999...]
+          -- T_s = slot length of 1s.
+          -- f = 0.05
+          -- The timeout is randomly picked per bearer to avoid all bearers going down
+          -- at the same time in case of a long streak of empty slots.
+          -- TODO: workaround until peer selection governor.
+          (Just <$> randomElem [90, 135, 180, 224, 269])
           (NTN.mkHandlers nodeArgs nodeKernel)
 
     mkNodeToClientApps

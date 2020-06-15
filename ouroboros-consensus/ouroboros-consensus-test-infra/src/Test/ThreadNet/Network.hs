@@ -779,7 +779,7 @@ runThreadNetwork ThreadNetworkArgs
                   -- node
                   nullDebugProtocolTracers
                   (customNodeToNodeCodecs pInfoConfig)
-                  Nothing
+                  (return Nothing) -- Workaround for #1882, tests that can't cope with timeouts.
                   (NTN.mkHandlers nodeArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction

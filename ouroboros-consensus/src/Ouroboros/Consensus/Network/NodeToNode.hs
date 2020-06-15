@@ -359,10 +359,10 @@ mkApps
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> Codecs blk e m bCS bCS bBF bBF bTX
-  -> Maybe DiffTime -- Workaround for #1882, test cases that can't cope with timeouts
+  -> m (Maybe DiffTime)
   -> Handlers m remotePeer blk
   -> Apps m remotePeer blk bCS bBF bTX ()
-mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -384,7 +384,8 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
             (Node.chainSyncClientTracer (getTracers kernel))
             (defaultChainDbView (getChainDB kernel))
             (getNodeCandidates kernel)
-            them $ \varCandidate->
+            them $ \varCandidate-> do
+          chainSyncTimeout <- genChainSyncTimeout
           runPipelinedPeerWithLimits
             (contramap (TraceLabelPeer them) tChainSyncTracer)
             cChainSyncCodec
@@ -401,7 +402,8 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
       -> m ()
     aChainSyncServer version them channel = do
       labelThisThread "ChainSyncServer"
-      withRegistry $ \registry ->
+      withRegistry $ \registry -> do
+        chainSyncTimeout <- genChainSyncTimeout
         runPeerWithLimits
           (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
           cChainSyncCodecSerialised
