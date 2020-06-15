@@ -15,6 +15,7 @@ module Test.Util.HardFork.Future (
   singleEraFuture,
   ) where
 
+import qualified Data.Fixed
 import           Data.Time (NominalDiffTime)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -128,7 +129,7 @@ futureEpochInFirstEra = \case
 -------------------------------------------------------------------------------}
 
 divide :: NominalDiffTime -> SlotLength -> Word64
-divide d slotLength = floor $ d / getSlotLength slotLength
+divide d slotLength = Data.Fixed.div' d (getSlotLength slotLength)
 
 multiply :: Word64 -> SlotLength -> NominalDiffTime
 multiply m sl = fromIntegral m * getSlotLength sl
