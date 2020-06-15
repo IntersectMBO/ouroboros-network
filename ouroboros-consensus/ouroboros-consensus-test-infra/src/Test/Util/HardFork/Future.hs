@@ -46,38 +46,41 @@ newtype EraSize = EraSize {unEraSize :: Word64}
 --
 -- INVARIANT: every number is @> 0@
 data Future =
-      FinalEra SlotLength EpochSize
-    | NextEra  SlotLength EpochSize EraSize Future
+      EraFinal SlotLength EpochSize
+    | EraCons  SlotLength EpochSize EraSize Future
   deriving (Eq, Show)
 
 -- | 'Future' with only one era
 singleEraFuture :: SlotLength -> EpochSize -> Future
-singleEraFuture = FinalEra
+singleEraFuture = EraFinal
 
 -- | 'SlotLength' of the first era
 futureFirstSlotLength :: Future -> SlotLength
 futureFirstSlotLength future = case future of
-    NextEra  slotLength _epochSize _eraSize _future -> slotLength
-    FinalEra slotLength _epochSize                  -> slotLength
+    EraCons  slotLength _epochSize _eraSize _future -> slotLength
+    EraFinal slotLength _epochSize                  -> slotLength
 
 -- | 'EpochSize' of the first era
 futureFirstEpochSize :: Future -> EpochSize
 futureFirstEpochSize future = case future of
-    NextEra  _slotLength epochSize _eraSize _future -> epochSize
-    FinalEra _slotLength epochSize                  -> epochSize
+    EraCons  _slotLength epochSize _eraSize _future -> epochSize
+    EraFinal _slotLength epochSize                  -> epochSize
 
--- | Future as of a slot within an epoch
+-- | A variant of 'Future' that records the length of an era by 'NumSlots'
+-- instead of by @('EpochSize', 'EraSize')@
+--
+-- Used to clarify some function definitions
 data SlotFuture =
-      InFinalEra SlotLength
-    | InNextEra  SlotLength NumSlots Future
+      InEraFinal SlotLength
+    | InEraCons  SlotLength NumSlots Future
       -- ^ INVARIANT: @'NumSlots' > 0@
 
 -- | Length of each slot in the whole 'Future'
 futureSlotLengths :: Future -> Stream SlotLength
 futureSlotLengths = \case
-    FinalEra slotLength _epochSize ->
+    EraFinal slotLength _epochSize ->
         let x = slotLength :< x in x
-    NextEra slotLength epochSize eraSize future ->
+    EraCons slotLength epochSize eraSize future ->
         nTimes (slotLength :<) eraSlots $
         futureSlotLengths future
       where
@@ -89,22 +92,22 @@ futureTimeToSlot :: Future
                  -> (SlotNo, NominalDiffTime, SlotLength)
 futureTimeToSlot = \future d -> go2 0 d future
   where
-    go acc d (InFinalEra slotLength) =
+    go acc d (InEraFinal slotLength) =
         (SlotNo $ acc + n, timeInSlot, slotLength)
       where
         n = divide d slotLength
         timeInSlot = d - multiply n slotLength
-    go acc d (InNextEra slotLength (NumSlots leftovers) future) =
+    go acc d (InEraCons slotLength (NumSlots leftovers) future) =
         case d `safeSub` remaining of
-          Nothing -> go  acc               d  (InFinalEra slotLength)
+          Nothing -> go  acc               d  (InEraFinal slotLength)
           Just d' -> go2 (acc + leftovers) d' future
       where
         remaining = multiply leftovers slotLength
 
-    go2 acc d (FinalEra slotLength _epochSize) =
-        go acc d $ InFinalEra slotLength
-    go2 acc d (NextEra slotLength epochSize eraSize future) =
-        go acc d $ InNextEra slotLength (NumSlots eraSlots) future
+    go2 acc d (EraFinal slotLength _epochSize) =
+        go acc d $ InEraFinal slotLength
+    go2 acc d (EraCons slotLength epochSize eraSize future) =
+        go acc d $ InEraCons slotLength (NumSlots eraSlots) future
       where
         NumSlots eraSlots = calcEraSlots epochSize eraSize
 
@@ -115,11 +118,11 @@ futureSlotToEpoch :: Future
 futureSlotToEpoch = \future (SlotNo s) -> EpochNo $ go 0 s future
   where
     go acc s = \case
-      FinalEra _slotLength (EpochSize epSz) ->
+      EraFinal _slotLength (EpochSize epSz) ->
           acc + s `div` epSz
-      NextEra _slotLength epochSize eraSize future ->
+      EraCons _slotLength epochSize eraSize future ->
           case s `safeSub` eraSlots of
-            Nothing -> go acc s (FinalEra _slotLength epochSize)
+            Nothing -> go acc s (EraFinal _slotLength epochSize)
             Just s' -> go (acc + n) s' future
         where
           EraSize n = eraSize
@@ -128,9 +131,9 @@ futureSlotToEpoch = \future (SlotNo s) -> EpochNo $ go 0 s future
 -- | Whether the epoch is in the first era
 futureEpochInFirstEra :: Future -> EpochNo -> Bool
 futureEpochInFirstEra = \case
-    NextEra _slotLength _epochSize (EraSize n) _future ->
+    EraCons _slotLength _epochSize (EraSize n) _future ->
         \(EpochNo e) -> e < n
-    FinalEra{} -> const True
+    EraFinal{} -> const True
 
 {-------------------------------------------------------------------------------
   Miscellany

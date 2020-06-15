@@ -204,10 +204,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     testConfigB = TestConfigB {
           forgeEbbEnv = Nothing
         , future      =
-            NextEra  (eraSlotLength eraParamsA)
+            EraCons  (eraSlotLength eraParamsA)
                      (eraEpochSize  eraParamsA)
                      eraSizeA $
-            FinalEra (eraSlotLength eraParamsB)
+            EraFinal (eraSlotLength eraParamsB)
                      (eraEpochSize  eraParamsB)
         , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , nodeRestarts = noRestarts
