@@ -45,8 +45,9 @@ class ( LedgerSupportsProtocol blk
   -- This should only report the transition point once it is stable (rollback
   -- cannot affect it anymore).
   --
-  -- This takes the partial config rather than the full config for the same
-  -- reason as 'singleEraParam'.
+  -- Since we need this to construct the 'HardForkSummary' (and hence the
+  -- 'EpochInfo'), this takes the /partial/ config, not the full config
+  -- (or we'd end up with a catch-22).
   singleEraTransition :: PartialLedgerConfig blk -> LedgerState blk -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
