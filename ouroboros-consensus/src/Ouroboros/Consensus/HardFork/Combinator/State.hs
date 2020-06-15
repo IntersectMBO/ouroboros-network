@@ -107,7 +107,7 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
 
 reconstructSummaryLedger :: CanHardFork xs
                          => HardForkLedgerConfig xs
-                         -> HardForkState LedgerState xs
+                         -> HardForkState_ g LedgerState xs
                          -> History.Summary xs
 reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
     reconstructSummary
@@ -121,7 +121,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 -- It should not be stored.
 epochInfoLedger :: CanHardFork xs
                 => HardForkLedgerConfig xs
-                -> HardForkState LedgerState xs
+                -> HardForkState_ g LedgerState xs
                 -> EpochInfo Identity
 epochInfoLedger cfg st =
     History.snapshotEpochInfo $
