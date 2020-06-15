@@ -103,18 +103,13 @@ instance Arbitrary TestSetup where
             , numSlots
             }
 
-      -- crudely ensure new nodes have a relatively recent chain, since the Praos
-      -- paper assumes that
-      let truncForJoin (NumSlots n) = NumSlots $ n `min` maxRollbacks k
-      nodeJoinPlan <- genNodeJoinPlan numCoreNodes (truncForJoin numSlots)
-
       pure $ TestSetup
         k
         testConfig
         delaySeed
         epochSize
         eta0
-        nodeJoinPlan
+        (trivialNodeJoinPlan numCoreNodes)
         fixedPreDelta
         slotLength
 
