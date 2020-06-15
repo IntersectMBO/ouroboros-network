@@ -63,6 +63,7 @@ import           Control.Monad (join)
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isJust, mapMaybe)
@@ -488,7 +489,11 @@ type BlockFileParserError hash =
 
 blockFileParser
   :: forall m blk.
-     (IOLike m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
+     ( IOLike m
+     , HasHeader blk
+     , GetHeader blk
+     , VolDbSerialiseConstraints blk
+     )
   => VolDbArgs m blk
   -> VolDB.Parser
        Util.CBOR.ReadIncrementalErr
@@ -498,9 +503,21 @@ blockFileParser VolDbArgs{..} =
     blockFileParser'
       volHasFS
       volGetBinaryBlockInfo
-      (decodeDisk volCodecConfig)
+      decodeNestedCtxtAndBlock
       volCheckIntegrity
       volValidation
+  where
+    prefixLen :: PrefixLen
+    prefixLen = reconstructPrefixLen (Proxy @(Header blk))
+
+    -- The decoder for a block is given the ByteString corresponding to the
+    -- decoded block by the blockFileParser'@. We take advantage of this to
+    -- extract the nested context from that same bytestring.
+    decodeNestedCtxtAndBlock
+      :: forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk))
+    decodeNestedCtxtAndBlock =
+      (\f bytes -> (takePrefix prefixLen bytes, f bytes)) <$>
+        decodeDisk volCodecConfig
 
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
@@ -508,16 +525,16 @@ blockFileParser'
   :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
   => HasFS m h
   -> (blk -> BinaryBlockInfo)
-  -> (forall s. Decoder s (Lazy.ByteString -> blk))
+  -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
   -> (blk -> Bool)
   -> VolDB.BlockValidationPolicy
   -> VolDB.Parser
        Util.CBOR.ReadIncrementalErr
        m
        (HeaderHash blk)
-blockFileParser' hasFS getBinaryBlockInfo decodeBlock isNotCorrupt validationPolicy =
+blockFileParser' hasFS getBinaryBlockInfo decodeNestedCtxtAndBlock isNotCorrupt validationPolicy =
     VolDB.Parser $ \fsPath -> Util.CBOR.withStreamIncrementalOffsets
-      hasFS decodeBlock fsPath (checkEntries [])
+      hasFS decodeNestedCtxtAndBlock fsPath (checkEntries [])
   where
     extractInfo' :: blk -> VolDB.BlockInfo (HeaderHash blk)
     extractInfo' blk = extractInfo blk (getBinaryBlockInfo blk)
@@ -526,7 +543,7 @@ blockFileParser' hasFS getBinaryBlockInfo decodeBlock isNotCorrupt validationPol
     noValidation = validationPolicy == VolDB.NoValidation
 
     checkEntries :: VolDB.ParsedInfo (HeaderHash blk)
-                 -> Stream (Of (Word64, (Word64, blk)))
+                 -> Stream (Of (Word64, (Word64, (ShortByteString, blk))))
                     m
                     (Maybe (Util.CBOR.ReadIncrementalErr, Word64))
                  -> m ( VolDB.ParsedInfo (HeaderHash blk)
@@ -535,10 +552,15 @@ blockFileParser' hasFS getBinaryBlockInfo decodeBlock isNotCorrupt validationPol
     checkEntries parsed stream = S.next stream >>= \case
       Left mbErr
         -> return (reverse parsed, first VolDB.BlockReadErr <$> mbErr)
-      Right ((offset, (size, blk)), stream')
+      Right ((offset, (size, (nestedCtxt, blk))), stream')
         | noValidation || isNotCorrupt blk
         -> let !blockInfo = extractInfo' blk
-               newParsed = (offset, (VolDB.BlockSize size, blockInfo))
+               !newParsed = VolDB.ParsedBlockInfo  {
+                   pbiBlockOffset = offset
+                 , pbiBlockSize   = VolDB.BlockSize size
+                 , pbiBlockInfo   = blockInfo
+                 , pbiNestedCtxt  = nestedCtxt
+                 }
            in checkEntries (newParsed : parsed) stream'
         | otherwise  -- The block was invalid
         -> let !bid = VolDB.bbid $ extractInfo' blk

@@ -53,7 +53,6 @@ import           Data.Bifunctor (first)
 import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
@@ -584,8 +583,7 @@ extractBlockComponent prefixLen hash slot isEBB bytes binfo = \case
     GetIsEBB      -> isEBB
     GetBlockSize  -> fromIntegral $ Lazy.length bytes
     GetHeaderSize -> headerSize binfo
-    GetNestedCtxt -> Short.toShort $ Lazy.toStrict $
-                     Lazy.take (fromIntegral (getPrefixLen prefixLen)) bytes
+    GetNestedCtxt -> takePrefix prefixLen bytes
     GetPure a     -> a
     GetApply f bc ->
       extractBlockComponent prefixLen hash slot isEBB bytes binfo f $

@@ -597,8 +597,11 @@ test cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
-        parser = blockFileParser' hasFS
-          testBlockBinaryBlockInfo (const <$> decode) testBlockIsValid
+        parser = blockFileParser'
+          hasFS
+          testBlockBinaryBlockInfo
+          ((\blk bytes -> (takePrefix testPrefixLen bytes, blk)) <$> decode)
+          testBlockIsValid
           ValidateAll
         args = VolatileDbArgs
           { hasFS

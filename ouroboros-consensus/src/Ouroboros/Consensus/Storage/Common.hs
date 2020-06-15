@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Storage.Common (
     -- * Re-exports
   , SizeInBytes
   , PrefixLen (..)
+  , takePrefix
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -32,7 +33,7 @@ import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (PrefixLen (..))
+                     (PrefixLen (..), takePrefix)
 
 {-------------------------------------------------------------------------------
   Indexing

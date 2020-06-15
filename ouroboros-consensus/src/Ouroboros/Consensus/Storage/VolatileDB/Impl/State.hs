@@ -384,8 +384,8 @@ mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files = do
       let fileInfo        = FileInfo.fromParsedInfo acceptedBlocks
           currentMap'     = Index.insert fd fileInfo currentMap
           currentSuccMap' = foldl'
-            (\succMap (_, (_, blockInfo)) ->
-              insertMapSet succMap (bbid blockInfo, bpreBid blockInfo))
+            (\succMap ParsedBlockInfo { pbiBlockInfo } ->
+              insertMapSet succMap (bbid pbiBlockInfo, bpreBid pbiBlockInfo))
             currentSuccMap
             acceptedBlocks
 
@@ -449,12 +449,18 @@ addToReverseIndex file = \revMap -> go revMap []
               , Just (DuplicatedBlock bbid alreadyExistsHere file, offset)
               )
         where
-          (offset, (size, blockInfo@BlockInfo { bbid })) = parsedBlock
+          ParsedBlockInfo {
+              pbiBlockOffset = offset
+            , pbiBlockSize   = size
+            , pbiBlockInfo   = blockInfo@BlockInfo { bbid }
+            , pbiNestedCtxt  = nestedCtxt
+            } = parsedBlock
           internalBlockInfo = InternalBlockInfo {
               ibFile         = file
             , ibBlockOffset  = offset
             , ibBlockSize    = size
             , ibBlockInfo    = blockInfo
+            , ibNestedCtxt   = nestedCtxt
             }
 
     -- | Insert the value at the key returning the updated map, unless there

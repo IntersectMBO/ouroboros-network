@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -104,8 +105,7 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Builder as BS
-import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
+import           Data.ByteString.Short (ShortByteString)
 import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -123,7 +123,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
                      runWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     PrefixLen (..))
+                     PrefixLen (..), takePrefix)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -192,7 +192,7 @@ getBlockComponentImpl
   -> BlockComponent (VolatileDB blockId m) b
   -> blockId
   -> m (Maybe b)
-getBlockComponentImpl env@VolatileDBEnv { prefixLen } blockComponent blockId =
+getBlockComponentImpl env blockComponent blockId =
     withOpenState env $ \hasFS OpenState { currentRevMap } ->
       case Map.lookup blockId currentRevMap of
         Nothing                -> return Nothing
@@ -224,11 +224,7 @@ getBlockComponentImpl env@VolatileDBEnv { prefixLen } blockComponent blockId =
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetNestedCtxt -> withFile hasFS ibFile ReadMode $ \hndl -> do
-          let size   = fromIntegral (getPrefixLen prefixLen)
-              offset = ibBlockOffset
-          bytes <- hGetExactlyAt hasFS hndl size (AbsOffset offset)
-          return $ Short.toShort $ Lazy.toStrict bytes
+        GetNestedCtxt -> return ibNestedCtxt
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib
 
@@ -253,7 +249,7 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
              -> BlockInfo blockId
              -> BS.Builder
              -> m ()
-putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
+putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer, prefixLen }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
     appendOpenState env $ \hasFS -> do
@@ -261,16 +257,23 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
       if Map.member bbid currentRevMap then
         lift $ lift $ traceWith tracer $ BlockAlreadyHere bbid
       else do
-        bytesWritten <- lift $ lift $ hPut hasFS currentWriteHandle builder
-        fileIsFull <- state $ updateStateAfterWrite bytesWritten
+        let bytes = BS.toLazyByteString builder
+            -- The builder will likely consist of a single chunk as the
+            -- annotation of the block is used here, which is strict. Related:
+            -- #1215. Nevertheless, force @nestedCtxt@ so that we no longer
+            -- hold on to @bytes@ while it is written to disk.
+            !nestedCtxt = takePrefix prefixLen bytes
+        bytesWritten <- lift $ lift $ hPutAll hasFS currentWriteHandle bytes
+        fileIsFull <- state $ updateStateAfterWrite bytesWritten nestedCtxt
         when fileIsFull $ nextFile hasFS
   where
     updateStateAfterWrite
       :: forall h.
          Word64
+      -> ShortByteString
       -> OpenState blockId h
       -> (Bool, OpenState blockId h)  -- ^ True: current file is full
-    updateStateAfterWrite bytesWritten st@OpenState{..} =
+    updateStateAfterWrite bytesWritten nestedCtxt st@OpenState{..} =
         (FileInfo.isFull maxBlocksPerFile fileInfo', st')
       where
         fileInfo = fromMaybe
@@ -285,6 +288,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
           , ibBlockOffset  = currentWriteOffset
           , ibBlockSize    = BlockSize bytesWritten
           , ibBlockInfo    = blockInfo
+          , ibNestedCtxt   = nestedCtxt
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' currentRevMap
         st' = st {

@@ -34,7 +34,6 @@ import           Control.Monad.Except (MonadError, throwError)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Short as Short
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -47,7 +46,8 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
-                     BlockComponent (..), PrefixLen (..), extractHeader)
+                     BlockComponent (..), PrefixLen (..), extractHeader,
+                     takePrefix)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
@@ -260,8 +260,7 @@ extractBlockComponent prefixLen bc0 (BlockInfo {..}, bytes) = go bc0
       GetIsEBB      -> bisEBB
       GetBlockSize  -> fromIntegral $ BL.length bytes
       GetHeaderSize -> bheaderSize
-      GetNestedCtxt -> Short.toShort $ BL.toStrict $
-                         BL.take (fromIntegral (getPrefixLen prefixLen)) bytes
+      GetNestedCtxt -> takePrefix prefixLen bytes
       GetPure a     -> a
       GetApply f bc -> go f $ go bc
 

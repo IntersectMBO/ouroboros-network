@@ -48,6 +48,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
   , ReconstructNestedCtxt (..)
   , PrefixLen (..)
   , addPrefixLen
+  , takePrefix
     -- * Re-exported for convenience
   , SizeInBytes
     -- * Exported for the benefit of tests
@@ -61,6 +62,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.SOP.BasicFunctors
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -321,6 +323,10 @@ newtype PrefixLen = PrefixLen {
 
 addPrefixLen :: Word8 -> PrefixLen -> PrefixLen
 addPrefixLen m (PrefixLen n) = PrefixLen (m + n)
+
+takePrefix :: PrefixLen -> Lazy.ByteString -> ShortByteString
+takePrefix (PrefixLen n) =
+    Short.toShort . Lazy.toStrict . Lazy.take (fromIntegral n)
 
 {-------------------------------------------------------------------------------
   Forwarding instances

@@ -85,7 +85,6 @@ import           Codec.Serialise (Serialise, serialise)
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (isInfixOf, isPrefixOf, sortBy)
@@ -126,7 +125,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
                      (ReconstructNestedCtxt (..))
-import           Ouroboros.Consensus.Storage.Common (PrefixLen (..))
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..), takePrefix)
 
 type IteratorId = Int
 
@@ -518,10 +517,7 @@ getBlockComponent blk = \case
     GetIsEBB      -> headerToIsEBB (getHeader blk)
     GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedCtxt -> Short.toShort $ Lazy.toStrict $
-                     Lazy.take (fromIntegral (getPrefixLen prefixLen)) $
-                     serialise blk
-
+    GetNestedCtxt -> takePrefix prefixLen $ serialise blk
     GetPure a     -> a
     GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
   where

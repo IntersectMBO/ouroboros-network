@@ -19,7 +19,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Types
   , BlockOffset
   , Parser (..)
   , ParsedInfo
-  , ParsedBlockInfo
+  , ParsedBlockInfo (..)
   , BlockInfo (..)
   , InternalBlockInfo (..)
     -- * Tracing
@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Types
   ) where
 
 import           Control.Exception (Exception (..), SomeException)
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Word (Word16, Word32, Word64)
@@ -157,7 +158,12 @@ type ParsedInfo blockId = [ParsedBlockInfo blockId]
 -- | Information returned by the parser about a single block.
 --
 -- The parser returns for each block, its offset, its size and its 'BlockInfo'
-type ParsedBlockInfo blockId = (BlockOffset, (BlockSize, BlockInfo blockId))
+data ParsedBlockInfo blockId = ParsedBlockInfo {
+      pbiBlockOffset :: !BlockOffset
+    , pbiBlockSize   :: !BlockSize
+    , pbiBlockInfo   :: !(BlockInfo blockId)
+    , pbiNestedCtxt  :: !ShortByteString
+    }
 
 -- | The information that the user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
@@ -175,6 +181,7 @@ data InternalBlockInfo blockId = InternalBlockInfo {
     , ibBlockOffset :: !BlockOffset
     , ibBlockSize   :: !BlockSize
     , ibBlockInfo   :: !(BlockInfo blockId)
+    , ibNestedCtxt  :: !ShortByteString
     } deriving (Show, Generic, NoUnexpectedThunks)
 
 {------------------------------------------------------------------------------
