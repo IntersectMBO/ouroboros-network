@@ -66,15 +66,6 @@ futureFirstEpochSize future = case future of
     EraCons  _slotLength epochSize _eraSize _future -> epochSize
     EraFinal _slotLength epochSize                  -> epochSize
 
--- | A variant of 'Future' that records the length of an era by 'NumSlots'
--- instead of by @('EpochSize', 'EraSize')@
---
--- Used to clarify some function definitions
-data SlotFuture =
-      InEraFinal SlotLength
-    | InEraCons  SlotLength NumSlots Future
-      -- ^ INVARIANT: @'NumSlots' > 0@
-
 -- | Length of each slot in the whole 'Future'
 futureSlotLengths :: Future -> Stream SlotLength
 futureSlotLengths = \case
@@ -90,26 +81,23 @@ futureSlotLengths = \case
 futureTimeToSlot :: Future
                  -> NominalDiffTime
                  -> (SlotNo, NominalDiffTime, SlotLength)
-futureTimeToSlot = \future d -> go2 0 d future
+futureTimeToSlot = \future d -> go 0 d future
   where
-    go acc d (InEraFinal slotLength) =
+    done acc d slotLength =
         (SlotNo $ acc + n, timeInSlot, slotLength)
       where
-        n = divide d slotLength
+        n          = divide d slotLength
         timeInSlot = d - multiply n slotLength
-    go acc d (InEraCons slotLength (NumSlots leftovers) future) =
-        case d `safeSub` remaining of
-          Nothing -> go  acc               d  (InEraFinal slotLength)
-          Just d' -> go2 (acc + leftovers) d' future
-      where
-        remaining = multiply leftovers slotLength
 
-    go2 acc d (EraFinal slotLength _epochSize) =
-        go acc d $ InEraFinal slotLength
-    go2 acc d (EraCons slotLength epochSize eraSize future) =
-        go acc d $ InEraCons slotLength (NumSlots eraSlots) future
+    go acc d (EraFinal slotLength _epochSize) =
+        done acc d slotLength
+    go acc d (EraCons slotLength epochSize eraSize future) =
+        case d `safeSub` eraLength of
+          Nothing -> done acc d slotLength
+          Just d' -> go (acc + eraSlots) d' future
       where
         NumSlots eraSlots = calcEraSlots epochSize eraSize
+        eraLength         = multiply eraSlots slotLength
 
 -- | Which epoch the slot is in
 futureSlotToEpoch :: Future
