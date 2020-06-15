@@ -12,6 +12,7 @@ module Ouroboros.Network.KeepAlive
   , TraceKeepAliveClient
   ) where
 
+import           Control.Exception (assert)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -44,9 +45,11 @@ keepAliveClient
     -> KeepAliveInterval
     -> StrictTVar m (Maybe Time)
     -> KeepAliveClient m ()
-keepAliveClient tracer _peer _dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
+keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
     SendMsgKeepAlive go
   where
+    payloadSize = 2
+
     decisionSTM :: Lazy.TVar m Bool
                 -> STM  m RunOrStop
     decisionSTM delayVar = Lazy.readTVar delayVar >>= fmap (const Run) . check
@@ -57,8 +60,11 @@ keepAliveClient tracer _peer _dqCtx KeepAliveInterval { keepAliveInterval } star
       startTime_m <- atomically $ readTVar startTimeV
       case startTime_m of
            Just startTime -> do
-               traceWith tracer $ AddSample $ diffTime startTime endTime
-               return () -- TODO add sample
+               traceWith tracer $ AddSample $ diffTime endTime startTime
+               let sample = fromSample startTime endTime payloadSize
+               atomically $ modifyTVar dqCtx $ \m ->
+                   assert (peer `M.member` m) $
+                   M.adjust (\a -> a <> sample) peer m
            Nothing        -> return ()
 
       delayVar <- registerDelay keepAliveInterval
