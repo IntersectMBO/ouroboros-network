@@ -9,7 +9,7 @@
 module Test.Util.HardFork.OracularClock (
     OracularClock (..)
   , new
-  , onSlotChange
+  , forkEachSlot
   , withinEachSlot
   , withinTheCurrentSlot
   , EndOfDaysException (..)
@@ -17,6 +17,7 @@ module Test.Util.HardFork.OracularClock (
 
 import           Control.Monad (replicateM_, when, void)
 import           Data.Foldable (toList)
+import           Data.Function (fix)
 import           Data.Time
 import           GHC.Stack
 
@@ -26,7 +27,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Cardano.Slotting.Slot
 
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
-import           Ouroboros.Consensus.Util.STM (onEachChange)
 import           Ouroboros.Consensus.Util.Time (nominalDelay)
 
 import           Test.Util.HardFork.Future (Future, futureSlotLengths,
@@ -80,13 +80,13 @@ data OracularClock m = OracularClock
       -- which thread would win the race to respectively read or increment the
       -- internal state.
       --
-      -- Note: we do use a ticker thread for 'onSlotChange'.
+      -- Note: we do use a ticker thread for 'blockUntilSlot'.
       --
       -- Eventually raises 'EndOfDaysException'.
     , getCurrentSlot :: m SlotNo
 
-      -- | See 'onSlotChange'
-    , onSlotChange_ :: HasCallStack
+      -- | See 'forkEachSlot'
+    , forkEachSlot_ :: HasCallStack
                     => ResourceRegistry m
                     -> String
                     -> (SlotNo -> m ())
@@ -108,13 +108,13 @@ data OracularClock m = OracularClock
 -- from within the given action will always return the correct slot.
 --
 -- See the discussion of ticker threads in 'getCurrentSlot'.
-onSlotChange :: HasCallStack
+forkEachSlot :: HasCallStack
              => ResourceRegistry m
              -> OracularClock m
              -> String
              -> (SlotNo -> m ())
              -> m (m ())
-onSlotChange reg clk = onSlotChange_ clk reg
+forkEachSlot reg clk = forkEachSlot_ clk reg
     -- jumping the hoop so HasCallStack is useful
 
 -- | Perform a " transaction " within the current slot
@@ -248,15 +248,19 @@ new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
       , getCurrentSlot = do
           (slot, _leftInSlot, _slotLength) <- getPresent
           pure slot
-      , onSlotChange_ = \rr threadLabel action ->
-          cancelThread <$>
-            onEachChange
-              rr
-              threadLabel
-              id
-              Nothing
-              readCurrentSlotSTM
-              action
+      , forkEachSlot_ = \rr threadLabel action ->
+          fmap cancelThread $
+          forkLinkedThread rr threadLabel $
+          fix $ \loop -> do
+            -- INVARIANT the slot returned here is always greater than it was
+            -- on previous iterations, unless @systemTime@ jumps backwards eg
+            (slot, leftInSlot, _slotLength) <- getPresent
+
+            let lbl = threadLabel <> " [" <> show slot <> "]"
+            void $ forkLinkedThread rr lbl $ action slot
+
+            threadDelay (nominalDelay leftInSlot)
+            loop
       , waitUntilDone = atomically $ do
             -- throw if the caller is too late
             exn <- readTVar exnVar

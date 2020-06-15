@@ -578,7 +578,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> Mempool m blk TicketNo
                    -> m ()
     forkTxProducer registry clock cfg varRNG getExtLedger mempool =
-      void $ OracularClock.onSlotChange registry clock "txProducer" $ \curSlotNo -> do
+      void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- simMonadRandom varRNG $
                     testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
