@@ -276,6 +276,7 @@ data RunMiniProtocol (mode :: MuxMode) bytes m a b where
        -> MuxPeer bytes m b
        -> RunMiniProtocol InitiatorResponderMode bytes m a b
 
+
 data MuxPeer bytes m a where
     MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
                ( Show failure
