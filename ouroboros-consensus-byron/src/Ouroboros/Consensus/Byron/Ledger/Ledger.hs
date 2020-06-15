@@ -16,10 +16,12 @@
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Ledger integration
     LedgerState(..)
-  , ByronLedgerConfig(..)
   , Query(..)
   , initByronLedgerState
   , byronEraParams
+    -- * Config
+  , ByronLedgerConfig(..)
+  , HardCodedTransition(..)
     -- * Serialisation
   , encodeByronAnnTip
   , decodeByronAnnTip
@@ -79,10 +81,24 @@ import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
+{-------------------------------------------------------------------------------
+  Ledger config
+-------------------------------------------------------------------------------}
+
 data ByronLedgerConfig = ByronLedgerConfig {
-      byronLedgerConfigGenesis :: !Gen.Config
+      byronLedgerConfigGenesis    :: !Gen.Config
+    , byronLedgerConfigTransition :: !HardCodedTransition
     }
   deriving (Generic, NoUnexpectedThunks)
+
+data HardCodedTransition =
+    NoHardCodedTransition
+  | HardCodedTransitionAt !EpochNo
+  deriving (Generic, NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
+  IsLedger
+-------------------------------------------------------------------------------}
 
 type instance LedgerCfg (LedgerState ByronBlock) = ByronLedgerConfig
 

@@ -88,11 +88,12 @@ recover =
 -------------------------------------------------------------------------------}
 
 eraTransitionInfo :: SingleEraBlock          blk
-                  => WrapPartialLedgerConfig blk
+                  => EpochInfo Identity
+                  -> WrapPartialLedgerConfig blk
                   -> LedgerState             blk
                   -> K TransitionInfo        blk
-eraTransitionInfo cfg st = K $
-    case singleEraTransition' cfg st of
+eraTransitionInfo ei cfg st = K $
+    case singleEraTransition (completeLedgerConfig' ei cfg) st of
       Nothing -> TransitionUnknown (ledgerTipSlot st)
       Just e  -> TransitionKnown e
 
@@ -100,10 +101,11 @@ mostRecentTransitionInfo :: CanHardFork xs
                          => HardForkLedgerConfig xs
                          -> HardForkState_ g LedgerState xs
                          -> TransitionInfo
-mostRecentTransitionInfo HardForkLedgerConfig{..} st =
-    hcollapse $ hczipWith proxySingle eraTransitionInfo cfgs (tip st)
+mostRecentTransitionInfo cfg@HardForkLedgerConfig{..} st =
+    hcollapse $ hczipWith proxySingle (eraTransitionInfo ei) cfgs (tip st)
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+    ei   = epochInfoLedger cfg st
 
 reconstructSummaryLedger :: CanHardFork xs
                          => HardForkLedgerConfig xs
@@ -177,7 +179,9 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
                -> Current LedgerState         blk
                -> (Maybe :.: K History.Bound) blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
-        transition <- singleEraTransition' pcfg (currentState cur)
+        transition <- singleEraTransition
+                        (completeLedgerConfig' ei pcfg)
+                        (currentState cur)
         let endBound = History.mkUpperBound
                          eraParams
                          (currentStart cur)

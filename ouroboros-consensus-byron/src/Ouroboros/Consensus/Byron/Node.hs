@@ -126,7 +126,8 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
                 pbftParams = byronPBftParams genesisConfig mSigThresh
               }
           , configLedger = ByronLedgerConfig {
-                byronLedgerConfigGenesis = genesisConfig
+                byronLedgerConfigGenesis    = genesisConfig
+              , byronLedgerConfigTransition = NoHardCodedTransition
               }
           , configBlock  = byronConfig
           }

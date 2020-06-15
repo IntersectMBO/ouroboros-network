@@ -16,7 +16,6 @@
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
-  , HardCodedTransition (..)
     -- * TranslateNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
@@ -288,7 +287,7 @@ protocolInfoCardano
   -> Natural
   -> Maybe (TPraosLeaderCredentials sc)
      -- Hard fork
-  -> HardCodedTransition
+  -> Byron.HardCodedTransition
   -> ProtocolInfo m (CardanoBlock sc)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley protVer maxMajorPV mbCredsShelley
@@ -323,10 +322,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
     partialConsensusConfigByron = consensusConfigByron
 
+    -- 'protocolInfoByron' always sets 'byronLedgerConfigTransition' to
+    -- 'NoHardCodedTransition', so we override it here.
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
-    partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig = ledgerConfigByron
-        , transitionEpoch   = hardCodedTransition
+    partialLedgerConfigByron = ledgerConfigByron {
+          Byron.byronLedgerConfigTransition = hardCodedTransition
         }
 
     kByron :: SecurityParam
@@ -453,5 +453,5 @@ projByronTopLevelConfig cfg = byronCfg
     byronCfg = TopLevelConfig {
         configBlock     = byronBlockCfg
       , configConsensus = byronConsensusCfg
-      , configLedger    = byronLedgerConfig byronLedgerCfg
+      , configLedger    = byronLedgerCfg
       }

@@ -11,11 +11,10 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.CanHardFork (
-    HardCodedTransition (..)
-  , ByronPartialLedgerConfig (..)
-  , ShelleyPartialLedgerConfig (..)
+    ShelleyPartialLedgerConfig (..)
   ) where
 
 import           Control.Monad.Reader (runReader)
@@ -84,8 +83,8 @@ instance SingleEraBlock ByronBlock where
   -- This will be replaced with a proper implementation that looks for the
   -- right transaction in the ledger. See:
   -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
-  singleEraTransition pcfg _ledgerState =
-      case transitionEpoch pcfg of
+  singleEraTransition cfg _ledgerState =
+      case byronLedgerConfigTransition cfg of
         NoHardCodedTransition       -> Nothing
         HardCodedTransitionAt epoch -> Just epoch
 
@@ -96,27 +95,9 @@ instance SingleEraBlock ByronBlock where
 instance PBftCrypto bc => HasPartialConsensusConfig (PBft bc)
   -- Use defaults
 
-data HardCodedTransition =
-    NoHardCodedTransition
-  | HardCodedTransitionAt !EpochNo
-  deriving (Generic, NoUnexpectedThunks)
-
--- | When Byron is part of the hard-fork combinator, we use the partial ledger
--- config. Standalone Byron uses the regular ledger config. This means that
--- the partial ledger config is the perfect place to store a hard-coded, yet
--- configurable, transition point for testing purposes, as we don't have to
--- modify the ledger config for standalone Byron.
-data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
-      byronLedgerConfig :: !(LedgerConfig ByronBlock)
-    , transitionEpoch   :: !HardCodedTransition
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
 instance HasPartialLedgerConfig ByronBlock where
-
-  type PartialLedgerConfig ByronBlock = ByronPartialLedgerConfig
-
-  completeLedgerConfig _ _ = byronLedgerConfig
+  type PartialLedgerConfig ByronBlock = LedgerConfig ByronBlock
+  completeLedgerConfig _ _ = id
 
 {-------------------------------------------------------------------------------
   SingleEraBlock Shelley

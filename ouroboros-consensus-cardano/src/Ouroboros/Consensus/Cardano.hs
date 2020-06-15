@@ -71,7 +71,6 @@ import           Ouroboros.Consensus.Shelley.Protocol (TPraos,
                      TPraosStandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.Node
 
 {-------------------------------------------------------------------------------

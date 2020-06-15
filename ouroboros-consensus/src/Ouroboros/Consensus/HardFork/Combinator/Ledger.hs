@@ -287,19 +287,23 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       --
       -- See comment of 'hardForkEraTransition' for justification of the
       -- use of @st'@ to determine the transition/tip.
-      forecastOne :: SingleEraBlock                         blk
+      forecastOne :: forall blk.
+                     SingleEraBlock                         blk
                   => WrapPartialLedgerConfig                blk
                   -> K EraParams                            blk
                   -> LedgerState                            blk
                   -> (Maybe :.: AnnForecast WrapLedgerView) blk
       forecastOne pcfg (K eraParams) st' = Comp $
-          ann <$> ledgerViewForecastAt (completeLedgerConfig' ei pcfg) st' p
+          ann <$> ledgerViewForecastAt cfg st' p
         where
+          cfg :: LedgerConfig blk
+          cfg = completeLedgerConfig' ei pcfg
+
           ann :: Forecast (LedgerView (BlockProtocol blk))
               -> AnnForecast WrapLedgerView blk
           ann forecast = AnnForecast {
                 annForecast          = WrapLedgerView <$> forecast
-              , annForecastNext      = singleEraTransition' pcfg st'
+              , annForecastNext      = singleEraTransition cfg st'
               , annForecastEraParams = eraParams
               }
 

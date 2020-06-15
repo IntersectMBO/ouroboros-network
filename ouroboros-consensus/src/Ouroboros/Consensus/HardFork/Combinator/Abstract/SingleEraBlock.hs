@@ -2,7 +2,6 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
     SingleEraBlock(..)
-  , singleEraTransition'
   , proxySingle
   ) where
 
@@ -45,17 +44,18 @@ class ( LedgerSupportsProtocol blk
   -- This should only report the transition point once it is stable (rollback
   -- cannot affect it anymore).
   --
-  -- This takes the partial config rather than the full config for the same
-  -- reason as 'singleEraParam'.
-  singleEraTransition :: PartialLedgerConfig blk -> LedgerState blk -> Maybe EpochNo
+  -- Implementations should be careful: if the 'LedgerConfig' contains an
+  -- 'EpochInfo', the forecast range of that 'EpochInfo' will include the tip
+  -- of the 'LedgerState', but may not be include the point of the actual
+  -- transition. Of course, the implementation of 'singleEraTransition' is
+  -- /computing/ when the transition happens, and so it assume the same
+  -- 'EpochSize' until that transition, but the 'EpochInfo' it is given will
+  -- not be aware of that. This means some slot/epoch computations might have
+  -- to be done in the implementation of 'singleEraTransition' itself.
+  singleEraTransition :: LedgerConfig blk -> LedgerState blk -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
   singleEraInfo       :: proxy blk -> SingleEraInfo blk
 
 proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy
-
-singleEraTransition' :: SingleEraBlock blk
-                     => WrapPartialLedgerConfig blk
-                     -> LedgerState blk -> Maybe EpochNo
-singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig

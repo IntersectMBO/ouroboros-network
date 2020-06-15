@@ -29,6 +29,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Node
 
 import qualified Shelley.Spec.Ledger.OCert as SL

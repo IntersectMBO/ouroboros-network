@@ -75,7 +75,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               }
           , configLedger = DualLedgerConfig {
                 dualLedgerConfigMain = ByronLedgerConfig {
-                    byronLedgerConfigGenesis = concreteGenesis
+                    byronLedgerConfigGenesis    = concreteGenesis
+                  , byronLedgerConfigTransition = NoHardCodedTransition
                   }
               , dualLedgerConfigAux  = abstractConfig
               }
