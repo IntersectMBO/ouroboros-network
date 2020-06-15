@@ -47,7 +47,7 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
-                     BlockComponent (..), extractHeader)
+                     BlockComponent (..), PrefixLen (..), extractHeader)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
@@ -258,7 +258,7 @@ extractBlockComponent (BlockInfo {..}, bytes) = go
       GetBlockSize    -> fromIntegral $ BL.length bytes
       GetHeaderSize   -> bheaderSize
       GetNestedCtxt n -> Short.toShort $ BL.toStrict $
-                         BL.take (fromIntegral n) bytes
+                         BL.take (fromIntegral (getPrefixLen n)) bytes
       GetPure a       -> a
       GetApply f bc   -> go f $ go bc
 

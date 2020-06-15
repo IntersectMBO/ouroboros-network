@@ -580,7 +580,7 @@ extractBlockComponent hash slot isEBB bytes binfo = \case
     GetBlockSize    -> fromIntegral $ Lazy.length bytes
     GetHeaderSize   -> headerSize binfo
     GetNestedCtxt n -> Short.toShort $ Lazy.toStrict $
-                       Lazy.take (fromIntegral n) bytes
+                       Lazy.take (fromIntegral (getPrefixLen n)) bytes
     GetPure a       -> a
     GetApply f bc   ->
       extractBlockComponent hash slot isEBB bytes binfo f $

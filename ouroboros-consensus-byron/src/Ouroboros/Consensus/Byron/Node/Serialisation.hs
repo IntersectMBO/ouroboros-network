@@ -184,7 +184,7 @@ instance SerialiseResult ByronBlock (Query ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance ReconstructNestedCtxt Header ByronBlock where
-  reconstructPrefixLen _ = 2
+  reconstructPrefixLen _ = PrefixLen 2
   reconstructNestedCtxt _proxy prefix size =
       -- The first byte is @encodeListLen 2@, the second (index 1) is 0 for
       -- EBB, 1 for regular block

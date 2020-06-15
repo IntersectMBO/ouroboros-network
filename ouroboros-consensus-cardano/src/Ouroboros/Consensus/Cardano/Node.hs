@@ -131,7 +131,7 @@ instance TPraosCrypto sc => SerialiseHFC (CardanoEras sc) where
     where
       epochSlots = Byron.getByronEpochSlots ccfgByron
 
-  reconstructHfcPrefixLen _ = 2
+  reconstructHfcPrefixLen _ = PrefixLen 2
 
   reconstructHfcNestedCtxt _ prefix blockSize =
       case Short.index prefix 1 of

@@ -122,7 +122,8 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
                      runWithTempRegistry)
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     PrefixLen (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -223,7 +224,7 @@ getBlockComponentImpl env blockComponent blockId =
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
         GetNestedCtxt n -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let offset = ibBlockOffset
-          bytes <- hGetExactlyAt hasFS hndl (fromIntegral n) (AbsOffset offset)
+          bytes <- hGetExactlyAt hasFS hndl (fromIntegral (getPrefixLen n)) (AbsOffset offset)
           return $ Short.toShort $ Lazy.toStrict bytes
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib

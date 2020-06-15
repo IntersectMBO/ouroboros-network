@@ -28,7 +28,6 @@ import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
-import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -444,9 +443,9 @@ iteratorNextImpl dbEnv it@IteratorHandle
     readNestedCtxt
       :: Handle h
       -> Secondary.Entry hash
-      -> Word8
+      -> PrefixLen
       -> m ShortByteString
-    readNestedCtxt eHnd Secondary.Entry { blockOffset } n =
+    readNestedCtxt eHnd Secondary.Entry { blockOffset } (PrefixLen n) =
         Short.toShort . Lazy.toStrict <$>
           hGetExactlyAt hasFS eHnd (fromIntegral n) offset
       where

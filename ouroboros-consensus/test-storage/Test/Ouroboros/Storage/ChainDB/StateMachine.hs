@@ -93,6 +93,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceReaderEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllChunks))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
@@ -231,7 +232,7 @@ allComponents = (,,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
-    <*> GetNestedCtxt 10
+    <*> GetNestedCtxt (PrefixLen 10)
 
 -- | 'AllComponentsM' instantiated to 'Identity'.
 type AllComponents blk = AllComponentsM Identity blk

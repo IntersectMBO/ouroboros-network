@@ -15,7 +15,6 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.Proxy
-import           Data.Word (Word8)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HasHeader,
                      HeaderHash, SlotNo)
@@ -65,7 +64,7 @@ translateToRawDB ccfg = go
       GetPure a       -> GetPure a
       GetApply f bc   -> GetApply (go f) (go bc)
 
-    prefixLen :: Word8
+    prefixLen :: PrefixLen
     prefixLen = reconstructPrefixLen (Proxy @(Header blk))
 
 getBlockRef :: DBHeaderHash db ~ HeaderHash blk

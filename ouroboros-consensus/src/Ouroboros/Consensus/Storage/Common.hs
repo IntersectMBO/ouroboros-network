@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Storage.Common (
   , castBlockComponent
     -- * Re-exports
   , SizeInBytes
+  , PrefixLen (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -30,6 +31,8 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (PrefixLen (..))
 
 {-------------------------------------------------------------------------------
   Indexing
@@ -91,7 +94,7 @@ data BlockComponent db a where
   GetIsEBB      :: BlockComponent db IsEBB
   GetBlockSize  :: BlockComponent db Word32
   GetHeaderSize :: BlockComponent db Word16
-  GetNestedCtxt :: Word8
+  GetNestedCtxt :: PrefixLen
                 -> BlockComponent db ShortByteString
   GetPure       :: a
                 -> BlockComponent db a

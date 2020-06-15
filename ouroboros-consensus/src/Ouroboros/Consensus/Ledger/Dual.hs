@@ -572,7 +572,7 @@ instance ReconstructNestedCtxt Header m
       => ReconstructNestedCtxt Header (DualBlock m a) where
   reconstructPrefixLen _ =
       -- Account for the outer @encodeListLen 3@
-      1 + reconstructPrefixLen (Proxy @(Header m))
+      1 `addPrefixLen` reconstructPrefixLen (Proxy @(Header m))
   reconstructNestedCtxt _ prefix size =
       case reconstructNestedCtxt (Proxy @(Header m)) prefixMain size of
         SomeBlock ctxt -> SomeBlock (mapNestedCtxt CtxtDual ctxt)

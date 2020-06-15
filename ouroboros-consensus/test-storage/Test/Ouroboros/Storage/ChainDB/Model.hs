@@ -123,6 +123,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      LedgerCursorFailure (..), StreamFrom (..), StreamTo (..),
                      UnknownRange (..), validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..))
 
 type IteratorId = Int
 
@@ -515,7 +516,7 @@ getBlockComponent blk = \case
     GetBlockSize    -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize   -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
     GetNestedCtxt n -> Short.toShort $ Lazy.toStrict $
-                       Lazy.take (fromIntegral n) $ serialise blk
+                       Lazy.take (fromIntegral (getPrefixLen n)) $ serialise blk
 
     GetPure a       -> a
     GetApply f bc   -> getBlockComponent blk f $ getBlockComponent blk bc
