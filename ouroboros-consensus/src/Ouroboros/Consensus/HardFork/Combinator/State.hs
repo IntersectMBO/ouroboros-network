@@ -22,7 +22,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
   , epochInfoLedgerView
     -- * Ledger specific functionality
   , extendToSlot
-  , transitions
   ) where
 
 import           Prelude hiding (sequence)
@@ -37,7 +36,6 @@ import           Cardano.Slotting.Slot
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.Counting
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -208,68 +206,3 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     translate :: InPairs (Translate LedgerState) xs
     translate = InPairs.requiringBoth cfgs $
                   translateLedgerState hardForkEraTranslation
-
-{-------------------------------------------------------------------------------
-  Collect all current hard fork transitions
-
-  TODO: If we make 'hardForkSummary' the primitive function in
-  'HasHardForkHistory', ideally this should not be necessary anymore: the
-  summary is trivially derivable from the ledger state. This would then
-  also obsolete the need for caching.
--------------------------------------------------------------------------------}
-
-transitions :: forall g xs. CanHardFork xs
-            => HardForkLedgerConfig xs
-            -> HardForkState_ g LedgerState xs -> History.Transitions xs
-transitions HardForkLedgerConfig{..} (HardForkState st) =
-    case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
-        History.Transitions $
-          shiftTransitions (getPerEraLedgerConfig cfg) $
-            allTransitions (getPerEraLedgerConfig cfg) st
-  where
-    cfg = hardForkLedgerConfigPerEra
-
--- | Find transition points in all eras
---
--- This associates each transition with the era it transitions /from/.
--- See also 'shiftTransitions'.
-allTransitions :: CanHardFork                                xs
-               => NP WrapPartialLedgerConfig                 xs
-               -> Telescope (Past f) (Current (LedgerState)) xs
-               -> AtMost                                     xs EpochNo
-allTransitions cfgs st =
-    Telescope.toAtMost $
-      Telescope.bihap
-        (hpure (fn past))
-        (hcmap proxySingle (fn . cur) cfgs)
-        st
-  where
-    past :: Past f blk -> K EpochNo blk
-    past = K . History.boundEpoch . pastEnd
-
-    cur :: SingleEraBlock          blk
-        => WrapPartialLedgerConfig blk
-        -> Current LedgerState     blk
-        -> K (Maybe EpochNo)       blk
-    cur cfg = K . singleEraTransition' cfg . currentState
-
--- | Associate transitions with the era they transition /to/
---
--- 'allTransitions' associates transitions with the era in which they occur,
--- but the hard fork history infrastructure expects them to be associated with
--- the era that they transition /to/. 'shiftTransitions' implements this
--- shift of perspective, and also verifies that the final era cannot have
--- a transition.
-shiftTransitions :: NP f (x ': xs) -- Just as an index
-                 -> AtMost (x ': xs) EpochNo -> AtMost xs EpochNo
-shiftTransitions = go
-  where
-    go :: NP f (x ': xs)
-       -> AtMost (x ': xs) EpochNo -> AtMost xs EpochNo
-    go _                  AtMostNil                = AtMostNil
-    go (_ :* cs@(_ :* _)) (AtMostCons t ts)        = AtMostCons t (go cs ts)
-    go (_ :* Nil)         (AtMostCons _ AtMostNil) = error invalidTransition
-
-    invalidTransition :: String
-    invalidTransition = "Unexpected transition in final era"
