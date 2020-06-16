@@ -127,7 +127,7 @@ instance MonadDelay IO where
     where
       go :: DiffTime -> IO ()
       go d | d > maxDelay = do
-        IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+        IO.threadDelay maxBound
         go (d - maxDelay)
       go d = do
         IO.threadDelay (diffTimeToMicrosecondsAsInt d)
