@@ -77,6 +77,7 @@ let
       } else {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
+        packages.ouroboros-network.components.tests.test-cddl.preCheck = "export HOME=`pwd`";
       })
     ];
     configureArgs = lib.optionalString stdenv.hostPlatform.isWindows "--disable-tests";
