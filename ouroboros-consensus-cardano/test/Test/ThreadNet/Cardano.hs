@@ -17,6 +17,8 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.Slot (EpochSize (..))
 
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
+
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
@@ -76,11 +78,6 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "Cardano" $
-   -- TODO Byron hashes are 32 bytes and Shelley mock hashes are 4 bytes, so they
-   -- are incompatible, causing the tests to fail. We disable them until we have
-   -- a solution for this, e.g., parameterising the Shelley mock crypto by the
-   -- hash type.
-    const [] $ -- REMOVE this line
     [ testProperty "simple convergence" $ \setup ->
           prop_simple_cardano_convergence setup
     ]
@@ -117,7 +114,7 @@ prop_simple_cardano_convergence TestSetup
       , txGenExtra   = ()
       }
 
-    testOutput :: TestOutput (CardanoBlock TPraosMockCrypto)
+    testOutput :: TestOutput (CardanoBlock (TPraosMockCrypto Blake2b_256))
     testOutput =
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
@@ -164,7 +161,7 @@ prop_simple_cardano_convergence TestSetup
     maxKESEvolution :: Word64
     maxKESEvolution = 100
 
-    coreNodes :: [Shelley.CoreNode TPraosMockCrypto]
+    coreNodes :: [Shelley.CoreNode (TPraosMockCrypto Blake2b_256)]
     coreNodes =
         withSeed initSeed $
         replicateM (fromIntegral n) $
@@ -172,7 +169,7 @@ prop_simple_cardano_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisShelley :: ShelleyGenesis TPraosMockCrypto
+    genesisShelley :: ShelleyGenesis (TPraosMockCrypto Blake2b_256)
     genesisShelley =
         Shelley.mkGenesisConfig
           setupK

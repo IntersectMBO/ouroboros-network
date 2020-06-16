@@ -27,6 +27,7 @@ import           Data.Word (Word64)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
+import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -77,20 +78,21 @@ data CoreNode c = CoreNode {
     , cnOCert       :: !(SL.OCert               c)
     }
 
-data CoreNodeKeyInfo = CoreNodeKeyInfo
+data CoreNodeKeyInfo h = CoreNodeKeyInfo
   { cnkiKeyPair
-      ::  ( SL.KeyPair 'SL.Payment TPraosMockCrypto
-          , SL.KeyPair 'SL.Staking TPraosMockCrypto
+      ::  ( SL.KeyPair 'SL.Payment (TPraosMockCrypto h)
+          , SL.KeyPair 'SL.Staking (TPraosMockCrypto h)
           )
   , cnkiCoreNode ::
-      ( SL.KeyPair 'SL.Genesis TPraosMockCrypto
-      , Gen.AllIssuerKeys 'SL.GenesisDelegate
+      ( SL.KeyPair 'SL.Genesis (TPraosMockCrypto h)
+      , Gen.AllIssuerKeys h 'SL.GenesisDelegate
       )
   }
 
 coreNodeKeys
-  :: CoreNode TPraosMockCrypto
-  -> CoreNodeKeyInfo
+  :: HashAlgorithm h
+  => CoreNode (TPraosMockCrypto h)
+  -> CoreNodeKeyInfo h
 coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
   = CoreNodeKeyInfo
       { cnkiCoreNode =

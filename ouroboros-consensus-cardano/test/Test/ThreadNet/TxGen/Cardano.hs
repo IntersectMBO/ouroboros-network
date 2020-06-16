@@ -10,6 +10,6 @@ import           Test.ThreadNet.TxGen
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 
-instance TxGen (CardanoBlock TPraosMockCrypto) where
+instance TxGen (CardanoBlock (TPraosMockCrypto h)) where
   -- TODO
   testGenTxs _ _ _ _ _ = return []

@@ -1,16 +1,18 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE UndecidableInstances  #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
   ) where
 
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 import           Data.Coerce
 import qualified Data.List.NonEmpty as NE
@@ -52,13 +54,13 @@ import           Test.Consensus.Shelley.MockCrypto
   Disk
 -------------------------------------------------------------------------------}
 
-instance Arbitrary (CardanoBlock TPraosMockCrypto) where
+instance HashAlgorithm h => Arbitrary (CardanoBlock (TPraosMockCrypto h)) where
   arbitrary = oneof
     [ BlockByron   <$> arbitrary
     , BlockShelley <$> arbitrary
     ]
 
-instance Arbitrary (CardanoHeader TPraosMockCrypto) where
+instance HashAlgorithm h => Arbitrary (CardanoHeader (TPraosMockCrypto h)) where
   arbitrary = getHeader <$> arbitrary
 
 -- TODO if we try to use arbitrary instances for `SlotNo` and `EpochNo` here, we
@@ -102,11 +104,11 @@ arbitraryHardForkState p = toTelescope' p <$> oneof
             , return NoSnapshot
             ]
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h a))
       => Arbitrary (CardanoLedgerState sc) where
   arbitrary = arbitraryHardForkState (Proxy @LedgerState)
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (HardForkConsensusState (CardanoEras sc)) where
   arbitrary = arbitraryHardForkState (Proxy @WrapConsensusState)
 
@@ -130,10 +132,10 @@ instance Crypto sc => Arbitrary (OneEraHash (CardanoEras sc)) where
     , toRawHash (Proxy @(ShelleyBlock sc)) <$> arbitrary
     ]
 
-instance Arbitrary (AnnTip (CardanoBlock TPraosMockCrypto)) where
+instance HashAlgorithm h => Arbitrary (AnnTip (CardanoBlock (TPraosMockCrypto h))) where
   arbitrary = oneof
     [ mapAnnTip TipInfoByron   <$> arbitrary @(AnnTip (ByronBlock))
-    , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock TPraosMockCrypto))
+    , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock (TPraosMockCrypto h)))
     ]
 
 {-------------------------------------------------------------------------------
@@ -181,7 +183,7 @@ arbitraryNodeToNode injByron injShelley = oneof
     ]
 
 
-instance sc ~ TPraosMockCrypto
+instance sc ~ TPraosMockCrypto h
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
                                 (SomeBlock (NestedCtxt Header) (CardanoBlock sc))) where
   arbitrary = arbitraryNodeToNode injByron injShelley
@@ -189,22 +191,22 @@ instance sc ~ TPraosMockCrypto
       injByron   = mapSomeNestedCtxt NCZ
       injShelley = mapSomeNestedCtxt (NCS . NCZ)
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
                                 (CardanoBlock sc)) where
   arbitrary = arbitraryNodeToNode BlockByron BlockShelley
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
                                 (CardanoHeader sc)) where
   arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
                                 (CardanoGenTx sc)) where
   arbitrary = arbitraryNodeToNode GenTxByron GenTxShelley
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
                                 (CardanoGenTxId sc)) where
   arbitrary = arbitraryNodeToNode GenTxIdByron GenTxIdShelley
@@ -255,17 +257,17 @@ arbitraryNodeToClient injByron injShelley = oneof
 pc :: Proxy (CardanoBlock sc)
 pc = Proxy
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (CardanoBlock sc)) where
   arbitrary = arbitraryNodeToClient BlockByron BlockShelley
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (CardanoGenTx sc)) where
   arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h a))
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (CardanoApplyTxErr sc)) where
   arbitrary = frequency
@@ -274,7 +276,7 @@ instance sc ~ TPraosMockCrypto
               <$> arbitrary)
       ]
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeBlock Query (CardanoBlock sc))) where
   arbitrary = arbitraryNodeToClient injByron injShelley
@@ -282,7 +284,7 @@ instance sc ~ TPraosMockCrypto
       injByron   (SomeBlock query) = SomeBlock (QueryByron   query)
       injShelley (SomeBlock query) = SomeBlock (QueryShelley query)
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeResult (CardanoBlock sc))) where
   arbitrary = frequency
@@ -308,7 +310,7 @@ instance sc ~ TPraosMockCrypto
               <$> arbitrary <*> arbitrary
           ]
 
-instance sc ~ TPraosMockCrypto
+instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (MismatchEraInfo (CardanoEras sc)) where
   arbitrary = MismatchEraInfo <$> elements
       [ ML eraInfoByron (Z (LedgerEraInfo eraInfoShelley))

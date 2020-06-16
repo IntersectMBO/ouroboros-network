@@ -10,6 +10,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
+import           Cardano.Crypto.Hash (ShortHash)
 
 import           Ouroboros.Network.Block (Point (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -104,12 +105,12 @@ testQueries = testGroup "Queries"
       ]
 
     queryNonMyopicMemberRewards
-      :: Query Block (NonMyopicMemberRewards TPraosMockCrypto)
+      :: Query (Block ShortHash) (NonMyopicMemberRewards (TPraosMockCrypto ShortHash))
     queryNonMyopicMemberRewards =
       GetNonMyopicMemberRewards $ Set.singleton $ Right $
         (SL.KeyHashObj . SL.hashKey . SL.vKey) $ SL.KeyPair 0 0
 
-    goldenTestQuery :: Query Block result -> FlatTerm -> Assertion
+    goldenTestQuery :: Query (Block ShortHash) result -> FlatTerm -> Assertion
     goldenTestQuery = goldenTestCBOR encodeShelleyQuery
 
 testResults :: TestTree
@@ -130,18 +131,18 @@ testResults = testGroup "Results"
   where
     -- TODO move to Test.Consensus.Shelley.Examples?
 
-    nonMyopicMemberRewards :: (NonMyopicMemberRewards TPraosMockCrypto)
+    nonMyopicMemberRewards :: (NonMyopicMemberRewards (TPraosMockCrypto ShortHash))
     nonMyopicMemberRewards = NonMyopicMemberRewards Map.empty
 
     currentPParams :: SL.PParams
     currentPParams = SL.emptyPParams
 
-    proposedPParamsUpdates :: SL.ProposedPPUpdates TPraosMockCrypto
+    proposedPParamsUpdates :: SL.ProposedPPUpdates (TPraosMockCrypto ShortHash)
     proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
       (SL.hashKey 0)
       (SL.emptyPParamsUpdate {SL._keyDeposit = SJust 100})
 
-    stakeDistribution :: SL.PoolDistr TPraosMockCrypto
+    stakeDistribution :: SL.PoolDistr (TPraosMockCrypto ShortHash)
     stakeDistribution = SL.PoolDistr $ Map.singleton
       (SL.KeyHash $ SL.hash 0)
       (1, hashKeyVRF $ VerKeyFakeVRF 0)
@@ -202,7 +203,7 @@ testResults = testGroup "Results"
       , TkBytes "}\234\&6+"
       ]
 
-    goldenTestResult :: Query Block result -> result -> FlatTerm -> Assertion
+    goldenTestResult :: Query (Block ShortHash) result -> result -> FlatTerm -> Assertion
     goldenTestResult q = goldenTestCBOR (encodeShelleyResult q)
 
 test_golden_ConsensusState :: Assertion
