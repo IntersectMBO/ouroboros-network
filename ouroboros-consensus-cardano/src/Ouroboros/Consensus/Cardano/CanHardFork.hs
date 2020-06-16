@@ -149,12 +149,13 @@ byronTransition ByronPartialLedgerConfig{..}
     cpuSlot = Byron.fromByronSlotNo . CC.Update.cpuSlot
 
     -- This follows the same structure as the computation in the A/B test. Let
-    -- @s@ be the slot of the update proposal. Note that the very first slot in
-    -- which the transition /could/ occur is @s + 1@; adding the required
-    -- stability, the first slot in which the transition could occur is @s + 4k
-    -- + 1@. This means that the last slot which /must/ be in /this/ era is @s +
-    -- 4k@. Hence the last /epoch/ that must be in this era is @epoch (s + 4k)@,
-    -- and the first epoch of the /next/ era is @succ (epoch (s + 4k)@.
+    -- @s@ be the slot the update proposal was endorsed (gathered enough
+    -- endorsements). Note that the very first slot in which the transition
+    -- /could/ occur is @s + 1@; adding the required stability, the first slot
+    -- in which the transition could occur is @s + 4k + 1@. This means that the
+    -- last slot which /must/ be in /this/ era is @s + 4k@. Hence the last
+    -- /epoch/ that must be in this era is @epoch (s + 4k)@, and the first epoch
+    -- of the /next/ era is @succ (epoch (s + 4k))@.
     cpuEpoch :: CC.Update.CandidateProtocolUpdate -> EpochNo
     cpuEpoch upd = succ (slotToEpoch $ History.addSlots (4 * k) (cpuSlot upd))
 
@@ -166,21 +167,21 @@ byronTransition ByronPartialLedgerConfig{..}
           (boundEpoch eraStart)
 
     isStable :: CC.Update.CandidateProtocolUpdate -> Bool
-    isStable upd = confirmationDepth >= 2 * k
+    isStable upd = endorsementDepth >= 2 * k
       where
-        confirmedInSlot :: SlotNo
-        confirmedInSlot = cpuSlot upd
+        endorsedInSlot :: SlotNo
+        endorsedInSlot = cpuSlot upd
 
         -- The impossible cases are impossible because the ledger contains
         -- at least the block containing the update proposal, and hence cannot
         -- be empty or have a tip /before/ the slot number of that block.
-        confirmationDepth :: Word64
-        confirmationDepth =
+        endorsementDepth :: Word64
+        endorsementDepth =
             case ledgerTipSlot st of
               Origin -> error "byronTransition: impossible"
-              At s   -> if s < confirmedInSlot
+              At s   -> if s < endorsedInSlot
                           then error "byronTransition: impossible"
-                          else History.countSlots s confirmedInSlot
+                          else History.countSlots s endorsedInSlot
 
     -- 'tryBumpVersion' assumes head of the list is the newest, so we do too
     latest :: [CC.Update.CandidateProtocolUpdate]
