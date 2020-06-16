@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -188,6 +189,10 @@ instance ApplyBlock (LedgerState BlockB) BlockB where
 
 instance UpdateLedger BlockB
 
+instance CommonProtocolParams BlockB where
+  maxHeaderSize _ = maxBound
+  maxTxSize     _ = maxBound
+
 instance CanForge BlockB where
   forgeBlock _ _ bno (Ticked sno st) _txs _ = return $ BlkB {
       blkB_header = HdrB {
@@ -229,7 +234,6 @@ instance LedgerSupportsMempool BlockB where
   reapplyTx = applyTx
 
   maxTxCapacity _ = maxBound
-  maxTxSize     _ = maxBound
   txInBlockSize _ = 0
 
 instance HasTxId (GenTx BlockB) where

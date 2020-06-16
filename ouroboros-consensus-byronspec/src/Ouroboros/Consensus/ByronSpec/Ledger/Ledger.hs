@@ -24,11 +24,13 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -99,6 +101,16 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
   deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
 
 instance UpdateLedger ByronSpecBlock
+
+instance CommonProtocolParams ByronSpecBlock where
+  maxHeaderSize = fromIntegral . Spec._maxHdrSz . getPParams
+  maxTxSize     = fromIntegral . Spec._maxTxSz  . getPParams
+
+getPParams :: LedgerState ByronSpecBlock -> Spec.PParams
+getPParams =
+      Spec.protocolParameters
+    . getChainStateUPIState
+    . byronSpecLedgerState
 
 {-------------------------------------------------------------------------------
   Working with the ledger state

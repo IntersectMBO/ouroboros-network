@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.Versioned
@@ -446,6 +447,10 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
   showResult GetCurrentLedgerState                        = show
   showResult (GetCBOR {})                                 = show
   showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
+
+instance TPraosCrypto c => CommonProtocolParams (ShelleyBlock c) where
+  maxHeaderSize = fromIntegral . SL._maxBHSize . getPParams . shelleyState
+  maxTxSize     = fromIntegral . SL._maxTxSize . getPParams . shelleyState
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope

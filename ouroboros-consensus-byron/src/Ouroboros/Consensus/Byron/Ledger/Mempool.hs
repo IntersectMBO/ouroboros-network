@@ -61,7 +61,6 @@ import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Chain.Update.Validation.Interface as Update
 import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
@@ -112,14 +111,6 @@ instance LedgerSupportsMempool ByronBlock where
 
   maxTxCapacity (Ticked _ st) =
     CC.getMaxBlockSize (byronLedgerState st) - byronBlockEncodingOverhead
-
-  -- TODO cardano-ledger should expose API.getMaxTxSize
-  maxTxSize =
-      fromIntegral
-    . Update.ppMaxBlockSize
-    . Update.adoptedProtocolParameters
-    . CC.cvsUpdateState
-    . byronLedgerState
 
   txInBlockSize =
       fromIntegral

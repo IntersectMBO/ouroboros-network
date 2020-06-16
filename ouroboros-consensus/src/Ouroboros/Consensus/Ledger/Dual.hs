@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -194,6 +195,7 @@ class (
       , LedgerSupportsProtocol m
       , HasHardForkHistory     m
       , LedgerSupportsMempool  m
+      , CommonProtocolParams   m
       , HasTxId (GenTx         m)
       , Show (ApplyTxErr       m)
 
@@ -458,6 +460,11 @@ instance Bridge m a => QueryLedger (DualBlock m a) where
 instance ShowQuery (Query (DualBlock m a)) where
   showResult = \case {}
 
+-- | Forward to the main ledger
+instance Bridge m a => CommonProtocolParams (DualBlock m a) where
+  maxHeaderSize = maxHeaderSize . dualLedgerStateMain
+  maxTxSize     = maxTxSize     . dualLedgerStateMain
+
 {-------------------------------------------------------------------------------
   Mempool support
 -------------------------------------------------------------------------------}
@@ -524,7 +531,6 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   maxTxCapacity (Ticked slot DualLedgerState{..}) =
       maxTxCapacity (Ticked slot dualLedgerStateMain)
 
-  maxTxSize     = maxTxSize     . dualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where

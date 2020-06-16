@@ -69,8 +69,6 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
     where
       SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
 
-  maxTxSize = fromIntegral . SL._maxTxSize . getPParams . shelleyState
-
   txInBlockSize (ShelleyTx _ tx) =
     fromIntegral . Lazy.length . SL.txFullBytes $ tx
 

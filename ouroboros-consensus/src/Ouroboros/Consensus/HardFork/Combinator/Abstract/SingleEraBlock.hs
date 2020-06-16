@@ -12,6 +12,7 @@ import           Data.Proxy
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
@@ -34,6 +35,7 @@ class ( LedgerSupportsProtocol blk
       , ConvertRawHash blk
       , HasCodecConfig blk
       , ReconstructNestedCtxt Header blk
+      , CommonProtocolParams blk
         -- Instances required to support testing
       , Eq   (GenTx blk)
       , Eq   (ApplyTxErr blk)

@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -73,6 +74,7 @@ class ( LedgerSupportsProtocol           blk
       , ConfigSupportsNode               blk
       , HasCodecConfig                   blk
       , ConvertRawHash                   blk
+      , CommonProtocolParams             blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
