@@ -11,6 +11,7 @@ module Test.Util.HardFork.Future (
   futureFirstSlotLength,
   futureSlotLengths,
   futureSlotToEpoch,
+  futureSlotToTime,
   futureTimeToSlot,
   singleEraFuture,
   ) where
@@ -107,15 +108,35 @@ futureSlotToEpoch :: Future
 futureSlotToEpoch = \future (SlotNo s) -> EpochNo $ go 0 s future
   where
     go acc s = \case
-      EraFinal _slotLength (EpochSize epSz) ->
+      EraFinal _slotLength (EpochSize epSz)                ->
           acc + s `div` epSz
-      EraCons _slotLength epochSize eraSize future ->
+      EraCons  slotLength  epochSize        eraSize future ->
           case s `safeSub` eraSlots of
-            Nothing -> go acc s (EraFinal _slotLength epochSize)
+            Nothing -> go acc s (EraFinal slotLength epochSize)
             Just s' -> go (acc + n) s' future
         where
           EraSize n = eraSize
           NumSlots eraSlots = calcEraSlots epochSize eraSize
+
+-- | When the slot begins
+futureSlotToTime :: Future
+                 -> SlotNo
+                 -> NominalDiffTime
+futureSlotToTime = \future (SlotNo s) -> go 0 s future
+  where
+    done acc s slotLength =
+        acc + multiply s slotLength
+
+    go acc s = \case
+      EraFinal slotLength _epochSize                ->
+          done acc s slotLength
+      EraCons  slotLength epochSize  eraSize future ->
+          case s `safeSub` eraSlots of
+            Nothing -> done acc s slotLength
+            Just s' -> go (acc + eraLength) s' future
+        where
+          NumSlots eraSlots = calcEraSlots epochSize eraSize
+          eraLength         = multiply eraSlots slotLength
 
 -- | Whether the epoch is in the first era
 futureEpochInFirstEra :: Future -> EpochNo -> Bool

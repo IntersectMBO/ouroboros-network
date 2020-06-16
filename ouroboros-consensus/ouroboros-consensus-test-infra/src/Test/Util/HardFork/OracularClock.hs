@@ -8,14 +8,14 @@
 -- > import qualified Test.Util.OracularClock as OracularClock
 module Test.Util.HardFork.OracularClock (
     OracularClock (..)
-  , new
+  , mkOracularClock
   , forkEachSlot
   , withinEachSlot
   , withinTheCurrentSlot
   , EndOfDaysException (..)
   ) where
 
-import           Control.Monad (replicateM_, when, void)
+import           Control.Monad (void, when)
 import           Data.Foldable (toList)
 import           Data.Function (fix)
 import           Data.Time
@@ -30,59 +30,38 @@ import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Util.Time (nominalDelay)
 
 import           Test.Util.HardFork.Future (Future, futureSlotLengths,
-                     futureTimeToSlot)
+                     futureSlotToTime, futureTimeToSlot)
 import           Test.Util.Slots (NumSlots (..))
-import           Test.Util.Stream
 
 -- | A clock that knows the future
 --
 -- This clock's closure contains a 'BTime.SystemTime', a 'Future', and a
--- 'NumSlots'. As the system time advances, the clock maintains a notion of the
--- current 'SlotNo'. Once all 'NumSlots' have passed, the clock is /exhausted/
--- and all of its methods raise 'EndOfDaysException' after a minimal
--- 'threadDelay'.
+-- 'NumSlots'. Once all 'NumSlots' have passed, the clock is /exhausted/ and
+-- all of its methods begin throwing 'EndOfDaysException'.
 --
--- Most notably, 'waitUntilDone' (when called before the clock is exhausted)
--- blocks until the the clock is exhausted; so the continuation of that call
--- should expect other threads using the rest of this clock's methods to be
--- stuck (and eg reap them).
+-- Notably, 'waitUntilDone' blocks until the the clock is exhausted; so the
+-- continuation of that call should promptly reap other threads using this
+-- clock because they will otherwise soon raise 'EndOfDaysException'.
 --
--- Note: though the wallclock-slot correspondence depends on the ledger state,
+-- Note: Though the wallclock-slot correspondence depends on the ledger state,
 -- we have designed our ledgers so that all nodes necessarily use the same
--- correspondence in the absence of a Common Prefix violation. So this clock
--- can indeed know /the/ future.
+-- correspondence in the absence of a Common Prefix violation. This ensures all
+-- nodes adopt the same timeline, which must be /the/ 'Future' that this clock
+-- anticipates.
 data OracularClock m = OracularClock
     { -- | Returns 'True' if the requested slot is already over
-      --
-      -- Eventually raises 'EndOfDaysException'.
       blockUntilSlot :: SlotNo -> m Bool
 
       -- | The current delay duration until the onset of the next slot
-      --
-      -- Eventually raises 'EndOfDaysException'.
     , delayUntilNextSlot :: m NominalDiffTime
 
       -- | A mock system time
       --
-      -- Note: 'BTime.systemTimeCurrent' eventually raises 'EndOfDaysException'.
+      -- Note that 'BTime.systemTimeCurrent' eventually raises
+      -- 'EndOfDaysException'.
     , finiteSystemTime :: BTime.SystemTime m
 
-      -- | Convert 'Control.Monad.Class.MonadTime.getCurrentTime' to 'SlotNo'
-      --
-      -- INVARIANT: In @io-sim@, the @getCurrentTime@ use (by default) the
-      -- monotonic clock, and it advances /before/ threads correspondingly
-      -- wake-up from a @threadDelay@.
-      --
-      -- So we rely on the (monotonic) clock instead of using a ticker thread
-      -- and internal state, since a calling thread and the ticker thread might
-      -- wake up simultaneously from a
-      -- 'Control.Monad.Class.MonadTimer.threadDelay' call: it's ambiguous
-      -- which thread would win the race to respectively read or increment the
-      -- internal state.
-      --
-      -- Note: we do use a ticker thread for 'blockUntilSlot'.
-      --
-      -- Eventually raises 'EndOfDaysException'.
+      -- | The current slot
     , getCurrentSlot :: m SlotNo
 
       -- | See 'forkEachSlot'
@@ -93,9 +72,6 @@ data OracularClock m = OracularClock
                     -> m (m ())
 
       -- | Block until the clock is exhausted
-      --
-      -- Eventually raises 'EndOfDaysException' if invoked after clock is
-      -- exhausted.
     , waitUntilDone :: m ()
     }
 
@@ -162,112 +138,111 @@ withinEachSlot clock s0 get put = do
           withinEachSlot clock s2 get put
 
 -- | See 'OracularClock'
-new :: forall m. (IOLike m, HasCallStack)
+--
+-- NOTE: Every method relies only on the given 'BTime.SystemTime'. For example,
+-- there is no internal ticker thread underlying this 'OracularClock'. This
+-- design avoids the risk of certain kinds of races, particularly with respect
+-- to
+-- 'Ouroboros.Consensus.BlockchainTime.WallClock.HardFork.hardForkBlockchainTime'
+-- which also only relies on 'BTime.SystemTime'.
+--
+-- PREREQUISITE: The only assumption about the given 'BTime.SystemTime' is that
+-- its 'BTime.systemCurrentTime' ticks before any 'threadDelay'-ed thread
+-- scheduled to wake-up then does so. The 'BTime.defaultSystemTime' in the mock
+-- 'IO' monad provided by @io-sim@ satisfies this assumption.
+mkOracularClock :: forall m. (IOLike m)
     => BTime.SystemTime m
-    -> ResourceRegistry m
     -> NumSlots
     -> Future
-    -> m (OracularClock m)
-new systemTime@BTime.SystemTime{..} registry (NumSlots n) future = do
-    waitOneSlot <- do
-      slotLengthsVar <- uncheckedNewTVarM $ futureSlotLengths future
-      pure $ do
-        slotLength <- atomically $ do
-          x :< xs <- readTVar slotLengthsVar
-          x <$ writeTVar slotLengthsVar xs
-        threadDelay $ nominalDelay $ BTime.getSlotLength slotLength
-    let _ = waitOneSlot :: m ()
+    -> OracularClock m
+mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
+    { blockUntilSlot = \slot -> do
+        BTime.RelativeTime now <- finiteSystemTimeCurrent
+        let later = futureSlotToTime future slot
 
-    slotVar <- newTVarM 0
-    doneVar <- newTVarM False
-    exnVar  <- newTVarM False
-    void $ forkThread registry "OracularClock.ticker" $ do
-      -- The first slot has already begun, so let other threads execute until
-      -- the slot ends
-      waitOneSlot
-      -- And repeat for the @n - 1@ remaining slots
-      replicateM_ (fromIntegral n - 1) $ do
-        atomically $ modifyTVar slotVar (+ 1)
-        waitOneSlot
-      -- Set internal flag indicating the clock is exhausted (ie the test is
-      -- over)
-      atomically $ writeTVar doneVar True
+        -- refuse to block until @>= endOfDays@
+        when (later >= endOfDays) $ do
+          threadDelay $ nominalDelay $ endOfDays - now
+          exhaustedM
 
-      -- block for a non-zero amount of time after the end of the test
-      --
-      -- Normal finalizers etc should complete during this time and terminate
-      -- threads blocked on this @exnVar@. If not, those threads eventually
-      -- throw 'EndOfDaysException'. (Recall that 'OracularClock' is for
-      -- testing, and we're in the infinitely-fast @io-sim:SimM@ monad.)
-      threadDelay 1
-      atomically $ writeTVar exnVar True
+        blockUntilTime now later
 
-    let exhaustedM = do
-            -- throw if this thread isn't terminated in time
-            readTVar exnVar >>= check
-            throwM EndOfDaysException
+    , delayUntilNextSlot = do
+        (_slot, leftInSlot, _slotLength) <- getPresent
+        pure leftInSlot
 
-    let readCurrentSlotSTM = do
-            -- check if clock is exhausted
-            done <- readTVar doneVar
-            when done exhaustedM
+    , finiteSystemTime = BTime.SystemTime
+        { BTime.systemTimeCurrent = finiteSystemTimeCurrent
+        , BTime.systemTimeWait    = systemTimeWait
+        }
 
-            readTVar slotVar
+    , getCurrentSlot = do
+        (slot, _leftInSlot, _slotLength) <- getPresent
+        pure slot
 
-    let finiteSystemTimeCurrent = do
-            t <- systemTimeCurrent
+    , forkEachSlot_ = \rr threadLabel action ->
+        fmap cancelThread $
+        forkLinkedThread rr threadLabel $
+        fix $ \loop -> do
+          -- INVARIANT the slot returned here ascends monotonically unless
+          -- the underlying 'BTime.SystemTime' jumps backwards
+          (slot, leftInSlot, _slotLength) <- getPresent
 
-            -- check if clock is exhausted (this checks the time directly,
-            -- without relying on 'doneVar')
-            let totalDelta =
-                    (sum . map BTime.getSlotLength) $
-                    (take (fromIntegral n) . toList) $
-                    futureSlotLengths future
-                tFinal = BTime.RelativeTime totalDelta
-            when (t >= tFinal) $ atomically exhaustedM
+          let lbl = threadLabel <> " [" <> show slot <> "]"
+          -- fork the action, so it can't threadDelay us
+          void $ forkLinkedThread rr lbl $ action slot
 
-            pure t
+          threadDelay $ nominalDelay leftInSlot
+          loop
 
-    let getPresent = do
-            BTime.RelativeTime t <- finiteSystemTimeCurrent
-            pure $ futureTimeToSlot future t
+    , waitUntilDone = do
+        BTime.RelativeTime now <- finiteSystemTimeCurrent
+        void $ blockUntilTime now endOfDays
 
-    pure OracularClock
-      { blockUntilSlot = \slot -> atomically $ do
-          now <- readCurrentSlotSTM
-          case compare now slot of
-            LT -> retry
-            EQ -> pure False
-            GT -> pure True   -- ie " too late "
-      , delayUntilNextSlot = do
-          (_slot, leftInSlot, _slotLength) <- getPresent
-          pure leftInSlot
-      , finiteSystemTime = systemTime
-          { BTime.systemTimeCurrent = finiteSystemTimeCurrent
-          }
-      , getCurrentSlot = do
-          (slot, _leftInSlot, _slotLength) <- getPresent
-          pure slot
-      , forkEachSlot_ = \rr threadLabel action ->
-          fmap cancelThread $
-          forkLinkedThread rr threadLabel $
-          fix $ \loop -> do
-            -- INVARIANT the slot returned here is always greater than it was
-            -- on previous iterations, unless @systemTime@ jumps backwards eg
-            (slot, leftInSlot, _slotLength) <- getPresent
+    }
+  where
+    -- when the clock becomes exhausted
+    endOfDays :: NominalDiffTime
+    endOfDays =
+        (sum . map BTime.getSlotLength) $
+        (take (fromIntegral n) . toList) $
+        futureSlotLengths future
+      where
+        NumSlots n = numSlots
 
-            let lbl = threadLabel <> " [" <> show slot <> "]"
-            void $ forkLinkedThread rr lbl $ action slot
+    -- what any method called at exactly @endOfDays@ or blocked as of
+    -- @endOfDays@ ends up doing at the exact @endOfDays@ moment
+    exhaustedM :: forall a. m a
+    exhaustedM = do
+        -- throw if this thread isn't terminated in time
+        threadDelay $ picosecondsToDiffTime 1   -- the smallest possible delay
+        throwM EndOfDaysException
 
-            threadDelay (nominalDelay leftInSlot)
-            loop
-      , waitUntilDone = atomically $ do
-            -- throw if the caller is too late
-            exn <- readTVar exnVar
-            when exn $ throwM EndOfDaysException
+    -- a 'BTime.systemTimeCurrent' that respects @endOfDays@
+    finiteSystemTimeCurrent :: m BTime.RelativeTime
+    finiteSystemTimeCurrent = do
+        t <- systemTimeCurrent
 
-            readTVar doneVar >>= check
-      }
+        -- check if clock is exhausted
+        let tFinal = BTime.RelativeTime endOfDays
+        when (t >  tFinal) $ throwM EndOfDaysException
+        when (t == tFinal) $ exhaustedM
+
+        pure t
+
+    getPresent :: m (SlotNo, NominalDiffTime, BTime.SlotLength)
+    getPresent = do
+        BTime.RelativeTime now <- finiteSystemTimeCurrent
+        pure $ futureTimeToSlot future now
+
+    blockUntilTime :: NominalDiffTime -> NominalDiffTime -> m Bool
+    blockUntilTime now later =
+        case compare now later of
+          LT -> do
+              threadDelay $ nominalDelay $ later - now
+              pure False
+          EQ -> pure False
+          GT -> pure True   -- ie " too late "
 
 -----
 

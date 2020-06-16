@@ -278,7 +278,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     -- from the wrong thread. To stop the network, wait for all the nodes'
     -- blockchain times to be done and then kill the main thread of each node,
     -- which should terminate all other threads it spawned.
-    clock <- OracularClock.new systemTime sharedRegistry numSlots future
+    let clock = OracularClock.mkOracularClock systemTime numSlots future
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
