@@ -62,6 +62,7 @@ let
         packages.lens.package.buildType = lib.mkForce "Simple";
         packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
         packages.semigroupoids.package.buildType = lib.mkForce "Simple";
+        packages.system-filepath.package.buildType = lib.mkForce "Simple";
 
         # ruby/perl dependencies cannot be cross-built for cddl tests:
         packages.ouroboros-network.flags.cddl = false;
