@@ -6,7 +6,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
-    ByronOtherHeaderEnvelopeError(..)
+    TipInfoIsEBB (..)
+  , ByronOtherHeaderEnvelopeError(..)
   ) where
 
 import           Control.Monad.Except
@@ -32,12 +33,10 @@ import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
   Envelope
 -------------------------------------------------------------------------------}
 
-type ByronTipInfo = (HeaderHash ByronBlock, IsEBB)
-
 instance HasAnnTip ByronBlock where
-  type TipInfo ByronBlock = ByronTipInfo
-  tipInfoHash _ = fst
-  getTipInfo b  = (blockHash b, byronHeaderIsEBB b)
+  type TipInfo ByronBlock = TipInfoIsEBB ByronBlock
+  tipInfoHash _ (TipInfoIsEBB h _) = h
+  getTipInfo b = TipInfoIsEBB (blockHash b) (byronHeaderIsEBB b)
 
 data ByronOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
@@ -48,13 +47,13 @@ instance BasicEnvelopeValidation ByronBlock where
   minimumPossibleSlotNo _ = SlotNo 0
 
   -- EBB shares its block number with its predecessor
-  expectedNextBlockNo _ (_, prevIsEBB) (_, curIsEBB) b =
+  expectedNextBlockNo _ (TipInfoIsEBB _ prevIsEBB) (TipInfoIsEBB _ curIsEBB) b =
      case (prevIsEBB, curIsEBB) of
        (IsNotEBB, IsEBB) -> b
        _otherwise        -> succ b
 
   -- EBB shares its slot number with its successor
-  minimumNextSlotNo _ (_, prevIsEBB) (_, curIsEBB) s =
+  minimumNextSlotNo _ (TipInfoIsEBB _ prevIsEBB) (TipInfoIsEBB _ curIsEBB) s =
       case (prevIsEBB, curIsEBB) of
         (IsEBB, IsNotEBB) -> s
         _otherwise        -> succ s

@@ -98,7 +98,7 @@ exampleHeaderState = (genesisHeaderState S.empty)
     annTip = AnnTip {
         annTipSlotNo  = 0
       , annTipBlockNo = 0
-      , annTipInfo    = (exampleHeaderHash, IsNotEBB)
+      , annTipInfo    = TipInfoIsEBB exampleHeaderHash IsNotEBB
       }
 
 exampleExtLedgerState :: ExtLedgerState ByronBlock

@@ -270,7 +270,7 @@ instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
-    <*> ((,) <$> arbitrary <*> elements [IsEBB, IsNotEBB])
+    <*> (TipInfoIsEBB <$> arbitrary <*> elements [IsEBB, IsNotEBB])
 
 instance Arbitrary (PBftState PBftByronCrypto) where
   arbitrary = do
