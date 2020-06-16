@@ -76,13 +76,12 @@ fromParsedInfo parsedInfo = MkFileInfo maxSlotNo contents
     maxSlotNo = foldMap parsedBlockInfoToMaxSlotNo parsedInfo
 
     parsedBlockInfoToMaxSlotNo :: ParsedBlockInfo blockId -> MaxSlotNo
-    parsedBlockInfoToMaxSlotNo (_, (_, blockInfo)) =
-      MaxSlotNo $ bslot blockInfo
+    parsedBlockInfoToMaxSlotNo = MaxSlotNo . bslot . pbiBlockInfo
 
     contents :: Map BlockOffset (FileBlockInfo blockId)
     contents = Map.fromList
-      [ (blockOffset, FileBlockInfo blockSize (bbid blockInfo))
-      | (blockOffset, (blockSize, blockInfo)) <- parsedInfo
+      [ (pbiBlockOffset, FileBlockInfo pbiBlockSize (bbid pbiBlockInfo))
+      | ParsedBlockInfo { pbiBlockOffset, pbiBlockSize, pbiBlockInfo } <- parsedInfo
       ]
 
 mkFileBlockInfo :: BlockSize -> blockId -> FileBlockInfo blockId

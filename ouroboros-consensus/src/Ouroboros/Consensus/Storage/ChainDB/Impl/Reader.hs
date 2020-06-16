@@ -299,25 +299,25 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     getBlockComponentFromHeader
       :: forall b'. Header blk -> BlockComponent (ChainDB m blk) b' -> m b'
     getBlockComponentFromHeader hdr = \case
-        GetBlock        -> getBlockComponent GetBlock
-        GetRawBlock     -> getBlockComponent GetRawBlock
-        GetHeader       -> return $ return hdr
-        GetRawHeader    -> return $ rawHdr
-        GetHash         -> return $ headerHash hdr
-        GetSlot         -> return $ blockSlot hdr
-        GetIsEBB        -> return $ headerToIsEBB hdr
-        GetBlockSize    -> getBlockComponent GetBlockSize
+        GetBlock      -> getBlockComponent GetBlock
+        GetRawBlock   -> getBlockComponent GetRawBlock
+        GetHeader     -> return $ return hdr
+        GetRawHeader  -> return $ rawHdr
+        GetHash       -> return $ headerHash hdr
+        GetSlot       -> return $ blockSlot hdr
+        GetIsEBB      -> return $ headerToIsEBB hdr
+        GetBlockSize  -> getBlockComponent GetBlockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap because we keep the
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
-        GetHeaderSize   -> return $ fromIntegral $ Lazy.length rawHdr
+        GetHeaderSize -> return $ fromIntegral $ Lazy.length rawHdr
         -- We don't know with which bytes the block starts, forward it.
         -- TODO When we replace 'GetNestedCtxt' with the proper type, we can
         -- probably return the right value here.
-        GetNestedCtxt n -> getBlockComponent (GetNestedCtxt n)
-        GetPure a       -> return a
-        GetApply f bc   ->
+        GetNestedCtxt -> getBlockComponent GetNestedCtxt
+        GetPure a     -> return a
+        GetApply f bc ->
           getBlockComponentFromHeader hdr f <*>
           getBlockComponentFromHeader hdr bc
       where

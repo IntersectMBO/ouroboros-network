@@ -131,7 +131,7 @@ instance TPraosCrypto sc => SerialiseHFC (CardanoEras sc) where
     where
       epochSlots = Byron.getByronEpochSlots ccfgByron
 
-  reconstructHfcPrefixLen _ = 2
+  reconstructHfcPrefixLen _ = PrefixLen 2
 
   reconstructHfcNestedCtxt _ prefix blockSize =
       case Short.index prefix 1 of
@@ -207,13 +207,13 @@ instance TPraosCrypto sc => TranslateNetworkProtocolVersion (CardanoBlock sc) wh
 
   nodeToNodeProtocolVersion _ = \case
       CardanoNodeToNodeVersion1 -> NodeToNodeV_1
-      CardanoNodeToNodeVersion2 -> error "NodeToNodeV_2"
+      CardanoNodeToNodeVersion2 -> NodeToNodeV_2
       v                         -> error $ "unsupported version: " <> show v
 
   nodeToClientProtocolVersion _ = \case
       CardanoNodeToClientVersion1 -> NodeToClientV_1
       CardanoNodeToClientVersion2 -> NodeToClientV_2
-      CardanoNodeToClientVersion3 -> error "NodeToClientV_3"
+      CardanoNodeToClientVersion3 -> NodeToClientV_3
       v                           -> error $ "unsupported version: " <> show v
 
 {-------------------------------------------------------------------------------

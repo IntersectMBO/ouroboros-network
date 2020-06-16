@@ -217,16 +217,16 @@ class ( CanHardFork xs
 
   -- | Used as the implementation of 'reconstructPrefixLen' for
   -- 'HardForkBlock'.
-  reconstructHfcPrefixLen :: proxy (Header (HardForkBlock xs)) -> Word8
+  reconstructHfcPrefixLen :: proxy (Header (HardForkBlock xs)) -> PrefixLen
   reconstructHfcPrefixLen _ =
       -- We insert two bytes at the front
-      2 + maximum (hcollapse perEra)
+      2 `addPrefixLen` maximum (hcollapse perEra)
     where
-      perEra :: NP (K Word8) xs
+      perEra :: NP (K PrefixLen) xs
       perEra = hcpure proxySingle reconstructOne
 
       reconstructOne :: forall blk. SingleEraBlock blk
-                     => K Word8 blk
+                     => K PrefixLen blk
       reconstructOne = K $ reconstructPrefixLen (Proxy @(Header blk))
 
   -- | Used as the implementation of 'reconstructNestedCtxt' for

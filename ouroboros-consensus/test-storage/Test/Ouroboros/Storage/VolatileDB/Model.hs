@@ -34,7 +34,6 @@ import           Control.Monad.Except (MonadError, throwError)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Short as Short
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -47,7 +46,8 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
-                     BlockComponent (..), extractHeader)
+                     BlockComponent (..), PrefixLen (..), extractHeader,
+                     takePrefix)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
@@ -69,14 +69,16 @@ data DBModel blockId = DBModel {
       --
       -- INVARIANT: the 'BlocksInFile' associated with the highest 'FileId'
       -- has always fewer than 'blocksPerFile' blocks.
+    , prefixLen     :: PrefixLen
     }
   deriving (Show, Generic)
 
-initDBModel :: BlocksPerFile -> DBModel blockId
-initDBModel blocksPerFile = DBModel {
+initDBModel :: BlocksPerFile -> PrefixLen -> DBModel blockId
+initDBModel blocksPerFile prefixLen = DBModel {
       blocksPerFile = blocksPerFile
     , open          = True
     , fileIndex     = Map.singleton 0 emptyFile
+    , prefixLen     = prefixLen
     }
 
 blockIndex
@@ -236,31 +238,31 @@ getBlockComponentModel
   -> DBModel blockId
   -> Either VolatileDBError (Maybe b)
 getBlockComponentModel blockComponent blockId dbm = whenOpen dbm $
-    (`extractBlockComponent` blockComponent) <$>
+    (extractBlockComponent (prefixLen dbm) blockComponent) <$>
     Map.lookup blockId (blockIndex dbm)
 
 extractBlockComponent
   :: forall m blockId b.
-     (BlockInfo blockId, ByteString)
+     PrefixLen
   -> BlockComponent (VolatileDB blockId m) b
+  -> (BlockInfo blockId, ByteString)
   -> b
-extractBlockComponent (BlockInfo {..}, bytes) = go
+extractBlockComponent prefixLen bc0 (BlockInfo {..}, bytes) = go bc0
   where
     go :: forall b'. BlockComponent (VolatileDB blockId m) b' -> b'
     go = \case
-      GetBlock        -> ()
-      GetRawBlock     -> bytes
-      GetHeader       -> ()
-      GetRawHeader    -> header
-      GetHash         -> bbid
-      GetSlot         -> bslot
-      GetIsEBB        -> bisEBB
-      GetBlockSize    -> fromIntegral $ BL.length bytes
-      GetHeaderSize   -> bheaderSize
-      GetNestedCtxt n -> Short.toShort $ BL.toStrict $
-                         BL.take (fromIntegral n) bytes
-      GetPure a       -> a
-      GetApply f bc   -> go f $ go bc
+      GetBlock      -> ()
+      GetRawBlock   -> bytes
+      GetHeader     -> ()
+      GetRawHeader  -> header
+      GetHash       -> bbid
+      GetSlot       -> bslot
+      GetIsEBB      -> bisEBB
+      GetBlockSize  -> fromIntegral $ BL.length bytes
+      GetHeaderSize -> bheaderSize
+      GetNestedCtxt -> takePrefix prefixLen bytes
+      GetPure a     -> a
+      GetApply f bc -> go f $ go bc
 
     header =
       extractHeader

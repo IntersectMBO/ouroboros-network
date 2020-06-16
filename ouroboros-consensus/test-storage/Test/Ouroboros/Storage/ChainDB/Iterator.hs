@@ -411,10 +411,13 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     epochSize :: EpochSize
     epochSize = 10
 
+    prefixLen :: PrefixLen
+    prefixLen = PrefixLen 10
+
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock chunkInfo
+        (_immDBModel, immDB) <- ImmDB.openDBMock chunkInfo prefixLen
         forM_ (Chain.toOldestFirst chain) $ \block -> case blockIsEBB block of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)

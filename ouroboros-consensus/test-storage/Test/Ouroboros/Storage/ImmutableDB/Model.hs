@@ -53,7 +53,6 @@ import           Data.Bifunctor (first)
 import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
@@ -116,14 +115,16 @@ data DBModel hash = DBModel
   , dbmChunkInfo    :: ChunkInfo
   , dbmIterators    :: Map IteratorId (IteratorModel hash)
   , dbmNextIterator :: IteratorId
+  , dbmPrefixLen    :: PrefixLen
   } deriving (Show, Generic)
 
-initDBModel :: ChunkInfo -> DBModel hash
-initDBModel chunkInfo = DBModel
+initDBModel :: ChunkInfo -> PrefixLen -> DBModel hash
+initDBModel chunkInfo prefixLen = DBModel
   { dbmSlots        = Map.empty
   , dbmChunkInfo    = chunkInfo
   , dbmIterators    = Map.empty
   , dbmNextIterator = 0
+  , dbmPrefixLen    = prefixLen
   }
 
 insertInSlot :: forall hash. HasCallStack
@@ -322,7 +323,9 @@ rollBackToTip :: forall hash. Show hash
               => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
     Origin ->
-        (initDBModel dbmChunkInfo) { dbmNextIterator = dbmNextIterator }
+        (initDBModel dbmChunkInfo dbmPrefixLen) {
+            dbmNextIterator = dbmNextIterator
+          }
 
     At (EBB epoch) ->
         dbm { dbmSlots = Map.update deleteRegular (slotNoOfEBB' dbm epoch)
@@ -562,29 +565,29 @@ deleteAfterModel tip =
     . closeAllIterators
 
 extractBlockComponent
-  :: hash
+  :: PrefixLen
+  -> hash
   -> SlotNo
   -> IsEBB
   -> ByteString
   -> BinaryBlockInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> b
-extractBlockComponent hash slot isEBB bytes binfo = \case
-    GetBlock        -> ()
-    GetRawBlock     -> bytes
-    GetHeader       -> ()
-    GetRawHeader    -> extractHeader binfo bytes
-    GetHash         -> hash
-    GetSlot         -> slot
-    GetIsEBB        -> isEBB
-    GetBlockSize    -> fromIntegral $ Lazy.length bytes
-    GetHeaderSize   -> headerSize binfo
-    GetNestedCtxt n -> Short.toShort $ Lazy.toStrict $
-                       Lazy.take (fromIntegral n) bytes
-    GetPure a       -> a
-    GetApply f bc   ->
-      extractBlockComponent hash slot isEBB bytes binfo f $
-      extractBlockComponent hash slot isEBB bytes binfo bc
+extractBlockComponent prefixLen hash slot isEBB bytes binfo = \case
+    GetBlock      -> ()
+    GetRawBlock   -> bytes
+    GetHeader     -> ()
+    GetRawHeader  -> extractHeader binfo bytes
+    GetHash       -> hash
+    GetSlot       -> slot
+    GetIsEBB      -> isEBB
+    GetBlockSize  -> fromIntegral $ Lazy.length bytes
+    GetHeaderSize -> headerSize binfo
+    GetNestedCtxt -> takePrefix prefixLen bytes
+    GetPure a     -> a
+    GetApply f bc ->
+      extractBlockComponent prefixLen hash slot isEBB bytes binfo f $
+      extractBlockComponent prefixLen hash slot isEBB bytes binfo bc
 
 getBlockComponentModel
   :: HasCallStack
@@ -605,7 +608,14 @@ getBlockComponentModel blockComponent slot dbm@DBModel{..} = do
     return $ case lookupBySlot slot (dbmRegular dbm) of
       Nothing                   -> Nothing
       Just (hash, bytes, binfo) -> Just $
-        extractBlockComponent hash slot IsNotEBB bytes binfo blockComponent
+        extractBlockComponent
+          dbmPrefixLen
+          hash
+          slot
+          IsNotEBB
+          bytes
+          binfo
+          blockComponent
 
 getEBBComponentModel
   :: HasCallStack
@@ -627,7 +637,14 @@ getEBBComponentModel blockComponent epoch dbm@DBModel {..} = do
     return $ case Map.lookup chunk (dbmEBBs dbm) of
       Nothing                   -> Nothing
       Just (hash, bytes, binfo) -> Just $
-          extractBlockComponent hash slot IsEBB bytes binfo blockComponent
+          extractBlockComponent
+            dbmPrefixLen
+            hash
+            slot
+            IsEBB
+            bytes
+            binfo
+            blockComponent
         where
           slot = slotNoOfEBB' dbm epoch
 
@@ -638,7 +655,7 @@ getBlockOrEBBComponentModel
   -> hash
   -> DBModel hash
   -> Either ImmutableDBError (Maybe b)
-getBlockOrEBBComponentModel blockComponent slot hash dbm = do
+getBlockOrEBBComponentModel blockComponent slot hash dbm@DBModel { dbmPrefixLen } = do
     -- Check that the slot is not in the future
     let inTheFuture = case forgetTipInfo <$> dbmTip dbm of
           Origin              -> True
@@ -654,12 +671,12 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
     return $ case lookupBySlotMaybe slot of
       Just (hash', bytes, binfo)
         | hash' == hash
-        -> Just $ extractBlockComponent hash slot IsNotEBB bytes binfo blockComponent
+        -> Just $ extractBlockComponent dbmPrefixLen hash slot IsNotEBB bytes binfo blockComponent
       -- Fall back to EBB
       _ | Just _ifBoundary <- mIfBoundary
         , Just (hash', bytes, binfo) <- Map.lookup chunk (dbmEBBs dbm)
         , hash' == hash
-        -> Just $ extractBlockComponent hash slot IsEBB bytes binfo blockComponent
+        -> Just $ extractBlockComponent dbmPrefixLen hash slot IsEBB bytes binfo blockComponent
         | otherwise
         -> Nothing
   where
@@ -854,17 +871,18 @@ streamAllModel
      BlockComponent (ImmutableDB hash m) b
   -> DBModel hash
   -> [b]
-streamAllModel blockComponent =
+streamAllModel blockComponent dbm@DBModel { dbmPrefixLen } =
       map toBlockComponent
     . Map.toAscList
     . dbmBlobs
+    $ dbm
   where
     toBlockComponent
       :: ((ChunkSlot, SlotNo),
           Either (hash, ByteString, BinaryBlockInfo) (hash, ByteString, BinaryBlockInfo))
       -> b
     toBlockComponent ((_chunkSlot, slotNo), ebbOrBlock) =
-        extractBlockComponent hash slotNo isEBB bytes binfo blockComponent
+        extractBlockComponent dbmPrefixLen hash slotNo isEBB bytes binfo blockComponent
       where
         (isEBB, hash, bytes, binfo) = case ebbOrBlock of
           Left  (h, b, bi) -> (IsEBB,    h, b, bi)
@@ -891,7 +909,7 @@ iteratorNextModel itId blockComponent dbm@DBModel {..} =
             }
 
           res = IteratorResult $
-            extractBlockComponent hash slot isEBB bytes binfo blockComponent
+            extractBlockComponent dbmPrefixLen hash slot isEBB bytes binfo blockComponent
 
           (slot, isEBB) = case epochOrSlot of
             Left epoch  -> (slotNoOfEBB' dbm epoch, IsEBB)

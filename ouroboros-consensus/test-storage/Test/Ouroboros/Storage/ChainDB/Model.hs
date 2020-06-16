@@ -1,3 +1,4 @@
+{-# LANGUAGE DefaultSignatures    #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -60,7 +61,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , ledgerCursorState
   , ledgerCursorMove
     -- * ModelSupportsBlock
-  , ModelSupportsBlock
+  , ModelSupportsBlock (..)
     -- * Exported for testing purposes
   , between
   , blocks
@@ -84,7 +85,6 @@ import           Codec.Serialise (Serialise, serialise)
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (isInfixOf, isPrefixOf, sortBy)
@@ -123,6 +123,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      LedgerCursorFailure (..), StreamFrom (..), StreamTo (..),
                      UnknownRange (..), validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (ReconstructNestedCtxt (..))
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..), takePrefix)
 
 type IteratorId = Int
 
@@ -500,25 +503,25 @@ iteratorNext itrId blockComponent m =
       Nothing      -> error "iteratorNext: unknown iterator ID"
 
 getBlockComponent
-  :: (ModelSupportsBlock blk, Monad m)
+  :: forall m blk b. (ModelSupportsBlock blk, Monad m)
   => blk -> BlockComponent (ChainDB m blk) b -> b
 getBlockComponent blk = \case
-    GetBlock        -> return blk
-    GetRawBlock     -> serialise blk
+    GetBlock      -> return blk
+    GetRawBlock   -> serialise blk
 
-    GetHeader       -> return $ getHeader blk
-    GetRawHeader    -> serialise $ getHeader blk
+    GetHeader     -> return $ getHeader blk
+    GetRawHeader  -> serialise $ getHeader blk
 
-    GetHash         -> Block.blockHash blk
-    GetSlot         -> Block.blockSlot blk
-    GetIsEBB        -> headerToIsEBB (getHeader blk)
-    GetBlockSize    -> fromIntegral $ Lazy.length $ serialise blk
-    GetHeaderSize   -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedCtxt n -> Short.toShort $ Lazy.toStrict $
-                       Lazy.take (fromIntegral n) $ serialise blk
-
-    GetPure a       -> a
-    GetApply f bc   -> getBlockComponent blk f $ getBlockComponent blk bc
+    GetHash       -> Block.blockHash blk
+    GetSlot       -> Block.blockSlot blk
+    GetIsEBB      -> headerToIsEBB (getHeader blk)
+    GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
+    GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
+    GetNestedCtxt -> takePrefix prefixLen $ serialise blk
+    GetPure a     -> a
+    GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
+  where
+    prefixLen = modelGetPrefixLen (Proxy @blk)
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.
@@ -627,16 +630,21 @@ ledgerCursorMove cfg lcId pt m@Model { ledgerCursors = lcs }
 
 -- | Functionality the block needs to support so that it can be used in the
 -- 'Model'.
---
--- The real ChainDB takes these as function arguments. For convenience (we
--- don't want to pass around an environment throughout the model and the state
--- machine tests), we bundle them in a testing-only type class.
 class ( HasHeader blk
       , GetHeader blk
       , HasHeader (Header blk)
       , Serialise blk
       , Serialise (Header blk)
-      ) => ModelSupportsBlock blk
+      ) => ModelSupportsBlock blk where
+  modelGetPrefixLen :: Proxy blk -> PrefixLen
+
+  -- Default implementation in terms of @ReconstructNestedCtxt Header blk@
+  -- instead of requiring it as a constraint, so that test blocks not
+  -- implementating the constraint can provide a dummy implementation.
+  default modelGetPrefixLen
+    :: ReconstructNestedCtxt Header blk
+    => Proxy blk -> PrefixLen
+  modelGetPrefixLen _ = reconstructPrefixLen (Proxy @(Header blk))
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

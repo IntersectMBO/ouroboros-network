@@ -28,7 +28,6 @@ import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
-import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -373,7 +372,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           stepIterator curChunkInfo iteratorState
           return $ IteratorResult b
   where
-    ImmutableDBEnv { chunkInfo } = dbEnv
+    ImmutableDBEnv { chunkInfo, prefixLen } = dbEnv
 
     getBlockComponent
       :: Handle h
@@ -394,8 +393,8 @@ iteratorNextImpl dbEnv it@IteratorHandle
           readNextBlock  itChunkHandle entryWithBlockSize itChunk
         GetRawHeader    ->
           readNextHeader itChunkHandle entry
-        GetNestedCtxt n ->
-          readNestedCtxt itChunkHandle entry n
+        GetNestedCtxt   ->
+          readNestedCtxt itChunkHandle entry
         GetBlock        ->
           return ()
         GetHeader       ->
@@ -444,12 +443,12 @@ iteratorNextImpl dbEnv it@IteratorHandle
     readNestedCtxt
       :: Handle h
       -> Secondary.Entry hash
-      -> Word8
       -> m ShortByteString
-    readNestedCtxt eHnd Secondary.Entry { blockOffset } n =
+    readNestedCtxt eHnd Secondary.Entry { blockOffset } =
         Short.toShort . Lazy.toStrict <$>
-          hGetExactlyAt hasFS eHnd (fromIntegral n) offset
+          hGetExactlyAt hasFS eHnd size offset
       where
+        size   = fromIntegral (getPrefixLen prefixLen)
         offset = AbsOffset $ Secondary.unBlockOffset blockOffset
 
     -- | Move the iterator to the next position that can be read from,

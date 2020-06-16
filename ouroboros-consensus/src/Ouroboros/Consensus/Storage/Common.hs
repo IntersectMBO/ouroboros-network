@@ -17,6 +17,8 @@ module Ouroboros.Consensus.Storage.Common (
   , castBlockComponent
     -- * Re-exports
   , SizeInBytes
+  , PrefixLen (..)
+  , takePrefix
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -30,6 +32,8 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (PrefixLen (..), takePrefix)
 
 {-------------------------------------------------------------------------------
   Indexing
@@ -91,8 +95,7 @@ data BlockComponent db a where
   GetIsEBB      :: BlockComponent db IsEBB
   GetBlockSize  :: BlockComponent db Word32
   GetHeaderSize :: BlockComponent db Word16
-  GetNestedCtxt :: Word8
-                -> BlockComponent db ShortByteString
+  GetNestedCtxt :: BlockComponent db ShortByteString
   GetPure       :: a
                 -> BlockComponent db a
   GetApply      :: BlockComponent db (a -> b)
@@ -116,15 +119,15 @@ castBlockComponent
   => BlockComponent db1 b
   -> BlockComponent db2 b
 castBlockComponent = \case
-    GetBlock        -> GetBlock
-    GetRawBlock     -> GetRawBlock
-    GetHeader       -> GetHeader
-    GetRawHeader    -> GetRawHeader
-    GetHash         -> GetHash
-    GetSlot         -> GetSlot
-    GetIsEBB        -> GetIsEBB
-    GetBlockSize    -> GetBlockSize
-    GetHeaderSize   -> GetHeaderSize
-    GetNestedCtxt n -> GetNestedCtxt n
-    GetPure a       -> GetPure a
-    GetApply f bc   -> GetApply (castBlockComponent f) (castBlockComponent bc)
+    GetBlock      -> GetBlock
+    GetRawBlock   -> GetRawBlock
+    GetHeader     -> GetHeader
+    GetRawHeader  -> GetRawHeader
+    GetHash       -> GetHash
+    GetSlot       -> GetSlot
+    GetIsEBB      -> GetIsEBB
+    GetBlockSize  -> GetBlockSize
+    GetHeaderSize -> GetHeaderSize
+    GetNestedCtxt -> GetNestedCtxt
+    GetPure a     -> GetPure a
+    GetApply f bc -> GetApply (castBlockComponent f) (castBlockComponent bc)

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -104,8 +105,7 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Builder as BS
-import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
+import           Data.ByteString.Short (ShortByteString)
 import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -122,7 +122,8 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
                      runWithTempRegistry)
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     PrefixLen (..), takePrefix)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -141,6 +142,7 @@ data VolatileDbArgs m h blockId e = VolatileDbArgs
     , maxBlocksPerFile :: BlocksPerFile
     , tracer           :: Tracer m (TraceEvent e blockId)
     , parser           :: Parser e m blockId
+    , prefixLen        :: PrefixLen
     }
 
 openDB :: ( HasCallStack
@@ -155,11 +157,12 @@ openDB VolatileDbArgs {..} = runWithTempRegistry $ do
     ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
     stVar <- lift $ RAWLock.new (DbOpen ost)
     let env = VolatileDBEnv {
-            hasFS          = hasFS
-          , varInternalState  = stVar
+            hasFS            = hasFS
+          , varInternalState = stVar
           , maxBlocksPerFile = maxBlocksPerFile
           , parser           = parser
           , tracer           = tracer
+          , prefixLen        = prefixLen
           }
         volDB = VolatileDB {
             closeDB             = closeDBImpl             env
@@ -203,28 +206,25 @@ getBlockComponentImpl env blockComponent blockId =
       -> BlockComponent (VolatileDB blockId m) b'
       -> m b'
     getBlockComponent hasFS ib = \case
-        GetHash         -> return blockId
-        GetSlot         -> return bslot
-        GetIsEBB        -> return bisEBB
-        GetBlockSize    -> return $ fromIntegral $ unBlockSize ibBlockSize
-        GetHeaderSize   -> return bheaderSize
-        GetPure a       -> return a
-        GetApply f bc   ->
+        GetHash       -> return blockId
+        GetSlot       -> return bslot
+        GetIsEBB      -> return bisEBB
+        GetBlockSize  -> return $ fromIntegral $ unBlockSize ibBlockSize
+        GetHeaderSize -> return bheaderSize
+        GetPure a     -> return a
+        GetApply f bc ->
           getBlockComponent hasFS ib f <*> getBlockComponent hasFS ib bc
-        GetBlock        -> return ()
-        GetRawBlock     -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetBlock      -> return ()
+        GetRawBlock   -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = unBlockSize ibBlockSize
               offset = ibBlockOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetHeader       -> return ()
-        GetRawHeader    -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetHeader     -> return ()
+        GetRawHeader  -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetNestedCtxt n -> withFile hasFS ibFile ReadMode $ \hndl -> do
-          let offset = ibBlockOffset
-          bytes <- hGetExactlyAt hasFS hndl (fromIntegral n) (AbsOffset offset)
-          return $ Short.toShort $ Lazy.toStrict bytes
+        GetNestedCtxt -> return ibNestedCtxt
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib
 
@@ -249,7 +249,7 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
              -> BlockInfo blockId
              -> BS.Builder
              -> m ()
-putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
+putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer, prefixLen }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
     appendOpenState env $ \hasFS -> do
@@ -257,16 +257,23 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
       if Map.member bbid currentRevMap then
         lift $ lift $ traceWith tracer $ BlockAlreadyHere bbid
       else do
-        bytesWritten <- lift $ lift $ hPut hasFS currentWriteHandle builder
-        fileIsFull <- state $ updateStateAfterWrite bytesWritten
+        let bytes = BS.toLazyByteString builder
+            -- The builder will likely consist of a single chunk as the
+            -- annotation of the block is used here, which is strict. Related:
+            -- #1215. Nevertheless, force @nestedCtxt@ so that we no longer
+            -- hold on to @bytes@ while it is written to disk.
+            !nestedCtxt = takePrefix prefixLen bytes
+        bytesWritten <- lift $ lift $ hPutAll hasFS currentWriteHandle bytes
+        fileIsFull <- state $ updateStateAfterWrite bytesWritten nestedCtxt
         when fileIsFull $ nextFile hasFS
   where
     updateStateAfterWrite
       :: forall h.
          Word64
+      -> ShortByteString
       -> OpenState blockId h
       -> (Bool, OpenState blockId h)  -- ^ True: current file is full
-    updateStateAfterWrite bytesWritten st@OpenState{..} =
+    updateStateAfterWrite bytesWritten nestedCtxt st@OpenState{..} =
         (FileInfo.isFull maxBlocksPerFile fileInfo', st')
       where
         fileInfo = fromMaybe
@@ -281,6 +288,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
           , ibBlockOffset  = currentWriteOffset
           , ibBlockSize    = BlockSize bytesWritten
           , ibBlockInfo    = blockInfo
+          , ibNestedCtxt   = nestedCtxt
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' currentRevMap
         st' = st {

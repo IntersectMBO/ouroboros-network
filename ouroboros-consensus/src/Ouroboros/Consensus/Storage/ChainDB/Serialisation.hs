@@ -1,19 +1,21 @@
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Serialisation for on-disk storage.
 --
@@ -44,6 +46,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
   , decodeTrivialSerialisedHeader
     -- * Reconstruct nested type
   , ReconstructNestedCtxt (..)
+  , PrefixLen (..)
+  , addPrefixLen
+  , takePrefix
     -- * Re-exported for convenience
   , SizeInBytes
     -- * Exported for the benefit of tests
@@ -57,10 +62,13 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.SOP.BasicFunctors
 import           Data.Word
+import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
@@ -272,11 +280,11 @@ decodeTrivialSerialisedHeader =
 -------------------------------------------------------------------------------}
 
 class HasNestedContent f blk => ReconstructNestedCtxt f blk where
-  -- | Number of bytes required to reconstruct the nested type
+  -- | Number of bytes required to reconstruct the nested context.
   --
   -- This will be the /minimum/ length of the 'ShortByteString' passed to
   -- 'reconstructNestedCtxt'.
-  reconstructPrefixLen :: proxy (f blk) -> Word8
+  reconstructPrefixLen :: proxy (f blk) -> PrefixLen
 
   -- | Reconstruct the type of nested contents
   --
@@ -291,8 +299,8 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
 
   default reconstructPrefixLen ::
         TrivialDependency (NestedCtxt_ blk f)
-     => proxy (f blk) -> Word8
-  reconstructPrefixLen _ = 0
+     => proxy (f blk) -> PrefixLen
+  reconstructPrefixLen _ = PrefixLen 0
     where
       _ = keepRedundantConstraint (Proxy @(TrivialDependency (NestedCtxt_ blk f)))
 
@@ -303,6 +311,22 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
     -> SizeInBytes      -- ^ Block size
     -> SomeBlock (NestedCtxt f) blk
   reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
+
+-- | Number of bytes from the start of a block needed to reconstruct the
+-- nested context.
+--
+-- See 'reconstructPrefixLen'.
+newtype PrefixLen = PrefixLen {
+      getPrefixLen :: Word8
+    }
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+
+addPrefixLen :: Word8 -> PrefixLen -> PrefixLen
+addPrefixLen m (PrefixLen n) = PrefixLen (m + n)
+
+takePrefix :: PrefixLen -> Lazy.ByteString -> ShortByteString
+takePrefix (PrefixLen n) =
+    Short.toShort . Lazy.toStrict . Lazy.take (fromIntegral n)
 
 {-------------------------------------------------------------------------------
   Forwarding instances

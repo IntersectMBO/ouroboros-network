@@ -20,15 +20,24 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..), 
 
 -- | Enumeration of node to node protocol versions.
 --
-data NodeToNodeVersion = NodeToNodeV_1
+data NodeToNodeVersion
+    = NodeToNodeV_1
+    | NodeToNodeV_2
+    -- ^ Changes:
+    --
+    -- * Enable block size hints for Byron headers in ChainSync
+    --
+    -- * Enable @CardanoNodeToNodeVersion2@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_1  = CBOR.TInt 1
+    encodeTerm NodeToNodeV_2  = CBOR.TInt 2
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
+    decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n

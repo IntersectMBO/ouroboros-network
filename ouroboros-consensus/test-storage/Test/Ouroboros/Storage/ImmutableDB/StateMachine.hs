@@ -178,7 +178,7 @@ allComponents = (,,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
-    <*> GetNestedCtxt 10
+    <*> GetNestedCtxt
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents =
@@ -1196,6 +1196,7 @@ instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
 instance ToExpr r => ToExpr (S.WithOrigin r)
 instance ToExpr BinaryBlockInfo
 instance ToExpr hash => ToExpr (InSlot hash)
+instance ToExpr PrefixLen
 instance ToExpr (DBModel Hash)
 
 instance ToExpr FsError where
@@ -1209,6 +1210,10 @@ instance ToExpr (Model m Concrete)
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
+
+-- | The value for 'PrefixLen' used throughout this testsuite
+testPrefixLen :: PrefixLen
+testPrefixLen = PrefixLen 10
 
 -- | Show minimal examples for each of the generated tags
 showLabelledExamples'
@@ -1234,7 +1239,7 @@ showLabelledExamples' mbReplay numTests focus chunkInfo = do
         collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
           property True
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo
+    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
 
 showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
@@ -1247,7 +1252,7 @@ prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
         $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
         $ prop
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo
+    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
 
 test :: Index.CacheConfig
      -> ChunkInfo
@@ -1276,6 +1281,7 @@ test cacheConfig chunkInfo cmds = do
             , cacheConfig
             , valPol   = ValidateMostRecentChunk
             , parser
+            , prefixLen = testPrefixLen
             }
 
       (hist, model, res, trace) <- bracket
@@ -1292,7 +1298,7 @@ test cacheConfig chunkInfo cmds = do
                 , varDB
                 , args
                 }
-              sm' = sm env (initDBModel chunkInfo)
+              sm' = sm env (initDBModel chunkInfo testPrefixLen)
 
           (hist, model, res) <- QSM.runCommands' sm' cmds
 

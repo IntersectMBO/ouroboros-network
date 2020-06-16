@@ -231,7 +231,7 @@ allComponents = (,,,,,,,,,)
     <*> GetIsEBB
     <*> GetBlockSize
     <*> GetHeaderSize
-    <*> GetNestedCtxt 10
+    <*> GetNestedCtxt
 
 -- | 'AllComponentsM' instantiated to 'Identity'.
 type AllComponents blk = AllComponentsM Identity blk

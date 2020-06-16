@@ -15,7 +15,6 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.Proxy
-import           Data.Word (Word8)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HasHeader,
                      HeaderHash, SlotNo)
@@ -48,25 +47,22 @@ translateToRawDB ccfg = go
   where
     go :: forall b'. BlockComponent (ChainDB m blk) b' -> BlockComponent db b'
     go = \case
-      GetBlock        -> parseBlock ccfg <$> getBlockRef <*> GetRawBlock
-      GetRawBlock     -> GetRawBlock
-      GetHeader       -> parseHeader ccfg
-                           <$> getBlockRef
-                           <*> GetNestedCtxt prefixLen
-                           <*> GetBlockSize
-                           <*> GetRawHeader
-      GetRawHeader    -> GetRawHeader
-      GetHash         -> GetHash
-      GetSlot         -> GetSlot
-      GetIsEBB        -> GetIsEBB
-      GetBlockSize    -> GetBlockSize
-      GetHeaderSize   -> GetHeaderSize
-      GetNestedCtxt n -> GetNestedCtxt n
-      GetPure a       -> GetPure a
-      GetApply f bc   -> GetApply (go f) (go bc)
-
-    prefixLen :: Word8
-    prefixLen = reconstructPrefixLen (Proxy @(Header blk))
+      GetBlock      -> parseBlock ccfg <$> getBlockRef <*> GetRawBlock
+      GetRawBlock   -> GetRawBlock
+      GetHeader     -> parseHeader ccfg
+                         <$> getBlockRef
+                         <*> GetNestedCtxt
+                         <*> GetBlockSize
+                         <*> GetRawHeader
+      GetRawHeader  -> GetRawHeader
+      GetHash       -> GetHash
+      GetSlot       -> GetSlot
+      GetIsEBB      -> GetIsEBB
+      GetBlockSize  -> GetBlockSize
+      GetHeaderSize -> GetHeaderSize
+      GetNestedCtxt -> GetNestedCtxt
+      GetPure a     -> GetPure a
+      GetApply f bc -> GetApply (go f) (go bc)
 
 getBlockRef :: DBHeaderHash db ~ HeaderHash blk
             => BlockComponent db (BlockRef blk)

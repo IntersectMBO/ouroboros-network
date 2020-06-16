@@ -254,6 +254,7 @@ openDB ImmDbArgs {..} = do
       , cacheConfig = immCacheConfig
       , valPol      = immValidation
       , parser      = parser
+      , prefixLen   = reconstructPrefixLen (Proxy @(Header blk))
       }
     parser = ImmDB.chunkFileParser immHasFS (decodeDisk immCodecConfig)
       immGetBinaryBlockInfo immCheckIntegrity

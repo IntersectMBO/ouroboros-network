@@ -39,6 +39,7 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
                      allocateTemp, modifyWithTempRegistry)
 
+import           Ouroboros.Consensus.Storage.Common (PrefixLen)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -55,6 +56,7 @@ data VolatileDBEnv m blockId = forall h e. Eq h => VolatileDBEnv {
       hasFS            :: !(HasFS m h)
     , varInternalState :: !(RAWLock m (InternalState blockId h))
     , maxBlocksPerFile :: !BlocksPerFile
+    , prefixLen        :: !PrefixLen
     , parser           :: !(Parser e m blockId)
     , tracer           :: !(Tracer m (TraceEvent e blockId))
     }
@@ -382,8 +384,8 @@ mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files = do
       let fileInfo        = FileInfo.fromParsedInfo acceptedBlocks
           currentMap'     = Index.insert fd fileInfo currentMap
           currentSuccMap' = foldl'
-            (\succMap (_, (_, blockInfo)) ->
-              insertMapSet succMap (bbid blockInfo, bpreBid blockInfo))
+            (\succMap ParsedBlockInfo { pbiBlockInfo } ->
+              insertMapSet succMap (bbid pbiBlockInfo, bpreBid pbiBlockInfo))
             currentSuccMap
             acceptedBlocks
 
@@ -447,12 +449,18 @@ addToReverseIndex file = \revMap -> go revMap []
               , Just (DuplicatedBlock bbid alreadyExistsHere file, offset)
               )
         where
-          (offset, (size, blockInfo@BlockInfo { bbid })) = parsedBlock
+          ParsedBlockInfo {
+              pbiBlockOffset = offset
+            , pbiBlockSize   = size
+            , pbiBlockInfo   = blockInfo@BlockInfo { bbid }
+            , pbiNestedCtxt  = nestedCtxt
+            } = parsedBlock
           internalBlockInfo = InternalBlockInfo {
               ibFile         = file
             , ibBlockOffset  = offset
             , ibBlockSize    = size
             , ibBlockInfo    = blockInfo
+            , ibNestedCtxt   = nestedCtxt
             }
 
     -- | Insert the value at the key returning the updated map, unless there
