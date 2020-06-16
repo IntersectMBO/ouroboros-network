@@ -65,6 +65,8 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+import           Ouroboros.Consensus.HardFork.History (Bound (..),
+                     EraParams (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -192,8 +194,8 @@ instance ValidateEnvelope BlockA where
 data instance LedgerState BlockA = LgrA {
       lgrA_tip :: Point BlockA
 
-      -- | The confirmed transition, and when it was confirmed
-    , lgrA_transition :: Maybe (SlotNo, EpochNo)
+      -- | The 'SlotNo' of the block containing the 'InitiateAtoB' transaction
+    , lgrA_transition :: Maybe SlotNo
     }
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
 
@@ -280,69 +282,10 @@ instance LedgerSupportsMempool BlockA where
 
   type ApplyTxErr BlockA = Void
 
-  applyTx (ei, ledgerConfig) (TxA _ tx) (Ticked sno st) =
+  applyTx _ (TxA _ tx) (Ticked sno st) =
       case tx of
         InitiateAtoB -> do
-          let -- note that these @ei@ invocations are all at @sno@ or earlier,
-              -- so we should see no 'PastHorizonException'
-              tipEpoch          = runEI epochInfoEpoch sno
-              firstSlotTipEpoch = runEI epochInfoFirst tipEpoch
-              epochSizeTipEpoch = runEI epochInfoSize  tipEpoch
-
-              -- The ledger must report the scheduled transition to the next
-              -- era as soon as the block containing this transaction is
-              -- immutable (that is, at least @k@ blocks have come after) --
-              -- this happens elsewhere in the corresponding 'SingleEraBlock'
-              -- instance. It must not report it sooner than that because the
-              -- consensus layer requires that conversions about time (when
-              -- successful) must not be subject to rollback.
-              --
-              -- Consensus /also/ insists that as long as the transition to the
-              -- next era is not yet known (ie not yet determined by an
-              -- immutable block), there is a safe zone that extends past the
-              -- tip of the ledger in which we guarantee the next era will not
-              -- begin. This means that we must have an additional
-              -- @safeFromTipA k@ blocks /after/ reporting the transition and
-              -- /before/ the start of the next era.
-              --
-              -- Thus, we schedule the next era to begin with the first
-              -- upcoming epoch that starts /after/ we're guaranteed to see
-              -- both the aforementioned @k@ additional blocks and also a
-              -- further @safeFromTipA k@ slots after the last of those.
-
-              -- The last slot that must be in the current era
-              firstPossibleLastSlotThisEra =
-                  History.addSlots (stabilityWindowA k + safeFromTipA k) sno
-
-              -- The 'EpochNo' corresponding to 'firstPossibleLastSlotThisEra'
-              --
-              -- NOTE: We cannot use 'EpochInfo' for this. The 'EpochInfo'
-              -- only allows us to look ahead as far as the safe zone allows,
-              -- but here we are, almost by definition, looking further ahead
-              -- than that (stability window + safe zone).
-              --
-              -- (Once we construct an 'EpochInfo' with the known transition, it
-              -- would allow us to look this far ahead, but we cannot use it
-              -- to /determine/ the transition point.)
-              lastEpochThisEra =
-                  History.addEpochs
-                    (History.countSlots
-                       firstPossibleLastSlotThisEra firstSlotTipEpoch
-                     `div` unEpochSize epochSizeTipEpoch)
-                    tipEpoch
-
-              -- The first epoch that may be in the next era (recall: eras are
-              -- epoch-aligned)
-              firstEpochNextEra = succ lastEpochThisEra
-
-          return $ Ticked sno $ st {
-              lgrA_transition = Just (sno, firstEpochNextEra)
-            }
-    where
-      k = lcfgA_k ledgerConfig
-
-      runEI :: (EpochInfo Identity -> a -> Identity b) -> a -> b
-      runEI f x = runIdentity $ f ei x
+          return $ Ticked sno $ st { lgrA_transition = Just sno }
 
   reapplyTx = applyTx
 
@@ -400,9 +343,17 @@ instance ReconstructNestedCtxt Header BlockA
   -- Use defaults
 
 instance SingleEraBlock BlockA where
-  singleEraInfo _     = SingleEraInfo "A"
-  singleEraTransition = \cfg st -> do
-      (confirmedInSlot, transition) <- lgrA_transition st
+  singleEraInfo _ = SingleEraInfo "A"
+
+  singleEraTransition cfg EraParams{..} eraStart st = do
+      confirmedInSlot <- lgrA_transition st
+
+      -- The ledger must report the scheduled transition to the next era as soon
+      -- as the block containing this transaction is immutable (that is, at
+      -- least @k@ blocks have come after) -- this happens elsewhere in the
+      -- corresponding 'SingleEraBlock' instance. It must not report it sooner
+      -- than that because the consensus layer requires that conversions about
+      -- time (when successful) must not be subject to rollback.
       let confirmationDepth =
             case ledgerTipSlot st of
               Origin -> error "impossible"
@@ -410,7 +361,42 @@ instance SingleEraBlock BlockA where
                           then error "impossible"
                           else History.countSlots s confirmedInSlot
       guard $ confirmationDepth >= stabilityWindowA (lcfgA_k cfg)
-      return transition
+
+      -- Consensus /also/ insists that as long as the transition to the next era
+      -- is not yet known (ie not yet determined by an immutable block), there
+      -- is a safe zone that extends past the tip of the ledger in which we
+      -- guarantee the next era will not begin. This means that we must have an
+      -- additional @safeFromTipA k@ blocks /after/ reporting the transition and
+      -- /before/ the start of the next era.
+      --
+      -- Thus, we schedule the next era to begin with the first upcoming epoch
+      -- that starts /after/ we're guaranteed to see both the aforementioned @k@
+      -- additional blocks and also a further @safeFromTipA k@ slots after the
+      -- last of those.
+
+      let -- The last slot that must be in the current era
+          firstPossibleLastSlotThisEra =
+            History.addSlots
+              (stabilityWindowA k + safeFromTipA k)
+              confirmedInSlot
+
+          -- The 'EpochNo' corresponding to 'firstPossibleLastSlotThisEra'
+          lastEpochThisEra = slotToEpoch firstPossibleLastSlotThisEra
+
+          -- The first epoch that may be in the next era
+          -- (recall: eras are epoch-aligned)
+          firstEpochNextEra = succ lastEpochThisEra
+
+      return firstEpochNextEra
+   where
+      k = lcfgA_k cfg
+
+      -- Slot conversion (valid for slots in this era only)
+      slotToEpoch :: SlotNo -> EpochNo
+      slotToEpoch s =
+          History.addEpochs
+            (History.countSlots s (boundSlot eraStart) `div` unEpochSize eraEpochSize)
+            (boundEpoch eraStart)
 
 instance HasTxs BlockA where
   extractTxs = blkA_body

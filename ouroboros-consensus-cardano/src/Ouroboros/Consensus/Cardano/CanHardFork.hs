@@ -22,10 +22,16 @@ import           Control.Monad.Reader (runReader)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.ProtocolConstants as CC
+import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Chain.Update.Validation.Endorsement as CC.Update
+import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hash as Hash
 import qualified Cardano.Crypto.Hashing as Hashing
@@ -35,6 +41,9 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.History (Bound (..),
+                     EraParams (..))
+import qualified Ouroboros.Consensus.HardFork.History.Util as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
@@ -44,6 +53,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), RequiringBoth (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
+import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Node ()
 import           Ouroboros.Consensus.Protocol.PBFT (PBft, PBftCrypto)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
@@ -74,19 +84,126 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 import           Ouroboros.Consensus.Cardano.Block
 
 {-------------------------------------------------------------------------------
+  Figure out the transition point for Byron
+
+  The Byron ledger defines the update 'State' in
+  "Cardano.Chain.Update.Validation.Interface". The critical piece of state we
+  need is
+
+  > candidateProtocolUpdates :: ![CandidateProtocolUpdate]
+
+  which are the update proposals that have been voted on, accepted, and
+  endorsed, and now need to become stable. In `tryBumpVersion`
+  ("Cardano.Chain.Update.Validation.Interface.ProtocolVersionBump") we
+  find the candidates that are at least 'kUpdateStabilityParam' (@== 4k@) deep,
+  and then construct
+
+  > State
+  > { nextProtocolVersion    = cpuProtocolVersion
+  > , nextProtocolParameters = cpuProtocolParameters
+  > }
+
+  (with 'State' from "Cardano.Chain.Update.Validation.Interface.ProtocolVersionBump")
+  where 'cpuProtocolVersion'/'cpuProtocolParameters' are the version and
+  parameters from the update. This then ends up in the following callstack
+
+  > applyChainTick
+  > |
+  > \-- epochTransition
+  >     |
+  >     \-- registerEpoch
+  >         |
+  >         \-- tryBumpVersion
+
+  Now, if this is changing the major version of the protocol, then this actually
+  indicates the transition to Shelley, and the Byron 'applyChainTick' won't
+  actually happen. Instead, in 'singleEraTransition' we will report the
+  'EpochNo' of the transition as soon as it's @2k@ (not @4k@!) deep: in other
+  words, as soon as it is stable; at this point, the HFC will do the rest.
+
+  A slightly subtle point is that the Byron ledger does not record any
+  information about /past/ updates to the protocol parameters, and so if we
+  /were/ to ask the Byron ledger /after/ the update when the transition is
+  going to take place (did take place), it will say 'Nothing': transition not
+  yet known. In practice this won't matter, as it will have been translated to
+  a Shelley ledger at that point.
+-------------------------------------------------------------------------------}
+
+byronTransition :: PartialLedgerConfig ByronBlock
+                -> EraParams
+                -> Bound
+                -> LedgerState ByronBlock
+                -> Maybe EpochNo
+byronTransition ByronPartialLedgerConfig{..}
+                EraParams{..}
+                eraStart
+                st@ByronLedgerState{..} =
+      fmap cpuEpoch
+    . latest
+    . filter isStable
+    . CC.Update.candidateProtocolUpdates
+    . CC.cvsUpdateState
+    $ byronLedgerState
+  where
+    k :: CC.BlockCount
+    k = CC.Genesis.gdK $ CC.Genesis.configGenesisData byronLedgerConfig
+
+    stableAfter, takesEffectAfter :: Word64
+    stableAfter      = CC.unSlotCount $ CC.kSlotSecurityParam    k
+    takesEffectAfter = CC.unSlotCount $ CC.kUpdateStabilityParam k
+
+    cpuSlot :: CC.Update.CandidateProtocolUpdate -> SlotNo
+    cpuSlot = Byron.fromByronSlotNo . CC.Update.cpuSlot
+
+    -- This follows the same structure as the computation in the A/B test. Let
+    -- @s@ be the slot the update proposal was endorsed (gathered enough
+    -- endorsements). Note that the very first slot in which the transition
+    -- /could/ occur is @s + 1@; adding the required stability, the first slot
+    -- in which the transition could occur is @s + 4k + 1@. This means that the
+    -- last slot which /must/ be in /this/ era is @s + 4k@. Hence the last
+    -- /epoch/ that must be in this era is @epoch (s + 4k)@, and the first epoch
+    -- of the /next/ era is @succ (epoch (s + 4k))@.
+    cpuEpoch :: CC.Update.CandidateProtocolUpdate -> EpochNo
+    cpuEpoch upd = succ (slotToEpoch $ History.addSlots takesEffectAfter (cpuSlot upd))
+
+    -- Slot conversion (valid for slots in this era only)
+    slotToEpoch :: SlotNo -> EpochNo
+    slotToEpoch s =
+        History.addEpochs
+          (History.countSlots s (boundSlot eraStart) `div` unEpochSize eraEpochSize)
+          (boundEpoch eraStart)
+
+    isStable :: CC.Update.CandidateProtocolUpdate -> Bool
+    isStable upd = endorsementDepth >= stableAfter
+      where
+        endorsedInSlot :: SlotNo
+        endorsedInSlot = cpuSlot upd
+
+        -- The impossible cases are impossible because the ledger contains
+        -- at least the block containing the update proposal, and hence cannot
+        -- be empty or have a tip /before/ the slot number of that block.
+        endorsementDepth :: Word64
+        endorsementDepth =
+            case ledgerTipSlot st of
+              Origin -> error "byronTransition: impossible"
+              At s   -> if s < endorsedInSlot
+                          then error "byronTransition: impossible"
+                          else History.countSlots s endorsedInSlot
+
+    -- 'tryBumpVersion' assumes head of the list is the newest, so we do too
+    latest :: [CC.Update.CandidateProtocolUpdate]
+           -> Maybe CC.Update.CandidateProtocolUpdate
+    latest (newest:_) = Just newest
+    latest []         = Nothing
+
+{-------------------------------------------------------------------------------
   SingleEraBlock Byron
 -------------------------------------------------------------------------------}
 
 instance SingleEraBlock ByronBlock where
-  -- | TODO Currently we hard-code the transition in the partial ledger config
-  -- for testing purposes.
-  --
-  -- This will be replaced with a proper implementation that looks for the
-  -- right transaction in the ledger. See:
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
-  singleEraTransition pcfg _ledgerState =
+  singleEraTransition pcfg eraParams eraStart ledgerState =
       case transitionEpoch pcfg of
-        NoHardCodedTransition       -> Nothing
+        NoHardCodedTransition -> byronTransition pcfg eraParams eraStart ledgerState
         HardCodedTransitionAt epoch -> Just epoch
 
   singleEraInfo _ = SingleEraInfo {
@@ -124,7 +241,7 @@ instance HasPartialLedgerConfig ByronBlock where
 
 instance TPraosCrypto sc => SingleEraBlock (ShelleyBlock sc) where
   -- No transition from Shelley to Goguen yet
-  singleEraTransition _cfg _st = Nothing
+  singleEraTransition _cfg _eraParams _eraStart _st = Nothing
 
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Shelley"

@@ -283,7 +283,7 @@ instance ReconstructNestedCtxt Header BlockB
 
 instance SingleEraBlock BlockB where
   singleEraInfo _     = SingleEraInfo "B"
-  singleEraTransition = \_ _ -> Nothing
+  singleEraTransition = \_ _ _ _ -> Nothing
 
 instance HasTxs BlockB where
   extractTxs = const []

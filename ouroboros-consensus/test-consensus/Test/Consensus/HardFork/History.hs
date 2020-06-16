@@ -819,7 +819,7 @@ mockHardForkLedgerView :: SListI xs
 mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
       (InPairs.hpure $ Translate $ \_epoch (K ()) -> K ())
-      (HardForkState $ mockState HF.initBound pss ts ess)
+      (mockState HF.initBound pss ts ess)
   where
     mockState :: HF.Bound
               -> Exactly  (x ': xs) HF.EraParams

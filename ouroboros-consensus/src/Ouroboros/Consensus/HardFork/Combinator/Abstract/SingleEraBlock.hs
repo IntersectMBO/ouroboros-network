@@ -10,6 +10,7 @@ import           Cardano.Slotting.Slot
 import           Data.Proxy
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -45,9 +46,14 @@ class ( LedgerSupportsProtocol blk
   -- This should only report the transition point once it is stable (rollback
   -- cannot affect it anymore).
   --
-  -- This takes the partial config rather than the full config for the same
-  -- reason as 'singleEraParam'.
-  singleEraTransition :: PartialLedgerConfig blk -> LedgerState blk -> Maybe EpochNo
+  -- Since we need this to construct the 'HardForkSummary' (and hence the
+  -- 'EpochInfo'), this takes the /partial/ config, not the full config
+  -- (or we'd end up with a catch-22).
+  singleEraTransition :: PartialLedgerConfig blk
+                      -> EraParams -- ^ Current era parameters
+                      -> Bound     -- ^ Start of this era
+                      -> LedgerState blk
+                      -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
   singleEraInfo       :: proxy blk -> SingleEraInfo blk
@@ -57,5 +63,7 @@ proxySingle = Proxy
 
 singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
+                     -> EraParams
+                     -> Bound
                      -> LedgerState blk -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
