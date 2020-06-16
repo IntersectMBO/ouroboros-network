@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -314,10 +315,7 @@ instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
   maxTxCapacity (Ticked slot (DLgr lgr)) =
     maxTxCapacity (Ticked slot (project lgr))
 
-  maxTxSize (DLgr lgr) = maxTxSize (project lgr)
-
   txInBlockSize (DTx tx) = txInBlockSize (project tx)
-
 
 instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
   newtype TxId (GenTx (DegenFork b)) = DTxId {
@@ -338,6 +336,10 @@ instance SingleEraBlock b => QueryLedger (DegenFork b) where
 
   answerQuery cfg (DQry qry) (DLgr lgr) = answerQuery cfg qry lgr
   eqQuery (DQry qry1) (DQry qry2) = eqQuery qry1 qry2
+
+instance NoHardForks b => CommonProtocolParams (DegenFork b) where
+  maxHeaderSize (DLgr lgr) = maxHeaderSize (project lgr)
+  maxTxSize     (DLgr lgr) = maxTxSize     (project lgr)
 
 instance NoHardForks b => CanForge (DegenFork b) where
   type ForgeState (DegenFork b) = ForgeState (HardForkBlock '[b])

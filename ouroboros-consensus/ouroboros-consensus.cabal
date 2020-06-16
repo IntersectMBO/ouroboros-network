@@ -67,6 +67,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Forge
                        Ouroboros.Consensus.HardFork.Combinator.Info
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
+                       Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
                        Ouroboros.Consensus.HardFork.Combinator.Node
@@ -100,6 +101,7 @@ library
                        Ouroboros.Consensus.HardFork.History.Util
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
+                       Ouroboros.Consensus.Ledger.CommonProtocolParams
                        Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.History

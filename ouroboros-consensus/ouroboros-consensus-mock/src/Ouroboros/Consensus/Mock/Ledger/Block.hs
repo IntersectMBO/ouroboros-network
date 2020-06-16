@@ -84,6 +84,7 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
@@ -343,6 +344,11 @@ updateSimpleUTxO x (Ticked slot (SimpleLedgerState st)) =
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 
+-- | Dummy values
+instance MockProtocolSpecific c ext => CommonProtocolParams (SimpleBlock c ext) where
+  maxHeaderSize = const 2000000
+  maxTxSize     = const 2000000
+
 {-------------------------------------------------------------------------------
   Support for the mempool
 -------------------------------------------------------------------------------}
@@ -363,7 +369,6 @@ instance MockProtocolSpecific c ext
   -- Large value so that the Mempool tests never run out of capacity when they
   -- don't override it.
   maxTxCapacity = const 1000000000
-  maxTxSize     = const 2000000
   txInBlockSize = txSize
 
 instance HasTxId (GenTx (SimpleBlock c ext)) where

@@ -47,5 +47,4 @@ instance LedgerSupportsMempool ByronSpecBlock where
 
   -- Dummy values, as these are not used in practice.
   maxTxCapacity = const maxBound
-  maxTxSize     = const maxBound
   txInBlockSize = const 0

@@ -32,6 +32,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool as X
 -- Instance for 'ConsensusProtocol'
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
 
+-- Instance for 'CommonProtocolParams'
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X
+                     ()
+
 -- Instances for 'ShowQuery' and 'QueryLedger'
 -- Definition of 'Query', required for serialisation code
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
