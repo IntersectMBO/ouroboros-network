@@ -27,6 +27,9 @@ import           GHC.Generics (Generic)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.ProtocolConstants as CC
+import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Chain.Update.Validation.Endorsement as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
 import qualified Cardano.Chain.UTxO as CC
@@ -38,7 +41,6 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..),
                      EraParams (..))
 import qualified Ouroboros.Consensus.HardFork.History.Util as History
@@ -143,7 +145,12 @@ byronTransition ByronPartialLedgerConfig{..}
     . CC.cvsUpdateState
     $ byronLedgerState
   where
-    SecurityParam k = Byron.genesisSecurityParam byronLedgerConfig
+    k :: CC.BlockCount
+    k = CC.Genesis.gdK $ CC.Genesis.configGenesisData byronLedgerConfig
+
+    stableAfter, takesEffectAfter :: Word64
+    stableAfter      = CC.unSlotCount $ CC.kSlotSecurityParam    k
+    takesEffectAfter = CC.unSlotCount $ CC.kUpdateStabilityParam k
 
     cpuSlot :: CC.Update.CandidateProtocolUpdate -> SlotNo
     cpuSlot = Byron.fromByronSlotNo . CC.Update.cpuSlot
@@ -157,7 +164,7 @@ byronTransition ByronPartialLedgerConfig{..}
     -- /epoch/ that must be in this era is @epoch (s + 4k)@, and the first epoch
     -- of the /next/ era is @succ (epoch (s + 4k))@.
     cpuEpoch :: CC.Update.CandidateProtocolUpdate -> EpochNo
-    cpuEpoch upd = succ (slotToEpoch $ History.addSlots (4 * k) (cpuSlot upd))
+    cpuEpoch upd = succ (slotToEpoch $ History.addSlots takesEffectAfter (cpuSlot upd))
 
     -- Slot conversion (valid for slots in this era only)
     slotToEpoch :: SlotNo -> EpochNo
@@ -167,7 +174,7 @@ byronTransition ByronPartialLedgerConfig{..}
           (boundEpoch eraStart)
 
     isStable :: CC.Update.CandidateProtocolUpdate -> Bool
-    isStable upd = endorsementDepth >= 2 * k
+    isStable upd = endorsementDepth >= stableAfter
       where
         endorsedInSlot :: SlotNo
         endorsedInSlot = cpuSlot upd
