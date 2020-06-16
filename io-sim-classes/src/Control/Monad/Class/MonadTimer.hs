@@ -127,7 +127,7 @@ instance MonadDelay IO where
     where
       go :: DiffTime -> IO ()
       go d | d > maxDelay = do
-        IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+        IO.threadDelay maxBound
         go (d - maxDelay)
       go d = do
         IO.threadDelay (diffTimeToMicrosecondsAsInt d)
@@ -201,6 +201,10 @@ instance MonadTimer IO where
   -- | For delays less (or equal) than @maxBound :: Int@ this is exactly the same as
   -- 'STM.registerDaley'; for larger delays it will start a monitoring thread
   -- whcih will update the 'TVar'.
+  --
+  -- TODO: issue #2184 'registerDelay' relies on 'newTimeout', through
+  -- 'defaultRegisterDelay'.  'newTimeout' can overflow an 'Int' (this is
+  -- especially easy on 32-bit architectures).
   registerDelay d
       | d <= maxDelay =
         STM.registerDelay (diffTimeToMicrosecondsAsInt d)

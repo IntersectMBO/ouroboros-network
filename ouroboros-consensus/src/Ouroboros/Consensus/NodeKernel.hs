@@ -263,12 +263,8 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
                 -- we're 1 slot behind.
                 Origin  -> unSlotNo curSlot + 1
                 At slot -> unSlotNo curSlot - unSlotNo slot
-              maxBlocksBehind = 5
-              -- Convert from blocks to slots. This is more or less the @f@
-              -- parameter, the frequency of blocks. TODO should be 10 for
-              -- Praos, so make this part of 'OuroborosTag'.
-              blocksToSlots = 1
-          return $ if slotsBehind < maxBlocksBehind * blocksToSlots
+              maxSlotsBehind = 20
+          return $ if slotsBehind < maxSlotsBehind
             -- When the current chain is near to "now", use deadline mode,
             -- when it is far away, use bulk sync mode.
             then FetchModeDeadline
