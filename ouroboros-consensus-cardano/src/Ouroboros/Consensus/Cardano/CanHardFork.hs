@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , ShelleyPartialLedgerConfig (..)
   ) where
 
+import           Control.Monad (guard)
 import           Control.Monad.Reader (runReader)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -30,6 +31,7 @@ import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.ProtocolConstants as CC
 import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Endorsement as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
 import qualified Cardano.Chain.UTxO as CC
@@ -130,15 +132,18 @@ import           Ouroboros.Consensus.Cardano.Block
 -------------------------------------------------------------------------------}
 
 byronTransition :: PartialLedgerConfig ByronBlock
+                -> Word16   -- ^ Shelley major protocol version
                 -> EraParams
                 -> Bound
                 -> LedgerState ByronBlock
                 -> Maybe EpochNo
 byronTransition ByronPartialLedgerConfig{..}
+                shelleyMajorVersion
                 EraParams{..}
                 eraStart
                 st@ByronLedgerState{..} =
       fmap cpuEpoch
+    . filterMaybe bumpsMajorProtocolVersion
     . latest
     . filter isStable
     . CC.Update.candidateProtocolUpdates
@@ -190,7 +195,14 @@ byronTransition ByronPartialLedgerConfig{..}
                           then error "byronTransition: impossible"
                           else History.countSlots s endorsedInSlot
 
-    -- 'tryBumpVersion' assumes head of the list is the newest, so we do too
+    -- check if the candidate update protocol induces a hard fork to Shelley
+    bumpsMajorProtocolVersion :: CC.Update.CandidateProtocolUpdate -> Bool
+    bumpsMajorProtocolVersion upd =
+        shelleyMajorVersion
+          == CC.Update.pvMajor (CC.Update.cpuProtocolVersion upd)
+
+    -- 'tryBumpVersion' assumes head of the list of stable proposals is the
+    -- newest, so we do too
     latest :: [CC.Update.CandidateProtocolUpdate]
            -> Maybe CC.Update.CandidateProtocolUpdate
     latest (newest:_) = Just newest
@@ -203,8 +215,14 @@ byronTransition ByronPartialLedgerConfig{..}
 instance SingleEraBlock ByronBlock where
   singleEraTransition pcfg eraParams eraStart ledgerState =
       case transitionEpoch pcfg of
-        NoHardCodedTransition -> byronTransition pcfg eraParams eraStart ledgerState
-        HardCodedTransitionAt epoch -> Just epoch
+        HardCodedTransitionAt epoch               -> Just epoch
+        NoHardCodedTransition shelleyMajorVersion ->
+            byronTransition
+              pcfg
+              shelleyMajorVersion
+              eraParams
+              eraStart
+              ledgerState
 
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Byron"
@@ -214,7 +232,9 @@ instance PBftCrypto bc => HasPartialConsensusConfig (PBft bc)
   -- Use defaults
 
 data HardCodedTransition =
-    NoHardCodedTransition
+    NoHardCodedTransition !Word16
+    -- ^ the major version of the next era; an update proposal to this major
+    -- version induces the hard fork
   | HardCodedTransitionAt !EpochNo
   deriving (Generic, NoUnexpectedThunks)
 
@@ -496,3 +516,13 @@ translateLedgerViewByronToShelley shelleyCfg epochNo = SL.LedgerView {
           epochNo
           (Map.keysSet (sgGenDelegs genesisShelley))
           (sgProtocolParams genesisShelley)
+
+{-------------------------------------------------------------------------------
+  Miscellany
+-------------------------------------------------------------------------------}
+
+filterMaybe :: (a -> Bool) -> Maybe a -> Maybe a
+filterMaybe f m = do
+  x <- m
+  guard (f x)
+  Just x

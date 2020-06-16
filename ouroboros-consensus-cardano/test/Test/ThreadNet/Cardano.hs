@@ -126,7 +126,7 @@ prop_simple_cardano_convergence TestSetup
                     generatedSecrets
                     genesisShelley
                     (coreNodes !! fromIntegral nid)
-                    (HardCodedTransitionAt 1)
+                    (NoHardCodedTransition shelleyInitialMajorVersion)
             , mkRekeyM = Nothing
             }
 
@@ -180,6 +180,7 @@ prop_simple_cardano_convergence TestSetup
     genesisShelley :: ShelleyGenesis (TPraosMockCrypto Blake2b_256)
     genesisShelley =
         Shelley.mkGenesisConfig
+          (SL.ProtVer shelleyInitialMajorVersion 0)
           setupK
           setupD
           slotLength
@@ -230,18 +231,41 @@ mkProtocolCardano pbftParams coreNodeId genesisByron generatedSecretsByron
           generatedSecretsByron
           coreNodeId
 
+    -- the protocol version that each Byron node is endorsing with each block
+    -- it forges (ie which the node is ready to run)
     protVerByron :: CC.Update.ProtocolVersion
-    protVerByron = CC.Update.ProtocolVersion 2 0 0
+    protVerByron = CC.Update.ProtocolVersion shelleyInitialMajorVersion 0 0
 
     softVerByron :: CC.Update.SoftwareVersion
     softVerByron = CC.Update.SoftwareVersion (CC.Update.ApplicationName "Shelley") 0
 
     -- Shelley
+
+    -- the protocol version that each Shelley node is endorsing with each block
+    -- it forges (ie which the node is ready to run)
+    --
+    -- This is still Shelley, since that's the last era of this test.
     protVerShelley :: SL.ProtVer
-    protVerShelley = SL.ProtVer 2 0
+    protVerShelley = SL.ProtVer shelleyInitialMajorVersion 0
 
     maxMajorPVShelley :: Natural
     maxMajorPVShelley = 100
 
     leaderCredentialsShelley :: TPraosLeaderCredentials sc
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
+
+{-------------------------------------------------------------------------------
+  Constants
+-------------------------------------------------------------------------------}
+
+-- | The major protocol version of Shelley in this test
+--
+-- On mainnet, the Byron era spans multiple major versions: 0 for Classic and 1
+-- for OBFT. So Shelley is 2. But in this test, we start with OBFT as major
+-- version 0: the nodes are running OBFT from slot 0 and the Byron ledger
+-- defaults to an initial version of 0. So Shelley is 1 in this test.
+shelleyInitialMajorVersion :: Num a => a
+shelleyInitialMajorVersion = byronLastMajorVersion + 1
+  where
+    byronLastMajorVersion :: Num a => a
+    byronLastMajorVersion = 0

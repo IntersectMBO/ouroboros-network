@@ -160,13 +160,15 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
 
 mkGenesisConfig
   :: forall c. TPraosCrypto c
-  => SecurityParam
+  => ProtVer  -- ^ Initial protocol version
+  -> SecurityParam
   -> Double  -- ^ Decentralisation param
   -> SlotLength
   -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
+mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
+    ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
@@ -199,12 +201,13 @@ mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
 
     pparams :: SL.PParams
     pparams = SL.emptyPParams
-      { SL._d =
+      { SL._d               =
             SL.truncateUnitInterval
           . realToFrac
           $ d
-      , SL._maxBBSize = 10000 -- TODO
-      , SL._maxBHSize = 1000 -- TODO
+      , SL._maxBBSize       = 10000 -- TODO
+      , SL._maxBHSize       = 1000 -- TODO
+      , SL._protocolVersion = pVer
       }
 
     coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.GenDelegPair c)

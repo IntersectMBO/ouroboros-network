@@ -26,6 +26,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Node
 
@@ -122,6 +123,7 @@ prop_simple_real_tpraos_convergence TestSetup
     genesisConfig :: ShelleyGenesis (TPraosMockCrypto ShortHash)
     genesisConfig =
         mkGenesisConfig
+          (SL.ProtVer 0 0)
           setupK
           setupD
           tpraosSlotLength
