@@ -175,7 +175,7 @@ instance Arbitrary (SL.ProposedPPUpdates TPraosMockCrypto) where
   shrink    = genericShrink
 
 instance Arbitrary (SL.GenDelegs TPraosMockCrypto) where
-  arbitrary = SL.GenDelegs <$> arbitrary
+  arbitrary = (SL.GenDelegs . fmap (uncurry SL.GenDelegPair)) <$> arbitrary
 
 instance Arbitrary (SL.LedgerView TPraosMockCrypto) where
   arbitrary = genericArbitraryU

@@ -319,7 +319,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
        -- The given genesis key has authority to produce a block in this
         -- slot. Check whether we're its delegate.
         Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-            Just (dlgHash, genDlgVRFHash)
+            Just (SL.GenDelegPair dlgHash genDlgVRFHash)
               | SL.coerceKeyRole dlgHash == vkhCold
               -> case hasValidOCert icn of
                 Right () ->

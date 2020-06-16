@@ -205,13 +205,18 @@ mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
       , SL._maxBHSize = 1000 -- TODO
       }
 
-    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c)  (SL.KeyHash 'SL.GenesisDelegate c, SL.Hash c (SL.VerKeyVRF c))
+    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.GenDelegPair c)
     coreNodesToGenesisMapping  = Map.fromList
-      [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
-        , ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-          , SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
-          )
-        )
+      [ let
+          gkh :: SL.KeyHash 'SL.Genesis c
+          gkh = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
+
+          gdpair :: SL.GenDelegPair c
+          gdpair = SL.GenDelegPair
+              (SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
+              (SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF)
+
+        in (gkh, gdpair)
       | CoreNode { cnGenesisKey, cnDelegateKey, cnVRF } <- coreNodes
       ]
 
