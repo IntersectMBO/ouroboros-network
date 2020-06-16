@@ -137,10 +137,18 @@ prop_simple_cardano_convergence TestSetup
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 5
 
+    -- The team does not currently plan for Byron or Shelley to ever use an
+    -- epoch size other than 10k.
     epochSize :: EpochSize
-    epochSize = assert (epochSizeByron == epochSizeShelley) epochSizeByron
+    epochSize =
+        assert (tenK == epochSizeByron) $
+        assert (tenK == epochSizeShelley) $
+        tenK
+      where
+        tenK = EpochSize (10 * maxRollbacks setupK)
 
     -- Byron
+
     pbftParams :: PBftParams
     pbftParams = Byron.realPBftParams setupK numCoreNodes
 
