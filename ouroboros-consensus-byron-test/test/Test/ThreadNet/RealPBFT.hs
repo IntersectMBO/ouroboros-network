@@ -74,6 +74,7 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import qualified Test.Util.Stream as Stream
@@ -857,14 +858,13 @@ prop_simple_real_pbft_convergence TestSetup
       } = testConfig
 
     testConfigB = TestConfigB
-      { epochSize
-      , forgeEbbEnv = case produceEBBs of
+      { forgeEbbEnv = case produceEBBs of
           NoEBBs      -> Nothing
           ProduceEBBs -> Just byronForgeEbbEnv
+      , future       = singleEraFuture slotLength epochSize
       , nodeJoinPlan
       , nodeRestarts
-      , slotLength
-      , txGenExtra = ()
+      , txGenExtra   = ()
       }
 
     testOutput =

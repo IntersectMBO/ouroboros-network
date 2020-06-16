@@ -72,6 +72,7 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Random (Seed (..))
 import           Test.Util.WrappedClock (NumSlots (..))
 
@@ -187,11 +188,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
     testConfigB :: TestConfigB TestBlock
     testConfigB = TestConfigB {
-          epochSize    = testSetupEpochSize
-        , forgeEbbEnv  = Nothing
+          forgeEbbEnv  = Nothing
+        , future       = singleEraFuture testSetupSlotLength testSetupEpochSize
         , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , nodeRestarts = noRestarts
-        , slotLength   = testSetupSlotLength
         , txGenExtra   = ()
         }
       where

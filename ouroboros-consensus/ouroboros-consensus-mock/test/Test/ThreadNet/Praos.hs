@@ -30,6 +30,7 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import           Test.Util.WrappedClock (NumSlots (..))
@@ -118,10 +119,9 @@ prop_simple_praos_convergence TestSetup
       testOutput
   where
     testConfigB = TestConfigB
-      { epochSize
-      , forgeEbbEnv  = Nothing
+      { forgeEbbEnv  = Nothing
+      , future       = singleEraFuture slotLength epochSize
       , nodeJoinPlan
-      , slotLength
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
       }

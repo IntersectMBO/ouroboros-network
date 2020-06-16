@@ -35,6 +35,7 @@ import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Consensus.Ledger.Mock.Generators ()
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import           Test.Util.Serialisation
@@ -128,12 +129,13 @@ prop_simple_bft_convergence TestSetup
     TestConfig{numCoreNodes, numSlots} = testConfig
     slotLength = slotLengthFromSec 20
     testConfigB = TestConfigB
-      { epochSize = EpochSize $ maxRollbacks k * 10
+      { forgeEbbEnv = Nothing
+      , future      = singleEraFuture
+          slotLength
+          (EpochSize $ maxRollbacks k * 10)
           -- The mock ledger doesn't really care, and neither does BFT. We
           -- stick with the common @k * 10@ size for now.
-      , forgeEbbEnv = Nothing
       , nodeJoinPlan
-      , slotLength
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
       }

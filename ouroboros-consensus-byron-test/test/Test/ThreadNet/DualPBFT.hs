@@ -66,6 +66,7 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.WrappedClock (NumSlots (..))
 
 tests :: TestTree
@@ -140,16 +141,18 @@ setupParams = realPBftParams . setupGenesis
 
 setupTestConfigB :: SetupDualPBft -> TestConfigB DualByronBlock
 setupTestConfigB SetupDualPBft{..} = TestConfigB
-  { epochSize    =
-      fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount setupK)
-  , forgeEbbEnv  = Nothing -- spec does not model EBBs
+  { forgeEbbEnv  = Nothing -- spec does not model EBBs
+  , future       = singleEraFuture setupSlotLength epochSize
   , nodeJoinPlan = setupNodeJoinPlan
   , nodeRestarts = setupNodeRestarts
   , txGenExtra   = ()
-  , slotLength   = setupSlotLength
   }
   where
     RealPBFT.TestSetup{..} = setupRealPBft
+
+    epochSize :: EpochSize
+    epochSize =
+        fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount setupK)
 
 setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
 setupTestOutput setup@SetupDualPBft{..} =
