@@ -41,9 +41,10 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random (Seed (..))
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 data TestSetup = TestSetup
   { setupK            :: SecurityParam
@@ -119,12 +120,13 @@ prop_simple_pbft_convergence TestSetup
     TestConfig{numCoreNodes, numSlots} = testConfig
     slotLength = slotLengthFromSec 1
     testConfigB = TestConfigB
-      { epochSize = EpochSize $ maxRollbacks k * 10
+      { forgeEbbEnv = Nothing
+      , future      = singleEraFuture
+          slotLength
+          (EpochSize $ maxRollbacks k * 10)
           -- The mock ledger doesn't really care, and neither does PBFT. We
           -- stick with the common @k * 10@ size for now.
-      , forgeEbbEnv = Nothing
       , nodeJoinPlan
-      , slotLength
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
       }

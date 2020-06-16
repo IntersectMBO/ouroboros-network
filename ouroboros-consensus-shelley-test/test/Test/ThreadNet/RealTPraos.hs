@@ -20,6 +20,7 @@ import           Ouroboros.Consensus.NodeId
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley
 
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
@@ -86,11 +87,10 @@ prop_simple_real_tpraos_convergence TestSetup
       } = setupTestConfig
 
     testConfigB = TestConfigB
-      { epochSize
-      , forgeEbbEnv  = Nothing
+      { forgeEbbEnv  = Nothing
+      , future       = singleEraFuture tpraosSlotLength epochSize
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
-      , slotLength   = tpraosSlotLength
       , txGenExtra   = ShelleyTxGenExtra $ mkGenEnv coreNodes
       }
 

@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Node Join Plans

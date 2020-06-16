@@ -11,7 +11,7 @@ let
   pkgSet = haskell-nix.mkStackPkgSet {
     stack-pkgs = (haskell-nix.importAndFilterProject (haskell-nix.callStackToNix {
       inherit src;
-    })).pkgs;
+    }));
     pkg-def-extras = [];
     modules = [];
   };

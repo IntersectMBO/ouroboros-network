@@ -288,6 +288,7 @@ library
                      , network           >=3.1   && <3.2
                      , psqueues          >=0.2.3 && <0.3
                      , random
+                     , quiet             >=0.2   && <0.3
                      , serialise         >=0.2   && <0.3
                      , sop-core          >=0.5   && <0.6
                      , stm               >=2.5   && <2.6
@@ -366,9 +367,12 @@ test-suite test-consensus
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
+                       Test.Util.HardFork.Future
+                       Test.Util.HardFork.OracularClock
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.Orphans.ToExpr
@@ -379,12 +383,12 @@ test-suite test-consensus
                        Test.Util.Roundtrip
                        Test.Util.Shrink
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
-                       Test.Util.WrappedClock
 
                        -- ThreadNet (also from -infra) (for the HFC tests)
                        Test.ThreadNet.General
@@ -416,6 +420,7 @@ test-suite test-consensus
                      , mtl
                      , QuickCheck
                      , quickcheck-state-machine
+                     , quiet
                      , serialise
                      , sop-core
                      , tasty
@@ -495,6 +500,7 @@ test-suite test-storage
                        Test.Util.FS.Sim.STM
                        Test.Util.LogicalClock
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.Orphans.ToExpr
@@ -503,11 +509,11 @@ test-suite test-storage
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
-                       Test.Util.WrappedClock
 
   build-depends:       base
                      , bifunctors
@@ -527,6 +533,7 @@ test-suite test-storage
                      , pretty-show
                      , QuickCheck
                      , quickcheck-state-machine >=0.7.0
+                     , quiet
                      , random
                      , serialise
                      , tasty

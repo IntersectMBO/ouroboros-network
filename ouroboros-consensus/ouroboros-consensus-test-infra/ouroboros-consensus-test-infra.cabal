@@ -43,12 +43,15 @@ library
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
                        Test.Util.Golden
+                       Test.Util.HardFork.Future
+                       Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
@@ -59,13 +62,13 @@ library
                        Test.Util.Serialisation
                        Test.Util.Shrink
                        Test.Util.SOP
+                       Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
-                       Test.Util.WrappedClock
 
   build-depends:       base              >=4.9 && <4.13
                      , base16-bytestring
@@ -85,6 +88,7 @@ library
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
                      , quickcheck-state-machine
+                     , quiet             >=0.2   && <0.3
                      , random
                      , serialise         >=0.2   && <0.3
                      , tasty

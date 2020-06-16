@@ -127,7 +127,7 @@ exampleApplyTxErr =
     $ pure
     $ STS.LedgerFailure
     $ STS.UtxowFailure
-    $ STS.InvalidWitnessesUTXOW [SL.VKey 1]
+    $ STS.InvalidWitnessesUTXOW ([SL.VKey 1], [])
 
 exampleConsensusState :: ConsensusState (BlockProtocol Block)
 exampleConsensusState =

@@ -18,7 +18,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 
 import           Test.ThreadNet.Util.NodeJoinPlan
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 data NodeRestart
   = NodeRekey

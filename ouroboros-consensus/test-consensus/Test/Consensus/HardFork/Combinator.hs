@@ -1,5 +1,9 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -22,6 +26,8 @@ import qualified Data.Map as Map
 import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Slotting.Slot
 
@@ -72,8 +78,9 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
+import           Test.Util.HardFork.Future
 import           Test.Util.Random (Seed (..))
-import           Test.Util.WrappedClock (NumSlots (..))
+import           Test.Util.Slots (NumSlots (..))
 
 import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
@@ -84,38 +91,47 @@ tests = testGroup "HardForkCombinator" [
         prop_simple_hfc_convergence
     ]
 
+data AB a = AB {getA, getB :: a}
+  deriving (Foldable, Functor, Generic, Traversable)
+  deriving (Show) via (Quiet (AB a))
+
+instance Applicative AB where
+  pure x = AB x x
+  AB af bf <*> AB a b = AB (af a) (bf b)
+
 data TestSetup = TestSetup {
-      -- TODO: Vary epoch size across the fork
-      testSetupEpochSize  :: EpochSize
+      testSetupEpochSize  :: AB EpochSize
       -- ^ INVARIANT: @> 0@
     , testSetupK          :: SecurityParam
     , testSetupSeed       :: Seed
-      -- TODO: Vary slot length across the fork
-    , testSetupSlotLength :: SlotLength
+    , testSetupSlotLength :: AB SlotLength
     , testSetupTxSlot     :: SlotNo
     }
   deriving (Show)
 
 instance Arbitrary TestSetup where
   arbitrary = do
-      testSetupEpochSize <- EpochSize     <$> choose (1, 10)
-      testSetupK         <- SecurityParam <$> choose (2, 10)
+      testSetupEpochSize <- abM $ EpochSize <$> choose (1, 10)
+      testSetupK         <- SecurityParam   <$> choose (2, 10)
       -- TODO why does k=1 cause the nodes to only forge in the first epoch?
-      testSetupTxSlot    <- SlotNo        <$> choose (0, 9)
+      testSetupTxSlot    <- SlotNo          <$> choose (0, 9)
 
       testSetupSeed       <- arbitrary
-      testSetupSlotLength <- arbitrary
+      testSetupSlotLength <- abM arbitrary
       return TestSetup{..}
+    where
+      abM :: Monad m => m a -> m (AB a)
+      abM = sequence . pure
 
 -- | The number of epochs in the A era
-testSetupEraSizeA :: TestSetup -> Word64
+testSetupEraSizeA :: TestSetup -> EraSize
 testSetupEraSizeA TestSetup{..} =
     -- This function, as a specification, intentionally independently
     -- reimplements the interpretation of the 'InitiateAtoB' transaction by the
     -- A ledger.
-    succ lastEpochA
+    EraSize $ succ lastEpochA
   where
-    lastEpochA = lastSlotA `div` unEpochSize testSetupEpochSize
+    lastEpochA = lastSlotA `div` unEpochSize (getA testSetupEpochSize)
     lastSlotA  =
         unSlotNo testSetupTxSlot +
         stabilityWindowA testSetupK +
@@ -127,14 +143,14 @@ testSetupNumSlots testSetup@TestSetup{..} =
     -- this test doesn't need more than one B epoch
     NumSlots $ eraSizeA * epoSizeA + epoSizeB
   where
-    eraSizeA           = testSetupEraSizeA testSetup
-    EpochSize epoSizeA = testSetupEpochSize
-    EpochSize epoSizeB = testSetupEpochSize
+    EraSize eraSizeA     = testSetupEraSizeA testSetup
+    AB epoSizeA epoSizeB = unEpochSize <$> testSetupEpochSize
 
 prop_simple_hfc_convergence :: TestSetup -> Property
 prop_simple_hfc_convergence testSetup@TestSetup{..} =
     counterexample (show testConfig) $
-    tabulate "size of era A" [show (testSetupEraSizeA testSetup)] $
+    counterexample ("eraSizeA: " <> show eraSizeA) $
+    tabulate "epochs in era A" [labelEraSizeA] $
     prop_general args testOutput .&&.
     prop_allExpectedBlocks
   where
@@ -142,16 +158,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     k = testSetupK
 
     eraParamsA, eraParamsB :: EraParams
-    eraParamsA = EraParams {
-                     eraEpochSize  = testSetupEpochSize
-                   , eraSlotLength = testSetupSlotLength
-                   , eraSafeZone   = defaultSafeZone (safeFromTipA k)
-                   }
-    eraParamsB = EraParams {
-                     eraEpochSize  = testSetupEpochSize
-                   , eraSlotLength = testSetupSlotLength
-                   , eraSafeZone   = safeZoneB k
-                   }
+    AB eraParamsA eraParamsB =
+        EraParams
+        <$> testSetupEpochSize
+        <*> testSetupSlotLength
+        <*> AB (defaultSafeZone (safeFromTipA k))
+               (safeZoneB k)
 
     shape :: History.Shape '[BlockA, BlockB]
     shape = History.Shape $ exactlyTwo eraParamsA eraParamsB
@@ -185,13 +197,20 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         ncn :: NumCoreNodes
         ncn = NumCoreNodes 2
 
+    eraSizeA :: EraSize
+    eraSizeA = testSetupEraSizeA testSetup
+
     testConfigB :: TestConfigB TestBlock
     testConfigB = TestConfigB {
-          epochSize    = testSetupEpochSize
-        , forgeEbbEnv  = Nothing
+          forgeEbbEnv = Nothing
+        , future      =
+            EraCons  (eraSlotLength eraParamsA)
+                     (eraEpochSize  eraParamsA)
+                     eraSizeA $
+            EraFinal (eraSlotLength eraParamsB)
+                     (eraEpochSize  eraParamsB)
         , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , nodeRestarts = noRestarts
-        , slotLength   = testSetupSlotLength
         , txGenExtra   = ()
         }
       where
@@ -202,6 +221,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
           nodeInfo = plainTestNodeInitialization . protocolInfo
         , mkRekeyM = Nothing
         }
+
+    labelEraSizeA :: String
+    labelEraSizeA =
+        if sz >= 10 then ">=10" else show sz
+      where
+        EraSize sz = eraSizeA
 
     protocolInfo :: Monad m => CoreNodeId -> ProtocolInfo m TestBlock
     protocolInfo nid = ProtocolInfo {
@@ -310,7 +335,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         NumSlots t     = numSlots
 
         -- we expect one epoch from B and the rest from A
-        b = unEpochSize testSetupEpochSize
+        b = unEpochSize (getB testSetupEpochSize)
         a = t - b
 
     -- counts of A blocks and of B blocks for each final chain

@@ -72,6 +72,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)

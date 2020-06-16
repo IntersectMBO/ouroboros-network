@@ -93,6 +93,7 @@ import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
+import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.QuickCheck (collects)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE

@@ -52,7 +52,6 @@ import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
 
-import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -70,7 +69,10 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
+                     (hardForkBlockchainTime)
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -110,12 +112,14 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
-import qualified Test.Util.LogicalClock as LogicalClock
+import           Test.Util.HardFork.Future (Future)
+import qualified Test.Util.HardFork.Future as HFF
+import           Test.Util.HardFork.OracularClock (OracularClock (..))
+import qualified Test.Util.HardFork.OracularClock as OracularClock
 import           Test.Util.Random
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer
-import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
-import qualified Test.Util.WrappedClock as WrappedClock
 
 -- | How to forge an EBB
 --
@@ -168,6 +172,7 @@ plainTestNodeInitialization pInfo = TestNodeInitialization
 --
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
   { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
+  , tnaFuture       :: Future
   , tnaJoinPlan     :: NodeJoinPlan
   , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization m blk
   , tnaNumCoreNodes :: NumCoreNodes
@@ -175,17 +180,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaRNG          :: ChaChaDRG
   , tnaMkRekeyM     :: Maybe (m (RekeyM m blk))
   , tnaRestarts     :: NodeRestarts
-  , tnaSlotLength   :: SlotLength
   , tnaTopology     :: NodeTopology
-  , tnaEpochSize    :: EpochSize
-    -- ^ Epoch size
-    --
-    -- The ThreadNet tests need to know epoch boundaries in order to know when
-    -- to insert EBBs, when delegation certificates become active, etc. (This
-    -- is therefore not related to the /chunking/ of the immutable DB.)
-    --
-    -- This is temporary: once we have proper support for the hard fork
-    -- combinator, 'EpochInfo' must be /derived/ from the current ledger state.
   , tnaTxGenExtra   :: TxGenExtra blk
   }
 
@@ -257,9 +252,10 @@ runThreadNetwork :: forall m blk.
                     , TracingConstraints blk
                     , HasCallStack
                     )
-                 => ThreadNetworkArgs m blk -> m (TestOutput blk)
-runThreadNetwork ThreadNetworkArgs
+                 => SystemTime m -> ThreadNetworkArgs m blk -> m (TestOutput blk)
+runThreadNetwork systemTime ThreadNetworkArgs
   { tnaForgeEbbEnv    = mbForgeEbbEnv
+  , tnaFuture         = future
   , tnaJoinPlan       = nodeJoinPlan
   , tnaNodeInfo       = mkProtocolInfo
   , tnaNumCoreNodes   = numCoreNodes
@@ -267,9 +263,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaRNG            = initRNG
   , tnaMkRekeyM       = mbMkRekeyM
   , tnaRestarts       = nodeRestarts
-  , tnaSlotLength     = slotLength
   , tnaTopology       = nodeTopology
-  , tnaEpochSize      = epochSize
   , tnaTxGenExtra     = txGenExtra
   } = withRegistry $ \sharedRegistry -> do
     mbRekeyM <- sequence mbMkRekeyM
@@ -284,7 +278,7 @@ runThreadNetwork ThreadNetworkArgs
     -- from the wrong thread. To stop the network, wait for all the nodes'
     -- blockchain times to be done and then kill the main thread of each node,
     -- which should terminate all other threads it spawned.
-    clock <- WrappedClock.new sharedRegistry numSlots slotLength
+    let clock = OracularClock.mkOracularClock systemTime numSlots future
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -335,12 +329,16 @@ runThreadNetwork ThreadNetworkArgs
 
       -- the vertex cannot create its first node instance until the
       -- 'NodeJoinPlan' allows
-      tooLate <- WrappedClock.blockUntilSlot clock joinSlot
+      tooLate <- OracularClock.blockUntilSlot clock joinSlot
       when tooLate $ do
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
       -- fork the per-vertex state variables, including the mock filesystem
       (nodeInfo, readNodeInfo) <- newNodeInfo
+
+      -- a tvar containing the next slot to be recorded in
+      -- nodeEventsTipBlockNos
+      nextInstrSlotVar <- uncheckedNewTVarM joinSlot
 
       let myEdgeStatusVars =
             [ v
@@ -351,36 +349,25 @@ runThreadNetwork ThreadNetworkArgs
         mbRekeyM
         varRNG
         clock
+        joinSlot
         sharedRegistry
         coreNodeId
         vertexStatusVar
         myEdgeStatusVars
         nodeInfo
+        nextInstrSlotVar
 
-      -- Instrumentation: record the tip's block number at the onset of the
-      -- slot.
-      --
-      -- With such a short transaction (read a few TVars) we assume this runs
-      -- 1) before anything else in the slot and 2) once per slot.
-      void $ forkLinkedThread sharedRegistry "instrumentation" $ do
-        let NodeInfo{nodeInfoEvents} = nodeInfo
-            loop next = do
-              (s, bno) <- atomically $ do
-                s <- WrappedClock.getCurrentSlot clock
-                check $ s >= next
-                readTVar vertexStatusVar >>= \case
-                  VUp kernel _ -> do
-                    bno <- ChainDB.getTipBlockNo (getChainDB kernel)
-                    pure (s, bno)
-                  _ -> retry
-              traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
-              loop (succ s)
-        loop 0
+      forkInstrumentation
+        clock
+        sharedRegistry
+        vertexStatusVar
+        nodeInfo
+        nextInstrSlotVar
 
       return (coreNodeId, vertexStatusVar, readNodeInfo)
 
     -- Wait for the last slot to end
-    WrappedClock.waitUntilDone clock
+    OracularClock.waitUntilDone clock
 
     -- Collect all nodes' final chains
     vertexInfos <-
@@ -394,8 +381,9 @@ runThreadNetwork ThreadNetworkArgs
   where
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
-    epochInfo :: EpochInfo m
-    epochInfo = fixedSizeEpochInfo epochSize
+    -- epoch size of the first era (ie the one that might have EBBs)
+    epochSize0 :: EpochSize
+    epochSize0 = HFF.futureFirstEpochSize future
 
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
@@ -406,22 +394,26 @@ runThreadNetwork ThreadNetworkArgs
     forkVertex
       :: Maybe (RekeyM m blk)
       -> StrictTVar m ChaChaDRG
-      -> WrappedClock m
+      -> OracularClock m
+      -> SlotNo
       -> ResourceRegistry m
       -> CoreNodeId
       -> VertexStatusVar m blk
       -> [EdgeStatusVar m]
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+      -> StrictTVar m SlotNo
       -> m ()
     forkVertex
       mbRekeyM
       varRNG
       clock
+      joinSlot
       sharedRegistry
       coreNodeId
       vertexStatusVar
       edgeStatusVars
-      nodeInfo =
+      nodeInfo
+      nextInstrSlotVar =
         void $ forkLinkedThread sharedRegistry label $ do
           loop 0 tniProtocolInfo NodeRestart restarts0
       where
@@ -448,7 +440,7 @@ runThreadNetwork ThreadNetworkArgs
             -- the node is restarting because it just rekeyed
             tni' <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
+                rekeyM coreNodeId pInfo s (pure . HFF.futureSlotToEpoch future)
               _                        ->
                   pure $ plainTestNodeInitialization pInfo
             let TestNodeInitialization
@@ -463,6 +455,7 @@ runThreadNetwork ThreadNetworkArgs
               coreNodeId
               varRNG
               clock
+              joinSlot
               nodeRegistry
               pInfo'
               nodeInfo
@@ -473,15 +466,24 @@ runThreadNetwork ThreadNetworkArgs
             again <- case Map.minViewWithKey rs of
               -- end of test
               Nothing               -> do
-                WrappedClock.waitUntilDone clock
+                OracularClock.waitUntilDone clock
                 pure Nothing
               -- onset of schedule restart slot
               Just ((s', nr'), rs') -> do
                 -- wait until the node should stop
-                tooLate <- WrappedClock.blockUntilSlot clock s'
+                tooLate <- OracularClock.blockUntilSlot clock s'
                 when tooLate $ do
                   error $ "unsatisfiable nodeRestarts: "
                     ++ show (coreNodeId, s')
+
+                -- this synchronization prevents a race with the
+                -- instrumentation thread: we it want to record the current
+                -- block number at the start of the slot, before this vertex
+                -- restarts the node
+                atomically $ do
+                  nextSlot <- readTVar nextInstrSlotVar
+                  check $ nextSlot > s'
+
                 pure $ Just (s', pInfo', nr', rs')
 
             -- stop threads that depend on/stimulate the kernel
@@ -505,6 +507,35 @@ runThreadNetwork ThreadNetworkArgs
             Nothing                     -> pure ()
             Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
 
+    -- | Instrumentation: record the tip's block number at the onset of the
+    -- slot.
+    --
+    -- With such a short transaction (read a few TVars) we assume this runs (1)
+    -- before anything else in the slot and (2) once per slot.
+    forkInstrumentation
+      :: OracularClock m
+      -> ResourceRegistry m
+      -> VertexStatusVar m blk
+      -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+      -> StrictTVar m SlotNo
+      -> m ()
+    forkInstrumentation
+      clock
+      registry
+      vertexStatusVar
+      nodeInfo
+      nextInstrSlotVar =
+        void $ OracularClock.forkEachSlot registry clock lbl $ \s -> do
+          bno <- atomically $ readTVar vertexStatusVar >>= \case
+            VUp kernel _ -> ChainDB.getTipBlockNo (getChainDB kernel)
+            _            -> retry
+          traceWith nodeEventsTipBlockNos (s, bno)
+          atomically $ modifyTVar nextInstrSlotVar $ max (succ s)
+      where
+        NodeInfo{nodeInfoEvents}          = nodeInfo
+        NodeEvents{nodeEventsTipBlockNos} = nodeInfoEvents
+        lbl                               = "instrumentation"
+
     -- | Persistently attempt to add the given transactions to the mempool
     -- every time the ledger slot changes, even if successful!
     --
@@ -514,46 +545,57 @@ runThreadNetwork ThreadNetworkArgs
     forkCrucialTxs
       :: forall fingerprint.
          (Eq fingerprint, HasCallStack)
-      => ResourceRegistry m
+      => OracularClock m
+      -> SlotNo
+      -> ResourceRegistry m
       -> (fingerprint, STM m fingerprint)
       -- ^ How to get the fingerprint of the current ledger state
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs registry (initialLdgr, getLdgr) mempool txs0 =
+    forkCrucialTxs clock s0 registry (initialLdgr, getLdgr) mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
-        let getFingerprint :: STM m ([TicketNo], fingerprint)
-            getFingerprint = do
-              -- NB the following two hypotheticals may happen independently
-              --
-              -- In particular, a different ledger state does not necessarily
-              -- imply a different mempool snapshot.
-
-              -- a new tx (e.g. added by TxSubmission) might render a crucial
-              -- transaction valid
-              mempoolFp <- (map snd . snapshotTxs) <$> getSnapshot mempool
-
-              -- a new ledger state might render a crucial transaction valid
-              ldgrFp <- getLdgr
-
-              pure (mempoolFp, ldgrFp)
-
-            loop fp = do
+        let loop (slot, mempFp, ldgrFp) = do
               _ <- addTxs mempool txs0
-              (fp', _) <- atomically $ blockUntilChanged id fp getFingerprint
+              let
+                -- a clock tick might render a crucial transaction valid
+                slotChanged = do
+                  let slot' = succ slot
+                  _ <- OracularClock.blockUntilSlot clock slot'
+                  pure (slot', mempFp, ldgrFp)
+
+                -- a new tx (e.g. added by TxSubmission) might render a crucial
+                -- transaction valid
+                mempChanged = do
+                  let getMemp = (map snd . snapshotTxs) <$> getSnapshot mempool
+                  (mempFp', _) <- atomically $ blockUntilChanged id mempFp getMemp
+                  pure (slot, mempFp', ldgrFp)
+
+                -- a new ledger state might render a crucial transaction valid
+                ldgrChanged = do
+                  (ldgrFp', _) <- atomically $ blockUntilChanged id ldgrFp getLdgr
+                  pure (slot, mempFp, ldgrFp')
+
+              -- wake up when any of those change
+              --
+              -- key observation: it's OK to add the crucial txs too often
+              fps' <- fmap (either (either id id) id) $
+                slotChanged `race` mempChanged `race` ldgrChanged
+
               -- avoid the race in which we wake up before the mempool's
               -- background thread wakes up by mimicking it before we do
               -- anything else
               void $ syncWithLedger mempool
-              loop fp'
-        loop ([], initialLdgr)
+
+              loop fps'
+        loop (s0, [], initialLdgr)
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
     forkTxProducer :: HasCallStack
                    => ResourceRegistry m
-                   -> WrappedClock m
+                   -> OracularClock m
                    -> TopLevelConfig blk
                    -> StrictTVar m ChaChaDRG
                    -> STM m (ExtLedgerState blk)
@@ -561,13 +603,13 @@ runThreadNetwork ThreadNetworkArgs
                    -> Mempool m blk TicketNo
                    -> m ()
     forkTxProducer registry clock cfg varRNG getExtLedger mempool =
-      void $ WrappedClock.onSlotChange registry clock "txProducer" $ \curSlotNo -> do
+      void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- simMonadRandom varRNG $
                     testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
-    mkArgs :: WrappedClock m
+    mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
@@ -595,12 +637,11 @@ runThreadNetwork ThreadNetworkArgs
         , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
         , cdbTopLevelConfig       = cfg
-        , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize
+        , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize0
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
-        , cdbCheckInFuture        = LogicalClock.checkInFuture
-                                      (configLedger cfg)
-                                      (unwrapLogicalClock clock)
+        , cdbCheckInFuture        = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
+                                      (OracularClock.finiteSystemTime clock)
         , cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
@@ -632,7 +673,8 @@ runThreadNetwork ThreadNetworkArgs
       :: HasCallStack
       => CoreNodeId
       -> StrictTVar m ChaChaDRG
-      -> WrappedClock m
+      -> OracularClock m
+      -> SlotNo
       -> ResourceRegistry m
       -> ProtocolInfo (ChaChaT m) blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
@@ -641,7 +683,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId Void blk
            , LimitedApp m NodeId      blk
            )
-    forkNode coreNodeId varRNG clock registry pInfo nodeInfo txs0 = do
+    forkNode coreNodeId varRNG clock joinSlot registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -652,7 +694,7 @@ runThreadNetwork ThreadNetworkArgs
       -- prop_general relies on these tracers
       let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
           addTracer = Tracer $ \(p, bno) -> do
-            s <- atomically $ WrappedClock.getCurrentSlot clock
+            s <- OracularClock.getCurrentSlot clock
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             clock registry
@@ -671,28 +713,26 @@ runThreadNetwork ThreadNetworkArgs
 
       blockProduction <- blockProductionIOLike pInfoConfig canBeLeader maintainForgeState varRNG $
          \upd currentBno tickedLdgSt txs prf -> do
-            let currentSlot = tickedSlotNo tickedLdgSt
+            let currentSlot  = tickedSlotNo tickedLdgSt
+            let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
-            -- the typical behavior, which doesn't add a Just-In-Time EBB
-            let forgeWithoutEBB =
+            -- EBBs are only ever possible in the first era
+            let inFirstEra = HFF.futureEpochInFirstEra future currentEpoch
+
+            let ebbSlot :: SlotNo
+                ebbSlot = SlotNo $ x * y
+                  where
+                    EpochNo   x = currentEpoch
+                    EpochSize y = epochSize0
+            let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
+
+            let needEBB = inFirstEra && At ebbSlot > pointSlot p
+            case mbForgeEbbEnv <* guard needEBB of
+              Nothing ->
+                 -- no EBB needed, forge without making one
                   forgeBlock pInfoConfig upd
                     currentBno tickedLdgSt txs prf
-
-            case mbForgeEbbEnv of
-              Nothing          -> forgeWithoutEBB
               Just forgeEbbEnv -> do
-                let ebbSlot :: SlotNo
-                    ebbSlot =
-                        SlotNo $ denom * div numer denom
-                      where
-                        SlotNo numer    = currentSlot
-                        EpochSize denom = epochSize
-
-                let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
-                let mSlot = pointSlot p
-                if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
-                  -- the EBB is needed
-                  --
                   -- The EBB shares its BlockNo with its predecessor (if
                   -- there is one)
                   let ebbBno = case currentBno of
@@ -738,7 +778,26 @@ runThreadNetwork ThreadNetworkArgs
           -- traces the node's local events other than those from the -- ChainDB
           tracers = instrumentationTracers <> nullDebugTracers
 
-      btime <- LogicalClock.hardForkBlockchainTime
+      let -- use a backoff delay of exactly one slot length (which the
+          -- 'OracularClock' always knows) for the following reasons
+          --
+          -- o It gives the node a chance to sync some blocks so that it will
+          --   eventually not need to backoff
+          --
+          -- o It maintains the invariant that the node's activities all happen "
+          --   during " a slot onset
+          --
+          -- o It avoids causing the node to miss a slot it could have
+          --   nominally lead. EG If we used a backoff of two slot durations,
+          --   then it might have synced during the first slot and then been
+          --   able to productively lead the second slot had it not still been
+          --   asleep.
+          --
+          -- o We assume a node will only backoff when it joins late and only
+          --   until it syncs enough of the net's existing common prefix.
+          backoffDelay =
+              BackoffDelay <$> OracularClock.delayUntilNextSlot clock
+      btime <- hardForkBlockchainTime
                  registry
                  (contramap
                     (\(t, e) ->
@@ -747,8 +806,9 @@ runThreadNetwork ThreadNetworkArgs
                          (fromRelativeTime (SystemStart dawnOfTime) t)
                          e)
                     (blockchainTimeTracer tracers))
-                 (unwrapLogicalClock clock)
+                 (OracularClock.finiteSystemTime clock)
                  (configLedger pInfoConfig)
+                 backoffDelay
                  (ledgerState <$>
                     ChainDB.getCurrentLedger chainDB)
 
@@ -799,14 +859,13 @@ runThreadNetwork ThreadNetworkArgs
       -- TODO Is there a risk that this will block because the 'forkTxProducer'
       -- fills up the mempool too quickly?
       forkCrucialTxs
+        clock
+        joinSlot
         registry
         -- a fingerprint for the ledger
-        ( (Origin, GenesisPoint)
-        , do
-            -- time matters, because some transaction expire
-            now <- WrappedClock.getCurrentSlot clock
-            p <- (ledgerTipPoint' (Proxy @blk) . ledgerState) <$> ChainDB.getCurrentLedger chainDB
-            pure (At now, p)
+        ( GenesisPoint
+        ,     (ledgerTipPoint' (Proxy @blk) . ledgerState)
+          <$> ChainDB.getCurrentLedger chainDB
         )
         mempool
         txs0
@@ -884,7 +943,7 @@ data RestartCause
 forkBothEdges
   :: (IOLike m, TranslateNetworkProtocolVersion blk, HasCallStack)
   => ResourceRegistry m
-  -> WrappedClock m
+  -> OracularClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> Map CoreNodeId (VertexStatusVar m blk)
   -> (CoreNodeId, CoreNodeId)
@@ -931,7 +990,7 @@ forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
 directedEdge ::
   forall m blk. (IOLike m, TranslateNetworkProtocolVersion blk)
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
-  -> WrappedClock m
+  -> OracularClock m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
@@ -948,10 +1007,10 @@ directedEdge tr clock edgeStatusVar client server =
           RestartNode  -> pure ()
           RestartExn e -> do
             -- "error policy": restart at beginning of next slot
-            s <- atomically $ WrappedClock.getCurrentSlot clock
+            s <- OracularClock.getCurrentSlot clock
             let s' = succ s
             traceWith tr (s, MiniProtocolDelayed, e)
-            void $ WrappedClock.blockUntilSlot clock s'
+            void $ OracularClock.blockUntilSlot clock s'
             traceWith tr (s', MiniProtocolRestarting, e)
         loop
       where

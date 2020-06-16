@@ -38,7 +38,8 @@ data Rekeying m blk = forall opKey. Rekeying
       -> Maybe (TestNodeInitialization m blk)
      -- ^ new config and any corresponding delegation certificate transactions
      --
-     -- The epoch number is the one required to create a Byron redeleg cert.
+     -- The given epoch contains the first nominal slot whose block will
+     -- include the redelegation certificate transaction.
      --
      -- The 'TestNodeInitialization' includes the new 'ProtocolInfo' used when
      -- the node completes restarting.

@@ -203,6 +203,7 @@ run runargs@RunNodeArgs{..} =
                          (blockchainTimeTracer rnTraceConsensus))
                       systemTime
                       (configLedger cfg)
+                      (pure $ BackoffDelay 60) -- see 'BackoffDelay'
                       (ledgerState <$>
                          ChainDB.getCurrentLedger chainDB)
       nodeArgs   <- rnCustomiseNodeArgs <$>

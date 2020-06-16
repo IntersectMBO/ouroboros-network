@@ -121,15 +121,22 @@ mkGenEnv coreNodes = Gen.GenEnv keySpace constants
       }
 
     keySpace :: Gen.KeySpace
-    keySpace = Gen.KeySpace
+    keySpace =
+      Gen.KeySpace
         (cnkiCoreNode <$> cn)
+        ksGenesisDelegates
+        ksStakePools
         (ksKeyPairs <> (cnkiKeyPair <$> cn))
         ksMSigScripts
-        ksVRFKeyPairs
       where
         cn = coreNodeKeys <$> coreNodes
-        Gen.KeySpace_ { ksKeyPairs, ksMSigScripts, ksVRFKeyPairs } =
-          Gen.Presets.keySpace constants
+        Gen.KeySpace_
+          { ksKeyPairs,
+            ksMSigScripts,
+            ksGenesisDelegates,
+            ksStakePools
+          } =
+            Gen.Presets.keySpace constants
 
 {-------------------------------------------------------------------------------
   QuickCheck to MonadRandom adapter

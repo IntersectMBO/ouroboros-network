@@ -62,6 +62,7 @@ let
         packages.lens.package.buildType = lib.mkForce "Simple";
         packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
         packages.semigroupoids.package.buildType = lib.mkForce "Simple";
+        packages.system-filepath.package.buildType = lib.mkForce "Simple";
 
         # ruby/perl dependencies cannot be cross-built for cddl tests:
         packages.ouroboros-network.flags.cddl = false;
@@ -76,6 +77,7 @@ let
       } else {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
+        packages.ouroboros-network.components.tests.test-cddl.preCheck = "export HOME=`pwd`";
       })
     ];
     configureArgs = lib.optionalString stdenv.hostPlatform.isWindows "--disable-tests";

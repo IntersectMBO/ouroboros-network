@@ -29,6 +29,7 @@ module Test.ThreadNet.General (
   ) where
 
 import           Control.Monad (guard)
+import           Control.Tracer (nullTracer)
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -38,15 +39,13 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader, HeaderHash,
                      SlotNo (..))
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -71,14 +70,15 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.HardFork.Future (Future)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Random
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
-import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Configuring tests
@@ -167,13 +167,10 @@ instance Arbitrary TestConfig where
 -- absence/lateness. And 'epochSize' is here because eg the Byron ledger
 -- assumes a fixed epoch size of @10k@. And so on.
 data TestConfigB blk = TestConfigB
-  { epochSize    :: EpochSize
-    -- ^ Temporary: until we start testing the hard fork combinator, we only
-    -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
-  , forgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
+  { forgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
+  , future       :: Future
   , nodeJoinPlan :: NodeJoinPlan
   , nodeRestarts :: NodeRestarts
-  , slotLength   :: SlotLength
   , txGenExtra   :: TxGenExtra blk
   }
 
@@ -214,11 +211,10 @@ runTestNetwork TestConfig
   , nodeTopology
   , initSeed
   } TestConfigB
-  { epochSize
-  , forgeEbbEnv
+  { forgeEbbEnv
+  , future
   , nodeJoinPlan
   , nodeRestarts
-  , slotLength
   , txGenExtra
   }
     mkTestConfigMB
@@ -228,19 +224,23 @@ runTestNetwork TestConfig
           { nodeInfo
           , mkRekeyM
           } = mkTestConfigMB
-    runThreadNetwork ThreadNetworkArgs
-      { tnaForgeEbbEnv    = forgeEbbEnv
-      , tnaJoinPlan       = nodeJoinPlan
-      , tnaNodeInfo       = nodeInfo
-      , tnaNumCoreNodes   = numCoreNodes
-      , tnaNumSlots       = numSlots
-      , tnaRNG            = seedToChaCha initSeed
-      , tnaMkRekeyM       = mkRekeyM
-      , tnaRestarts       = nodeRestarts
-      , tnaSlotLength     = slotLength
-      , tnaTopology       = nodeTopology
-      , tnaEpochSize      = epochSize
-      , tnaTxGenExtra     = txGenExtra
+    setCurrentTime dawnOfTime
+    let systemTime =
+            BTime.defaultSystemTime
+              (BTime.SystemStart dawnOfTime)
+              nullTracer
+    runThreadNetwork systemTime ThreadNetworkArgs
+      { tnaForgeEbbEnv  = forgeEbbEnv
+      , tnaFuture       = future
+      , tnaJoinPlan     = nodeJoinPlan
+      , tnaNodeInfo     = nodeInfo
+      , tnaNumCoreNodes = numCoreNodes
+      , tnaNumSlots     = numSlots
+      , tnaRNG          = seedToChaCha initSeed
+      , tnaMkRekeyM     = mkRekeyM
+      , tnaRestarts     = nodeRestarts
+      , tnaTopology     = nodeTopology
+      , tnaTxGenExtra   = txGenExtra
       }
 
 {-------------------------------------------------------------------------------

@@ -47,6 +47,7 @@ import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
@@ -109,11 +110,10 @@ prop_simple_cardano_convergence TestSetup
       } = setupTestConfig
 
     testConfigB = TestConfigB
-      { epochSize
-      , forgeEbbEnv  = Nothing
+      { forgeEbbEnv  = Nothing
+      , future       = singleEraFuture Shelley.tpraosSlotLength epochSize
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
-      , slotLength   = slotLength
       , txGenExtra   = ()
       }
 

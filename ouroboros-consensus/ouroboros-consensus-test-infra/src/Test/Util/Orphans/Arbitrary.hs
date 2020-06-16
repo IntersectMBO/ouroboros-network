@@ -62,9 +62,7 @@ instance Arbitrary SlotLength where
       oneSec = slotLengthFromSec 1
 
 deriving via UTCTime         instance Arbitrary SystemStart
-deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Positive Word64 instance Arbitrary BlockNo
-deriving via Word64          instance Arbitrary EpochNo
 
 instance Arbitrary RelativeSlot where
   arbitrary = RelativeSlot <$> arbitrary <*> arbitrary <*> arbitrary
