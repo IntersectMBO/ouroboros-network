@@ -556,11 +556,12 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 -- on the protocol version, but it eventually may; this is why @_version@ is
 -- currently unused.
 initiator
-  :: MiniProtocolParameters
+  :: NodeToNodeVersion
+  -> MiniProtocolParameters
   -> BlockNodeToNodeVersion blk
   -> Apps m (ConnectionId peer) blk b b b b a
   -> OuroborosApplication 'InitiatorMode peer b m a Void
-initiator miniProtocolParameters version Apps {..} =
+initiator n2nv miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
       -- TODO: currently consensus is using 'ConnectionId' for its 'peer' type.
@@ -579,17 +580,19 @@ initiator miniProtocolParameters version Apps {..} =
           keepAliveProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version them)))
         })
+      n2nv
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-node protocols.
 --
 -- See 'initiatorNetworkApplication' for rationale for the @_version@ arg.
 responder
-  :: MiniProtocolParameters
+  :: NodeToNodeVersion
+  -> MiniProtocolParameters
   -> BlockNodeToNodeVersion blk
   -> Apps m (ConnectionId peer) blk b b b b a
   -> OuroborosApplication 'ResponderMode peer b m Void a
-responder miniProtocolParameters version Apps {..} =
+responder n2nv miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
       (\them _shouldStopSTM -> NodeToNodeProtocols {
@@ -602,3 +605,4 @@ responder miniProtocolParameters version Apps {..} =
           keepAliveProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
         })
+      n2nv

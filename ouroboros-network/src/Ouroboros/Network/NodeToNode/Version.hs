@@ -28,6 +28,10 @@ data NodeToNodeVersion
     -- * Enable block size hints for Byron headers in ChainSync
     --
     -- * Enable @CardanoNodeToNodeVersion2@
+    | NodeToNodeV_3
+    -- ^ Changes:
+    --
+    -- * Enable KeepAlive miniprotocol
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -35,9 +39,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_1  = CBOR.TInt 1
     encodeTerm NodeToNodeV_2  = CBOR.TInt 2
+    encodeTerm NodeToNodeV_3  = CBOR.TInt 3
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
+    decodeTerm (CBOR.TInt 3) = Right NodeToNodeV_3
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n
