@@ -336,6 +336,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -- fork the per-vertex state variables, including the mock filesystem
       (nodeInfo, readNodeInfo) <- newNodeInfo
 
+      -- a tvar containing the next slot to be recorded in
+      -- nodeEventsTipBlockNos
+      nextInstrSlotVar <- uncheckedNewTVarM joinSlot
+
       let myEdgeStatusVars =
             [ v
             | ((n1, n2), v) <- Map.toList edgeStatusVars
@@ -351,26 +355,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
         vertexStatusVar
         myEdgeStatusVars
         nodeInfo
+        nextInstrSlotVar
 
-      -- Instrumentation: record the tip's block number at the onset of the
-      -- slot.
-      --
-      -- With such a short transaction (read a few TVars) we assume this runs
-      -- 1) before anything else in the slot and 2) once per slot.
-      --
-      -- Note: onSlotChange does not suffice because we need the current slot
-      -- and the 'VUp' to be read as part of the same " transaction ".
-      void $ forkLinkedThread sharedRegistry "instrumentation" $ do
-        let NodeInfo{nodeInfoEvents} = nodeInfo
-            get s = atomically $ do
-                readTVar vertexStatusVar >>= \case
-                  VUp kernel _ -> do
-                    bno <- ChainDB.getTipBlockNo (getChainDB kernel)
-                    pure (s, bno)
-                  _ -> retry
-            put (s, bno) =
-                traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
-        OracularClock.withinEachSlot clock joinSlot get put
+      forkInstrumentation
+        clock
+        sharedRegistry
+        vertexStatusVar
+        nodeInfo
+        nextInstrSlotVar
 
       return (coreNodeId, vertexStatusVar, readNodeInfo)
 
@@ -409,6 +401,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> VertexStatusVar m blk
       -> [EdgeStatusVar m]
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+      -> StrictTVar m SlotNo
       -> m ()
     forkVertex
       mbRekeyM
@@ -419,7 +412,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
       coreNodeId
       vertexStatusVar
       edgeStatusVars
-      nodeInfo =
+      nodeInfo
+      nextInstrSlotVar =
         void $ forkLinkedThread sharedRegistry label $ do
           loop 0 tniProtocolInfo NodeRestart restarts0
       where
@@ -482,11 +476,13 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   error $ "unsatisfiable nodeRestarts: "
                     ++ show (coreNodeId, s')
 
-                -- TODO this " yield " is necessary to ensure the
-                -- instrumentation thread wins the race: we want to record the
-                -- current block number at the start of the slot, before the
-                -- node restarts
-                atomically $ pure ()
+                -- this synchronization prevents a race with the
+                -- instrumentation thread: we it want to record the current
+                -- block number at the start of the slot, before this vertex
+                -- restarts the node
+                atomically $ do
+                  nextSlot <- readTVar nextInstrSlotVar
+                  check $ nextSlot > s'
 
                 pure $ Just (s', pInfo', nr', rs')
 
@@ -510,6 +506,35 @@ runThreadNetwork systemTime ThreadNetworkArgs
           case again of
             Nothing                     -> pure ()
             Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
+
+    -- | Instrumentation: record the tip's block number at the onset of the
+    -- slot.
+    --
+    -- With such a short transaction (read a few TVars) we assume this runs (1)
+    -- before anything else in the slot and (2) once per slot.
+    forkInstrumentation
+      :: OracularClock m
+      -> ResourceRegistry m
+      -> VertexStatusVar m blk
+      -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+      -> StrictTVar m SlotNo
+      -> m ()
+    forkInstrumentation
+      clock
+      registry
+      vertexStatusVar
+      nodeInfo
+      nextInstrSlotVar =
+        void $ OracularClock.forkEachSlot registry clock lbl $ \s -> do
+          bno <- atomically $ readTVar vertexStatusVar >>= \case
+            VUp kernel _ -> ChainDB.getTipBlockNo (getChainDB kernel)
+            _            -> retry
+          traceWith nodeEventsTipBlockNos (s, bno)
+          atomically $ modifyTVar nextInstrSlotVar $ max (succ s)
+      where
+        NodeInfo{nodeInfoEvents}          = nodeInfo
+        NodeEvents{nodeEventsTipBlockNos} = nodeInfoEvents
+        lbl                               = "instrumentation"
 
     -- | Persistently attempt to add the given transactions to the mempool
     -- every time the ledger slot changes, even if successful!

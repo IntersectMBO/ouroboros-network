@@ -10,8 +10,6 @@ module Test.Util.HardFork.OracularClock (
     OracularClock (..)
   , mkOracularClock
   , forkEachSlot
-  , withinEachSlot
-  , withinTheCurrentSlot
   , EndOfDaysException (..)
   ) where
 
@@ -92,50 +90,6 @@ forkEachSlot :: HasCallStack
              -> m (m ())
 forkEachSlot reg clk = forkEachSlot_ clk reg
     -- jumping the hoop so HasCallStack is useful
-
--- | Perform a " transaction " within the current slot
---
--- The callback should be idempotent.
---
--- We don't export a 'getCurrentSlotSTM' function because that leads to races
--- with 'threadDelay'. This function repeatedly attempts to execute the
--- callback until it is able to do so with 'getCurrentSlot' returning the same
--- provided value before and after.
---
--- Takes the expected current slot, returns the current slot.
-withinTheCurrentSlot :: (Monad m)
-                     => OracularClock m
-                     -> SlotNo
-                     -> (SlotNo -> m a)
-                     -> m (SlotNo, Maybe a)
-withinTheCurrentSlot clock s get = do
-    a <- get s
-    s' <- getCurrentSlot clock
-    pure (s', if s == s' then Just a else Nothing)
-
--- | Perform a " transaction " once within each slot
---
--- The first callback should be idempotent.
---
--- See 'withinTheCurrentSlot'.
-withinEachSlot :: (Monad m, HasCallStack)
-               => OracularClock m
-               -> SlotNo
-               -> (SlotNo -> m a)
-               -> (a -> m ())
-               -> m ()
-withinEachSlot clock s0 get put = do
-    (s1, mbA) <- withinTheCurrentSlot clock s0 get
-    case mbA of
-      Nothing ->
-          -- ticked while we were trying, so try again in this new slot
-          withinEachSlot clock s1 get put
-      Just a  -> do
-          put a
-          -- we succeed in this slot, so try again in the next
-          let s2 = succ s1
-          void $ blockUntilSlot clock s2
-          withinEachSlot clock s2 get put
 
 -- | See 'OracularClock'
 --
