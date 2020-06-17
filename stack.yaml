@@ -41,7 +41,7 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: c388d765566ad5e6141c586425bcd7b4efbfec8a
+    commit: 21fb94831099a6b8a4baf7dbc7e2d4c2a76384f1
     subdirs:
       - binary
       - binary/test
