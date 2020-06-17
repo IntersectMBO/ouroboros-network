@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
-import           Control.Monad (void)
+import           Control.Monad (void, forever)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
@@ -390,6 +390,7 @@ mkApps
      , Ord remotePeer
      , Exception e
      , LedgerSupportsProtocol blk
+     , TranslateNetworkProtocolVersion blk
      )
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
@@ -519,15 +520,23 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
     aKeepAliveClient version them channel = do
       labelThisThread "KeepAliveClient"
       startTs <- newTVarM Nothing
-      bracketKeepAliveClient (getFetchClientRegistry kernel) them $ \dqCtx -> do
-        runPeerWithLimits
-          nullTracer
-          cKeepAliveCodec
-          (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
-          timeLimitsKeepAlive
-          channel
-          $ keepAliveClientPeer
-          $ hKeepAliveClient version them dqCtx (KeepAliveInterval 10) startTs
+      let version' = nodeToNodeProtocolVersion (Proxy @blk) version
+          kacApp = case version' of
+                        -- Version 1 and 2 doesn't support keep alive protocol but Blockfetch
+                        -- still requires a PeerGSV per peer.
+                        NodeToNodeV_1 -> \_ -> forever (threadDelay 1000) >> return ()
+                        NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ()
+                        _             -> \dqCtx -> do
+                          runPeerWithLimits
+                            nullTracer
+                            cKeepAliveCodec
+                            (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
+                            timeLimitsKeepAlive
+                            channel
+                            $ keepAliveClientPeer
+                            $ hKeepAliveClient version them dqCtx (KeepAliveInterval 10) startTs
+
+      bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
 
     aKeepAliveServer
       :: BlockNodeToNodeVersion blk
