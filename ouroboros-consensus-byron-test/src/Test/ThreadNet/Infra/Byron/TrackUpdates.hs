@@ -376,8 +376,11 @@ mkProtocolRealPBftAndHardForkTxs
   -> CoreNodeId
   -> Genesis.Config
   -> Genesis.GeneratedSecrets
+  -> Update.ProtocolVersion
+     -- ^ the protocol version that triggers the hard fork
   -> TestNodeInitialization m ByronBlock
-mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
+mkProtocolRealPBftAndHardForkTxs
+  params cid genesisConfig genesisSecrets propPV =
     TestNodeInitialization
       { tniCrucialTxs   = proposals ++ votes
       , tniProtocolInfo = pInfo
@@ -417,7 +420,7 @@ mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
     proposal :: AProposal ByteString
     proposal =
         loopbackAnnotations $
-        mkHardForkProposal params genesisConfig genesisSecrets
+        mkHardForkProposal params genesisConfig genesisSecrets propPV
 
 -- | A protocol parameter update proposal that doesn't actually change any
 -- parameter value but does propose 'theProposedProtocolVersion'
@@ -429,8 +432,9 @@ mkHardForkProposal
   => PBftParams
   -> Genesis.Config
   -> Genesis.GeneratedSecrets
+  -> Update.ProtocolVersion
   -> AProposal ()
-mkHardForkProposal params genesisConfig genesisSecrets =
+mkHardForkProposal params genesisConfig genesisSecrets propPV =
     -- signed by delegate SK
     Proposal.signProposal
       (Byron.byronProtocolMagicId configBlock)
@@ -447,7 +451,7 @@ mkHardForkProposal params genesisConfig genesisSecrets =
 
     propBody :: Proposal.ProposalBody
     propBody = Proposal.ProposalBody
-      { Proposal.protocolVersion          = theProposedProtocolVersion
+      { Proposal.protocolVersion          = propPV
       , Proposal.protocolParametersUpdate = Update.ProtocolParametersUpdate
         { Update.ppuScriptVersion     = Nothing
         , Update.ppuSlotDuration      = Nothing

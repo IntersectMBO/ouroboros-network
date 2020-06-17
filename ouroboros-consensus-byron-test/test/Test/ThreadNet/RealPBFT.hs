@@ -922,6 +922,7 @@ prop_simple_real_pbft_convergence TestSetup
             { nodeInfo = \nid ->
                 mkProtocolRealPBftAndHardForkTxs
                   params nid genesisConfig genesisSecrets
+                  theProposedProtocolVersion
             , mkRekeyM = Just $ fromRekeyingToRekeyM Rekeying
               { rekeyOracle   = \cid s ->
                   let nominalSlots = case refResult of
