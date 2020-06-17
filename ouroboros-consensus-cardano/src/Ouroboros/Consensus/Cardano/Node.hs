@@ -156,14 +156,20 @@ prependTag tag payload = mconcat [
 -- Note: we don't support all combinations, so we don't declare them as
 -- COMPLETE
 
--- | We support only Byron V1 with the hard fork disabled, as no other
--- versions have been released before the hard fork
+-- | We support Byron V1 with the hard fork disabled, as it was released before
+-- the hard fork
 pattern CardanoNodeToNodeVersion1 :: BlockNodeToNodeVersion (CardanoBlock sc)
 pattern CardanoNodeToNodeVersion1 =
     HardForkNodeToNodeDisabled (WrapNodeToNodeVersion ByronNodeToNodeVersion1)
 
+-- | We support Byron V2 with the hard fork disabled, as it was released
+-- before the hard fork
 pattern CardanoNodeToNodeVersion2 :: BlockNodeToNodeVersion (CardanoBlock sc)
 pattern CardanoNodeToNodeVersion2 =
+    HardForkNodeToNodeDisabled (WrapNodeToNodeVersion ByronNodeToNodeVersion2)
+
+pattern CardanoNodeToNodeVersion3 :: BlockNodeToNodeVersion (CardanoBlock sc)
+pattern CardanoNodeToNodeVersion3 =
     HardForkNodeToNodeEnabled (
          WrapNodeToNodeVersion ByronNodeToNodeVersion2
       :* WrapNodeToNodeVersion ShelleyNodeToNodeVersion1
@@ -194,6 +200,7 @@ instance TPraosCrypto sc => TranslateNetworkProtocolVersion (CardanoBlock sc) wh
   supportedNodeToNodeVersions _ = NE.fromList $
       [ CardanoNodeToNodeVersion1
       , CardanoNodeToNodeVersion2
+      , CardanoNodeToNodeVersion3
       ]
 
   supportedNodeToClientVersions _ = NE.fromList $
@@ -202,12 +209,13 @@ instance TPraosCrypto sc => TranslateNetworkProtocolVersion (CardanoBlock sc) wh
       , CardanoNodeToClientVersion3
       ]
 
-  mostRecentSupportedNodeToNode   _ = CardanoNodeToNodeVersion2
+  mostRecentSupportedNodeToNode   _ = CardanoNodeToNodeVersion3
   mostRecentSupportedNodeToClient _ = CardanoNodeToClientVersion3
 
   nodeToNodeProtocolVersion _ = \case
       CardanoNodeToNodeVersion1 -> NodeToNodeV_1
       CardanoNodeToNodeVersion2 -> NodeToNodeV_2
+      CardanoNodeToNodeVersion3 -> NodeToNodeV_3
       v                         -> error $ "unsupported version: " <> show v
 
   nodeToClientProtocolVersion _ = \case
