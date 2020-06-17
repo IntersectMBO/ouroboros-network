@@ -22,6 +22,9 @@ data ByronNodeToNodeVersion =
 
     -- | We send headers /with/ a size hint
   | ByronNodeToNodeVersion2
+
+    -- | KeepAlive protocol
+  | ByronNodeToNodeVersion3
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 data ByronNodeToClientVersion =
@@ -38,15 +41,16 @@ instance HasNetworkProtocolVersion ByronBlock where
 
 instance TranslateNetworkProtocolVersion ByronBlock where
   supportedNodeToNodeVersions   _ = ByronNodeToNodeVersion1
-                                  :| [ ByronNodeToNodeVersion2 ]
+                                  :| [ ByronNodeToNodeVersion2, ByronNodeToNodeVersion3 ]
   supportedNodeToClientVersions _ = ByronNodeToClientVersion1
                                   :| [ ByronNodeToClientVersion2 ]
 
-  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion2
+  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion3
   mostRecentSupportedNodeToClient _ = ByronNodeToClientVersion2
 
   nodeToNodeProtocolVersion _ ByronNodeToNodeVersion1 = N.NodeToNodeV_1
   nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = N.NodeToNodeV_2
+  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion3 = N.NodeToNodeV_3
 
   nodeToClientProtocolVersion _ ByronNodeToClientVersion1 = N.NodeToClientV_1
   nodeToClientProtocolVersion _ ByronNodeToClientVersion2 = N.NodeToClientV_2

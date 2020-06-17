@@ -315,6 +315,8 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (Header ByronBlock)) wher
             hdr { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
           ByronNodeToNodeVersion2 ->
             hdr
+          ByronNodeToNodeVersion3 ->
+            hdr
     return (WithVersion version hdr')
 
 instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeBlock (NestedCtxt Header) ByronBlock)) where
@@ -323,6 +325,7 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeBlock (NestedCtxt He
       size    <- case version of
                    ByronNodeToNodeVersion1 -> return fakeByronBlockSizeHint
                    ByronNodeToNodeVersion2 -> arbitrary
+                   ByronNodeToNodeVersion3 -> arbitrary
       ctxt    <- elements [
                      SomeBlock . NestedCtxt $ CtxtByronRegular  size
                    , SomeBlock . NestedCtxt $ CtxtByronBoundary size

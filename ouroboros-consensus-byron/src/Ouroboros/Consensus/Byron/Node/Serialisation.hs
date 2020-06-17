@@ -89,6 +89,8 @@ instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
           encodeUnsizedHeader . fst . splitSizeHint
       ByronNodeToNodeVersion2 ->
         encodeDisk ccfg . unnest
+      ByronNodeToNodeVersion3 ->
+        encodeDisk ccfg . unnest
 
   decodeNodeToNode ccfg = \case
       ByronNodeToNodeVersion1 ->
@@ -96,6 +98,8 @@ instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
               (flip joinSizeHint fakeByronBlockSizeHint .)
           <$> decodeUnsizedHeader epochSlots
       ByronNodeToNodeVersion2 ->
+        nest <$> decodeDisk ccfg
+      ByronNodeToNodeVersion3 ->
         nest <$> decodeDisk ccfg
     where
       epochSlots = getByronEpochSlots ccfg
@@ -119,6 +123,7 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
           aux (GenDepPair ix (Serialised bytes)) = (SomeBlock ix, bytes)
 
       ByronNodeToNodeVersion2 -> encodeDisk ccfg
+      ByronNodeToNodeVersion3 -> encodeDisk ccfg
 
   decodeNodeToNode ccfg version = case version of
       ByronNodeToNodeVersion1 -> do
@@ -131,6 +136,7 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
           aux (SomeBlock ix, bytes) = GenDepPair ix (Serialised bytes)
 
       ByronNodeToNodeVersion2 -> decodeDisk ccfg
+      ByronNodeToNodeVersion3 -> decodeDisk ccfg
 
 -- | No CBOR-in-CBOR, because we check for canonical encodings, which means we
 -- can use the recomputed encoding for the annotation.

@@ -173,7 +173,7 @@ pattern CardanoNodeToNodeVersion2 =
 pattern CardanoNodeToNodeVersion3 :: BlockNodeToNodeVersion (CardanoBlock sc)
 pattern CardanoNodeToNodeVersion3 =
     HardForkNodeToNodeEnabled (
-         WrapNodeToNodeVersion ByronNodeToNodeVersion2
+         WrapNodeToNodeVersion ByronNodeToNodeVersion3
       :* WrapNodeToNodeVersion ShelleyNodeToNodeVersion1
       :* Nil
       )

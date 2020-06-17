@@ -522,7 +522,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       startTs <- newTVarM Nothing
       let version' = nodeToNodeProtocolVersion (Proxy @blk) version
           kacApp = case version' of
-                        -- Version 1 and 2 doesn't support keep alive protocol but Blockfetch
+                        -- Version 1 doesn't support keep alive protocol but Blockfetch
                         -- still requires a PeerGSV per peer.
                         NodeToNodeV_1 -> \_ -> forever (threadDelay 1000) >> return ()
                         NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ()
