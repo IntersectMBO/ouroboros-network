@@ -69,7 +69,11 @@ keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startT
                    M.adjust (\a -> a <> sample) peer m
            Nothing        -> return ()
 
-      delayVar <- registerDelay keepAliveInterval
+      let keepAliveInterval' = case startTime_m of
+                                    Just _  -> keepAliveInterval
+                                    Nothing -> 0 -- The first time we send a packet directly.
+
+      delayVar <- registerDelay keepAliveInterval'
       decision <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
       atomically $ writeTVar startTimeV $ Just now
