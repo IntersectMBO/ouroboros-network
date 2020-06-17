@@ -28,9 +28,11 @@ import           Ouroboros.Network.Protocol.KeepAlive.Server
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }
 
-data TraceKeepAliveClient =
-    AddSample DiffTime
-    deriving Show
+data TraceKeepAliveClient peer =
+    AddSample peer DiffTime
+
+instance Show peer => Show (TraceKeepAliveClient peer) where
+    show (AddSample peer rtt) = "AddSample " ++ show peer ++ show rtt
 
 keepAliveClient
     :: forall m peer.
@@ -39,7 +41,7 @@ keepAliveClient
        , MonadTimer m
        , Ord peer
        )
-    => Tracer m TraceKeepAliveClient
+    => Tracer m (TraceKeepAliveClient peer)
     -> peer
     -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
@@ -60,7 +62,7 @@ keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startT
       startTime_m <- atomically $ readTVar startTimeV
       case startTime_m of
            Just startTime -> do
-               traceWith tracer $ AddSample $ diffTime endTime startTime
+               traceWith tracer $ AddSample peer $ diffTime endTime startTime
                let sample = fromSample startTime endTime payloadSize
                atomically $ modifyTVar dqCtx $ \m ->
                    assert (peer `M.member` m) $

@@ -60,7 +60,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
-  , keepAliveClientTracer         :: f TraceKeepAliveClient
+  , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
 
     -- | Called on every slot with the possibly updated 'ForgeState'
     --
