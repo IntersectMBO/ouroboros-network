@@ -15,6 +15,7 @@ module Ouroboros.Network.BlockFetch.ClientRegistry (
     FetchClientPolicy(..),
     readFetchClientsStatus,
     readFetchClientsStateVars,
+    readPeerGSVs,
   ) where
 
 import           Data.Functor.Contravariant (contramap)
@@ -216,3 +217,10 @@ readFetchClientsStateVars :: MonadSTM m
                           -> STM m (Map peer (FetchClientStateVars m header))
 readFetchClientsStateVars (FetchClientRegistry _ registry _ _) = readTVar registry
 
+-- | A read-only 'STM' action to get the 'PeerGSV's for all fetch
+-- clients in the 'FetchClientRegistry'.
+--
+readPeerGSVs :: MonadSTM m
+             => FetchClientRegistry peer header block m
+             -> STM m (Map peer PeerGSV)
+readPeerGSVs (FetchClientRegistry _ _ _ registry) = readTVar registry

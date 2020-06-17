@@ -100,7 +100,6 @@ module Ouroboros.Network.BlockFetch (
   ) where
 
 import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
@@ -108,15 +107,14 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.DeltaQ
-                   ( PeerGSV(..), ballisticGSV, degenerateDistribution
-                   , SizeInBytes )
+import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientPolicy(..)
                    , FetchClientRegistry, newFetchClientRegistry
                    , readFetchClientsStatus, readFetchClientsStateVars
+                   , readPeerGSVs
                    , bracketFetchClient, bracketKeepAliveClient
                    , bracketSyncWithFetchClient, setFetchClientContext )
 
@@ -280,16 +278,7 @@ blockFetchLogic decisionTracer clientStateTracer
       FetchNonTriggerVariables {
         readStateFetchedBlocks    = readFetchedBlocks,
         readStatePeerStateVars    = readFetchClientsStateVars registry,
-        readStatePeerGSVs         = readPeerGSVs,
+        readStatePeerGSVs         = readPeerGSVs registry,
         readStateFetchMode        = readFetchMode,
         readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
       }
-
-    -- TODO: get this from elsewhere once we have DeltaQ info available
-    readPeerGSVs = Map.map (const dummyGSVs) <$> readFetchClientsStateVars registry
-    -- roughly 500ms one-way ping time and 5MBit/s bandwidth gives an in-flight
-    -- low watermark and high watermark of ~500kb and ~1000kb respectively.
-    dummyGSVs    = PeerGSV{outboundGSV, inboundGSV}
-    inboundGSV   = ballisticGSV 500e-3 2e-6 (degenerateDistribution 0)
-    outboundGSV  = inboundGSV
-
