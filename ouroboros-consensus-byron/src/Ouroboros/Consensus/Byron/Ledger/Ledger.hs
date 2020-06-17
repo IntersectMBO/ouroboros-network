@@ -45,7 +45,6 @@ import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot hiding (at)
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
@@ -255,18 +254,13 @@ instance LedgerSupportsProtocol ByronBlock where
                 Origin -> SlotNo $ 2 * k
                 At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
-byronEraParams :: Gen.Config -> HardFork.EraParams
-byronEraParams genesis = HardFork.EraParams {
+byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
+byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
       eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
     , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
     , eraSafeZone   = HardFork.SafeZone {
           safeFromTip     = 2 * k
-
-          -- @180@ is merely a lower bound on the 'EpochNo' in which the
-          -- Byron-to-Shelley transition could take place. We can update
-          -- it over time, and set it to the precise value once the
-          -- transition has actually taken place.
-        , safeBeforeEpoch = HardFork.LowerBound (EpochNo 180)
+        , safeBeforeEpoch = safeBeforeEpoch
         }
     }
   where
@@ -274,7 +268,8 @@ byronEraParams genesis = HardFork.EraParams {
 
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[ByronBlock]
-  hardForkSummary = neverForksHardForkSummary byronEraParams
+  hardForkSummary =
+      neverForksHardForkSummary (byronEraParams HardFork.UnsafeUnbounded)
 
 {-------------------------------------------------------------------------------
   Auxiliary

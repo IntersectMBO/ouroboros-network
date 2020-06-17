@@ -6,7 +6,7 @@ module Test.ThreadNet.Cardano (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (replicateM)
+import           Control.Monad (guard, replicateM)
 import           Data.List ((!!))
 import           Data.Word (Word64)
 
@@ -15,7 +15,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.Slot (EpochSize (..))
+import           Cardano.Slotting.Slot (EpochNo, EpochSize (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 
@@ -54,10 +54,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
 data TestSetup = TestSetup
-  { setupD          :: Double
+  { setupByronLowerBound :: Bool
+    -- ^ whether to use the @HardFork.LowerBound@ optimization
+  , setupD               :: Double
     -- ^ decentralization parameter
-  , setupK          :: SecurityParam
-  , setupTestConfig :: TestConfig
+  , setupK               :: SecurityParam
+  , setupTestConfig      :: TestConfig
   }
   deriving (Show)
 
@@ -68,8 +70,11 @@ instance Arbitrary TestSetup where
 
     setupTestConfig <- arbitrary
 
+    setupByronLowerBound <- arbitrary
+
     pure TestSetup
-      { setupD
+      { setupByronLowerBound
+      , setupD
       , setupK
       , setupTestConfig
       }
@@ -84,7 +89,8 @@ tests = testGroup "Cardano" $
 
 prop_simple_cardano_convergence :: TestSetup -> Property
 prop_simple_cardano_convergence TestSetup
-  { setupD
+  { setupByronLowerBound
+  , setupD
   , setupK
   , setupTestConfig
   } =
@@ -126,6 +132,7 @@ prop_simple_cardano_convergence TestSetup
                     generatedSecrets
                     genesisShelley
                     (coreNodes !! fromIntegral nid)
+                    (guard setupByronLowerBound *> Just numByronEpochs)
                     (NoHardCodedTransition shelleyInitialMajorVersion)
             , mkRekeyM = Nothing
             }
@@ -201,11 +208,12 @@ mkProtocolCardano
   -> ShelleyGenesis sc
   -> Shelley.CoreNode sc
      -- Hard fork
+  -> Maybe EpochNo
   -> HardCodedTransition
   -> ProtocolInfo m (CardanoBlock sc)
 mkProtocolCardano pbftParams coreNodeId genesisByron generatedSecretsByron
                   genesisShelley coreNodeShelley
-                  hardCodedTransition =
+                  mbLowerBound hardCodedTransition =
     protocolInfoCardano
       -- Byron
       genesisByron
@@ -213,13 +221,14 @@ mkProtocolCardano pbftParams coreNodeId genesisByron generatedSecretsByron
       protVerByron
       softVerByron
       (Just leaderCredentialsByron)
-     -- Shelley
-     genesisShelley
-     protVerShelley
-     maxMajorPVShelley
-     (Just leaderCredentialsShelley)
-     -- Hard fork
-     hardCodedTransition
+      -- Shelley
+      genesisShelley
+      protVerShelley
+      maxMajorPVShelley
+      (Just leaderCredentialsShelley)
+      -- Hard fork
+      mbLowerBound
+      hardCodedTransition
   where
     -- Byron
     PBftParams { pbftSignatureThreshold } = pbftParams
@@ -269,3 +278,12 @@ shelleyInitialMajorVersion = byronLastMajorVersion + 1
   where
     byronLastMajorVersion :: Num a => a
     byronLastMajorVersion = 0
+
+-- | The number of Byron epochs in this test
+--
+-- All nodes join in slot 0, we generate the proposal in slot 0, we also
+-- generate the votes in slot 0, and the nodes are endorsing the proposal as of
+-- slot 0. Thus we expect that Byron will end after one era. Otherwise it would
+-- indicate some sort of protocol failure.
+numByronEpochs :: Num a => a
+numByronEpochs = 1

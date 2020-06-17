@@ -39,6 +39,7 @@ import           Cardano.Prelude (Natural)
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
+import           Cardano.Slotting.Slot (EpochNo)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -160,6 +161,17 @@ data Protocol (m :: * -> *) blk p where
     -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
        -- Hard fork
+    -> Maybe EpochNo
+       -- ^ maybe lower bound on first Shelley epoch
+       --
+       -- Setting this to @Just@ when a true lower bound is known may
+       -- particularly improve performance of bulk syncing. For example, @Just
+       -- 180@ would be sound for the Cardano mainnet, since the Byron era's
+       -- immutable prefix now includes that era. We can update it over time,
+       -- and set it to the precise value once the transition has actually
+       -- taken place.
+       --
+       -- The @Nothing@ case is useful for test and possible alternative nets.
     -> HardCodedTransition
     -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
@@ -200,11 +212,11 @@ protocolInfo (ProtocolRealTPraos genesis protVer maxMajorPV mbLeaderCredentials)
 protocolInfo (ProtocolCardano
                genesisByron mthr prv swv mbLeaderCredentialsByron
                genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
-               hardCodedTransition) =
+               mbLowerBound hardCodedTransition) =
     protocolInfoCardano
       genesisByron mthr prv swv mbLeaderCredentialsByron
       genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
-      hardCodedTransition
+      mbLowerBound hardCodedTransition
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
