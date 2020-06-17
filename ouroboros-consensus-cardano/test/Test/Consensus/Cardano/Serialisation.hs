@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.Cardano.Serialisation (tests) where
 
+import           Cardano.Crypto.Hash (ShortHash)
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
@@ -63,13 +64,13 @@ tests = testGroup "Cardano"
     pReal :: Proxy (CardanoBlock TPraosStandardCrypto)
     pReal = Proxy
 
-testCodecCfg :: CardanoCodecConfig TPraosMockCrypto
+testCodecCfg :: CardanoCodecConfig (TPraosMockCrypto ShortHash)
 testCodecCfg =
   CardanoCodecConfig (ByronCodecConfig epochSlots k) ShelleyCodecConfig
 
 dictNestedHdr
   :: forall a.
-     NestedCtxt_ (CardanoBlock TPraosMockCrypto) Header a
+     NestedCtxt_ (CardanoBlock (TPraosMockCrypto ShortHash)) Header a
   -> Dict (Eq a, Show a)
 dictNestedHdr = \case
     NCZ (CtxtByronBoundary {}) -> Dict
@@ -81,7 +82,7 @@ dictNestedHdr = \case
   BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_CardanoBinaryBlockInfo :: CardanoBlock TPraosMockCrypto -> Property
+prop_CardanoBinaryBlockInfo :: CardanoBlock (TPraosMockCrypto ShortHash) -> Property
 prop_CardanoBinaryBlockInfo blk =
     encodedNestedHeader === extractedHeader
   where

@@ -79,6 +79,7 @@ test-suite test
                      , binary
                      , bytestring
                      , cardano-binary
+                     , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting

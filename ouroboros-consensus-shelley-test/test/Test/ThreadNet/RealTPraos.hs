@@ -10,6 +10,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Slotting.Slot (EpochSize (..))
 
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -25,6 +26,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Node
 
@@ -110,7 +112,7 @@ prop_simple_real_tpraos_convergence TestSetup
     maxKESEvolution :: Word64
     maxKESEvolution = 100 -- TODO
 
-    coreNodes :: [CoreNode TPraosMockCrypto]
+    coreNodes :: [CoreNode (TPraosMockCrypto ShortHash)]
     coreNodes =
         withSeed initSeed $
         replicateM (fromIntegral n) $
@@ -118,9 +120,10 @@ prop_simple_real_tpraos_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisConfig :: ShelleyGenesis TPraosMockCrypto
+    genesisConfig :: ShelleyGenesis (TPraosMockCrypto ShortHash)
     genesisConfig =
         mkGenesisConfig
+          (SL.ProtVer 0 0)
           setupK
           setupD
           tpraosSlotLength

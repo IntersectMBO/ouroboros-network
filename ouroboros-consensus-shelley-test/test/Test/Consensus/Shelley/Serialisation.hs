@@ -9,12 +9,13 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
+import           Cardano.Crypto.Hash (ShortHash)
+
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
-import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -49,13 +50,13 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    pMock :: Proxy (ShelleyBlock TPraosMockCrypto)
+    pMock :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
     pMock = Proxy
 
-    pReal :: Proxy (ShelleyBlock TPraosStandardCrypto)
+    pReal :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
     pReal = Proxy
 
-    testCodecCfg :: CodecConfig Block
+    testCodecCfg :: CodecConfig (ShelleyBlock (TPraosMockCrypto ShortHash))
     testCodecCfg = ShelleyCodecConfig
 
     dictNestedHdr :: forall a c. Crypto c
@@ -66,7 +67,7 @@ tests = testGroup "Shelley"
   BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_shelleyBinaryBlockInfo :: Block -> Property
+prop_shelleyBinaryBlockInfo :: Block ShortHash -> Property
 prop_shelleyBinaryBlockInfo blk =
     encodedHeader === extractedHeader
   where
@@ -92,15 +93,15 @@ testTPraosSlotsPerKESPeriod :: Word64
 testTPraosSlotsPerKESPeriod = maxBound
 
 -- | Test that the block we generate pass the 'verifyBlockIntegrity' check
-prop_blockIntegrity :: Block -> Bool
+prop_blockIntegrity :: Block ShortHash -> Bool
 prop_blockIntegrity = verifyBlockIntegrity testTPraosSlotsPerKESPeriod
 
 -- | Test that the block we generate pass the 'verifyHeaderIntegrity' check
-prop_headerIntegrity :: Header Block -> Bool
+prop_headerIntegrity :: Header (Block ShortHash) -> Bool
 prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
 
 -- | Test that we can detect random bitflips in blocks.
-prop_detectCorruption_Block :: Block -> Corruption -> Property
+prop_detectCorruption_Block :: Block ShortHash -> Corruption -> Property
 prop_detectCorruption_Block =
     detectCorruption
       encodeShelleyBlock
@@ -108,7 +109,7 @@ prop_detectCorruption_Block =
       (verifyBlockIntegrity testTPraosSlotsPerKESPeriod)
 
 -- | Test that we can detect random bitflips in blocks.
-prop_detectCorruption_Header :: Header Block -> Corruption -> Property
+prop_detectCorruption_Header :: Header (Block ShortHash) -> Corruption -> Property
 prop_detectCorruption_Header =
     detectCorruption
       encodeShelleyHeader

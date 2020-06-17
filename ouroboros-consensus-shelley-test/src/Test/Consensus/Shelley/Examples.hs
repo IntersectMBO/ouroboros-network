@@ -28,6 +28,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Time (UTCTime (..), fromGregorian)
 
 import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
@@ -104,24 +105,24 @@ mkDummyHash _ = coerce . SL.hash @(SL.HASH c)
   Examples
 -------------------------------------------------------------------------------}
 
-exampleBlock :: Block
+exampleBlock :: Block ShortHash
 exampleBlock = mkShelleyBlock Examples.blockEx3B
 
-exampleHeader :: Header Block
+exampleHeader :: Header (Block ShortHash)
 exampleHeader = getHeader exampleBlock
 
-exampleHeaderHash :: HeaderHash Block
+exampleHeaderHash :: HeaderHash (Block ShortHash)
 exampleHeaderHash = blockHash exampleBlock
 
-exampleGenTx :: GenTx Block
+exampleGenTx :: GenTx (Block ShortHash)
 exampleGenTx = mkShelleyTx Examples.txEx2A
 
-exampleGenTxId :: GenTxId Block
+exampleGenTxId :: GenTxId (Block ShortHash)
 exampleGenTxId = txId exampleGenTx
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
-exampleApplyTxErr :: ApplyTxErr Block
+exampleApplyTxErr :: ApplyTxErr (Block ShortHash)
 exampleApplyTxErr =
       ApplyTxError
     $ pure
@@ -129,51 +130,51 @@ exampleApplyTxErr =
     $ STS.UtxowFailure
     $ STS.InvalidWitnessesUTXOW ([SL.VKey 1], [])
 
-exampleConsensusState :: ConsensusState (BlockProtocol Block)
+exampleConsensusState :: ConsensusState (BlockProtocol (Block ShortHash))
 exampleConsensusState =
     TPraosState.append 2      (mkPrtclState 2) $
     TPraosState.empty  (At 1) (mkPrtclState 1)
   where
-    mkPrtclState :: Natural -> STS.PrtclState TPraosMockCrypto
+    mkPrtclState :: Natural -> STS.PrtclState (TPraosMockCrypto ShortHash)
     mkPrtclState seed = STS.PrtclState
       (Map.fromList
-       [ (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)
-       , (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 2), 2)
+       [ (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)
+       , (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 2), 2)
        ])
       SL.NeutralNonce
       (SL.mkNonce seed)
       (SL.mkNonce seed)
       (SL.mkNonce seed)
 
-exampleLedgerState :: LedgerState Block
+exampleLedgerState :: LedgerState (Block ShortHash)
 exampleLedgerState = reapplyLedgerBlock
     ledgerCfg
-    (mkShelleyBlock newBlock)
+    (mkShelleyBlock newBlock :: Block ShortHash)
     (Ticked 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint
       , history      = History.empty
       , shelleyState = STS.chainNes startState
       })
   where
-    Examples.CHAINExample { startState, newBlock } = Examples.ex2A
+    Examples.CHAINExample { startState, newBlock } = Examples.ex2A (Proxy @ShortHash)
     ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
 
-exampleHeaderState :: HeaderState Block
+exampleHeaderState :: HeaderState (Block ShortHash)
 exampleHeaderState = genesisHeaderState st
   where
-    prtclState :: STS.PrtclState TPraosMockCrypto
+    prtclState :: STS.PrtclState (TPraosMockCrypto ShortHash)
     prtclState = STS.PrtclState
       (Map.fromList
-        [(SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)])
+        [(SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)])
       SL.NeutralNonce
       (SL.mkNonce 1)
       SL.NeutralNonce
       (SL.mkNonce 2)
 
-    st :: TPraosState ConcreteCrypto
+    st :: TPraosState (ConcreteCrypto ShortHash)
     st = TPraosState.empty (At 1) prtclState
 
-exampleExtLedgerState :: ExtLedgerState Block
+exampleExtLedgerState :: ExtLedgerState (Block ShortHash)
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState

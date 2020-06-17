@@ -6,7 +6,7 @@ module Test.ThreadNet.Cardano (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (replicateM)
+import           Control.Monad (guard, replicateM)
 import           Data.List ((!!))
 import           Data.Word (Word64)
 
@@ -15,7 +15,9 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.Slot (EpochSize (..))
+import           Cardano.Slotting.Slot (EpochNo, EpochSize (..))
+
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -23,10 +25,12 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 
+import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
@@ -44,31 +48,44 @@ import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
+import           Test.ThreadNet.Network (TestNodeInitialization (..))
 import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
-import           Test.Util.HardFork.Future (singleEraFuture)
+import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
 data TestSetup = TestSetup
-  { setupD          :: Double
+  { setupByronLowerBound   :: Bool
+    -- ^ whether to use the @HardFork.LowerBound@ optimization
+  , setupD                 :: Double
     -- ^ decentralization parameter
-  , setupK          :: SecurityParam
-  , setupTestConfig :: TestConfig
+  , setupK                 :: SecurityParam
+  , setupSlotLengthByron   :: SlotLength
+  , setupSlotLengthShelley :: SlotLength
+  , setupTestConfig        :: TestConfig
   }
   deriving (Show)
 
 instance Arbitrary TestSetup where
   arbitrary = do
     setupD <- (/10)         <$> choose   (1, 10)
-    setupK <- SecurityParam <$> elements [5, 10]
+    setupK <- SecurityParam <$> choose   (2, 5)
+
+    setupSlotLengthByron   <- arbitrary
+    setupSlotLengthShelley <- arbitrary
 
     setupTestConfig <- arbitrary
 
+    setupByronLowerBound <- arbitrary
+
     pure TestSetup
-      { setupD
+      { setupByronLowerBound
+      , setupD
       , setupK
+      , setupSlotLengthByron
+      , setupSlotLengthShelley
       , setupTestConfig
       }
 
@@ -76,19 +93,17 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "Cardano" $
-   -- TODO Byron hashes are 32 bytes and Shelley mock hashes are 4 bytes, so they
-   -- are incompatible, causing the tests to fail. We disable them until we have
-   -- a solution for this, e.g., parameterising the Shelley mock crypto by the
-   -- hash type.
-    const [] $ -- REMOVE this line
     [ testProperty "simple convergence" $ \setup ->
           prop_simple_cardano_convergence setup
     ]
 
 prop_simple_cardano_convergence :: TestSetup -> Property
 prop_simple_cardano_convergence TestSetup
-  { setupD
+  { setupByronLowerBound
+  , setupD
   , setupK
+  , setupSlotLengthByron
+  , setupSlotLengthShelley
   , setupTestConfig
   } =
     prop_general PropGeneralArgs
@@ -111,39 +126,42 @@ prop_simple_cardano_convergence TestSetup
 
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
-      , future       = singleEraFuture Shelley.tpraosSlotLength epochSize
+      , future       =
+          EraCons  setupSlotLengthByron   epochSize (EraSize numByronEpochs) $
+          EraFinal setupSlotLengthShelley epochSize
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
       }
 
-    testOutput :: TestOutput (CardanoBlock TPraosMockCrypto)
+    testOutput :: TestOutput (CardanoBlock (TPraosMockCrypto Blake2b_256))
     testOutput =
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
-                plainTestNodeInitialization $
-                  mkProtocolCardano
-                    pbftParams
-                    coreNodeId
-                    genesisByron
-                    generatedSecrets
-                    genesisShelley
-                    (coreNodes !! fromIntegral nid)
-                    (HardCodedTransitionAt 1)
+                mkProtocolCardanoAndHardForkTxs
+                  pbftParams
+                  coreNodeId
+                  genesisByron
+                  generatedSecrets
+                  genesisShelley
+                  (coreNodes !! fromIntegral nid)
+                  (guard setupByronLowerBound *> Just numByronEpochs)
+                  (NoHardCodedTransition shelleyInitialMajorVersion)
             , mkRekeyM = Nothing
             }
 
-    -- Shared
-    --
-    -- TODO we use the same @slotLength@ and @epochSize@ for Byron and Shelley
-    -- until the ThreadNet infrastructure supports varying them.
-    slotLength :: SlotLength
-    slotLength = slotLengthFromSec 5
-
+    -- The team does not currently plan for Byron or Shelley to ever use an
+    -- epoch size other than 10k.
     epochSize :: EpochSize
-    epochSize = assert (epochSizeByron == epochSizeShelley) epochSizeByron
+    epochSize =
+        assert (tenK == epochSizeByron) $
+        assert (tenK == epochSizeShelley) $
+        tenK
+      where
+        tenK = EpochSize (10 * maxRollbacks setupK)
 
     -- Byron
+
     pbftParams :: PBftParams
     pbftParams = Byron.realPBftParams setupK numCoreNodes
 
@@ -154,7 +172,7 @@ prop_simple_cardano_convergence TestSetup
     genesisByron     :: CC.Genesis.Config
     generatedSecrets :: CC.Genesis.GeneratedSecrets
     (genesisByron, generatedSecrets) =
-        Byron.generateGenesisConfig slotLength pbftParams
+        Byron.generateGenesisConfig setupSlotLengthByron pbftParams
 
     -- Shelley
 
@@ -164,7 +182,7 @@ prop_simple_cardano_convergence TestSetup
     maxKESEvolution :: Word64
     maxKESEvolution = 100
 
-    coreNodes :: [Shelley.CoreNode TPraosMockCrypto]
+    coreNodes :: [Shelley.CoreNode (TPraosMockCrypto Blake2b_256)]
     coreNodes =
         withSeed initSeed $
         replicateM (fromIntegral n) $
@@ -172,20 +190,21 @@ prop_simple_cardano_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisShelley :: ShelleyGenesis TPraosMockCrypto
+    genesisShelley :: ShelleyGenesis (TPraosMockCrypto Blake2b_256)
     genesisShelley =
         Shelley.mkGenesisConfig
+          (SL.ProtVer shelleyInitialMajorVersion 0)
           setupK
           setupD
-          slotLength
+          setupSlotLengthShelley
           maxKESEvolution
           coreNodes
 
     epochSizeShelley :: EpochSize
     epochSizeShelley = sgEpochLength genesisShelley
 
-mkProtocolCardano
-  :: forall sc m. (MonadRandom m, TPraosCrypto sc)
+mkProtocolCardanoAndHardForkTxs
+  :: forall sc m. (IOLike m, TPraosCrypto sc)
      -- Byron
   => PBftParams
   -> CoreNodeId
@@ -195,26 +214,50 @@ mkProtocolCardano
   -> ShelleyGenesis sc
   -> Shelley.CoreNode sc
      -- Hard fork
+  -> Maybe EpochNo
   -> HardCodedTransition
-  -> ProtocolInfo m (CardanoBlock sc)
-mkProtocolCardano pbftParams coreNodeId genesisByron generatedSecretsByron
-                  genesisShelley coreNodeShelley
-                  hardCodedTransition =
-    protocolInfoCardano
-      -- Byron
-      genesisByron
-      (Just $ PBftSignatureThreshold pbftSignatureThreshold)
-      protVerByron
-      softVerByron
-      (Just leaderCredentialsByron)
-     -- Shelley
-     genesisShelley
-     protVerShelley
-     maxMajorPVShelley
-     (Just leaderCredentialsShelley)
-     -- Hard fork
-     hardCodedTransition
+  -> TestNodeInitialization m (CardanoBlock sc)
+mkProtocolCardanoAndHardForkTxs
+    pbftParams coreNodeId genesisByron generatedSecretsByron
+    genesisShelley coreNodeShelley
+    mbLowerBound hardCodedTransition =
+    TestNodeInitialization
+      { tniCrucialTxs   = crucialTxs
+      , tniProtocolInfo = pInfo
+      }
   where
+    crucialTxs :: [GenTx (CardanoBlock sc)]
+    crucialTxs =
+        assert (protVerByron == Byron.theProposedProtocolVersion) $
+        GenTxByron <$> tniCrucialTxs tniByron
+      where
+        -- reuse the RealPBft logic for generating the crucial txs, ie the
+        -- proposal and votes
+        tniByron :: TestNodeInitialization m ByronBlock
+        tniByron =
+            Byron.mkProtocolRealPBftAndHardForkTxs
+              pbftParams
+              coreNodeId
+              genesisByron
+              generatedSecretsByron
+
+    pInfo :: ProtocolInfo (ChaChaT m) (CardanoBlock sc)
+    pInfo = protocolInfoCardano
+        -- Byron
+        genesisByron
+        (Just $ PBftSignatureThreshold pbftSignatureThreshold)
+        protVerByron
+        softVerByron
+        (Just leaderCredentialsByron)
+        -- Shelley
+        genesisShelley
+        protVerShelley
+        maxMajorPVShelley
+        (Just leaderCredentialsShelley)
+        -- Hard fork
+        mbLowerBound
+        hardCodedTransition
+
     -- Byron
     PBftParams { pbftSignatureThreshold } = pbftParams
 
@@ -225,18 +268,51 @@ mkProtocolCardano pbftParams coreNodeId genesisByron generatedSecretsByron
           generatedSecretsByron
           coreNodeId
 
+    -- the protocol version that each Byron node is endorsing with each block
+    -- it forges (ie which the node is ready to run)
     protVerByron :: CC.Update.ProtocolVersion
-    protVerByron = CC.Update.ProtocolVersion 2 0 0
+    protVerByron = CC.Update.ProtocolVersion shelleyInitialMajorVersion 0 0
 
+    -- this sets a vestigial header field which is not actually used for anything
     softVerByron :: CC.Update.SoftwareVersion
-    softVerByron = CC.Update.SoftwareVersion (CC.Update.ApplicationName "Shelley") 0
+    softVerByron = Byron.theProposedSoftwareVersion
 
     -- Shelley
+
+    -- the protocol version that each Shelley node is endorsing with each block
+    -- it forges (ie which the node is ready to run)
+    --
+    -- This is still Shelley, since that's the last era of this test.
     protVerShelley :: SL.ProtVer
-    protVerShelley = SL.ProtVer 2 0
+    protVerShelley = SL.ProtVer shelleyInitialMajorVersion 0
 
     maxMajorPVShelley :: Natural
     maxMajorPVShelley = 100
 
     leaderCredentialsShelley :: TPraosLeaderCredentials sc
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
+
+{-------------------------------------------------------------------------------
+  Constants
+-------------------------------------------------------------------------------}
+
+-- | The major protocol version of Shelley in this test
+--
+-- On mainnet, the Byron era spans multiple major versions: 0 for Classic and 1
+-- for OBFT. So Shelley is 2. But in this test, we start with OBFT as major
+-- version 0: the nodes are running OBFT from slot 0 and the Byron ledger
+-- defaults to an initial version of 0. So Shelley is 1 in this test.
+shelleyInitialMajorVersion :: Num a => a
+shelleyInitialMajorVersion = byronLastMajorVersion + 1
+  where
+    byronLastMajorVersion :: Num a => a
+    byronLastMajorVersion = 0
+
+-- | The number of Byron epochs in this test
+--
+-- All nodes join in slot 0, we generate the proposal in slot 0, we also
+-- generate the votes in slot 0, and the nodes are endorsing the proposal as of
+-- slot 0. Thus we expect that Byron will end after one era. Otherwise it would
+-- indicate some sort of protocol failure.
+numByronEpochs :: Num a => a
+numByronEpochs = 1

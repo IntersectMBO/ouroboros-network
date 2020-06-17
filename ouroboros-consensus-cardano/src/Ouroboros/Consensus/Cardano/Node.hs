@@ -41,6 +41,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 import           Cardano.Prelude (Natural, cborError)
+import           Cardano.Slotting.Slot (EpochNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -288,11 +289,12 @@ protocolInfoCardano
   -> Natural
   -> Maybe (TPraosLeaderCredentials sc)
      -- Hard fork
+  -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
   -> HardCodedTransition
   -> ProtocolInfo m (CardanoBlock sc)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley protVer maxMajorPV mbCredsShelley
-                    hardCodedTransition =
+                    mbLowerBound hardCodedTransition =
     ProtocolInfo {
         pInfoConfig      = cfg
       , pInfoInitLedger  = ExtLedgerState {
@@ -357,8 +359,12 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     shape :: History.Shape (CardanoEras sc)
     shape = History.Shape $
       exactlyTwo
-        (Byron.byronEraParams genesisByron)
+        (Byron.byronEraParams safeBeforeByron genesisByron)
         (Shelley.shelleyEraParams genesisShelley)
+      where
+        safeBeforeByron :: History.SafeBeforeEpoch
+        safeBeforeByron =
+            maybe History.NoLowerBound History.LowerBound mbLowerBound
 
     cfg :: TopLevelConfig (CardanoBlock sc)
     cfg = TopLevelConfig {

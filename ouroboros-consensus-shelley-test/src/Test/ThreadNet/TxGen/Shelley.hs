@@ -2,6 +2,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE ViewPatterns             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -16,6 +17,8 @@ import           Control.Monad.Except (runExcept)
 import           Crypto.Number.Generate (generateBetween, generateMax)
 import           Crypto.Random (MonadRandom)
 import qualified Data.Sequence.Strict as Seq
+
+import           Cardano.Crypto.Hash (HashAlgorithm)
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -41,14 +44,14 @@ import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.Infra.Shelley
 
-data ShelleyTxGenExtra = ShelleyTxGenExtra
+data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.
-    stgeGenEnv :: Gen.GenEnv
+    stgeGenEnv :: Gen.GenEnv h
   }
 
-instance TxGen (ShelleyBlock TPraosMockCrypto) where
+instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 
-  type TxGenExtra (ShelleyBlock TPraosMockCrypto) = ShelleyTxGenExtra
+  type TxGenExtra (ShelleyBlock (TPraosMockCrypto h)) = ShelleyTxGenExtra h
 
   -- TODO #1823
   testGenTxs _numCoreNodes curSlotNo cfg (ShelleyTxGenExtra genEnv) lst = do
@@ -56,10 +59,10 @@ instance TxGen (ShelleyBlock TPraosMockCrypto) where
       go [] n $ applyChainTick (configLedger cfg) curSlotNo lst
     where
       go :: MonadRandom m
-         => [GenTx (ShelleyBlock TPraosMockCrypto)]  -- ^ Accumulator
+         => [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
-         -> TickedLedgerState (ShelleyBlock TPraosMockCrypto)
-         -> m [GenTx (ShelleyBlock TPraosMockCrypto)]
+         -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
+         -> m [GenTx (ShelleyBlock (TPraosMockCrypto h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
         tx <- quickCheckAdapter $ genTx cfg st genEnv
@@ -69,10 +72,11 @@ instance TxGen (ShelleyBlock TPraosMockCrypto) where
           Right st' -> go (tx:acc) (n - 1) st'
 
 genTx
-  :: TopLevelConfig (ShelleyBlock TPraosMockCrypto)
-  -> TickedLedgerState (ShelleyBlock TPraosMockCrypto)
-  -> Gen.GenEnv
-  -> Gen (GenTx (ShelleyBlock TPraosMockCrypto))
+  :: forall h. HashAlgorithm h
+  => TopLevelConfig (ShelleyBlock (TPraosMockCrypto h))
+  -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
+  -> Gen.GenEnv h
+  -> Gen (GenTx (ShelleyBlock (TPraosMockCrypto h)))
 genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
@@ -89,7 +93,7 @@ genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
       (Seq.null $ SL._certs txb)
     ShelleyLedgerState { shelleyState } = tickedLedgerState
 
-    epochState :: CSL.EpochState
+    epochState :: CSL.EpochState h
     epochState = SL.nesEs shelleyState
 
     ledgerEnv :: STS.LedgerEnv
@@ -100,19 +104,21 @@ genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
       , ledgerAccount  = SL.esAccountState epochState
       }
 
-    utxoSt :: CSL.UTxOState
+    utxoSt :: CSL.UTxOState h
     utxoSt =
         SL._utxoState
       . SL.esLState
       $ epochState
 
-    dpState :: CSL.DPState
+    dpState :: CSL.DPState h
     dpState =
         SL._delegationState
       . SL.esLState
       $ epochState
 
-mkGenEnv :: [CoreNode TPraosMockCrypto] -> Gen.GenEnv
+mkGenEnv :: forall h. HashAlgorithm h
+         => [CoreNode (TPraosMockCrypto h)]
+         -> Gen.GenEnv h
 mkGenEnv coreNodes = Gen.GenEnv keySpace constants
   where
     constants :: Gen.Constants
@@ -120,7 +126,7 @@ mkGenEnv coreNodes = Gen.GenEnv keySpace constants
       { Gen.frequencyMIRCert = 0
       }
 
-    keySpace :: Gen.KeySpace
+    keySpace :: Gen.KeySpace h
     keySpace =
       Gen.KeySpace
         (cnkiCoreNode <$> cn)

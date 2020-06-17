@@ -27,6 +27,7 @@ import           Data.Word (Word64)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
+import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -77,20 +78,21 @@ data CoreNode c = CoreNode {
     , cnOCert       :: !(SL.OCert               c)
     }
 
-data CoreNodeKeyInfo = CoreNodeKeyInfo
+data CoreNodeKeyInfo h = CoreNodeKeyInfo
   { cnkiKeyPair
-      ::  ( SL.KeyPair 'SL.Payment TPraosMockCrypto
-          , SL.KeyPair 'SL.Staking TPraosMockCrypto
+      ::  ( SL.KeyPair 'SL.Payment (TPraosMockCrypto h)
+          , SL.KeyPair 'SL.Staking (TPraosMockCrypto h)
           )
   , cnkiCoreNode ::
-      ( SL.KeyPair 'SL.Genesis TPraosMockCrypto
-      , Gen.AllIssuerKeys 'SL.GenesisDelegate
+      ( SL.KeyPair 'SL.Genesis (TPraosMockCrypto h)
+      , Gen.AllIssuerKeys h 'SL.GenesisDelegate
       )
   }
 
 coreNodeKeys
-  :: CoreNode TPraosMockCrypto
-  -> CoreNodeKeyInfo
+  :: HashAlgorithm h
+  => CoreNode (TPraosMockCrypto h)
+  -> CoreNodeKeyInfo h
 coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
   = CoreNodeKeyInfo
       { cnkiCoreNode =
@@ -158,13 +160,15 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
 
 mkGenesisConfig
   :: forall c. TPraosCrypto c
-  => SecurityParam
+  => ProtVer  -- ^ Initial protocol version
+  -> SecurityParam
   -> Double  -- ^ Decentralisation param
   -> SlotLength
   -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
+mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
+    ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
@@ -197,21 +201,27 @@ mkGenesisConfig k d slotLength maxKESEvolutions coreNodes = ShelleyGenesis {
 
     pparams :: SL.PParams
     pparams = SL.emptyPParams
-      { SL._d =
+      { SL._d               =
             SL.truncateUnitInterval
           . realToFrac
           $ d
-      , SL._maxBBSize = 10000 -- TODO
-      , SL._maxBHSize = 1000 -- TODO
+      , SL._maxBBSize       = 10000 -- TODO
+      , SL._maxBHSize       = 1000 -- TODO
+      , SL._protocolVersion = pVer
       }
 
-    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c)  (SL.KeyHash 'SL.GenesisDelegate c, SL.Hash c (SL.VerKeyVRF c))
+    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.GenDelegPair c)
     coreNodesToGenesisMapping  = Map.fromList
-      [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
-        , ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-          , SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
-          )
-        )
+      [ let
+          gkh :: SL.KeyHash 'SL.Genesis c
+          gkh = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
+
+          gdpair :: SL.GenDelegPair c
+          gdpair = SL.GenDelegPair
+              (SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
+              (SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF)
+
+        in (gkh, gdpair)
       | CoreNode { cnGenesisKey, cnDelegateKey, cnVRF } <- coreNodes
       ]
 

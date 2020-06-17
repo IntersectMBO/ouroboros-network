@@ -1,16 +1,21 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Shelley.Generators (
     SomeResult (..)
   ) where
+
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      Point, SlotNo (..), mkSerialised)
@@ -48,26 +53,27 @@ import           Test.Shelley.Spec.Ledger.SerializationProperties ()
   necessarily valid
 -------------------------------------------------------------------------------}
 
-instance Arbitrary Block where
+instance HashAlgorithm h => Arbitrary (Block h) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
-instance Arbitrary (Header Block) where
+instance HashAlgorithm h => Arbitrary (Header (Block h)) where
   arbitrary = getHeader <$> arbitrary
 
 instance Crypto c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance Arbitrary (GenTx Block) where
+instance HashAlgorithm h => Arbitrary (GenTx (Block h)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
-instance Arbitrary (GenTxId Block) where
+instance HashAlgorithm h => Arbitrary (GenTxId (Block h)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance Arbitrary (ApplyTxError TPraosMockCrypto) where
+instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
+      => Arbitrary (ApplyTxError (TPraosMockCrypto h)) where
   arbitrary = ApplyTxError <$> arbitrary
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
-instance Arbitrary (SomeBlock Query Block) where
+instance HashAlgorithm h => Arbitrary (SomeBlock Query (Block h)) where
   arbitrary = oneof
     [ pure $ SomeBlock GetLedgerTip
     , pure $ SomeBlock GetEpochNo
@@ -80,7 +86,7 @@ instance Arbitrary (SomeBlock Query Block) where
     , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
 
-instance Arbitrary (SomeResult Block) where
+instance HashAlgorithm h => Arbitrary (SomeResult (Block h)) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
@@ -95,13 +101,14 @@ instance Arbitrary (SomeResult Block) where
     , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
     ]
 
-instance Arbitrary (NonMyopicMemberRewards TPraosMockCrypto) where
+instance HashAlgorithm h
+      => Arbitrary (NonMyopicMemberRewards (TPraosMockCrypto h)) where
   arbitrary = NonMyopicMemberRewards <$> arbitrary
 
-instance Arbitrary (Point Block) where
+instance HashAlgorithm h => Arbitrary (Point (Block h)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
-instance Arbitrary (TPraosState TPraosMockCrypto) where
+instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
   arbitrary = do
       steps     <- choose (0, 5)
       startSlot <- frequency
@@ -113,8 +120,8 @@ instance Arbitrary (TPraosState TPraosMockCrypto) where
     where
       go :: Int
          -> WithOrigin SlotNo
-         -> TPraosState TPraosMockCrypto
-         -> Gen (TPraosState TPraosMockCrypto)
+         -> TPraosState (TPraosMockCrypto h)
+         -> Gen (TPraosState (TPraosMockCrypto h))
       go steps prevSlot st
         | 0 <- steps = return st
         | otherwise  = do
@@ -122,7 +129,8 @@ instance Arbitrary (TPraosState TPraosMockCrypto) where
           newPrtclState <- arbitrary
           go (steps - 1) (At slot) (TPraosState.append slot newPrtclState st)
 
-instance Arbitrary (History.LedgerViewHistory TPraosMockCrypto) where
+instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
+      => Arbitrary (History.LedgerViewHistory (TPraosMockCrypto h)) where
   arbitrary = do
       snapshots   <- choose (0, 5)
       startSlot   <- SlotNo <$> choose (0, 100)
@@ -132,8 +140,8 @@ instance Arbitrary (History.LedgerViewHistory TPraosMockCrypto) where
 
       go :: Int
          -> SlotNo
-         -> LedgerViewHistory TPraosMockCrypto
-         -> Gen (LedgerViewHistory TPraosMockCrypto)
+         -> LedgerViewHistory (TPraosMockCrypto h)
+         -> Gen (LedgerViewHistory (TPraosMockCrypto h))
       go snapshots slot hist
         | 0 <- snapshots = return hist
         | otherwise      = do
@@ -141,13 +149,14 @@ instance Arbitrary (History.LedgerViewHistory TPraosMockCrypto) where
           let hist' = History.snapOld maxRollback slot ledgerView hist
           go (snapshots - 1) (succ slot) hist'
 
-instance Arbitrary (LedgerState Block) where
+instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
+      => Arbitrary (LedgerState (Block h)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
 
-instance Arbitrary (AnnTip Block) where
+instance HashAlgorithm h => Arbitrary (AnnTip (Block h)) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
@@ -159,7 +168,7 @@ instance Arbitrary ShelleyNodeToNodeVersion where
 instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
-instance Arbitrary (SomeBlock (NestedCtxt f) Block) where
+instance Arbitrary (SomeBlock (NestedCtxt f) (Block h)) where
   arbitrary = return (SomeBlock indexIsTrivial)
 
 {-------------------------------------------------------------------------------
@@ -170,14 +179,17 @@ instance Arbitrary (SL.PParams' SL.StrictMaybe) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance Arbitrary (SL.ProposedPPUpdates TPraosMockCrypto) where
+instance HashAlgorithm h
+      => Arbitrary (SL.ProposedPPUpdates (TPraosMockCrypto h)) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance Arbitrary (SL.GenDelegs TPraosMockCrypto) where
-  arbitrary = SL.GenDelegs <$> arbitrary
+instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
+      => Arbitrary (SL.GenDelegs (TPraosMockCrypto h)) where
+  arbitrary = (SL.GenDelegs . fmap (uncurry SL.GenDelegPair)) <$> arbitrary
 
-instance Arbitrary (SL.LedgerView TPraosMockCrypto) where
+instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
+      => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
