@@ -30,7 +30,6 @@ module Ouroboros.Network.Subscription.Dns
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -76,25 +75,22 @@ withResolver port rs k = do
     ipv4ToSockAddr dnsResolver d = do
         r <- DNS.lookupA dnsResolver d
         case r of
-             (Right ips) -> return $ Right $ map (Socket.SockAddrInet (fromIntegral port) .
+             (Right ips) -> return $ Right $ map (Socket.SockAddrInet port .
                                                   IP.toHostAddress) ips
              (Left e)    -> return $ Left e
 
     ipv6ToSockAddr dnsResolver d = do
         r <- DNS.lookupAAAA dnsResolver d
         case r of
-             (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
+             (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 port 0 (IP.toHostAddress6 ip) 0) ips
              (Left e)    -> return $ Left e
 
 
 dnsResolve :: forall a m s.
      ( MonadAsync m
      , MonadCatch m
-     , MonadSay   m
-     , MonadSTM   m
      , MonadTime  m
      , MonadTimer m
-     , MonadThrow m
      )
     => Tracer m DnsTrace
     -> m a

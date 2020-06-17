@@ -141,8 +141,7 @@ toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
 --
 runMuxPeer
-  :: ( MonadThrow m
-     , MonadCatch m
+  :: ( MonadCatch m
      , MonadAsync m
      )
   => MuxPeer bytes m a

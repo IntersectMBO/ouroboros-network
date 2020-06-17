@@ -155,7 +155,6 @@ instance Arbitrary (Arb ([Event], AcceptedConnectionsLimit)) where
 rateLimittingExperiment
     :: forall m.
        ( MonadAsync m
-       , MonadSTM   m
        , MonadTime  m
        , MonadDelay m
        )

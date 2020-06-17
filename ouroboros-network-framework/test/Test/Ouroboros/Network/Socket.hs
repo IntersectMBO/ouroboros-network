@@ -102,7 +102,7 @@ tests =
   ]
 #undef LAST_IP_TEST
 
-activeMuxTracer :: Show a => Tracer IO a
+activeMuxTracer :: Tracer IO a
 activeMuxTracer = nullTracer
 --activeMuxTracer = _verboseTracer -- Dump log messages to stdout.
 

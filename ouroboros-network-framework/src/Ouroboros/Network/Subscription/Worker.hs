@@ -48,7 +48,6 @@ import           Network.Socket (Family( AF_UNIX ))
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -200,15 +199,12 @@ data ConnectResult =
 subscriptionLoop
     :: forall m s sock localAddrs addr a x.
        ( MonadAsync m
-       , MonadFork  m
        , MonadMask  m
-       , MonadSTM   m
        , MonadTime  m
        , MonadTimer m
        , MonadFix   m
        , Ord (Async m ())
        , Ord addr
-       , Show addr
        )
     => Tracer              m (SubscriptionTrace addr)
 
@@ -546,9 +542,7 @@ data WorkerParams m localAddrs addr = WorkerParams {
 --
 worker
     :: forall s sock localAddrs addr a x.
-       ( Ord addr
-       , Show addr
-       )
+       Ord addr
     => Tracer              IO (SubscriptionTrace addr)
     -> Tracer              IO (WithAddr addr ErrorPolicyTrace)
     -> ConnectionTable     IO   addr

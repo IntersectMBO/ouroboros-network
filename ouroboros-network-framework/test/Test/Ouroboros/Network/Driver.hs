@@ -56,7 +56,8 @@ tests = testGroup "Ouroboros.Network.Driver.Limits"
 
 -- | Byte limits
 byteLimitsReqResp
-  :: Word
+  :: forall req resp.
+     Word
   -> ProtocolSizeLimits (ReqResp req resp) String
 byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
   where
@@ -70,7 +71,7 @@ serverTimeout :: DiffTime
 serverTimeout = 0.2 -- 200 ms
 
 -- Time limits
-timeLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
+timeLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
@@ -79,7 +80,7 @@ timeLimitsReqResp = ProtocolTimeLimits stateToLimit
     stateToLimit (ServerAgency TokBusy) = Just serverTimeout
 
 -- Unlimited Time
-timeUnLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
+timeUnLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
@@ -126,7 +127,9 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
 
       recvPeer :: Peer (ReqResp String ()) AsServer StIdle m [DiffTime]
       recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
-        (\(delay:acc) _ -> do
+        (\a _ -> case a of
+          [] -> error "prop_runPeerWithLimits: empty list"
+          delay : acc -> do
             threadDelay delay 
             return (acc, ()))
         (map snd reqPayloads)

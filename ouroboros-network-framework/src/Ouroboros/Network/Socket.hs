@@ -9,6 +9,9 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- it is useful to have 'HasInitiator' constraint on 'connectToNode' & friends.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- |
 -- Module exports interface for running a node over a socket over TCP \/ IP.
 --

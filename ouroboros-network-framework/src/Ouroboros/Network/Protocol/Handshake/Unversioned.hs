@@ -11,7 +11,6 @@ module Ouroboros.Network.Protocol.Handshake.Unversioned
   ) where
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -66,11 +65,9 @@ unversionedProtocol =
 
 -- | 'Handshake' codec used in various tests.
 --
-unversionedHandshakeCodec :: ( MonadST m
-                            , MonadThrow m
-                            )
-                         => Codec (Handshake UnversionedProtocol CBOR.Term)
-                                  CBOR.DeserialiseFailure m ByteString
+unversionedHandshakeCodec :: MonadST m
+                           => Codec (Handshake UnversionedProtocol CBOR.Term)
+                                    CBOR.DeserialiseFailure m ByteString
 unversionedHandshakeCodec = codecHandshake unversionedProtocolCodec
   where
     unversionedProtocolCodec :: CodecCBORTerm (String, Maybe Int) UnversionedProtocol
