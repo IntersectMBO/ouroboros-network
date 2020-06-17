@@ -6,6 +6,8 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | An alternative implementation of 'System.Timeout.timeout' for platforms
 -- (i.e. Windows) where the standard implementation is too expensive.
 --
@@ -304,7 +306,7 @@ timeout monitorState delay action =
 
 monitoringThread :: (MonadFork m, MonadSTM m,
                      MonadMonotonicTime m, MonadTimer m,
-                     MonadThrow m, MonadThrow (STM m))
+                     MonadThrow (STM m))
                  => MonitorState m -> m ()
 monitoringThread monitorState@MonitorState{deadlineResetVar} =
   forever $ do

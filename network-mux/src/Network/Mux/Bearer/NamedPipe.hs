@@ -71,7 +71,7 @@ namedPipeAsBearer tracer h =
               show waitingOnNextHeader) callStack
         else do
           traceWith tracer (Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf))
-          recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
+          recvLen' False (l - BL.length buf) (buf : bufs)
 
     writeNamedPipe :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
     writeNamedPipe _ sdu = do

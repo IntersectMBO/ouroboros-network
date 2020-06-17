@@ -156,7 +156,6 @@ runMux :: forall m mode.
           ( MonadAsync m
           , MonadCatch m
           , MonadFork m
-          , MonadSTM m
           , MonadThrow (STM m)
           , MonadTime  m
           , MonadTimer m
@@ -188,7 +187,7 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
 
 miniProtocolJob
   :: forall mode m.
-     (MonadSTM m, MonadThrow m)
+     MonadSTM m
   => Tracer m MuxTrace
   -> EgressQueue m
   -> MiniProtocolState mode m
@@ -422,7 +421,6 @@ data MuxJobResult =
 muxChannel
     :: forall m.
        ( MonadSTM m
-       , MonadThrow m
        , HasCallStack
        )
     => Tracer m MuxTrace
@@ -508,7 +506,7 @@ traceMuxBearerState tracer state =
 -- irrespective of the 'StartOnDemandOrEagerly' value.
 --
 runMiniProtocol :: forall mode m a.
-                   (MonadSTM m, MonadThrow (STM m))
+                   MonadSTM m
                 => Mux mode m
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
