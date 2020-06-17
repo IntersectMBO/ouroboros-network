@@ -33,6 +33,7 @@ import qualified Cardano.Chain.Update as Update
 import           Cardano.Chain.Update.Proposal (AProposal)
 import qualified Cardano.Chain.Update.Proposal as Proposal
 import qualified Cardano.Chain.Update.Validation.Interface as Update
+import qualified Cardano.Chain.Update.Validation.Registration as Registration
 import           Cardano.Chain.Update.Vote (AVote)
 import qualified Cardano.Chain.Update.Vote as Vote
 import qualified Cardano.Crypto as Crypto
@@ -255,7 +256,7 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result
     svuLabel = SoftwareVersionUpdateLabel
         { svuObserved = fromMaybe False $ do
             let nm = Update.svAppName theProposedSoftwareVersion
-            (vn, _slot, _metadata) <- Map.lookup nm $
+            (Registration.ApplicationVersion vn _slot _metadata) <- Map.lookup nm $
               Update.appVersions $
               Block.cvsUpdateState $
               -- unlike for protocol version updates, there is no need to tick

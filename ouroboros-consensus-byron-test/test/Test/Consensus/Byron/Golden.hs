@@ -988,19 +988,21 @@ test_golden_Result = goldenTestCBOR
     applicationVersions :: CC.ApplicationVersions
     applicationVersions = Map.singleton
       (CC.ApplicationName "Golden-Test")
-      (0, 0, Map.empty)
+      (CC.ApplicationVersion 0 0 Map.empty)
 
     protocolUpdateProposals :: CC.ProtocolUpdateProposals
     protocolUpdateProposals = Map.singleton
       CC.exampleUpId
-      (CC.exampleProtocolVersion, CC.exampleProtocolParameters)
+      (CC.ProtocolUpdateProposal
+        CC.exampleProtocolVersion
+        CC.exampleProtocolParameters)
 
     softwareUpdateProposals :: CC.SoftwareUpdateProposals
     softwareUpdateProposals = Map.singleton
       CC.exampleUpId
-      ( CC.exampleSoftwareVersion
-      , Map.singleton CC.exampleSystemTag CC.exampleInstallerHash
-      )
+      (CC.SoftwareUpdateProposal
+        CC.exampleSoftwareVersion
+        (Map.singleton CC.exampleSystemTag CC.exampleInstallerHash))
 
     endorsement :: CC.Endorsement
     endorsement = CC.Endorsement
