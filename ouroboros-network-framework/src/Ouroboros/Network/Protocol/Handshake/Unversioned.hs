@@ -67,7 +67,7 @@ unversionedProtocol = simpleSingletonVersions UnversionedProtocol UnversionedPro
 -- | 'Handshake' codec used in various tests.
 --
 unversionedHandshakeCodec :: MonadST m
-                           => Codec (Handshake UnversionedProtocol CBOR.Term)
+                          => Codec (Handshake UnversionedProtocol CBOR.Term)
                                     CBOR.DeserialiseFailure m ByteString
 unversionedHandshakeCodec = codecHandshake unversionedProtocolCodec
   where
