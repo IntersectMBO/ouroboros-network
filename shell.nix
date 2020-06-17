@@ -21,18 +21,18 @@ let
                 ++ [ ps.cardano-crypto-class ];
 
     # These programs will be available inside the nix-shell.
-    buildInputs = (with haskellPackages; [
-      cabal-install
-      ghcid
-      hlint
-      weeder
-      nix
+    buildInputs = [
       niv
       pkgconfig
-      sqlite-interactive
-      git
-    ])
-    ++ [(pkgs.callPackage ./nix/stylish-haskell.nix {})];
+    ];
+
+    tools = {
+      stylish-haskell = "0.11.0.0";
+      # todo: add back the build tools which are actually necessary
+      # cabal-install = "3.2.0.0";
+      # ghcide = "0.2.0";
+      # hlint = "...";
+    };
 
     # Prevents cabal from choosing alternate plans, so that
     # *all* dependencies are provided by Nix.
