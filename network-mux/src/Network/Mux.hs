@@ -214,11 +214,14 @@ miniProtocolJob tracer egressQueue
       let chan = muxChannel tracer egressQueue (Wanton w)
                            miniProtocolNum miniProtocolDirEnum
                            miniProtocolIngressQueue
-      result  <- protocolAction chan
+      (result, remainder)  <- protocolAction chan
       mpsJobExit w
       atomically $ do
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar $ Right result
+        buf <- readTVar miniProtocolIngressQueue
+        writeTVar miniProtocolIngressQueue $ BL.append remainder buf
+
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
     miniProtocolDirEnum = protocolDirEnum miniProtocolDir
@@ -245,7 +248,7 @@ data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
   deriving Eq
 
 data MiniProtocolAction m where
-     MiniProtocolAction :: (Channel m -> m a)                     -- ^ Action
+     MiniProtocolAction :: (Channel m -> m (a, BL.ByteString))    -- ^ Action
                         -> StrictTMVar m (Either SomeException a) -- ^ Completion var
                         -> MiniProtocolAction m
 
@@ -507,7 +510,7 @@ runMiniProtocol :: forall mode m a.
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
                 -> StartOnDemandOrEagerly
-                -> (Channel m -> m a)
+                -> (Channel m -> m (a, BL.ByteString))
                 -> m (STM m (Either SomeException a))
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                 ptclNum ptclDir startMode protocolAction

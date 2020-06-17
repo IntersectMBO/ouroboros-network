@@ -117,14 +117,14 @@ runClient :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> Channel m
           -> ReqRespClient req resp m a
-          -> m a
+          -> m (a, LBS.ByteString)
 
 runClient tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
        -> ReqRespClient req resp m a
-       -> m a
+       -> m (a, LBS.ByteString)
     go trailing (SendMsgReq req mnext) = do
       let msg :: MsgReqResp req resp
           msg = MsgReq req
@@ -145,12 +145,13 @@ runClient tracer channel@Channel {send} =
 
         Right (msg', _) -> error $ "runClient: wrong message " ++ show msg'
 
-    go _trailing (SendMsgDone ma) = do
+    go trailing (SendMsgDone ma) = do
         let msg :: MsgReqResp req resp
             msg = MsgDone
         traceWith tracer (TraceSend msg)
         send (serialise msg)
-        ma
+        a <- ma
+        return (a, maybe LBS.empty id trailing)
 
 
 -- | Server which receives 'req' and responds with 'resp'.
@@ -177,14 +178,14 @@ runServer :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> Channel m
           -> ReqRespServer req resp m a
-          -> m a
+          -> m (a, LBS.ByteString)
 
 runServer tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
        -> ReqRespServer req resp m a
-       -> m a
+       -> m (a, LBS.ByteString)
     go trailing ReqRespServer {recvMsgReq, recvMsgDone} = do
       res <- withLiftST $ \liftST -> runDecoderWithChannel
                                         liftST channel trailing decode
@@ -202,9 +203,10 @@ runServer tracer channel@Channel {send} =
           send $ serialise msg'
           go trailing' server
 
-        Right (msg@MsgDone, _) -> do
+        Right (msg@MsgDone, trailing') -> do
           traceWith tracer (TraceRecv msg)
-          recvMsgDone
+          x <- recvMsgDone
+          return (x, maybe LBS.empty id trailing')
 
         Right (msg, _) -> do
           traceWith tracer (TraceRecv msg)
