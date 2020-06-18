@@ -192,14 +192,23 @@ data TPraosParams = TPraosParams {
     , tpraosMaxLovelaceSupply :: !Word64
       -- | Testnet or mainnet?
     , tpraosNetworkId         :: !SL.Network
+      -- | Initial nonce used for the TPraos protocol state. Typically this is
+      -- derived from the hash of the Shelley genesis config JSON file, but
+      -- different values may be used for testing purposes.
+      --
+      -- NOTE: this is only used when translating the Byron 'ChainDepState' to
+      -- the Shelley 'ChainDepState', at which point we'll need access to the
+      -- initial nonce at runtime. TODO #2326.
+    , tpraosInitialNonce      :: !SL.Nonce
     }
   deriving (Generic, NoUnexpectedThunks)
 
 mkTPraosParams
-  :: Natural -- ^ Max major protocol version
+  :: Natural   -- ^ Max major protocol version
+  -> SL.Nonce  -- ^ Initial nonce
   -> SL.ShelleyGenesis c
   -> TPraosParams
-mkTPraosParams maxMajorPV genesis = TPraosParams {
+mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
       tpraosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
     , tpraosLeaderF           = SL.sgActiveSlotCoeff   genesis
     , tpraosMaxKESEvo         = SL.sgMaxKESEvolutions  genesis
@@ -208,6 +217,7 @@ mkTPraosParams maxMajorPV genesis = TPraosParams {
     , tpraosNetworkId         = SL.sgNetworkId         genesis
     , tpraosSecurityParam     = securityParam
     , tpraosMaxMajorPV        = maxMajorPV
+    , tpraosInitialNonce      = initialNonce
     }
   where
     securityParam = SecurityParam $ SL.sgSecurityParam genesis

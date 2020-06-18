@@ -294,11 +294,13 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
 mkProtocolRealTPraos
   :: forall m c. (IOLike m, TPraosCrypto c)
   => ShelleyGenesis c
+  -> SL.Nonce
   -> CoreNode c
   -> ProtocolInfo m (ShelleyBlock c)
-mkProtocolRealTPraos genesis coreNode =
+mkProtocolRealTPraos genesis initialNonce coreNode =
     protocolInfoShelley
       genesis
+      initialNonce
       maxMajorPV
       protVer
       (Just (mkLeaderCredentials coreNode))

@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
   , SL.ProtVer
+  , SL.Nonce (..)
   , SL.emptyGenesisStaking
   , shelleyMaintainForgeState
   , checkMaxKESEvolutions
@@ -133,11 +134,14 @@ checkMaxKESEvolutions genesis
 protocolInfoShelley
   :: forall m c. (IOLike m, TPraosCrypto c)
   => SL.ShelleyGenesis c
+  -> SL.Nonce
+     -- ^ The initial nonce, typically derived from the hash of Genesis config
+     -- JSON file.
   -> Natural -- ^ Max major protocol version
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials c)
   -> ProtocolInfo m (ShelleyBlock c)
-protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
+protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     assertWithMsg (checkMaxKESEvolutions genesis) $
     ProtocolInfo {
         pInfoConfig      = topLevelConfig
@@ -166,7 +170,7 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
 
     tpraosParams :: TPraosParams
-    tpraosParams = mkTPraosParams maxMajorPV genesis
+    tpraosParams = mkTPraosParams maxMajorPV initialNonce genesis
 
     mkLeaderCreds :: TPraosLeaderCredentials c
                   -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
@@ -209,9 +213,7 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
       (SL.sgGenDelegs genesis)
       oSched
       (SL.sgProtocolParams genesis)
-      -- We can start without entropy, throughout the epoch(s) we'll obtain
-      -- entropy.
-      SL.NeutralNonce
+      initialNonce
 
     initExtLedgerState :: ExtLedgerState (ShelleyBlock c)
     initExtLedgerState = ExtLedgerState {

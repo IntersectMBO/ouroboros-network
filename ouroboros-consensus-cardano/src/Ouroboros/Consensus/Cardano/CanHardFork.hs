@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE InstanceSigs             #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
@@ -463,14 +462,17 @@ translateChainDepStateByronToShelleyWrapper
        ByronBlock
        (ShelleyBlock sc)
 translateChainDepStateByronToShelleyWrapper =
-    RequireBoth $ \_ _ -> Translate   $ \_ (WrapChainDepState pbftState) ->
-      WrapChainDepState (translateChainDepStateByronToShelley pbftState)
+    RequireBoth $ \_ (WrapConsensusConfig shelleyCfg) ->
+      Translate $ \_ (WrapChainDepState pbftState) ->
+        WrapChainDepState $
+          translateChainDepStateByronToShelley shelleyCfg pbftState
 
 translateChainDepStateByronToShelley
   :: forall bc sc.
-     PBftState bc
+     ConsensusConfig (TPraos sc)
+  -> PBftState bc
   -> TPraosState sc
-translateChainDepStateByronToShelley pbftState =
+translateChainDepStateByronToShelley TPraosConfig { tpraosParams } pbftState =
     TPraosState.empty (PBftState.tipSlot pbftState) $
       SL.PrtclState
         Map.empty
@@ -479,8 +481,7 @@ translateChainDepStateByronToShelley pbftState =
         nonce
         nonce
   where
-    -- TODO use hash of Shelley genesis config as entropy?
-    nonce = SL.NeutralNonce
+    nonce = tpraosInitialNonce tpraosParams
 
 translateLedgerViewByronToShelleyWrapper
   :: forall sc.
