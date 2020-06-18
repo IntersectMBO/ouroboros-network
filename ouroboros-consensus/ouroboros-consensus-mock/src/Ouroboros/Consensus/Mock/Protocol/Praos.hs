@@ -264,7 +264,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) cs = do
       rho <- evalCertified () rho' praosSignKeyVRF
       y   <- evalCertified () y'   praosSignKeyVRF
-      return $ if fromIntegral (certifiedNatural y) < t
+      return $ if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
           then IsLeader PraosProof {
                    praosProofRho  = rho
                  , praosProofY    = y
@@ -314,7 +314,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         throwError $ PraosInvalidCert
             vkVRF
             rho'
-            (certifiedNatural praosRho)
+            (getOutputVRFNatural (certifiedOutput praosRho))
             (certifiedProof praosRho)
 
     -- verify y proof
@@ -322,12 +322,13 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         throwError $ PraosInvalidCert
             vkVRF
             y'
-            (certifiedNatural praosY)
+            (getOutputVRFNatural (certifiedOutput praosY))
             (certifiedProof praosY)
 
     -- verify stake
-    unless (fromIntegral (certifiedNatural praosY) < t) $
-        throwError $ PraosInsufficientStake t $ certifiedNatural praosY
+    unless (fromIntegral (getOutputVRFNatural (certifiedOutput praosY)) < t) $
+        throwError $ PraosInsufficientStake t $
+                       getOutputVRFNatural (certifiedOutput praosY)
 
     let !bi = BlockInfo
             { biSlot  = slot
