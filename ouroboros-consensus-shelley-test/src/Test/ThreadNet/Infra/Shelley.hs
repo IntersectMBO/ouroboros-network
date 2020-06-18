@@ -174,9 +174,9 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
     , sgProtocolMagicId       = ProtocolMagicId 0
-    , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
+    , sgActiveSlotsCoeff      = recip recipF   -- ie f
     , sgSecurityParam         = maxRollbacks k
-    , sgEpochLength           = EpochSize (10 * maxRollbacks k)
+    , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
     , sgSlotsPerKESPeriod     = 10 -- TODO
     , sgMaxKESEvolutions      = maxKESEvolutions
     , sgSlotLength            = getSlotLength slotLength
@@ -188,6 +188,10 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgStaking               = initialStake
     }
   where
+    -- the reciprocal of the active slot coefficient
+    recipF :: Num a => a
+    recipF = 2   -- so f = 0.5
+
     networkId :: SL.Network
     networkId = SL.Testnet
 

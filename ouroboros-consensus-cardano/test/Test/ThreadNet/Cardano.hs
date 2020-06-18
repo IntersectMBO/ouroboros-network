@@ -153,10 +153,10 @@ prop_simple_cardano_convergence TestSetup
       , future       =
           if setupHardFork
           then
-          EraCons  setupSlotLengthByron   epochSize (EraSize numByronEpochs) $
-          EraFinal setupSlotLengthShelley epochSize
+          EraCons  setupSlotLengthByron   epochSizeByron   eraSizeByron $
+          EraFinal setupSlotLengthShelley epochSizeShelley
           else
-          EraFinal setupSlotLengthByron   epochSize
+          EraFinal setupSlotLengthByron   epochSizeByron
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
@@ -179,24 +179,19 @@ prop_simple_cardano_convergence TestSetup
             , mkRekeyM = Nothing
             }
 
-    -- The team does not currently plan for Byron or Shelley to ever use an
-    -- epoch size other than 10k.
-    epochSize :: EpochSize
-    epochSize =
-        assert (tenK == epochSizeByron) $
-        assert (tenK == epochSizeShelley) $
-        tenK
-      where
-        tenK = EpochSize (10 * maxRollbacks setupK)
-
     -- Byron
 
     pbftParams :: PBftParams
     pbftParams = Byron.realPBftParams setupK numCoreNodes
 
+    -- the Byron ledger is designed to use a fixed epoch size, so this test
+    -- does not randomize it
     epochSizeByron :: EpochSize
     epochSizeByron =
         fromByronEpochSlots $ CC.Genesis.configEpochSlots genesisByron
+
+    eraSizeByron :: EraSize
+    eraSizeByron = EraSize numByronEpochs
 
     genesisByron     :: CC.Genesis.Config
     generatedSecrets :: CC.Genesis.GeneratedSecrets
@@ -229,6 +224,8 @@ prop_simple_cardano_convergence TestSetup
           maxKESEvolution
           coreNodes
 
+    -- the Shelley ledger is designed to use a fixed epoch size, so this test
+    -- does not randomize it
     epochSizeShelley :: EpochSize
     epochSizeShelley = sgEpochLength genesisShelley
 
