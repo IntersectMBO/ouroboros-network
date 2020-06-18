@@ -529,8 +529,8 @@ setupMiniReqRspCompat :: IO ()
                       -> DummyTrace
                       -- ^ Trace of messages
                       -> IO ( IO Bool
-                            , Channel IO -> IO ()
-                            , Channel IO -> IO ()
+                            , Channel IO -> IO ((), Maybe BL.ByteString)
+                            , Channel IO -> IO ((), Maybe BL.ByteString)
                             )
 setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarM
@@ -570,19 +570,19 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
 
     clientApp :: StrictTMVar IO Bool
               -> Channel IO
-              -> IO ()
+              -> IO ((), Maybe BL.ByteString)
     clientApp clientResultVar clientChan = do
-        (result, _) <- runClient nullTracer clientChan (reqRespClient requests)
+        (result, trailing) <- runClient nullTracer clientChan (reqRespClient requests)
         atomically (putTMVar clientResultVar result)
-        end
+        (,trailing) <$> end
 
     serverApp :: StrictTMVar IO Bool
               -> Channel IO
-              -> IO ()
+              -> IO ((), Maybe BL.ByteString)
     serverApp serverResultVar serverChan = do
-        (result, _) <- runServer nullTracer serverChan (reqRespServer responses)
+        (result, trailing) <- runServer nullTracer serverChan (reqRespServer responses)
         atomically (putTMVar serverResultVar result)
-        end
+        (,trailing) <$> end
 
     -- Wait on all miniprotocol jobs before letting a miniprotocol thread exit.
     end = do
@@ -604,8 +604,8 @@ setupMiniReqRsp :: IO ()
                 -- ^ Action performed by responder before processing the response
                 -> DummyTrace
                 -- ^ Trace of messages
-                -> IO ( Channel IO -> IO (Bool, BL.ByteString)
-                      , Channel IO -> IO (Bool, BL.ByteString)
+                -> IO ( Channel IO -> IO (Bool, Maybe BL.ByteString)
+                      , Channel IO -> IO (Bool, Maybe BL.ByteString)
                       )
 setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
@@ -637,11 +637,11 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: Channel IO
-              -> IO (Bool, BL.ByteString)
+              -> IO (Bool, Maybe BL.ByteString)
     clientApp clientChan = runClient nullTracer clientChan (reqRespClient requests)
 
     serverApp :: Channel IO
-              -> IO (Bool, BL.ByteString)
+              -> IO (Bool, Maybe BL.ByteString)
     serverApp serverChan = runServer nullTracer serverChan (reqRespServer responses)
 
 --
@@ -650,14 +650,14 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  [Channel IO -> IO (Bool, BL.ByteString)]
-    -> [Channel IO -> IO (Bool, BL.ByteString)]
+    =  [Channel IO -> IO (Bool, Maybe BL.ByteString)]
+    -> [Channel IO -> IO (Bool, Maybe BL.ByteString)]
     -> IO Bool
 
 
-runMuxApplication :: [Channel IO -> IO (Bool, BL.ByteString)]
+runMuxApplication :: [Channel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> MuxBearer IO
-                  -> [Channel IO -> IO (Bool, BL.ByteString)]
+                  -> [Channel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> MuxBearer IO
                   -> IO Bool
 runMuxApplication initApps initBearer respApps respBearer = do
@@ -1098,7 +1098,7 @@ prop_demux_sdu a = do
     serverRsp stopVar chan =
         atomically (takeTMVar stopVar) >>= loop
       where
-        loop e | e == BL.empty = return ((), BL.empty)
+        loop e | e == BL.empty = return ((), Nothing)
         loop e = do
             msg_m <- recv chan
             case msg_m of
@@ -1224,11 +1224,11 @@ dummyAppToChannel :: forall m.
                      , HasCallStack
                      )
                   => DummyApp
-                  -> (Channel m -> m ((), BL.ByteString))
+                  -> (Channel m -> m ((), Maybe BL.ByteString))
 dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
-         DummyAppSucceed -> return ((), BL.empty)
+         DummyAppSucceed -> return ((), Nothing)
          DummyAppFail    -> throwM $ MuxError MuxShutdown "App Fail" callStack
 
 appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode

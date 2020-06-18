@@ -37,7 +37,7 @@ module Network.Mux.Compat (
     , WithMuxBearer (..)
     ) where
 
-import           Data.ByteString.Lazy (empty)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
 
 import           Control.Applicative ((<|>))
@@ -74,19 +74,19 @@ data RunMiniProtocol (mode :: MuxMode) m a b where
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'InitiatorDir'@.
-    :: (Channel m -> m a)
+    :: (Channel m -> m (a, Maybe BL.ByteString))
     -> RunMiniProtocol InitiatorMode m a Void
 
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ResponderDir'@.
-    :: (Channel m -> m b)
+    :: (Channel m -> m (b, Maybe BL.ByteString))
     -> RunMiniProtocol ResponderMode m Void b
 
   InitiatorAndResponderProtocol
     -- Initiator and server applications.
-    :: (Channel m -> m a)
-    -> (Channel m -> m b)
+    :: (Channel m -> m (a, Maybe BL.ByteString))
+    -> (Channel m -> m (b, Maybe BL.ByteString))
     -> RunMiniProtocol InitiatorResponderMode m a b
 
 
@@ -116,7 +116,7 @@ muxStart tracer muxapp bearer = do
           StartEagerly
           (\a -> do
             r <- action a
-            return (r, empty) -- Compat interface doesn't do restarts
+            return (r, Nothing) -- Compat interface doesn't do restarts
           )
       | let MuxApplication ptcls = muxapp
       , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
