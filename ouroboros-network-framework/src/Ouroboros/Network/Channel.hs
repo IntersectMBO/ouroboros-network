@@ -57,23 +57,27 @@ data Channel m a = Channel {
        -- It may raise exceptions (as appropriate for the monad and kind of
        -- channel).
        --
-       recv :: m (Maybe a)
+       recv :: m (Maybe a),
+
+       pushBackTrailingData :: a -> m ()
      }
 
 -- TODO: eliminate the second Channel type and these conversion functions.
 
 fromChannel :: Mx.Channel m
             -> Channel m LBS.ByteString
-fromChannel Mx.Channel { Mx.send, Mx.recv } = Channel {
+fromChannel Mx.Channel { Mx.send, Mx.recv, Mx.pushBackTrailingBytes } = Channel {
     send = send,
-    recv = recv
+    recv = recv,
+    pushBackTrailingData = pushBackTrailingBytes
   }
 
 toChannel :: Channel m LBS.ByteString
           -> Mx.Channel m
-toChannel Channel { send, recv } = Mx.Channel {
+toChannel Channel { send, recv, pushBackTrailingData } = Mx.Channel {
     Mx.send = send,
-    Mx.recv = recv
+    Mx.recv = recv,
+    Mx.pushBackTrailingBytes = pushBackTrailingData
   }
 
 -- | Create a local pipe, with both ends in this process, and expose that as
@@ -96,9 +100,10 @@ isoKleisliChannel
   -> (b -> m a)
   -> Channel m a
   -> Channel m b
-isoKleisliChannel f finv Channel{send, recv} = Channel {
+isoKleisliChannel f finv Channel{send, recv, pushBackTrailingData} = Channel {
     send = finv >=> send,
-    recv = recv >>= traverse f
+    recv = recv >>= traverse f,
+    pushBackTrailingData = finv >=> pushBackTrailingData
   }
 
 
@@ -109,6 +114,7 @@ hoistChannel
 hoistChannel nat channel = Channel
   { send = nat . send channel
   , recv = nat (recv channel)
+  , pushBackTrailingData = nat . pushBackTrailingData channel
   }
 
 -- | A 'Channel' with a fixed input, and where all output is discarded.
@@ -123,7 +129,11 @@ hoistChannel nat channel = Channel
 fixedInputChannel :: MonadSTM m => [a] -> m (Channel m a)
 fixedInputChannel xs0 = do
     v <- atomically $ newTVar xs0
-    return Channel {send, recv = recv v}
+    return Channel {
+        send,
+        recv = recv v,
+        pushBackTrailingData = \_ -> pure ()
+      }
   where
     recv v = atomically $ do
                xs <- readTVar v
@@ -142,10 +152,11 @@ mvarsAsChannel :: MonadSTM m
                -> TMVar m a
                -> Channel m a 
 mvarsAsChannel bufferRead bufferWrite =
-    Channel{send, recv}
+    Channel{send, recv, pushBackTrailingData}
   where
     send x = atomically (putTMVar bufferWrite x)
     recv   = atomically (Just <$> takeTMVar bufferRead)
+    pushBackTrailingData _ = pure ()
 
 
 -- | Create a pair of channels that are connected via one-place buffers.
@@ -183,10 +194,11 @@ createConnectedBufferedChannels sz = do
             queuesAsChannel bufferA bufferB)
   where
     queuesAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, pushBackTrailingData}
       where
         send x = atomically (writeTBQueue bufferWrite x)
         recv   = atomically (Just <$> readTBQueue bufferRead)
+        pushBackTrailingData _ = pure ()
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -210,13 +222,14 @@ createPipelineTestChannels sz = do
             queuesAsChannel bufferA bufferB)
   where
     queuesAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, pushBackTrailingData}
       where
         send x = atomically $ do
                    full <- isFullTBQueue bufferWrite
                    if full then fail failureMsg
                            else writeTBQueue bufferWrite x
         recv   = atomically (Just <$> readTBQueue bufferRead)
+        pushBackTrailingData _ = pure ()
 
     failureMsg = "createPipelineTestChannels: "
               ++ "maximum pipeline depth exceeded: " ++ show sz
@@ -235,7 +248,7 @@ handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
                  -> Channel IO LBS.ByteString
 handlesAsChannel hndRead hndWrite =
-    Channel{send, recv}
+    Channel{send, recv, pushBackTrailingData}
   where
     send :: LBS.ByteString -> IO ()
     send chunk = do
@@ -249,6 +262,9 @@ handlesAsChannel hndRead hndWrite =
         then return Nothing
         else Just . LBS.fromStrict <$> BS.hGetSome hndRead smallChunkSize
 
+    pushBackTrailingData :: LBS.ByteString -> IO ()
+    pushBackTrailingData _ = pure ()
+
 
 -- | Transform a channel to add an extra action before /every/ send and after
 -- /every/ receive.
@@ -259,7 +275,7 @@ channelEffect :: forall m a.
               -> (Maybe a -> m ())  -- ^ Action after 'recv'
               -> Channel m a
               -> Channel m a
-channelEffect beforeSend afterRecv Channel{send, recv} =
+channelEffect beforeSend afterRecv Channel{send, recv, pushBackTrailingData} =
     Channel{
       send = \x -> do
         beforeSend x
@@ -269,6 +285,8 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
         mx <- recv
         afterRecv mx
         return mx
+
+    , pushBackTrailingData = pushBackTrailingData
     }
 
 -- | Delay a channel on the receiver end.
@@ -295,10 +313,11 @@ loggingChannel :: ( MonadSay m
                => id
                -> Channel m a
                -> Channel m a
-loggingChannel ident Channel{send,recv} =
+loggingChannel ident Channel{send,recv,pushBackTrailingData} =
   Channel {
     send = loggingSend,
-    recv = loggingRecv
+    recv = loggingRecv,
+    pushBackTrailingData = pushBackTrailingData
   }
  where
   loggingSend a = do

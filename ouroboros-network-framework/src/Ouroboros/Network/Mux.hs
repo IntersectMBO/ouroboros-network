@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Mux
@@ -151,7 +152,7 @@ runMuxPeer
 runMuxPeer (MuxPeer tracer codec peer) channel =
     runPeer tracer codec channel peer
 
-runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
+runMuxPeer (MuxPeerPipelined tracer codec peer) channel = do
     runPipelinedPeer tracer codec channel peer
 
 runMuxPeer (MuxPeerRaw action) channel =

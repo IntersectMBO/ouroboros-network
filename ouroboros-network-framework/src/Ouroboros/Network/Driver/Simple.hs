@@ -44,6 +44,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), traceWith, contramap)
 
+import Data.Foldable (traverse_)
 
 -- $intro
 --
@@ -116,6 +117,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
 -- | Run a peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
+-- Decoder's trailing data are pushed back into the channel.
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
@@ -125,8 +127,10 @@ runPeer
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeer tracer codec channel peer =
-    fst <$> runPeerWithDriver driver peer (startDState driver)
+runPeer tracer codec channel@Channel{pushBackTrailingData} peer = do
+    (a, trailing) <- runPeerWithDriver driver peer (startDState driver)
+    traverse_ pushBackTrailingData trailing
+    pure a
   where
     driver = driverSimple tracer codec channel
 
@@ -134,6 +138,7 @@ runPeer tracer codec channel peer =
 -- | Run a pipelined peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
+-- Decoder's trailing data are pushed back into the channel.
 --
 -- Unlike normal peers, running pipelined peers rely on concurrency, hence the
 -- 'MonadSTM' constraint.
@@ -146,8 +151,10 @@ runPipelinedPeer
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer tracer codec channel peer =
-    fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+runPipelinedPeer tracer codec channel@Channel{pushBackTrailingData} peer = do
+    (a, trailing) <- runPipelinedPeerWithDriver driver peer (startDState driver)
+    traverse_ pushBackTrailingData trailing
+    pure a
   where
     driver = driverSimple tracer codec channel
 

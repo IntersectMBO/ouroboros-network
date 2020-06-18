@@ -39,6 +39,8 @@ import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Tracer (Tracer (..), traceWith)
 
+import Data.Foldable (traverse_)
+
 import Network.Mux.Timeout
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
@@ -47,7 +49,6 @@ import Network.TypedProtocol.Driver
 import Ouroboros.Network.Codec
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple (TraceSendRecv(..))
-
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        sizeLimitForState :: forall (pr :: PeerRole) (st :: ps).
@@ -159,6 +160,9 @@ runDecoderWithLimit limit size Channel{recv} =
                                      go sz' Nothing =<< k (Just bs)
 
 
+-- | Run a peer enforcing 'ProtocolSizeLimits` and 'ProtocolTimeLimits'.
+-- Decoder's trailing data are pushed back to the channel.
+--
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
@@ -170,15 +174,19 @@ runPeerWithLimits
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeerWithLimits tracer codec slimits tlimits channel peer =
-    withTimeoutSerial $ \timeoutFn ->
-    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
-     in fst <$> runPeerWithDriver driver peer (startDState driver)
+runPeerWithLimits tracer codec slimits tlimits
+                  channel@Channel{pushBackTrailingData} peer =
+    withTimeoutSerial $ \timeoutFn -> do
+      let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
+      (a, trailing) <- runPeerWithDriver driver peer (startDState driver)
+      traverse_ pushBackTrailingData trailing
+      pure a
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
+-- Decoders' trailing data are pushed back to the channel.
 --
 -- Unlike normal peers, running pipelined peers rely on concurrency, hence the
 -- 'MonadSTM' constraint.
@@ -194,7 +202,10 @@ runPipelinedPeerWithLimits
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
-    withTimeoutSerial $ \timeoutFn ->
-    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
-     in fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+runPipelinedPeerWithLimits tracer codec slimits tlimits
+                           channel@Channel{pushBackTrailingData} peer =
+    withTimeoutSerial $ \timeoutFn -> do
+      let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
+      (a, trailing) <- runPipelinedPeerWithDriver driver peer (startDState driver)
+      traverse_ pushBackTrailingData trailing
+      pure a
