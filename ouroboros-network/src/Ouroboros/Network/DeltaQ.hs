@@ -37,7 +37,6 @@ module Ouroboros.Network.DeltaQ (
   ) where
 
 import           Control.Monad.Class.MonadTime (Time (..), diffTime)
-import           Control.Monad.Class.MonadTimer (microsecondsAsIntToDiffTime)
 import           Data.Semigroup ((<>))
 import           Data.Time.Clock (DiffTime)
 import           Data.Word (Word32)
@@ -320,15 +319,11 @@ gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
 defaultGSV :: PeerGSV
 defaultGSV = PeerGSV {sampleTime, outboundGSV, inboundGSV }
   where
-    default_g = maxG -- start with an unreasonable large G.
+    default_g = 500e-3 -- Old hardcoded default value. Only available value when running without KeepAlive.
     default_s = 2e-6 -- 4Mbps.
     inboundGSV  = ballisticGSV default_g default_s (degenerateDistribution 0)
     outboundGSV = inboundGSV
     sampleTime  = Time 0
-
-    maxG :: DiffTime
-    maxG = microsecondsAsIntToDiffTime maxBound / 4
-    --maxG = 500e-3 -- not unreasonable but old default value
 
 fromSample :: Time -> Time -> SizeInBytes -> PeerGSV
 fromSample t@(Time start) (Time end) _size =
