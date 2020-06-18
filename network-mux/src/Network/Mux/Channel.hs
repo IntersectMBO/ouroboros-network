@@ -48,7 +48,9 @@ data Channel m = Channel {
     -- It may raise exceptions (as appropriate for the monad and kind of
     -- channel).
     --
-    recv :: m (Maybe LBS.ByteString)
+    recv :: m (Maybe LBS.ByteString),
+
+    pushBackTrailingBytes :: LBS.ByteString -> m ()
   }
 
 
@@ -65,7 +67,7 @@ handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
                  -> Channel IO
 handlesAsChannel hndRead hndWrite =
-    Channel{send, recv}
+    Channel{send, recv, pushBackTrailingBytes}
   where
     send :: LBS.ByteString -> IO ()
     send chunk = do
@@ -78,6 +80,8 @@ handlesAsChannel hndRead hndWrite =
       if eof
         then return Nothing
         else Just . LBS.fromStrict <$> BS.hGetSome hndRead LBS.smallChunkSize
+
+    pushBackTrailingBytes _ = pure ()
 
 -- | Create a pair of 'Channel's that are connected internally.
 --
@@ -99,7 +103,7 @@ createBufferConnectedChannels = do
             buffersAsChannel bufferA bufferB)
   where
     buffersAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, pushBackTrailingBytes}
       where
         send :: LBS.ByteString -> m ()
         send x = sequence_ [ atomically (putTMVar bufferWrite c)
@@ -109,6 +113,9 @@ createBufferConnectedChannels = do
 
         recv :: m (Maybe LBS.ByteString)
         recv   = Just . LBS.fromStrict <$> atomically (takeTMVar bufferRead)
+
+        pushBackTrailingBytes :: LBS.ByteString -> m ()
+        pushBackTrailingBytes _ = pure ()
 
 
 -- | Create a local pipe, with both ends in this process, and expose that as
@@ -150,7 +157,7 @@ withFifosAsChannel fifoPathRead fifoPathWrite action =
 ---
 socketAsChannel :: Socket.Socket -> Channel IO
 socketAsChannel socket =
-    Channel{send, recv}
+    Channel{send, recv, pushBackTrailingBytes}
   where
     send :: LBS.ByteString -> IO ()
     send chunks =
@@ -166,6 +173,9 @@ socketAsChannel socket =
       if BS.null chunk
         then return Nothing
         else return (Just (LBS.fromStrict chunk))
+
+    pushBackTrailingBytes :: LBS.ByteString -> IO ()
+    pushBackTrailingBytes _ = pure ()
 
 
 --- | Create a local socket, with both ends in this process, and expose that as
@@ -191,7 +201,7 @@ channelEffect :: forall m.
               -> (Maybe LBS.ByteString -> m ()) -- ^ Action after 'recv'
               -> Channel m
               -> Channel m
-channelEffect beforeSend afterRecv Channel{send, recv} =
+channelEffect beforeSend afterRecv Channel{send, recv, pushBackTrailingBytes} =
     Channel{
       send = \x -> do
         beforeSend x
@@ -201,6 +211,8 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
         mx <- recv
         afterRecv mx
         return mx
+
+    , pushBackTrailingBytes
     }
 
 -- | Delay a channel on the receiver end.
@@ -225,10 +237,11 @@ loggingChannel :: ( MonadSay m
                => id
                -> Channel m
                -> Channel m
-loggingChannel ident Channel{send,recv} =
+loggingChannel ident Channel{send,recv,pushBackTrailingBytes} =
   Channel {
     send = loggingSend,
-    recv = loggingRecv
+    recv = loggingRecv,
+    pushBackTrailingBytes = loggingPushBackTrailingBytes
   }
  where
   loggingSend a = do
@@ -241,3 +254,7 @@ loggingChannel ident Channel{send,recv} =
       Nothing -> return ()
       Just a  -> say (show ident ++ ":recv:" ++ show a)
     return msg
+
+  loggingPushBackTrailingBytes a = do
+    say (show ident ++ ":pushBackTrailingBytes:" ++ show a)
+    pushBackTrailingBytes a

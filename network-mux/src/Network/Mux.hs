@@ -430,7 +430,7 @@ muxChannel
     -> IngressQueue m
     -> Channel m
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
-    Channel { send, recv}
+    Channel { send, recv, pushBackTrailingBytes}
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
@@ -468,6 +468,11 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ MuxTraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
+
+    pushBackTrailingBytes :: BL.ByteString -> m ()
+    pushBackTrailingBytes blob = do
+      atomically $ modifyTVar q (blob <>)
+      traceWith tracer $ MuxTraceChannelPushBackTrailingBytes (fromIntegral $ BL.length blob)
 
 traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
 traceMuxBearerState tracer state =

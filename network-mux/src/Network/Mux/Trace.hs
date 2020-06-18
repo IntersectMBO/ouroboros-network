@@ -133,6 +133,7 @@ data MuxTrace =
     | MuxTraceChannelRecvEnd !MiniProtocolNum !Int
     | MuxTraceChannelSendStart !MiniProtocolNum !Int
     | MuxTraceChannelSendEnd !MiniProtocolNum
+    | MuxTraceChannelPushBackTrailingBytes !Int
     | MuxTraceHandshakeStart
     | MuxTraceHandshakeClientEnd !DiffTime
     | MuxTraceHandshakeServerEnd
@@ -167,6 +168,7 @@ instance Show MuxTrace where
     show (MuxTraceChannelSendStart mid len) = printf "Channel Send Start on %s %d" (show mid)
         len
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
+    show (MuxTraceChannelPushBackTrailingBytes len) = printf "Channel: push back %d trailing bytes" len
     show MuxTraceHandshakeStart = "Handshake start"
     show (MuxTraceHandshakeClientEnd duration) = printf "Handshake Client end, duration %s" (show duration)
     show MuxTraceHandshakeServerEnd = "Handshake Server end"

@@ -216,7 +216,7 @@ data MuxBearer m = MuxBearer {
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
 muxBearerAsChannel
-  :: forall m. Functor m
+  :: forall m. Applicative m
   => MuxBearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
@@ -224,7 +224,8 @@ muxBearerAsChannel
 muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
-        recv = Just . msBlob . fst <$> read bearer noTimeout
+        recv = Just . msBlob . fst <$> read bearer noTimeout,
+        pushBackTrailingBytes = \_ -> pure ()
       }
     where
       -- wrap a 'ByteString' as 'MuxSDU'
