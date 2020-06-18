@@ -119,6 +119,7 @@ test-suite test
                        Network.TypedProtocol.ReqResp.Codec.CBOR
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
+                       Test.Ouroboros.Network.ConnectionManager
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Server2
@@ -136,6 +137,7 @@ test-suite test
                      , network
                      , serialise
                      , time
+                     , quiet
 
                      , QuickCheck
                      , tasty
@@ -148,6 +150,7 @@ test-suite test
                      , io-classes
                      , network-mux
                      , ouroboros-network-framework
+                     , ouroboros-network-testing
                      , typed-protocols
                      , typed-protocols-examples
 
