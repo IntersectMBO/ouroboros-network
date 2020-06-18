@@ -38,15 +38,17 @@ instance HasNetworkProtocolVersion ByronBlock where
 
 instance TranslateNetworkProtocolVersion ByronBlock where
   supportedNodeToNodeVersions   _ = ByronNodeToNodeVersion1
-                                  :| [ ByronNodeToNodeVersion2 ]
+                                  :| []
   supportedNodeToClientVersions _ = ByronNodeToClientVersion1
                                   :| [ ByronNodeToClientVersion2 ]
 
-  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion2
+  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion1
   mostRecentSupportedNodeToClient _ = ByronNodeToClientVersion2
 
+  -- Note ByronNodeToNodeVersion2 is enabled as part of the hard-fork-enabled
+  -- CardanoNodeToNodeVersion2
   nodeToNodeProtocolVersion _ ByronNodeToNodeVersion1 = N.NodeToNodeV_1
-  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = N.NodeToNodeV_2
+  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = error "version 2 not supported"
 
   nodeToClientProtocolVersion _ ByronNodeToClientVersion1 = N.NodeToClientV_1
   nodeToClientProtocolVersion _ ByronNodeToClientVersion2 = N.NodeToClientV_2
