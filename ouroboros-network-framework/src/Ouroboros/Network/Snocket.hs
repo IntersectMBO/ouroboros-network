@@ -24,6 +24,7 @@ module Ouroboros.Network.Snocket
   , LocalSocket (..)
   , LocalAddress (..)
   , localAddressFromPath
+  , TestAddress (..)
 
   , FileDescriptor
   , socketFileDescriptor
@@ -37,6 +38,7 @@ import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Hashable
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
@@ -189,7 +191,15 @@ newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
+newtype TestAddress addr = TestAddress { getTestAddress :: addr }
+  deriving (Eq, Ord, Generic, Typeable)
+  deriving Show via Quiet (TestAddress addr)
+
 -- | We support either sockets or named pipes.
+--
+-- There are three families of addresses: 'SocketFamily' usef for Berkeley
+-- sockets, 'LocalFamily' used for 'LocalAddress'es (either Unix sockets or
+-- Windows named pipe addresses), and 'TestFamily' for testing purposes.
 --
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
 -- opened Win32 'HANDLE'.
@@ -200,6 +210,12 @@ data AddressFamily addr where
                  -> AddressFamily Socket.SockAddr
 
     LocalFamily  :: !LocalAddress -> AddressFamily LocalAddress
+
+    -- | Using a newtype wrapper 'TestAddress' makes pattern matches on
+    -- @AddressFamily@ complete, e.g. it makes 'AddressFamily' injective:
+    -- @AddressFamily addr == AddressFamily addr'@ then @addr == addr'@. .
+    --
+    TestFamily   :: AddressFamily (TestAddress addr)
 
 deriving instance Eq   addr => Eq   (AddressFamily addr)
 deriving instance Show addr => Show (AddressFamily addr)
