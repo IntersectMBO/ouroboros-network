@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 module Ouroboros.Network.Snocket
   ( -- * Snocket Interface
@@ -22,6 +23,7 @@ module Ouroboros.Network.Snocket
   , LocalSocket (..)
   , LocalAddress (..)
   , localAddressFromPath
+  , TestAddress (..)
 
   , FileDescriptor
   , socketFileDescriptor
@@ -35,6 +37,7 @@ import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Hashable
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 #if !defined(mingw32_HOST_OS)
@@ -169,7 +172,14 @@ newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
+newtype TestAddress addr = TestAddress { getTestAddress :: addr }
+  deriving (Eq, Ord, Typeable, Show)
+
 -- | We support either sockets or named pipes.
+--
+-- There are three families of addresses: 'SocketFamily' usef for Berkeley
+-- sockets, 'LocalFamily' used for 'LocalAddress'es (either Unix sockets or
+-- Windows named pipe addresses), and 'TestFamily' for testing purposes.
 --
 data AddressFamily addr where
 
@@ -178,13 +188,15 @@ data AddressFamily addr where
 
     LocalFamily  :: AddressFamily LocalAddress
 
-instance Eq (AddressFamily addr) where
-    SocketFamily fam0 == SocketFamily fam1 = fam0 == fam1
-    LocalFamily       == LocalFamily       = True
+    -- using a newtype wrapper make pattern matches on @AddressFamily@ complete,
+    -- e.g. it makes 'AddressFamily' injective:
+    -- @AddressFamily addr == AddressFamily addr'@ then @addr == addr'@. .
+    --
+    TestFamily   :: AddressFamily (TestAddress addr)
 
-instance Show (AddressFamily addr) where
-    show (SocketFamily fam) = show fam
-    show LocalFamily        = "LocalFamily"
+deriving instance Eq (AddressFamily addr)
+deriving instance Show (AddressFamily addr)
+
 
 -- | Abstract communication interface that can be used by more than
 -- 'Socket'.  Snockets are polymorphic over monad which is used, this feature
