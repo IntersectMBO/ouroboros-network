@@ -81,7 +81,7 @@ instance HashAlgorithm h => Arbitrary (SomeBlock Query (Block h)) where
     , pure $ SomeBlock GetCurrentPParams
     , pure $ SomeBlock GetProposedPParamsUpdates
     , pure $ SomeBlock GetStakeDistribution
-    , pure $ SomeBlock GetCurrentLedgerState
+    , pure $ SomeBlock GetCurrentEpochState
     , (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> arbitrary
     , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
@@ -94,7 +94,7 @@ instance HashAlgorithm h => Arbitrary (SomeResult (Block h)) where
     , SomeResult GetCurrentPParams <$> arbitrary
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
-    , SomeResult GetCurrentLedgerState <$> arbitrary
+    , SomeResult GetCurrentEpochState <$> arbitrary
     , (\(SomeResult q r) ->
         SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
       arbitrary
