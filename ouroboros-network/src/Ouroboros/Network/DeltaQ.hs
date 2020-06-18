@@ -292,12 +292,13 @@ defaultGSV = PeerGSV { outboundGSV, inboundGSV }
 
     maxG :: DiffTime
     maxG = microsecondsAsIntToDiffTime maxBound / 4
+    --maxG = 500e-3 -- not unreasonable but old default value
 
 fromSample :: Time -> Time -> SizeInBytes -> PeerGSV
 fromSample (Time start) (Time end) _size =
     PeerGSV  { outboundGSV, inboundGSV }
   where
-    g =  (start - end) / 2
+    g =  (end - start) / 2
 
     inboundGSV = ballisticGSV g 2e-6 (degenerateDistribution 0)
     outboundGSV  = inboundGSV
