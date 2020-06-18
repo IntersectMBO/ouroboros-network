@@ -185,6 +185,10 @@ instance Semigroup GSV where
   GSV g1 s1 v1 <> GSV g2 s2 v2 = GSV (g1+g2) (\sz -> s1 sz + s2 sz) (v1 <> v2)
 
 
+instance Show GSV where
+    show (GSV g s (DegenerateDistribution v)) =
+        "GSV g " ++ show g ++ " s " ++ show (s 1) ++ " v " ++ show v
+
 -- | The case of ballistic packet transmission where the /S/ is directly
 -- proportional to the packet size.
 --
@@ -242,6 +246,7 @@ data PeerGSV = PeerGSV {
                  outboundGSV :: !GSV,
                  inboundGSV  :: !GSV
                }
+               deriving Show
 
 instance Semigroup PeerGSV where
     (<>) _ a = a -- TODO add propper EWMA based implementation
