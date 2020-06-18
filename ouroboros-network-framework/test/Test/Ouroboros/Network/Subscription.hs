@@ -24,7 +24,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (void)
+import           Data.Functor (void, (<$))
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
@@ -555,12 +555,13 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         reqRespResponder =
           ResponderProtocolOnly $
           MuxPeerRaw $ \channel -> do
-            r <- runPeer (tagTrace "Responder" activeTracer)
+            (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
-            waitSiblingSub siblingVar
+            ((), trailing)
+              <$ waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
@@ -569,12 +570,13 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         reqRespInitiator =
           InitiatorProtocolOnly $
           MuxPeerRaw $ \channel -> do
-            r <- runPeer (tagTrace "Initiator" activeTracer)
+            (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
-            waitSiblingSub siblingVar
+            ((), trailing) <$
+              waitSiblingSub siblingVar
 
     peerStatesVar <- newPeerStatesVar
     let sn = socketSnocket iocp
@@ -700,24 +702,26 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
       InitiatorAndResponderProtocol
             -- Initiator
             (MuxPeerRaw $ \channel -> do
-             r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
+             (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
              atomically $ putTMVar rrcClientVar r
              -- wait for our responder and peer
-             waitSiblingSub rrcSiblingVar
+             ((), trailing)
+                <$ waitSiblingSub rrcSiblingVar
             )
             -- Responder
             (MuxPeerRaw $ \channel -> do
-             r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
+             (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))
              atomically $ putTMVar rrcServerVar r
              -- wait for our initiator and peer
-             waitSiblingSub rrcSiblingVar
+             ((), trailing)
+                <$ waitSiblingSub rrcSiblingVar
             )
 
     startPassiveServer iocp tbl stVar responderAddr localAddrVar rrcfg = withServerNode

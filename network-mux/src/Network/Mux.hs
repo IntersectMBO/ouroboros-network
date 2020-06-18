@@ -219,10 +219,9 @@ miniProtocolJob tracer egressQueue
       atomically $ do
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar $ Right result
-        buf <- readTVar miniProtocolIngressQueue
         case remainder of
           Just trailing ->
-            writeTVar miniProtocolIngressQueue $ BL.append trailing buf
+            modifyTVar miniProtocolIngressQueue (BL.append trailing)
           Nothing ->
             pure ()
 

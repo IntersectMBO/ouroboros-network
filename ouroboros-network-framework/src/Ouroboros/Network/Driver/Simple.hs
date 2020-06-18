@@ -124,9 +124,9 @@ runPeer
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr st m a
-  -> m a
+  -> m (a, Maybe bytes)
 runPeer tracer codec channel peer =
-    fst <$> runPeerWithDriver driver peer (startDState driver)
+    runPeerWithDriver driver peer (startDState driver)
   where
     driver = driverSimple tracer codec channel
 
@@ -145,9 +145,9 @@ runPipelinedPeer
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m a
+  -> m (a, Maybe bytes)
 runPipelinedPeer tracer codec channel peer =
-    fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+    runPipelinedPeerWithDriver driver peer (startDState driver)
   where
     driver = driverSimple tracer codec channel
 
@@ -191,9 +191,9 @@ runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
 runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPeer tracerClient codec clientChannel client
+    (fst <$> runPeer tracerClient codec clientChannel client)
       `concurrently`
-    runPeer tracerServer codec serverChannel server
+    (fst <$> runPeer tracerServer codec serverChannel server)
   where
     tracerClient = contramap ((,) AsClient) tracer
     tracerServer = contramap ((,) AsServer) tracer
@@ -215,9 +215,9 @@ runConnectedPeersAsymmetric
 runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPeer tracerClient codec  clientChannel client
+    (fst <$> runPeer tracerClient codec  clientChannel client)
       `concurrently`
-    runPeer tracerServer codec' serverChannel server
+    (fst <$> runPeer tracerServer codec' serverChannel server)
   where
     tracerClient = contramap ((,) AsClient) tracer
     tracerServer = contramap ((,) AsServer) tracer
@@ -234,9 +234,9 @@ runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
 runConnectedPeersPipelined createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPipelinedPeer tracerClient codec clientChannel client
+    (fst <$> runPipelinedPeer tracerClient codec clientChannel client)
       `concurrently`
-    runPeer          tracerServer codec serverChannel server
+    (fst <$> runPeer          tracerServer codec serverChannel server)
   where
     tracerClient = contramap ((,) AsClient) tracer
     tracerServer = contramap ((,) AsServer) tracer

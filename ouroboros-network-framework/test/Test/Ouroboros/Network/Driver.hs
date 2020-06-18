@@ -110,7 +110,7 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        runPeerWithLimits tracer codecReqResp (byteLimitsReqResp limit) timeUnLimitsReqResp c1 recvPeer
+        (fst <$> runPeerWithLimits tracer codecReqResp (byteLimitsReqResp limit) timeUnLimitsReqResp c1 recvPeer)
           `concurrently`
         void (runPeerWithLimits tracer codecReqResp (byteLimitsReqResp maxBound) timeLimitsReqResp
               c2 sendPeer)
