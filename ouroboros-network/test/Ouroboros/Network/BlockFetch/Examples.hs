@@ -178,10 +178,11 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
 --
 exampleFixedPeerGSVs :: PeerGSV
 exampleFixedPeerGSVs =
-    PeerGSV{outboundGSV, inboundGSV}
+    PeerGSV{sampleTime, outboundGSV, inboundGSV}
   where
     inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
     outboundGSV = inboundGSV
+    sampleTime  = Time 0
 
 
 --
