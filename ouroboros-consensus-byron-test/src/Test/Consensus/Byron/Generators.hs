@@ -30,6 +30,7 @@ import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
+import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
@@ -189,6 +190,22 @@ instance Arbitrary CC.Update.ProtocolParameters where
 instance Arbitrary CC.Update.SoftwareVersion where
   arbitrary = hedgehog UG.genSoftwareVersion
 
+instance Arbitrary CC.Reg.ProtocolUpdateProposal where
+  arbitrary = CC.Reg.ProtocolUpdateProposal
+    <$> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Reg.SoftwareUpdateProposal where
+  arbitrary = CC.Reg.SoftwareUpdateProposal
+    <$> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Reg.ApplicationVersion where
+  arbitrary = CC.Reg.ApplicationVersion
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
 instance Arbitrary CC.UPI.State where
   arbitrary = CC.UPI.State
     <$> arbitrary
@@ -270,7 +287,7 @@ instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
-    <*> ((,) <$> arbitrary <*> elements [IsEBB, IsNotEBB])
+    <*> (TipInfoIsEBB <$> arbitrary <*> elements [IsEBB, IsNotEBB])
 
 instance Arbitrary (PBftState PBftByronCrypto) where
   arbitrary = do

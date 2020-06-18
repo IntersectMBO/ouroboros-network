@@ -578,9 +578,9 @@ data instance LedgerState TestBlock =
 instance UpdateLedger TestBlock
 
 instance HasAnnTip TestBlock where
-  type TipInfo TestBlock = (HeaderHash TestBlock, IsEBB)
-  tipInfoHash _ = fst
-  getTipInfo b  = (blockHash b, headerToIsEBB b)
+  type TipInfo TestBlock = TipInfoIsEBB TestBlock
+  tipInfoHash _ (TipInfoIsEBB h _) = h
+  getTipInfo b = TipInfoIsEBB (blockHash b) (headerToIsEBB b)
 
 data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
@@ -590,7 +590,7 @@ instance BasicEnvelopeValidation TestBlock where
   minimumPossibleSlotNo _ = SlotNo 0
 
   -- EBB shares its slot number with its successor
-  minimumNextSlotNo _ (_, prevIsEBB) (_, curIsEBB) s =
+  minimumNextSlotNo _ (TipInfoIsEBB _ prevIsEBB) (TipInfoIsEBB _ curIsEBB) s =
       case (prevIsEBB, curIsEBB) of
         (IsEBB, IsNotEBB) -> s
         _otherwise        -> succ s
@@ -599,7 +599,7 @@ instance BasicEnvelopeValidation TestBlock where
   expectedFirstBlockNo _ = BlockNo 0
 
   -- EBB shares its block number with its predecessor.
-  expectedNextBlockNo _ (_, prevIsEBB) (_, curIsEBB) b =
+  expectedNextBlockNo _ (TipInfoIsEBB _ prevIsEBB) (TipInfoIsEBB _ curIsEBB) b =
       case (prevIsEBB, curIsEBB) of
         (IsNotEBB, IsEBB) -> b
         _otherwise        -> succ b

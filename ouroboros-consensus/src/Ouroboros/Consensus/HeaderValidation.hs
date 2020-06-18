@@ -39,6 +39,8 @@ module Ouroboros.Consensus.HeaderValidation (
     -- * Errors
   , HeaderError(..)
   , castHeaderError
+    -- * TipInfoIsEBB
+  , TipInfoIsEBB(..)
     -- * Serialization
   , defaultEncodeAnnTip
   , defaultDecodeAnnTip
@@ -461,6 +463,20 @@ validateHeader cfg ledgerView hdr st = do
                st
 
 {-------------------------------------------------------------------------------
+  TipInfoIsEBB
+-------------------------------------------------------------------------------}
+
+-- | Reusable strict data type for 'TipInfo' in case the 'TipInfo' should
+-- contain 'IsEBB' in addition to the 'HeaderHash'.
+data TipInfoIsEBB blk = TipInfoIsEBB !(HeaderHash blk) !IsEBB
+  deriving (Generic)
+
+deriving instance StandardHash blk => Eq   (TipInfoIsEBB blk)
+deriving instance StandardHash blk => Show (TipInfoIsEBB blk)
+deriving instance NoUnexpectedThunks (HeaderHash blk)
+               => NoUnexpectedThunks (TipInfoIsEBB blk)
+
+{-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
@@ -494,21 +510,23 @@ defaultDecodeAnnTip decodeHash = do
     decodeInfo :: forall s. Decoder s ()
     decodeInfo = decode
 
-encodeAnnTipIsEBB :: TipInfo blk ~ (HeaderHash blk, IsEBB)
+encodeAnnTipIsEBB :: TipInfo blk ~ TipInfoIsEBB blk
                   => (HeaderHash blk -> Encoding)
                   -> (AnnTip     blk -> Encoding)
 encodeAnnTipIsEBB encodeHash AnnTip{..} = mconcat [
       encodeListLen 4
     , encode     annTipSlotNo
-    , encodeHash (fst annTipInfo)
+    , encodeHash hash
     , encode     annTipBlockNo
-    , encodeInfo (snd annTipInfo)
+    , encodeInfo isEBB
     ]
   where
+    TipInfoIsEBB hash isEBB = annTipInfo
+
     encodeInfo :: IsEBB -> Encoding
     encodeInfo = encode
 
-decodeAnnTipIsEBB :: TipInfo blk ~ (HeaderHash blk, IsEBB)
+decodeAnnTipIsEBB :: TipInfo blk ~ TipInfoIsEBB blk
                   => (forall s. Decoder s (HeaderHash blk))
                   -> (forall s. Decoder s (AnnTip     blk))
 decodeAnnTipIsEBB decodeHash = do
@@ -517,7 +535,7 @@ decodeAnnTipIsEBB decodeHash = do
     hash          <- decodeHash
     annTipBlockNo <- decode
     isEBB         <- decodeInfo
-    return AnnTip{annTipInfo = (hash, isEBB), ..}
+    return AnnTip{annTipInfo = TipInfoIsEBB hash isEBB, ..}
   where
     decodeInfo :: forall s. Decoder s IsEBB
     decodeInfo = decode

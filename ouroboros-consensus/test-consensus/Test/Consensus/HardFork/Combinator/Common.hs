@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -16,7 +19,7 @@ import           Codec.Serialise
 import qualified Data.ByteString as Strict
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -33,7 +36,8 @@ data HeaderFields b = HeaderFields {
      , headerFieldSlot     :: SlotNo
      , headerFieldNo       :: BlockNo
      }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HeaderFields" (HeaderFields b)
 
 deriving instance Serialise (HeaderHash b) => Serialise (HeaderFields b)
 

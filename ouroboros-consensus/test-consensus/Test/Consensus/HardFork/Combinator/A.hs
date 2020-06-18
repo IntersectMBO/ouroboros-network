@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -48,7 +50,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.ProtocolMagic
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
@@ -95,7 +97,7 @@ data instance ConsensusConfig ProtocolA = CfgA {
       cfgA_k           :: SecurityParam
     , cfgA_leadInSlots :: Set SlotNo
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "CfgA" (ConsensusConfig ProtocolA)
 
 instance ChainSelection ProtocolA where
   -- Use defaults
@@ -123,7 +125,8 @@ data BlockA = BlkA {
     , blkA_body   :: [GenTx BlockA]
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlkA" BlockA
 
 -- Standard cborg generic serialisation is:
 --
@@ -143,7 +146,8 @@ instance GetHeader BlockA where
         hdrA_fields :: HeaderFields BlockA
       }
     deriving stock   (Show, Eq, Generic)
-    deriving newtype (NoUnexpectedThunks, Serialise)
+    deriving newtype (Serialise)
+    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrA" (Header BlockA)
 
   getHeader          = blkA_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
@@ -198,14 +202,15 @@ data instance LedgerState BlockA = LgrA {
       -- | The 'SlotNo' of the block containing the 'InitiateAtoB' transaction
     , lgrA_transition :: Maybe SlotNo
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+  deriving (Show, Eq, Generic, Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrA" (LedgerState BlockA)
 
 data PartialLedgerConfigA = LCfgA {
       lcfgA_k           :: SecurityParam
     , lcfgA_systemStart :: SystemStart
     , lcfgA_forgeTxs    :: Map SlotNo [GenTx BlockA]
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LCfgA" PartialLedgerConfigA
 
 type instance LedgerCfg (LedgerState BlockA) =
     (EpochInfo Identity, PartialLedgerConfigA)
@@ -283,7 +288,8 @@ instance LedgerSupportsMempool BlockA where
          txA_id      :: TxId (GenTx BlockA)
        , txA_payload :: TxPayloadA
        }
-    deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+    deriving (Show, Eq, Generic, Serialise)
+    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
 
   type ApplyTxErr BlockA = Void
 

@@ -1169,6 +1169,7 @@ deriving instance ToExpr TestBody
 deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
+deriving instance ToExpr (TipInfoIsEBB Blk)
 deriving instance ToExpr (AnnTip Blk)
 deriving instance ToExpr (LedgerState Blk)
 deriving instance ToExpr (HeaderState Blk)

@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -40,7 +42,7 @@ import           Data.Void
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.ProtocolMagic
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.Slot
 
 import           Test.Util.Time (dawnOfTime)
@@ -82,7 +84,7 @@ data instance ConsensusConfig ProtocolB = CfgB {
       cfgB_k           :: SecurityParam
     , cfgB_leadInSlots :: Set SlotNo
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "CfgB" (ConsensusConfig ProtocolB)
 
 instance ChainSelection ProtocolB where
   -- Use defaults
@@ -109,7 +111,8 @@ data BlockB = BlkB {
       blkB_header :: Header BlockB
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlkB" BlockB
 
 binaryBlockInfoB :: BlockB -> BinaryBlockInfo
 binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
@@ -122,7 +125,8 @@ instance GetHeader BlockB where
         hdrB_fields :: HeaderFields BlockB
       }
     deriving stock   (Show, Eq, Generic)
-    deriving newtype (NoUnexpectedThunks, Serialise)
+    deriving newtype (Serialise)
+    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
 
   getHeader          = blkB_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
@@ -174,7 +178,8 @@ instance ValidateEnvelope BlockB where
 data instance LedgerState BlockB = LgrB {
       lgrB_tip :: Point BlockB
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+  deriving (Show, Eq, Generic, Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrB" (LedgerState BlockB)
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 
