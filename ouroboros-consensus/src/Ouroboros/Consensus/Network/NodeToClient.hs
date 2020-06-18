@@ -299,13 +299,13 @@ showTracers tr = Tracers {
 -- See 'Network.Mux.Types.MuxApplication'
 data Apps m peer bCS bTX bSQ a = Apps {
       -- | Start a local chain sync server.
-      aChainSyncServer    :: peer -> Channel m bCS -> m a
+      aChainSyncServer    :: peer -> Channel m bCS -> m (a, Maybe bCS)
 
       -- | Start a local transaction submission server.
-    , aTxSubmissionServer :: peer -> Channel m bTX -> m a
+    , aTxSubmissionServer :: peer -> Channel m bTX -> m (a, Maybe bTX)
 
       -- | Start a local state query server.
-    , aStateQueryServer   :: peer -> Channel m bSQ -> m a
+    , aStateQueryServer   :: peer -> Channel m bSQ -> m (a, Maybe bSQ)
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
@@ -321,7 +321,7 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
     aChainSyncServer
       :: peer
       -> Channel m bCS
-      -> m ()
+      -> m ((), Maybe bCS)
     aChainSyncServer them channel = do
       labelThisThread "LocalChainSyncServer"
       withRegistry $ \registry ->
@@ -335,7 +335,7 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
     aTxSubmissionServer
       :: peer
       -> Channel m bTX
-      -> m ()
+      -> m ((), Maybe bTX)
     aTxSubmissionServer them channel = do
       labelThisThread "LocalTxSubmissionServer"
       runPeer
@@ -347,7 +347,7 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
     aStateQueryServer
       :: peer
       -> Channel m bSQ
-      -> m ()
+      -> m ((), Maybe bSQ)
     aStateQueryServer them channel = do
       labelThisThread "LocalStateQueryServer"
       runPeer

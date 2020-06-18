@@ -31,7 +31,6 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
-import           Control.Monad (void)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
@@ -327,24 +326,24 @@ showTracers tr = Tracers {
 data Apps m peer blk bCS bBF bTX a = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      aChainSyncClient    :: BlockNodeToNodeVersion blk -> peer -> Channel m bCS -> m a
+      aChainSyncClient    :: BlockNodeToNodeVersion blk -> peer -> Channel m bCS -> m (a, Maybe bCS)
 
       -- | Start a chain sync server.
-    , aChainSyncServer    :: BlockNodeToNodeVersion blk -> peer -> Channel m bCS -> m a
+    , aChainSyncServer    :: BlockNodeToNodeVersion blk -> peer -> Channel m bCS -> m (a, Maybe bCS)
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , aBlockFetchClient   :: BlockNodeToNodeVersion blk -> peer -> Channel m bBF -> m a
+    , aBlockFetchClient   :: BlockNodeToNodeVersion blk -> peer -> Channel m bBF -> m (a, Maybe bBF)
 
       -- | Start a block fetch server.
-    , aBlockFetchServer   :: BlockNodeToNodeVersion blk -> peer -> Channel m bBF -> m a
+    , aBlockFetchServer   :: BlockNodeToNodeVersion blk -> peer -> Channel m bBF -> m (a, Maybe bBF)
 
       -- | Start a transaction submission client that communicates with the
       -- given upstream node.
-    , aTxSubmissionClient :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m a
+    , aTxSubmissionClient :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m (a, Maybe bTX)
 
       -- | Start a transaction submission server.
-    , aTxSubmissionServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m a
+    , aTxSubmissionServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m (a, Maybe bTX)
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
@@ -369,37 +368,38 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bCS
-      -> m ()
+      -> m ((), Maybe bCS)
     aChainSyncClient version them channel = do
       labelThisThread "ChainSyncClient"
-      void $
-        -- Note that it is crucial that we sync with the fetch client "outside"
-        -- of registering the state for the sync client. This is needed to
-        -- maintain a state invariant required by the block fetch logic: that for
-        -- each candidate chain there is a corresponding block fetch client that
-        -- can be used to fetch blocks for that chain.
-        bracketSyncWithFetchClient
-          (getFetchClientRegistry kernel) them $
+      -- Note that it is crucial that we sync with the fetch client "outside"
+      -- of registering the state for the sync client. This is needed to
+      -- maintain a state invariant required by the block fetch logic: that for
+      -- each candidate chain there is a corresponding block fetch client that
+      -- can be used to fetch blocks for that chain.
+      bracketSyncWithFetchClient
+        (getFetchClientRegistry kernel) them $
         bracketChainSyncClient
             (Node.chainSyncClientTracer (getTracers kernel))
             (defaultChainDbView (getChainDB kernel))
             (getNodeCandidates kernel)
-            them $ \varCandidate-> do
-          chainSyncTimeout <- genChainSyncTimeout
-          runPipelinedPeerWithLimits
-            (contramap (TraceLabelPeer them) tChainSyncTracer)
-            cChainSyncCodec
-            (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-            (timeLimitsChainSync chainSyncTimeout)
-            channel
-            $ chainSyncClientPeerPipelined
-            $ hChainSyncClient version varCandidate
+            them $ \varCandidate -> do
+              chainSyncTimeout <- genChainSyncTimeout
+              (_, trailing) <-
+                runPipelinedPeerWithLimits
+                  (contramap (TraceLabelPeer them) tChainSyncTracer)
+                  cChainSyncCodec
+                  (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+                  (timeLimitsChainSync chainSyncTimeout)
+                  channel
+                  $ chainSyncClientPeerPipelined
+                  $ hChainSyncClient version varCandidate
+              return ((), trailing)
 
     aChainSyncServer
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bCS
-      -> m ()
+      -> m ((), Maybe bCS)
     aChainSyncServer version them channel = do
       labelThisThread "ChainSyncServer"
       withRegistry $ \registry -> do
@@ -417,7 +417,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bBF
-      -> m ()
+      -> m ((), Maybe bBF)
     aBlockFetchClient version them channel = do
       labelThisThread "BlockFetchClient"
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
@@ -433,7 +433,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bBF
-      -> m ()
+      -> m ((), Maybe bBF)
     aBlockFetchServer version them channel = do
       labelThisThread "BlockFetchServer"
       withRegistry $ \registry ->
@@ -450,7 +450,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bTX
-      -> m ()
+      -> m ((), Maybe bTX)
     aTxSubmissionClient version them channel = do
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
@@ -465,7 +465,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       :: BlockNodeToNodeVersion blk
       -> remotePeer
       -> Channel m bTX
-      -> m ()
+      -> m ((), Maybe bTX)
     aTxSubmissionServer version them channel = do
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
