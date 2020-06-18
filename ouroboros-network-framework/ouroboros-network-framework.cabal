@@ -115,7 +115,8 @@ test-suite test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test
-  other-modules:       Test.Ouroboros.Network.Driver
+  other-modules:       Test.Ouroboros.Network.ConnectionManager
+                       Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Server2
                        Test.Ouroboros.Network.Socket
@@ -132,6 +133,7 @@ test-suite test
                      , network
                      , serialise
                      , time
+                     , quiet
 
                      , QuickCheck
                      , tasty
@@ -144,6 +146,7 @@ test-suite test
                      , io-classes
                      , network-mux
                      , ouroboros-network-framework
+                     , ouroboros-network-testing
                      , typed-protocols
                      , typed-protocols-cborg
                      , typed-protocols-examples
