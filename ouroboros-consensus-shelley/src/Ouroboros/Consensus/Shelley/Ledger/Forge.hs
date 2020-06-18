@@ -97,17 +97,20 @@ evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
   where
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
     evolveKey :: HotKey c -> HotKey c
-    evolveKey (HotKey oldPeriod outdatedKey) = go outdatedKey oldPeriod kesPeriod
-      where
-        go !sk c t
-          | t < c
-          = error "Asked to evolve KES key to old period"
-          | c == t
-          = HotKey kesPeriod sk
-          | otherwise
-          = case KES.updateKES () sk c of
-              Nothing  -> error "Could not update KES key"
-              Just sk' -> go sk' (c + 1) t
+    evolveKey !hk@(HotKey kesPeriodOfKey key)
+        | kesPeriod == kesPeriodOfKey
+        = hk
+        | kesPeriod < kesPeriodOfKey
+        = error $
+            "Asked to evolve KES signature key at period " <>
+            show kesPeriodOfKey <> "  to old period " <> show kesPeriod
+        | otherwise
+        = case KES.updateKES () key kesPeriodOfKey of
+            Just key' -> evolveKey (HotKey (kesPeriodOfKey + 1) key')
+            Nothing   -> error $
+              "Could not evolve KES signature key to period " <>
+              show kesPeriod <> ", its current period " <>
+              show kesPeriodOfKey <> " is its last"
 
 {-------------------------------------------------------------------------------
   Forging
