@@ -1052,22 +1052,22 @@ directedEdgeInner edgeStatusVar
              -> BlockNodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
-             -> m ()
+             -> m ((), trailingBytes)
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
              -> BlockNodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
-             -> m ()
+             -> m ((), trailingBytes)
              )
              -- ^ server action to run on node2
           -> m (m (), m ())
         miniProtocol client server = do
            (chan, dualChan) <- createConnectedChannels
            pure
-             ( client app1 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node2) chan
-             , server app2 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node1) dualChan
+             ( fst <$> client app1 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node2) chan
+             , fst <$> server app2 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests

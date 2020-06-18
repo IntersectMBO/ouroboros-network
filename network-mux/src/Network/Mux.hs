@@ -219,8 +219,11 @@ miniProtocolJob tracer egressQueue
       atomically $ do
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar $ Right result
-        buf <- readTVar miniProtocolIngressQueue
-        writeTVar miniProtocolIngressQueue $ BL.append remainder buf
+        case remainder of
+          Just trailing ->
+            modifyTVar miniProtocolIngressQueue (BL.append trailing)
+          Nothing ->
+            pure ()
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
@@ -248,8 +251,8 @@ data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
   deriving Eq
 
 data MiniProtocolAction m where
-     MiniProtocolAction :: (Channel m -> m (a, BL.ByteString))    -- ^ Action
-                        -> StrictTMVar m (Either SomeException a) -- ^ Completion var
+     MiniProtocolAction :: (Channel m -> m (a, Maybe BL.ByteString)) -- ^ Action
+                        -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
 -- | The monitoring loop does two jobs:
@@ -510,7 +513,7 @@ runMiniProtocol :: forall mode m a.
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
                 -> StartOnDemandOrEagerly
-                -> (Channel m -> m (a, BL.ByteString))
+                -> (Channel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                 ptclNum ptclDir startMode protocolAction

@@ -117,14 +117,14 @@ runClient :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> Channel m
           -> ReqRespClient req resp m a
-          -> m (a, LBS.ByteString)
+          -> m (a, Maybe LBS.ByteString)
 
 runClient tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
        -> ReqRespClient req resp m a
-       -> m (a, LBS.ByteString)
+       -> m (a, Maybe LBS.ByteString)
     go trailing (SendMsgReq req mnext) = do
       let msg :: MsgReqResp req resp
           msg = MsgReq req
@@ -151,7 +151,7 @@ runClient tracer channel@Channel {send} =
         traceWith tracer (TraceSend msg)
         send (serialise msg)
         a <- ma
-        return (a, maybe LBS.empty id trailing)
+        return (a, trailing)
 
 
 -- | Server which receives 'req' and responds with 'resp'.
@@ -178,14 +178,14 @@ runServer :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> Channel m
           -> ReqRespServer req resp m a
-          -> m (a, LBS.ByteString)
+          -> m (a, Maybe LBS.ByteString)
 
 runServer tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
        -> ReqRespServer req resp m a
-       -> m (a, LBS.ByteString)
+       -> m (a, Maybe LBS.ByteString)
     go trailing ReqRespServer {recvMsgReq, recvMsgDone} = do
       res <- withLiftST $ \liftST -> runDecoderWithChannel
                                         liftST channel trailing decode
@@ -206,7 +206,7 @@ runServer tracer channel@Channel {send} =
         Right (msg@MsgDone, trailing') -> do
           traceWith tracer (TraceRecv msg)
           x <- recvMsgDone
-          return (x, maybe LBS.empty id trailing')
+          return (x, trailing')
 
         Right (msg, _) -> do
           traceWith tracer (TraceRecv msg)

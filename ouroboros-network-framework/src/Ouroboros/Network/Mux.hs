@@ -107,7 +107,7 @@ data MuxPeer bytes m a where
             -> MuxPeer bytes m a
 
     MuxPeerRaw
-           :: (Channel m bytes -> m a)
+           :: (Channel m bytes -> m (a, Maybe bytes))
            -> MuxPeer bytes m a
 
 toApplication :: (MonadCatch m, MonadAsync m)
@@ -147,7 +147,7 @@ runMuxPeer
      )
   => MuxPeer bytes m a
   -> Channel m bytes
-  -> m a
+  -> m (a, Maybe bytes)
 runMuxPeer (MuxPeer tracer codec peer) channel =
     runPeer tracer codec channel peer
 

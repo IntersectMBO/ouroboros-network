@@ -169,11 +169,11 @@ runPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr st m a
-  -> m a
+  -> m (a, Maybe bytes)
 runPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
-    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
-     in fst <$> runPeerWithDriver driver peer (startDState driver)
+      let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
+      in runPeerWithDriver driver peer (startDState driver)
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -193,8 +193,8 @@ runPipelinedPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m a
+  -> m (a, Maybe bytes)
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
-    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
-     in fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+      let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
+      in runPipelinedPeerWithDriver driver peer (startDState driver)

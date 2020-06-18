@@ -130,13 +130,14 @@ runHandshakeClient bearer
                      haVersions
                    } =
     tryHandshake
-      (runPeerWithLimits
-        (WithMuxBearer connectionId `contramap` haHandshakeTracer)
-        haHandshakeCodec
-        byteLimitsHandshake
-        timeLimitsHandshake
-        (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir))
-        (handshakeClientPeer haVersionDataCodec haVersions))
+      (fst <$>
+        runPeerWithLimits
+          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          haHandshakeCodec
+          byteLimitsHandshake
+          timeLimitsHandshake
+          (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir))
+          (handshakeClientPeer haVersionDataCodec haVersions))
 
 
 -- | Run server side of the 'Handshake' protocol.
@@ -165,10 +166,11 @@ runHandshakeServer bearer
                      haVersions
                    } =
     tryHandshake
-      (runPeerWithLimits
-        (WithMuxBearer connectionId `contramap` haHandshakeTracer)
-        haHandshakeCodec
-        byteLimitsHandshake
-        timeLimitsHandshake
-        (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
-        (handshakeServerPeer haVersionDataCodec acceptVersion haVersions))
+      (fst <$>
+        runPeerWithLimits
+          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          haHandshakeCodec
+          byteLimitsHandshake
+          timeLimitsHandshake
+          (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
+          (handshakeServerPeer haVersionDataCodec acceptVersion haVersions))

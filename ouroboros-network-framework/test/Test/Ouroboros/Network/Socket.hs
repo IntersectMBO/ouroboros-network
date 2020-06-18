@@ -209,12 +209,13 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
           MuxPeerRaw $ \channel -> do
-            r <- runPeer nullTracer
+            (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSibling siblingVar
+            pure ((), trailing)
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
@@ -226,12 +227,13 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
           MuxPeerRaw $ \channel -> do
-            r <- runPeer nullTracer
+            (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
             waitSibling siblingVar
+            pure ((), trailing)
 
     let snocket = socketSnocket iomgr
     res <-
@@ -301,11 +303,12 @@ prop_socket_recv_error f rerr =
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
           MuxPeerRaw $ \channel -> do
-            r <- runPeer nullTracer
+            (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
+            pure ((), trailing)
 
     let snocket :: SocketSnocket
         snocket = socketSnocket iomgr
@@ -408,7 +411,7 @@ prop_socket_send_error rerr =
                   withTimeoutSerial $ \timeout ->
                     -- send maximum mux sdus until we've filled the window.
                     replicateM 100 $ do
-                      void $ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
+                      ((), Nothing) <$ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
                 )
 
           )
@@ -476,12 +479,13 @@ prop_socket_client_connect_error _ xs =
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
           MuxPeerRaw $ \channel -> do
-            _ <- runPeer nullTracer
+            (_, trailing) <- runPeer nullTracer
                     ReqResp.codecReqResp
                     channel
                     (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                             :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
-            atomically $ putTMVar cv ()
+            ((), trailing)
+              <$ atomically (putTMVar cv ())
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
