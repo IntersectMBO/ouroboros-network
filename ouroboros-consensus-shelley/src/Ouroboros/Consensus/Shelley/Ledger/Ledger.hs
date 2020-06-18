@@ -329,24 +329,25 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     GetUTxO
       :: Query (ShelleyBlock c) (SL.UTxO c)
 
-    -- | Only for debugging purposes, we don't guarantee binary compatibility
-    GetCurrentLedgerState
-      :: Query (ShelleyBlock c) (SL.LedgerState c)
+    -- | Only for debugging purposes, we don't guarantee binary compatibility.
+    -- Moreover, it is huge.
+    GetCurrentEpochState
+      :: Query (ShelleyBlock c) (SL.EpochState c)
 
     -- | Wrap the result of the query using CBOR-in-CBOR.
     --
     -- For example, when a client is running a different version than the
-    -- server and it sends a 'GetCurrentLedgerState' query, the client's
-    -- decoder might fail to deserialise it the ledger state as it might have
+    -- server and it sends a 'GetCurrentEpochState' query, the client's
+    -- decoder might fail to deserialise the epoch state as it might have
     -- changed between the two different versions. The client will then
     -- disconnect.
     --
     -- By using CBOR-in-CBOR, the client always successfully decodes the outer
     -- CBOR layer (so no disconnect) and can then manually try to decode the
     -- inner result. When the client's decoder is able to decode the inner
-    -- result, it has access to the deserialised ledger state. When it fails
-    -- to decode it, the client can fall back to pretty printing the actual
-    -- CBOR, which is better than no output at all.
+    -- result, it has access to the deserialised epoch state. When it fails to
+    -- decode it, the client can fall back to pretty printing the actual CBOR,
+    -- which is better than no output at all.
     GetCBOR
       :: Query (ShelleyBlock c) result
       -> Query (ShelleyBlock c) (Serialised result)
@@ -366,7 +367,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       GetStakeDistribution -> SL.nesPd $ shelleyState st
       GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyState st) addrs
       GetUTxO -> SL.getUTxO $ shelleyState st
-      GetCurrentLedgerState -> getCurrentLedgerState $ shelleyState st
+      GetCurrentEpochState -> getCurrentEpochState $ shelleyState st
       GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
           answerQuery cfg query' st
       GetFilteredDelegationsAndRewardAccounts creds ->
@@ -415,9 +416,9 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     = Just Refl
   eqQuery GetUTxO _
     = Nothing
-  eqQuery GetCurrentLedgerState GetCurrentLedgerState
+  eqQuery GetCurrentEpochState GetCurrentEpochState
     = Just Refl
-  eqQuery GetCurrentLedgerState _
+  eqQuery GetCurrentEpochState _
     = Nothing
   eqQuery (GetCBOR q) (GetCBOR q')
     = apply Refl <$> eqQuery q q'
@@ -444,7 +445,7 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
   showResult GetStakeDistribution                         = show
   showResult (GetFilteredUTxO {})                         = show
   showResult GetUTxO                                      = show
-  showResult GetCurrentLedgerState                        = show
+  showResult GetCurrentEpochState                         = show
   showResult (GetCBOR {})                                 = show
   showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
 
@@ -479,17 +480,9 @@ getPParams = SL.esPp . SL.nesEs
 getProposedPPUpdates :: SL.ShelleyState c -> SL.ProposedPPUpdates c
 getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
 
--- Get the current LedgerState minus the UTxO and account portions. This
--- is mainly for debugging.
-getCurrentLedgerState :: SL.ShelleyState c -> SL.LedgerState c
-getCurrentLedgerState =
-    nukeLedgerUtxO . SL.esLState . SL.nesEs
-  where
-    nukeLedgerUtxO :: SL.LedgerState c -> SL.LedgerState c
-    nukeLedgerUtxO ls = ls { SL._utxoState = nukeUtxOSet $ SL._utxoState ls }
-
-    nukeUtxOSet :: SL.UTxOState c -> SL.UTxOState c
-    nukeUtxOSet us = us { SL._utxo = SL.UTxO mempty }
+-- Get the current EpochState. This is mainly for debugging.
+getCurrentEpochState :: SL.ShelleyState c -> SL.EpochState c
+getCurrentEpochState = SL.nesEs
 
 getDState :: SL.ShelleyState c -> SL.DState c
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
@@ -574,7 +567,7 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
     GetUTxO ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
-    GetCurrentLedgerState ->
+    GetCurrentEpochState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
     GetCBOR query' ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
@@ -594,7 +587,7 @@ decodeShelleyQuery = do
       (1, 5)  -> return $ SomeBlock GetStakeDistribution
       (2, 6)  -> SomeBlock . GetFilteredUTxO <$> fromCBOR
       (1, 7)  -> return $ SomeBlock GetUTxO
-      (1, 8)  -> return $ SomeBlock GetCurrentLedgerState
+      (1, 8)  -> return $ SomeBlock GetCurrentEpochState
       (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
       (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
       _       -> fail $
@@ -613,7 +606,7 @@ encodeShelleyResult query = case query of
     GetStakeDistribution                       -> toCBOR
     GetFilteredUTxO {}                         -> toCBOR
     GetUTxO                                    -> toCBOR
-    GetCurrentLedgerState                      -> toCBOR
+    GetCurrentEpochState                       -> toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
 
@@ -630,6 +623,6 @@ decodeShelleyResult query = case query of
     GetStakeDistribution                       -> fromCBOR
     GetFilteredUTxO {}                         -> fromCBOR
     GetUTxO                                    -> fromCBOR
-    GetCurrentLedgerState                      -> fromCBOR
+    GetCurrentEpochState                       -> fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
