@@ -162,8 +162,6 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorPV
 
-    -- TODO: This must instead be derived from the hard fork history.
-    -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
     epochInfo :: EpochInfo Identity
     epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
 
