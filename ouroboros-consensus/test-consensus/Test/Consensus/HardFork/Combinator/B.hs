@@ -227,7 +227,7 @@ instance HasPartialLedgerConfig BlockB
 -- safezone. However, we give it a default one anyway, since that makes the
 -- test more realistic.
 safeZoneB :: SecurityParam -> History.SafeZone
-safeZoneB (SecurityParam k) = History.defaultSafeZone k
+safeZoneB (SecurityParam k) = History.noLowerBoundSafeZone k
 
 instance LedgerSupportsMempool BlockB where
   data GenTx BlockB

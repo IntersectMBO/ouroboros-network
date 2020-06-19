@@ -8,8 +8,8 @@ module Ouroboros.Consensus.HardFork.History.EraParams (
     EraParams(..)
   , SafeZone(..)
   , SafeBeforeEpoch(..)
+  , noLowerBoundSafeZone
     -- * Defaults
-  , defaultSafeZone
   , defaultEraParams
     -- * Queries
   , maxMaybeEpoch
@@ -146,7 +146,7 @@ defaultEraParams :: SecurityParam -> SlotLength -> EraParams
 defaultEraParams (SecurityParam k) slotLength = EraParams {
       eraEpochSize  = EpochSize (k * 10)
     , eraSlotLength = slotLength
-    , eraSafeZone   = defaultSafeZone (k * 2)
+    , eraSafeZone   = noLowerBoundSafeZone (k * 2)
     }
 
 -- | Zone in which it is guaranteed that no hard fork can take place
@@ -163,9 +163,9 @@ data SafeZone = SafeZone {
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
--- | Default safe zone with no 'safeBeforeEpoch\
-defaultSafeZone :: Word64 -> SafeZone
-defaultSafeZone n = SafeZone n NoLowerBound
+-- | The safe zone with given 'safeFromTip' and 'NoLowerBound'
+noLowerBoundSafeZone :: Word64 -> SafeZone
+noLowerBoundSafeZone n = SafeZone n NoLowerBound
 
 -- | Lower bound on when a transition can take place
 data SafeBeforeEpoch =
