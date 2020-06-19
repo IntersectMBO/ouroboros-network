@@ -139,7 +139,7 @@ data EraParams = EraParams {
 --
 -- * epoch size to @10k@ slots
 -- * the safe zone to @2k@ slots
--- * the upper bound to 'UnsafeUnbounded'
+-- * the upper bound to 'NoLowerBound'
 --
 -- This is primarily useful for tests.
 defaultEraParams :: SecurityParam -> SlotLength -> EraParams
