@@ -28,8 +28,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Protocol specific functionality required to run consensus with mock blocks
 class ( MockProtocolSpecific c ext
-      , EncodeDisk (SimpleBlock c ext) (ConsensusState (BlockProtocol (SimpleBlock c ext)))
-      , DecodeDisk (SimpleBlock c ext) (ConsensusState (BlockProtocol (SimpleBlock c ext)))
+      , EncodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
+      , DecodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
       ) => RunMockBlock c ext where
   mockProtocolMagicId
     :: BlockConfig (SimpleBlock c ext)

@@ -125,6 +125,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             configConsensus = PBftConfig {
                 pbftParams = byronPBftParams genesisConfig mSigThresh
               }
+          , configIndep  = ()
           , configLedger = genesisConfig
           , configBlock  = byronConfig
           }

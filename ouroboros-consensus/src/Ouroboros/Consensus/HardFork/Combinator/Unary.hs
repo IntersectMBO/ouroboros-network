@@ -197,11 +197,19 @@ instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
-instance Isomorphic WrapConsensusState where
+instance Isomorphic WrapChainDepState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
-instance Isomorphic WrapForgeState where
+instance Isomorphic WrapChainIndepState where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
+instance Isomorphic WrapChainIndepStateConfig where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
+instance Isomorphic WrapExtraForgeState where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
@@ -253,6 +261,7 @@ instance Isomorphic TopLevelConfig where
           => TopLevelConfig (HardForkBlock '[blk]) -> TopLevelConfig blk
   project TopLevelConfig{..} = TopLevelConfig{
         configConsensus  = auxConsensus configConsensus
+      , configIndep      = auxIndep     configIndep
       , configLedger     = auxLedger    configLedger
       , configBlock      = project      configBlock
       }
@@ -282,10 +291,15 @@ instance Isomorphic TopLevelConfig where
           . getPerEraConsensusConfig
           . hardForkConsensusConfigPerEra
 
+      auxIndep :: ChainIndepStateConfig (BlockProtocol (HardForkBlock '[blk]))
+               -> ChainIndepStateConfig (BlockProtocol blk)
+      auxIndep = project' (Proxy @(WrapChainIndepStateConfig blk))
+
   inject :: forall blk. NoHardForks blk
          => TopLevelConfig blk -> TopLevelConfig (HardForkBlock '[blk])
   inject tlc@TopLevelConfig{..} = TopLevelConfig{
         configConsensus = auxConsensus configConsensus
+      , configIndep     = auxIndep     configIndep
       , configLedger    = auxLedger    configLedger
       , configBlock     = inject       configBlock
       }
@@ -312,6 +326,10 @@ instance Isomorphic TopLevelConfig where
               :* Nil
           }
 
+      auxIndep :: ChainIndepStateConfig (BlockProtocol blk)
+               -> ChainIndepStateConfig (BlockProtocol (HardForkBlock '[blk]))
+      auxIndep = inject' (Proxy @(WrapChainIndepStateConfig blk))
+
 {-------------------------------------------------------------------------------
   Various kinds of records
 -------------------------------------------------------------------------------}
@@ -320,7 +338,7 @@ instance Isomorphic HeaderState where
   project :: forall blk. NoHardForks blk
           => HeaderState (HardForkBlock '[blk]) -> HeaderState blk
   project HeaderState{..} = HeaderState {
-        headerStateConsensus = project' (Proxy @(WrapConsensusState blk)) headerStateConsensus
+        headerStateConsensus = project' (Proxy @(WrapChainDepState blk)) headerStateConsensus
       , headerStateTips      = project <$> headerStateTips
       , headerStateAnchor    = project <$> headerStateAnchor
       }
@@ -328,7 +346,7 @@ instance Isomorphic HeaderState where
   inject :: forall blk. NoHardForks blk
          => HeaderState blk -> HeaderState (HardForkBlock '[blk])
   inject HeaderState{..} = HeaderState {
-        headerStateConsensus = inject' (Proxy @(WrapConsensusState blk)) headerStateConsensus
+        headerStateConsensus = inject' (Proxy @(WrapChainDepState blk)) headerStateConsensus
       , headerStateTips      = inject <$> headerStateTips
       , headerStateAnchor    = inject <$> headerStateAnchor
       }
@@ -344,34 +362,49 @@ instance Isomorphic ExtLedgerState where
       , headerState = inject headerState
       }
 
+instance Isomorphic ForgeState where
+  project :: forall blk. NoHardForks blk
+          => ForgeState (HardForkBlock '[blk]) -> ForgeState blk
+  project ForgeState{..} = ForgeState {
+        chainIndepState = project' (Proxy @(WrapChainIndepState blk)) chainIndepState
+      , extraForgeState = project' (Proxy @(WrapExtraForgeState blk)) extraForgeState
+      }
+
+  inject :: forall blk. NoHardForks blk
+         => ForgeState blk -> ForgeState (HardForkBlock '[blk])
+  inject ForgeState{..} = ForgeState {
+        chainIndepState = inject' (Proxy @(WrapChainIndepState blk)) chainIndepState
+      , extraForgeState = inject' (Proxy @(WrapExtraForgeState blk)) extraForgeState
+      }
+
 instance Functor m => Isomorphic (MaintainForgeState m) where
   project :: forall blk. NoHardForks blk
           => MaintainForgeState m (HardForkBlock '[blk])
           -> MaintainForgeState m blk
   project mfs = MaintainForgeState {
-        initForgeState   = project' (Proxy @(WrapForgeState blk)) $ initForgeState mfs
-      , updateForgeState = updateForgeState mfs . liftUpdate get set
+        initForgeState   = project $ initForgeState mfs
+      , updateForgeState = \cfg slotNo ->
+            fmap project
+          . updateForgeState
+              mfs
+              (inject' (Proxy @(WrapChainIndepStateConfig blk)) cfg)
+              slotNo
+          . inject
       }
-    where
-      get :: ForgeState blk -> PerEraForgeState '[blk]
-      get = inject' (Proxy @(WrapForgeState blk))
-
-      set :: PerEraForgeState '[blk] -> ForgeState blk -> ForgeState blk
-      set = const . project' (Proxy @(WrapForgeState blk))
 
   inject :: forall blk. NoHardForks blk
          => MaintainForgeState m blk
          -> MaintainForgeState m (HardForkBlock '[blk])
   inject mfs = MaintainForgeState {
-        initForgeState   = inject' (Proxy @(WrapForgeState blk)) $ initForgeState mfs
-      , updateForgeState = updateForgeState mfs . liftUpdate get set
+        initForgeState   = inject $ initForgeState mfs
+      , updateForgeState = \cfg slotNo ->
+            fmap inject
+          . updateForgeState
+              mfs
+              (project' (Proxy @(WrapChainIndepStateConfig blk)) cfg)
+              slotNo
+          . project
       }
-    where
-      get :: PerEraForgeState '[blk] -> ForgeState blk
-      get = project' (Proxy @(WrapForgeState blk))
-
-      set :: ForgeState blk -> PerEraForgeState '[blk] -> PerEraForgeState '[blk]
-      set = const . inject' (Proxy @(WrapForgeState blk))
 
 instance Isomorphic AnnTip where
   project :: forall blk. NoHardForks blk => AnnTip (HardForkBlock '[blk]) -> AnnTip blk

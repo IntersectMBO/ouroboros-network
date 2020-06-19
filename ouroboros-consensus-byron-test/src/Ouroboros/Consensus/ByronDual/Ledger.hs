@@ -25,7 +25,6 @@ module Ouroboros.Consensus.ByronDual.Ledger (
   ) where
 
 import           Codec.Serialise
-import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -208,20 +207,20 @@ bridgeTransactionIds = Spec.Test.transactionIds
 -------------------------------------------------------------------------------}
 
 instance CanForge DualByronBlock where
-  type ForgeState DualByronBlock = ForgeState ByronBlock
+  type ExtraForgeState DualByronBlock = ExtraForgeState ByronBlock
 
   forgeBlock = forgeDualByronBlock
 
 forgeDualByronBlock
-  :: forall m. (MonadRandom m, HasCallStack)
+  :: HasCallStack
   => TopLevelConfig DualByronBlock
   -> ForgeState DualByronBlock
   -> BlockNo                            -- ^ Current block number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
-  -> m DualByronBlock
-forgeDualByronBlock cfg () curBlockNo tickedLedger txs isLeader = do
+  -> DualByronBlock
+forgeDualByronBlock cfg forgeState curBlockNo tickedLedger txs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -229,32 +228,33 @@ forgeDualByronBlock cfg () curBlockNo tickedLedger txs isLeader = do
     -- the block instead). Fortunately, this is okay, since the bridge for the
     -- block can be computed from the bridge information of all of the txs.
 
-    main <- forgeByronBlock
-              (dualTopLevelConfigMain cfg)
-              ()
-              curBlockNo
-              (Ticked {
-                   tickedSlotNo      = curSlotNo
-                 , tickedLedgerState = dualLedgerStateMain $
-                                         tickedLedgerState tickedLedger
-                 })
-              (map dualGenTxMain txs)
-              isLeader
-
-    let aux :: ByronSpecBlock
-        aux = forgeByronSpecBlock
-                curSlotNo
-                curBlockNo
-                (dualLedgerStateAux $ tickedLedgerState tickedLedger)
-                (map dualGenTxAux txs)
-                (bridgeToSpecKey
-                   (dualLedgerStateBridge $ tickedLedgerState tickedLedger)
-                   (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))
-
-    return DualBlock {
+    DualBlock {
         dualBlockMain   = main
       , dualBlockAux    = Just aux
       , dualBlockBridge = mconcat $ map dualGenTxBridge txs
       }
   where
     curSlotNo = tickedSlotNo tickedLedger
+
+    main :: ByronBlock
+    main = forgeByronBlock
+             (dualTopLevelConfigMain cfg)
+             (castForgeState forgeState)
+             curBlockNo
+             (Ticked {
+                  tickedSlotNo      = curSlotNo
+                , tickedLedgerState = dualLedgerStateMain $
+                                        tickedLedgerState tickedLedger
+                })
+             (map dualGenTxMain txs)
+             isLeader
+
+    aux :: ByronSpecBlock
+    aux = forgeByronSpecBlock
+            curSlotNo
+            curBlockNo
+            (dualLedgerStateAux $ tickedLedgerState tickedLedger)
+            (map dualGenTxAux txs)
+            (bridgeToSpecKey
+               (dualLedgerStateBridge $ tickedLedgerState tickedLedger)
+               (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))

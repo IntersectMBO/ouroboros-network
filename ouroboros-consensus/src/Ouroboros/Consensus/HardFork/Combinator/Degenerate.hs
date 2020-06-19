@@ -27,7 +27,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , CodecConfig(..)
   , NestedCtxt_(..)
     -- * Newtype wrappers
-  , DegenForkConsensusState(..)
+  , DegenForkChainDepState(..)
   , DegenForkHeaderHash(..)
   , DegenForkApplyTxErr(..)
     -- * Test support
@@ -185,12 +185,12 @@ data DegenForkProtocol b
 
 type instance BlockProtocol (DegenFork b) = DegenForkProtocol b
 
-newtype DegenForkConsensusState b = DCSt {
-      unDCSt :: ConsensusState (HardForkProtocol '[b])
+newtype DegenForkChainDepState b = DCSt {
+      unDCSt :: ChainDepState (HardForkProtocol '[b])
     }
-deriving instance SingleEraBlock b => Eq                 (DegenForkConsensusState b)
-deriving instance SingleEraBlock b => Show               (DegenForkConsensusState b)
-deriving instance SingleEraBlock b => NoUnexpectedThunks (DegenForkConsensusState b)
+deriving instance SingleEraBlock b => Eq                 (DegenForkChainDepState b)
+deriving instance SingleEraBlock b => Show               (DegenForkChainDepState b)
+deriving instance SingleEraBlock b => NoUnexpectedThunks (DegenForkChainDepState b)
 
 instance SingleEraBlock b => ChainSelection (DegenForkProtocol b) where
   type ChainSelConfig (DegenForkProtocol b) = ChainSelConfig (HardForkProtocol '[b])
@@ -198,35 +198,42 @@ instance SingleEraBlock b => ChainSelection (DegenForkProtocol b) where
   preferCandidate   _ = preferCandidate   (Proxy @(HardForkProtocol '[b]))
   compareCandidates _ = compareCandidates (Proxy @(HardForkProtocol '[b]))
 
+instance SingleEraBlock b => HasChainIndepState (DegenForkProtocol b) where
+  type ChainIndepStateConfig (DegenForkProtocol b) = ChainIndepStateConfig (HardForkProtocol '[b])
+  type ChainIndepState       (DegenForkProtocol b) = ChainIndepState       (HardForkProtocol '[b])
+
+  -- Operations on the chain independent state
+  updateChainIndepState _ = updateChainIndepState (Proxy @(HardForkProtocol '[b]))
+
 instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
   -- The reason for introducing a separate 'DegenForkProtocol' instead of:
   --
   -- > type instance BlockProtocol (DegenFork b) = BlockProtocol (HardForkBlock '[b])
   --
-  -- is that we need to wrap the 'ConsensusState' in a newtype so that we can
+  -- is that we need to wrap the 'ChainDepState' in a newtype so that we can
   -- define non-orphan serialisation instances for it. The orphan instances
-  -- would be /bad orphans/, i.e., for @HardForkConsensusState '[b]@.
-  type ConsensusState (DegenForkProtocol b) = DegenForkConsensusState b
-  type ValidationErr  (DegenForkProtocol b) = ValidationErr (HardForkProtocol '[b])
-  type LedgerView     (DegenForkProtocol b) = LedgerView    (HardForkProtocol '[b])
-  type CanBeLeader    (DegenForkProtocol b) = CanBeLeader   (HardForkProtocol '[b])
-  type CannotLead     (DegenForkProtocol b) = CannotLead    (HardForkProtocol '[b])
-  type IsLeader       (DegenForkProtocol b) = IsLeader      (HardForkProtocol '[b])
-  type ValidateView   (DegenForkProtocol b) = ValidateView  (HardForkProtocol '[b])
+  -- would be /bad orphans/, i.e., for @HardForkChainDepState '[b]@.
+  type ChainDepState (DegenForkProtocol b) = DegenForkChainDepState b
+  type ValidationErr (DegenForkProtocol b) = ValidationErr   (HardForkProtocol '[b])
+  type LedgerView    (DegenForkProtocol b) = LedgerView      (HardForkProtocol '[b])
+  type CanBeLeader   (DegenForkProtocol b) = CanBeLeader     (HardForkProtocol '[b])
+  type CannotLead    (DegenForkProtocol b) = CannotLead      (HardForkProtocol '[b])
+  type IsLeader      (DegenForkProtocol b) = IsLeader        (HardForkProtocol '[b])
+  type ValidateView  (DegenForkProtocol b) = ValidateView    (HardForkProtocol '[b])
 
   -- Operations on the state
-  checkIsLeader (DConCfg cfg) canBeLeader tickedLedgerView (DCSt consensusState) =
+  checkIsLeader (DConCfg cfg) canBeLeader tickedLedgerView chainIndepState (DCSt chainDepState) =
     castLeaderCheck <$>
-      checkIsLeader cfg canBeLeader tickedLedgerView consensusState
-  updateConsensusState (DConCfg cfg) tickedLedgerView valView (DCSt consensusState) =
-    DCSt <$> updateConsensusState cfg tickedLedgerView valView consensusState
-  rewindConsensusState _ secParam pt (DCSt consensusState) =
+      checkIsLeader cfg canBeLeader tickedLedgerView chainIndepState chainDepState
+  updateChainDepState (DConCfg cfg) tickedLedgerView valView (DCSt chainDepState) =
+    DCSt <$> updateChainDepState cfg tickedLedgerView valView chainDepState
+  rewindChainDepState _ secParam pt (DCSt chainDepState) =
     DCSt <$>
-      rewindConsensusState
+      rewindChainDepState
         (Proxy @(HardForkProtocol '[b]))
         secParam
         pt
-        consensusState
+        chainDepState
 
   -- Straight-forward extensions
   protocolSecurityParam = protocolSecurityParam . unDConCfg
@@ -342,13 +349,13 @@ instance NoHardForks b => CommonProtocolParams (DegenFork b) where
   maxTxSize     (DLgr lgr) = maxTxSize     (project lgr)
 
 instance NoHardForks b => CanForge (DegenFork b) where
-  type ForgeState (DegenFork b) = ForgeState (HardForkBlock '[b])
+  type ExtraForgeState (DegenFork b) = ExtraForgeState (HardForkBlock '[b])
 
-  forgeBlock cfg upd block (Ticked slot (DLgr lgr)) txs proof =
-      (DBlk . inject' (Proxy @(I b))) <$>
+  forgeBlock cfg forgeState block (Ticked slot (DLgr lgr)) txs proof =
+      DBlk . inject' (Proxy @(I b)) $
         forgeBlock
           (projCfg cfg)
-          (project' (Proxy @(WrapForgeState b)) upd)
+          (project (castForgeState forgeState))
           block
           (Ticked slot (project lgr))
           (map (project . unDTx) txs)
@@ -409,12 +416,12 @@ instance (SerialiseDiskConstraints b, NoHardForks b)
   decodeDisk = defaultDecodeDisk (Proxy @(Lazy.ByteString -> b))
 
 instance (SerialiseDiskConstraints b, NoHardForks b)
-      => EncodeDisk (DegenFork b) (DegenForkConsensusState b) where
-  encodeDisk = defaultEncodeDisk (Proxy @(WrapConsensusState b))
+      => EncodeDisk (DegenFork b) (DegenForkChainDepState b) where
+  encodeDisk = defaultEncodeDisk (Proxy @(WrapChainDepState b))
 
 instance (SerialiseDiskConstraints b, NoHardForks b)
-      => DecodeDisk (DegenFork b) (DegenForkConsensusState b) where
-  decodeDisk = defaultDecodeDisk (Proxy @(WrapConsensusState b))
+      => DecodeDisk (DegenFork b) (DegenForkChainDepState b) where
+  decodeDisk = defaultDecodeDisk (Proxy @(WrapChainDepState b))
 
 instance (SerialiseDiskConstraints b, NoHardForks b)
       => EncodeDisk (DegenFork b) (LedgerState (DegenFork b)) where

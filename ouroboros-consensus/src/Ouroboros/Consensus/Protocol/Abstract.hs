@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
   , ChainSelection(..)
+  , HasChainIndepState(..)
   , ConsensusConfig
     -- * LeaderCheck
   , LeaderCheck(..)
@@ -22,10 +23,11 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
+import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point, SlotNo)
 
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
+import           Ouroboros.Consensus.Util.IOLike
 
 -- | Static configuration required to run the consensus protocol
 --
@@ -102,27 +104,69 @@ class ( NoUnexpectedThunks (ChainSelConfig p)
                             -> Ordering
   compareCandidates _ _ = compare
 
+-- | Chain independent state
+class ( Show (ChainIndepState p)
+      , NoUnexpectedThunks (ChainIndepState p)
+      , NoUnexpectedThunks (ChainIndepStateConfig p)
+      ) => HasChainIndepState p where
+
+  -- | Configuration required for dealing with chain independent state.
+  type family ChainIndepStateConfig p :: *
+  type ChainIndepStateConfig p = ()
+
+  -- | Blockchain independent state.
+  --
+  -- For example, it can store a key that needs to be evolved over time.
+  type family ChainIndepState p :: *
+  type ChainIndepState p = ()
+
+  -- | Update the chain independent state for the current wallclock 'SlotNo'.
+  --
+  -- NOTE: Although this only happens (just before) we do the 'checkIsLeader'
+  -- check, we do not pass a 'LedgerView'. From a philosophical point of view,
+  -- passing a 'LedgerView' does not make much sense, since we are updating
+  -- the chain /independent/ state. From a pragmatic, and perhaps more
+  -- important, point of view, passing a 'LedgerView' here would make the hard
+  -- fork combinator impossible: the HFC needs to update the 'ChainIndepState'
+  -- for all eras, but we’d only have a 'LedgerView' for a single era.
+  updateChainIndepState :: IOLike m
+                        => proxy p
+                        -> ChainIndepStateConfig p
+                        -> SlotNo
+                        -> ChainIndepState p
+                        -> m (ChainIndepState p)
+  default updateChainIndepState ::
+       (ChainIndepState p ~ (), Monad m)
+    => proxy p
+    -> ChainIndepStateConfig p
+    -> SlotNo
+    -> ChainIndepState p
+    -> m (ChainIndepState p)
+  updateChainIndepState _ _ _ = return
+
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
-class ( Show (ConsensusState p)
-      , Show (ValidationErr  p)
-      , Show (LedgerView     p)
-      , Show (CannotLead     p)
-      , Eq   (ConsensusState p)
-      , Eq   (ValidationErr  p)
+class ( Show (ChainDepState   p)
+      , Show (ChainIndepState p)
+      , Show (ValidationErr   p)
+      , Show (LedgerView      p)
+      , Show (CannotLead      p)
+      , Eq   (ChainDepState   p)
+      , Eq   (ValidationErr   p)
       , NoUnexpectedThunks (ConsensusConfig p)
-      , NoUnexpectedThunks (ConsensusState  p)
+      , NoUnexpectedThunks (ChainDepState   p)
       , NoUnexpectedThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
       , ChainSelection p
+      , HasChainIndepState p
       ) => ConsensusProtocol p where
   -- | Protocol-specific state
   --
   -- NOTE: This chain is blockchain dependent, i.e., updated when new blocks
   -- come in (more precisely, new /headers/), and subject to rollback.
-  type family ConsensusState p :: *
+  type family ChainDepState p :: *
 
   -- | Evidence that a node /is/ the leader
   type family IsLeader p :: *
@@ -194,16 +238,17 @@ class ( Show (ConsensusState p)
                 => ConsensusConfig    p
                 -> CanBeLeader        p
                 -> Ticked (LedgerView p)
-                -> ConsensusState     p
+                -> ChainIndepState    p
+                -> ChainDepState      p
                 -> m (LeaderCheck     p)
 
   -- | Apply a header
-  updateConsensusState :: HasCallStack
-                       => ConsensusConfig    p
-                       -> Ticked (LedgerView p)
-                       -> ValidateView       p
-                       -> ConsensusState     p
-                       -> Except (ValidationErr p) (ConsensusState p)
+  updateChainDepState :: HasCallStack
+                      => ConsensusConfig    p
+                      -> Ticked (LedgerView p)
+                      -> ValidateView       p
+                      -> ChainDepState      p
+                      -> Except (ValidationErr p) (ChainDepState p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: ConsensusConfig p -> SecurityParam
@@ -216,12 +261,12 @@ class ( Show (ConsensusState p)
   --
   -- PRECONDITION: the point to rewind to must correspond to a header (or
   -- 'GenesisPoint') that was previously applied to the chain state using
-  -- 'updateConsensusState'.
+  -- 'updateChainDepState'.
   --
   -- Rewinding the chain state is intended to be used when switching to a
   -- fork, longer or equally long to the chain to which the current chain
   -- state corresponds. So each rewinding should be followed by rolling
-  -- forward (using 'updateConsensusState') at least as many blocks that we have
+  -- forward (using 'updateChainDepState') at least as many blocks that we have
   -- rewound.
   --
   -- Note that repeatedly rewinding a chain state does not make it possible to
@@ -233,11 +278,11 @@ class ( Show (ConsensusState p)
   --
   -- TODO: The Serialise instance is only required for a hack in PBFT.
   -- Reconsider later.
-  rewindConsensusState :: Serialise (HeaderHash hdr)
-                       => proxy p
-                       -> SecurityParam
-                       -> Point hdr      -- ^ Point to rewind to
-                       -> ConsensusState p -> Maybe (ConsensusState p)
+  rewindChainDepState :: Serialise (HeaderHash hdr)
+                      => proxy p
+                      -> SecurityParam
+                      -> Point hdr      -- ^ Point to rewind to
+                      -> ChainDepState p -> Maybe (ChainDepState p)
 
 {-------------------------------------------------------------------------------
   Result of 'checkIsLeader'

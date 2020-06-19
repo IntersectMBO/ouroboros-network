@@ -136,9 +136,8 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
      => CanForge (SimpleBftBlock c c') where
-  type ForgeState (SimpleBftBlock c c') = ()
   forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
-      return . forgeBftExt cfg
+      forgeBftExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

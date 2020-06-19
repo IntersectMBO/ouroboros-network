@@ -52,8 +52,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
 
 -- Re-export types required to initialize 'ProtocolInfo'
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
-                     (PerEraBlockConfig (..), PerEraConsensusConfig (..),
-                     PerEraForgeState (..))
+                     (PerEraBlockConfig (..), PerEraChainIndepState (..),
+                     PerEraChainIndepStateConfig (..),
+                     PerEraConsensusConfig (..), PerEraExtraForgeState (..))
 
 -- Defines the various translation types required for concrete HFC instances
 import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
@@ -86,9 +87,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.State as X
 -- * "Ouroboros.Consensus.HardFork.Combinator.State"
 --   This defines 'HardForkState', a wrapper around a 'Telescope'. We use this
 --   to define 'HardForkLedgerState', 'HardForkLedgerView' as well as
---   'HardForkConsensusState', but the type itself should mostly be internal
---   to the hard fork combinator. We do export the constructor for it, as this
---   may be required for serialisation code.
+--   'HardForkChainDepState', but the type itself should mostly be internal to
+--   the hard fork combinator. We do export the constructor for it, as this may
+--   be required for serialisation code.
 --
 -- * "module Ouroboros.Consensus.HardFork.Combinator.State.Infra"
 --   This module is only separate from @.State@ to avoid some cyclic module

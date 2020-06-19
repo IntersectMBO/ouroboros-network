@@ -1,29 +1,32 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Block.Forge (
-    CanForge (..)
+    -- * ForgeState
+    ForgeState(..)
+  , castForgeState
+    -- * CanForge
+  , CanForge(..)
     -- * MaintainForgeState
   , MaintainForgeState(..)
   , defaultMaintainForgeState
+  , defaultMaintainNoExtraForgeState
+  , hoistMaintainForgeState
   , castMaintainForgeState
-    -- * Infrastructure for dealing with state updates
-  , Update(..)
-  , runUpdate_
-  , updateFromMVar
-  , liftUpdate
-  , coerceUpdate
-  , traceUpdate
   ) where
 
-import           Control.Tracer (Tracer, traceWith)
-import           Crypto.Random (MonadRandom)
-import           Data.Bifunctor (first)
-import           Data.Coerce
+import           Data.Proxy (Proxy (..))
+import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
@@ -34,38 +37,59 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util (Trivial (..), (..:))
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
+
+{-------------------------------------------------------------------------------
+  ForgeState
+-------------------------------------------------------------------------------}
+
+data ForgeState blk = ForgeState {
+      chainIndepState :: !(ChainIndepState (BlockProtocol blk))
+    , extraForgeState :: !(ExtraForgeState blk)
+    }
+  deriving (Generic)
+
+deriving instance ( NoUnexpectedThunks (ExtraForgeState blk)
+                  , HasChainIndepState (BlockProtocol blk)
+                  ) => NoUnexpectedThunks (ForgeState blk)
+deriving instance ( Show (ExtraForgeState blk)
+                  , HasChainIndepState (BlockProtocol blk)
+                  ) => Show (ForgeState blk)
+
+castForgeState ::
+     ( ChainIndepState (BlockProtocol blk) ~ ChainIndepState (BlockProtocol blk')
+     , ExtraForgeState blk ~ ExtraForgeState blk'
+     )
+  => ForgeState blk -> ForgeState blk'
+castForgeState ForgeState {..} = ForgeState {..}
 
 {-------------------------------------------------------------------------------
   CanForge
 -------------------------------------------------------------------------------}
 
-class ( NoUnexpectedThunks (ForgeState blk)
-      , Show (ForgeState blk)
+class ( NoUnexpectedThunks (ExtraForgeState blk)
+      , ConsensusProtocol (BlockProtocol blk)
+      , Show (ExtraForgeState blk)
       ) => CanForge blk where
 
-  -- | (Chain-independent) state required to forge blocks
-  type ForgeState blk :: *
-
-  -- Default to ()
-  type ForgeState blk = ()
+  -- | Extra block-specific state required to forge blocks in addition to the
+  -- protocol's chain independent state.
+  type ExtraForgeState blk :: *
+  type ExtraForgeState blk = ()
 
   -- | Forge a new block
   --
-  -- The forge state that is passed to `forgeBlock` will already have been
+  -- The forge state that is passed to 'forgeBlock' will already have been
   -- updated.
-  --
-  -- TODO: This should be a pure function
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/2058>
   forgeBlock
-    :: MonadRandom m
-    => TopLevelConfig blk
+    :: TopLevelConfig blk
     -> ForgeState blk
     -> BlockNo                -- ^ Current block number
     -> TickedLedgerState blk  -- ^ Current ledger
     -> [GenTx blk]            -- ^ Txs to add in the block
     -> IsLeader (BlockProtocol blk)
-    -> m blk
+    -> blk
 
 {-------------------------------------------------------------------------------
   Maintaining the 'ForgeState'
@@ -81,59 +105,72 @@ data MaintainForgeState (m :: * -> *) blk = MaintainForgeState {
       -- this function may have all kinds of things in its closure; for example,
       -- we might need access to some external hardware crypto hardware
       -- device.
-    , updateForgeState :: Update m (ForgeState blk) -- Lens into the node's state
-                       -> SlotNo                    -- Current slot
-                       -> m ()
+    , updateForgeState :: ChainIndepStateConfig (BlockProtocol blk)
+                       -> SlotNo  -- Current wallclock slot
+                       -> ForgeState blk
+                       -> m (ForgeState blk)
     }
 
-defaultMaintainForgeState :: (Monad m, ForgeState blk ~ ())
-                          => MaintainForgeState m blk
+defaultMaintainForgeState ::
+     forall m blk.
+     ( Trivial (ChainIndepState (BlockProtocol blk))
+     , Trivial (ExtraForgeState blk)
+     , Monad m
+     )
+  => MaintainForgeState m blk
 defaultMaintainForgeState = MaintainForgeState {
-      initForgeState   = ()
-    , updateForgeState = \_ _ -> return ()
+      initForgeState   = ForgeState {
+          chainIndepState = trivial (Proxy @(ChainIndepState (BlockProtocol blk)))
+        , extraForgeState = trivial (Proxy @(ExtraForgeState blk))
+        }
+    , updateForgeState = \_ _ -> return
     }
 
-castMaintainForgeState :: ForgeState blk ~ ForgeState blk'
-                       => MaintainForgeState m blk -> MaintainForgeState m blk'
+-- | Default implementation of 'MaintainForgeState' in case there is no
+-- 'ExtraForgeState'. 'updateForgeState' will just call
+-- 'updateChainIndepState'.
+defaultMaintainNoExtraForgeState ::
+     forall m blk.
+     ( Trivial (ExtraForgeState blk)
+     , ConsensusProtocol (BlockProtocol blk)
+     , IOLike m
+     )
+  => ChainIndepState (BlockProtocol blk)
+  -> MaintainForgeState m blk
+defaultMaintainNoExtraForgeState initChainIndepState = MaintainForgeState {
+      initForgeState   = ForgeState {
+          chainIndepState = initChainIndepState
+        , extraForgeState = trivial (Proxy @(ExtraForgeState blk))
+        }
+    , updateForgeState = \cfg slot (ForgeState chainIndepState extraForgeState) ->
+        (`ForgeState` extraForgeState) <$>
+          updateChainIndepState
+            (Proxy @(BlockProtocol blk))
+            cfg
+            slot
+            chainIndepState
+    }
+
+hoistMaintainForgeState ::
+     (forall x. m x -> n x)
+  -> MaintainForgeState m blk
+  -> MaintainForgeState n blk
+hoistMaintainForgeState hoist MaintainForgeState {..} = MaintainForgeState {
+      initForgeState   = initForgeState
+    , updateForgeState = hoist ..: updateForgeState
+    }
+
+castMaintainForgeState ::
+     ( ChainIndepStateConfig (BlockProtocol blk) ~ ChainIndepStateConfig (BlockProtocol blk')
+     , ChainIndepState       (BlockProtocol blk) ~ ChainIndepState       (BlockProtocol blk')
+     , ExtraForgeState blk ~ ExtraForgeState blk'
+     , Functor m
+     )
+  => MaintainForgeState m blk -> MaintainForgeState m blk'
 castMaintainForgeState maintainForgeState = MaintainForgeState {
-      initForgeState   = initForgeState   maintainForgeState
-    , updateForgeState = updateForgeState maintainForgeState
+      initForgeState   = castForgeState $ initForgeState maintainForgeState
+    , updateForgeState = \cfg slot ->
+          fmap castForgeState
+        . updateForgeState maintainForgeState cfg slot
+        . castForgeState
     }
-
-{-------------------------------------------------------------------------------
-  Updating the state
--------------------------------------------------------------------------------}
-
--- | Update a stateful value
-newtype Update m a = Update {
-      -- | Update the value, and produce a result
-      runUpdate :: forall b. (a -> m (a, b)) -> m b
-    }
-
-runUpdate_ :: Functor m => Update m a -> (a -> m a) -> m ()
-runUpdate_ upd f = runUpdate upd (fmap (, ()) . f)
-
-updateFromMVar :: (MonadSTM m, MonadCatch m) => StrictMVar m a -> Update m a
-updateFromMVar var = Update $ modifyMVar var
-
-liftUpdate :: Functor m
-           => (large -> small)
-           -> (small -> large -> large)
-           -> Update m large
-           -> Update m small
-liftUpdate get set (Update update) = Update $ \f ->
-    update $ \large ->
-      first (flip set large) <$> (f (get large))
-
-coerceUpdate :: (Functor m, Coercible a b) => Update m a -> Update m b
-coerceUpdate = liftUpdate coerce (\new _old -> coerce new)
-
-traceUpdate :: forall m a. Monad m => Tracer m a -> Update m a -> Update m a
-traceUpdate tracer upd = Update $ \f ->
-    runUpdate upd (aux f)
-  where
-    aux :: (a -> m (a, b)) -> a -> m (a, b)
-    aux f a = do
-        (a', b) <- f a
-        traceWith tracer a'
-        return (a', b)

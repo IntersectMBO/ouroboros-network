@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -11,16 +12,15 @@ module Ouroboros.Consensus.HardFork.Combinator.Forge (
     undistribMaintainForgeState
   ) where
 
-import           Crypto.Random (MonadRandom)
-import           Data.Coerce
 import           Data.Functor.Product
 import           Data.SOP.Strict
 
 import           Cardano.Slotting.Slot (SlotNo)
 
-import           Ouroboros.Consensus.Block.Forge
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 
 instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
-  type ForgeState (HardForkBlock xs) = PerEraForgeState xs
+  type ExtraForgeState (HardForkBlock xs) = PerEraExtraForgeState xs
 
   forgeBlock cfg forgeState blockNo
              Ticked { tickedSlotNo, tickedLedgerState }
@@ -49,11 +49,10 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
           -- Although we get a list with transactions that each could be from
           -- a different era, we know they have been validated against the
           -- 'LedgerState', which means they __must__ be from the same era.
-          fmap (HardForkBlock . OneEraBlock) $
-          hsequence $
+          HardForkBlock . OneEraBlock $
           hcpure (Proxy @CanForge) (fn_4 matchedForgeBlock)
             `hap` (distribTopLevelConfig ei cfg)
-            `hap` (getPerEraForgeState forgeState)
+            `hap` (distribForgeState forgeState)
             `hap` (partition_NS (map (getOneEraGenTx . getHardForkGenTx) txs))
             `hap` (State.tip matched)
     where
@@ -64,27 +63,54 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
 
       -- | Unwraps all the layers needed for SOP and call 'forgeBlock'.
       matchedForgeBlock
-        :: forall m blk. (MonadRandom m, CanForge blk)
+        :: CanForge blk
         => TopLevelConfig blk
-        -> WrapForgeState blk
+        -> ForgeState blk
         -> ([] :.: GenTx) blk
         -> Product WrapIsLeader LedgerState blk
-        -> m blk
+        -> I blk
       matchedForgeBlock matchedCfg
                         matchedForgeState
                         (Comp matchedTxs)
-                        (Pair matchedIsLeader matchedLedgerState) =
+                        (Pair matchedIsLeader matchedLedgerState) = I $
           forgeBlock
             matchedCfg
-            (unwrapForgeState matchedForgeState)
+            matchedForgeState
             blockNo
             (Ticked tickedSlotNo matchedLedgerState)
             matchedTxs
             (unwrapIsLeader matchedIsLeader)
 
 {-------------------------------------------------------------------------------
-  Maintaining the 'ForgeState'
+  Distributive properties
 -------------------------------------------------------------------------------}
+
+distribForgeState ::
+     forall xs. SListI xs
+  => ForgeState (HardForkBlock xs)
+  -> NP ForgeState xs
+distribForgeState = \ForgeState{..} ->
+    hzipWith
+      aux
+      (getPerEraChainIndepState chainIndepState)
+      (getPerEraExtraForgeState extraForgeState)
+  where
+    aux :: WrapChainIndepState blk -> WrapExtraForgeState blk -> ForgeState blk
+    aux chainIndepState extraForgeState = ForgeState {
+          chainIndepState = unwrapChainIndepState chainIndepState
+        , extraForgeState = unwrapExtraForgeState extraForgeState
+        }
+
+undistribForgeState ::
+     forall xs. SListI xs
+  => NP ForgeState xs
+  -> ForgeState (HardForkBlock xs)
+undistribForgeState np = ForgeState {
+      chainIndepState = PerEraChainIndepState $
+                          hmap (WrapChainIndepState . chainIndepState) np
+    , extraForgeState = PerEraExtraForgeState $
+                          hmap (WrapExtraForgeState . extraForgeState) np
+    }
 
 undistribMaintainForgeState
   :: forall xs m. (SListI xs, Monad m)
@@ -95,35 +121,26 @@ undistribMaintainForgeState np = MaintainForgeState {
     , updateForgeState = updateForgeStateHardFork
     }
   where
-    initForgeStateHardFork :: PerEraForgeState xs
-    initForgeStateHardFork =
-        PerEraForgeState $ hmap (WrapForgeState . initForgeState) np
+    initForgeStateHardFork :: ForgeState (HardForkBlock xs)
+    initForgeStateHardFork = undistribForgeState $ hmap initForgeState np
 
-    updateForgeStateHardFork
-      :: Update m (ForgeState (HardForkBlock xs))
+    updateForgeStateHardFork ::
+         ChainIndepStateConfig (BlockProtocol (HardForkBlock xs))
       -> SlotNo
-      -> m ()
-    updateForgeStateHardFork updateAll slotNo =
-        htraverse_ updateOne $
-          hzipWith Pair np (distribUpdateForgeState updateAll)
+      -> ForgeState (HardForkBlock xs)
+      -> m (ForgeState (HardForkBlock xs))
+    updateForgeStateHardFork cfg slot =
+          fmap undistribForgeState
+        . hsequence'
+        . hap updates
+        . distribForgeState
       where
-        updateOne
-          :: Product (MaintainForgeState m) (Update m :.: WrapForgeState) blk
-          -> m ()
-        updateOne (Pair mfs (Comp update)) =
-            updateForgeState mfs (coerceUpdate update) slotNo
+        cfgs = getPerEraChainIndepStateConfig cfg
 
-distribUpdateForgeState
-  :: forall xs m. (SListI xs, Functor m)
-  => Update m (ForgeState (HardForkBlock xs))
-  -> NP (Update m :.: WrapForgeState) xs
-distribUpdateForgeState updateAll = hliftA (Comp . mkSingleEraUpdate) lenses_NP
-  where
-    mkSingleEraUpdate
-      :: Lens WrapForgeState xs blk
-      -> Update m (WrapForgeState blk)
-    mkSingleEraUpdate Lens { getter, setter } =
-        liftUpdate
-          (getter . coerce)
-          (coerce . setter)
-          updateAll
+        updates :: NP (ForgeState -.-> m :.: ForgeState) xs
+        updates =
+          hzipWith
+            (\(WrapChainIndepStateConfig cfg') mfs ->
+                fn (Comp . updateForgeState mfs cfg' slot))
+            cfgs
+            np

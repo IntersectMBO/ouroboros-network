@@ -1282,7 +1282,7 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 mkRekeyUpd
   :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo (ChaChaT m) ByronBlock
+  -> ProtocolInfo m ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)

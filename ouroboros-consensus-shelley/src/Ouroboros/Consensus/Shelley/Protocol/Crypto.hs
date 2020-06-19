@@ -1,20 +1,15 @@
 {-# LANGUAGE DataKinds               #-}
-{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Protocol.Crypto (
     module Shelley.Spec.Ledger.Crypto
-  , HotKey(..)
   , TPraosCrypto
   , TPraosStandardCrypto
   ) where
 
 import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Cardano.Binary (ToCBOR)
@@ -22,12 +17,10 @@ import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 import           Cardano.Crypto.Hash.Class (Hash)
-import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.KES.Sum
 import qualified Cardano.Crypto.VRF.Class as VRF
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Util.Condense (Condense)
 
@@ -63,13 +56,3 @@ instance Crypto TPraosStandardCrypto where
   type ADDRHASH TPraosStandardCrypto = Blake2b_224
 
 instance TPraosCrypto TPraosStandardCrypto
-
--- | A hot KES key. We store alongside the key the KES period for which it is
--- valid.
-data HotKey c = HotKey !Period !(SignKeyKES (KES c))
-  deriving Generic
-
-instance Show (HotKey c) where
-  show _ = "<HotKey>"
-
-instance TPraosCrypto c => NoUnexpectedThunks (HotKey c)

@@ -77,12 +77,12 @@ instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
 instance DecodeDisk DualByronBlock (LedgerState DualByronBlock) where
   decodeDisk _ = decodeDualLedgerState decodeByronLedgerState
 
--- | @'ConsensusState' ('BlockProtocol' 'DualByronBlock')@
+-- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
 instance EncodeDisk DualByronBlock (PBftState PBftByronCrypto) where
-  encodeDisk _ = encodeByronConsensusState
--- | @'ConsensusState' ('BlockProtocol' 'DualByronBlock')@
+  encodeDisk _ = encodeByronChainDepState
+-- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
 instance DecodeDisk DualByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronConsensusState k
+  decodeDisk ccfg = decodeByronChainDepState k
     where
       k = getByronSecurityParam $ dualCodecConfigMain ccfg
 

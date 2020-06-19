@@ -109,13 +109,13 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h 
   arbitrary = arbitraryHardForkState (Proxy @LedgerState)
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (HardForkConsensusState (CardanoEras sc)) where
-  arbitrary = arbitraryHardForkState (Proxy @WrapConsensusState)
+      => Arbitrary (HardForkChainDepState (CardanoEras sc)) where
+  arbitrary = arbitraryHardForkState (Proxy @WrapChainDepState)
 
 -- | Forwarding
-instance Arbitrary (ConsensusState (BlockProtocol blk))
-      => Arbitrary (WrapConsensusState blk) where
-  arbitrary = WrapConsensusState <$> arbitrary
+instance Arbitrary (ChainDepState (BlockProtocol blk))
+      => Arbitrary (WrapChainDepState blk) where
+  arbitrary = WrapChainDepState <$> arbitrary
 
 -- | NOTE: Byron hashes are always 32 bytes, but for Shelley it depends on the
 -- crypto: with 'TPraosStandardCrypto' the hash is also 32 bytes, but with

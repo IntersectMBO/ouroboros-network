@@ -11,6 +11,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
@@ -46,6 +47,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -73,6 +75,34 @@ newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
 deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
 deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
 deriving newtype instance CanHardFork xs => NoUnexpectedThunks (LedgerState (HardForkBlock xs))
+
+{-------------------------------------------------------------------------------
+  Chain independent state
+-------------------------------------------------------------------------------}
+
+instance CanHardFork xs => HasChainIndepState (HardForkProtocol xs) where
+  type ChainIndepStateConfig (HardForkProtocol xs) = PerEraChainIndepStateConfig xs
+  type ChainIndepState       (HardForkProtocol xs) = PerEraChainIndepState       xs
+
+  -- Operations on the chain independent state
+
+  updateChainIndepState _ cfg slot =
+        fmap PerEraChainIndepState
+      . hsequence'
+      . hczipWith proxySingle updateOne cfgs
+      . getPerEraChainIndepState
+    where
+      cfgs = getPerEraChainIndepStateConfig cfg
+
+      updateOne ::
+           forall m blk. (SingleEraBlock blk, IOLike m)
+        => WrapChainIndepStateConfig blk
+        -> WrapChainIndepState blk
+        -> (m :.: WrapChainIndepState) blk
+      updateOne (WrapChainIndepStateConfig cfg') (WrapChainIndepState st) =
+        Comp $
+          WrapChainIndepState <$>
+            updateChainIndepState (Proxy @(BlockProtocol blk)) cfg' slot st
 
 {-------------------------------------------------------------------------------
   Protocol config
@@ -166,15 +196,21 @@ distribTopLevelConfig :: CanHardFork xs
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei TopLevelConfig{..} =
-    hczipWith3 proxySingle
-      (\cfgConsensus cfgLedger cfgBlock ->
+    hcpure proxySingle
+      (fn_4 (\cfgConsensus cfgIndep cfgLedger cfgBlock ->
            TopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
+             (unwrapChainIndepStateConfig cfgIndep)
              (completeLedgerConfig'    ei cfgLedger)
-             cfgBlock)
+             cfgBlock))
+    `hap`
       (getPerEraConsensusConfig $
          hardForkConsensusConfigPerEra configConsensus)
+    `hap`
+      (getPerEraChainIndepStateConfig configIndep)
+    `hap`
       (getPerEraLedgerConfig $
          hardForkLedgerConfigPerEra configLedger)
+    `hap`
       (getPerEraBlockConfig $
          hardForkBlockConfigPerEra configBlock)

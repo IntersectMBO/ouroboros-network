@@ -271,6 +271,9 @@ instance PBftCrypto c => ChainSelection (PBft c) where
        score IsEBB    = 1
        score IsNotEBB = 0
 
+instance HasChainIndepState (PBft c)
+  -- Use defaults
+
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
@@ -279,18 +282,18 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView     (PBft c) = PBftLedgerView c
-  type IsLeader       (PBft c) = PBftIsLeader   c
-  type ConsensusState (PBft c) = PBftState      c
-  type CanBeLeader    (PBft c) = PBftIsLeader   c
-  type CannotLead     (PBft c) = PBftCannotLead c
+  type LedgerView    (PBft c) = PBftLedgerView c
+  type IsLeader      (PBft c) = PBftIsLeader   c
+  type ChainDepState (PBft c) = PBftState      c
+  type CanBeLeader   (PBft c) = PBftIsLeader   c
+  type CannotLead    (PBft c) = PBftCannotLead c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
   checkIsLeader
     cfg@PBftConfig{pbftParams}
     credentials
-    (Ticked slot@(SlotNo n) (PBftLedgerView dms)) cs =
+    (Ticked slot@(SlotNo n) (PBftLedgerView dms)) _cis cds =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
@@ -299,7 +302,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
           then case Bimap.lookupR dlgKeyHash dms of
             Nothing -> CannotLead $ PBftCannotLeadInvalidDelegation dlgKeyHash
             Just gk -> do
-              let state' = append cfg params (slot, gk) cs
+              let state' = append cfg params (slot, gk) cds
               case exceedsThreshold params state' gk of
                 Nothing -> IsLeader credentials
                 Just numForged  -> CannotLead $ PBftCannotLeadThresholdExceeded numForged
@@ -310,7 +313,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  updateConsensusState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =
+  updateChainDepState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =
       case toValidate of
         PBftValidateBoundary slot hash ->
           return $! appendEBB cfg params slot hash state
@@ -341,7 +344,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
     where
       params = pbftWindowParams cfg
 
-  rewindConsensusState _proxy = rewind
+  rewindChainDepState _proxy = rewind
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftState'

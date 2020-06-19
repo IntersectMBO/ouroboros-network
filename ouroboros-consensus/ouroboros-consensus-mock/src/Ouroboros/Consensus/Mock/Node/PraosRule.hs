@@ -20,10 +20,11 @@ import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
+import           Ouroboros.Consensus.Util.IOLike
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
-protocolInfoPraosRule :: Monad m
+protocolInfoPraosRule :: IOLike m
                       => NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
@@ -48,6 +49,7 @@ protocolInfoPraosRule numCoreNodes
                 }
             , wlsConfigNodeId   = nid
             }
+        , configIndep  = ()
         , configLedger = SimpleLedgerConfig () eraParams
         , configBlock  = SimpleBlockConfig (praosSecurityParam params)
         }

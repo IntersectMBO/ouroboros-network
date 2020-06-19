@@ -224,6 +224,7 @@ testCfg securityParam = TopLevelConfig {
         , bftSignKey = SignKeyMockDSIGN 0
         , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
+    , configIndep  = ()
     , configLedger = eraParams
     , configBlock  = TestBlockConfig numCoreNodes
     }

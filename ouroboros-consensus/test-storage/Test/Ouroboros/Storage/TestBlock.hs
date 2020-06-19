@@ -657,6 +657,7 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           , bftSignKey = SignKeyMockDSIGN 0
           , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
+      , configIndep  = ()
       , configLedger = eraParams
       , configBlock  = TestBlockConfig {
             testBlockEBBsAllowed  = chunkCanContainEBB
@@ -727,7 +728,7 @@ instance EncodeDiskDep   (NestedCtxt Header) TestBlock
 instance DecodeDiskDepIx (NestedCtxt Header) TestBlock
 instance DecodeDiskDep   (NestedCtxt Header) TestBlock
 
--- ConsensusState
+-- ChainDepState
 instance EncodeDisk TestBlock ()
 instance DecodeDisk TestBlock ()
 

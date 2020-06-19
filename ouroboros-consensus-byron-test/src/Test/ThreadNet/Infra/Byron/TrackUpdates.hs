@@ -59,7 +59,6 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.ThreadNet.Infra.Byron.ProtocolInfo
 
-import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
 
 -- | The expectation and observation regarding whether the hard-fork proposal
@@ -389,7 +388,7 @@ mkProtocolRealPBftAndHardForkTxs
     ProtocolInfo{pInfoConfig}   = pInfo
     TopLevelConfig{configBlock} = pInfoConfig
 
-    pInfo :: ProtocolInfo (ChaChaT m) ByronBlock
+    pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
 
     proposals :: [Byron.GenTx ByronBlock]

@@ -191,7 +191,7 @@ instance TPraosCrypto c
   -- + 'applyChainTick': executes the @TICK@ transition
   -- + 'validateHeader':
   --    - 'validateEnvelope': executes the @chainChecks@
-  --    - 'updateConsensusState': executes the @PRTCL@ transition
+  --    - 'updateChainDepState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
   applyLedgerBlock cfg

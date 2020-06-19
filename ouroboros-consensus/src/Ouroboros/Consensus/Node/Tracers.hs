@@ -115,8 +115,8 @@ showTracers :: ( Show blk
                , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
+               , Show (ExtraForgeState blk)
                , Show remotePeer
-               , Show (ForgeState blk)
                , LedgerSupportsProtocol blk
                )
             => Tracer m String -> Tracers m remotePeer localPeer blk

@@ -23,10 +23,11 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Util.IOLike
 
 type MockPraosBlock = SimplePraosBlock SimpleMockCrypto PraosMockCrypto
 
-protocolInfoPraos :: Monad m
+protocolInfoPraos :: IOLike m
                   => NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
@@ -42,6 +43,7 @@ protocolInfoPraos numCoreNodes nid params eraParams =
               , praosInitialStake = genesisStakeDist addrDist
               , praosVerKeys      = verKeys
               }
+          , configIndep  = ()
           , configLedger = SimpleLedgerConfig addrDist eraParams
           , configBlock  = SimpleBlockConfig (praosSecurityParam params)
           }
@@ -51,14 +53,13 @@ protocolInfoPraos numCoreNodes nid params eraParams =
           }
       , pInfoLeaderCreds = Just (
             nid
-          , MaintainForgeState {
-                initForgeState =
-                  PraosKey $
+          , defaultMaintainNoExtraForgeState
+              (HotKey $
                     SignKeyMockKES
-                      (fst $ verKeys Map.! nid)   -- key ID
-                      0                           -- KES initial slot
-              , updateForgeState = evolveKey
-              }
+                      -- key ID
+                      (fst $ verKeys Map.! nid)
+                      -- KES initial slot
+                      0)
           )
       }
   where

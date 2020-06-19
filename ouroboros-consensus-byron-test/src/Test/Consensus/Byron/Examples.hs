@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Byron.Examples (
-    exampleConsensusState
+    exampleChainDepState
   , exampleLedgerState
   , exampleHeaderState
   , exampleExtLedgerState
@@ -48,7 +48,7 @@ import qualified Test.Cardano.Chain.UTxO.Example as CC
 -------------------------------------------------------------------------------}
 
 -- | Note that we must use the same value for the 'SecurityParam' as for the
--- 'S.WindowSize', because 'decodeByronConsensusState' only takes the
+-- 'S.WindowSize', because 'decodeByronChainDepState' only takes the
 -- 'SecurityParam' and uses it as the basis for the 'S.WindowSize'.
 secParam :: SecurityParam
 secParam = SecurityParam 2
@@ -60,8 +60,8 @@ windowSize = S.WindowSize 2
   Examples
 -------------------------------------------------------------------------------}
 
-exampleConsensusState :: ConsensusState (BlockProtocol ByronBlock)
-exampleConsensusState = withEBB
+exampleChainDepState :: ChainDepState (BlockProtocol ByronBlock)
+exampleChainDepState = withEBB
   where
     signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
 
@@ -75,7 +75,7 @@ exampleConsensusState = withEBB
     exampleEbbHeaderHashBytes :: HeaderHashBytes
     exampleEbbSlot            = 6
     exampleEbbHeaderHashBytes = mkHeaderHashBytesForTestingOnly
-                                  (Lazy8.pack "test_golden_ConsensusState6")
+                                  (Lazy8.pack "test_golden_ChainDepState6")
 
     withEBB = S.appendEBB secParam windowSize
                 exampleEbbSlot exampleEbbHeaderHashBytes

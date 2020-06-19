@@ -144,8 +144,8 @@ class ( -- TODO remove/replace this one once we remove it from the
       , DecodeDisk blk (LedgerState blk)
       , EncodeDisk blk (AnnTip      blk)
       , DecodeDisk blk (AnnTip      blk)
-      , EncodeDisk blk (ConsensusState (BlockProtocol blk))
-      , DecodeDisk blk (ConsensusState (BlockProtocol blk))
+      , EncodeDisk blk (ChainDepState (BlockProtocol blk))
+      , DecodeDisk blk (ChainDepState (BlockProtocol blk))
       ) => LgrDbSerialiseConstraints blk
 
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.

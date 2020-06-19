@@ -9,8 +9,8 @@
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
     toPBftLedgerView
   , fromPBftLedgerView
-  , encodeByronConsensusState
-  , decodeByronConsensusState
+  , encodeByronChainDepState
+  , decodeByronChainDepState
   , mkByronContextDSIGN
   ) where
 
@@ -84,12 +84,12 @@ toPBftLedgerView = PBftLedgerView . Delegation.unMap
 fromPBftLedgerView :: PBftLedgerView PBftByronCrypto -> Delegation.Map
 fromPBftLedgerView = Delegation.Map . pbftDelegates
 
-encodeByronConsensusState
-  :: ConsensusState (BlockProtocol ByronBlock)
+encodeByronChainDepState
+  :: ChainDepState (BlockProtocol ByronBlock)
   -> Encoding
-encodeByronConsensusState = S.encodePBftState
+encodeByronChainDepState = S.encodePBftState
 
-decodeByronConsensusState
+decodeByronChainDepState
   :: SecurityParam
-  -> Decoder s (ConsensusState (BlockProtocol ByronBlock))
-decodeByronConsensusState k = S.decodePBftState k (pbftWindowSize k)
+  -> Decoder s (ChainDepState (BlockProtocol ByronBlock))
+decodeByronChainDepState k = S.decodePBftState k (pbftWindowSize k)

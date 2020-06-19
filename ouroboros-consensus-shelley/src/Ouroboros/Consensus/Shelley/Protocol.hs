@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosProof (..)
   , TPraosIsCoreNode (..)
   , mkShelleyGlobals
+  , TPraosUnusableKey(..)
   , TPraosCannotLead(..)
     -- * Crypto
   , Crypto
@@ -42,6 +43,7 @@ import           Control.Monad.Trans.Except (except)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -74,6 +76,9 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
+                     (HotKey (..))
+import qualified Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey as HotKey
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 import           Ouroboros.Consensus.Shelley.Protocol.Util
@@ -128,7 +133,7 @@ forgeTPraosFields :: ( TPraosCrypto c
                   -> IsLeader (TPraos c)
                   -> (TPraosToSign c -> toSign)
                   -> TPraosFields c toSign
-forgeTPraosFields (HotKey kesEvolution hotKESKey) TPraosProof{..} mkToSign =
+forgeTPraosFields HotKey { hkEvolution, hkKey } TPraosProof{..} mkToSign =
     TPraosFields {
         tpraosSignature = signature
       , tpraosToSign    = mkToSign signedFields
@@ -136,9 +141,9 @@ forgeTPraosFields (HotKey kesEvolution hotKESKey) TPraosProof{..} mkToSign =
   where
     signature = signedKES
       ()
-      kesEvolution
+      hkEvolution
       (mkToSign signedFields)
-      hotKESKey
+      hkKey
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
@@ -211,7 +216,7 @@ data TPraosIsCoreNode c = TPraosIsCoreNode {
       -- | Certificate delegating rights from the stake pool cold key (or
       -- genesis stakeholder delegate cold key) to the online KES key.
       tpraosIsCoreNodeOpCert     :: !(SL.OCert c)
-    -- | Stake pool cold key or genesis stakeholder delegate cold key.
+      -- | Stake pool cold key or genesis stakeholder delegate cold key.
     , tpraosIsCoreNodeColdVerKey :: !(SL.VKey 'SL.BlockIssuer c)
     , tpraosIsCoreNodeSignKeyVRF :: !(SignKeyVRF (VRF c))
     }
@@ -230,21 +235,44 @@ data TPraosProof c = TPraosProof {
 
 instance TPraosCrypto c => NoUnexpectedThunks (TPraosProof c)
 
+data TPraosUnusableKey = TPraosUnusableKey {
+      tpraosUnusableKeyStart   :: !SL.KESPeriod
+    , tpraosUnusableKeyEnd     :: !SL.KESPeriod
+    , tpraosUnusableKeyCurrent :: !SL.KESPeriod
+      -- ^ Current KES period of the key
+    , tpraosUnusableWallClock  :: !SL.KESPeriod
+      -- ^ Current KES period according to the wallclock slot, i.e., the KES
+      -- period in which we want to use the key.
+    }
+  deriving (Show)
+
+checkKesPeriod :: SL.KESPeriod -> HotKey c -> Either TPraosUnusableKey ()
+checkKesPeriod wallclockPeriod hk
+    | let curKeyPeriod = HotKey.toPeriod hk
+    , curKeyPeriod /= wallclockPeriod
+    = Left TPraosUnusableKey {
+          tpraosUnusableKeyStart   = hkStart hk
+        , tpraosUnusableKeyEnd     = hkEnd   hk
+        , tpraosUnusableKeyCurrent = curKeyPeriod
+        , tpraosUnusableWallClock  = wallclockPeriod
+        }
+    | otherwise
+    = Right ()
+
 -- | Expresses that, whilst we believe ourselves to be a leader for this slot,
 -- we are nonetheless unable to forge a block.
 data TPraosCannotLead c =
-    -- | Our operational certificate is not valid for the current KES period. The
-    --   given parameters are the current KES period, the minimum and maximum KES
-    --   periods for which this operational certificate is valid.
-    TPraosCannotLeadInvalidOcert KES.Period KES.Period KES.Period
+    -- | The KES key in our operational certificate is not usable for the
+    -- current KES period.
+    TPraosCannotLeadUnusableKESKey !TPraosUnusableKey
     -- | We are a genesis delegate, but our VRF key does not match the
     -- registered key for that delegate.
   | TPraosCannotLeadWrongVRF
-      (SL.Hash c (VerKeyVRF (VRF c)))
-      (SL.Hash c (VerKeyVRF (VRF c)))
+      !(SL.Hash c (VerKeyVRF (VRF c)))
+      !(SL.Hash c (VerKeyVRF (VRF c)))
   deriving (Generic)
 
-deriving instance (TPraosCrypto c) => Show (TPraosCannotLead c)
+deriving instance TPraosCrypto c => Show (TPraosCannotLead c)
 
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
@@ -283,25 +311,37 @@ instance TPraosCrypto c => ChainSelection (TPraos c) where
   -- operational certificate issue number.
   type SelectView (TPraos c) = TPraosChainSelectView c
 
+instance TPraosCrypto c => HasChainIndepState (TPraos c) where
+  type ChainIndepStateConfig (TPraos c) = TPraosParams
+  type ChainIndepState       (TPraos c) = HotKey c
+
+  updateChainIndepState _proxy TPraosParams{..} curSlot hk =
+      -- When the period is outside the range of the key, we can't evolve it
+      -- and get a 'Nothing'. We don't throw an error or exception here, we
+      -- will return/trace this as 'CannotLead'.
+      fromMaybe hk <$> HotKey.evolve curPeriod hk
+    where
+      curPeriod = SL.KESPeriod $ fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
+
 instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
-  type ConsensusState  (TPraos c) = TPraosState c
-  type IsLeader        (TPraos c) = TPraosProof c
-  type CanBeLeader     (TPraos c) = TPraosIsCoreNode c
-  type CannotLead      (TPraos c) = TPraosCannotLead c
-  type LedgerView      (TPraos c) = SL.LedgerView c
-  type ValidationErr   (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
-  type ValidateView    (TPraos c) = TPraosValidateView c
+  type ChainDepState (TPraos c) = TPraosState c
+  type IsLeader      (TPraos c) = TPraosProof c
+  type CanBeLeader   (TPraos c) = TPraosIsCoreNode c
+  type CannotLead    (TPraos c) = TPraosCannotLead c
+  type LedgerView    (TPraos c) = SL.LedgerView c
+  type ValidationErr (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
+  type ValidateView  (TPraos c) = TPraosValidateView c
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg@TPraosConfig{..} icn (Ticked slot lv) cs = do
+  checkIsLeader cfg@TPraosConfig{..} icn (Ticked slot lv) hk cs = do
       rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
       y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
       -- First, check whether we're in the overlay schedule
       return $ case Map.lookup slot (SL.lvOverlaySched lv) of
         Nothing
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
-          -> case hasValidOCert icn of
+          -> case checkKesPeriod wallclockPeriod hk of
             Right () ->
             -- Slot isn't in the overlay schedule, so we're in Praos
               IsLeader TPraosProof {
@@ -309,8 +349,8 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
               , tpraosLeader     = coerce y
               , tpraosIsCoreNode = icn
               }
-            Left (c, mi, ma) ->
-              CannotLead $ TPraosCannotLeadInvalidOcert c mi ma
+            Left unusableKey ->
+              CannotLead $ TPraosCannotLeadUnusableKESKey unusableKey
           | otherwise
           -> NotLeader
 
@@ -320,25 +360,24 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
        -- The given genesis key has authority to produce a block in this
         -- slot. Check whether we're its delegate.
         Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
+            Nothing
+              -> error "unknown genesis key in overlay schedule"
             Just (SL.GenDelegPair dlgHash genDlgVRFHash)
-              | SL.coerceKeyRole dlgHash == vkhCold
-              -> case hasValidOCert icn of
-                Right () ->
-                  if genDlgVRFHash == coreNodeVRFHash
-                    then
-                      IsLeader TPraosProof {
-                          tpraosEta        = coerce rho
-                          -- Note that this leader value is not checked for slots in
-                          -- the overlay schedule, so we could set it to whatever we
-                          -- want. We evaluate it as normal for simplicity's sake.
-                        , tpraosLeader     = coerce y
-                        , tpraosIsCoreNode = icn
-                        }
-                    else
-                      CannotLead $ TPraosCannotLeadWrongVRF genDlgVRFHash coreNodeVRFHash
-                Left (c, mi, ma) ->
-                  CannotLead $ TPraosCannotLeadInvalidOcert c mi ma
-            _ -> NotLeader
+              | SL.coerceKeyRole dlgHash /= vkhCold
+              -> NotLeader
+              | Left unusableKey <- checkKesPeriod wallclockPeriod hk
+              -> CannotLead $ TPraosCannotLeadUnusableKESKey unusableKey
+              | genDlgVRFHash /= coreNodeVRFHash
+              -> CannotLead $ TPraosCannotLeadWrongVRF genDlgVRFHash coreNodeVRFHash
+              | otherwise
+              -> IsLeader TPraosProof {
+                     tpraosEta        = coerce rho
+                     -- Note that this leader value is not checked for slots in
+                     -- the overlay schedule, so we could set it to whatever we
+                     -- want. We evaluate it as normal for simplicity's sake.
+                   , tpraosLeader     = coerce y
+                   , tpraosIsCoreNode = icn
+                   }
           where
             SL.GenDelegs dlgMap = SL.lvGenDelegs lv
             coreNodeVRFHash = SL.hashVerKeyVRF $ deriveVerKeyVRF tpraosIsCoreNodeSignKeyVRF
@@ -354,26 +393,12 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
 
-      -- | Check whether we have an operational certificate valid for the
-      -- current KES period.
-      --
-      -- Returns 'Right ()' when the OCert is valid and 'Left (current, min,
-      -- max)' when it is not.
-      hasValidOCert
-        :: TPraosIsCoreNode c
-        -> Either (KES.Period, KES.Period, KES.Period) ()
-      hasValidOCert TPraosIsCoreNode{tpraosIsCoreNodeOpCert} =
-          if kesPeriod >= c0 && kesPeriod < c1
-            then Right ()
-            else Left (kesPeriod, c0, c1)
-        where
-          SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
-          c1 = c0 + fromIntegral (tpraosMaxKESEvo tpraosParams)
-          -- The current KES period
-          kesPeriod = fromIntegral $
-            unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
+      -- The current wallclock KES period
+      wallclockPeriod :: SL.KESPeriod
+      wallclockPeriod = SL.KESPeriod $ fromIntegral $
+          unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
 
-  updateConsensusState TPraosConfig{..} (Ticked _ lv) b cs = do
+  updateChainDepState TPraosConfig{..} (Ticked _ lv) b cs = do
       newCS <- except . flip runReader shelleyGlobals $
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return
@@ -398,7 +423,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindConsensusState _proxy _k = State.rewind . pointSlot
+  rewindChainDepState _proxy _k = State.rewind . pointSlot
 
 mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
 mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {

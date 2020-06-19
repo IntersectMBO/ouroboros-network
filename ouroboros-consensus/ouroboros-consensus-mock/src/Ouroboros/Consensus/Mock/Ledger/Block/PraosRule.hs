@@ -128,9 +128,8 @@ forgePraosRuleExt cfg SimpleBlock{..} =
     SimpleHeader{..} = simpleHeader
 
 instance SimpleCrypto c => CanForge (SimplePraosRuleBlock c) where
-  type ForgeState (SimplePraosRuleBlock c) = ()
   forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
-      return . forgePraosRuleExt cfg
+      forgePraosRuleExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

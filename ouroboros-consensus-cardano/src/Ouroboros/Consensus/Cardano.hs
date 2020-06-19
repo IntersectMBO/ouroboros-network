@@ -31,7 +31,6 @@ module Ouroboros.Consensus.Cardano (
   , verifyProtocolClient
   ) where
 
-import           Crypto.Random (MonadRandom)
 import           Data.Type.Equality
 
 import           Cardano.Prelude (Natural)
@@ -51,6 +50,7 @@ import           Ouroboros.Consensus.Protocol.BFT as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.Combinator
 
@@ -189,7 +189,7 @@ verifyProtocol ProtocolCardano{}        = Refl
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the selected protocol
-protocolInfo :: forall m blk p. MonadRandom m
+protocolInfo :: forall m blk p. IOLike m
              => Protocol m blk p -> ProtocolInfo m blk
 protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
     protocolInfoBft nodes nid k paramsEra

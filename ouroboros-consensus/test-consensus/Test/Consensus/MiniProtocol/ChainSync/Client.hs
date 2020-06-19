@@ -397,6 +397,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                           , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
                           ]
           }
+      , configIndep  = ()
       , configLedger = eraParams
       , configBlock  = TestBlockConfig numCoreNodes
       }

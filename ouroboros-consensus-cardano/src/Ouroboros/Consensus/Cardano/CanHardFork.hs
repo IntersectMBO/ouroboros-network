@@ -296,9 +296,9 @@ instance TPraosCrypto sc => HasPartialLedgerConfig (ShelleyBlock sc) where
 
 instance TPraosCrypto c => CanHardFork (CardanoEras c) where
   hardForkEraTranslation = EraTranslation {
-      translateLedgerState    = PCons translateLedgerStateByronToShelleyWrapper    PNil
-    , translateLedgerView     = PCons translateLedgerViewByronToShelleyWrapper     PNil
-    , translateConsensusState = PCons translateConsensusStateByronToShelleyWrapper PNil
+      translateLedgerState   = PCons translateLedgerStateByronToShelleyWrapper   PNil
+    , translateLedgerView    = PCons translateLedgerViewByronToShelleyWrapper    PNil
+    , translateChainDepState = PCons translateChainDepStateByronToShelleyWrapper PNil
     }
 
 {-------------------------------------------------------------------------------
@@ -452,22 +452,22 @@ translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
           (Map.keysSet (sgGenDelegs genesisShelley))
           (sgProtocolParams genesisShelley)
 
-translateConsensusStateByronToShelleyWrapper
+translateChainDepStateByronToShelleyWrapper
   :: forall sc.
      RequiringBoth
        WrapConsensusConfig
-       (Translate WrapConsensusState)
+       (Translate WrapChainDepState)
        ByronBlock
        (ShelleyBlock sc)
-translateConsensusStateByronToShelleyWrapper =
-    RequireBoth $ \_ _ -> Translate   $ \_ (WrapConsensusState pbftState) ->
-      WrapConsensusState (translateConsensusStateByronToShelley pbftState)
+translateChainDepStateByronToShelleyWrapper =
+    RequireBoth $ \_ _ -> Translate   $ \_ (WrapChainDepState pbftState) ->
+      WrapChainDepState (translateChainDepStateByronToShelley pbftState)
 
-translateConsensusStateByronToShelley
+translateChainDepStateByronToShelley
   :: forall bc sc.
      PBftState bc
   -> TPraosState sc
-translateConsensusStateByronToShelley pbftState =
+translateChainDepStateByronToShelley pbftState =
     TPraosState.empty (PBftState.tipSlot pbftState) $
       SL.PrtclState
         Map.empty

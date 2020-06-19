@@ -260,7 +260,7 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g, h) = do
 type TestConstraints blk =
   ( ConsensusProtocol  (BlockProtocol blk)
   , LedgerSupportsProtocol            blk
-  , Eq (ConsensusState (BlockProtocol blk))
+  , Eq (ChainDepState  (BlockProtocol blk))
   , Eq (LedgerState                   blk)
   , Eq                                blk
   , Show                              blk

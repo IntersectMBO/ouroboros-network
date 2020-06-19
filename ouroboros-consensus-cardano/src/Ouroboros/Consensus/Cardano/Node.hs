@@ -29,7 +29,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Exception (assert)
-import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.Contravariant (contramap)
 import qualified Data.List.NonEmpty as NE
@@ -57,6 +56,7 @@ import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.SOP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -276,7 +276,7 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
 -------------------------------------------------------------------------------}
 
 protocolInfoCardano
-  :: forall sc m. (MonadRandom m, TPraosCrypto sc)
+  :: forall sc m. (IOLike m, TPraosCrypto sc)
      -- Byron
   => Genesis.Config
   -> Maybe PBftSignatureThreshold
@@ -302,7 +302,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                             initHardForkState initLedgerStateByron
           , headerState = genesisHeaderState $
                             initHardForkState
-                              (WrapConsensusState initConsensusStateByron)
+                              (WrapChainDepState initChainDepStateByron)
           }
       , pInfoLeaderCreds = creds
       }
@@ -317,7 +317,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
       , pInfoInitLedger  = ExtLedgerState {
             ledgerState = initLedgerStateByron
           , headerState = HeaderState {
-                headerStateConsensus = initConsensusStateByron
+                headerStateConsensus = initChainDepStateByron
               }
           }
       } = protocolInfoByron @m genesisByron mSigThresh pVer sVer mbCredsByron
@@ -336,11 +336,14 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     -- Shelley
 
+    tpraosParams :: TPraosParams
+    tpraosParams = Shelley.mkTPraosParams maxMajorPV genesisShelley
+
     blockConfigShelley :: BlockConfig (ShelleyBlock sc)
     blockConfigShelley = Shelley.mkShelleyBlockConfig protVer genesisShelley
 
     partialConsensusConfigShelley :: PartialConsensusConfig (BlockProtocol (ShelleyBlock sc))
-    partialConsensusConfigShelley = Shelley.mkTPraosParams maxMajorPV genesisShelley
+    partialConsensusConfigShelley = tpraosParams
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock sc)
     partialLedgerConfigShelley = ShelleyPartialLedgerConfig {
@@ -377,6 +380,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               :* Nil
               )
           }
+      , configIndep     = PerEraChainIndepStateConfig
+              (  WrapChainIndepStateConfig ()
+              :* WrapChainIndepStateConfig tpraosParams
+              :* Nil
+              )
       , configLedger    = HardForkLedgerConfig {
             hardForkLedgerConfigK      = k
           , hardForkLedgerConfigShape  = shape
@@ -459,5 +467,6 @@ projByronTopLevelConfig cfg = byronCfg
     byronCfg = TopLevelConfig {
         configBlock     = byronBlockCfg
       , configConsensus = byronConsensusCfg
+      , configIndep     = ()
       , configLedger    = byronLedgerConfig byronLedgerCfg
       }

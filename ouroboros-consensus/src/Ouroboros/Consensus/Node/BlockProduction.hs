@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Node.BlockProduction (
   , defaultGetLeaderProof
   ) where
 
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 import           Crypto.Random (MonadRandom)
 
 import           Ouroboros.Network.Block
@@ -27,7 +27,7 @@ data BlockProduction m blk = BlockProduction {
       -- | Check if we should produce a block
       getLeaderProof :: Tracer m (ForgeState blk)
                      -> Ticked (LedgerView (BlockProtocol blk))
-                     -> ConsensusState     (BlockProtocol blk)
+                     -> ChainDepState      (BlockProtocol blk)
                      -> m (LeaderCheck     (BlockProtocol blk))
 
       -- | Produce a block
@@ -55,38 +55,49 @@ blockProductionIO :: forall blk. (BlockSupportsProtocol blk, CanForge blk)
                   -> IO (BlockProduction IO blk)
 blockProductionIO cfg canBeLeader mfs = do
     varForgeState <- newMVar (initForgeState mfs)
-    let upd :: Update IO (ForgeState blk)
-        upd = updateFromMVar varForgeState
     return $ BlockProduction {
-        getLeaderProof = \tracer ->
+        getLeaderProof =
           defaultGetLeaderProof
             cfg
             canBeLeader
             mfs
-            (traceUpdate tracer upd)
+            varForgeState
       , produceBlock = \bno ledgerState txs proof -> do
           forgeState <- readMVar varForgeState
-          forgeBlock cfg forgeState bno ledgerState txs proof
+          return $ forgeBlock cfg forgeState bno ledgerState txs proof
       }
 
 {-------------------------------------------------------------------------------
   Get leader proof
 -------------------------------------------------------------------------------}
 
-defaultGetLeaderProof :: ( MonadRandom m
-                         , ConsensusProtocol (BlockProtocol blk)
-                         )
-                      => TopLevelConfig blk
-                      -> CanBeLeader (BlockProtocol blk)
-                      -> MaintainForgeState m blk
-                      -> Update m (ForgeState blk)
-                      -> Ticked (LedgerView (BlockProtocol blk))
-                      -> ConsensusState     (BlockProtocol blk)
-                      -> m (LeaderCheck     (BlockProtocol blk))
-defaultGetLeaderProof cfg proof mfs upd lgrSt consensusSt = do
-    updateForgeState mfs upd (tickedSlotNo lgrSt)
+defaultGetLeaderProof ::
+     ( MonadSTM m
+     , MonadCatch m
+     , MonadRandom m
+     , ConsensusProtocol (BlockProtocol blk)
+     )
+  => TopLevelConfig blk
+  -> CanBeLeader (BlockProtocol blk)
+  -> MaintainForgeState m blk
+  -> StrictMVar m (ForgeState blk)
+  -> Tracer m (ForgeState blk)
+  -> Ticked (LedgerView (BlockProtocol blk))
+  -> ChainDepState      (BlockProtocol blk)
+  -> m (LeaderCheck     (BlockProtocol blk))
+defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
+    forgeState' <- modifyMVar varForgeState $ \forgeState -> do
+      forgeState' <-
+        updateForgeState
+          mfs
+          (configIndep cfg)
+          (tickedSlotNo lgrSt)
+          forgeState
+      return (forgeState', forgeState')
+    traceWith tracer forgeState'
     checkIsLeader
       (configConsensus cfg)
       proof
       lgrSt
-      consensusSt
+      (chainIndepState forgeState')
+      chainDepSt

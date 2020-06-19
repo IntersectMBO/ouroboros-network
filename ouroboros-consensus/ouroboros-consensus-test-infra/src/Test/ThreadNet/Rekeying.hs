@@ -15,7 +15,6 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.ThreadNet.Network
 
-import           Test.Util.Random
 import           Test.Util.Stream
 
 -- | Functionality used by test node in order to update its operational key
@@ -32,7 +31,7 @@ data Rekeying m blk = forall opKey. Rekeying
     -- IE the first slot that will result in a block successfully being forged
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
-         ProtocolInfo (ChaChaT m) blk
+         ProtocolInfo m blk
       -> EpochNo
       -> opKey
       -> Maybe (TestNodeInitialization m blk)
