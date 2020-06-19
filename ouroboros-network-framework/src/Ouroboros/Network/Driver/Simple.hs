@@ -140,7 +140,7 @@ runPeer tracer codec channel peer =
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
+     (MonadAsync m, MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes

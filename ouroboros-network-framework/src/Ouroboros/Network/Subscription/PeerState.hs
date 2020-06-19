@@ -332,8 +332,7 @@ cleanPeerStates interval v = go
 --
 runSuspendDecision
     :: forall m addr e.
-       ( Monad m
-       , Ord addr
+       ( Ord addr
        , Ord (Async m ())
        , Exception e
        )

@@ -154,9 +154,7 @@ ipSubscriptionTarget tr peerStatesVar ips = go ips
 -- when creating a new socket: register consumer thread
 -- when tearing down a socket: unregister consumer thread
 socketStateChangeTx
-    :: ( Ord addr
-       , Show addr
-       )
+    :: Ord addr
     => SocketStateChange IO
         (PeerStates IO addr)
         addr
@@ -174,8 +172,7 @@ socketStateChangeTx (ClosedSocket addr thread) ps =
 -- | Main callback.  It throws an exception when the state becomes
 -- 'ThrowException'.  This exception is thrown from the main thread.
 --
-mainTx :: ( MonadThrow m
-          , MonadThrow (STM m)
+mainTx :: ( MonadThrow (STM m)
           , MonadSTM m
           )
        => Main m (PeerStates m addr) Void

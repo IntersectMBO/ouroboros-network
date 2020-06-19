@@ -9,7 +9,6 @@ module Network.Mux.Bearer.Queues
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word (Word16)
 
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
@@ -28,7 +27,6 @@ queuesAsMuxBearer
      ( MonadSTM   m
      , MonadTime  m
      , MonadThrow m
-     , Eq  (Async m ())
      )
   => Tracer m Mx.MuxTrace
   -> TBQueue m BL.ByteString

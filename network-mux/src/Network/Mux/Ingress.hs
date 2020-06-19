@@ -183,7 +183,10 @@ setupDispatchTable ptcls =
                   },
                 miniProtocolIngressQueue = q
               } <- ptcls
-            , let Just pix = pnumArray ! miniProtocolNum
+            , let pix  =
+                   case pnumArray ! miniProtocolNum of
+                     Just a  -> a
+                     Nothing -> error ("setupDispatchTable: missing " ++ show miniProtocolNum)
                   dir      = protocolDirEnum miniProtocolDir
                   qMax     = maximumIngressQueue miniProtocolLimits
             ]

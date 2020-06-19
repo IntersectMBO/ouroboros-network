@@ -22,9 +22,7 @@ import           Ouroboros.Network.Codec
 
 codecPingPong
   :: forall m.
-     ( Monad m
-     , MonadST m
-     )
+     MonadST m
   => Codec PingPong CBOR.DeserialiseFailure m ByteString
 codecPingPong = mkCodecCborLazyBS encodeMsg decodeMsg
  where

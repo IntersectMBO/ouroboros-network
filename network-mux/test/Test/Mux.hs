@@ -39,7 +39,6 @@ import qualified System.Random.SplitMix as SM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -107,7 +106,7 @@ smallMiniProtocolLimits =
 smallMiniProtocolLimit :: Int
 smallMiniProtocolLimit = 16*1024
 
-activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
+activeTracer :: forall m a. MonadSay m => Tracer m a
 activeTracer = nullTracer
 --activeTracer = showTracing _sayTracer
 
@@ -149,7 +148,7 @@ genLargeByteString :: Int -> Int -> Gen BL.ByteString
 genLargeByteString chunkSize  size | chunkSize < size = do
   chunk <- genByteString chunkSize
   return $ BL.concat $
-        replicate (fromIntegral $ size `div` chunkSize) chunk
+        replicate (size `div` chunkSize) chunk
       ++
         [BL.take (fromIntegral $ size `mod` chunkSize) chunk]
 genLargeByteString _chunkSize size = genByteString size
@@ -245,7 +244,7 @@ instance Arbitrary ArbitrarySDU where
 
         tooLargeSdu = do
             l <- choose (1 + smallMiniProtocolLimit , 2 * smallMiniProtocolLimit)
-            pl <- BL8.pack <$> replicateM (fromIntegral l) arbitrary
+            pl <- BL8.pack <$> replicateM l arbitrary
 
             -- This SDU is still considered valid, since the header itself will
             -- not cause a trouble, the error will be triggered by the fact that
@@ -978,16 +977,12 @@ encodeInvalidMuxSDU sdu =
 --
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
-                    , MonadCatch m
                     , MonadFork m
                     , MonadMask m
                     , MonadSay m
-                    , MonadST m
-                    , MonadSTM m
                     , MonadThrow (STM m)
                     , MonadTime m
                     , MonadTimer m
-                    , Eq (Async m ())
                     )
                  => ArbitrarySDU
                  -> m Property
@@ -1215,12 +1210,7 @@ instance Arbitrary DummyApps where
 dummyAppToChannel :: forall m.
                      ( MonadAsync m
                      , MonadCatch m
-                     , MonadFork m
-                     , MonadSTM m
-                     , MonadThrow (STM m)
-                     , MonadTime  m
                      , MonadTimer m
-                     , MonadMask m
                      , HasCallStack
                      )
                   => DummyApp
@@ -1239,12 +1229,9 @@ prop_mux_start_mX :: forall m.
                        , MonadFork m
                        , MonadMask m
                        , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
                        , MonadThrow (STM m)
                        , MonadTime m
                        , MonadTimer m
-                       , Eq (Async m ())
                        )
                     => DummyApps
                     -> DiffTime
@@ -1291,12 +1278,9 @@ prop_mux_start_m :: forall m.
                        , MonadFork m
                        , MonadMask m
                        , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
                        , MonadThrow (STM m)
                        , MonadTime m
                        , MonadTimer m
-                       , Eq (Async m ())
                        )
                     => MuxBearer m
                     -> (DummyApp -> m ())
@@ -1409,15 +1393,8 @@ instance (Show a) => Show (WithThreadAndTime a) where
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
-                       , MonadFork m
-                       , MonadMask m
                        , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
-                       , MonadThrow (STM m)
                        , MonadTime m
-                       , MonadTimer m
-                       , Eq (Async m ())
                        , Show a
                        )
                => Tracer m a
@@ -1425,15 +1402,7 @@ verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
-                       , MonadFork m
-                       , MonadMask m
-                       , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
-                       , MonadThrow (STM m)
                        , MonadTime m
-                       , MonadTimer m
-                       , Eq (Async m ())
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
 threadAndTimeTracer tr = Tracer $ \s -> do

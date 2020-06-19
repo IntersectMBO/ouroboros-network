@@ -75,9 +75,7 @@ data TraceSendRecv msg
 
 
 runDecoderWithChannel :: forall s m a.
-                         ( Monad m
-                         , MonadST m
-                         )
+                         MonadST m
                       => (forall b. ST s b -> m b)
                       -> Channel m
                       -> Maybe LBS.ByteString
@@ -107,8 +105,7 @@ runDecoderWithChannel liftST Channel{recv} trailing decoder =
 -- | Run a client using a byte 'Channel'.
 --
 runClient :: forall req resp m a.
-             ( Monad m
-             , MonadST m
+             ( MonadST m
              , Serialise req
              , Serialise resp
              , Show req

@@ -33,7 +33,9 @@ step remoteTS localTS obsSize s
              })
 
  | localTS <= nextSampleAt s    -- still in a sample period
-  = let Just refTimePoint = referenceTimePoint s
+  = let refTimePoint = case referenceTimePoint s of
+          Just a  -> a
+          Nothing -> error "step: missing referenceTimePoint"
         transitTime       = calcTransitTime refTimePoint remoteTS localTS
     in (recordObservation s localTS obsSize transitTime, Nothing)
  | otherwise                    -- need to start next sample period

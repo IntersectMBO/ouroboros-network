@@ -69,7 +69,7 @@ instance Exception ProtocolLimitFailure
 
 
 driverWithLimits :: forall ps failure bytes m.
-                    (MonadThrow m, MonadTimer m, Exception failure)
+                    (MonadThrow m, Exception failure)
                  => Tracer m (TraceSendRecv ps)
                  -> TimeoutFn m
                  -> Codec ps failure m bytes

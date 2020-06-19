@@ -131,7 +131,7 @@ isSanityCheckIgnored WithSanityCheckFailure {} = True
 --   timeout time plus a scheduling tolerance.
 --
 singleTimeoutExperiment
-    :: (TimeoutConstraints m, MonadSTM m)
+    :: TimeoutConstraints m
     => TimeoutFn m
     -> SchedulingTolerance
     -> TimeoutDuration
@@ -274,7 +274,7 @@ experimentResult SchedulingTolerance {
 -- | Run a 'singleTimeoutExperiment' under a single 'withTimeout' scope.
 --
 prop_timeout
-    :: (TimeoutConstraints m, MonadSTM m)
+    :: TimeoutConstraints m
     => WithTimeout m
     -> SchedulingTolerance
     -> TimeoutDuration
@@ -296,7 +296,7 @@ prop_timeout withTimeout
 -- 'withTimeout' scope.
 --
 prop_timeouts
-    :: (TimeoutConstraints m, MonadSTM m)
+    :: TimeoutConstraints m
     => WithTimeout m
     -> SchedulingTolerance
     -> [(TimeoutDuration, ActionDuration)]

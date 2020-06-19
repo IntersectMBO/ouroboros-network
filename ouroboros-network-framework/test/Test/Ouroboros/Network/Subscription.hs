@@ -16,7 +16,6 @@ module Test.Ouroboros.Network.Subscription (tests) where
 import           Control.Concurrent hiding (threadDelay)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -98,7 +97,7 @@ testProtocols2 reqResp =
     ]
 
 
-activeTracer :: Show a => Tracer IO a
+activeTracer :: Tracer IO a
 activeTracer = nullTracer
 -- activeTracer = _verboseTracer -- Dump log messages to stdout.
 
@@ -174,7 +173,7 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
             threadDelay 0.1
         let r = case lrioIpv4Result lr of
                      (Right sids) -> Right $ map (\sid -> Socket.SockAddrInet
-                         (fromIntegral $ sidToPort (Socket.AF_INET, sid))
+                         (sidToPort (Socket.AF_INET, sid))
                          (IP.toHostAddress "127.0.0.1")) sids
                      (Left e)      -> Left e
         when (lrioFirst lr == Socket.AF_INET) $
@@ -188,7 +187,7 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
             threadDelay $ 0.1 + resolutionDelay
         let r = case lrioIpv6Result lr of
                      (Right sids) -> Right $ map (\sid ->
-                         Socket.SockAddrInet6 (fromIntegral $ sidToPort (Socket.AF_INET6, sid)) 0
+                         Socket.SockAddrInet6 (sidToPort (Socket.AF_INET6, sid)) 0
                                               (IP.toHostAddress6 "::1") 0) sids
                      (Left e)      -> Left e
         when (lrioFirst lr == Socket.AF_INET6) $
@@ -296,11 +295,8 @@ permCheck a b = L.sort a == L.sort b
 prop_resolv :: forall m.
      ( MonadAsync m
      , MonadCatch m
-     , MonadSay   m
-     , MonadSTM   m
      , MonadTime  m
      , MonadTimer m
-     , MonadThrow m
      )
      => LookupResult
      -> m Property

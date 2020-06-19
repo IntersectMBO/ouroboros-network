@@ -89,6 +89,12 @@ library
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns                            
+                       -Wincomplete-record-updates                          
+                       -Wpartial-fields                                     
+                       -Widentities                                         
+                       -Wredundant-constraints                              
                        -Wno-unticked-promoted-constructors
 
 test-suite ouroboros-network-framework-tests
@@ -135,9 +141,15 @@ test-suite ouroboros-network-framework-tests
 
   default-language:    Haskell2010
   ghc-options:         -rtsopts
-                       -Wall
-                       -Wno-unticked-promoted-constructors
                        -threaded
+                       -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns                            
+                       -Wincomplete-record-updates                          
+                       -Wpartial-fields                                     
+                       -Widentities                                         
+                       -Wredundant-constraints                              
+                       -Wno-unticked-promoted-constructors
 
 executable demo-ping-pong
   hs-source-dirs:      demo test
@@ -166,3 +178,10 @@ executable demo-ping-pong
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded
+                       -Wcompat
+                       -Wincomplete-uni-patterns                            
+                       -Wincomplete-record-updates                          
+                       -Wpartial-fields                                     
+                       -Widentities                                         
+                       -Wredundant-constraints                              
+                       -Wno-unticked-promoted-constructors

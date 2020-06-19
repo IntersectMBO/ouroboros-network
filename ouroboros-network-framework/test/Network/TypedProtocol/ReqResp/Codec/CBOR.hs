@@ -23,8 +23,7 @@ import           Ouroboros.Network.Codec
 
 codecReqResp
   :: forall req resp m.
-     ( Monad m
-     , MonadST m
+     ( MonadST m
      , Serialise req
      , Serialise resp
      )

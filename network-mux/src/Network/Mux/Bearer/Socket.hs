@@ -77,7 +77,7 @@ socketAsMuxBearer sduTimeout tracer sd =
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
       recvRem !h0 = do
-          hbuf <- recvLen' (hdrLenght - fromIntegral (BL.length h0)) [h0]
+          hbuf <- recvLen' (hdrLenght - BL.length h0) [h0]
           case Mx.decodeMuxSDU hbuf of
                Left  e      ->  throwM e
                Right header@Mx.MuxSDU { Mx.msHeader } -> do
@@ -93,7 +93,7 @@ socketAsMuxBearer sduTimeout tracer sd =
       recvLen' 0 bufs = return $ BL.concat $ reverse bufs
       recvLen' l bufs = do
           buf <- recvAtMost False l
-          recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
+          recvLen' (l - BL.length buf) (buf : bufs)
 
       recvAtMost :: Bool -> Int64 -> IO BL.ByteString
       recvAtMost waitingOnNxtHeader l = do

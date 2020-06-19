@@ -22,7 +22,6 @@ module Ouroboros.Network.Protocol.Handshake.Codec
   ) where
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad (unless, replicateM)
 import           Data.ByteString.Lazy (ByteString)
@@ -73,7 +72,7 @@ maxTransmissionUnit :: Word
 maxTransmissionUnit = 4 * 1440
 
 -- | Byte limits
-byteLimitsHandshake :: ProtocolSizeLimits (Handshake vNumber CBOR.Term) ByteString
+byteLimitsHandshake :: forall vNumber. ProtocolSizeLimits (Handshake vNumber CBOR.Term) ByteString
 byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
@@ -84,7 +83,7 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
 -- Time limits
 -- We don't use a per-state timeout, instead there is an overall timeout
 -- for the complete handshake protocol exchange.
-timeLimitsHandshake :: ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+timeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
@@ -101,11 +100,8 @@ timeLimitsHandshake = ProtocolTimeLimits stateToLimit
 --
 codecHandshake
   :: forall vNumber m failure.
-     ( Monad m
-     , MonadThrow m
-     , MonadST m
+     ( MonadST m
      , Ord vNumber
-     , Show vNumber
      , Show failure
      )
   => CodecCBORTerm (failure, Maybe Int) vNumber
