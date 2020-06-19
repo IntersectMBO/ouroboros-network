@@ -256,10 +256,10 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 -- for each era. The type argument is a type-level list containing one entry
 -- per era, emphasizing that this information is statically known.
 --
--- The indices are currently not yet used, but the idea is that they look
--- something like @'[Byron, Shelley, Goguen]@ and are then also used by the
--- hard fork combinator (most likely this will be a list of block types, since
--- most of consensus is indexed by block types).
+-- The entry indices themselves are not used here, but the idea is that they
+-- look something like @'[ByronBlock, ShelleyBlock, GoguenBlock]@ and do affect
+-- the hard fork combinator. So far this is a list of block types, since most
+-- of consensus is indexed by block types.
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
 
