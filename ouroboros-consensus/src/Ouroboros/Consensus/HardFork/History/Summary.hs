@@ -19,7 +19,7 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , initBound
   , mkUpperBound
   , slotToEpochBound
-    -- * Per-era ummary
+    -- * Per-era summary
   , EraSummary(..)
   , EraEnd(..)
   , mkEraEnd

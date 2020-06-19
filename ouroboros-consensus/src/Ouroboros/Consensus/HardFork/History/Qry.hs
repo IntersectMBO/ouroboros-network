@@ -248,7 +248,7 @@ evalQryInEra EraSummary{..} = go
         return eraEpochSize
 
 {-------------------------------------------------------------------------------
-  Very thin layer for dealing running queries
+  Very thin layer for running queries
 -------------------------------------------------------------------------------}
 
 runQuery :: HasCallStack => Qry a -> Summary xs -> Either PastHorizonException a
