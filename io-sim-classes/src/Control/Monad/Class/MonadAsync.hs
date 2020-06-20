@@ -12,6 +12,7 @@ module Control.Monad.Class.MonadAsync
   , MonadAsyncSTM (..)
   , AsyncCancelled(..)
   , ExceptionInLinkedThread(..)
+  , Concurrently (..)
   , link
   , linkTo
   , linkOnly
@@ -20,8 +21,10 @@ module Control.Monad.Class.MonadAsync
 
 import           Prelude hiding (read)
 
+import           Control.Applicative (Alternative (..), liftA2)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
@@ -186,6 +189,43 @@ class ( MonadSTM m
                                withAsync right $ \b ->
                                  waitBoth a b
 
+-- | Similar to 'Async.Concurrently' but which works for any 'MonadAsync'
+-- instance.
+--
+newtype Concurrently m a = Concurrently { runConcurrently :: m a }
+
+instance Functor m => Functor (Concurrently m) where
+    fmap f (Concurrently ma) = Concurrently (fmap f ma)
+
+instance ( Applicative m
+         , MonadAsync m
+         ) => Applicative (Concurrently m) where
+    pure = Concurrently . pure
+
+    Concurrently fn <*> Concurrently as =
+      Concurrently $
+        (\(f, a) -> f a)
+        `fmap`
+        concurrently fn as
+
+instance ( Alternative m
+         , MonadAsync  m
+         , MonadTimer  m
+         ) => Alternative (Concurrently m) where
+    empty = Concurrently $ forever (threadDelay 86400)
+    Concurrently as <|> Concurrently bs =
+      Concurrently $ either id id <$> as `race` bs
+
+instance ( Semigroup  a
+         , MonadAsync m
+         ) => Semigroup (Concurrently m a) where
+    (<>) = liftA2 (<>)
+
+instance ( Monoid a
+         , MonadAsync m
+         ) => Monoid (Concurrently m a) where
+    mempty = pure mempty
+
 --
 -- Instance for IO uses the existing async library implementations
 --
@@ -203,7 +243,7 @@ instance MonadAsyncSTM Async.Async STM.STM where
 
 instance MonadAsync IO where
 
-  type Async IO = Async.Async
+  type Async IO         = Async.Async
 
   async                 = Async.async
   asyncThreadId         = \_proxy -> Async.asyncThreadId
