@@ -65,11 +65,14 @@ keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startT
            Just startTime -> do
                let rtt = diffTime endTime startTime
                    sample = fromSample startTime endTime payloadSize
+               gsv' <- atomically $ do
+                   m <- readTVar dqCtx
+                   assert (peer `M.member` m) $ do
+                     let m' = M.adjust (\a -> a <> sample) peer m
+                     writeTVar dqCtx m'
+                     return $ (M.!) m' peer
+               traceWith tracer $ AddSample peer rtt gsv'
 
-               traceWith tracer $ AddSample peer rtt sample
-               atomically $ modifyTVar dqCtx $ \m ->
-                   assert (peer `M.member` m) $
-                   M.adjust (\a -> a <> sample) peer m
            Nothing        -> return ()
 
       let keepAliveInterval' = case startTime_m of
