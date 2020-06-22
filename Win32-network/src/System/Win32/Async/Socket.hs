@@ -145,7 +145,7 @@ recvBufFrom sock buf size =
           alloca $ \saSizePtr ->
             alloca $ \wsaBufPtr ->
               alloca $ \lpFlags -> do
-                poke saSizePtr (fromIntegral saSize)
+                poke saSizePtr saSize
                 poke wsaBufPtr (WSABuf (fromIntegral size) buf)
                 poke lpFlags 0
                 recvResult <-
@@ -186,7 +186,7 @@ sockaddrStorageLen = 128
 
 -- | Copied from `Network.Socket.Types.withNewSocketAddress`.
 --
-withNewSocketAddress :: SocketAddress sa => (Ptr sa -> Int -> IO a) -> IO a
+withNewSocketAddress :: (Ptr sa -> Int -> IO a) -> IO a
 withNewSocketAddress f = allocaBytes sockaddrStorageLen $ \ptr -> do
     zeroMemory ptr $ fromIntegral sockaddrStorageLen
     f ptr sockaddrStorageLen

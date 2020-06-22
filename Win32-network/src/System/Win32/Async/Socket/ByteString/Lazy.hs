@@ -68,7 +68,7 @@ send sock bs =
                 poke q $ WSABuf (fromIntegral strlen) (castPtr ptr)
                 loop cs
                      (q `plusPtr` sizeOf (undefined :: WSABuf))
-                     (k + fromIntegral strlen)
+                     (k + strlen)
                      (nwsabuf + 1)
             | otherwise = f nwsabuf
         loop _ _ _ nwsabuf = f nwsabuf
