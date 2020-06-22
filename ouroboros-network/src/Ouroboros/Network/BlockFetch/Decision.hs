@@ -143,7 +143,7 @@ type CandidateFragments header = (ChainSuffix header, [ChainFragment header])
 
 
 fetchDecisions
-  :: (HasHeader header, HasHeader block,
+  :: (HasHeader header,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
   -> FetchMode
@@ -290,8 +290,7 @@ current chain. So our first task is to filter down to this set.
 -- the current chain.
 --
 filterPlausibleCandidates
-  :: HasHeader header
-  => (AnchoredFragment block -> AnchoredFragment header -> Bool)
+  :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
   -> AnchoredFragment block  -- ^ The current chain
   -> [(AnchoredFragment header, peerinfo)]
   -> [(FetchDecision (AnchoredFragment header), peerinfo)]
@@ -686,8 +685,7 @@ prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
                      (peerFetchBytesInFlight inflight)
                      (totalFetchSize blockFetchSize fragments)
 
-totalFetchSize :: HasHeader header
-               => (header -> SizeInBytes)
+totalFetchSize :: (header -> SizeInBytes)
                -> [ChainFragment header]
                -> SizeInBytes
 totalFetchSize blockFetchSize fragments =

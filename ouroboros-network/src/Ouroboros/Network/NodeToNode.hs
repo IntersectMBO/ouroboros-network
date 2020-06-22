@@ -92,7 +92,6 @@ module Ouroboros.Network.NodeToNode (
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 
@@ -143,9 +142,7 @@ type HandshakeTr = WithMuxBearer (ConnectionId Socket.SockAddr)
 
 -- | 'Hanshake' codec for the @node-to-node@ protocol suite.
 --
-nodeToNodeHandshakeCodec :: ( MonadST    m
-                            , MonadThrow m
-                            )
+nodeToNodeHandshakeCodec :: MonadST m
                          => Codec (Handshake NodeToNodeVersion CBOR.Term)
                                   CBOR.DeserialiseFailure m BL.ByteString
 nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec

@@ -88,7 +88,6 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
 import qualified Data.ByteString.Lazy as BL
@@ -204,9 +203,7 @@ maximumMiniProtocolLimits =
     }
 
 
-nodeToClientHandshakeCodec :: ( MonadST    m
-                              , MonadThrow m
-                              )
+nodeToClientHandshakeCodec :: MonadST m
                            => Codec (Handshake NodeToClientVersion CBOR.Term)
                                     CBOR.DeserialiseFailure m BL.ByteString
 nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec

@@ -154,7 +154,6 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 txSubmissionInbound
   :: forall txid tx idx m.
      ( Ord txid
-     , Ord idx
      , NoUnexpectedThunks txid
      , NoUnexpectedThunks tx
      , MonadSTM m

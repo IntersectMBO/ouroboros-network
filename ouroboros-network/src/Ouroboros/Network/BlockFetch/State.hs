@@ -161,7 +161,7 @@ fetchLogicIteration decisionTracer clientStateTracer
 -- real work.
 --
 fetchDecisionsForStateSnapshot
-  :: (HasHeader header, HasHeader block,
+  :: (HasHeader header,
       HeaderHash header ~ HeaderHash block,
       Ord peer)
   => FetchDecisionPolicy header
