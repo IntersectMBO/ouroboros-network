@@ -101,10 +101,10 @@ dnsResolve :: forall a m s.
     -> m (SubscriptionTarget m Socket.SockAddr)
 dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
     rs_e <- (Right <$> getSeed) `catches`
-        [ mkHandler (\ (e :: DNS.DNSError) ->
+        [ Handler (\ (e :: DNS.DNSError) ->
             return (Left $ toException e) :: m (Either SomeException a))
         -- On windows getSeed fails with BadConfiguration if the network is down.
-        , mkHandler (\ (e :: IOError) ->
+        , Handler (\ (e :: IOError) ->
             return (Left $ toException e) :: m (Either SomeException a))
         -- On OSX getSeed can fail with IOError if all network devices are down.
         ]

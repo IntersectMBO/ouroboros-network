@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 module Control.Monad.Class.MonadThrow
@@ -14,7 +15,8 @@ module Control.Monad.Class.MonadThrow
   , Exception(..)
   , SomeException
   , ExitCase(..)
-  , HandlerM(..)
+  , Handler(..)
+  , catches
   ) where
 
 import           Control.Exception (Exception (..), SomeException)
@@ -59,16 +61,8 @@ class MonadThrow m => MonadCatch m where
 
   {-# MINIMAL catch #-}
 
-  type Handler m :: * -> *
-
-  -- | 'Handler' smart constructor; useful when writing polymorphic
-  -- code in some moand m which satisfies 'MonadCatch' constraint.
-  --
-  mkHandler  :: Exception e => (e -> m a) -> Handler m a
-
   catch      :: Exception e => m a -> (e -> m a) -> m a
   catchJust  :: Exception e => (e -> Maybe b) -> m a -> (b -> m a) -> m a
-  catches    :: m a -> [Handler m a] -> m a
 
   try        :: Exception e => m a -> m (Either e a)
   tryJust    :: Exception e => (e -> Maybe b) -> m a -> m (Either b a)
@@ -88,16 +82,6 @@ class MonadThrow m => MonadCatch m where
   default generalBracket
                  :: MonadMask m
                  => m a -> (a -> ExitCase b -> m c) -> (a -> m b) -> m (b, c)
-
-  type instance Handler m = HandlerM m
-
-  default mkHandler :: forall a e. (HandlerM m a ~ Handler m a, Exception e)
-                  => (e -> m a) -> Handler m a
-  mkHandler = HandlerM
-
-  default catches :: forall a. (HandlerM m a ~ Handler m a)
-                  => m a -> [Handler m a] -> m a
-  catches ma handlers = ma `catch` catchesHandler handlers
 
   catchJust p a handler =
       catch a handler'
@@ -145,20 +129,29 @@ class MonadThrow m => MonadCatch m where
 -- | The default handler type for 'catches', whcih is a generalisation of
 -- 'IO.Handler'.
 --
-data HandlerM m a = forall e. Exception e => HandlerM (e -> m a) 
+data Handler m a = forall e. Exception e => Handler (e -> m a)
 
+deriving instance (Functor m) => Functor (Handler m)
+
+-- | Like 'catches' but for 'MonadCatch' rather than only 'IO'.
+--
+catches :: forall m a. MonadCatch m
+         => m a -> [Handler m a] -> m a
+catches ma handlers = ma `catch` catchesHandler handlers
+{-# SPECIALISE catches :: IO a -> [Handler IO a] -> IO a #-}
 
 -- | Used in the default 'catches' implementation.
 --
 catchesHandler :: MonadCatch m
-               => [HandlerM m a]
+               => [Handler m a]
                -> SomeException
                -> m a
 catchesHandler handlers e = foldr tryHandler (throwM e) handlers
-    where tryHandler (HandlerM handler) res
+    where tryHandler (Handler handler) res
               = case fromException e of
                 Just e' -> handler e'
                 Nothing -> res
+{-# SPECIALISE catchesHandler :: [Handler IO a] -> SomeException -> IO a #-}
 
 
 -- | Used in 'generalBracket'
@@ -205,11 +198,7 @@ instance MonadThrow IO where
 
 instance MonadCatch IO where
 
-  type Handler IO = IO.Handler
-  mkHandler = IO.Handler
-
   catch      = IO.catch
-  catches    = IO.catches
 
   catchJust  = IO.catchJust
   try        = IO.try
