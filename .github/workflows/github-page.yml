@@ -17,10 +17,13 @@ jobs:
       - name: Set PATH
         run: |
           echo "::add-path::$HOME/.cabal/bin"
-      - name: Install jq
+      - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y jq
+          apt-get install -y libsodium-dev jq
+      - name: Configure
+        run: |
+          ln -s cabal.project.local.github-pages cabal.project.local
       - name: Install cabal-plan
         run: |
           mkdir -p $HOME/.cabal/bin

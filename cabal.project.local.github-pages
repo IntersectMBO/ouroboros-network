@@ -1,0 +1,2 @@
+package cardano-crypto-praos
+  flags: -external-libsodium-vrf
