@@ -321,7 +321,7 @@ writeTQueueDefault (TQueue _read write) a = do
 readTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m a
 readTQueueDefault queue = maybe retry return =<< tryReadTQueueDefault queue
 
-tryReadTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m (Maybe a)
+tryReadTQueueDefault :: MonadSTMTx (STM m) => TQueueDefault m a -> STM m (Maybe a)
 tryReadTQueueDefault (TQueue read write) = do
   xs <- readTVar read
   case xs of
@@ -330,15 +330,14 @@ tryReadTQueueDefault (TQueue read write) = do
       return (Just x)
     [] -> do
       ys <- readTVar write
-      case ys of
-        [] -> return Nothing
-        _  -> do
-          let (z:zs) = reverse ys
+      case reverse ys of
+        []     -> return Nothing
+        (z:zs) -> do
           writeTVar write []
           writeTVar read zs
           return (Just z)
 
-isEmptyTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m Bool
+isEmptyTQueueDefault :: MonadSTMTx (STM m) => TQueueDefault m a -> STM m Bool
 isEmptyTQueueDefault (TQueue read write) = do
   xs <- readTVar read
   case xs of
@@ -370,7 +369,7 @@ newTBQueueDefault size = do
 readTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m a
 readTBQueueDefault queue = maybe retry return =<< tryReadTBQueueDefault queue
 
-tryReadTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m (Maybe a)
+tryReadTBQueueDefault :: MonadSTMTx (STM m) => TBQueueDefault m a -> STM m (Maybe a)
 tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
   xs <- readTVar read
   r <- readTVar rsize
@@ -381,11 +380,12 @@ tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
       return (Just x)
     [] -> do
       ys <- readTVar write
-      case ys of
+      case reverse ys of
         [] -> return Nothing
-        _  -> do
-          let (z:zs) = reverse ys -- NB. lazy: we want the transaction to be
-                                  -- short, otherwise it will conflict
+
+        -- NB. lazy: we want the transaction to be 
+        -- short, otherwise it will conflict       
+        (z:zs)  -> do
           writeTVar write []
           writeTVar read zs
           return (Just z)

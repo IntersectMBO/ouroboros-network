@@ -24,7 +24,15 @@ import           Data.Time.Clock.POSIX (getPOSIXTime)
 import           Data.Word (Word32, Word8)
 
 newtype Microsecond = Microsecond Integer
-  deriving (Enum, Eq, Integral, Num, Ord, Real, Show)
+  deriving (Enum, Eq, Num, Ord, Real, Show)
+
+-- The derived instance is using `toInteger :: Integer -> Integer` which gives
+-- a warning (`-Widentities`)
+instance Integral Microsecond where
+  toInteger (Microsecond a) = a
+  (Microsecond a) `quotRem` (Microsecond b) =
+    case a `quotRem` b of
+      (x, r) -> (Microsecond x, Microsecond r)
 
 data NtpPacket = NtpPacket
     { ntpParams       :: Word8        -- ^ some magic parameters

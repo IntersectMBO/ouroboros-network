@@ -3,6 +3,9 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- Just to keep 'HasCallstack' on 'validExtension'.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | Reference implementation of a representation of a block chain
 --
 module Ouroboros.Network.MockChain.Chain (

@@ -3,6 +3,10 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TypeFamilies          #-}
+
+-- to preserve 'HasCallstack' constraint on 'checkInvariant'
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 module Control.Monad.Class.MonadSTM.Strict
   ( module X
   , LazyTVar
