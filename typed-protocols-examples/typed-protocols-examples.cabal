@@ -53,6 +53,12 @@ library
   default-language:  Haskell2010
   ghc-options:       -Wall
                      -Wno-unticked-promoted-constructors
+                     -Wcompat
+                     -Wincomplete-uni-patterns                            
+                     -Wincomplete-record-updates                          
+                     -Wpartial-fields                                     
+                     -Widentities                                         
+                     -Wredundant-constraints                              
 
 test-suite typed-protocols-tests
   type:              exitcode-stdio-1.0
