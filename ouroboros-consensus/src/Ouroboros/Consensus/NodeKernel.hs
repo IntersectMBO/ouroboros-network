@@ -32,6 +32,9 @@ import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word32)
 
+import qualified Debug.Trace (trace)
+import           System.IO (hPutStrLn, stderr)
+
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -396,6 +399,10 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
 
         -- Actually produce the block
         newBlock <- lift $
+          (\b-> Debug.Trace.trace
+            (mconcat [ "slot=", show currentSlot, " "
+                     , "block=", show (blockHash b)
+                     ]) b) <$>
           produceBlock
             bcBlockNo
             ticked
