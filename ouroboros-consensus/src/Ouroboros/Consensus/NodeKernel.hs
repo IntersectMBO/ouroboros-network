@@ -263,7 +263,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
                 -- we're 1 slot behind.
                 Origin  -> unSlotNo curSlot + 1
                 At slot -> unSlotNo curSlot - unSlotNo slot
-              maxSlotsBehind = 20
+              maxSlotsBehind = 1000
           return $ if slotsBehind < maxSlotsBehind
             -- When the current chain is near to "now", use deadline mode,
             -- when it is far away, use bulk sync mode.
