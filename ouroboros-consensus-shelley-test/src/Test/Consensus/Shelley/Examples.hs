@@ -26,6 +26,7 @@ import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Time (UTCTime (..), fromGregorian)
+import           Data.Word (Word64)
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hash (ShortHash)
@@ -128,23 +129,23 @@ exampleApplyTxErr =
     $ pure
     $ STS.LedgerFailure
     $ STS.UtxowFailure
-    $ STS.InvalidWitnessesUTXOW ([SL.VKey 1], [])
+    $ STS.InvalidWitnessesUTXOW [SL.VKey 1]
 
 exampleConsensusState :: ConsensusState (BlockProtocol (Block ShortHash))
 exampleConsensusState =
     TPraosState.append 2      (mkPrtclState 2) $
     TPraosState.empty  (At 1) (mkPrtclState 1)
   where
-    mkPrtclState :: Natural -> STS.PrtclState (TPraosMockCrypto ShortHash)
+    mkPrtclState :: Word64 -> STS.PrtclState (TPraosMockCrypto ShortHash)
     mkPrtclState seed = STS.PrtclState
       (Map.fromList
        [ (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)
        , (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 2), 2)
        ])
       SL.NeutralNonce
-      (SL.mkNonce seed)
-      (SL.mkNonce seed)
-      (SL.mkNonce seed)
+      (SL.mkNonceFromNumber seed)
+      (SL.mkNonceFromNumber seed)
+      (SL.mkNonceFromNumber seed)
 
 exampleLedgerState :: LedgerState (Block ShortHash)
 exampleLedgerState = reapplyLedgerBlock
@@ -167,9 +168,9 @@ exampleHeaderState = genesisHeaderState st
       (Map.fromList
         [(SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)])
       SL.NeutralNonce
-      (SL.mkNonce 1)
+      (SL.mkNonceFromNumber 1)
       SL.NeutralNonce
-      (SL.mkNonce 2)
+      (SL.mkNonceFromNumber 2)
 
     st :: TPraosState (ConcreteCrypto ShortHash)
     st = TPraosState.empty (At 1) prtclState

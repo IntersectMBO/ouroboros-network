@@ -65,6 +65,7 @@ import qualified Control.State.Transition.Extended as STS
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -110,7 +111,7 @@ data TPraosToSign c = TPraosToSign {
       -- We include a value here even for blocks forged under the BFT
       -- schedule. It is not required that such a value be verifiable (though
       -- by default it will be verifiably correct, but unused.)
-    , tpraosToSignLeader   :: CertifiedVRF (VRF c) SL.UnitInterval
+    , tpraosToSignLeader   :: CertifiedVRF (VRF c) Natural
       -- | Lightweight delegation certificate mapping the cold (DSIGN) key to
       -- the online KES key.
     , tpraosToSignOCert    :: SL.OCert c
@@ -222,7 +223,7 @@ instance Crypto c => NoUnexpectedThunks (TPraosIsCoreNode c)
 -- selected slot.
 data TPraosProof c = TPraosProof {
       tpraosEta        :: CertifiedVRF (VRF c) SL.Nonce
-    , tpraosLeader     :: CertifiedVRF (VRF c) SL.UnitInterval
+    , tpraosLeader     :: CertifiedVRF (VRF c) Natural
     , tpraosIsCoreNode :: TPraosIsCoreNode c
     }
   deriving (Generic)
@@ -265,7 +266,7 @@ instance TPraosCrypto c => NoUnexpectedThunks (ConsensusConfig (TPraos c))
 --   - All chains are considered equally preferable
 data TPraosChainSelectView c = ChainSelectView {
     csvChainLength :: BlockNo
-  , csvLeaderVRF   :: SL.UnitInterval
+  , csvLeaderVRF   :: VRF.OutputVRF (SL.VRF c)
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Natural
   } deriving (Show, Eq)
@@ -431,8 +432,8 @@ meetsLeaderThreshold
   SL.LedgerView { lvPoolDistr }
   keyHash
   certNat
-    = SL.checkVRFValue
-        (VRF.certifiedNatural certNat)
+    = SL.checkLeaderValue
+        (VRF.certifiedOutput certNat)
         r
         (tpraosLeaderF tpraosParams)
   where

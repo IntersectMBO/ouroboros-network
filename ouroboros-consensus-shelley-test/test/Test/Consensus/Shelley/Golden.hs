@@ -268,7 +268,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\ETXv\132]"
+    , TkBytes "\211\231\US\147"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -616,7 +616,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\ETXv\132]"
+    , TkBytes "\211\231\US\147"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0

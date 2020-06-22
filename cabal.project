@@ -115,8 +115,8 @@ package small-steps
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 2a1afe23d88b91027f972dd7c70cd4aadfb19768
-  --sha256: 0azd8m9qqvpmlqaddyi41iyksx08zn4ffyngmg83psp74l6dwzyf
+  tag: efa4b5ecd7f0a13124616b12679cd42517cd905a
+  --sha256: 0h1h5ifl5d7dl3y6fym9pjd6rfrbh5rbyxs0xw5las503pibv2bf
   subdir:   contra-tracer
 
 source-repository-package
@@ -135,99 +135,99 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 21fb94831099a6b8a4baf7dbc7e2d4c2a76384f1
-  --sha256: 0jsi4pvz3qvi5f7vk0kjsbdjnjgblbhw3granpn3igrm3dbbhk64
+  tag: 1d24715aca78f1ef21278e9ce185792135079ddf
+  --sha256: 1js70y0hnnqnlr04v1k5gb9c03f05iws5s5z7k1i4xjp96wvp0pb
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 21fb94831099a6b8a4baf7dbc7e2d4c2a76384f1
-  --sha256: 0jsi4pvz3qvi5f7vk0kjsbdjnjgblbhw3granpn3igrm3dbbhk64
+  tag: 1d24715aca78f1ef21278e9ce185792135079ddf
+  --sha256: 1js70y0hnnqnlr04v1k5gb9c03f05iws5s5z7k1i4xjp96wvp0pb
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 21fb94831099a6b8a4baf7dbc7e2d4c2a76384f1
-  --sha256: 0jsi4pvz3qvi5f7vk0kjsbdjnjgblbhw3granpn3igrm3dbbhk64
+  tag: 1d24715aca78f1ef21278e9ce185792135079ddf
+  --sha256: 1js70y0hnnqnlr04v1k5gb9c03f05iws5s5z7k1i4xjp96wvp0pb
   subdir: cardano-crypto-class
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 21fb94831099a6b8a4baf7dbc7e2d4c2a76384f1
-  --sha256: 0jsi4pvz3qvi5f7vk0kjsbdjnjgblbhw3granpn3igrm3dbbhk64
+  tag: 1d24715aca78f1ef21278e9ce185792135079ddf
+  --sha256: 1js70y0hnnqnlr04v1k5gb9c03f05iws5s5z7k1i4xjp96wvp0pb
   subdir: slotting
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: semantics/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/ledger/impl
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/ledger/impl/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/crypto/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: byron/chain/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: shelley/chain-and-ledger/dependencies/non-integer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: shelley/chain-and-ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 18f0c670eb24b1f519e298a430651fb38af01117
-  --sha256: 0w6jq0z7qdl331la8wpyya28dvqn77m69nvzssw5pxhp9bwzmjf4
+  tag: ee92681752dc1a27ac77cb3466af8dca4ade997f
+  --sha256: 14k6dfq8ssc3c4shll813b8wfkf9vgsz2djvg2sll9pf2fz2g1vi
   subdir: shelley/chain-and-ledger/executable-spec/test
 
 source-repository-package

@@ -5,7 +5,7 @@
 -- TODO where to put this?
 module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
 
-import           Cardano.Crypto.VRF.Class (certifiedNatural)
+import           Cardano.Crypto.VRF.Class (certifiedOutput)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
@@ -14,7 +14,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 
 {-------------------------------------------------------------------------------
@@ -30,8 +29,7 @@ instance TPraosCrypto c => BlockSupportsProtocol (ShelleyBlock c) where
     ChainSelectView
       { csvChainLength = SL.bheaderBlockNo . SL.bhbody $ hdr
       , csvLeaderVRF =
-              SL.fromNatural
-            . certifiedNatural
+              certifiedOutput
             . SL.bheaderL
             . SL.bhbody
             $ hdr
