@@ -41,11 +41,12 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 1d24715aca78f1ef21278e9ce185792135079ddf
+    commit: 5e0b8bc8c7862be12da6989440f8644ba7c1e1cf
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
+      - cardano-crypto-praos
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs

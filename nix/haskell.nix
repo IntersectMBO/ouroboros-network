@@ -11,6 +11,7 @@
 , compiler ? config.haskellNix.compiler or "ghc865"
 # Enable profiling
 , profiling ? config.haskellNix.profiling or false
+, libsodium ? pkgs.libsodium
 }:
 let
 
@@ -74,6 +75,12 @@ let
         packages.Win32.components.library.build-tools = lib.mkForce [];
         packages.terminal-size.components.library.build-tools = lib.mkForce [];
         packages.network.components.library.build-tools = lib.mkForce [];
+
+        # Make sure that libsodium DLLs are available for tests
+        packages.ouroboros-consensus-shelley-test.components.all.postInstall = lib.mkForce "";
+        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-cardano.components.all.postInstall = lib.mkForce "";
+        packages.ouroboros-consensus-cardano.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       } else {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];

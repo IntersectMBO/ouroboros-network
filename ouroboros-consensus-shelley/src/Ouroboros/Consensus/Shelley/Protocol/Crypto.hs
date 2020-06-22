@@ -20,7 +20,7 @@ import           Cardano.Crypto.Hash.Class (Hash)
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.KES.Sum
 import qualified Cardano.Crypto.VRF.Class as VRF
-import           Cardano.Crypto.VRF.Simple (SimpleVRF)
+import           Cardano.Crypto.VRF.Praos (PraosVRF)
 
 import           Ouroboros.Consensus.Util.Condense (Condense)
 
@@ -51,7 +51,7 @@ data TPraosStandardCrypto
 instance Crypto TPraosStandardCrypto where
   type DSIGN    TPraosStandardCrypto = Ed25519DSIGN
   type KES      TPraosStandardCrypto = Sum7KES Ed25519DSIGN Blake2b_256
-  type VRF      TPraosStandardCrypto = SimpleVRF
+  type VRF      TPraosStandardCrypto = PraosVRF
   type HASH     TPraosStandardCrypto = Blake2b_256
   type ADDRHASH TPraosStandardCrypto = Blake2b_224
 
