@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util hiding (Trivial (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 

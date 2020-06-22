@@ -354,12 +354,12 @@ decodeByronAnnTip = decodeAnnTipIsEBB decodeByronHeaderHash
 encodeByronExtLedgerState :: ExtLedgerState ByronBlock -> Encoding
 encodeByronExtLedgerState = encodeExtLedgerState
     encodeByronLedgerState
-    encodeByronConsensusState
+    encodeByronChainDepState
     encodeByronAnnTip
 
 encodeByronHeaderState :: HeaderState ByronBlock -> Encoding
 encodeByronHeaderState = encodeHeaderState
-    encodeByronConsensusState
+    encodeByronChainDepState
     encodeByronAnnTip
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding

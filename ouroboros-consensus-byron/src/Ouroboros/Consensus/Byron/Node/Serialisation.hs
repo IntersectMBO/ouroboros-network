@@ -56,12 +56,12 @@ instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
 instance DecodeDisk ByronBlock (LedgerState ByronBlock) where
   decodeDisk _ = decodeByronLedgerState
 
--- | @'ConsensusState' ('BlockProtocol' 'ByronBlock')@
+-- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@
 instance EncodeDisk ByronBlock (PBftState PBftByronCrypto) where
-  encodeDisk _ = encodeByronConsensusState
--- | @'ConsensusState' ('BlockProtocol' 'ByronBlock')@
+  encodeDisk _ = encodeByronChainDepState
+-- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@
 instance DecodeDisk ByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronConsensusState (getByronSecurityParam ccfg)
+  decodeDisk ccfg = decodeByronChainDepState (getByronSecurityParam ccfg)
 
 instance EncodeDisk ByronBlock (AnnTip ByronBlock) where
   encodeDisk _ = encodeByronAnnTip

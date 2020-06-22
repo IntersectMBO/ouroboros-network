@@ -43,7 +43,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run (SerialiseNodeToClientConstraints,
                      SerialiseNodeToNodeConstraints)
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Protocol.Abstract (ConsensusState)
+import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
@@ -77,7 +77,7 @@ roundtrip_all
      , Arbitrary' (HeaderHash blk)
      , Arbitrary' (LedgerState blk)
      , Arbitrary' (AnnTip blk)
-     , Arbitrary' (ConsensusState (BlockProtocol blk))
+     , Arbitrary' (ChainDepState (BlockProtocol blk))
 
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
@@ -113,7 +113,7 @@ roundtrip_SerialiseDisk
      , Arbitrary' (Header blk)
      , Arbitrary' (LedgerState blk)
      , Arbitrary' (AnnTip blk)
-     , Arbitrary' (ConsensusState (BlockProtocol blk))
+     , Arbitrary' (ChainDepState (BlockProtocol blk))
      )
   => CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
@@ -134,7 +134,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
       rt (Proxy @(LedgerState blk)) "LedgerState"
     , rt (Proxy @(AnnTip blk)) "AnnTip"
-    , rt (Proxy @(ConsensusState (BlockProtocol blk))) "ConsensusState"
+    , rt (Proxy @(ChainDepState (BlockProtocol blk))) "ChainDepState"
     ]
   where
     rt :: forall a. (Arbitrary' a, EncodeDisk blk a, DecodeDisk blk a)

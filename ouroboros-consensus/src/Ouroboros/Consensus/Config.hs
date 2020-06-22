@@ -21,9 +21,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The top-level node configuration
 data TopLevelConfig blk = TopLevelConfig {
-      configConsensus :: !(ConsensusConfig (BlockProtocol blk))
-    , configLedger    :: !(LedgerConfig                   blk)
-    , configBlock     :: !(BlockConfig                    blk)
+      configConsensus :: !(ConsensusConfig       (BlockProtocol blk))
+    , configIndep     :: !(ChainIndepStateConfig (BlockProtocol blk))
+    , configLedger    :: !(LedgerConfig                         blk)
+    , configBlock     :: !(BlockConfig                          blk)
     }
   deriving (Generic)
 
@@ -36,14 +37,18 @@ configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
 configSecurityParam = protocolSecurityParam . configConsensus
 
-castTopLevelConfig :: ( Coercible (ConsensusConfig (BlockProtocol blk))
-                                  (ConsensusConfig (BlockProtocol blk'))
-                      , LedgerConfig blk ~ LedgerConfig blk'
-                      , Coercible (BlockConfig blk) (BlockConfig blk')
-                      )
-                   => TopLevelConfig blk -> TopLevelConfig blk'
+castTopLevelConfig ::
+     ( Coercible (ConsensusConfig (BlockProtocol blk))
+                 (ConsensusConfig (BlockProtocol blk'))
+     ,   ChainIndepStateConfig (BlockProtocol blk)
+       ~ ChainIndepStateConfig (BlockProtocol blk')
+     , LedgerConfig blk ~ LedgerConfig blk'
+     , Coercible (BlockConfig blk) (BlockConfig blk')
+     )
+  => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
       configConsensus = coerce configConsensus
+    , configIndep     = configIndep
     , configLedger    = configLedger
     , configBlock     = coerce configBlock
     }

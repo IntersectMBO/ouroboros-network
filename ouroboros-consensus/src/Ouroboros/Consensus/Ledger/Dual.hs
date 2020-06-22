@@ -160,6 +160,7 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       configConsensus =                      configConsensus
+    , configIndep     =                      configIndep
     , configLedger    = dualLedgerConfigMain configLedger
     , configBlock     = dualBlockConfigMain  configBlock
     }

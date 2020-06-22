@@ -74,7 +74,7 @@ instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtLedgerState blk) w
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
 deriving instance ( LedgerSupportsProtocol blk
-                  , Eq (ConsensusState (BlockProtocol blk))
+                  , Eq (ChainDepState (BlockProtocol blk))
                   ) => Eq (ExtLedgerState blk)
 
 -- | Lemma:
@@ -182,11 +182,11 @@ instance ( LedgerSupportsProtocol blk
 -------------------------------------------------------------------------------}
 
 encodeExtLedgerState :: (LedgerState   blk -> Encoding)
-                     -> (ConsensusState (BlockProtocol blk) -> Encoding)
+                     -> (ChainDepState (BlockProtocol blk) -> Encoding)
                      -> (AnnTip        blk -> Encoding)
                      -> ExtLedgerState blk -> Encoding
 encodeExtLedgerState encodeLedgerState
-                     encodeConsensusState
+                     encodeChainDepState
                      encodeAnnTip
                      ExtLedgerState{..} = mconcat [
       encodeLedgerState  ledgerState
@@ -194,22 +194,22 @@ encodeExtLedgerState encodeLedgerState
     ]
   where
     encodeHeaderState' = encodeHeaderState
-                           encodeConsensusState
+                           encodeChainDepState
                            encodeAnnTip
 
 decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
-                     -> (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
+                     -> (forall s. Decoder s (ChainDepState  (BlockProtocol blk)))
                      -> (forall s. Decoder s (AnnTip         blk))
                      -> (forall s. Decoder s (ExtLedgerState blk))
 decodeExtLedgerState decodeLedgerState
-                     decodeConsensusState
+                     decodeChainDepState
                      decodeAnnTip = do
     ledgerState <- decodeLedgerState
     headerState <- decodeHeaderState'
     return ExtLedgerState{..}
   where
     decodeHeaderState' = decodeHeaderState
-                           decodeConsensusState
+                           decodeChainDepState
                            decodeAnnTip
 
 {-------------------------------------------------------------------------------
@@ -219,8 +219,8 @@ decodeExtLedgerState decodeLedgerState
 castExtLedgerState
   :: ( Coercible (LedgerState blk)
                  (LedgerState blk')
-     , Coercible (ConsensusState (BlockProtocol blk))
-                 (ConsensusState (BlockProtocol blk'))
+     , Coercible (ChainDepState (BlockProtocol blk))
+                 (ChainDepState (BlockProtocol blk'))
      , TipInfo blk ~ TipInfo blk'
      )
   => ExtLedgerState blk -> ExtLedgerState blk'

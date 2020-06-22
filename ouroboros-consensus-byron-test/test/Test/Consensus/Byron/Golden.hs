@@ -32,7 +32,7 @@ tests :: TestTree
 tests = testGroup "Golden tests"
     -- Note that for most Byron types, we simply wrap the en/decoders from
     -- cardano-ledger, which already has golden tests for them.
-    [ testCase "ConsensusState" test_golden_ConsensusState
+    [ testCase "ChainDepState"  test_golden_ChainDepState
     , testCase "LedgerState"    test_golden_LedgerState
     , testCase "GenTxId"        test_golden_GenTxId
     , testCase "UPIState"       test_golden_UPIState
@@ -46,10 +46,10 @@ tests = testGroup "Golden tests"
     , testCase "Result"         test_golden_Result
     ]
 
-test_golden_ConsensusState :: Assertion
-test_golden_ConsensusState = goldenTestCBOR
-    encodeByronConsensusState
-    exampleConsensusState
+test_golden_ChainDepState :: Assertion
+test_golden_ChainDepState = goldenTestCBOR
+    encodeByronChainDepState
+    exampleChainDepState
     [ TkListLen 2
     , TkInt 0
     , TkListLen 3
@@ -73,7 +73,7 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkListLen 4
     , TkInt 0
     , TkInt 6
-    , TkBytes "test_golden_ConsensusState6"
+    , TkBytes "test_golden_ChainDepState6"
     , TkListLen 2
     , TkInt 1
     , TkInt 4

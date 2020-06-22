@@ -44,18 +44,17 @@ import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
 
 instance CanForge ByronBlock where
-  type ForgeState ByronBlock = ()
   forgeBlock = forgeByronBlock
 
 forgeByronBlock
-  :: forall m. (Monad m, HasCallStack)
+  :: HasCallStack
   => TopLevelConfig ByronBlock
   -> ForgeState ByronBlock
   -> BlockNo                         -- ^ Current block number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
-  -> m ByronBlock
+  -> ByronBlock
 forgeByronBlock = forgeRegularBlock
 
 forgeEBB
@@ -126,21 +125,20 @@ initBlockPayloads = BlockPayloads
   }
 
 forgeRegularBlock
-  :: forall m. (Monad m, HasCallStack)
+  :: HasCallStack
   => TopLevelConfig ByronBlock
   -> ForgeState ByronBlock
   -> BlockNo                           -- ^ Current block number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
-  -> m ByronBlock
-forgeRegularBlock cfg () curNo tickedLedger txs isLeader =
-    let ouroborosPayload =
-          forgePBftFields
-            (mkByronContextDSIGN $ configBlock cfg)
-            isLeader
-            (reAnnotate $ Annotated toSign ())
-    in return $ forge ouroborosPayload
+  -> ByronBlock
+forgeRegularBlock cfg _forgeState curNo tickedLedger txs isLeader =
+    forge $
+      forgePBftFields
+        (mkByronContextDSIGN $ configBlock cfg)
+        isLeader
+        (reAnnotate $ Annotated toSign ())
   where
     curSlot :: SlotNo
     curSlot = tickedSlotNo tickedLedger

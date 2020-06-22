@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.ThreadNet.Util.BlockProduction (
     blockProductionIOLike
@@ -22,40 +23,44 @@ import           Test.Util.Random
 --
 -- Unlike 'IO', 'IOLike' does not give us 'MonadRandom', and so we need to
 -- simulate it.
-blockProductionIOLike :: forall m blk.
-                         (IOLike m, BlockSupportsProtocol blk, CanForge blk)
-                      => TopLevelConfig blk
-                      -> CanBeLeader (BlockProtocol blk)
-                      -> MaintainForgeState (ChaChaT m) blk
-                      -> StrictTVar m ChaChaDRG
-                      -> (   ForgeState blk
-                          -> BlockNo
-                          -> TickedLedgerState blk
-                          -> [GenTx blk]
-                          -> IsLeader (BlockProtocol blk)
-                          -> ChaChaT m blk)
-                      -> m (BlockProduction m blk)
+blockProductionIOLike ::
+     forall m blk.
+     ( IOLike m
+     , BlockSupportsProtocol blk
+     , NoUnexpectedThunks (ExtraForgeState blk)
+     )
+  => TopLevelConfig blk
+  -> CanBeLeader (BlockProtocol blk)
+  -> MaintainForgeState m blk
+  -> StrictTVar m ChaChaDRG
+  -> (   ForgeState blk
+      -> BlockNo
+      -> TickedLedgerState blk
+      -> [GenTx blk]
+      -> IsLeader (BlockProtocol blk)
+      -> m blk)
+      -- ^ We don't use 'forgeBlock' directly but a custom function, used to
+      -- create EBBs JIT.
+  -> m (BlockProduction m blk)
 blockProductionIOLike cfg canBeLeader mfs varRNG forge = do
-    varForgeState <- newMVar (initForgeState mfs)
-    let upd :: Update (ChaChaT m) (ForgeState blk)
-        upd = updateFromMVar (castStrictMVar varForgeState)
+    varForgeState :: StrictMVar m (ForgeState blk) <- newMVar (initForgeState mfs)
     return $ BlockProduction {
-        getLeaderProof = \tracer ledgerState consensusState ->
+        getLeaderProof = \tracer ledgerState chainDepState ->
           simMonadRandom varRNG $
             defaultGetLeaderProof
               cfg
               canBeLeader
-              mfs
-              (traceUpdate (natTracer lift tracer) upd)
+              (hoistMaintainForgeState lift mfs)
+              (castStrictMVar varForgeState)
+              (natTracer lift tracer)
               ledgerState
-              consensusState
+              chainDepState
       , produceBlock = \bno ledgerState txs proof -> do
           forgeState <- readMVar varForgeState
-          simMonadRandom varRNG $
-            forge
-              forgeState
-              bno
-              ledgerState
-              txs
-              proof
+          forge
+            forgeState
+            bno
+            ledgerState
+            txs
+            proof
       }

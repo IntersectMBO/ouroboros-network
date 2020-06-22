@@ -153,9 +153,8 @@ instance ( SimpleCrypto c
          , ContextDSIGN (PBftDSIGN c') ~ ()
          )
      => CanForge (SimplePBftBlock c c') where
-  type ForgeState (SimplePBftBlock c c') = ()
   forgeBlock = forgeSimple $ ForgeExt $ \_cfg _update isLeader ->
-      return . forgePBftExt isLeader
+      forgePBftExt isLeader
 
 {-------------------------------------------------------------------------------
   Serialisation

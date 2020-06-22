@@ -89,6 +89,15 @@ collapse_NP = go
     go Nil         = []
     go (K x :* xs) = x : go xs
 
+ctraverse'_NP  ::
+     forall c proxy xs f f' g. (All c xs,  Applicative g)
+  => proxy c -> (forall a. c a => f a -> g (f' a)) -> NP f xs  -> g (NP f' xs)
+ctraverse'_NP _ f = go
+  where
+    go :: All c ys => NP f ys -> g (NP f' ys)
+    go Nil       = pure Nil
+    go (x :* xs) = (:*) <$> f x <*> go xs
+
 ctraverse__NP ::
      forall c proxy xs f g. (All c xs, Applicative g)
   => proxy c -> (forall a. c a => f a -> g ()) -> NP f xs -> g ()
@@ -113,6 +122,11 @@ instance HAp NP where
 
 instance HCollapse NP where
   hcollapse = collapse_NP
+
+instance HSequence NP where
+  hctraverse' = ctraverse'_NP
+  htraverse'  = hctraverse' (Proxy @Top)
+  hsequence'  = htraverse' unComp
 
 instance HTraverse_ NP where
   hctraverse_ = ctraverse__NP

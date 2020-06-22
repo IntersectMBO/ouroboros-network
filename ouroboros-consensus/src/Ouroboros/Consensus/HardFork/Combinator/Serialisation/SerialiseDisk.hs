@@ -123,20 +123,20 @@ instance SerialiseHFC xs
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
 instance SerialiseHFC xs
-      => EncodeDisk (HardForkBlock xs) (HardForkConsensusState xs) where
+      => EncodeDisk (HardForkBlock xs) (HardForkChainDepState xs) where
   encodeDisk cfg =
       encodeTelescope (hcmap pSHFC (fn . aux) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
       aux :: SerialiseDiskConstraints blk
-          => CodecConfig blk -> WrapConsensusState blk -> K Encoding blk
-      aux cfg' (WrapConsensusState st) = K $ encodeDisk cfg' st
+          => CodecConfig blk -> WrapChainDepState blk -> K Encoding blk
+      aux cfg' (WrapChainDepState st) = K $ encodeDisk cfg' st
 
 instance SerialiseHFC xs
-      => DecodeDisk (HardForkBlock xs) (HardForkConsensusState xs) where
+      => DecodeDisk (HardForkBlock xs) (HardForkChainDepState xs) where
   decodeDisk cfg =
-      decodeTelescope (hcmap pSHFC (Comp . fmap WrapConsensusState . decodeDisk) cfgs)
+      decodeTelescope (hcmap pSHFC (Comp . fmap WrapChainDepState . decodeDisk) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 

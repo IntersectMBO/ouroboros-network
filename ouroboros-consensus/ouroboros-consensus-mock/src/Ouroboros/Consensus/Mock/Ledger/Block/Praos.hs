@@ -23,7 +23,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
-import           Crypto.Random (MonadRandom)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
@@ -155,40 +154,40 @@ stakeDist = equalStakeDist . simpleMockLedgerConfig
   Forging
 -------------------------------------------------------------------------------}
 
-forgePraosExt :: forall c c' m.
+forgePraosExt :: forall c c'.
                  ( SimpleCrypto c
                  , PraosCrypto c'
                  , Signable (PraosKES c') (SignedSimplePraos c c')
-                 , MonadRandom m
                  )
               => TopLevelConfig (SimplePraosBlock c c')
-              -> PraosForgeState c'
+              -> ForgeState (SimplePraosBlock c c')
               -> IsLeader (BlockProtocol (SimplePraosBlock c c'))
               -> SimpleBlock' c (SimplePraosExt c c') ()
-              -> m (SimplePraosBlock c c')
-forgePraosExt cfg forgeState isLeader SimpleBlock{..} = do
-    ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-      forgePraosFields (configConsensus cfg)
-                       forgeState
-                       isLeader
-                       $ \praosExtraFields ->
-        SignedSimplePraos {
-            signedSimplePraos = simpleHeaderStd
-          , signedPraosFields = praosExtraFields
-          }
-    return SimpleBlock {
+              -> SimplePraosBlock c c'
+forgePraosExt cfg ForgeState { chainIndepState = hotKey } isLeader SimpleBlock{..} =
+    SimpleBlock {
         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
       , simpleBody   = simpleBody
       }
   where
     SimpleHeader{..} = simpleHeader
 
+    ext :: SimplePraosExt c c'
+    ext = SimplePraosExt $
+      forgePraosFields (configConsensus cfg)
+                       hotKey
+                       isLeader
+                       $ \praosExtraFields ->
+        SignedSimplePraos {
+            signedSimplePraos = simpleHeaderStd
+          , signedPraosFields = praosExtraFields
+          }
+
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          )
      => CanForge (SimplePraosBlock c c') where
-  type ForgeState (SimplePraosBlock c c') = PraosForgeState c'
   forgeBlock = forgeSimple $ ForgeExt forgePraosExt
 
 {-------------------------------------------------------------------------------

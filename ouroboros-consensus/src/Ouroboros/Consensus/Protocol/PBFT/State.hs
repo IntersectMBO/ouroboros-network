@@ -408,7 +408,7 @@ append k n signer@(PBftSigner _ gk) PBftState{..} =
 
 -- | Rewind the state to the specified slot
 --
--- This matches the semantics of 'rewindConsensusState' in 'OuroborosTag', in
+-- This matches the semantics of 'rewindchainDepState' in 'OuroborosTag', in
 -- that this should be the state after the given point.
 --
 -- NOTE: It only makes sense to rewind to a slot containing a block that we
@@ -677,10 +677,10 @@ data MaybeEbbInfo
 
 -- | Info about an EBB
 --
--- The serialised bytes of the EBB's header hash and its latest previous signed
--- slot. We use 'HeaderHashBytes' instead of the EBB's actual @HeaderHash@
--- because the 'ConsensusState' type family (which we instantiate as
--- 'PBftState') does not take a type argument that to which we can apply
+-- The serialised bytes of the EBB's header hash and its latest previous
+-- signed slot. We use 'HeaderHashBytes' instead of the EBB's actual
+-- @HeaderHash@ because the 'ChainDepState' type family (which we instantiate
+-- as 'PBftState') does not take a type argument that to which we can apply
 -- @HeaderHash@. This is a compromise.
 --
 -- INVARIANT @At 'eiSlot' > 'eiPrevSlot'@

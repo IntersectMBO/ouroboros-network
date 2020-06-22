@@ -124,21 +124,24 @@ data instance ConsensusConfig (Bft c) = BftConfig {
     }
   deriving (Generic)
 
-instance BftCrypto c => ChainSelection (Bft c) where
+instance ChainSelection (Bft c)
+  -- Use defaults
+
+instance HasChainIndepState (Bft c)
   -- Use defaults
 
 instance BftCrypto c => ConsensusProtocol (Bft c) where
-  type ValidationErr  (Bft c) = BftValidationErr
-  type ValidateView   (Bft c) = BftValidateView c
-  type LedgerView     (Bft c) = ()
-  type IsLeader       (Bft c) = ()
-  type ConsensusState (Bft c) = ()
-  type CanBeLeader    (Bft c) = CoreNodeId
-  type CannotLead     (Bft c) = Void
+  type ValidationErr (Bft c) = BftValidationErr
+  type ValidateView  (Bft c) = BftValidateView c
+  type LedgerView    (Bft c) = ()
+  type IsLeader      (Bft c) = ()
+  type ChainDepState (Bft c) = ()
+  type CanBeLeader   (Bft c) = CoreNodeId
+  type CannotLead    (Bft c) = Void
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftConfig{..} (CoreNodeId i) (Ticked (SlotNo n) _l) _cs = do
+  checkIsLeader BftConfig{..} (CoreNodeId i) (Ticked (SlotNo n) _l) _cis _cds = do
       return $ if n `mod` numCoreNodes == i
                  then IsLeader ()
                  else NotLeader
@@ -146,10 +149,10 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  updateConsensusState BftConfig{..}
-                       _l
-                       (BftValidateView (SlotNo n) BftFields{..} signed)
-                       _cs =
+  updateChainDepState BftConfig{..}
+                      _l
+                      (BftValidateView (SlotNo n) BftFields{..} signed)
+                      _cs =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
              ()
@@ -163,7 +166,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  rewindConsensusState _ _ _ _ = Just ()
+  rewindChainDepState _ _ _ _ = Just ()
 
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance

@@ -15,7 +15,7 @@ module Test.Consensus.Shelley.Examples (
   , exampleGenTx
   , exampleGenTxId
   , exampleApplyTxErr
-  , exampleConsensusState
+  , exampleChainDepState
   , exampleLedgerState
   , exampleHeaderState
   , exampleExtLedgerState
@@ -131,8 +131,8 @@ exampleApplyTxErr =
     $ STS.UtxowFailure
     $ STS.InvalidWitnessesUTXOW [SL.VKey 1]
 
-exampleConsensusState :: ConsensusState (BlockProtocol (Block ShortHash))
-exampleConsensusState =
+exampleChainDepState :: ChainDepState (BlockProtocol (Block ShortHash))
+exampleChainDepState =
     TPraosState.append 2      (mkPrtclState 2) $
     TPraosState.empty  (At 1) (mkPrtclState 1)
   where

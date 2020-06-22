@@ -38,6 +38,7 @@ import           Cardano.Slotting.Slot (EpochSize (..))
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
@@ -56,8 +57,7 @@ import qualified Shelley.Spec.Ledger.TxData as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN,
-                     HotKey (..))
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
@@ -150,7 +150,7 @@ genCoreNode startKESPeriod = do
 mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
     TPraosLeaderCredentials {
-        tpraosLeaderCredentialsSignKey    = HotKey 0 cnKES
+        tpraosLeaderCredentialsSignKey    = cnKES
       , tpraosLeaderCredentialsIsCoreNode = TPraosIsCoreNode {
           tpraosIsCoreNodeOpCert     = cnOCert
         , tpraosIsCoreNodeColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
@@ -287,7 +287,7 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
 
 mkProtocolRealTPraos
-  :: forall m c. (MonadRandom m, TPraosCrypto c)
+  :: forall m c. (IOLike m, TPraosCrypto c)
   => ShelleyGenesis c
   -> CoreNode c
   -> ProtocolInfo m (ShelleyBlock c)

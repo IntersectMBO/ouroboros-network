@@ -89,23 +89,26 @@ data instance ConsensusConfig ProtocolB = CfgB {
 instance ChainSelection ProtocolB where
   -- Use defaults
 
-instance ConsensusProtocol ProtocolB where
-  type ConsensusState ProtocolB = ()
-  type LedgerView     ProtocolB = ()
-  type IsLeader       ProtocolB = ()
-  type CanBeLeader    ProtocolB = ()
-  type CannotLead     ProtocolB = Void
-  type ValidateView   ProtocolB = ()
-  type ValidationErr  ProtocolB = Void
+instance HasChainIndepState ProtocolB where
+  -- Use defaults
 
-  checkIsLeader CfgB{..} () (Ticked slot _) _ =
+instance ConsensusProtocol ProtocolB where
+  type ChainDepState ProtocolB = ()
+  type LedgerView    ProtocolB = ()
+  type IsLeader      ProtocolB = ()
+  type CanBeLeader   ProtocolB = ()
+  type CannotLead    ProtocolB = Void
+  type ValidateView  ProtocolB = ()
+  type ValidationErr ProtocolB = Void
+
+  checkIsLeader CfgB{..} () (Ticked slot _) _ _ =
       return $ if slot `Set.member` cfgB_leadInSlots
                  then IsLeader ()
                  else NotLeader
 
   protocolSecurityParam = cfgB_k
-  updateConsensusState  = \_ _ _ _ -> return ()
-  rewindConsensusState  = \_ _ _ _ -> Just ()
+  updateChainDepState  = \_ _ _ _ -> return ()
+  rewindChainDepState  = \_ _ _ _ -> Just ()
 
 data BlockB = BlkB {
       blkB_header :: Header BlockB
@@ -199,7 +202,7 @@ instance CommonProtocolParams BlockB where
   maxTxSize     _ = maxBound
 
 instance CanForge BlockB where
-  forgeBlock _ _ bno (Ticked sno st) _txs _ = return $ BlkB {
+  forgeBlock _ _ bno (Ticked sno st) _txs _ = BlkB {
       blkB_header = HdrB {
           hdrB_fields = HeaderFields {
               headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno

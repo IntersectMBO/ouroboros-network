@@ -1,10 +1,14 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -49,6 +53,8 @@ module Ouroboros.Consensus.Util (
   , (....:)
     -- * Miscellaneous
   , fib
+    -- * Trivial
+  , Trivial(..)
   ) where
 
 import qualified Data.ByteString as Strict
@@ -60,6 +66,7 @@ import           Data.Kind
 import           Data.List (foldl', maximumBy)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.SOP.Strict
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -255,3 +262,21 @@ fib n = round $ phi ** fromIntegral n / sq5
     sq5, phi :: Double
     sq5 = sqrt 5
     phi = (1 + sq5) / 2
+
+{-------------------------------------------------------------------------------
+  Trivial
+-------------------------------------------------------------------------------}
+
+-- | Trivial values of the same type should all be equal:
+-- > forall (x :: a), x == trivial (Proxy @a)
+class Trivial a where
+  trivial :: Proxy a -> a
+
+instance Trivial () where
+  trivial _ = ()
+
+instance All (Trivial `Compose` f) xs => Trivial (NP f xs) where
+  trivial _ = hcpure (Proxy @(Trivial `Compose` f)) trivialOne
+    where
+      trivialOne :: forall a. (Trivial `Compose` f) a => f a
+      trivialOne = trivial (Proxy @(f a))

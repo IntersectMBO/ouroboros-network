@@ -316,7 +316,7 @@ mkProtocolCardanoAndHardForkTxs
               generatedSecretsByron
               propPV
 
-    pInfo :: ProtocolInfo (ChaChaT m) (CardanoBlock sc)
+    pInfo :: ProtocolInfo m (CardanoBlock sc)
     pInfo = protocolInfoCardano
         -- Byron
         genesisByron

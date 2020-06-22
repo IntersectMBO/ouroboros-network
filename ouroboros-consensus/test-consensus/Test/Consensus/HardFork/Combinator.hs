@@ -238,18 +238,13 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                                 initLedgerState
             , headerState = genesisHeaderState $
                               initHardForkState
-                                (WrapConsensusState initConsensusState)
+                                (WrapChainDepState initChainDepState)
             }
         , pInfoLeaderCreds = Just (
                 OptCons (WrapCanBeLeader ())
               $ OptCons (WrapCanBeLeader ())
               $ OptNil
-            , MaintainForgeState {
-                  initForgeState   = PerEraForgeState $ WrapForgeState ()
-                                                     :* WrapForgeState ()
-                                                     :* Nil
-                , updateForgeState = \_ _ -> return ()
-                }
+            , defaultMaintainForgeState
             )
         }
 
@@ -259,8 +254,8 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , lgrA_transition = Nothing
         }
 
-    initConsensusState :: ConsensusState ProtocolA
-    initConsensusState = ()
+    initChainDepState :: ChainDepState ProtocolA
+    initChainDepState = ()
 
     topLevelConfig :: CoreNodeId -> TopLevelConfig TestBlock
     topLevelConfig nid = TopLevelConfig {
@@ -272,6 +267,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* (WrapPartialConsensusConfig $ consensusConfigB nid)
                 :* Nil
             }
+        , configIndep  = PerEraChainIndepStateConfig $
+                              (WrapChainIndepStateConfig ())
+                           :* (WrapChainIndepStateConfig ())
+                           :* Nil
         , configLedger = HardForkLedgerConfig {
               hardForkLedgerConfigK      = k
             , hardForkLedgerConfigShape  = shape
@@ -368,9 +367,9 @@ type TestBlock = HardForkBlock '[BlockA, BlockB]
 
 instance CanHardFork '[BlockA, BlockB] where
   hardForkEraTranslation = EraTranslation {
-        translateLedgerState    = PCons ledgerState_AtoB    PNil
-      , translateLedgerView     = PCons ledgerView_AtoB     PNil
-      , translateConsensusState = PCons consensusState_AtoB PNil
+        translateLedgerState   = PCons ledgerState_AtoB   PNil
+      , translateLedgerView    = PCons ledgerView_AtoB    PNil
+      , translateChainDepState = PCons chainDepState_AtoB PNil
       }
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
@@ -422,5 +421,5 @@ ledgerState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ LgrA{..} -> LgrB {
 ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (Translate WrapLedgerView) BlockA BlockB
 ledgerView_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapLedgerView ()
 
-consensusState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapConsensusState) BlockA BlockB
-consensusState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapConsensusState ()
+chainDepState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapChainDepState) BlockA BlockB
+chainDepState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapChainDepState ()

@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -12,7 +11,6 @@ module Ouroboros.Consensus.Mock.Ledger.Forge (
   ) where
 
 import           Codec.Serialise (Serialise (..), serialise)
-import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
@@ -31,17 +29,15 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- This is used in 'forgeSimple', which takes care of the generic part of the
 -- mock block.
 data ForgeExt c ext = ForgeExt {
-      forgeExt :: forall m. MonadRandom m
-               => TopLevelConfig          (SimpleBlock c ext)
+      forgeExt :: TopLevelConfig          (SimpleBlock c ext)
                -> ForgeState              (SimpleBlock c ext)
                -> IsLeader (BlockProtocol (SimpleBlock c ext))
                -> SimpleBlock' c ext ()
-               -> m (SimpleBlock c ext)
+               -> SimpleBlock c ext
     }
 
-forgeSimple :: forall c m ext.
-               ( MonadRandom m
-               , SimpleCrypto c
+forgeSimple :: forall c ext.
+               ( SimpleCrypto c
                , MockProtocolSpecific c ext
                )
             => ForgeExt c ext
@@ -51,8 +47,8 @@ forgeSimple :: forall c m ext.
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
-            -> m (SimpleBlock c ext)
-forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock tickedLedger txs proof = do
+            -> SimpleBlock c ext
+forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock tickedLedger txs proof =
     forgeExt cfg forgeState proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body

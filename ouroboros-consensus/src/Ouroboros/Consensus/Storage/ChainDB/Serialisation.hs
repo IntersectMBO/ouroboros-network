@@ -332,13 +332,13 @@ takePrefix (PrefixLen n) =
   Forwarding instances
 -------------------------------------------------------------------------------}
 
-instance EncodeDisk blk (ConsensusState (BlockProtocol blk))
-      => EncodeDisk blk (WrapConsensusState blk) where
-  encodeDisk cfg (WrapConsensusState st) = encodeDisk cfg st
+instance EncodeDisk blk (ChainDepState (BlockProtocol blk))
+      => EncodeDisk blk (WrapChainDepState blk) where
+  encodeDisk cfg (WrapChainDepState st) = encodeDisk cfg st
 
-instance DecodeDisk blk (ConsensusState (BlockProtocol blk))
-      => DecodeDisk blk (WrapConsensusState blk) where
-  decodeDisk cfg = WrapConsensusState <$> decodeDisk cfg
+instance DecodeDisk blk (ChainDepState (BlockProtocol blk))
+      => DecodeDisk blk (WrapChainDepState blk) where
+  decodeDisk cfg = WrapChainDepState <$> decodeDisk cfg
 
 instance EncodeDisk blk blk
       => EncodeDisk blk (I blk) where

@@ -48,10 +48,10 @@ instance Crypto c => EncodeDisk (ShelleyBlock c) (LedgerState (ShelleyBlock c)) 
 instance Crypto c => DecodeDisk (ShelleyBlock c) (LedgerState (ShelleyBlock c)) where
   decodeDisk _ = decodeShelleyLedgerState
 
--- | @'ConsensusState' ('BlockProtocol' ('ShelleyBlock' c))@
+-- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' c))@
 instance Crypto c => EncodeDisk (ShelleyBlock c) (TPraosState c) where
   encodeDisk _ = toCBOR
--- | @'ConsensusState' ('BlockProtocol' ('ShelleyBlock' c))@
+-- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' c))@
 instance Crypto c => DecodeDisk (ShelleyBlock c) (TPraosState c) where
   decodeDisk _ = fromCBOR
 

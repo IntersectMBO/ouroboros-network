@@ -22,13 +22,13 @@ module Ouroboros.Consensus.Shelley.Node (
   ) where
 
 import           Control.Monad.Reader (runReader)
-import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import           Cardano.Prelude (Natural)
 
+import           Cardano.Crypto.KES.Class
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin))
@@ -45,6 +45,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
+import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
@@ -66,7 +67,9 @@ import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (HotKey)
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
+                     (HotKey (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
 {-------------------------------------------------------------------------------
@@ -74,36 +77,35 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 -------------------------------------------------------------------------------}
 
 data TPraosLeaderCredentials c = TPraosLeaderCredentials {
-    -- | Signing KES key. Note that this is not inside 'TPraosIsCoreNode' since
-    --   it gets evolved automatically, whereas 'TPraosIsCoreNode' does not
-    --   change.
-    tpraosLeaderCredentialsSignKey    :: HotKey c
+    -- | The unevolved signing KES key (at evolution 0).
+    --
+    -- Note that this is not inside 'TPraosIsCoreNode' since it gets evolved
+    -- automatically, whereas 'TPraosIsCoreNode' does not change.
+    tpraosLeaderCredentialsSignKey    :: SignKeyKES (KES c)
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
   }
 
 
 shelleyMaintainForgeState
-  :: forall m c. (MonadRandom m, TPraosCrypto c)
+  :: forall m c. (IOLike m, TPraosCrypto c)
   => TPraosParams
   -> TPraosLeaderCredentials c
   -> MaintainForgeState m (ShelleyBlock c)
-shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials key isACoreNode) =
-    MaintainForgeState {
-        initForgeState   = TPraosForgeState key
-      , updateForgeState = evolveKey isACoreNode
-      }
+shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials signKeyKES icn) =
+    defaultMaintainNoExtraForgeState initHotKey
   where
-    evolveKey :: TPraosIsCoreNode c
-              -> Update m (TPraosForgeState c) -> SlotNo -> m ()
-    evolveKey TPraosIsCoreNode{..} upd curSlot =
-        evolveKESKeyIfNecessary upd (SL.KESPeriod kesEvolution)
-      where
-        kesPeriodNat = fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
-        SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
-        kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
+    SL.KESPeriod start = SL.ocertKESPeriod $ tpraosIsCoreNodeOpCert icn
+
+    initHotKey = HotKey {
+        hkStart     = SL.KESPeriod start
+      , hkEnd       = SL.KESPeriod (start + fromIntegral tpraosMaxKESEvo)
+        -- We get an unevolved KES key
+      , hkEvolution = 0
+      , hkKey       = signKeyKES
+      }
 
 protocolInfoShelley
-  :: forall m c. (MonadRandom m, TPraosCrypto c)
+  :: forall m c. (IOLike m, TPraosCrypto c)
   => SL.ShelleyGenesis c
   -> Natural -- ^ Max major protocol version
   -> SL.ProtVer
@@ -119,6 +121,7 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
     topLevelConfig = TopLevelConfig {
         configConsensus = consensusConfig
+      , configIndep     = tpraosParams
       , configLedger    = ledgerConfig
       , configBlock     = blockConfig
       }
@@ -157,8 +160,8 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
       , shelleyState = SL.chainNes initShelleyState
       }
 
-    initConsensusState :: State.TPraosState c
-    initConsensusState = State.empty Origin $
+    initChainDepState :: State.TPraosState c
+    initChainDepState = State.empty Origin $
       SL.PrtclState
          (SL.chainOCertIssue     initShelleyState)
          (SL.chainEpochNonce     initShelleyState)
@@ -188,7 +191,7 @@ protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
     initExtLedgerState :: ExtLedgerState (ShelleyBlock c)
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
-      , headerState = genesisHeaderState initConsensusState
+      , headerState = genesisHeaderState initChainDepState
       }
 
     runShelleyBase :: SL.ShelleyBase a -> a

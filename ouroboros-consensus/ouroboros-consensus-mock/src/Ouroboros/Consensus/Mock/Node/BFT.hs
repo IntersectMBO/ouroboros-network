@@ -40,6 +40,7 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
                   | n <- enumCoreNodes numCoreNodes
                   ]
               }
+          , configIndep  = ()
           , configLedger = SimpleLedgerConfig () eraParams
           , configBlock  = SimpleBlockConfig securityParam
           }

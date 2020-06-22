@@ -143,7 +143,7 @@ instance Show (ForgeEbbEnv blk) where
 -- will restart and use 'tnaRekeyM' to compute its new 'ProtocolInfo'.
 type RekeyM m blk =
      CoreNodeId
-  -> ProtocolInfo (ChaChaT m) blk
+  -> ProtocolInfo m blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
@@ -158,11 +158,11 @@ data TestNodeInitialization m blk = TestNodeInitialization
   { tniCrucialTxs   :: [GenTx blk]
     -- ^ these transactions are added immediately and repeatedly (whenever the
     -- 'ledgerTipSlot' changes)
-  , tniProtocolInfo :: ProtocolInfo (ChaChaT m) blk
+  , tniProtocolInfo :: ProtocolInfo m blk
   }
 
 plainTestNodeInitialization
-  :: ProtocolInfo (ChaChaT m) blk -> TestNodeInitialization m blk
+  :: ProtocolInfo m blk -> TestNodeInitialization m blk
 plainTestNodeInitialization pInfo = TestNodeInitialization
     { tniCrucialTxs   = []
     , tniProtocolInfo = pInfo
@@ -430,7 +430,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             NodeRestarts m = nodeRestarts
 
         loop :: SlotNo
-             -> ProtocolInfo (ChaChaT m) blk
+             -> ProtocolInfo m blk
              -> NodeRestart
              -> Map SlotNo NodeRestart -> m ()
         loop s pInfo nr rs = do
@@ -676,7 +676,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> OracularClock m
       -> SlotNo
       -> ResourceRegistry m
-      -> ProtocolInfo (ChaChaT m) blk
+      -> ProtocolInfo m blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -712,7 +712,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               Just creds -> creds
 
       blockProduction <- blockProductionIOLike pInfoConfig canBeLeader maintainForgeState varRNG $
-         \upd currentBno tickedLdgSt txs prf -> do
+         \forgeState currentBno tickedLdgSt txs prf -> do
             let currentSlot  = tickedSlotNo tickedLdgSt
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
@@ -730,8 +730,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
             case mbForgeEbbEnv <* guard needEBB of
               Nothing ->
                  -- no EBB needed, forge without making one
-                  forgeBlock pInfoConfig upd
-                    currentBno tickedLdgSt txs prf
+                  return $
+                    forgeBlock
+                      pInfoConfig
+                      forgeState
+                      currentBno
+                      tickedLdgSt
+                      txs
+                      prf
               Just forgeEbbEnv -> do
                   -- The EBB shares its BlockNo with its predecessor (if
                   -- there is one)
@@ -760,14 +766,19 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                   -- forge the block usings the ledger state that includes
                   -- the EBB
-                  blk <- forgeBlock pInfoConfig upd
-                    currentBno tickedLdgSt' txs prf
+                  let blk = forgeBlock
+                              pInfoConfig
+                              forgeState
+                              currentBno
+                              tickedLdgSt'
+                              txs
+                              prf
 
                   -- If the EBB or the subsequent block is invalid, then the
                   -- ChainDB will reject it as invalid, and
                   -- 'Test.ThreadNet.General.prop_general' will eventually fail
                   -- because of a block rejection.
-                  void $ lift $ ChainDB.addBlock chainDB ebb
+                  void $ ChainDB.addBlock chainDB ebb
                   pure blk
 
       let -- prop_general relies on these tracers
@@ -1291,7 +1302,7 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
-  , Show (ForgeState blk)
+  , Show (ExtraForgeState blk)
   , ShowQuery (Query blk)
   , HasNestedContent Header blk
   )

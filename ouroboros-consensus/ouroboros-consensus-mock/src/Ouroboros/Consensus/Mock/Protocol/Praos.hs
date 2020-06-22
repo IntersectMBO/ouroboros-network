@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosFields(..)
   , PraosExtraFields(..)
   , PraosParams(..)
-  , PraosForgeState(..)
+  , HotKey(..)
   , forgePraosFields
   , evolveKey
     -- * Tags
@@ -69,7 +69,6 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -120,38 +119,35 @@ praosValidateView getFields hdr =
   Forging
 -------------------------------------------------------------------------------}
 
-data PraosForgeState c =
-    -- | The KES key
-    PraosKey !(SignKeyKES (PraosKES c))
+newtype HotKey c = HotKey (SignKeyKES (PraosKES c))
   deriving (Generic)
 
-deriving instance PraosCrypto c => Show (PraosForgeState c)
+deriving instance PraosCrypto c => Show (HotKey c)
 
 -- We override 'showTypeOf' to make sure to show @c@
-instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
-  showTypeOf _ = show $ typeRep (Proxy @(PraosForgeState c))
+instance PraosCrypto c => NoUnexpectedThunks (HotKey c) where
+  showTypeOf _ = show $ typeRep (Proxy @(HotKey c))
 
 evolveKey :: (Monad m, PraosCrypto c)
-          => Update m (PraosForgeState c) -> SlotNo -> m ()
-evolveKey upd slotNo = runUpdate_ upd $ \(PraosKey oldKey) -> do
+          => SlotNo -> HotKey c -> m (HotKey c)
+evolveKey slotNo (HotKey oldKey) = do
     let newKey = fromMaybe (error "evolveKey: updateKES failed") $
                  updateKES () oldKey kesPeriod
-    return $ PraosKey newKey
+    return $ HotKey newKey
   where
    kesPeriod :: Period
    kesPeriod = fromIntegral $ unSlotNo slotNo
 
-forgePraosFields :: ( Monad m
-                    , PraosCrypto c
+forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => ConsensusConfig (Praos c)
-                 -> PraosForgeState c
+                 -> HotKey c
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
-                 -> m (PraosFields c toSign)
-forgePraosFields PraosConfig{..} (PraosKey key) PraosProof{..} mkToSign = do
-    return $ PraosFields {
+                 -> PraosFields c toSign
+forgePraosFields PraosConfig{..} (HotKey key) PraosProof{..} mkToSign =
+    PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields
       }
@@ -250,18 +246,22 @@ data instance ConsensusConfig (Praos c) = PraosConfig
 instance PraosCrypto c => ChainSelection (Praos c) where
   -- Use defaults
 
+instance PraosCrypto c => HasChainIndepState (Praos c) where
+  type ChainIndepState (Praos c) = HotKey c
+  updateChainIndepState _ () = evolveKey
+
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type LedgerView     (Praos c) = StakeDist
-  type IsLeader       (Praos c) = PraosProof c
-  type ValidationErr  (Praos c) = PraosValidationError c
-  type ValidateView   (Praos c) = PraosValidateView    c
-  type ConsensusState (Praos c) = [BlockInfo c]
-  type CanBeLeader    (Praos c) = CoreNodeId
-  type CannotLead     (Praos c) = Void
+  type LedgerView    (Praos c) = StakeDist
+  type IsLeader      (Praos c) = PraosProof c
+  type ValidationErr (Praos c) = PraosValidationError c
+  type ValidateView  (Praos c) = PraosValidateView    c
+  type ChainDepState (Praos c) = [BlockInfo c]
+  type CanBeLeader   (Praos c) = CoreNodeId
+  type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) cs = do
+  checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) _cis cds = do
       rho <- evalCertified () rho' praosSignKeyVRF
       y   <- evalCertified () y'   praosSignKeyVRF
       return $ if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
@@ -273,12 +273,12 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
                  }
           else NotLeader
     where
-      (rho', y', t) = rhoYT cfg cs slot nid
+      (rho', y', t) = rhoYT cfg cds slot nid
 
-  updateConsensusState cfg@PraosConfig{..}
-                       (Ticked _ sd)
-                       (PraosValidateView slot PraosFields{..} toSign)
-                       cs = do
+  updateChainDepState cfg@PraosConfig{..}
+                      (Ticked _ sd)
+                      (PraosValidateView slot PraosFields{..} toSign)
+                      cs = do
     let PraosExtraFields{..} = praosExtraFields
         nid                  = praosCreator
 
@@ -349,7 +349,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindConsensusState _proxy _k rewindTo =
+  rewindChainDepState _proxy _k rewindTo =
       -- This may drop us back to the empty list if we go back to genesis
       Just . dropWhile (\bi -> At (biSlot bi) > pointSlot rewindTo)
 

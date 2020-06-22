@@ -40,7 +40,7 @@ import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Golden tests"
-    [ testCase "ConsensusState" test_golden_ConsensusState
+    [ testCase "ChainDepState"  test_golden_ChainDepState
     , testCase "LedgerState"    test_golden_LedgerState
     , testCase "HeaderState"    test_golden_HeaderState
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
@@ -206,10 +206,10 @@ testResults = testGroup "Results"
     goldenTestResult :: Query (Block ShortHash) result -> result -> FlatTerm -> Assertion
     goldenTestResult q = goldenTestCBOR (encodeShelleyResult q)
 
-test_golden_ConsensusState :: Assertion
-test_golden_ConsensusState = goldenTestCBOR
+test_golden_ChainDepState :: Assertion
+test_golden_ChainDepState = goldenTestCBOR
     toCBOR
-    exampleConsensusState
+    exampleChainDepState
     [ TkListLen 2
     , TkInt 0
     , TkListLen 2

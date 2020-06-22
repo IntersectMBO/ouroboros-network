@@ -338,7 +338,7 @@ newtype Retract m g f x y = Retract { retractWith :: g x -> f y -> m (f x) }
 -- state. When we rewind the consensus state, we might cross a hard fork
 -- transition point. So we first /retract/ the telescope /to/ the era containing
 -- the slot number that we want to rewind to, and only then call
--- 'rewindConsensusState' on that era. Of course, retraction may fail (we
+-- 'rewindChainDepState' on that era. Of course, retraction may fail (we
 -- might not /have/ past consensus state to rewind to anymore); this failure
 -- would require a choice for a particular monad @m@.
 retract :: forall m h g f xs. Monad m

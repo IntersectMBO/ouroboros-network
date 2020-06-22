@@ -34,6 +34,7 @@ protocolInfoMockPBFT params eraParams nid =
             configConsensus = PBftConfig {
                 pbftParams = params
               }
+          , configIndep  = ()
           , configLedger = SimpleLedgerConfig ledgerView eraParams
           , configBlock  = SimpleBlockConfig  (pbftSecurityParam params)
           }
