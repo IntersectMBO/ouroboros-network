@@ -21,6 +21,9 @@ jobs:
         run: |
           apt-get update
           apt-get install -y libsodium-dev jq
+      - name: Configure
+        run: |
+          ln -s cabal.project.local.github-pages cabal.project.local
       - name: Install cabal-plan
         run: |
           mkdir -p $HOME/.cabal/bin
