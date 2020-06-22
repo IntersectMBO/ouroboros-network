@@ -46,6 +46,12 @@ library
                        time              >=1.6 && <1.10
 
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns                            
+                       -Wincomplete-record-updates                          
+                       -Wpartial-fields                                     
+                       -Widentities                                         
+                       -Wredundant-constraints                              
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
 
