@@ -27,7 +27,6 @@ import           Data.Word (Word64)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
-import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -89,28 +88,25 @@ data CoreNodeKeyInfo h = CoreNodeKeyInfo
       )
   }
 
-coreNodeKeys
-  :: HashAlgorithm h
-  => CoreNode (TPraosMockCrypto h)
-  -> CoreNodeKeyInfo h
-coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
-  = CoreNodeKeyInfo
-      { cnkiCoreNode =
+coreNodeKeys :: CoreNode (TPraosMockCrypto h) -> CoreNodeKeyInfo h
+coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
+    CoreNodeKeyInfo {
+        cnkiCoreNode =
           ( mkDSIGNKeyPair cnGenesisKey
           , Gen.AllIssuerKeys
             { Gen.cold = mkDSIGNKeyPair cnDelegateKey
-            , Gen.vrf  = mkVRFKeyPair cnVRF
-            , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
-            , Gen.hk   = SL.hashKey (SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
+              -- 'CoreNodeKeyInfo' is used for all sorts of generators, not
+              -- only transaction generators. To generate transactions we
+              -- don't need all these keys, hence the 'error's.
+            , Gen.vrf  = error "vrf used while generating transactions"
+            , Gen.hot  = error "hot used while generating transactions"
+            , Gen.hk   = error "hk used while generating transactions"
             }
           )
       , cnkiKeyPair = (mkDSIGNKeyPair cnDelegateKey, mkDSIGNKeyPair cnStakingKey)
       }
   where
-    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k)
-                                  k
-    mkVRFKeyPair k = (k, deriveVerKeyVRF k)
-    mkKESKeyPair k = (k, deriveVerKeyKES k)
+    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k) k
 
 genCoreNode
   :: (MonadRandom m, TPraosCrypto c)
