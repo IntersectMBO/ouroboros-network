@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.ThreadNet.Cardano (
     tests
@@ -12,6 +13,7 @@ import           Control.Exception (assert)
 import           Control.Monad (guard, replicateM)
 import           Data.List ((!!))
 import qualified Data.Map as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -23,6 +25,7 @@ import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.Slot (EpochNo, EpochSize (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
+import qualified Cardano.Crypto.KES.Class as KES
 
 import           Ouroboros.Network.MockChain.Chain (chainToList)
 
@@ -46,8 +49,8 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto)
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES, TPraosCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
@@ -203,8 +206,9 @@ prop_simple_cardano_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    maxKESEvolution :: Word64
-    maxKESEvolution = 100
+    maxKESEvolutions :: Word64
+    maxKESEvolutions = fromIntegral $
+      KES.totalPeriodsKES (Proxy @(KES (TPraosMockCrypto Blake2b_256)))
 
     coreNodes :: [Shelley.CoreNode (TPraosMockCrypto Blake2b_256)]
     coreNodes =
@@ -221,7 +225,7 @@ prop_simple_cardano_convergence TestSetup
           setupK
           setupD
           setupSlotLengthShelley
-          maxKESEvolution
+          maxKESEvolutions
           coreNodes
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test

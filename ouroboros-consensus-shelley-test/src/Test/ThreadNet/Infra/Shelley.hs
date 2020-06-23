@@ -177,7 +177,13 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgActiveSlotsCoeff      = recip recipF   -- ie f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
-    , sgSlotsPerKESPeriod     = 10 -- TODO
+      -- TODO maxKESEvolutions * sgSlotsPerKESPeriod = max number of slots the
+      -- test can run without needing new ocerts. The maximum number of slots
+      -- the tests run now is 200 and the mock KES supports 10 evolutions, so
+      -- 10 * 20 == 200 is enough.
+      -- We can relax this in:
+      -- <https://github.com/input-output-hk/ouroboros-network/issues/2107>
+    , sgSlotsPerKESPeriod     = 20
     , sgMaxKESEvolutions      = maxKESEvolutions
     , sgSlotLength            = getSlotLength slotLength
     , sgUpdateQuorum          = 1  -- TODO
