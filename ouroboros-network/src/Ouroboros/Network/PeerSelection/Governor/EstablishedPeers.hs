@@ -107,7 +107,7 @@ jobPromoteColdPeer :: forall peeraddr peerconn m.
                    => PeerSelectionActions peeraddr peerconn m
                    -> peeraddr
                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteColdPeer PeerSelectionActions{establishPeerConnection} peeraddr =
+jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {establishPeerConnection}} peeraddr =
     Job job handler "promoteColdPeer"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
@@ -228,7 +228,7 @@ jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
                          -> peeraddr
                          -> peerconn
                          -> Job m (Completion m peeraddr peerconn)
-jobDemoteEstablishedPeer PeerSelectionActions{closePeerConnection}
+jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateActions {closePeerConnection}}
                          peeraddr peerconn =
     Job job handler "demoteEstablishedPeer"
   where
