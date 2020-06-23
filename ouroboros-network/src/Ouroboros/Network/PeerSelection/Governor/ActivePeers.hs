@@ -102,7 +102,7 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    -> peeraddr
                    -> peerconn
                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
+jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
                    peeraddr peerconn =
     Job job handler "promoteWarmPeer"
   where
@@ -210,7 +210,7 @@ jobDemoteActivePeer :: forall peeraddr peerconn m.
                     -> peeraddr
                     -> peerconn
                     -> Job m (Completion m peeraddr peerconn)
-jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
+jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
                     peeraddr peerconn =
     Job job handler "demoteActivePeer"
   where
