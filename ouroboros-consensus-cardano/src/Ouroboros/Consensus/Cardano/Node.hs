@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.SOP (OptNP (..))
@@ -295,6 +296,7 @@ protocolInfoCardano
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley protVer maxMajorPV mbCredsShelley
                     mbLowerBound triggerHardFork =
+    assertWithMsg (checkMaxKESEvolutions genesisShelley) $
     ProtocolInfo {
         pInfoConfig      = cfg
       , pInfoInitLedger  = ExtLedgerState {

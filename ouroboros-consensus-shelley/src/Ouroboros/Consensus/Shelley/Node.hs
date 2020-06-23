@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -19,8 +20,10 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ProtVer
   , SL.emptyGenesisStaking
   , shelleyMaintainForgeState
+  , checkMaxKESEvolutions
   ) where
 
+import           Control.Monad.Except (throwError)
 import           Control.Monad.Reader (runReader)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
@@ -45,6 +48,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Shelley.Spec.Ledger.Address as SL
@@ -104,6 +108,28 @@ shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials signKeyKES i
       , hkKey       = signKeyKES
       }
 
+-- | TODO this should be done as part of
+-- <https://github.com/input-output-hk/cardano-ledger-specs/issues/1516>
+checkMaxKESEvolutions
+  :: forall c. TPraosCrypto c
+  => SL.ShelleyGenesis c
+  -> Either String ()
+checkMaxKESEvolutions genesis
+    | configuredMaxKESEvo > fromIntegral supportedMaxKESEvo
+    = throwError $ mconcat [
+          "sgMaxKESEvolutions greater than the supported evolutions"
+        , " by the KES algorithm: "
+        , show configuredMaxKESEvo
+        , " > "
+        , show supportedMaxKESEvo
+        ]
+    | otherwise
+    = return ()
+  where
+    configuredMaxKESEvo = SL.sgMaxKESEvolutions genesis
+    -- Max evolutions supported by the chosen KES algorithm
+    supportedMaxKESEvo  = totalPeriodsKES (Proxy @(KES c))
+
 protocolInfoShelley
   :: forall m c. (IOLike m, TPraosCrypto c)
   => SL.ShelleyGenesis c
@@ -112,6 +138,7 @@ protocolInfoShelley
   -> Maybe (TPraosLeaderCredentials c)
   -> ProtocolInfo m (ShelleyBlock c)
 protocolInfoShelley genesis maxMajorPV protVer mbCredentials =
+    assertWithMsg (checkMaxKESEvolutions genesis) $
     ProtocolInfo {
         pInfoConfig      = topLevelConfig
       , pInfoInitLedger  = initExtLedgerState
