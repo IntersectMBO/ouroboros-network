@@ -175,7 +175,7 @@ prop_simple_cardano_convergence TestSetup
                   genesisShelley
                   (coreNodes !! fromIntegral nid)
                   (guard setupByronLowerBound *> Just numByronEpochs)
-                  (NoHardCodedTransition shelleyMajorVersion)
+                  (TriggerHardForkAtVersion shelleyMajorVersion)
             , mkRekeyM = Nothing
             }
 
@@ -290,12 +290,12 @@ mkProtocolCardanoAndHardForkTxs
   -> Shelley.CoreNode sc
      -- Hard fork
   -> Maybe EpochNo
-  -> HardCodedTransition
+  -> TriggerHardFork
   -> TestNodeInitialization m (CardanoBlock sc)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
     genesisShelley coreNodeShelley
-    mbLowerBound hardCodedTransition =
+    mbLowerBound triggerHardFork =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
       , tniProtocolInfo = pInfo
@@ -331,7 +331,7 @@ mkProtocolCardanoAndHardForkTxs
         (Just leaderCredentialsShelley)
         -- Hard fork
         mbLowerBound
-        hardCodedTransition
+        triggerHardFork
 
     -- Byron
     PBftParams { pbftSignatureThreshold } = pbftParams

@@ -16,7 +16,7 @@
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
-  , HardCodedTransition (..)
+  , TriggerHardFork (..)
     -- * TranslateNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
@@ -290,11 +290,11 @@ protocolInfoCardano
   -> Maybe (TPraosLeaderCredentials sc)
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
-  -> HardCodedTransition
+  -> TriggerHardFork
   -> ProtocolInfo m (CardanoBlock sc)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley protVer maxMajorPV mbCredsShelley
-                    mbLowerBound hardCodedTransition =
+                    mbLowerBound triggerHardFork =
     ProtocolInfo {
         pInfoConfig      = cfg
       , pInfoInitLedger  = ExtLedgerState {
@@ -328,7 +328,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
           byronLedgerConfig = ledgerConfigByron
-        , transitionEpoch   = hardCodedTransition
+        , triggerHardFork   = triggerHardFork
         }
 
     kByron :: SecurityParam
