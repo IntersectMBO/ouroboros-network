@@ -35,7 +35,7 @@ data HotKey c = HotKey {
       -- > hkEnd = hkStart + tpraosMaxKESEvo
     , hkEvolution :: !KESEvolution
       -- ^ Invariant:
-      -- > hkStart + hkEvolution in [hkStart, hkEnd]
+      -- > hkStart + hkEvolution in [hkStart, hkEnd)
     , hkKey       :: !(SignKeyKES (KES c))
     }
   deriving (Generic)
@@ -54,14 +54,17 @@ instance Show (HotKey c) where
 instance Crypto c => NoUnexpectedThunks (HotKey c)
 
 -- | Return the evolution of the given KES period, /when/ it falls within the
--- range of the 'HotKey' (@[hkStart, hkEnd]@).
+-- range of the 'HotKey' (@[hkStart, hkEnd)@).
+--
+-- Note that the upper bound is exclusive, the spec says:
+-- > c0 <= kesPeriod s < c0 + MaxKESEvo
 toEvolution :: HotKey c -> Absolute.KESPeriod -> Maybe KESEvolution
 toEvolution HotKey { hkStart = Absolute.KESPeriod lo
                    , hkEnd   = Absolute.KESPeriod hi
                    }
             (Absolute.KESPeriod cur)
-    | lo <= cur, cur <= hi = Just (cur - lo)
-    | otherwise            = Nothing
+    | lo <= cur, cur < hi = Just (cur - lo)
+    | otherwise           = Nothing
 
 -- | Return the current period of the 'HotKey'.
 toPeriod :: HotKey c -> Absolute.KESPeriod
