@@ -87,7 +87,7 @@ connections :: forall m peeraddr peerconn.
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (Decision m peeraddr peerconn)
-connections PeerSelectionActions{monitorPeerConnection}
+connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPeerConnection}}
             st@PeerSelectionState {
               activePeers,
               establishedPeers,

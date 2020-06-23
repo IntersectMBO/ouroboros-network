@@ -237,11 +237,13 @@ mockPeerSelectionActions' tracer
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
-      establishPeerConnection,
-      monitorPeerConnection,
-      activatePeerConnection,
-      deactivatePeerConnection,
-      closePeerConnection
+      peerStateActions         = PeerStateActions {
+          establishPeerConnection,
+          monitorPeerConnection,
+          activatePeerConnection,
+          deactivatePeerConnection,
+          closePeerConnection
+        }
     }
   where
     requestPeerGossip addr = do
@@ -1056,11 +1058,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 readPeerSelectionTargets = return targets,
                 requestPeerGossip        = \_ -> return [],
                 requestPublicRootPeers   = \_ -> return (Set.empty, 0),
-                establishPeerConnection  = fail "establishPeerConnection",
-                monitorPeerConnection    = fail "monitorPeerConnection",
-                activatePeerConnection   = fail "activatePeerConnection",
-                deactivatePeerConnection = fail "deactivatePeerConnection",
-                closePeerConnection      = fail "closePeerConnection"
+                peerStateActions         = PeerStateActions {
+                  establishPeerConnection  = fail "establishPeerConnection",
+                  monitorPeerConnection    = fail "monitorPeerConnection",
+                  activatePeerConnection   = fail "activatePeerConnection",
+                  deactivatePeerConnection = fail "deactivatePeerConnection",
+                  closePeerConnection      = fail "closePeerConnection"
+                }
               }
 
     targets :: PeerSelectionTargets

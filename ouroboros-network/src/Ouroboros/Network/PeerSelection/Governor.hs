@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     PeerSelectionPolicy(..),
     PeerSelectionTargets(..),
     PeerSelectionActions(..),
+    PeerStateActions(..),
     TracePeerSelection(..),
     DebugPeerSelection(..),
     peerSelectionGovernor,
