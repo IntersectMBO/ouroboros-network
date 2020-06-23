@@ -32,7 +32,6 @@ module Ouroboros.Consensus.Cardano (
   ) where
 
 import           Data.Type.Equality
-import           Numeric.Natural (Natural)
 
 import           Cardano.Prelude (Natural)
 
