@@ -100,7 +100,7 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
           , Gen.AllIssuerKeys
             { Gen.cold = mkDSIGNKeyPair cnDelegateKey
             , Gen.vrf  = mkVRFKeyPair cnVRF
-            , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
+            , Gen.hot  = [(SL.KESPeriod 0, mkKESKeyPair cnKES)]
             , Gen.hk   = SL.hashKey (SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
             }
           )
