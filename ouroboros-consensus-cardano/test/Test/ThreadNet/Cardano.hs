@@ -244,7 +244,7 @@ prop_simple_cardano_convergence TestSetup
     reachesShelley :: ReachesShelley
     reachesShelley = ReachesShelley
       { rsByronSlots    =
-          BoolProps.enabledIf $ t > numByronEpochs * unEpochSize epochSizeByron
+          BoolProps.enabledIf $ t > byronSlots
       , rsPV            = BoolProps.enabledIf setupHardFork
       , rsShelleyBlocks =
           or $
@@ -255,7 +255,7 @@ prop_simple_cardano_convergence TestSetup
           ]
       , rsShelleySlots  =
           assert (w >= k) $
-          BoolProps.requiredIf $ t > w + 1 - k
+          BoolProps.requiredIf $ t > byronSlots + w + 1 - k
             -- logic: if we are ensured at least @k@ blocks in @w@ slots, then
             -- we're ensured at least @1@ block in @w+1-k@ slots
       }
@@ -263,6 +263,9 @@ prop_simple_cardano_convergence TestSetup
         TestConfig{numSlots}        = setupTestConfig
         NumSlots t                  = numSlots
         TestOutput{testOutputNodes} = testOutput
+
+        byronSlots :: Word64
+        byronSlots = numByronEpochs * unEpochSize epochSizeByron
 
         k :: Word64
         k = maxRollbacks setupK
