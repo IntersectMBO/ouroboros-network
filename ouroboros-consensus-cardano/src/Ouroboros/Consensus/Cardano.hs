@@ -172,7 +172,7 @@ data Protocol (m :: * -> *) blk p where
        -- taken place.
        --
        -- The @Nothing@ case is useful for test and possible alternative nets.
-    -> HardCodedTransition
+    -> TriggerHardFork
     -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)

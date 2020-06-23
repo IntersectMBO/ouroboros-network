@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeFamilies             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.CanHardFork (
-    HardCodedTransition (..)
+    TriggerHardFork (..)
   , ByronPartialLedgerConfig (..)
   , ShelleyPartialLedgerConfig (..)
   ) where
@@ -214,9 +214,9 @@ byronTransition ByronPartialLedgerConfig{..}
 
 instance SingleEraBlock ByronBlock where
   singleEraTransition pcfg eraParams eraStart ledgerState =
-      case transitionEpoch pcfg of
-        HardCodedTransitionAt epoch               -> Just epoch
-        NoHardCodedTransition shelleyMajorVersion ->
+      case triggerHardFork pcfg of
+        TriggerHardForkAtEpoch   epoch               -> Just epoch
+        TriggerHardForkAtVersion shelleyMajorVersion ->
             byronTransition
               pcfg
               shelleyMajorVersion
@@ -231,21 +231,24 @@ instance SingleEraBlock ByronBlock where
 instance PBftCrypto bc => HasPartialConsensusConfig (PBft bc)
   -- Use defaults
 
-data HardCodedTransition =
-    NoHardCodedTransition !Word16
-    -- ^ the major version of the next era; an update proposal to this major
-    -- version induces the hard fork
-  | HardCodedTransitionAt !EpochNo
+-- | The trigger condition that will cause the hard fork transition.
+data TriggerHardFork =
+    -- | Trigger the transition when the on-chain protocol major version (from
+    -- the ledger state) reaches this number.
+    TriggerHardForkAtVersion !Word16
+    -- | For testing only, trigger the transition at a specific hard-coded
+    -- epoch, irrespective of the ledger state.
+  | TriggerHardForkAtEpoch !EpochNo
   deriving (Generic, NoUnexpectedThunks)
 
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger
 -- config. Standalone Byron uses the regular ledger config. This means that
--- the partial ledger config is the perfect place to store a hard-coded, yet
--- configurable, transition point for testing purposes, as we don't have to
--- modify the ledger config for standalone Byron.
+-- the partial ledger config is the perfect place to store the trigger
+-- condition for the hard fork to Shelley, as we don't have to modify the
+-- ledger config for standalone Byron.
 data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig :: !(LedgerConfig ByronBlock)
-    , transitionEpoch   :: !HardCodedTransition
+    , triggerHardFork   :: !TriggerHardFork
     }
   deriving (Generic, NoUnexpectedThunks)
 
