@@ -6,9 +6,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Integrity (
   ) where
 
 import           Data.Either (isRight)
-import           Data.Word (Word64)
-
-import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 
 import           Ouroboros.Consensus.Block
 
@@ -20,34 +17,18 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Protocol
 
 -- | Verify whether a header is not corrupted
-verifyHeaderIntegrity
-  :: TPraosCrypto c
-  => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
-  -> Header (ShelleyBlock c)
-  -> Bool
-verifyHeaderIntegrity slotsPerKESPeriod hdr@ShelleyHeader { shelleyHeaderRaw } =
-    isRight $ SL.verifySignedKES () ocertVkHot t hdrBody hdrSignature
+verifyHeaderIntegrity :: TPraosCrypto c => Header (ShelleyBlock c) -> Bool
+verifyHeaderIntegrity ShelleyHeader { shelleyHeaderRaw } =
+    -- TODO uses evolution 0. I assume the generator simply doesn't ever
+    -- evolve the KES key it signs with.
+    isRight $ SL.verifySignedKES () ocertVkHot 0 hdrBody hdrSignature
   where
     SL.BHeader hdrBody hdrSignature = shelleyHeaderRaw
-    SL.OCert {
-        ocertVkHot
-      , ocertKESPeriod = SL.KESPeriod startOfKesPeriod
-      } = SL.bheaderOCert hdrBody
-
-    currentKesPeriod = fromIntegral $
-      unSlotNo (blockSlot hdr) `div` slotsPerKESPeriod
-
-    t | currentKesPeriod >= startOfKesPeriod
-      = currentKesPeriod - startOfKesPeriod
-      | otherwise
-      = 0
+    SL.OCert { ocertVkHot } = SL.bheaderOCert hdrBody
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses
-verifyBlockIntegrity
-  :: TPraosCrypto c
-  => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
-  -> ShelleyBlock c -> Bool
-verifyBlockIntegrity slotsPerKESPeriod blk =
-    verifyHeaderIntegrity slotsPerKESPeriod (getHeader blk) &&
-    blockMatchesHeader                      (getHeader blk) blk
+verifyBlockIntegrity :: TPraosCrypto c => ShelleyBlock c -> Bool
+verifyBlockIntegrity blk =
+    verifyHeaderIntegrity (getHeader blk) &&
+    blockMatchesHeader    (getHeader blk) blk

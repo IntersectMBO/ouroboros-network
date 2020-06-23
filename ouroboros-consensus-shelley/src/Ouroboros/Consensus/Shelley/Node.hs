@@ -305,9 +305,6 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . tpraosParams
     . configConsensus
 
-  nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
-    where
-      TPraosParams { tpraosSlotsPerKESPeriod } =
-        tpraosParams $ configConsensus cfg
+  nodeCheckIntegrity _ = verifyBlockIntegrity
 
-  nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo
+  nodeGetBinaryBlockInfo = shelleyBinaryBlockInfo

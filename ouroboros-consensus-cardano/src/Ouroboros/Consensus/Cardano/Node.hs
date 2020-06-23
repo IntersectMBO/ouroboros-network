@@ -262,14 +262,9 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
       BlockByron byronBlock ->
         Byron.verifyBlockIntegrity byronBlockCfg byronBlock
       BlockShelley shelleyBlock ->
-        Shelley.verifyBlockIntegrity tpraosSlotsPerKESPeriod shelleyBlock
+        Shelley.verifyBlockIntegrity shelleyBlock
     where
-      TopLevelConfig {
-          configConsensus = CardanoConsensusConfig _ shelleyPartialConsensusCfg
-        , configBlock = CardanoBlockConfig byronBlockCfg _
-        } = cfg
-
-      TPraosParams { tpraosSlotsPerKESPeriod } = shelleyPartialConsensusCfg
+      TopLevelConfig { configBlock = CardanoBlockConfig byronBlockCfg _ } = cfg
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

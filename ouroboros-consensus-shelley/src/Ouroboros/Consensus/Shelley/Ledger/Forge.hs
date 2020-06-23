@@ -57,11 +57,8 @@ forgeShelleyBlock
   -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
   -> ShelleyBlock c
 forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader =
-    assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) blk
+    assert (verifyBlockIntegrity blk) blk
   where
-    TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
-      configConsensus cfg
-
     curSlot      = tickedSlotNo tickedLedger
     hotKey       = chainIndepState forgeState
     tpraosFields = forgeTPraosFields hotKey isLeader mkBhBody

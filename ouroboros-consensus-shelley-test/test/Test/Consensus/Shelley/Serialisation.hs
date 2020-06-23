@@ -7,7 +7,6 @@ module Test.Consensus.Shelley.Serialisation (tests) where
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word64)
 
 import           Cardano.Crypto.Hash (ShortHash)
 
@@ -89,16 +88,13 @@ prop_shelleyBinaryBlockInfo blk =
 
 -- TODO test with real crypto
 
-testTPraosSlotsPerKESPeriod :: Word64
-testTPraosSlotsPerKESPeriod = maxBound
-
 -- | Test that the block we generate pass the 'verifyBlockIntegrity' check
 prop_blockIntegrity :: Block ShortHash -> Bool
-prop_blockIntegrity = verifyBlockIntegrity testTPraosSlotsPerKESPeriod
+prop_blockIntegrity = verifyBlockIntegrity
 
 -- | Test that the block we generate pass the 'verifyHeaderIntegrity' check
 prop_headerIntegrity :: Header (Block ShortHash) -> Bool
-prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
+prop_headerIntegrity = verifyHeaderIntegrity
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Block :: Block ShortHash -> Corruption -> Property
@@ -106,7 +102,7 @@ prop_detectCorruption_Block =
     detectCorruption
       encodeShelleyBlock
       decodeShelleyBlock
-      (verifyBlockIntegrity testTPraosSlotsPerKESPeriod)
+      verifyBlockIntegrity
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Header :: Header (Block ShortHash) -> Corruption -> Property
@@ -114,4 +110,4 @@ prop_detectCorruption_Header =
     detectCorruption
       encodeShelleyHeader
       decodeShelleyHeader
-      (verifyHeaderIntegrity testTPraosSlotsPerKESPeriod)
+      verifyHeaderIntegrity
