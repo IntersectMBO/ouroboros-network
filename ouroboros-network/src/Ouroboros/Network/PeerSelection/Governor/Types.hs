@@ -163,13 +163,35 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        requestPeerGossip :: peeraddr -> m [peeraddr],
 
-       establishPeerConnection  :: peeraddr -> m peerconn,
-       monitorPeerConnection    :: peerconn -> STM m PeerStatus,
-       activatePeerConnection   :: peerconn -> m (),
-       deactivatePeerConnection :: peerconn -> m (),
-       closePeerConnection      :: peerconn -> m ()
+       -- | Core actions run by the governor to change 'PeerStatus'.
+       --
+       peerStateActions :: PeerStateActions peeraddr peerconn m
      }
 
+
+-- | Callbacks which are performed to change peer state.
+--
+data PeerStateActions peeraddr peerconn m = PeerStateActions {
+    -- | Monitor peer state.
+    --
+    monitorPeerConnection    :: peerconn -> STM m PeerStatus,
+
+    -- | Establish new connection.
+    --
+    establishPeerConnection  :: peeraddr -> m peerconn,
+
+    -- | Activate a connection: warm to hot promotion.
+    --
+    activatePeerConnection   :: peerconn -> m (),
+
+    -- | Deactive a peer: hot to warm demotion.
+    --
+    deactivatePeerConnection :: peerconn -> m (),
+
+    -- | Close a connection: warm to cold transition.
+    --
+    closePeerConnection      :: peerconn -> m ()
+  }
 
 -----------------------
 -- Peer Selection State
