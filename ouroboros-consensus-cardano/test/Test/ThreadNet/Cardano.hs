@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,15 +23,17 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.Slot (EpochNo, EpochSize (..))
+import           Cardano.Slotting.Slot (EpochNo, EpochSize (..), SlotNo (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import qualified Cardano.Crypto.KES.Class as KES
 
 import           Ouroboros.Network.MockChain.Chain (chainToList)
 
+import           Ouroboros.Consensus.Block.Abstract (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
+import qualified Ouroboros.Consensus.HardFork.History.Util as Util
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -60,16 +63,23 @@ import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
-import           Test.ThreadNet.Network (NodeOutput (..),
-                     TestNodeInitialization (..))
+import           Test.ThreadNet.Network (CalcMessageDelay (..),
+                     NodeOutput (..), TestNodeInitialization (..))
 import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+import           Test.ThreadNet.Util.NodeTopology (meshNodeTopology)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
+
+-- | When and for how long the nodes are partitioned
+--
+-- The nodes are divided via message delays into @even@ and @odd@ sub-networks.
+data Partition = Partition SlotNo NumSlots
+  deriving (Show)
 
 -- | The varying data of this test
 --
@@ -84,6 +94,7 @@ data TestSetup = TestSetup
   , setupHardFork          :: Bool
     -- ^ whether the proposal should trigger a hard fork or not
   , setupK                 :: SecurityParam
+  , setupPartition         :: Partition
   , setupSlotLengthByron   :: SlotLength
   , setupSlotLengthShelley :: SlotLength
   , setupTestConfig        :: TestConfig
@@ -96,24 +107,58 @@ instance Arbitrary TestSetup where
     setupK <- SecurityParam <$> choose   (2, 5)
 
     setupSlotLengthByron   <- arbitrary
+        `suchThat` (\x -> getSlotLength x < getSlotLength (slotLengthFromSec 1))
     setupSlotLengthShelley <- arbitrary
+        `suchThat` (\x -> getSlotLength x < getSlotLength (slotLengthFromSec 1))
 
     setupTestConfig <- arbitrary
 
     setupByronLowerBound <- arbitrary
     setupHardFork        <- frequency [(9, pure True), (1, pure False)]
+    setupPartition       <- genPartition (numSlots setupTestConfig) setupK
 
     pure TestSetup
       { setupByronLowerBound
       , setupD
       , setupHardFork
       , setupK
+      , setupPartition
       , setupSlotLengthByron
       , setupSlotLengthShelley
-      , setupTestConfig
+      , setupTestConfig = setupTestConfig
+        { nodeTopology =
+            -- use a mesh topology so the even-odd partitions definitely remain
+            -- internally connected
+            meshNodeTopology (numCoreNodes setupTestConfig)
+        }
       }
 
   -- TODO shrink
+
+-- | Generate 'setupPartition'
+genPartition :: NumSlots -> SecurityParam -> Gen Partition
+genPartition (NumSlots t) (SecurityParam k)
+    | t < 2     = pure $ Partition 0 (NumSlots 0)
+    | otherwise = do
+    -- The test must include at least one slot after the partition.
+    firstSlotIn    <- choose (0, penultimateSlot)
+
+    -- When the partition is over
+    let ub =
+            -- The partition must be short enough that neither partition can
+            -- generate @k@ blocks. That avoids forcing ChainSync
+            -- to look @k+1@ slots ahead, which the HFC might not allow.
+            --
+            -- Note that this is the exclusive upper bound, and so the max
+            -- possible duration is @2k-1@ slots. 
+            min ultimateSlot $ firstSlotIn + 2 * k
+    firstSlotAfter <- choose (firstSlotIn, ub)
+
+    let d = Util.countSlots (SlotNo firstSlotAfter) (SlotNo firstSlotIn)
+    pure $ Partition (SlotNo firstSlotIn) (NumSlots d)
+  where
+    penultimateSlot = ultimateSlot - 1
+    ultimateSlot    = t - 1
 
 tests :: TestTree
 tests = testGroup "Cardano" $
@@ -122,17 +167,19 @@ tests = testGroup "Cardano" $
     ]
 
 prop_simple_cardano_convergence :: TestSetup -> Property
-prop_simple_cardano_convergence TestSetup
+prop_simple_cardano_convergence testSetup@TestSetup
   { setupByronLowerBound
   , setupD
   , setupHardFork
   , setupK
+  , setupPartition
   , setupSlotLengthByron
   , setupSlotLengthShelley
   , setupTestConfig
   } =
     tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
-    prop_general PropGeneralArgs
+    tabulate "partition duration (approx frac of k)" [labelPartition testSetup] $
+    prop_general_semisync PropGeneralArgs
       { pgaBlockProperty      = const $ property True
       , pgaCountTxs           = fromIntegral . length . extractTxs
       , pgaExpectedCannotLead = noExpectedCannotLeads
@@ -144,7 +191,9 @@ prop_simple_cardano_convergence TestSetup
       , pgaTestConfigB        = testConfigB
       }
       testOutput .&&.
-    prop_ReachesShelley reachesShelley
+    ( counterexample (labelFinalChains testOutput) $
+      prop_ReachesShelley reachesShelley
+    )
   where
     TestConfig
       { initSeed
@@ -160,7 +209,7 @@ prop_simple_cardano_convergence TestSetup
           EraFinal setupSlotLengthShelley epochSizeShelley
           else
           EraFinal setupSlotLengthByron   epochSizeByron
-      , messageDelay = noCalcMessageDelay
+      , messageDelay = mkMessageDelay setupPartition
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
@@ -249,7 +298,7 @@ prop_simple_cardano_convergence TestSetup
     reachesShelley :: ReachesShelley
     reachesShelley = ReachesShelley
       { rsByronSlots    =
-          BoolProps.enabledIf $ t > numByronEpochs * unEpochSize epochSizeByron
+          BoolProps.enabledIf $ t > byronSlots
       , rsPV            = BoolProps.enabledIf setupHardFork
       , rsShelleyBlocks =
           or $
@@ -260,14 +309,22 @@ prop_simple_cardano_convergence TestSetup
           ]
       , rsShelleySlots  =
           assert (w >= k) $
-          BoolProps.requiredIf $ t > w + 1 - k
+          BoolProps.requiredIf $ t > byronSlots + w + 1 - k
             -- logic: if we are ensured at least @k@ blocks in @w@ slots, then
             -- we're ensured at least @1@ block in @w+1-k@ slots
+            --
+            -- Note that the number of partitioned slots during the Shelley
+            -- epoch is irrelevant as long as both make the transition: the
+            -- above logic ensures (statistically) at least one partition will
+            -- forge a Shelley block.
       }
       where
         TestConfig{numSlots}        = setupTestConfig
         NumSlots t                  = numSlots
         TestOutput{testOutputNodes} = testOutput
+
+        byronSlots :: Word64
+        byronSlots = numByronEpochs * unEpochSize epochSizeByron
 
         k :: Word64
         k = maxRollbacks setupK
@@ -339,7 +396,8 @@ mkProtocolCardanoAndHardForkTxs
         triggerHardFork
 
     -- Byron
-    PBftParams { pbftSignatureThreshold } = pbftParams
+    pbftSignatureThreshold = 1
+--    PBftParams { pbftSignatureThreshold } = pbftParams
 
     leaderCredentialsByron :: PBftLeaderCredentials
     leaderCredentialsByron =
@@ -450,7 +508,8 @@ prop_ReachesShelley :: ReachesShelley -> Property
 prop_ReachesShelley rs = case BoolProps.checkReqs rs of
     Nothing  -> property True
     Just req ->
-        counterexample (msg req <> ": " <> show rs) $
+        counterexample (show rs) $
+        counterexample (msg req) $
         rsShelleyBlocks == req
   where
     ReachesShelley{rsShelleyBlocks} = rs
@@ -459,3 +518,44 @@ prop_ReachesShelley rs = case BoolProps.checkReqs rs of
     msg req = if req
         then "the final chains should include at least one Shelley block"
         else "the final chains should not include any Shelley blocks"
+
+labelFinalChains :: TPraosCrypto sc => TestOutput (CardanoBlock sc) -> String
+labelFinalChains testOutput =
+    unlines $ 
+    [ show $ (,) nid $ map getHeader $ chainToList nodeOutputFinalChain
+    | (nid, no) <- Map.toList testOutputNodes
+    , let NodeOutput{nodeOutputFinalChain} = no
+    ]
+  where
+    TestOutput{testOutputNodes} = testOutput
+
+ {-------------------------------------------------------------------------------
+  A short even-odd partition
+-------------------------------------------------------------------------------}
+
+-- | Temporary partition 'CalcMessageDelay'
+--
+-- Calculates the delays that implement 'setupPartition'
+mkMessageDelay :: Partition -> CalcMessageDelay blk
+mkMessageDelay part = CalcMessageDelay $
+    \(CoreNodeId i, CoreNodeId j) curSlot _hdr -> NumSlots $ if
+      | curSlot <  firstSlotIn    -> 0
+      | curSlot >= firstSlotAfter -> 0
+      | mod i 2 == mod j 2        -> 0
+      | otherwise                 -> unSlotNo $ firstSlotAfter - curSlot
+  where
+    Partition firstSlotIn (NumSlots d) = part
+
+    -- exclusive upper-bound on the partition
+    firstSlotAfter = firstSlotIn + SlotNo d
+
+-- | Render the partition duration as an approximate fraction of @k@.
+labelPartition :: TestSetup -> String
+labelPartition testSetup =
+     show (fromIntegral tenths / 10 :: Double)
+  where
+    TestSetup{setupK, setupPartition} = testSetup
+    Partition _ (NumSlots d)          = setupPartition
+
+    ratio  = toRational d / toRational (maxRollbacks setupK)
+    tenths = round (ratio * 10) :: Int

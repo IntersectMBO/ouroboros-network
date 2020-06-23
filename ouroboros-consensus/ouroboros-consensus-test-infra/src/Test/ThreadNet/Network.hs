@@ -182,10 +182,10 @@ plainTestNodeInitialization pInfo = TestNodeInitialization
 -- the forge slot of the carried header.
 --
 -- It varies with the @(sender, recipient)@ and header.
-newtype CalcMessageDelay blk = CalcMessageDelay ((CoreNodeId, CoreNodeId) -> Header blk -> NumSlots)
+newtype CalcMessageDelay blk = CalcMessageDelay ((CoreNodeId, CoreNodeId) -> SlotNo -> Header blk -> NumSlots)
 
 noCalcMessageDelay :: CalcMessageDelay blk
-noCalcMessageDelay = CalcMessageDelay $ \_ _ -> NumSlots 0
+noCalcMessageDelay = CalcMessageDelay $ \_ _ _ -> NumSlots 0
 
 instance Show (CalcMessageDelay blk) where
   show _ = "_CalcMessageDelay"
@@ -1216,7 +1216,8 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
         decodeStep <- Codec.decode codec tok
         Codec.runDecoder [bs] decodeStep >>= \case
           Right (Codec.SomeMessage (CS.MsgRollForward hdr _tip)) -> do
-              let NumSlots d = f (node1, node2) hdr
+              s <- OracularClock.getCurrentSlot clock
+              let NumSlots d = f (node1, node2) s hdr
                     where
                       CalcMessageDelay f = calcMessageDelay
               pure () `asTypeOf` (traceM $ show (blockHash hdr, node1, node2, SlotNo d, blockSlot hdr + SlotNo d))

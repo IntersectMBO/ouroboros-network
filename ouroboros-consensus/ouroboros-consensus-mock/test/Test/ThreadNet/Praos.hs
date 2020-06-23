@@ -449,7 +449,7 @@ fixedActiveSlotCoeff = 0.2
 -- recipient, content, and the @delaySeed@ and is bounded above by @preDelta@.
 mkMessageDelay :: Word64 -> Seed -> CalcMessageDelay Block
 mkMessageDelay preDelta delaySeed = CalcMessageDelay $
-    \(sender, recipient) hdr ->
+    \(sender, recipient) _s hdr ->
     NumSlots $
     -- a delay of 0 means " during the block's forge slot "
     (`mod` preDelta) $

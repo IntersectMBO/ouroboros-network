@@ -11,6 +11,10 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "cardano"
+  [ Test.ThreadNet.Cardano.tests
+  ]
+  `asTypeOf`
+  testGroup "cardano"
   [ Test.Consensus.Cardano.Serialisation.tests
   , Test.ThreadNet.Cardano.tests
   ]
