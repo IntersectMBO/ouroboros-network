@@ -332,13 +332,13 @@ data AnnForecast f blk = AnnForecast {
     }
 
 -- | Change a telescope of a forecast into a forecast of a telescope
-mkHardForkForecast :: InPairs (Translate f) xs
+mkHardForkForecast :: InPairs (TranslateForecast f) xs
                    -> Telescope (Past g) (Current (AnnForecast f)) xs
                    -> Forecast (HardForkLedgerView_ f xs)
 mkHardForkForecast =
     go
   where
-    go :: InPairs (Translate f) xs
+    go :: InPairs (TranslateForecast f) xs
        -> Telescope (Past g) (Current (AnnForecast f)) xs
        -> Forecast (HardForkLedgerView_ f xs)
     go PNil         (TZ f)      = forecastFinalEra f
@@ -376,43 +376,56 @@ forecastFinalEra (Current start AnnForecast{..}) =
 -- NOTE 3: We assume that we only ever have to translate to the /next/
 -- era (as opposed to /any/ subsequent era).
 forecastNotFinal :: forall f blk blk' blks.
-                    Translate f blk blk'
+                    TranslateForecast f blk blk'
                  -> Current (AnnForecast f) blk
                  -> Forecast (HardForkLedgerView_ f (blk ': blk' ': blks))
 forecastNotFinal g (Current start AnnForecast{..}) =
     Forecast (forecastAt annForecast) $ \for ->
-      translateIf annForecastNext for <$> forecastFor annForecast for
+      case mEnd of
+        Just end | for >= boundSlot end -> do
+          -- The forecast is trying to emulate what happens "in reality", where
+          -- the translation from the ledger state of the first era to the next
+          -- era will happen precisely at the transition point. So, we do the
+          -- same in the forecast: we ask the first era for its final ledger
+          -- view (i.e., the view in the final slot in this era), and then
+          -- translate that to a ledger view in the next era. We pass 'for' to
+          -- that translation function so that if any other changes were still
+          -- scheduled to happen in the final ledger view of the first era, it
+          -- can take those into account.
+          --
+          -- NOTE: Upper bound is exclusive so the final slot in this era is
+          -- the predecessor of @boundSlot end@.
+          final :: f blk <- forecastFor annForecast (pred (boundSlot end))
+          let translated :: f blk'
+              translated = translateForecastWith g (boundEpoch end) for final
+
+          return $ HardForkLedgerView {
+              hardForkLedgerViewPerEra = HardForkState $
+                TS (Past start end NoSnapshot) $
+                TZ (Current end translated)
+              -- See documentation of 'TransitionImpossible' for motivation
+            , hardForkLedgerViewTransition =
+                TransitionImpossible
+            }
+
+        _otherwise -> do
+          -- The end of this era is not yet known, or the slot we're
+          -- constructing a forecast for is still within this era.
+          view :: f blk <- forecastFor annForecast for
+
+          return HardForkLedgerView {
+              hardForkLedgerViewPerEra = HardForkState $
+                TZ (Current start view)
+
+              -- We pretend that the anchor of the forecast is the tip.
+            , hardForkLedgerViewTransition =
+                case annForecastNext of
+                  Nothing -> TransitionUnknown (forecastAt annForecast)
+                  Just t  -> TransitionKnown t
+            }
   where
-    -- Translate if the slot is past the end of the epoch
-    translateIf :: Maybe EpochNo
-                -> SlotNo
-                -> f blk
-                -> HardForkLedgerView_ f (blk ': blk' ': blks)
-    translateIf (Just transition) for view | for >= boundSlot end =
-        HardForkLedgerView {
-            hardForkLedgerViewPerEra = HardForkState $
-              TS (Past start end NoSnapshot) $
-              TZ (Current end view')
-          , hardForkLedgerViewTransition =
-              TransitionImpossible
-          }
-      where
-        end :: Bound
-        end = History.mkUpperBound annForecastEraParams start transition
-
-        view' :: f blk'
-        view' = translateWith g (boundEpoch end) view
-
-    -- We pretend that the anchor of the forecast is the tip
-    translateIf mTransition _for view =
-       HardForkLedgerView {
-           hardForkLedgerViewPerEra = HardForkState $
-             TZ (Current start view)
-         , hardForkLedgerViewTransition =
-             case mTransition of
-               Nothing -> TransitionUnknown (forecastAt annForecast)
-               Just t  -> TransitionKnown t
-         }
+    mEnd :: Maybe Bound
+    mEnd = History.mkUpperBound annForecastEraParams start <$> annForecastNext
 
 shiftView :: Past g blk
           -> HardForkLedgerView_ f (blk' : blks)

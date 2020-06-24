@@ -300,8 +300,8 @@ instance TPraosCrypto sc => HasPartialLedgerConfig (ShelleyBlock sc) where
 instance TPraosCrypto c => CanHardFork (CardanoEras c) where
   hardForkEraTranslation = EraTranslation {
       translateLedgerState   = PCons translateLedgerStateByronToShelleyWrapper   PNil
-    , translateLedgerView    = PCons translateLedgerViewByronToShelleyWrapper    PNil
     , translateChainDepState = PCons translateChainDepStateByronToShelleyWrapper PNil
+    , translateLedgerView    = PCons translateLedgerViewByronToShelleyWrapper    PNil
     }
 
 {-------------------------------------------------------------------------------
@@ -486,12 +486,13 @@ translateLedgerViewByronToShelleyWrapper
   :: forall sc.
      RequiringBoth
        WrapLedgerConfig
-       (Translate WrapLedgerView)
+       (TranslateForecast WrapLedgerView)
        ByronBlock
        (ShelleyBlock sc)
 translateLedgerViewByronToShelleyWrapper =
-    RequireBoth $ \_ (WrapLedgerConfig shelleyCfg) -> Translate $ \epochNo _ ->
-      WrapLedgerView (translateLedgerViewByronToShelley shelleyCfg epochNo)
+    RequireBoth $ \_ (WrapLedgerConfig shelleyCfg) ->
+      TranslateForecast $ \epochNo _forecastFor _finalByronView ->
+        WrapLedgerView (translateLedgerViewByronToShelley shelleyCfg epochNo)
 
 -- | We construct a 'SL.LedgerView' using the Shelley genesis config in the
 -- same way as 'translateLedgerStateByronToShelley'.

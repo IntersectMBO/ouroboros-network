@@ -368,8 +368,8 @@ type TestBlock = HardForkBlock '[BlockA, BlockB]
 instance CanHardFork '[BlockA, BlockB] where
   hardForkEraTranslation = EraTranslation {
         translateLedgerState   = PCons ledgerState_AtoB   PNil
-      , translateLedgerView    = PCons ledgerView_AtoB    PNil
       , translateChainDepState = PCons chainDepState_AtoB PNil
+      , translateLedgerView    = PCons ledgerView_AtoB    PNil
       }
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
@@ -418,8 +418,8 @@ ledgerState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 
-ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (Translate WrapLedgerView) BlockA BlockB
-ledgerView_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapLedgerView ()
-
 chainDepState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapChainDepState) BlockA BlockB
 chainDepState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapChainDepState ()
+
+ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (TranslateForecast WrapLedgerView) BlockA BlockB
+ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateForecast $ \_ _ _ -> WrapLedgerView ()
