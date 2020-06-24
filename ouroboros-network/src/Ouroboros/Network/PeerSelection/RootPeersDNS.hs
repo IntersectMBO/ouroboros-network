@@ -5,6 +5,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS (
     -- * DNS based provider for local root peers
     localRootPeersProvider,
+    DomainAddress (..),
     TraceLocalRootPeers(..),
 
     -- * DNS based provider for public root peers
@@ -32,7 +33,9 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
 
 import           Data.IP (IPv4)
+import qualified Data.IP as IP
 import qualified Network.DNS as DNS
+import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.PeerSelection.Types
 
@@ -102,8 +105,14 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
 -- Public root peer set provider using DNS
 --
 
+data DomainAddress = DomainAddress {
+    daDomain     :: !DNS.Domain,
+    daPortNumber :: !Socket.PortNumber
+  }
+  deriving Show
+
 data TracePublicRootPeers =
-       TracePublicRootDomains [DNS.Domain]
+       TracePublicRootDomains [DomainAddress]
      | TracePublicRootResult  DNS.Domain [(IPv4, DNS.TTL)]
      | TracePublicRootFailure DNS.Domain DNS.DNSError
        --TODO: classify DNS errors, config error vs transitory
@@ -113,8 +122,8 @@ data TracePublicRootPeers =
 --
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> DNS.ResolvConf
-                        -> [DNS.Domain]
-                        -> ((Int -> IO (Set IPv4, DiffTime)) -> IO a)
+                        -> [DomainAddress]
+                        -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
 publicRootPeersProvider tracer resolvConf domains action = do
     traceWith tracer (TracePublicRootDomains domains)
@@ -122,18 +131,23 @@ publicRootPeersProvider tracer resolvConf domains action = do
     DNS.withResolver rs $ \resolver ->
       action (requestPublicRootPeers resolver)
   where
-    requestPublicRootPeers :: DNS.Resolver -> Int -> IO (Set IPv4, DiffTime)
+    requestPublicRootPeers :: DNS.Resolver -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resolver _numRequested = do
-        let lookups = [ lookupAWithTTL resolver domain | domain <- domains ]
+        let lookups =
+              [ lookupAWithTTL resolver daDomain
+              |  DomainAddress {daDomain} <- domains ]
         -- The timeouts here are handled by the dns library. They're configured
         -- via the DNS.ResolvConf resolvTimeout field and defaults to 3 sec.
         results <- withAsyncAll lookups (atomically . mapM waitSTM)
         sequence_
           [ traceWith tracer $ case result of
-              Left  dnserr -> TracePublicRootFailure domain dnserr
-              Right ipttls -> TracePublicRootResult  domain ipttls
-          | (domain, result) <- zip domains results ]
-        let successes = [ ipttl | Right ipttls <- results, ipttl <- ipttls ]
+              Left  dnserr -> TracePublicRootFailure daDomain dnserr
+              Right ipttls -> TracePublicRootResult  daDomain ipttls
+          | (DomainAddress {daDomain}, result) <- zip domains results ]
+        let successes = [ (Socket.SockAddrInet daPortNumber (IP.toHostAddress ip), ipttl)
+                        | (Right ipttls, DomainAddress {daPortNumber}) <- (zip results domains)
+                        , (ip, ipttl) <- ipttls
+                        ]
             !ips      = Set.fromList  (map fst successes)
             !ttl      = ttlForResults (map snd successes)
         -- If all the lookups failed we'll return an empty set with a minimum
