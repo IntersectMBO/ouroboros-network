@@ -34,6 +34,8 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , InvalidBlockReason
   ) where
 
+import Debug.Trace
+
 import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Except
@@ -727,8 +729,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               InvalidRollForward (realPointToPoint hdrPoint) ourTip theirTip
           Just forecast ->
             case runExcept $ forecastFor forecast (realPointSlot hdrPoint) of
-              Left OutsideForecastRange{} -> -- Case (1)
-                retry
+              Left x@OutsideForecastRange{} -> -- Case (1)
+                trace ("XXXXX " <> show (intersection, ourTip, theirTip, x)) retry
               Right lv ->
                 -- Forecasting is equivalent to ticking
                 -- ('lemma_ledgerViewForecastAt_applyChainTick' )
