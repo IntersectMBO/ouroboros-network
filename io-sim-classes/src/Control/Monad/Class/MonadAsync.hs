@@ -12,6 +12,7 @@ module Control.Monad.Class.MonadAsync
   , MonadAsyncSTM (..)
   , AsyncCancelled(..)
   , ExceptionInLinkedThread(..)
+  , isCancel
   , link
   , linkTo
   , linkOnly
