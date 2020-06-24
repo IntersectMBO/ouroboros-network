@@ -162,6 +162,9 @@ data ReadIncrementalErr =
 
     -- | Deserialisation was successful, but there was additional data
   | TrailingBytes ByteString
+
+    -- | An unknown exception, like a 'UserError' or an 'IOException'
+  | UnKnownException String
   deriving (Eq, Show)
 
 -- | Read a file incrementally
@@ -179,9 +182,11 @@ readIncremental :: forall m h a. IOLike m
                 -> (forall s . CBOR.D.Decoder s a)
                 -> FsPath
                 -> m (Either ReadIncrementalErr a)
-readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
-    withFile hasFS fp ReadMode $ \h ->
-      go liftST h =<< liftST (CBOR.R.deserialiseIncremental decoder)
+readIncremental hasFS@HasFS{..} decoder fp = handleNotAsync
+  (return . Left . UnKnownException . show) $
+    withLiftST $ \liftST -> do
+      withFile hasFS fp ReadMode $ \h ->
+        go liftST h =<< liftST (CBOR.R.deserialiseIncremental decoder)
   where
     go :: (forall x. ST s x -> m x)
        -> Handle h
@@ -232,7 +237,25 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
           S.lift (liftST (CBOR.R.deserialiseIncremental decoder)) >>=
             go liftST h 0 Nothing [] fileSize
   where
+    -- | First run the 'action'. If an exception happened, wrap it and return
+    -- the current 'offset'. If no exception happened run the continuation.
+    liftWithHandler
+      :: Word64
+      -> (b -> Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64)))
+      -> m b
+      -> Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64))
+    liftWithHandler offset cont action = do
+      eiDecode <- S.lift $ try action
+      case eiDecode of
+        Right ok -> cont ok
+        Left e   -> do
+          when (isAsync e) $
+            S.lift $ throwM e
+          return $ Just (UnKnownException $ show e, offset)
+
     -- TODO stream from HasFS?
+    -- TODO: It feels like this should run on a a custom Monad, where exception
+    -- handling is built in.
     go :: (forall x. ST s x -> m x)
        -> Handle h
        -> Word64                   -- ^ Offset
@@ -242,45 +265,53 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
        -> CBOR.R.IDecode s (LBS.ByteString -> a)
        -> Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64))
     go liftST h offset mbUnconsumed bss fileSize dec = case dec of
-      CBOR.R.Partial k -> do
-        -- First use the unconsumed bytes from a previous read before read
-        -- some more bytes from the file.
-        bs   <- case mbUnconsumed of
-          Just unconsumed -> return unconsumed
-          Nothing         -> S.lift $ hGetSome h (fromIntegral defaultChunkSize)
-        dec' <- S.lift $ liftST $ k (checkEmpty bs)
-        go liftST h offset Nothing (bs:bss) fileSize dec'
+      CBOR.R.Partial k -> liftWithHandler
+        offset
+        (\(bs, dec') -> go liftST h offset Nothing (bs:bss) fileSize dec') $ do
+          -- First use the unconsumed bytes from a previous read before read
+          -- some more bytes from the file.
+          bs <- case mbUnconsumed of
+            Just unconsumed -> return unconsumed
+            Nothing         -> hGetSome h (fromIntegral defaultChunkSize)
+          bs' <- evaluate bs
+          dec' <- liftST (k $ checkEmpty bs) >>= evaluate
+          return (bs', dec')
 
-      CBOR.R.Done leftover size mkA -> do
-        let nextOffset = offset + fromIntegral size
-            -- We've been keeping track of the bytes pushed into the decoder
-            -- for this item so far in bss. Now there's some trailing data to
-            -- remove and we can get the whole bytes used for this item. We
-            -- supply the bytes to the final decoded value. This is to support
-            -- annotating values with their original input bytes.
-            aBytes     = case bss of
-                []      -> LBS.empty
-                bs:bss' -> LBS.fromChunks (reverse (bs' : bss'))
-                  where
-                    bs' = BS.take (BS.length bs - BS.length leftover) bs
-            -- The bang on the @a'@ here allows the used 'Decoder' to force
-            -- its computation. For example, the decoder might decode a whole
-            -- block and then (maybe through a use of 'fmap') just return its
-            -- hash. If we don't force the value it returned here, we're just
-            -- putting a thunk that references the whole block in the list
-            -- instead of merely the hash.
-            !a         = mkA aBytes
-        S.yield (offset, (fromIntegral size, a))
-        case checkEmpty leftover of
-          Nothing
-            | nextOffset == fileSize
-              -- We're at the end of the file, so stop
-            -> return Nothing
-          -- Some more bytes, so try to read the next @a@.
-          mbLeftover ->
-            S.lift (liftST (CBOR.R.deserialiseIncremental decoder)) >>=
-            go liftST h nextOffset mbLeftover [] fileSize
-
+      CBOR.R.Done leftover size mkA -> liftWithHandler
+        offset
+        (\(nextOffset, a) -> do
+            S.yield (offset, (fromIntegral size, a))
+            case checkEmpty leftover of
+              Nothing
+                | nextOffset == fileSize
+                  -- We're at the end of the file, so stop
+                -> return Nothing
+              -- Some more bytes, so try to read the next @a@.
+              mbLeftover ->
+                liftWithHandler offset
+                  (go liftST h nextOffset mbLeftover [] fileSize)
+                  (join $ evaluate <$> liftST (CBOR.R.deserialiseIncremental decoder))
+        ) $
+        do
+          nextOffset <- evaluate $ offset + fromIntegral size
+              -- We've been keeping track of the bytes pushed into the decoder
+              -- for this item so far in bss. Now there's some trailing data to
+              -- remove and we can get the whole bytes used for this item. We
+              -- supply the bytes to the final decoded value. This is to support
+              -- annotating values with their original input bytes.
+          let aBytes     = case bss of
+                  []      -> LBS.empty
+                  bs:bss' -> LBS.fromChunks (reverse (bs' : bss'))
+                    where
+                      bs' = BS.take (BS.length bs - BS.length leftover) bs
+              -- The bang on the @a'@ here allows the used 'Decoder' to force
+              -- its computation. For example, the decoder might decode a whole
+              -- block and then (maybe through a use of 'fmap') just return its
+              -- hash. If we don't force the value it returned here, we're just
+              -- putting a thunk that references the whole block in the list
+              -- instead of merely the hash.
+          a <- evaluate $ mkA aBytes
+          return (nextOffset, a)
       CBOR.R.Fail _ _ err -> return $ Just (ReadFailed err, offset)
 
     checkEmpty :: ByteString -> Maybe ByteString
