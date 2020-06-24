@@ -12,7 +12,7 @@ module Test.ThreadNet.Cardano (
 
 import           Control.Exception (assert)
 import           Control.Monad (guard, replicateM)
-import           Data.List ((!!))
+import           Data.List ((!!), nub)
 import qualified Data.Map as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
@@ -22,12 +22,13 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Prelude (Natural)
+import           Cardano.Prelude (Natural, listToMaybe)
 import           Cardano.Slotting.Slot (EpochNo, EpochSize (..), SlotNo (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import qualified Cardano.Crypto.KES.Class as KES
 
+import           Ouroboros.Network.Block (BlockNo, blockNo)
 import           Ouroboros.Network.MockChain.Chain (chainToList)
 
 import           Ouroboros.Consensus.Block.Abstract (getHeader)
@@ -140,25 +141,69 @@ genPartition :: NumSlots -> SecurityParam -> Gen Partition
 genPartition (NumSlots t) (SecurityParam k)
     | t < 2     = pure $ Partition 0 (NumSlots 0)
     | otherwise = do
-    -- The test must include at least one slot after the partition.
-    firstSlotIn    <- choose (0, penultimateSlot)
+    let ultimateSlot :: Word64
+        ultimateSlot = t - 1
+
+    -- Fundamental plan: all @MsgRollForward@ sent during the partition only
+    -- arrive at the onset of slot @firstSlotAfter@. The partition begins with
+    -- @firstSlotIn@.
+
+    firstSlotIn <- choose (0, ultimateSlot)
+
+    -- FACT (A) The leader of @firstSlotAfter@ will forge before fully reacting
+    -- to the @MsgRollForward@s that just arrived, due to a race in the test
+    -- infrastructure that is consistently won by the forge. Thus the two
+    -- class's unique extensions consist of the blocks forged in the slots from
+    -- @firstSlotIn@ to @firstSlotAfter@ /inclusive/.
 
     -- When the partition is over
-    let ub =
-            -- The partition must be short enough that neither partition can
-            -- generate @k@ blocks. That avoids forcing ChainSync
-            -- to look @k+1@ slots ahead, which the HFC might not allow.
+    let crop :: Word64 -> Word64
+        crop s =
+            -- Because of FACT (A), we require there to be at least one slot
+            -- after the partition. This doesn't ensure full consensus, because
+            -- the block forged in @firstSlotAfter@ may create two equal length
+            -- chains. But it ensures that all final chains will be the same
+            -- length.
+            min ultimateSlot s
+        wMax :: Word64
+        wMax =
+            -- Because of FACT (A), we limit the partition duration so that at
+            -- least one of the two partition classes will forge /strictly/
+            -- /less/ /than/ @k@ such blocks. While both classes would be able
+            -- to rollback if we let them forge @k@ such blocks, they might
+            -- (TODO "might" or "will"?) not able to /decide/ that they need to
+            -- rollback, since the relevant ChainSync client might (TODO will?)
+            -- not be able to forecast a ledger view far-enough into the future
+            -- to validate the @k+1@st header from the other class after the
+            -- partition ends. It will remain unaware that a longer chain
+            -- exists and end up stuck on its own distinct chain. Hence it's a
+            -- Common Prefix violation.
             --
-            -- Note that this is the exclusive upper bound, and so the max
-            -- possible duration is @2k-1@ slots. 
-            min ultimateSlot $ firstSlotIn + 2 * k
-    firstSlotAfter <- choose (firstSlotIn, ub)
+            -- We therefore motivate an upper bound on the partition duration
+            -- @w@ for a net with @n@ nodes by considering the two variables'
+            -- parities.
+            --
+            -- o For @n = 2h@ nodes and @w = 2u@ slots, the classes
+            --   respectively forge @u@ and @u+1@ ignorant blocks. (The @+1@th
+            --   block is forged in @firstSlotAfter@.) The preceding paragraph
+            --   requires @u < k@ requires @u <= k-1@ requires @w <= 2k-2@.
+            --
+            -- o For @n = 2h@ nodes and @w = 2u+1@ slots, the classes both
+            --   forge @u+1@ ignorant blocks. (The second @+1@th block is
+            --   forged in @firstSlotAfter@.) The preceding paragraph requires
+            --   @u+1 < k@ requires @u <= k-2@ requires @w <= 2k-3@.
+            --
+            -- o For @n = 2h+1@ nodes, slowest class forges at most the number
+            --   of blocks considered in the above cases for even @n@, so this
+            --   case doesn't contribute to the upper bound.
+            --
+            -- Thus @w@ can range from @0@ to @2k-2@ inclusive.
+            assert (k > 0) $ 2 * k - 2
+    firstSlotAfter <- choose (firstSlotIn, crop $ firstSlotIn + wMax)
 
-    let d = Util.countSlots (SlotNo firstSlotAfter) (SlotNo firstSlotIn)
+    let d :: Word64
+        d = Util.countSlots (SlotNo firstSlotAfter) (SlotNo firstSlotIn)
     pure $ Partition (SlotNo firstSlotIn) (NumSlots d)
-  where
-    penultimateSlot = ultimateSlot - 1
-    ultimateSlot    = t - 1
 
 tests :: TestTree
 tests = testGroup "Cardano" $
@@ -192,6 +237,7 @@ prop_simple_cardano_convergence testSetup@TestSetup
       }
       testOutput .&&.
     ( counterexample (labelFinalChains testOutput) $
+      prop_InSync testOutput .&&.
       prop_ReachesShelley reachesShelley
     )
   where
@@ -529,11 +575,31 @@ labelFinalChains testOutput =
   where
     TestOutput{testOutputNodes} = testOutput
 
- {-------------------------------------------------------------------------------
+prop_InSync :: forall sc. TPraosCrypto sc
+            => TestOutput (CardanoBlock sc) -> Property
+prop_InSync testOutput =
+    counterexample (show depths) $
+    counterexample "the nodes' final chains have different block numbers" $
+    property $
+    1 == length (nub depths)
+  where
+    TestOutput{testOutputNodes} = testOutput
+
+    -- the final chains' depths
+    --
+    -- NOTE: merely one element per node.
+    depths :: [Maybe BlockNo]
+    depths =
+      [ fmap blockNo $ listToMaybe $ chainToList nodeOutputFinalChain
+      | (_nid, no) <- Map.toList testOutputNodes
+      , let NodeOutput{nodeOutputFinalChain} = no
+      ]
+
+{-------------------------------------------------------------------------------
   A short even-odd partition
 -------------------------------------------------------------------------------}
 
--- | Temporary partition 'CalcMessageDelay'
+-- | The temporary partition as a 'CalcMessageDelay'
 --
 -- Calculates the delays that implement 'setupPartition'
 mkMessageDelay :: Partition -> CalcMessageDelay blk
