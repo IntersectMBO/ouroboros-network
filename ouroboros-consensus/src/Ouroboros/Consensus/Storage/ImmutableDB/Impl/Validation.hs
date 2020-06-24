@@ -348,7 +348,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
     lift $ do
 
-      -- If the parser returneds a deserialisation error, truncate the chunk
+      -- If the parser returns a deserialisation error, truncate the chunk
       -- file. Don't truncate the database just yet, because the
       -- deserialisation error may be due to some extra random bytes that
       -- shouldn't have been there in the first place.

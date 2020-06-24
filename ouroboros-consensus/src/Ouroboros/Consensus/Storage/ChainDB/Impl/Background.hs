@@ -235,7 +235,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
 -- * Schedule GC of the VolDB ('scheduleGC') for the 'SlotNo' of the most
 --   recent block that was copied.
 --
--- It is important that we only take LgrDB snapshots when are are /sure/ they
+-- It is important that we only take LgrDB snapshots when we are /sure/ they
 -- have been copied to the ImmDB, since the LgrDB assumes that all snapshots
 -- correspond to immutable blocks. (Of course, data corruption can occur and we
 -- can handle it by reverting to an older LgrDB snapshot, but we should need
