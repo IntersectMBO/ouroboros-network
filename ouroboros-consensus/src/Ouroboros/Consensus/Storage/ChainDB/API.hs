@@ -343,12 +343,16 @@ instance DB (ChainDB m blk) where
 -------------------------------------------------------------------------------}
 
 data AddBlockPromise m blk = AddBlockPromise
-    { blockWrittenToDisk :: STM m Bool
+    { blockWrittenToDisk :: STM m (Either SomeException Bool)
       -- ^ Use this 'STM' transaction to wait until the block has been written
       -- to disk.
       --
       -- Returns 'True' when the block was written to disk or 'False' when it
       -- was ignored, e.g., because it was older than @k@.
+      --
+      -- Returns 'Left' if the background thread met an exception, while
+      -- writting the block to the disk. It's possible that the block is written
+      -- to disk even if an exception is returned.
       --
       -- If the 'STM' transaction has returned 'True' then 'getIsFetched' will
       -- return 'True' for the added block.
@@ -356,7 +360,7 @@ data AddBlockPromise m blk = AddBlockPromise
       -- NOTE: Even when the result is 'False', 'getIsFetched' might still
       -- return 'True', e.g., the block was older than @k@, but it has been
       -- downloaded and stored on disk before.
-    , blockProcessed     :: STM m (Point blk)
+    , blockProcessed     :: STM m (Either SomeException (Point blk))
       -- ^ Use this 'STM' transaction to wait until the block has been
       -- processed: the block has been written to disk and chain selection has
       -- been performed for the block, /unless/ the block is from the future.
@@ -365,6 +369,9 @@ data AddBlockPromise m blk = AddBlockPromise
       -- doesn't match the added block, it doesn't necessarily mean the block
       -- wasn't adopted. We might have adopted a longer chain of which the
       -- added block is a part, but not the tip.
+      --
+      -- Returns 'Left' if the background thread met an exception, while
+      -- processing the block.
       --
       -- NOTE: When the block is from the future, chain selection for the
       -- block won't be performed until the block is no longer in the future,
@@ -375,18 +382,26 @@ data AddBlockPromise m blk = AddBlockPromise
     }
 
 -- | Add a block synchronously: wait until the block has been written to disk
--- (see 'blockWrittenToDisk').
+-- (see 'blockWrittenToDisk'). Rethrows any exception from the addBlockRunner
+-- background thread.
 addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> blk -> m Bool
 addBlockWaitWrittenToDisk chainDB blk = do
     promise <- addBlockAsync chainDB blk
-    atomically $ blockWrittenToDisk promise
+    eiAdded <- atomically $ blockWrittenToDisk promise
+    case eiAdded of
+      Left e      -> throwM e
+      Right added -> return added
 
 -- | Add a block synchronously: wait until the block has been processed (see
--- 'blockProcessed'). The new tip of the ChainDB is returned.
+-- 'blockProcessed'). The new tip of the ChainDB is returned. Rethrows any
+-- exception from the addBlockRunner background thread.
 addBlock :: IOLike m => ChainDB m blk -> blk -> m (Point blk)
 addBlock chainDB blk = do
     promise <- addBlockAsync chainDB blk
-    atomically $ blockProcessed promise
+    eiPoint <- atomically $ blockProcessed promise
+    case eiPoint of
+      Left e      -> throwM e
+      Right point -> return point
 
 -- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
 -- new tip of the ChainDB.

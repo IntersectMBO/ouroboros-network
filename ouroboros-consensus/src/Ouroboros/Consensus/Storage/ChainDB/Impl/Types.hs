@@ -56,6 +56,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceInitChainSelEvent (..)
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
+    -- * Exceptions Utilities
+  , SomeExceptionWithEq (..)
   ) where
 
 import           Control.Tracer
@@ -420,9 +422,9 @@ newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
 -- to implement 'AddBlockPromise'.
 data BlockToAdd m blk = BlockToAdd
   { blockToAdd            :: !blk
-  , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
+  , varBlockWrittenToDisk :: !(StrictTMVar m (Either SomeException Bool))
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
-  , varBlockProcessed     :: !(StrictTMVar m (Point blk))
+  , varBlockProcessed     :: !(StrictTMVar m (Either SomeException (Point blk)))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
   }
 
@@ -599,6 +601,12 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | An unknown exception was encountered at the thread that writes blocks
+    -- to the database and we don't know how to handle it.
+    -- 'Bool' is 'True' if the exception was thrown after the block was written
+    -- to disk. The opposite is not guarranteed for 'False'.
+  | AddBlockUnhandledException SomeExceptionWithEq Bool
   deriving (Generic)
 
 deriving instance
@@ -744,3 +752,16 @@ data TraceIteratorEvent blk
     -- back in the VolatileDB again because the ImmutableDB doesn't have the
     -- next block we're looking for.
   deriving (Generic, Eq, Show)
+
+{-------------------------------------------------------------------------------
+  Exceptions Utilities
+-------------------------------------------------------------------------------}
+
+-- Wrapper of SomeException to allow deriving Eq instance.
+newtype SomeExceptionWithEq = DefaultEq SomeException
+
+instance Eq SomeExceptionWithEq where
+  _ == _ = True
+
+instance Show SomeExceptionWithEq where
+  show (DefaultEq someException) = show someException

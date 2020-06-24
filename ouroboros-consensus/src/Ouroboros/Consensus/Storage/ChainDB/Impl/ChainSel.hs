@@ -240,54 +240,59 @@ addBlockSync
   -> BlockToAdd m blk
   -> m ()
 addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
-    (isMember, invalid, curChain) <- atomically $ (,,)
-      <$> VolDB.getIsMember               cdbVolDB
-      <*> (forgetFingerprint <$> readTVar cdbInvalid)
-      <*> Query.getCurrentChain           cdb
-
-    let immBlockNo = AF.anchorBlockNo curChain
-
-    -- We follow the steps from section "## Adding a block" in ChainDB.md
-
-    -- Note: we call 'chainSelectionForFutureBlocks' in all branches instead
-    -- of once, before branching, because we want to do it /after/ writing the
-    -- block to the VolatileDB and delivering the 'varBlockWrittenToDisk'
-    -- promise, as this is the promise the BlockFetch client waits for.
-    -- Otherwise, the BlockFetch client would have to wait for
-    -- 'chainSelectionForFutureBlocks'.
-
-    -- ### Ignore
-    newTip <- if
-      | olderThanK hdr isEBB immBlockNo -> do
-        trace $ IgnoreBlockOlderThanK (blockRealPoint b)
-        deliverWrittenToDisk False
-        chainSelectionForFutureBlocks cdb BlockCache.empty
-
-      | isMember (blockHash b) -> do
-        trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
-        deliverWrittenToDisk True
-        chainSelectionForFutureBlocks cdb BlockCache.empty
-
-      | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
-        trace $ IgnoreInvalidBlock (blockRealPoint b) reason
-        deliverWrittenToDisk False
-        chainSelectionForFutureBlocks cdb BlockCache.empty
-
-      -- The remaining cases
-      | otherwise -> do
-        VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
-        deliverWrittenToDisk True
-
-        let blockCache = BlockCache.singleton b
-        -- Do chain selection for future blocks before chain selection for the
-        -- new block. When some future blocks are now older than the current
-        -- block, we will do chain selection in a more chronological order.
-        void $ chainSelectionForFutureBlocks cdb blockCache
-        chainSelectionForBlock cdb blockCache hdr
-
-    deliverProcessed newTip
+    eiNewTip <- try mkNewTip
+    case eiNewTip of
+      Left e       -> handler e
+      Right newTip -> deliverProcessed newTip
   where
+    mkNewTip :: m (Point blk)
+    mkNewTip = do
+      (isMember, invalid, curChain) <- atomically $ (,,)
+        <$> VolDB.getIsMember               cdbVolDB
+        <*> (forgetFingerprint <$> readTVar cdbInvalid)
+        <*> Query.getCurrentChain           cdb
+
+      let immBlockNo = AF.anchorBlockNo curChain
+
+      -- We follow the steps from section "## Adding a block" in ChainDB.md
+
+      -- Note: we call 'chainSelectionForFutureBlocks' in all branches instead
+      -- of once, before branching, because we want to do it /after/ writing the
+      -- block to the VolatileDB and delivering the 'varBlockWrittenToDisk'
+      -- promise, as this is the promise the BlockFetch client waits for.
+      -- Otherwise, the BlockFetch client would have to wait for
+      -- 'chainSelectionForFutureBlocks'.
+
+      -- ### Ignore
+      if
+        | olderThanK hdr isEBB immBlockNo -> do
+          trace $ IgnoreBlockOlderThanK (blockRealPoint b)
+          deliverWrittenToDisk False
+          chainSelectionForFutureBlocks cdb BlockCache.empty
+
+        | isMember (blockHash b) -> do
+          trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
+          deliverWrittenToDisk True
+          chainSelectionForFutureBlocks cdb BlockCache.empty
+
+        | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
+          trace $ IgnoreInvalidBlock (blockRealPoint b) reason
+          deliverWrittenToDisk False
+          chainSelectionForFutureBlocks cdb BlockCache.empty
+
+        -- The remaining cases
+        | otherwise -> do
+          VolDB.putBlock cdbVolDB b
+          trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
+          deliverWrittenToDisk True
+
+          let blockCache = BlockCache.singleton b
+          -- Do chain selection for future blocks before chain selection for the
+          -- new block. When some future blocks are now older than the current
+          -- block, we will do chain selection in a more chronological order.
+          void $ chainSelectionForFutureBlocks cdb blockCache
+          chainSelectionForBlock cdb blockCache hdr
+
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 
@@ -301,13 +306,28 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- 'AddBlockPromise' with the given 'Bool'.
     deliverWrittenToDisk :: Bool -> m ()
     deliverWrittenToDisk writtenToDisk = atomically $
-        putTMVar varBlockWrittenToDisk writtenToDisk
+        putTMVar varBlockWrittenToDisk $ Right writtenToDisk
 
     -- | Fill in the 'TMVar' for the 'varBlockProcessed' of the block's
     -- 'AddBlockPromise' with the given tip.
     deliverProcessed :: Point blk -> m ()
     deliverProcessed tip = atomically $
-        putTMVar varBlockProcessed tip
+        putTMVar varBlockProcessed $ Right tip
+
+    handler :: SomeException -> m ()
+    handler e = do
+      when (isAsync e) $
+        throwM e
+      filled <- atomically $ do
+        -- Note that 'varBlockWrittenToDisk' may be full already, in which case
+        -- using 'putTMVar' deadlocks the whole application. On the other hand,
+        -- we are sure at this point that 'varBlockProcessed' is empty. When
+        -- 'filled' is 'False', this means the 'TMVar' is already full, so the
+        -- block is already written to disk.
+        filled  <- tryPutTMVar varBlockWrittenToDisk $ Left e
+        putTMVar varBlockProcessed $ Left e
+        return filled
+      trace $ AddBlockUnhandledException (DefaultEq e) (not filled)
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain
