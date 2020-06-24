@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadThrow(..)
   , MonadCatch(..)
   , MonadMask(..)
+  , MonadEvaluate(..)
   , Exception(..)
   , SomeException
   , ExitCase(..)
@@ -87,6 +88,7 @@ class ( MonadAsync              m
       , MonadCatch              m
       , MonadMask               m
       , MonadMonotonicTime      m
+      , MonadEvaluate           m
       , MonadThrow         (STM m)
       , MonadSTMTxExtended (STM m)
       , forall a. NoUnexpectedThunks (m a)

@@ -187,6 +187,9 @@ instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
     asyncWithUnmask $ \unmask ->
       withEarlyExit (f (earlyExit . unmask . withEarlyExit))
 
+instance (MonadEvaluate m, MonadCatch m) => MonadEvaluate (WithEarlyExit m) where
+  evaluate = WithEarlyExit . lift . evaluate
+
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
 commute (Right Nothing)  = Nothing
