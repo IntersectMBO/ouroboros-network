@@ -13,6 +13,7 @@ module Control.Monad.Class.MonadAsync
   , AsyncCancelled(..)
   , ExceptionInLinkedThread(..)
   , Concurrently (..)
+  , isCancel
   , link
   , linkTo
   , linkOnly
