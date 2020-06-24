@@ -12,7 +12,7 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types (Translate)
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), RequiringBoth (..))
 
@@ -21,9 +21,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
 -------------------------------------------------------------------------------}
 
 data EraTranslation xs = EraTranslation {
-      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))       xs
-    , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (Translate WrapLedgerView))    xs
-    , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState)) xs
+      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))            xs
+    , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState))      xs
+    , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (TranslateForecast WrapLedgerView)) xs
     }
   deriving NoUnexpectedThunks
        via OnlyCheckIsWHNF "EraTranslation" (EraTranslation xs)

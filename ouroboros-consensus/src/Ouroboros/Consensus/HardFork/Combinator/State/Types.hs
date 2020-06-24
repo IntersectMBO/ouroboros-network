@@ -9,6 +9,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Types (
   , Snapshot(..)
     -- * Supporting types
   , Translate(..)
+  , TranslateForecast(..)
   , TransitionInfo(..)
   ) where
 
@@ -101,8 +102,28 @@ data Snapshot f blk =
   Supporting types
 -------------------------------------------------------------------------------}
 
+-- | Translate @f x@ to @f y@ across an era transition
+--
+-- Typically @f@ will be 'LedgerState' or 'WrapChainDepState'.
 newtype Translate f x y = Translate {
       translateWith :: EpochNo -> f x -> f y
+    }
+
+-- | Translate (a forecast of) @f x@ to (a forecast of) @f y@
+-- across an era transition.
+--
+-- Typically @f@ will be 'WrapLedgerView'.
+--
+-- In addition to the 'EpochNo' of the transition, this is also told the
+-- 'SlotNo' we're constructing a forecast for. This enables the translation
+-- function to take into account any scheduled changes that the final ledger
+-- view in the preceding era might have.
+newtype TranslateForecast f x y = TranslateForecast {
+      translateForecastWith ::
+           EpochNo  -- 'EpochNo' of the transition
+        -> SlotNo   -- 'SlotNo' we're constructing a forecast for
+        -> f x
+        -> f y
     }
 
 -- | Knowledge in a particular era of the transition to the next era

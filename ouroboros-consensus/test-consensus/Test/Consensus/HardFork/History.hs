@@ -818,7 +818,7 @@ mockHardForkLedgerView :: SListI xs
                        -> Forecast (HardForkLedgerView_ (K ()) xs)
 mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
-      (InPairs.hpure $ Translate $ \_epoch (K ()) -> K ())
+      (InPairs.hpure $ TranslateForecast $ \_epoch _slot (K ()) -> K ())
       (mockState HF.initBound pss ts ess)
   where
     mockState :: HF.Bound
