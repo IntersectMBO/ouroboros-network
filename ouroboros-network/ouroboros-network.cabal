@@ -68,6 +68,7 @@ library
                        Ouroboros.Network.PeerSelection.PeerStateActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
+                       Ouroboros.Network.PeerSelection.Simple
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
                        Ouroboros.Network.Protocol.ChainSync.Codec
