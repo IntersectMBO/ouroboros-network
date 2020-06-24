@@ -40,15 +40,25 @@ import qualified Network.Socket as Socket
 import           Ouroboros.Network.PeerSelection.Types
 
 
+-- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
+-- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
+--
+data DomainAddress = DomainAddress {
+    daDomain     :: !DNS.Domain,
+    daPortNumber :: !Socket.PortNumber
+  }
+  deriving (Show, Eq, Ord)
+
+
 -----------------------------------------------
 -- local root peer set provider based on DNS
 --
 
 data TraceLocalRootPeers =
-       TraceLocalRootDomains [(DNS.Domain, PeerAdvertise)]
-     | TraceLocalRootWaiting DNS.Domain DiffTime
-     | TraceLocalRootResult  DNS.Domain [(IPv4, DNS.TTL)]
-     | TraceLocalRootFailure DNS.Domain DNS.DNSError
+       TraceLocalRootDomains [(DomainAddress, PeerAdvertise)]
+     | TraceLocalRootWaiting DomainAddress DiffTime
+     | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
+     | TraceLocalRootFailure DomainAddress DNS.DNSError
        --TODO: classify DNS errors, config error vs transitory
   deriving Show
 
@@ -59,8 +69,8 @@ data TraceLocalRootPeers =
 --
 localRootPeersProvider :: Tracer IO TraceLocalRootPeers
                        -> DNS.ResolvConf
-                       -> TVar IO (Map DNS.Domain (Map IPv4 PeerAdvertise))
-                       -> [(DNS.Domain, PeerAdvertise)]
+                       -> TVar IO (Map DomainAddress (Map Socket.SockAddr PeerAdvertise))
+                       -> [(DomainAddress, PeerAdvertise)]
                        -> IO ()
 localRootPeersProvider tracer resolvConf rootPeersVar domains = do
     traceWith tracer (TraceLocalRootDomains domains)
@@ -70,7 +80,8 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
         withAsyncAll (map (monitorDomain resolver) domains) $ \asyncs ->
           waitAny asyncs >> return ()
   where
-    monitorDomain resolver (domain, advertisePeer) =
+    monitorDomain :: DNS.Resolver -> (DomainAddress, PeerAdvertise) -> IO ()
+    monitorDomain resolver (domain@DomainAddress {daDomain, daPortNumber}, advertisePeer) =
         go 0
       where
         go :: DiffTime -> IO ()
@@ -78,7 +89,7 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
             threadDelay ttl
-          reply <- lookupAWithTTL resolver domain
+          reply <- lookupAWithTTL resolver daDomain
           case reply of
             Left  err -> do
               traceWith tracer (TraceLocalRootFailure domain err)
@@ -88,10 +99,13 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
               traceWith tracer (TraceLocalRootResult domain results)
               atomically $ do
                 rootPeers <- readTVar rootPeersVar
-                let resultsMap :: Map IPv4 PeerAdvertise
-                    resultsMap = Map.fromList [ (addr, advertisePeer)
+                let resultsMap :: Map Socket.SockAddr PeerAdvertise
+                    resultsMap = Map.fromList [ ( Socket.SockAddrInet
+                                                    daPortNumber
+                                                    (IP.toHostAddress addr)
+                                                , advertisePeer)
                                               | (addr, _ttl) <- results ]
-                    rootPeers' :: Map DNS.Domain (Map IPv4 PeerAdvertise)
+                    rootPeers' :: Map DomainAddress (Map Socket.SockAddr PeerAdvertise)
                     rootPeers' = Map.insert domain resultsMap rootPeers
 
                 -- Only overwrite if it changed:
@@ -104,12 +118,6 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
 ---------------------------------------------
 -- Public root peer set provider using DNS
 --
-
-data DomainAddress = DomainAddress {
-    daDomain     :: !DNS.Domain,
-    daPortNumber :: !Socket.PortNumber
-  }
-  deriving Show
 
 data TracePublicRootPeers =
        TracePublicRootDomains [DomainAddress]
