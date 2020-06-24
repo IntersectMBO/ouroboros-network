@@ -27,7 +27,6 @@ import           Data.Word (Word64)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
-import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -89,28 +88,25 @@ data CoreNodeKeyInfo h = CoreNodeKeyInfo
       )
   }
 
-coreNodeKeys
-  :: HashAlgorithm h
-  => CoreNode (TPraosMockCrypto h)
-  -> CoreNodeKeyInfo h
-coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
-  = CoreNodeKeyInfo
-      { cnkiCoreNode =
+coreNodeKeys :: CoreNode (TPraosMockCrypto h) -> CoreNodeKeyInfo h
+coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
+    CoreNodeKeyInfo {
+        cnkiCoreNode =
           ( mkDSIGNKeyPair cnGenesisKey
           , Gen.AllIssuerKeys
             { Gen.cold = mkDSIGNKeyPair cnDelegateKey
-            , Gen.vrf  = mkVRFKeyPair cnVRF
-            , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
-            , Gen.hk   = SL.hashKey (SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
+              -- 'CoreNodeKeyInfo' is used for all sorts of generators, not
+              -- only transaction generators. To generate transactions we
+              -- don't need all these keys, hence the 'error's.
+            , Gen.vrf  = error "vrf used while generating transactions"
+            , Gen.hot  = error "hot used while generating transactions"
+            , Gen.hk   = error "hk used while generating transactions"
             }
           )
       , cnkiKeyPair = (mkDSIGNKeyPair cnDelegateKey, mkDSIGNKeyPair cnStakingKey)
       }
   where
-    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k)
-                                  k
-    mkVRFKeyPair k = (k, deriveVerKeyVRF k)
-    mkKESKeyPair k = (k, deriveVerKeyKES k)
+    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k) k
 
 genCoreNode
   :: (MonadRandom m, TPraosCrypto c)
@@ -158,6 +154,9 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         }
       }
 
+-- | Note: a KES algorithm supports a particular max number of KES evolutions,
+-- but we can configure a potentially lower maximum for the ledger, that's why
+-- we take it as an argument.
 mkGenesisConfig
   :: forall c. TPraosCrypto c
   => ProtVer  -- ^ Initial protocol version
@@ -177,7 +176,13 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgActiveSlotsCoeff      = recip recipF   -- ie f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
-    , sgSlotsPerKESPeriod     = 10 -- TODO
+      -- TODO maxKESEvolutions * sgSlotsPerKESPeriod = max number of slots the
+      -- test can run without needing new ocerts. The maximum number of slots
+      -- the tests run now is 200 and the mock KES supports 10 evolutions, so
+      -- 10 * 20 == 200 is enough.
+      -- We can relax this in:
+      -- <https://github.com/input-output-hk/ouroboros-network/issues/2107>
+    , sgSlotsPerKESPeriod     = 20
     , sgMaxKESEvolutions      = maxKESEvolutions
     , sgSlotLength            = getSlotLength slotLength
     , sgUpdateQuorum          = 1  -- TODO

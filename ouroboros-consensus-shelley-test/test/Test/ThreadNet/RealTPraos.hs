@@ -1,9 +1,11 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.ThreadNet.RealTPraos (tests) where
 
 import           Control.Monad (replicateM)
 import           Data.List ((!!))
+import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -11,6 +13,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Hash (ShortHash)
+import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Slotting.Slot (EpochSize (..))
 
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -29,6 +32,7 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Node
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES)
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.TxGen.Shelley
@@ -109,8 +113,9 @@ prop_simple_real_tpraos_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    maxKESEvolution :: Word64
-    maxKESEvolution = 100 -- TODO
+    maxKESEvolutions :: Word64
+    maxKESEvolutions = fromIntegral $
+      KES.totalPeriodsKES (Proxy @(KES (TPraosMockCrypto ShortHash)))
 
     coreNodes :: [CoreNode (TPraosMockCrypto ShortHash)]
     coreNodes =
@@ -127,7 +132,7 @@ prop_simple_real_tpraos_convergence TestSetup
           setupK
           setupD
           tpraosSlotLength
-          maxKESEvolution
+          maxKESEvolutions
           coreNodes
 
     epochSize :: EpochSize
