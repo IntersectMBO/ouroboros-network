@@ -31,8 +31,7 @@ import           Data.Map.Strict (Map)
 import           Control.Exception (Exception (..), IOException)
 import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadAsync
--- TODO: use `MonadSTM.Strict`
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
@@ -166,8 +165,8 @@ resolverResource resolvConf = do
       `catches` handlers filePath tr
 
 
--- | `Resource` which passes the 'DNS.Resolver' through a 'TVar'.  Better than
--- 'resolverResource' when using in multiple threads.
+-- | `Resource` which passes the 'DNS.Resolver' through a 'StrictTVar'.  Better
+-- than 'resolverResource' when using in multiple threads.
 --
 asyncResolverResource :: DNS.ResolvConf -> IO (Resource DNSorIOError DNS.Resolver)
 asyncResolverResource resolvConf =
@@ -179,7 +178,7 @@ asyncResolverResource resolvConf =
         rs <- DNS.makeResolvSeed resolvConf
         DNS.withResolver rs (pure . constantResource)
   where
-    handlers :: FilePath -> TVar IO TimedResolver
+    handlers :: FilePath -> StrictTVar IO TimedResolver
              -> [Handler IO
                   ( Either DNSorIOError DNS.Resolver
                   , Resource DNSorIOError DNS.Resolver)]
@@ -192,7 +191,7 @@ asyncResolverResource resolvConf =
             pure (Left (DNSError err), go filePath resourceVar)
       ]
 
-    go :: FilePath -> TVar IO TimedResolver
+    go :: FilePath -> StrictTVar IO TimedResolver
        -> Resource DNSorIOError DNS.Resolver
     go filePath resourceVar = Resource $ do
       r <- atomically (readTVar resourceVar)
@@ -239,7 +238,7 @@ data TraceLocalRootPeers =
 --
 localRootPeersProvider :: Tracer IO TraceLocalRootPeers
                        -> DNS.ResolvConf
-                       -> TVar IO (Map DomainAddress (Map Socket.SockAddr PeerAdvertise))
+                       -> StrictTVar IO (Map DomainAddress (Map Socket.SockAddr PeerAdvertise))
                        -> [(DomainAddress, PeerAdvertise)]
                        -> IO ()
 localRootPeersProvider tracer resolvConf rootPeersVar domains = do
@@ -313,7 +312,7 @@ publicRootPeersProvider tracer resolvConf domains action = do
     resourceVar <- newTVarM rr
     action (requestPublicRootPeers resourceVar)
   where
-    requestPublicRootPeers :: TVar IO (Resource DNSorIOError DNS.Resolver)
+    requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         rr <- atomically $ readTVar resourceVar
@@ -418,7 +417,7 @@ exampleLocal domains = do
         rootPeersVar
         (map (\d -> (d, DoAdvertisePeer)) domains)
 
-    observer :: (Eq a, Show a) => TVar IO a -> a -> IO ()
+    observer :: (Eq a, Show a) => StrictTVar IO a -> a -> IO ()
     observer var fingerprint = do
       x <- atomically $ do
         x <- readTVar var
