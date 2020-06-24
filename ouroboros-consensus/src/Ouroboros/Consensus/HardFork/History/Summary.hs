@@ -19,7 +19,7 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , initBound
   , mkUpperBound
   , slotToEpochBound
-    -- * Per-era ummary
+    -- * Per-era summary
   , EraSummary(..)
   , EraEnd(..)
   , mkEraEnd
@@ -256,10 +256,10 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 -- for each era. The type argument is a type-level list containing one entry
 -- per era, emphasizing that this information is statically known.
 --
--- The indices are currently not yet used, but the idea is that they look
--- something like @'[Byron, Shelley, Goguen]@ and are then also used by the
--- hard fork combinator (most likely this will be a list of block types, since
--- most of consensus is indexed by block types).
+-- The entry indices themselves are not used here, but the idea is that they
+-- look something like @'[ByronBlock, ShelleyBlock, GoguenBlock]@ and do affect
+-- the hard fork combinator. So far this is a list of block types, since most
+-- of consensus is indexed by block types.
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
 
@@ -328,14 +328,14 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
        -> Exactly  (x ': xs) EraParams   -- params for all eras
        -> AtMost         xs  EpochNo     -- transitions
        -> NonEmpty (x ': xs) EraSummary
-    -- CASE (ii)
+    -- CASE (ii) from 'EraParams' Haddock
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
     go lo (K params :* ss) (AtMostCons epoch fs) =
         NonEmptyCons (EraSummary lo (EraEnd hi) params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
-    -- CASE (i) or (iii)
+    -- CASE (i) or (iii) from 'EraParams' Haddock
     go lo (K params@EraParams{..} :* _) AtMostNil =
         NonEmptyOne (EraSummary lo hi params)
       where
@@ -345,9 +345,10 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
            . slotToEpochBound params lo
            . addSlots (safeFromTip eraSafeZone)
              -- If the tip is already in this era, safe zone applies from the
-             -- ledger tip (CASE (i)). If the ledger tip is in the /previous/
-             -- era, but the transition to /this/ era is already known, the safe
-             -- zone applies from the start of this era (CASE (iii)).
+             -- ledger tip (CASE (i) from 'EraParams' Haddock). If the ledger
+             -- tip is in the /previous/ era, but the transition to /this/ era
+             -- is already known, the safe zone applies from the start of this
+             -- era (CASE (iii) from 'EraParams' Haddock).
              --
              -- NOTE: The upper bound is /exclusive/:
              --
