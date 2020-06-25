@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP              #-}
 {-# LANGUAGE ConstraintKinds  #-}
 {-# LANGUAGE DeriveFunctor    #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE RankNTypes       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Test.Mux.Timeout ( tests ) where
 
@@ -52,6 +54,7 @@ tests =
       , testProperty "prop_timeout_io withTimeoutSerialAlternative" $
           prop_timeout_io withTimeoutSerialAlternative
 
+#if !defined(mingw32_HOST_OS)
         -- Note that these IO tests can fail if run concurrently with CPU-bound
         -- threads. See the comments on schedulingToleranceIO.
       , testProperty "prop_timeouts_io withTimeoutSerialNative" $
@@ -61,6 +64,7 @@ tests =
       , testProperty "prop_timeouts_io withTimeoutSerialAlternative" $
           mapSize (min 50) $
           prop_timeouts_io withTimeoutSerialAlternative
+#endif
       ]
     ]
 
