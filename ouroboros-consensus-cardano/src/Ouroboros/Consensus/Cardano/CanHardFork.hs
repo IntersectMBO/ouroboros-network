@@ -434,7 +434,7 @@ translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
             _utxo      = utxoShelley
           , _deposited = SL.Coin 0
           , _fees      = SL.Coin 0
-          , _ppups     = SL.ProposedPPUpdates Map.empty
+          , _ppups     = SL.emptyPPUPState
           }
       , _delegationState = SL.DPState {
           _dstate = SL.emptyDState { SL._genDelegs = genDelegs }

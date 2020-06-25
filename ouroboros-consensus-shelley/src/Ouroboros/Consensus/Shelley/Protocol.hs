@@ -447,7 +447,8 @@ mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold
   :: forall c.
-     ConsensusConfig (TPraos c)
+     Crypto c
+  => ConsensusConfig (TPraos c)
   -> LedgerView (TPraos c)
   -> SL.KeyHash 'SL.StakePool c
   -> CertifiedVRF (VRF c) SL.Seed
