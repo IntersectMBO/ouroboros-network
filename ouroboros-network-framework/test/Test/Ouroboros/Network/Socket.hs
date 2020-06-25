@@ -33,7 +33,6 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Concurrent (ThreadId)
 import           Control.Exception (IOException)
 import           Control.Tracer
@@ -318,9 +317,10 @@ prop_socket_recv_error f rerr =
       (close snocket)
       $ \sd -> do
         -- bind the socket
-        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
         Socket.setSocketOption sd Socket.ReuseAddr 1
         Socket.bind sd (Socket.addrAddress muxAddress)
+        addr <- Socket.getSocketName sd
         Socket.listen sd 1
 
         withAsync
@@ -343,8 +343,8 @@ prop_socket_recv_error f rerr =
           $ \muxAsync -> do
 
           -- connect to muxAddress
-          sd' <- openToConnect snocket (Socket.addrAddress muxAddress)
-          _ <- connect snocket sd' (Socket.addrAddress muxAddress)
+          sd' <- openToConnect snocket addr
+          _ <- connect snocket sd' addr
 
 #if defined(mingw32_HOST_OS)
           Win32.Async.sendAll sd' $ BL.singleton 0xa
@@ -352,8 +352,7 @@ prop_socket_recv_error f rerr =
           Socket.sendAll sd' $ BL.singleton 0xa
 #endif
 
-          if rerr == RecvSocketClosed then Socket.close sd'
-                                      else threadDelay 0.2
+          when (rerr == RecvSocketClosed) $ Socket.close sd'
 
           res <- waitCatch muxAsync
           result <- case res of
@@ -392,9 +391,10 @@ prop_socket_send_error rerr =
       (close snocket)
       $ \sd -> do
         -- bind the socket
-        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
         Socket.setSocketOption sd Socket.ReuseAddr 1
         Socket.bind sd (Socket.addrAddress muxAddress)
+        addr <- Socket.getSocketName sd
         Socket.listen sd 1
 
         withAsync
@@ -418,18 +418,12 @@ prop_socket_send_error rerr =
           $ \muxAsync -> do
 
 
-          sd' <- openToConnect snocket (Socket.addrAddress muxAddress)
+          sd' <- openToConnect snocket addr
           -- connect to muxAddress
-          _ <- connect snocket sd' (Socket.addrAddress muxAddress)
+          _ <- connect snocket sd' addr
 
-#if defined(mingw32_HOST_OS)
-          Win32.Async.sendAll sd' $ BL.singleton 0xa
-#else
-          Socket.sendAll sd' $ BL.singleton 0xa
-#endif
+          when (rerr == SendSocketClosed) $ Socket.close sd'
 
-          if rerr ==SendSocketClosed then Socket.close sd'
-                                     else threadDelay 0.2
 
           res <- waitCatch muxAsync
           result <- case res of
