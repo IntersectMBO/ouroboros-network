@@ -473,14 +473,14 @@ meetsLeaderThreshold
 -- | Calculate the stability window (e.g. the number of slots needed for a block
 -- to become stable) from the security param and the active slot coefficient.
 --
--- The value 3k/f is determined to be a suitabe value as per
+-- The value 4k/f is determined to be a suitabe value as per
 -- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
 computeStabilityWindow
   :: SecurityParam
   -> SL.ActiveSlotCoeff
   -> Word64
 computeStabilityWindow securityParam asc =
-    ceiling $ fromIntegral @_ @Double (3 * k) / fromRational (toRational f)
+    ceiling $ fromIntegral @_ @Double (4 * k) / fromRational (toRational f)
   where
     SecurityParam k = securityParam
     f = SL.intervalValue . SL.activeSlotVal $ asc
