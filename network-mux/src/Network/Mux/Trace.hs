@@ -1,6 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE DerivingStrategies        #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Network.Mux.Trace (
       MuxError(..)
@@ -19,7 +23,9 @@ import           Text.Printf
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception
+import           GHC.Generics (Generic (..))
 import           GHC.Stack
+import           Quiet (Quiet (..))
 
 import           Network.Mux.Types
 
@@ -34,7 +40,9 @@ data MuxError = MuxError {
       errorType  :: !MuxErrorType
     , errorMsg   :: !String
     , errorStack :: !CallStack
-    } deriving Show
+    }
+  deriving Generic
+  deriving Show via Quiet MuxError
 
 
 -- | Enumeration of error conditions.
@@ -98,11 +106,10 @@ data WithMuxBearer peerid a = WithMuxBearer {
       wmbPeerId :: !peerid
       -- ^ A tag that should identify a specific mux bearer.
     , wmbEvent  :: !a
-}
+  }
+  deriving (Generic)
+  deriving Show via (Quiet (WithMuxBearer peerid a))
 --TODO: probably remove this type
-
-instance (Show a, Show peerid) => Show (WithMuxBearer peerid a) where
-    show WithMuxBearer {wmbPeerId, wmbEvent} = printf "Mux %s %s" (show wmbPeerId) (show wmbEvent)
 
 
 data MuxBearerState = Mature

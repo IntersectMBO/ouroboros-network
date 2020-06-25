@@ -38,7 +38,8 @@ library
                        statistics-linreg
                                        >=0.3 && <0.4,
                        vector          >=0.12 && <0.13,
-                       time            >=1.6 && <1.10
+                       time            >=1.6 && <1.10,
+                       quiet
 
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <2.9,
