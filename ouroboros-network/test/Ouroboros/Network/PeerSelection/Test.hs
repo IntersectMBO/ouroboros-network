@@ -34,10 +34,13 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.IOSim
 
 import qualified Network.DNS as DNS (defaultResolvConf)
+import           Network.Socket (SockAddr)
+import           Network.Mux.Timeout
+
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
@@ -1030,10 +1033,12 @@ renderRanges r n = show lower ++ " -- " ++ show upper
 -- Live examples
 --
 
-_governorFindingPublicRoots :: Int -> [Domain] -> IO Void
+_governorFindingPublicRoots :: Int -> [DomainAddress] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers domains =
+    withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
+      timeout
       DNS.defaultResolvConf
       domains $ \requestPublicRootPeers ->
 
@@ -1045,7 +1050,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
-    actions :: PeerSelectionActions IPv4 () IO
+    actions :: PeerSelectionActions SockAddr () IO
     actions = PeerSelectionActions {
                 readLocalRootPeers       = return Map.empty,
                 readPeerSelectionTargets = return targets,
@@ -1066,7 +1071,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 targetNumberOfActivePeers      = 0
               }
 
-    policy :: PeerSelectionPolicy IPv4 IO
+    policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
                 policyPickKnownPeersForGossip = pickTrivially,
                 policyPickColdPeersToForget   = pickTrivially,
@@ -1080,5 +1085,5 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 policyGossipBatchWaitTime     = 0, -- seconds
                 policyGossipOverallTimeout    = 0  -- seconds
               }
-    pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (Set IPv4)
+    pickTrivially :: Applicative m => Map SockAddr a -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n . Map.keysSet $ m
