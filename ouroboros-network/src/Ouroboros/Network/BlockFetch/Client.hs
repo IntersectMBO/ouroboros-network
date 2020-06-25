@@ -5,6 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
+-- hic sunt dracones!
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
     blockFetchClient,
@@ -20,7 +23,6 @@ module Ouroboros.Network.BlockFetch.Client (
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Data.Set as Set
@@ -72,7 +74,7 @@ type BlockFetchClient header block m a =
 -- work in conjunction with our fetch logic.
 --
 blockFetchClient :: forall header block m void.
-                    (MonadSTM m, MonadMonotonicTime m, MonadThrow m,
+                    (MonadSTM m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion

@@ -33,7 +33,9 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limits.
-byteLimitsTxSubmission :: (bytes -> Word) -> ProtocolSizeLimits (TxSubmission txid tx) bytes
+byteLimitsTxSubmission :: forall bytes txid tx.
+                          (bytes -> Word)
+                       -> ProtocolSizeLimits (TxSubmission txid tx) bytes
 byteLimitsTxSubmission= ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
@@ -50,7 +52,7 @@ byteLimitsTxSubmission= ProtocolSizeLimits stateToLimit
 -- `TokTxIds TokNonBlocking` `shortWait` timeout
 -- `TokTxs` `shortWait` timeout
 -- `TokIdle` `shortWait` timeout
-timeLimitsTxSubmission :: ProtocolTimeLimits (TxSubmission txid tx)
+timeLimitsTxSubmission :: forall txid tx. ProtocolTimeLimits (TxSubmission txid tx)
 timeLimitsTxSubmission = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).

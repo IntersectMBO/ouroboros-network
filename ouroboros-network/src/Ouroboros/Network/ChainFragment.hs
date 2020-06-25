@@ -164,8 +164,7 @@ infixl 5 :>, :<
 -- | \( O(n) \). Fold a 'ChainFragment'.
 --
 -- Implemented as a strict left fold.
-foldChainFragment :: HasHeader block
-                  => (a -> block -> a) -> a -> ChainFragment block -> a
+foldChainFragment :: (a -> block -> a) -> a -> ChainFragment block -> a
 foldChainFragment blk gen (ChainFragment c) = Foldable.foldl' blk gen c
 
 -- | \( O(n) \). Specification of 'foldChainFragment'.
@@ -179,8 +178,7 @@ foldChainFragmentSpec :: HasHeader block
 foldChainFragmentSpec _blk gen Empty    = gen
 foldChainFragmentSpec  blk gen (c :> b) = blk (foldChainFragmentSpec blk gen c) b
 
-prettyPrintChainFragment :: HasHeader block
-                         => String -> (block -> String)
+prettyPrintChainFragment :: String -> (block -> String)
                          -> ChainFragment block
                          -> String
 prettyPrintChainFragment nl ppBlock =
@@ -316,12 +314,12 @@ lastSlot = fmap blockSlot . last
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
 -- order.
-toNewestFirst :: HasHeader block => ChainFragment block -> [block]
+toNewestFirst :: ChainFragment block -> [block]
 toNewestFirst = foldChainFragment (flip (:)) []
 
 -- | \( O(n) \). Make a list of blocks from a 'ChainFragment', in
 -- oldest-to-newest order.
-toOldestFirst :: HasHeader block => ChainFragment block -> [block]
+toOldestFirst :: ChainFragment block -> [block]
 toOldestFirst (ChainFragment ft) = Foldable.toList ft
 
 -- | \( O(n) \). Make a 'ChainFragment' from a list of blocks in
@@ -584,7 +582,7 @@ successorBlock p c = splitAfterPoint c p >>= extractSuccessor
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
 -- the (newest\/rightmost) block of the first returned chain.
-splitAfterPoint :: (HasHeader block1, HasHeader block2,
+splitAfterPoint :: (HasHeader block1,
                     HeaderHash block1 ~ HeaderHash block2)
                 => ChainFragment block1
                 -> Point block2
@@ -614,7 +612,7 @@ splitAfterPoint (ChainFragment t) p@(BlockPoint bslot _)
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
 -- the (oldest\/leftmost) block of the second returned chain.
-splitBeforePoint :: (HasHeader block1, HasHeader block2,
+splitBeforePoint :: (HasHeader block1,
                     HeaderHash block1 ~ HeaderHash block2)
                  => ChainFragment block1
                  -> Point block2
@@ -789,7 +787,7 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
 -- | \( O(\max(n_1, n_2)) \). Check whether the first chain fragment is a
 -- prefix of the second.
-isPrefixOf :: (HasHeader block, Eq block)
+isPrefixOf :: Eq block
            => ChainFragment block -> ChainFragment block -> Bool
 a `isPrefixOf` b = toOldestFirst a `L.isPrefixOf` toOldestFirst b
 

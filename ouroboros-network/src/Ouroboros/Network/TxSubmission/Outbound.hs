@@ -108,7 +108,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
 
           when (  fromIntegral (Seq.length unackedSeq)
                 - ackNo
-                + fromIntegral reqNo
+                + reqNo
                 > maxUnacked) $
             throwM (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked)
 
@@ -165,7 +165,9 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
             TokNonBlocking -> SendMsgReplyTxIds (NonBlockingReply txs') client'
             TokBlocking    -> SendMsgReplyTxIds (BlockingReply   txs'') client'
               where
-                Just txs'' = NonEmpty.nonEmpty txs'
+                txs'' = case NonEmpty.nonEmpty txs' of
+                  Just  x -> x
+                  Nothing -> error "txSubmissionOutbound: empty transaction's list"
                 -- Assert txs is non-empty: we blocked until txs was non-null,
                 -- and we know reqNo > 0, hence take reqNo txs is non-null.
 

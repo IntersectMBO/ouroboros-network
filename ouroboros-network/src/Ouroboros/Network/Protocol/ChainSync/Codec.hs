@@ -33,7 +33,9 @@ import           Text.Printf
 
 
 -- | Byte Limits
-byteLimitsChainSync :: (bytes -> Word) -> ProtocolSizeLimits (ChainSync header tip) bytes
+byteLimitsChainSync :: forall bytes header tip .
+                       (bytes -> Word)
+                    -> ProtocolSizeLimits (ChainSync header tip) bytes
 byteLimitsChainSync = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
@@ -49,7 +51,9 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 -- `TokNext TokCanAwait` `longWait` timeout
 -- `TokNext TokMustReply` consensusTimeout timeout
 -- `TokIntersect` `longWait` timeout
-timeLimitsChainSync :: Maybe DiffTime -> ProtocolTimeLimits (ChainSync header tip)
+timeLimitsChainSync :: forall header tip.
+                       Maybe DiffTime
+                    -> ProtocolTimeLimits (ChainSync header tip)
 timeLimitsChainSync consensusTimeout = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).

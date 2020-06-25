@@ -117,7 +117,9 @@ chainSyncClientExample chainvar client = ChainSyncClient $
     rollback p = atomically $ do
         chain <- readTVar chainvar
         --TODO: handle rollback failure
-        let (Just !chain') = Chain.rollback p chain
+        let !chain' = case Chain.rollback p chain of
+              Just a -> a
+              Nothing -> error "out of scope rollback"
         writeTVar chainvar chain'
 
 -- | Offsets from the head of the chain to select points on the consumer's

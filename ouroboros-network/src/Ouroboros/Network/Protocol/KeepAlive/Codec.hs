@@ -32,9 +32,7 @@ import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 codecKeepAlive
   :: forall m.
-     ( Monad   m
-     , MonadST m
-     )
+     MonadST m
   => Codec KeepAlive CBOR.DeserialiseFailure m ByteString
 codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
    where

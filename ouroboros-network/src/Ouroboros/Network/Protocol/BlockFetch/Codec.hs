@@ -33,7 +33,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
-byteLimitsBlockFetch :: (bytes -> Word) -> ProtocolSizeLimits (BlockFetch block) bytes
+byteLimitsBlockFetch :: forall bytes block. (bytes -> Word) -> ProtocolSizeLimits (BlockFetch block) bytes
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
@@ -47,7 +47,7 @@ byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
 -- `TokIdle' No timeout
 -- `TokBusy` `longWait` timeout
 -- `TokStreaming` `longWait` timeout
-timeLimitsBlockFetch :: ProtocolTimeLimits (BlockFetch block)
+timeLimitsBlockFetch :: forall block. ProtocolTimeLimits (BlockFetch block)
 timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).

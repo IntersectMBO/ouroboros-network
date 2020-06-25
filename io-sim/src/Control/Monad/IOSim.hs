@@ -8,7 +8,11 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
+
 {-# OPTIONS_GHC -Wno-orphans            #-}
+-- incomplete uni patterns in 'schedule' (when interpreting 'StmTxCommitted')
+-- and 'reschedule'.
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Control.Monad.IOSim (
   -- * Simulation monad
