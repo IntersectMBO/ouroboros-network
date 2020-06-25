@@ -478,7 +478,8 @@ getPParams :: SL.ShelleyState c -> SL.PParams
 getPParams = SL.esPp . SL.nesEs
 
 getProposedPPUpdates :: SL.ShelleyState c -> SL.ProposedPPUpdates c
-getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
+getProposedPPUpdates = SL.proposals . SL._ppups
+                     . SL._utxoState . SL.esLState . SL.nesEs
 
 -- Get the current EpochState. This is mainly for debugging.
 getCurrentEpochState :: SL.ShelleyState c -> SL.EpochState c

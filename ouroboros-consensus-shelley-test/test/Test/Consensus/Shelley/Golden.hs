@@ -312,11 +312,13 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 9999999999999726
     , TkInt 271
     , TkInt 3
+    , TkListLen 2
     , TkMapLen 1
     , TkBytes "4\233C\154"
     , TkMapLen 1
     , TkInt 5
     , TkInt 255
+    , TkMapLen 0
     , TkListLen 2
     , TkListLen 7
     , TkMapLen 3
@@ -660,11 +662,13 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 9999999999999726
     , TkInt 271
     , TkInt 3
+    , TkListLen 2
     , TkMapLen 1
     , TkBytes "4\233C\154"
     , TkMapLen 1
     , TkInt 5
     , TkInt 255
+    , TkMapLen 0
     , TkListLen 2
     , TkListLen 7
     , TkMapLen 3
