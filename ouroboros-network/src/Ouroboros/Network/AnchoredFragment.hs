@@ -22,6 +22,7 @@ module Ouroboros.Network.AnchoredFragment (
   anchorToBlockNo,
   anchorToHash,
   anchorIsGenesis,
+  anchorToHeaderFields,
   anchorToTip,
   castAnchor,
 
@@ -220,6 +221,10 @@ anchorToSlotNo (Anchor s _h _b) = At s
 anchorToHash :: Anchor block -> ChainHash block
 anchorToHash AnchorGenesis    = GenesisHash
 anchorToHash (Anchor _s h _b) = BlockHash h
+
+anchorToHeaderFields :: Anchor block -> WithOrigin (HeaderFields block)
+anchorToHeaderFields AnchorGenesis  = Origin
+anchorToHeaderFields (Anchor s h b) = At (HeaderFields s b h)
 
 -- | Translate 'Anchor' to 'Tip'
 --

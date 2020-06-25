@@ -49,7 +49,7 @@ data BlockFetchServerException =
       -- garbage collected. However, the network protocol will have timed out
       -- long before this happens.
       forall blk. (Typeable blk, StandardHash blk) =>
-        BlockGCed (HeaderHash blk)
+        BlockGCed (RealPoint blk)
 
       -- | Thrown when requesting the genesis block from the database
       --
@@ -119,9 +119,9 @@ blockFetchServer _tracer chainDB _version registry = senderSide
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
           return $ SendMsgBatchDone $ return senderSide
-        IteratorBlockGCed hash -> do
+        IteratorBlockGCed pt -> do
           ChainDB.iteratorClose it
-          throwM $ BlockGCed @blk hash
+          throwM $ BlockGCed @blk pt
 
 
 {-------------------------------------------------------------------------------

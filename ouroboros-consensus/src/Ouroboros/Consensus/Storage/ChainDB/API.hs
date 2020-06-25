@@ -542,16 +542,16 @@ traverseIterator f it = it {
 data IteratorResult blk b =
     IteratorExhausted
   | IteratorResult b
-  | IteratorBlockGCed (HeaderHash blk)
+  | IteratorBlockGCed (RealPoint blk)
     -- ^ The block that was supposed to be streamed was garbage-collected from
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks very slowly.
   deriving (Functor, Foldable, Traversable)
 
-deriving instance (Eq   blk, Eq   b, Eq   (HeaderHash blk))
+deriving instance (Eq   blk, Eq   b, StandardHash blk)
                => Eq   (IteratorResult blk b)
-deriving instance (Show blk, Show b, Show (HeaderHash blk))
+deriving instance (Show blk, Show b, StandardHash blk)
                => Show (IteratorResult blk b)
 
 data UnknownRange blk =

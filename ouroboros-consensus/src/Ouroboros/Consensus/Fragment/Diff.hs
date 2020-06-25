@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 -- | Intended for qualified import
 --
@@ -17,11 +19,14 @@ module Ouroboros.Consensus.Fragment.Diff
     -- * Application
   , apply
     -- * Manipulation
+  , append
   , truncate
   , takeWhileOldest
+  , mapM
   ) where
 
-import           Prelude hiding (truncate)
+import           Prelude hiding (mapM, truncate)
+import qualified Prelude
 
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
@@ -124,6 +129,12 @@ apply curChain (ChainDiff nbRollback suffix) =
   Manipulation
 -------------------------------------------------------------------------------}
 
+-- | Append a @b@ to a 'ChainDiff'.
+--
+-- PRECONDITION: it must fit onto the end of the suffix.
+append :: HasHeader b => ChainDiff b -> b -> ChainDiff b
+append (ChainDiff nbRollback suffix) b = (ChainDiff nbRollback (suffix :> b))
+
 -- | Truncate the diff by rolling back the new suffix to the given point.
 --
 -- PRECONDITION: the given point must correspond to one of the new
@@ -154,3 +165,17 @@ takeWhileOldest
   -> ChainDiff b
 takeWhileOldest accept (ChainDiff nbRollback suffix) =
     ChainDiff nbRollback (AF.takeWhileOldest accept suffix)
+
+mapM
+  :: forall a b m.
+     ( HasHeader b
+     , HeaderHash a ~ HeaderHash b
+     , Monad m
+     )
+  => (a -> m b)
+  -> ChainDiff a
+  -> m (ChainDiff b)
+mapM f (ChainDiff rollback suffix) =
+       ChainDiff rollback
+    .  AF.fromOldestFirst (AF.castAnchor (AF.anchor suffix))
+   <$> Prelude.mapM f (AF.toOldestFirst suffix)
