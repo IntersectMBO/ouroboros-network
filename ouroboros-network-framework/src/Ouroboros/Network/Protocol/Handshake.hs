@@ -10,6 +10,9 @@ module Ouroboros.Network.Protocol.Handshake
   , runHandshakeServer
   , HandshakeArguments (..)
   , HandshakeException (..)
+  , HandshakeClientProtocolError (..)
+  , RefuseReason (..)
+  , Accept (..)
   ) where
 
 import           Control.Monad.Class.MonadAsync
