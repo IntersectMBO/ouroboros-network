@@ -1,8 +1,13 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+
+--  'resolverResource' and 'asyncResolverResource' are not used when compiled
+--  on @Windows@
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS (
     -- * DNS based provider for local root peers
@@ -220,6 +225,35 @@ asyncResolverResource resolvConf =
           `catches` handlers filePath resourceVar
 
 
+#if defined(mingw32_HOST_OS)
+-- | Returns a newly intiatialised 'DNS.Resolver' at each step;  This is only
+-- for Windows, where we don't have a way to check that the network
+-- configuration has changed.  On /Windows/ the 'dns' library is using
+-- @GetNetworkParams@ win32 api call to get the list of default dns servers.
+--
+newResolverResource :: DNS.ResolvConf -> Resource DNSorIOError DNS.Resolver
+newResolverResource resolvConf = go
+    where
+      go = Resource $
+        do
+          rs <- DNS.makeResolvSeed resolvConf
+          DNS.withResolver rs $ \resolver -> pure (Right resolver, go)
+        `catches` handlers
+
+      handlers :: [Handler IO
+                    ( Either DNSorIOError DNS.Resolver
+                    , Resource DNSorIOError DNS.Resolver)]
+      handlers =
+        [ Handler $
+            \(err :: IOException) ->
+              pure (Left (IOError err), go)
+        , Handler $
+            \(err :: DNS.DNSError) ->
+              pure (Left (DNSError err), go)
+        ]
+#endif
+
+
 -----------------------------------------------
 -- local root peer set provider based on DNS
 --
@@ -247,7 +281,11 @@ localRootPeersProvider :: Tracer IO TraceLocalRootPeers
 localRootPeersProvider tracer timeout resolvConf rootPeersVar domains = do
     traceWith tracer (TraceLocalRootDomains domains)
     unless (null domains) $ do
+#if !defined(mingw32_HOST_OS)
       rr <- asyncResolverResource resolvConf
+#else
+      let rr = newResolverResource resolvConf
+#endif
       withAsyncAll (map (monitorDomain rr) domains) $ \asyncs ->
         waitAny asyncs >> return ()
   where
@@ -312,7 +350,11 @@ publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> IO a
 publicRootPeersProvider tracer timeout resolvConf domains action = do
     traceWith tracer (TracePublicRootDomains domains)
+#if !defined(mingw32_HOST_OS)
     rr <- resolverResource resolvConf
+#else
+    let rr = newResolverResource resolvConf
+#endif
     resourceVar <- newTVarM rr
     action (requestPublicRootPeers resourceVar)
   where
