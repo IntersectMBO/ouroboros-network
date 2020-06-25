@@ -9,6 +9,7 @@ module Ouroboros.Consensus.HardFork.History.Util (
 
 import           Control.Exception (assert)
 import           Data.Word
+import           GHC.Stack
 
 import           Ouroboros.Consensus.Block
 
@@ -26,9 +27,9 @@ addEpochs :: Word64 -> EpochNo -> EpochNo
 addEpochs n (EpochNo x) = EpochNo (x + n)
 
 -- | @countSlots to fr@ counts the slots from @fr@ to @to@ (@to >= fr@)
-countSlots :: SlotNo -> SlotNo -> Word64
+countSlots :: HasCallStack => SlotNo -> SlotNo -> Word64
 countSlots (SlotNo to) (SlotNo fr) = assert (to >= fr) $ to - fr
 
 -- | @countEpochs to fr@ counts the epochs from @fr@ to @to@ (@to >= fr@)
-countEpochs :: EpochNo -> EpochNo -> Word64
+countEpochs :: HasCallStack => EpochNo -> EpochNo -> Word64
 countEpochs (EpochNo to) (EpochNo fr) = assert (to >= fr) $ to - fr

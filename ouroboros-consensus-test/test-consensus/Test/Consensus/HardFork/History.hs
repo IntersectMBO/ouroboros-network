@@ -66,26 +66,24 @@ import           Test.Util.QuickCheck
 --   b. If the event is outside of safe zone, we expect the conversion to throw
 --      a 'PastHorizonException'.
 tests :: TestTree
-tests = testGroup "HardForkHistory" [
-      testGroup "Chain" [
-          testGroup "Sanity" [
-              testProperty "generator" $ checkGenerator $ \ArbitraryChain{..} ->
-                let ArbitraryParams{..} = arbitraryParams in
-                checkInvariant HF.invariantShape arbitraryChainShape
-            , testProperty "shrinker"  $ checkShrinker $ \ArbitraryChain{..} ->
-                let ArbitraryParams{..} = arbitraryParams in
-                checkInvariant HF.invariantShape arbitraryChainShape
-            ]
-        , testGroup "Conversions" [
-              testProperty "summarizeInvariant"   summarizeInvariant
-            , testProperty "eventSlotToEpoch"     eventSlotToEpoch
-            , testProperty "eventEpochToSlot"     eventEpochToSlot
-            , testProperty "eventSlotToWallclock" eventSlotToWallclock
-            , testProperty "eventWallclockToSlot" eventWallclockToSlot
-            , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
-            , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
-            , testProperty "query vs expr"        queryVsExprConsistency
-            ]
+tests = testGroup "Chain" [
+      testGroup "Sanity" [
+          testProperty "generator" $ checkGenerator $ \ArbitraryChain{..} ->
+            let ArbitraryParams{..} = arbitraryParams in
+            checkInvariant HF.invariantShape arbitraryChainShape
+        , testProperty "shrinker"  $ checkShrinker $ \ArbitraryChain{..} ->
+            let ArbitraryParams{..} = arbitraryParams in
+            checkInvariant HF.invariantShape arbitraryChainShape
+        ]
+    , testGroup "Conversions" [
+          testProperty "summarizeInvariant"   summarizeInvariant
+        , testProperty "eventSlotToEpoch"     eventSlotToEpoch
+        , testProperty "eventEpochToSlot"     eventEpochToSlot
+        , testProperty "eventSlotToWallclock" eventSlotToWallclock
+        , testProperty "eventWallclockToSlot" eventWallclockToSlot
+        , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
+        , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
+        , testProperty "query vs expr"        queryVsExprConsistency
         ]
     ]
 
@@ -408,7 +406,7 @@ deriving instance Show ArbitraryChain
 
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
-      shape  <- HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
+      shape  <- genShape eras
       events <- genEvents eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
       rawIx  <- choose (0, length events - 1)
@@ -422,17 +420,6 @@ instance Arbitrary ArbitraryChain where
         , arbitraryDiffTime    = diff
         }
     where
-      genParams :: Era -> EpochNo -> Gen (HF.EraParams, EpochNo)
-      genParams _era startOfThis = do
-          params      <- genEraParams      startOfThis
-          startOfNext <- genStartOfNextEra startOfThis params
-          -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
-          -- era. This means we should not be generating any events for any
-          -- succeeding eras, but to determine the /shape/ of the eras, and
-          -- set subsequent lower bounds, we just need to make sure that we
-          -- generate a valid shape: the next era must start after this one.
-          return (params, fromMaybe (succ startOfThis) startOfNext)
-
       genDiffTime :: SlotLength -> Gen NominalDiffTime
       genDiffTime s = realToFrac <$> choose (0, s') `suchThat` (/= s')
         where

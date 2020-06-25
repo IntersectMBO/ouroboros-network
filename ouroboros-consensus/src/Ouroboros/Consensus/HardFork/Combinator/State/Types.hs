@@ -85,6 +85,12 @@ newtype TranslateForecast f g x y = TranslateForecast {
 data TransitionInfo =
     -- | No transition is yet known for this era
     -- We instead record the ledger tip (which must be in /this/ era)
+    --
+    -- NOTE: If we are forecasting, this will be set to the slot number of the
+    -- (past) ledger state in which the forecast was created. This means that
+    -- when we construct an 'EpochInfo' using a 'HardForkLedgerView', the
+    -- range of that 'EpochInfo' will extend a safe zone from that /past/
+    -- ledger state.
     TransitionUnknown !(WithOrigin SlotNo)
 
     -- | Transition to the next era is known to happen at this 'EpochNo'

@@ -25,21 +25,19 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Consensus.HardFork.Infra
 
 tests :: TestTree
-tests = testGroup "HardForkHistory" [
-      testGroup "Summary" [
-          testGroup "Sanity" [
-              testProperty "generator" $ checkGenerator $ \ArbitrarySummary{..} ->
-                checkInvariant HF.invariantSummary arbitrarySummary
-            , testProperty "shrinker"  $ checkShrinker $ \ArbitrarySummary{..} ->
-                checkInvariant HF.invariantSummary arbitrarySummary
-            ]
-        , testGroup "Conversions" [
-              testProperty "roundtripWallclockSlot" roundtripWallclockSlot
-            , testProperty "roundtripSlotWallclock" roundtripSlotWallclock
-            , testProperty "roundtripSlotEpoch"     roundtripSlotEpoch
-            , testProperty "roundtripEpochSlot"     roundtripEpochSlot
-            , testProperty "reportsPastHorizon"     reportsPastHorizon
-            ]
+tests = testGroup "Summary" [
+      testGroup "Sanity" [
+          testProperty "generator" $ checkGenerator $ \ArbitrarySummary{..} ->
+            checkInvariant HF.invariantSummary arbitrarySummary
+        , testProperty "shrinker"  $ checkShrinker $ \ArbitrarySummary{..} ->
+            checkInvariant HF.invariantSummary arbitrarySummary
+        ]
+    , testGroup "Conversions" [
+          testProperty "roundtripWallclockSlot" roundtripWallclockSlot
+        , testProperty "roundtripSlotWallclock" roundtripSlotWallclock
+        , testProperty "roundtripSlotEpoch"     roundtripSlotEpoch
+        , testProperty "roundtripEpochSlot"     roundtripEpochSlot
+        , testProperty "reportsPastHorizon"     reportsPastHorizon
         ]
     ]
 
@@ -149,10 +147,7 @@ deriving instance Show ArbitrarySummary
 
 instance Arbitrary ArbitrarySummary where
   arbitrary = chooseEras $ \is@(Eras _) -> do
-      summary <- HF.Summary <$> erasUnfoldAtMost
-                                  genEraSummary
-                                  is
-                                  HF.initBound
+      summary <- genSummary is
 
       let summaryStart :: HF.Bound
           mSummaryEnd  :: HF.EraEnd
@@ -256,17 +251,6 @@ instance Arbitrary ArbitrarySummary where
               , mPastHorizonSlot      = Just pastHorizonSlot
               , mPastHorizonEpoch     = Just pastHorizonEpoch
               }
-    where
-      genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.EraEnd)
-      genEraSummary _era lo = do
-          params <- genEraParams (HF.boundEpoch lo)
-          hi     <- genUpperBound lo params
-          return (HF.EraSummary lo hi params, hi)
-
-      genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.EraEnd
-      genUpperBound lo params = do
-          startOfNextEra <- genStartOfNextEra (HF.boundEpoch lo) params
-          return $ HF.mkEraEnd params lo startOfNextEra
 
   shrink summary@ArbitrarySummary{..} = concat [
         -- Reduce before-horizon slot

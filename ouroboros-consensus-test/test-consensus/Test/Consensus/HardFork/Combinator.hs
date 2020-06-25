@@ -82,7 +82,7 @@ import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
 
 tests :: TestTree
-tests = testGroup "HardForkCombinator" [
+tests = testGroup "Consensus" [
       testProperty "simple convergence" $
         prop_simple_hfc_convergence
     ]

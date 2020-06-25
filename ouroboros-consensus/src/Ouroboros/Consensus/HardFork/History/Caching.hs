@@ -49,8 +49,8 @@ cachedRunQueryThrow run qry = either throwM return =<< cachedRunQuery run qry
 runWithCachedSummary :: forall m xs. MonadSTM m
                      => STM m (Summary xs)
                      -> m (RunWithCachedSummary xs m)
-runWithCachedSummary getSummary = do
-    initSummary <- atomically getSummary
+runWithCachedSummary getLatestSummary = do
+    initSummary <- atomically getLatestSummary
     var <- newTVarM initSummary
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
@@ -61,6 +61,6 @@ runWithCachedSummary getSummary = do
         case runQuery q summary of
           Right a             -> return (Right a)
           Left  PastHorizon{} -> do
-            summary' <- getSummary
+            summary' <- getLatestSummary
             writeTVar var summary'
             return $ runQuery q summary'
