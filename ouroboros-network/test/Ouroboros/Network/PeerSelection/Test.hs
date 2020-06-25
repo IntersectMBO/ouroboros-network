@@ -34,11 +34,12 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.IOSim
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
+import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
@@ -1034,8 +1035,10 @@ renderRanges r n = show lower ++ " -- " ++ show upper
 
 _governorFindingPublicRoots :: Int -> [DomainAddress] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers domains =
+    withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
+      timeout
       DNS.defaultResolvConf
       domains $ \requestPublicRootPeers ->
 

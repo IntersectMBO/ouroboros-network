@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -33,7 +34,7 @@ import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer(..), contramap, traceWith)
 
@@ -45,6 +46,7 @@ import qualified Data.IP as IP
 import           Network.DNS (DNSError)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
+import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types
 
@@ -237,11 +239,12 @@ data TraceLocalRootPeers =
 -- corner cases where there is nothing to do.
 --
 localRootPeersProvider :: Tracer IO TraceLocalRootPeers
+                       -> TimeoutFn IO
                        -> DNS.ResolvConf
                        -> StrictTVar IO (Map DomainAddress (Map Socket.SockAddr PeerAdvertise))
                        -> [(DomainAddress, PeerAdvertise)]
                        -> IO ()
-localRootPeersProvider tracer resolvConf rootPeersVar domains = do
+localRootPeersProvider tracer timeout resolvConf rootPeersVar domains = do
     traceWith tracer (TraceLocalRootDomains domains)
     unless (null domains) $ do
       rr <- asyncResolverResource resolvConf
@@ -262,7 +265,7 @@ localRootPeersProvider tracer resolvConf rootPeersVar domains = do
             withResource' (TraceLocalRootFailure domain `contramap` tracer)
                           (1 :| [3, 6, 9, 12])
                           rr
-          reply <- lookupAWithTTL resolver daDomain
+          reply <- lookupAWithTTL timeout resolvConf resolver daDomain
           case reply of
             Left  err -> do
               traceWith tracer (TraceLocalRootFailure domain (DNSError err))
@@ -302,11 +305,12 @@ data TracePublicRootPeers =
 -- |
 --
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
+                        -> TimeoutFn IO
                         -> DNS.ResolvConf
                         -> [DomainAddress]
                         -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
-publicRootPeersProvider tracer resolvConf domains action = do
+publicRootPeersProvider tracer timeout resolvConf domains action = do
     traceWith tracer (TracePublicRootDomains domains)
     rr <- resolverResource resolvConf
     resourceVar <- newTVarM rr
@@ -323,7 +327,7 @@ publicRootPeersProvider tracer resolvConf domains action = do
           Left (IOError  err) -> throwM err
           Right resolver -> do
             let lookups =
-                  [ lookupAWithTTL resolver daDomain
+                  [ lookupAWithTTL timeout resolvConf resolver daDomain
                   |  DomainAddress {daDomain} <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
@@ -351,14 +355,20 @@ publicRootPeersProvider tracer resolvConf domains action = do
 
 -- | Like 'DNS.lookupA' but also return the TTL for the results.
 --
-lookupAWithTTL :: DNS.Resolver
+-- DNS library timeouts do not work reliably on Windows (#1873), hende the
+-- additional timeout.
+--
+lookupAWithTTL :: TimeoutFn IO
+               -> DNS.ResolvConf
+               -> DNS.Resolver
                -> DNS.Domain
                -> IO (Either DNS.DNSError [(IPv4, DNS.TTL)])
-lookupAWithTTL resolver domain = do
-    reply <- DNS.lookupRaw resolver domain DNS.A
+lookupAWithTTL timeout resolvConf resolver domain = do
+    reply <- timeout (microsecondsAsIntToDiffTime $ DNS.resolvTimeout resolvConf)  $ DNS.lookupRaw resolver domain DNS.A
     case reply of
-      Left  err -> return (Left err)
-      Right ans -> return (DNS.fromDNSMessage ans selectA)
+      Nothing -> return (Left DNS.TimeoutExpired)
+      Just (Left  err) -> return (Left err)
+      Just (Right ans) -> return (DNS.fromDNSMessage ans selectA)
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
   where
     selectA DNS.DNSMessage { DNS.answer } =
@@ -411,11 +421,13 @@ exampleLocal domains = do
         provider rootPeersVar
   where
     provider rootPeersVar =
-      localRootPeersProvider
-        (showTracing stdoutTracer)
-        DNS.defaultResolvConf
-        rootPeersVar
-        (map (\d -> (d, DoAdvertisePeer)) domains)
+      withTimeoutSerial $ \timeout ->
+        localRootPeersProvider
+          (showTracing stdoutTracer)
+          timeout
+          DNS.defaultResolvConf
+          rootPeersVar
+          (map (\d -> (d, DoAdvertisePeer)) domains)
 
     observer :: (Eq a, Show a) => StrictTVar IO a -> a -> IO ()
     observer var fingerprint = do
@@ -428,12 +440,14 @@ exampleLocal domains = do
 
 examplePublic :: [DomainAddress] -> IO ()
 examplePublic domains = do
-    publicRootPeersProvider
-      (showTracing stdoutTracer)
-      DNS.defaultResolvConf
-      domains $ \requestPublicRootPeers ->
-        forever $ do
-          (ips, ttl) <- requestPublicRootPeers 42
-          traceWith (showTracing stdoutTracer) (ips, ttl)
-          threadDelay ttl
+    withTimeoutSerial $ \timeout ->
+      publicRootPeersProvider
+        (showTracing stdoutTracer)
+        timeout
+        DNS.defaultResolvConf
+        domains $ \requestPublicRootPeers ->
+          forever $ do
+            (ips, ttl) <- requestPublicRootPeers 42
+            traceWith (showTracing stdoutTracer) (ips, ttl)
+            threadDelay ttl
 -}
