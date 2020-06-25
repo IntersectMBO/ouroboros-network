@@ -34,8 +34,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
-import           Ouroboros.Network.ChainFragment (ChainFragment)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchClientContext(..)
                    , FetchClientPolicy(..)
@@ -145,7 +145,7 @@ blockFetchClient _version
                     Nat n
                  -> PeerGSV
                  -> PeerFetchInFlightLimits
-                 -> [ChainFragment header]
+                 -> [AnchoredFragment header]
                  -> PeerSender (BlockFetch block) AsClient
                                BFIdle n () m void
 
@@ -171,12 +171,12 @@ blockFetchClient _version
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
         let range :: ChainRange header
-            !range = assert (not (ChainFragment.null fragment)) $
+            !range = assert (not (AF.null fragment)) $
                      ChainRange (blockPoint lower)
                                 (blockPoint upper)
               where
-                Just lower = ChainFragment.last fragment
-                Just upper = ChainFragment.head fragment
+                Right lower = AF.last fragment
+                Right upper = AF.head fragment
 
         return $
           SenderPipeline
@@ -190,7 +190,7 @@ blockFetchClient _version
 
 
     receiverBusy :: ChainRange header
-                 -> ChainFragment header
+                 -> AnchoredFragment header
                  -> PeerFetchInFlightLimits
                  -> PeerReceiver (BlockFetch block) AsClient
                                  BFBusy BFIdle m ()
@@ -215,14 +215,14 @@ blockFetchClient _version
                                  range headers stateVars
               return (ReceiverDone ())
             where
-              headers = ChainFragment.toOldestFirst fragment
+              headers = AF.toOldestFirst fragment
 
           MsgStartBatch ->
             ReceiverEffect $ do
               startedFetchBatch tracer inflightlimits range stateVars
               return (receiverStreaming inflightlimits range headers)
             where
-              headers = ChainFragment.toOldestFirst fragment
+              headers = AF.toOldestFirst fragment
 
     receiverStreaming :: PeerFetchInFlightLimits
                       -> ChainRange header

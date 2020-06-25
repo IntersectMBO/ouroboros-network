@@ -4,7 +4,7 @@
 
 module Ouroboros.Network.MockChain.ProducerState where
 
-import           Ouroboros.Network.Block (castPoint, genesisPoint)
+import           Ouroboros.Network.Block (HasFullHeader, castPoint, genesisPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
                      HasHeader, HeaderHash, Point (..), blockPoint,
                      pointOnChain)
@@ -86,7 +86,7 @@ data ReaderNext = ReaderBackTo | ReaderForwardFrom
 -- Invariant
 --
 
-invChainProducerState :: HasHeader block => ChainProducerState block -> Bool
+invChainProducerState :: HasFullHeader block => ChainProducerState block -> Bool
 invChainProducerState (ChainProducerState c rs nrid) =
     Chain.valid c
  && invReaderStates c rs

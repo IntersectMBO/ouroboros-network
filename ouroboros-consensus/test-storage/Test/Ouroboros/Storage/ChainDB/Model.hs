@@ -469,7 +469,7 @@ addBlockPromise cfg blk m = (result, m')
 -------------------------------------------------------------------------------}
 
 stream
-  :: HasHeader blk
+  :: GetPrevHash blk
   => SecurityParam
   -> StreamFrom blk -> StreamTo blk
   -> Model blk
@@ -762,7 +762,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
           -> findInvalidBlockInTheFuture ledger' bs'
 
 
-chains :: forall blk. (HasHeader blk)
+chains :: forall blk. (GetPrevHash blk)
        => Map (HeaderHash blk) blk -> [Chain blk]
 chains bs = go Chain.Genesis
   where
@@ -819,15 +819,15 @@ validChains cfg m bs =
       (invalid, [(chain, ledger)])
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
-successors :: forall blk. HasHeader blk
+successors :: forall blk. GetPrevHash blk
            => [blk] -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
 successors = Map.unionsWith Map.union . map single
   where
     single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    single b = Map.singleton (Block.blockPrevHash b)
+    single b = Map.singleton (getPrevHash b)
                              (Map.singleton (Block.blockHash b) b)
 
-between :: forall blk. HasHeader blk
+between :: forall blk. GetPrevHash blk
         => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
         -> Either (UnknownRange blk) [blk]
 between k from to m = do

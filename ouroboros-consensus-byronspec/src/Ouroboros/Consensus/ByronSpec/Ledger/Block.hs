@@ -81,20 +81,20 @@ instance Measured BlockMeasure ByronSpecBlock where
   measure = blockMeasure
 
 instance HasHeader ByronSpecBlock where
-  blockHash      =             blockHash     . getHeader
-  blockNo        =             blockNo       . getHeader
-  blockPrevHash  = castHash  . blockPrevHash . getHeader
-  blockSlot      =             blockSlot     . getHeader
-
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockNo   = blockNo   . getHeader
+  blockSlot = blockSlot . getHeader
 
 instance HasHeader ByronSpecHeader where
-  blockHash      = byronSpecHeaderHash
-  blockNo        = byronSpecHeaderNo
-  blockPrevHash  = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
-  blockSlot      = fromByronSpecSlotNo      . Spec._bhSlot     . byronSpecHeader
+  blockHash = byronSpecHeaderHash
+  blockNo   = byronSpecHeaderNo
+  blockSlot = fromByronSpecSlotNo . Spec._bhSlot . byronSpecHeader
 
-  blockInvariant = const True
+instance GetPrevHash ByronSpecBlock where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance GetPrevHash ByronSpecHeader where
+  getPrevHash = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
 
 {-------------------------------------------------------------------------------
   Config

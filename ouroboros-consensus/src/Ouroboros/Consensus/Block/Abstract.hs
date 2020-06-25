@@ -10,10 +10,12 @@ module Ouroboros.Consensus.Block.Abstract (
     -- * Configuration
   , BlockConfig
   , HasCodecConfig(..)
+    -- * Previous hash
+  , GetPrevHash(..)
+  , headerPrevHash
     -- * Working with headers
   , GetHeader(..)
   , headerHash
-  , headerPrevHash
   , headerPoint
   , headerToIsEBB
   , blockIsEBB
@@ -65,6 +67,21 @@ class NoUnexpectedThunks (CodecConfig blk) => HasCodecConfig blk where
   data family CodecConfig blk :: *
 
   getCodecConfig :: BlockConfig blk -> CodecConfig blk
+
+{-------------------------------------------------------------------------------
+  Get hash of previous block
+-------------------------------------------------------------------------------}
+
+class HasHeader blk => GetPrevHash blk where
+  -- | Get the hash of the predecessor of this block
+  --
+  -- This gets its own abstraction, because it will be a key part of the path
+  -- to getting rid of EBBs: when we have blocks @A - EBB - B@, the prev hash
+  -- of @B@ will be reported as @A@.
+  getPrevHash :: blk -> ChainHash blk
+
+headerPrevHash :: GetPrevHash (Header blk) => Header blk -> ChainHash blk
+headerPrevHash = castHash . getPrevHash
 
 {-------------------------------------------------------------------------------
   Link block to its header
@@ -119,9 +136,6 @@ instance HasHeader (Header blk) => Measured BlockMeasure (Header blk) where
 
 headerHash :: HasHeader (Header blk) => Header blk -> HeaderHash blk
 headerHash = blockHash
-
-headerPrevHash :: HasHeader (Header blk) => Header blk -> ChainHash blk
-headerPrevHash = castHash . blockPrevHash
 
 headerPoint :: HasHeader (Header blk) => Header blk -> Point blk
 headerPoint = castPoint . blockPoint

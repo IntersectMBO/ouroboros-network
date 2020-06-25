@@ -167,7 +167,7 @@ defaultArgs fp = VolDbArgs {
 
 openDB
   :: forall m blk.
-     (IOLike m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
+     (IOLike m, GetPrevHash blk, GetHeader blk, VolDbSerialiseConstraints blk)
   => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
@@ -220,7 +220,7 @@ getMaxSlotNo :: VolDB m blk
 getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock
-  :: (MonadCatch m, HasHeader blk, GetHeader blk, VolDbSerialiseConstraints blk)
+  :: (MonadCatch m, GetPrevHash blk, GetHeader blk, VolDbSerialiseConstraints blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
     VolDB.putBlock vol (extractInfo b binaryBlockInfo) binaryBlob
@@ -490,7 +490,7 @@ type BlockFileParserError hash =
 blockFileParser
   :: forall m blk.
      ( IOLike m
-     , HasHeader blk
+     , GetPrevHash blk
      , GetHeader blk
      , VolDbSerialiseConstraints blk
      )
@@ -522,7 +522,7 @@ blockFileParser VolDbArgs{..} =
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
 blockFileParser'
-  :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
+  :: forall m blk h. (IOLike m, GetPrevHash blk, GetHeader blk)
   => HasFS m h
   -> (blk -> BinaryBlockInfo)
   -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
@@ -611,14 +611,14 @@ fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
 fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
-extractInfo :: (HasHeader blk, GetHeader blk)
+extractInfo :: (GetPrevHash blk, GetHeader blk)
             => blk
             -> BinaryBlockInfo
             -> VolDB.BlockInfo (HeaderHash blk)
 extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
-    , bpreBid       = fromChainHash (blockPrevHash b)
+    , bpreBid       = fromChainHash (getPrevHash b)
     , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize

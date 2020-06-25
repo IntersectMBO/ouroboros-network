@@ -36,6 +36,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
@@ -119,13 +120,13 @@ genesisBlockInfo = BlockInfo
     }
 
 
-blockInfo :: (HasHeader b, HasCreator b)
+blockInfo :: (GetPrevHash b, HasCreator b)
           => b -> BlockInfo b
 blockInfo b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator b
     , biHash     = BlockHash $ blockHash b
-    , biPrevious = Just $ blockPrevHash b
+    , biPrevious = Just $ getPrevHash b
     }
 
 data NodeLabel = NodeLabel
@@ -158,7 +159,7 @@ data EdgeLabel = EdgeLabel
 instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
-tracesToDot :: forall b. (HasHeader b, HasCreator b)
+tracesToDot :: forall b. (GetPrevHash b, HasCreator b)
             => Map NodeId (NodeOutput b)
             -> String
 tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph

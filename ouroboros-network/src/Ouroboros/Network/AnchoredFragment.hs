@@ -78,18 +78,19 @@ module Ouroboros.Network.AnchoredFragment (
   intersect,
   intersectionPoint,
   mapAnchoredFragment,
-
   anchorNewest,
+  filter,
+  filterWithStop,
 
   -- * Helper functions
   prettyPrint
   ) where
 
-import           Prelude hiding (head, last, length, null)
+import           Prelude hiding (head, last, length, null, filter)
 
-import           Control.Exception (assert)
 import           Data.Functor ((<&>))
 import           Data.List (find)
+import           Data.Maybe (fromMaybe)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -226,13 +227,9 @@ anchorToTip :: (HeaderHash a ~ HeaderHash b) => Anchor a -> Tip b
 anchorToTip AnchorGenesis  = TipGenesis
 anchorToTip (Anchor s h b) = Tip s h b
 
-mkAnchoredFragment :: HasHeader block
-                   => Anchor block -> ChainFragment block
+mkAnchoredFragment :: Anchor block -> ChainFragment block
                    -> AnchoredFragment block
-mkAnchoredFragment a c = case CF.last c of
-    Nothing -> AnchoredFragment a CF.Empty
-    Just b  -> assert (validExtension (Empty a) b) $
-               AnchoredFragment a c
+mkAnchoredFragment = AnchoredFragment
 
 -- | \( O(1) \). Pattern for matching on or creating an empty
 -- 'AnchoredFragment'. An empty fragment has/needs an anchor point.
@@ -256,11 +253,10 @@ pattern (:>) :: (HasHeader block, HasCallStack)
              => AnchoredFragment block -> block -> AnchoredFragment block
 pattern af' :> b <- (viewRight -> ConsR af' b)
   where
-    af@(AnchoredFragment a c) :> b = case c of
+    (AnchoredFragment a c) :> b = case c of
       -- When the chain fragment is empty, validate to check whether the block
       -- fits onto the anchor point.
-      CF.Empty -> assert (validExtension af b) $
-                  AnchoredFragment a (c CF.:> b)
+      CF.Empty -> AnchoredFragment a (c CF.:> b)
       -- Don't validate when we're just appending a block to the chain
       -- fragment, as 'CF.:>' will already validate for us.
       _        -> AnchoredFragment a (c CF.:> b)
@@ -278,7 +274,8 @@ viewLeft (AnchoredFragment a c) = case c of
 -- | \( O(1) \). View the first, leftmost block of the anchored fragment.
 --
 -- This is only a view, not a constructor, as adding a block to the left would
--- change the anchor of the fragment.
+-- change the anchor of the fragment, but we have no information about the
+-- predecessor of the block we'd be prepending.
 pattern (:<) :: HasHeader block
              => block -> AnchoredFragment block -> AnchoredFragment block
 pattern b :< af' <- (viewLeft -> ConsL b af')
@@ -299,12 +296,12 @@ prettyPrint nl ppPoint ppBlock (AnchoredFragment a c) =
 
 
 -- | \( O(n) \).
-valid :: HasHeader block => AnchoredFragment block -> Bool
+valid :: HasFullHeader block => AnchoredFragment block -> Bool
 valid (Empty _) = True
 valid (af :> b) = valid af && validExtension af b
 
 -- | \( O(1) \).
-validExtension :: HasHeader block => AnchoredFragment block -> block -> Bool
+validExtension :: HasFullHeader block => AnchoredFragment block -> block -> Bool
 validExtension af bSucc =
     blockInvariant bSucc &&
     case head af of
@@ -633,7 +630,7 @@ join af1@(AnchoredFragment a1 c1) af2@(AnchoredFragment a2 c2) =
         -> Nothing
       Right b1Head
         | blockPoint b1Head == anchorToPoint a2
-        -> mkAnchoredFragment a1 <$> CF.joinChainFragments c1 c2
+        -> Just $ mkAnchoredFragment a1 (CF.joinSuccessor c1 c2)
         | otherwise
         -> Nothing
 
@@ -779,3 +776,61 @@ mapAnchoredFragment :: (HasHeader block1, HasHeader block2,
                  -> AnchoredFragment block2
 mapAnchoredFragment f (AnchoredFragment a c) =
     AnchoredFragment (castAnchor a) (CF.mapChainFragment f c)
+
+-- | \( O\(n\) \). Variation on 'filterWithStop' without a stop condition.
+filter :: forall block. HasHeader block
+       => (block -> Bool)  -- ^ Filtering predicate
+       -> AnchoredFragment block
+       -> [AnchoredFragment block]
+filter p = filterWithStop p (const False)
+
+-- | \( O\(n\) \). Filter out blocks that don't match the predicate.
+--
+-- As filtering removes blocks the result is a sequence of disconnected
+-- fragments. The fragments are in the original order and are of maximum size.
+--
+-- As soon as the stop condition is true, the filtering stops and the remaining
+-- fragment (starting with the first element for which the stop condition is
+-- true) is the final fragment in the returned list.
+--
+-- The stop condition wins from the filtering predicate: if the stop condition
+-- is true for an element, but the filter predicate not, then the element
+-- still ends up in final fragment.
+--
+-- For example, given the fragment containing @[1, 2, 3, 4, 5, 6]@:
+--
+-- > filter         odd        -> [[1], [3], [5]]
+-- > filterWithStop odd (>= 4) -> [[1], [3], [4, 5, 6]]
+filterWithStop :: forall block. HasHeader block
+               => (block -> Bool)  -- ^ Filtering predicate
+               -> (block -> Bool)  -- ^ Stop condition
+               -> AnchoredFragment block
+               -> [AnchoredFragment block]
+filterWithStop p stop = goNext []
+  where
+    goNext :: [AnchoredFragment block]  -- Previously constructed fragments
+           -> AnchoredFragment block    -- Fragment still to process
+           -> [AnchoredFragment block]
+    goNext cs af = go cs (Empty (anchor af)) af
+
+    go :: [AnchoredFragment block]  -- Previously constructed fragments
+       -> AnchoredFragment block    -- Currently accumulating fragment
+       -> AnchoredFragment block    -- Fragment still to process
+       -> [AnchoredFragment block]
+    go cs c' af@(b :< c) | stop b = reverse (addToAcc (join' c' af) cs)
+                         | p    b = go cs (c' :> b) c
+    go cs c' (_ :< c)             = goNext (addToAcc c' cs) c
+    go cs c' (Empty _)            = reverse (addToAcc c' cs)
+
+    addToAcc :: AnchoredFragment block
+             -> [AnchoredFragment block]
+             -> [AnchoredFragment block]
+    addToAcc (Empty _) acc =    acc
+    addToAcc c'        acc = c':acc
+
+    -- This is called with @c'@ and @(b : < c)@. @c'@ is the fragment
+    -- containing the blocks before @b@, so they must be joinable.
+    join' :: AnchoredFragment block
+          -> AnchoredFragment block
+          -> AnchoredFragment block
+    join' a b = fromMaybe (error "could not join fragments") $ join a b

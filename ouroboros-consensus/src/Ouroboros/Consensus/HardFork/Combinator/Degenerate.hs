@@ -164,18 +164,20 @@ instance SingleEraBlock b => Measured BlockMeasure (DegenFork b) where
   measure = blockMeasure
 
 instance SingleEraBlock b => HasHeader (DegenFork b) where
-    blockHash      = DHash    . blockHash     . unDBlk
-    blockPrevHash  = castHash . blockPrevHash . unDBlk
-    blockSlot      =            blockSlot     . unDBlk
-    blockNo        =            blockNo       . unDBlk
-    blockInvariant = const True
+  blockHash = DHash . blockHash . unDBlk
+  blockSlot =         blockSlot . unDBlk
+  blockNo   =         blockNo   . unDBlk
 
 instance SingleEraBlock b => HasHeader (Header (DegenFork b)) where
-  blockHash      = DHash    . blockHash     . unDHdr
-  blockPrevHash  = castHash . blockPrevHash . unDHdr
-  blockSlot      =            blockSlot     . unDHdr
-  blockNo        =            blockNo       . unDHdr
-  blockInvariant = const True
+  blockHash = DHash . blockHash . unDHdr
+  blockSlot =         blockSlot . unDHdr
+  blockNo   =         blockNo   . unDHdr
+
+instance SingleEraBlock b => GetPrevHash (DegenFork b) where
+  getPrevHash = castHash . getPrevHash . unDBlk
+
+instance SingleEraBlock b => GetPrevHash (Header (DegenFork b)) where
+  getPrevHash = castHash . getPrevHash . unDHdr
 
 {-------------------------------------------------------------------------------
   Forward the 'ConsensusProtocol' instance

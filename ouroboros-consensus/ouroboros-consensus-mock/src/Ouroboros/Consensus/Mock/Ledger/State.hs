@@ -26,8 +26,8 @@ import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (SlotNo)
 
-import           Ouroboros.Network.Block (ChainHash, HasHeader, HeaderHash,
-                     Point, StandardHash, blockSlot, genesisPoint, pointHash)
+import           Ouroboros.Network.Block (ChainHash, HeaderHash, Point,
+                     StandardHash, blockSlot, genesisPoint, pointHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -60,7 +60,7 @@ deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 
 updateMockState :: ( GetHeader blk
-                   , HasHeader (Header blk)
+                   , GetPrevHash (Header blk)
                    , StandardHash blk
                    , HasMockTxs blk
                    )
@@ -72,7 +72,7 @@ updateMockState blk st = do
     st' <- updateMockTip hdr st
     updateMockUTxO (blockSlot hdr) blk st'
 
-updateMockTip :: (HasHeader (Header blk), StandardHash blk)
+updateMockTip :: (GetPrevHash (Header blk), StandardHash blk)
               => Header blk
               -> MockState blk
               -> Except (MockError blk) (MockState blk)

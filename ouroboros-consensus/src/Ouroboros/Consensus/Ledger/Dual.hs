@@ -240,20 +240,20 @@ instance Bridge m a => Measured BlockMeasure (DualBlock m a) where
   measure = blockMeasure
 
 instance Bridge m a => HasHeader (DualBlock m a) where
-  blockHash      =            blockHash     . getHeader
-  blockPrevHash  = castHash . blockPrevHash . getHeader
-  blockSlot      =            blockSlot     . getHeader
-  blockNo        =            blockNo       . getHeader
-
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance Bridge m a => HasHeader (DualHeader m a) where
-  blockHash      =            blockHash     . dualHeaderMain
-  blockPrevHash  = castHash . blockPrevHash . dualHeaderMain
-  blockSlot      =            blockSlot     . dualHeaderMain
-  blockNo        =            blockNo       . dualHeaderMain
+  blockHash = blockHash . dualHeaderMain
+  blockSlot = blockSlot . dualHeaderMain
+  blockNo   = blockNo   . dualHeaderMain
 
-  blockInvariant = const True
+instance Bridge m a => GetPrevHash (DualBlock m a) where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance Bridge m a => GetPrevHash (DualHeader m a) where
+  getPrevHash = castHash . getPrevHash . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Protocol

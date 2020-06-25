@@ -216,18 +216,20 @@ instance Measured BlockMeasure TestBlock where
   measure = blockMeasure
 
 instance HasHeader TestBlock where
-  blockHash      =            blockHash      . getHeader
-  blockPrevHash  = castHash . blockPrevHash  . getHeader
-  blockSlot      =            blockSlot      . getHeader
-  blockNo        =            blockNo        . getHeader
-  blockInvariant =            blockInvariant . getHeader
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance HasHeader (Header TestBlock) where
-  blockHash      =            thHash     . unTestHeader
-  blockPrevHash  = castHash . thPrevHash . unTestHeader
-  blockSlot      =            thSlotNo   . unTestHeader
-  blockNo        =            thBlockNo  . unTestHeader
-  blockInvariant = const True
+  blockHash = thHash    . unTestHeader
+  blockSlot = thSlotNo  . unTestHeader
+  blockNo   = thBlockNo . unTestHeader
+
+instance GetPrevHash TestBlock where
+  getPrevHash = castHash . getPrevHash  . getHeader
+
+instance GetPrevHash (Header TestBlock) where
+  getPrevHash = castHash . thPrevHash . unTestHeader
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       -- | Whether the test block can be EBBs or not. This can vary per test
@@ -554,8 +556,8 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
+    | getPrevHash tb /= lastAppliedHash
+    = throwError $ InvalidHash lastAppliedHash (getPrevHash tb)
     | not $ tbIsValid testBody
     = throwError $ InvalidBlock
     | otherwise

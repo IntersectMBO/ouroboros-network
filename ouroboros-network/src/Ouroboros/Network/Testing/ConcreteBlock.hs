@@ -150,9 +150,11 @@ type instance HeaderHash Block       = ConcreteHeaderHash
 
 instance HasHeader BlockHeader where
     blockHash      = headerHash
-    blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
     blockNo        = headerBlockNo
+
+instance HasFullHeader BlockHeader where
+    blockPrevHash  = headerPrevHash
 
     -- | The header invariant is that the cached header hash is correct.
     --
@@ -162,9 +164,11 @@ instance HasHeader BlockHeader where
 
 instance HasHeader Block where
     blockHash      =            headerHash     . blockHeader
-    blockPrevHash  = castHash . headerPrevHash . blockHeader
     blockSlot      =            headerSlot     . blockHeader
     blockNo        =            headerBlockNo  . blockHeader
+
+instance HasFullHeader Block where
+    blockPrevHash  = castHash . headerPrevHash . blockHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
@@ -277,7 +281,7 @@ fixupBlockAfterBlock prev =
     prevhash     = BlockHash (blockHash prev)
     prevblockno  = blockNo prev
 
-fixupBlocks :: HasHeader b
+fixupBlocks :: HasFullHeader b
             => (c -> b -> c)
             -> c
             -> (Maybe (ChainHash b))  -- ^ optionally set anchor hash
@@ -303,7 +307,7 @@ fixupBlocks  f z anchorHash anchorBlockNo fixup (b0:c0) =
 -- first block to chain-on from genesis, since by construction the 'Chain' type
 -- starts from genesis.
 --
-fixupChain :: HasHeader b
+fixupChain :: HasFullHeader b
            => (ChainHash b -> BlockNo -> b -> b)
            -> [b] -> Chain b
 fixupChain =
@@ -313,7 +317,7 @@ fixupChain =
       (Just (BlockNo 0))
 
 
-fixupChainFragmentFrom :: HasHeader b
+fixupChainFragmentFrom :: HasFullHeader b
                        => ChainHash b
                        -> BlockNo
                        -> (ChainHash b -> BlockNo -> b -> b)
@@ -324,7 +328,7 @@ fixupChainFragmentFrom anchorhash anchorblockno =
       (Just anchorhash)
       (Just anchorblockno)
 
-fixupChainFragmentFromGenesis :: HasHeader b
+fixupChainFragmentFromGenesis :: HasFullHeader b
                               => (ChainHash b -> BlockNo -> b -> b)
                               -> [b] -> ChainFragment b
 fixupChainFragmentFromGenesis =
@@ -333,7 +337,7 @@ fixupChainFragmentFromGenesis =
       (Just GenesisHash)
       (Just (BlockNo 0))
 
-fixupChainFragmentFromSame :: HasHeader b
+fixupChainFragmentFromSame :: HasFullHeader b
                            => (ChainHash b -> BlockNo -> b -> b)
                            -> [b] -> ChainFragment b
 fixupChainFragmentFromSame =
@@ -342,7 +346,7 @@ fixupChainFragmentFromSame =
       Nothing
       Nothing
 
-fixupAnchoredFragmentFrom :: HasHeader b
+fixupAnchoredFragmentFrom :: HasFullHeader b
                           => Point b
                           -> BlockNo
                           -> (ChainHash b -> BlockNo -> b -> b)

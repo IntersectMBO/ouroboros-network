@@ -280,7 +280,9 @@ castHeaderEnvelopeError = \case
     UnexpectedPrevHash oldTip   prevHash -> UnexpectedPrevHash oldTip (castHash prevHash)
 
 -- | Ledger-independent envelope validation (block, slot, hash)
-class HasAnnTip blk => BasicEnvelopeValidation blk where
+class ( HasHeader (Header blk)
+      , HasAnnTip blk
+      ) => BasicEnvelopeValidation blk where
   -- | The block number of the first block on the chain
   expectedFirstBlockNo :: proxy blk -> BlockNo
   expectedFirstBlockNo _ = BlockNo 0
@@ -308,6 +310,7 @@ class HasAnnTip blk => BasicEnvelopeValidation blk where
 
 -- | Validate header envelope
 class ( BasicEnvelopeValidation blk
+      , GetPrevHash (Header blk)
       , Eq                 (OtherHeaderEnvelopeError blk)
       , Show               (OtherHeaderEnvelopeError blk)
       , NoUnexpectedThunks (OtherHeaderEnvelopeError blk)
@@ -325,7 +328,7 @@ class ( BasicEnvelopeValidation blk
   additionalEnvelopeChecks _ _ _ = return ()
 
 -- | Validate the header envelope
-validateEnvelope :: forall blk. (ValidateEnvelope blk, HasHeader (Header blk))
+validateEnvelope :: forall blk. (ValidateEnvelope blk)
                  => TopLevelConfig blk
                  -> Ticked (LedgerView (BlockProtocol blk))
                  -> WithOrigin (AnnTip blk) -- ^ Old tip
@@ -352,9 +355,9 @@ validateEnvelope cfg ledgerView oldTip hdr = do
     actualBlockNo  :: BlockNo
     actualPrevHash :: ChainHash blk
 
-    actualSlotNo   =            blockSlot     hdr
-    actualBlockNo  =            blockNo       hdr
-    actualPrevHash = castHash $ blockPrevHash hdr
+    actualSlotNo   = blockSlot      hdr
+    actualBlockNo  = blockNo        hdr
+    actualPrevHash = headerPrevHash hdr
 
     expectedSlotNo :: SlotNo -- Lower bound only
     expectedSlotNo =
