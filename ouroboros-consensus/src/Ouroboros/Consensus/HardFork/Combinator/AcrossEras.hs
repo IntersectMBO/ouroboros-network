@@ -57,7 +57,6 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as Strict
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.SOP.Strict hiding (shift)
 import           Data.Text (Text)
 import           Data.Void
@@ -212,45 +211,6 @@ getSameValue values =
         = return ()
         | otherwise
         = throwError "differing values across hard fork"
-
-{-------------------------------------------------------------------------------
-  HasHeader instance for OneEraHeader
--------------------------------------------------------------------------------}
-
-type instance HeaderHash (OneEraHeader xs) = OneEraHash xs
-
-instance CanHardFork xs => StandardHash (OneEraHeader xs)
-
-instance CanHardFork xs => Measured BlockMeasure (OneEraHeader xs) where
-  measure = blockMeasure
-
-instance CanHardFork xs => HasHeader (OneEraHeader xs) where
-  blockHash = hcollapse
-            . hcmap proxySingle (K . getOneHash)
-            . getOneEraHeader
-   where
-     getOneHash :: forall blk. SingleEraBlock blk
-                => Header blk -> OneEraHash xs
-     getOneHash = OneEraHash . toRawHash (Proxy @blk) . blockHash
-
-  blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
-  blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader
-
-{-------------------------------------------------------------------------------
-  HasHeader instance for OneEraBlock
--------------------------------------------------------------------------------}
-
-type instance HeaderHash (OneEraBlock xs) = OneEraHash xs
-
-instance CanHardFork xs => StandardHash (OneEraBlock xs)
-
-instance CanHardFork xs => Measured BlockMeasure (OneEraBlock xs) where
-  measure = blockMeasure
-
-instance CanHardFork xs => HasHeader (OneEraBlock xs) where
-  blockHash = blockHash . oneEraBlockHeader
-  blockSlot = blockSlot . oneEraBlockHeader
-  blockNo   = blockNo   . oneEraBlockHeader
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks instances

@@ -34,6 +34,7 @@ module Test.Consensus.HardFork.Combinator.B (
 
 import           Codec.Serialise
 import qualified Data.Binary as B
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Set (Set)
@@ -71,8 +72,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import           Test.Consensus.HardFork.Combinator.Common
 
 {-------------------------------------------------------------------------------
   BlockB
@@ -124,11 +123,12 @@ binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
     }
 
 instance GetHeader BlockB where
-  newtype Header BlockB = HdrB {
+  data Header BlockB = HdrB {
         hdrB_fields :: HeaderFields BlockB
+      , hdrB_prev   :: ChainHash BlockB
       }
-    deriving stock   (Show, Eq, Generic)
-    deriving newtype (Serialise)
+    deriving stock    (Show, Eq, Generic)
+    deriving anyclass (Serialise)
     deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
 
   getHeader          = blkB_header
@@ -139,7 +139,7 @@ data instance BlockConfig BlockB = BCfgB
   deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol BlockB = ProtocolB
-type instance HeaderHash    BlockB = Hash
+type instance HeaderHash    BlockB = Strict.ByteString
 
 instance HasCodecConfig BlockB where
   data CodecConfig BlockB = CCfgB
@@ -158,17 +158,13 @@ instance Measured BlockMeasure BlockB where
   measure = blockMeasure
 
 instance HasHeader BlockB where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance HasHeader (Header BlockB) where
-  blockHash = headerFieldHash . hdrB_fields
-  blockSlot = headerFieldSlot . hdrB_fields
-  blockNo   = headerFieldNo   . hdrB_fields
+  getHeaderFields = castHeaderFields . hdrB_fields
 
 instance GetPrevHash BlockB where
-  headerPrevHash = headerFieldPrevHash . hdrB_fields
+  headerPrevHash = hdrB_prev
 
 instance HasAnnTip BlockB where
 
@@ -204,11 +200,11 @@ instance CanForge BlockB where
   forgeBlock _ _ bno (Ticked sno st) _txs _ = BlkB {
       blkB_header = HdrB {
           hdrB_fields = HeaderFields {
-              headerFieldHash     = Lazy.toStrict . B.encode $ unSlotNo sno
-            , headerFieldPrevHash = ledgerTipHash st
-            , headerFieldSlot     = sno
-            , headerFieldNo       = bno
+              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldSlot    = sno
+            , headerFieldBlockNo = bno
             }
+        , hdrB_prev = ledgerTipHash st
         }
     }
 
@@ -348,7 +344,7 @@ instance HasNetworkProtocolVersion BlockB
 -------------------------------------------------------------------------------}
 
 instance SerialiseNodeToNode BlockB BlockB
-instance SerialiseNodeToNode BlockB Hash
+instance SerialiseNodeToNode BlockB Strict.ByteString
 instance SerialiseNodeToNode BlockB (Serialised BlockB)
 instance SerialiseNodeToNode BlockB (SerialisedHeader BlockB)
 instance SerialiseNodeToNode BlockB (GenTx BlockB)

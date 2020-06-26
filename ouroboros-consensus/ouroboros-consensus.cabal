@@ -336,7 +336,6 @@ test-suite test-consensus
                        Test.Consensus.HardFork.Combinator
                        Test.Consensus.HardFork.Combinator.A
                        Test.Consensus.HardFork.Combinator.B
-                       Test.Consensus.HardFork.Combinator.Common
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool

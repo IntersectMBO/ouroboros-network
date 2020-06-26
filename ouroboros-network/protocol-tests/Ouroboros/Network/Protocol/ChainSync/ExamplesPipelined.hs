@@ -18,7 +18,7 @@ import           Data.Word
 import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
-                     getTipBlockNo)
+                     blockNo, getTipBlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))

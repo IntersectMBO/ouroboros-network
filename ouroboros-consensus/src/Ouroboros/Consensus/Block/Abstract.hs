@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Block.Abstract (
   , blockPrevHash
     -- * Working with headers
   , GetHeader(..)
+  , getBlockHeaderFields
   , headerHash
   , headerPoint
   , headerToIsEBB
@@ -28,13 +29,18 @@ module Ouroboros.Consensus.Block.Abstract (
     -- * Existentials
   , SomeBlock(..)
     -- * Re-export basic definitions from @ouroboros-network@
+  , blockHash
   , blockMeasure
   , BlockMeasure -- opaque
+  , blockNo
   , blockPoint
+  , blockSlot
   , castHash
+  , castHeaderFields
   , castPoint
   , ChainHash(..)
   , HasHeader(..)
+  , HeaderFields(..)
   , HeaderHash
   , Point(GenesisPoint, BlockPoint)
   , pointHash
@@ -69,8 +75,10 @@ import qualified Cardano.Slotting.Slot as Cardano
 
 import           Ouroboros.Network.Block (BlockMeasure, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader (..),
-                     HeaderHash, Point, StandardHash, blockMeasure, blockPoint,
-                     castHash, castPoint, pointHash, pointSlot)
+                     HeaderFields (..), HeaderHash, Point, StandardHash,
+                     blockHash, blockMeasure, blockNo, blockPoint, blockSlot,
+                     castHash, castHeaderFields, castPoint, pointHash,
+                     pointSlot)
 
 import           Ouroboros.Consensus.Block.EBB
 
@@ -142,14 +150,6 @@ type instance BlockProtocol (Header blk) = BlockProtocol blk
 
 {-------------------------------------------------------------------------------
   Some automatic instances for 'Header'
-
-  Unfortunately we cannot give a 'HasHeader' instance; if we mapped from a
-  header to a block instead we could do
-
-  > instance HasHeader hdr => HasHeader (Block hdr) where
-  >  ..
-
-  but we can't do that when we do things this way around.
 -------------------------------------------------------------------------------}
 
 type instance HeaderHash (Header blk) = HeaderHash blk
@@ -158,6 +158,26 @@ instance HasHeader blk => StandardHash (Header blk)
 
 instance HasHeader (Header blk) => Measured BlockMeasure (Header blk) where
   measure = blockMeasure
+
+-- | Get the 'HeaderFields' of a block, without requiring 'HasHeader blk'
+--
+-- This is primarily useful as a a simple definition of 'HasHeader' for
+-- block types:
+--
+-- > instance HasHeader SomeBlock where
+-- >   getHeaderFields = getBlockHeaderFields
+--
+-- provided that there is a 'HasHeader' instance for the header.
+--
+-- Unfortunately we cannot give a 'HasHeader' instance once and for all; if we
+-- mapped from a header to a block instead we could do
+--
+-- > instance HasHeader hdr => HasHeader (Block hdr) where
+-- >  ..
+--
+-- but we can't do that when we do things this way around.
+getBlockHeaderFields :: GetHeader blk => blk -> HeaderFields blk
+getBlockHeaderFields = castHeaderFields . getHeaderFields . getHeader
 
 {-------------------------------------------------------------------------------
   Convenience wrappers around 'HasHeader' that avoids unnecessary casts

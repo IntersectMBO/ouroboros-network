@@ -193,14 +193,14 @@ type instance HeaderHash ByronBlock = ByronHash
 instance StandardHash ByronBlock
 
 instance HasHeader ByronBlock where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance HasHeader (Header ByronBlock) where
-  blockHash = byronHeaderHash
-  blockSlot = byronHeaderSlotNo
-  blockNo   = fromByronBlockNo . CC.abobHdrChainDifficulty . byronHeaderRaw
+  getHeaderFields hdr = HeaderFields {
+        headerFieldHash    = byronHeaderHash hdr
+      , headerFieldSlot    = byronHeaderSlotNo hdr
+      , headerFieldBlockNo = fromByronBlockNo . CC.abobHdrChainDifficulty $ byronHeaderRaw hdr
+      }
 
 instance GetPrevHash ByronBlock where
   headerPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw

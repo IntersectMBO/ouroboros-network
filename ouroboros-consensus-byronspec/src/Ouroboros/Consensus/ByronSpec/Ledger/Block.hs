@@ -79,14 +79,14 @@ instance Measured BlockMeasure ByronSpecBlock where
   measure = blockMeasure
 
 instance HasHeader ByronSpecBlock where
-  blockHash = blockHash . getHeader
-  blockNo   = blockNo   . getHeader
-  blockSlot = blockSlot . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance HasHeader ByronSpecHeader where
-  blockHash = byronSpecHeaderHash
-  blockNo   = byronSpecHeaderNo
-  blockSlot = fromByronSpecSlotNo . Spec._bhSlot . byronSpecHeader
+  getHeaderFields hdr = HeaderFields {
+        headerFieldHash    = byronSpecHeaderHash hdr
+      , headerFieldBlockNo = byronSpecHeaderNo hdr
+      , headerFieldSlot    = fromByronSpecSlotNo . Spec._bhSlot $ byronSpecHeader hdr
+      }
 
 instance GetPrevHash ByronSpecBlock where
   headerPrevHash = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader

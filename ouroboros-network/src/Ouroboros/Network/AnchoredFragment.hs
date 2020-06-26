@@ -86,7 +86,7 @@ module Ouroboros.Network.AnchoredFragment (
   prettyPrint
   ) where
 
-import           Prelude hiding (head, last, length, null, filter)
+import           Prelude hiding (filter, head, last, length, null)
 
 import           Data.Functor ((<&>))
 import           Data.List (find)
@@ -160,6 +160,8 @@ data Anchor block =
     -- We don't use the 'Point' type directly as that has its /own/ use of
     -- 'WithOrigin', and we want to enforce here that we have a block number
     -- if and only if the point is not 'Origin'.
+    --
+    -- TODO: Use 'HeaderField'?
   | Anchor !SlotNo !(HeaderHash block) !BlockNo
   deriving (Generic)
 

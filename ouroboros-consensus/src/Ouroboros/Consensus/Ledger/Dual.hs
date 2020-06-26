@@ -238,14 +238,10 @@ instance Bridge m a => Measured BlockMeasure (DualBlock m a) where
   measure = blockMeasure
 
 instance Bridge m a => HasHeader (DualBlock m a) where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance Bridge m a => HasHeader (DualHeader m a) where
-  blockHash = blockHash . dualHeaderMain
-  blockSlot = blockSlot . dualHeaderMain
-  blockNo   = blockNo   . dualHeaderMain
+  getHeaderFields = castHeaderFields . getHeaderFields . dualHeaderMain
 
 instance Bridge m a => GetPrevHash (DualBlock m a) where
   headerPrevHash = castHash . headerPrevHash . dualHeaderMain

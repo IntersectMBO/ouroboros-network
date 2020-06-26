@@ -149,9 +149,11 @@ type instance HeaderHash BlockHeader = ConcreteHeaderHash
 type instance HeaderHash Block       = ConcreteHeaderHash
 
 instance HasHeader BlockHeader where
-    blockHash      = headerHash
-    blockSlot      = headerSlot
-    blockNo        = headerBlockNo
+  getHeaderFields hdr = HeaderFields {
+      headerFieldHash    = headerHash hdr,
+      headerFieldSlot    = headerSlot hdr,
+      headerFieldBlockNo = headerBlockNo hdr
+      }
 
 instance HasFullHeader BlockHeader where
     blockPrevHash  = headerPrevHash
@@ -163,9 +165,7 @@ instance HasFullHeader BlockHeader where
      && blockNo    b >  BlockNo 0  -- we reserve 0 for genesis
 
 instance HasHeader Block where
-    blockHash      =            headerHash     . blockHeader
-    blockSlot      =            headerSlot     . blockHeader
-    blockNo        =            headerBlockNo  . blockHeader
+  getHeaderFields = castHeaderFields . getHeaderFields . blockHeader
 
 instance HasFullHeader Block where
     blockPrevHash  = castHash . headerPrevHash . blockHeader
