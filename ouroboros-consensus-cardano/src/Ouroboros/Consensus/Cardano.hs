@@ -142,6 +142,12 @@ data Protocol (m :: * -> *) blk p where
   -- | Run TPraos against the real Shelley ledger
   ProtocolRealTPraos
     :: ShelleyGenesis TPraosStandardCrypto
+    -> Nonce
+       -- ^ The initial nonce, typically derived from the hash of Genesis
+       -- config JSON file.
+       --
+       -- WARNING: chains using different values of this parameter will be
+       -- mutually incompatible.
     -> ProtVer
     -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
@@ -157,6 +163,12 @@ data Protocol (m :: * -> *) blk p where
     -> Maybe PBftLeaderCredentials
        -- Shelley
     -> ShelleyGenesis TPraosStandardCrypto
+    -> Nonce
+       -- ^ The initial nonce for the Shelley era, typically derived from the
+       -- hash of Shelley Genesis config JSON file.
+       --
+       -- WARNING: chains using different values of this parameter will be
+       -- mutually incompatible.
     -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
     -> Natural -- ^ Max major protocol version
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
@@ -206,16 +218,16 @@ protocolInfo (ProtocolMockPBFT paramsPBft paramsEra nid) =
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc
 
-protocolInfo (ProtocolRealTPraos genesis protVer maxMajorPV mbLeaderCredentials) =
-    protocolInfoShelley genesis maxMajorPV protVer mbLeaderCredentials
+protocolInfo (ProtocolRealTPraos genesis initialNonce protVer maxMajorPV mbLeaderCredentials) =
+    protocolInfoShelley genesis initialNonce maxMajorPV protVer mbLeaderCredentials
 
 protocolInfo (ProtocolCardano
                genesisByron mthr prv swv mbLeaderCredentialsByron
-               genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
+               genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
                mbLowerBound hardCodedTransition) =
     protocolInfoCardano
       genesisByron mthr prv swv mbLeaderCredentialsByron
-      genesisShelley protVer maxMajorPV mbLeaderCredentialsShelley
+      genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
       mbLowerBound hardCodedTransition
 
 {-------------------------------------------------------------------------------

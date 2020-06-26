@@ -71,6 +71,8 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
+import           Shelley.Spec.Ledger.BaseTypes (Nonce (..))
+
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -286,6 +288,9 @@ protocolInfoCardano
   -> Maybe PBftLeaderCredentials
      -- Shelley
   -> ShelleyGenesis sc
+  -> Nonce
+     -- ^ The initial nonce for the Shelley era, typically derived from the
+     -- hash of Shelley Genesis config JSON file.
   -> ProtVer
   -> Natural
   -> Maybe (TPraosLeaderCredentials sc)
@@ -294,7 +299,7 @@ protocolInfoCardano
   -> TriggerHardFork
   -> ProtocolInfo m (CardanoBlock sc)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
-                    genesisShelley protVer maxMajorPV mbCredsShelley
+                    genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
                     mbLowerBound triggerHardFork =
     assertWithMsg (checkMaxKESEvolutions genesisShelley) $
     ProtocolInfo {
@@ -339,7 +344,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     -- Shelley
 
     tpraosParams :: TPraosParams
-    tpraosParams = Shelley.mkTPraosParams maxMajorPV genesisShelley
+    tpraosParams = Shelley.mkTPraosParams maxMajorPV initialNonce genesisShelley
 
     blockConfigShelley :: BlockConfig (ShelleyBlock sc)
     blockConfigShelley = Shelley.mkShelleyBlockConfig protVer genesisShelley

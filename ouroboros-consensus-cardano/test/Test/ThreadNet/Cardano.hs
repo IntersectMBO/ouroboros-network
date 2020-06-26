@@ -44,6 +44,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
@@ -176,6 +177,7 @@ prop_simple_cardano_convergence TestSetup
                   generatedSecrets
                   propPV
                   genesisShelley
+                  SL.NeutralNonce
                   (coreNodes !! fromIntegral nid)
                   (guard setupByronLowerBound *> Just numByronEpochs)
                   (TriggerHardForkAtVersion shelleyMajorVersion)
@@ -294,6 +296,7 @@ mkProtocolCardanoAndHardForkTxs
   -> CC.Update.ProtocolVersion
      -- Shelley
   -> ShelleyGenesis sc
+  -> SL.Nonce
   -> Shelley.CoreNode sc
      -- Hard fork
   -> Maybe EpochNo
@@ -301,7 +304,7 @@ mkProtocolCardanoAndHardForkTxs
   -> TestNodeInitialization m (CardanoBlock sc)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
-    genesisShelley coreNodeShelley
+    genesisShelley initialNonce coreNodeShelley
     mbLowerBound triggerHardFork =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
@@ -333,6 +336,7 @@ mkProtocolCardanoAndHardForkTxs
         (Just leaderCredentialsByron)
         -- Shelley
         genesisShelley
+        initialNonce
         protVerShelley
         maxMajorPVShelley
         (Just leaderCredentialsShelley)

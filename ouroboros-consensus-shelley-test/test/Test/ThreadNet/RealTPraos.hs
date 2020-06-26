@@ -28,6 +28,7 @@ import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 
+import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
@@ -106,6 +107,7 @@ prop_simple_real_tpraos_convergence TestSetup
               plainTestNodeInitialization $
                 mkProtocolRealTPraos
                   genesisConfig
+                  SL.NeutralNonce
                   (coreNodes !! fromIntegral nid)
             , mkRekeyM = Nothing
             }
