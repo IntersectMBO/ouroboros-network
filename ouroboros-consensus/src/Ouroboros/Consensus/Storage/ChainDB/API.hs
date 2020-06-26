@@ -76,14 +76,11 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
-                     ChainUpdate, pattern GenesisPoint, HasHeader (..),
-                     HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
-                     StandardHash, atSlot, genesisPoint)
+import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
+                     Serialised (..))
 import qualified Ouroboros.Network.Block as Network
 
 import           Ouroboros.Consensus.Block
@@ -583,7 +580,7 @@ validBounds from to = case from of
     StreamToInclusive (RealPoint sto _) -> sfrom <= sto
     StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
-  StreamFromExclusive (BlockPoint { atSlot = sfrom }) -> case to of
+  StreamFromExclusive (BlockPoint sfrom _) -> case to of
     StreamToInclusive (RealPoint sto _) -> sfrom <  sto
     StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
@@ -607,12 +604,12 @@ streamAll :: (IOLike m, StandardHash blk)
 streamAll chainDB registry = do
     tip <- atomically $ getTipPoint chainDB
     case pointToWithOriginRealPoint tip of
-      Origin  -> return Nothing
-      At tip' -> do
+      Origin         -> return Nothing
+      NotOrigin tip' -> do
         errIt <- streamBlocks
                    chainDB
                    registry
-                   (StreamFromExclusive genesisPoint)
+                   (StreamFromExclusive GenesisPoint)
                    (StreamToInclusive tip')
         case errIt of
           -- TODO this is theoretically possible if the current chain has

@@ -68,8 +68,6 @@ import           GHC.Stack
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode

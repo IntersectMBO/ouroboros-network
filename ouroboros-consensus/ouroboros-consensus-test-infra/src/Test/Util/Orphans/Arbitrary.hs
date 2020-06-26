@@ -16,9 +16,7 @@ import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture

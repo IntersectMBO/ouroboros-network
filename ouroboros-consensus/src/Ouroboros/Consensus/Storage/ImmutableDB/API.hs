@@ -24,14 +24,13 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import           Data.ByteString.Builder (Builder)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common

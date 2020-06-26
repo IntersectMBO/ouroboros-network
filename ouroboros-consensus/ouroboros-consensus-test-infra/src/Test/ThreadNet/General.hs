@@ -39,10 +39,7 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
-import           Ouroboros.Network.Block (BlockNo (..), HasHeader, HeaderHash,
-                     SlotNo (..))
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
@@ -635,10 +632,10 @@ prop_general pga testOutput =
                     property (d >= toEnum numActiveSlots)
 
             BlockNo d = case (b1, b2) of
-                          (At b1', At b2') -> b2' - b1'
-                          (Origin, At b2') -> b2' + 1
-                          (Origin, Origin) -> 0
-                          (At _,   Origin) -> error "prop_growth: negative growth"
+                          (NotOrigin b1', NotOrigin b2') -> b2' - b1'
+                          (Origin,        NotOrigin b2') -> b2' + 1
+                          (Origin,        Origin)        -> 0
+                          (NotOrigin _,   Origin)        -> error "prop_growth: negative growth"
             numActiveSlots =
                 Map.size $
                 flip Map.filterWithKey (getLeaderSchedule growthSchedule) $

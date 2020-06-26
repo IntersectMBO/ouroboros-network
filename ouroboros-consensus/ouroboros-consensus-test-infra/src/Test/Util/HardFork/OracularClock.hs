@@ -22,8 +22,7 @@ import           GHC.Stack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Util.Time (nominalDelay)
 

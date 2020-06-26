@@ -56,8 +56,7 @@ import qualified Cardano.Crypto.VRF.Class as VRF
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (BlockNo, pointSlot, unSlotNo)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense

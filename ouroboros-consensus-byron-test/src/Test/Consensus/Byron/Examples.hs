@@ -26,10 +26,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC
 
-import           Ouroboros.Network.Block (SlotNo)
-import           Ouroboros.Network.Point (WithOrigin (At))
-
-import           Ouroboros.Consensus.Block (BlockProtocol, IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -68,7 +65,7 @@ exampleChainDepState = withEBB
     withoutEBB = S.fromList
       secParam
       windowSize
-      (At 2, Seq.fromList signers, S.NothingEbbInfo)
+      (NotOrigin 2, Seq.fromList signers, S.NothingEbbInfo)
 
     -- info about an arbitrary hypothetical EBB
     exampleEbbSlot            :: SlotNo

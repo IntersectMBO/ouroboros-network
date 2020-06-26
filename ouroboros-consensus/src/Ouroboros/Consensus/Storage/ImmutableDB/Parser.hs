@@ -26,14 +26,7 @@ import           Streaming (Of, Stream)
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
 
-import           Cardano.Slotting.Block
-
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash)
-import           Ouroboros.Network.Point (WithOrigin (..))
-
-import           Ouroboros.Consensus.Block (GetHeader (..), GetPrevHash (..),
-                     blockIsEBB)
+import           Ouroboros.Consensus.Block hiding (headerHash)
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -96,7 +89,7 @@ chunkFileParser hasFS decodeBlock getBinaryBlockInfo isNotCorrupt =
   where
     convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
     convertPrevHash GenesisHash   = Origin
-    convertPrevHash (BlockHash h) = At h
+    convertPrevHash (BlockHash h) = NotOrigin h
 
     decoder :: forall s. Decoder s (BL.ByteString -> (blk, CRC))
     decoder = decodeBlock <&> \mkBlk bs ->
@@ -184,12 +177,12 @@ chunkFileParser hasFS decodeBlock getBinaryBlockInfo isNotCorrupt =
             Right (x, Secondary.headerHash entry)
 
         checkNext hashOfPrevBlock x@(BlockSummary entry _blockNo, prevHash)
-          | prevHash == At hashOfPrevBlock
+          | prevHash == NotOrigin hashOfPrevBlock
           = Right (x, Secondary.headerHash entry)
           | otherwise
           = Left (Just (err, offset))
             where
-              err = ChunkErrHashMismatch (At hashOfPrevBlock) prevHash
+              err = ChunkErrHashMismatch (NotOrigin hashOfPrevBlock) prevHash
               offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
 
 {-------------------------------------------------------------------------------

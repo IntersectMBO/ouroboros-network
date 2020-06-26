@@ -9,7 +9,7 @@ module Ouroboros.Consensus.HardFork.History.Util (
 import           Control.Exception (assert)
 import           Data.Word
 
-import           Cardano.Slotting.Slot
+import           Ouroboros.Consensus.Block
 
 {-------------------------------------------------------------------------------
   Adding and subtracting slots/epochs

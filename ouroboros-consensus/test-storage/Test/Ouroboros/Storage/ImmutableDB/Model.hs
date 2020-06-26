@@ -67,13 +67,9 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
 
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
 import           Ouroboros.Consensus.Util.RedundantConstraints
-
-import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
@@ -152,7 +148,7 @@ dbmTip :: DBModel hash -> ImmTipWithInfo hash
 dbmTip DBModel{..} =
     case Map.lookupMax dbmSlots of
       Nothing              -> Origin
-      Just (_slot, inSlot) -> At $
+      Just (_slot, inSlot) -> NotOrigin $
         case inSlot of
           InSlotBlock     (tip, _bytes, _binfo) -> Block <$> tip
           InSlotEBB       (tip, _bytes, _binfo) -> EBB   <$> tip
@@ -181,9 +177,9 @@ dbmEBBs =
 dbmCurrentChunk :: DBModel hash -> ChunkNo
 dbmCurrentChunk dbm =
     case forgetTipInfo <$> dbmTip dbm of
-      Origin          -> firstChunkNo
-      At (Block slot) -> chunkIndexOfSlot' dbm slot
-      At (EBB epoch') -> unsafeEpochNoToChunkNo epoch'
+      Origin                 -> firstChunkNo
+      NotOrigin (Block slot) -> chunkIndexOfSlot' dbm slot
+      NotOrigin (EBB epoch') -> unsafeEpochNoToChunkNo epoch'
 
 -- | The chain containing the regular blocks /only/
 --
@@ -238,9 +234,9 @@ dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
 -- TODO #1151
 dbmTipBlock :: DBModel hash -> Maybe TestBlock
 dbmTipBlock dbm = testBlockFromLazyByteString <$> case forgetTipInfo <$> dbmTip dbm of
-    Origin           -> Nothing
-    At (Block _slot) -> Just $ getBytes $ mustBeJust $ last $ dbmRegular dbm
-    At (EBB epoch)   -> Just $ getBytes $ dbmEBBs dbm Map.! (unsafeEpochNoToChunkNo epoch)
+    Origin                  -> Nothing
+    NotOrigin (Block _slot) -> Just $ getBytes $ mustBeJust $ last $ dbmRegular dbm
+    NotOrigin (EBB epoch)   -> Just $ getBytes $ dbmEBBs dbm Map.! (unsafeEpochNoToChunkNo epoch)
   where
     mustBeJust = fromMaybe (error "chain ends with an empty slot")
 
@@ -327,7 +323,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
             dbmNextIterator = dbmNextIterator
           }
 
-    At (EBB epoch) ->
+    NotOrigin (EBB epoch) ->
         dbm { dbmSlots = Map.update deleteRegular (slotNoOfEBB' dbm epoch)
                        $ Map.filterWithKey shouldKeep
                        $ dbmSlots
@@ -340,7 +336,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
         deleteRegular (InSlotBoth ebb _) = Just $ InSlotEBB ebb
         deleteRegular (InSlotBlock _)    = Nothing
 
-    At (Block slot) ->
+    NotOrigin (Block slot) ->
         dbm { dbmSlots = Map.filterWithKey shouldKeep $ dbmSlots }
       where
         shouldKeep slot' _inSlot = slot' <= slot
@@ -377,7 +373,7 @@ properTips = concatMap go . Map.elems . dbmSlots
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model, including 'TipGenesis'. The tips will be sorted from old to recent.
 tips :: DBModel hash -> NonEmpty (ImmTipWithInfo hash)
-tips dbm = Origin NE.:| map At (properTips dbm)
+tips dbm = Origin NE.:| map NotOrigin (properTips dbm)
 
 -- | Return the blobs in the given 'EpochNo', in order.
 blobsInChunk :: DBModel hash -> ChunkNo -> [ByteString]
@@ -448,11 +444,11 @@ rollBack rbp dbm = case rbp of
     RollBackToChunkSlot epochSlot@(ChunkSlot chunk relSlot) ->
       case relativeSlotIsEBB relSlot of
         IsEBB ->
-            rollBackToTip (At (EBB epoch)) dbm
+            rollBackToTip (NotOrigin (EBB epoch)) dbm
           where
             epoch = unsafeChunkNoToEpochNo chunk
         IsNotEBB ->
-           rollBackToTip (At (Block slot)) dbm
+           rollBackToTip (NotOrigin (Block slot)) dbm
           where
             slot = chunkSlotToSlot' dbm epochSlot
 
@@ -598,9 +594,9 @@ getBlockComponentModel
 getBlockComponentModel blockComponent slot dbm@DBModel{..} = do
     -- Check that the slot is not in the future
     let inTheFuture = case forgetTipInfo <$> dbmTip dbm of
-          Origin              -> True
-          At (Block lastSlot) -> slot > lastSlot
-          At (EBB  _ebb)      -> slot >= fromIntegral (length (dbmRegular dbm))
+          Origin                     -> True
+          NotOrigin (Block lastSlot) -> slot > lastSlot
+          NotOrigin (EBB  _ebb)      -> slot >= fromIntegral (length (dbmRegular dbm))
 
     when inTheFuture $
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
@@ -628,8 +624,8 @@ getEBBComponentModel blockComponent epoch dbm@DBModel {..} = do
         chunk        = unsafeEpochNoToChunkNo epoch
         inTheFuture  = chunk > currentEpoch ||
           case dbmTip dbm of
-            Origin -> True
-            At _   -> False
+            Origin      -> True
+            NotOrigin _ -> False
 
     when inTheFuture $
       throwUserError $ ReadFutureEBBError epoch currentEpoch
@@ -658,9 +654,9 @@ getBlockOrEBBComponentModel
 getBlockOrEBBComponentModel blockComponent slot hash dbm@DBModel { dbmPrefixLen } = do
     -- Check that the slot is not in the future
     let inTheFuture = case forgetTipInfo <$> dbmTip dbm of
-          Origin              -> True
-          At (Block lastSlot) -> slot > lastSlot
-          At (EBB   epoch)    -> slot > slotNoOfEBB' dbm epoch
+          Origin                     -> True
+          NotOrigin (Block lastSlot) -> slot > lastSlot
+          NotOrigin (EBB   epoch)    -> slot > slotNoOfEBB' dbm epoch
 
     when inTheFuture $
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
@@ -701,9 +697,9 @@ appendBlockModel
 appendBlockModel slot block hash builder binfo dbm@DBModel {..} = do
     -- Check that we're not appending to the past
     let inThePast = case forgetTipInfo <$> dbmTip dbm of
-          At (Block lastSlot) -> slot <= lastSlot
-          At (EBB _)          -> slot < fromIntegral (length (dbmRegular dbm))
-          Origin              -> False
+          NotOrigin (Block lastSlot) -> slot <= lastSlot
+          NotOrigin (EBB _)          -> slot < fromIntegral (length (dbmRegular dbm))
+          Origin                     -> False
 
     when inThePast $
       throwUserError $ AppendToSlotInThePastError slot (forgetTipInfo <$> dbmTip dbm)
@@ -728,8 +724,8 @@ appendEBBModel epoch block hash builder binfo dbm@DBModel {..} = do
     let currentChunk = dbmCurrentChunk dbm
         chunk        = unsafeEpochNoToChunkNo epoch
         inThePast    = chunk <= currentChunk && case dbmTip dbm of
-          Origin -> False
-          At _   -> True
+          Origin      -> False
+          NotOrigin _ -> True
 
     when inThePast $
       throwUserError $ AppendToEBBInThePastError epoch currentChunk

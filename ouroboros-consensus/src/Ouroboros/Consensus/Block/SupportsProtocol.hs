@@ -8,8 +8,6 @@ module Ouroboros.Consensus.Block.SupportsProtocol (
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 

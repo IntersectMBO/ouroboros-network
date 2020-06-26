@@ -52,8 +52,7 @@ import           Cardano.Prelude (unsafeNoUnexpectedThunks)
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Block (Tip, getTipBlockNo, getTipPoint)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 

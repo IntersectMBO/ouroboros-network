@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Forecast (
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 
-import           Cardano.Slotting.Slot hiding (at)
+import           Ouroboros.Consensus.Block
 
 data Forecast a = Forecast {
       forecastAt  :: WithOrigin SlotNo
@@ -34,7 +34,7 @@ constantForecastOf :: a -> WithOrigin SlotNo -> Forecast a
 constantForecastOf a at = Forecast {
       forecastAt  = at
     , forecastFor = \for ->
-                      if At for >= at
+                      if NotOrigin for >= at
                         then return a
                         else error "trivialForecast: precondition violated"
     }

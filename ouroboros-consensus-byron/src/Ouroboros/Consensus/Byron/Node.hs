@@ -27,10 +27,7 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
-                     SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block

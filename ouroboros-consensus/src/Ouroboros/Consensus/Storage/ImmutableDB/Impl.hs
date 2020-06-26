@@ -103,10 +103,7 @@ import qualified Data.ByteString.Short as Short
 import           Data.Functor (($>))
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -305,8 +302,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
         lift $ cleanUp hasFS st
         newTipWithHash <- lift $ truncateTo hasFS st newTipChunkSlot
         let (newChunk, allowExisting) = case newTipChunkSlot of
-              Origin                 -> (firstChunkNo, MustBeNew)
-              At (ChunkSlot chunk _) -> (chunk, AllowExisting)
+              Origin                        -> (firstChunkNo, MustBeNew)
+              NotOrigin (ChunkSlot chunk _) -> (chunk, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past chunks.
         lift $ Index.restart currentIndex newChunk
@@ -327,7 +324,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
     truncateTo hasFS OpenState {} = \case
       Origin                       ->
         removeFilesStartingFrom hasFS firstChunkNo $> Origin
-      At (ChunkSlot chunk relSlot) -> do
+      NotOrigin (ChunkSlot chunk relSlot) -> do
         removeFilesStartingFrom hasFS (nextChunkNo chunk)
 
         -- Retrieve the needed info from the primary index file and then
@@ -375,12 +372,12 @@ getBlockComponentImpl
 getBlockComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent slot =
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
       let inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin                -> True
-            At (Block lastSlot')  -> slot > lastSlot'
+            Origin                       -> True
+            NotOrigin (Block lastSlot')  -> slot > lastSlot'
             -- The slot (that's pointing to a regular block) corresponding to this
             -- EBB will be empty, as the EBB is the last thing in the database. So
             -- if @slot@ is equal to this slot, it is also referring to the future.
-            At (EBB lastEBBEpoch) -> slot >= slotNoOfEBB chunkInfo lastEBBEpoch
+            NotOrigin (EBB lastEBBEpoch) -> slot >= slotNoOfEBB chunkInfo lastEBBEpoch
 
       when inTheFuture $
         throwUserError $
@@ -401,9 +398,9 @@ getEBBComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
       let chunk       = unsafeEpochNoToChunkNo epoch
           inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin       -> True
-            At (Block _) -> chunk > currentChunk
-            At (EBB _)   -> chunk > currentChunk
+            Origin              -> True
+            NotOrigin (Block _) -> chunk > currentChunk
+            NotOrigin (EBB _)   -> chunk > currentChunk
 
       when inTheFuture $
         throwUserError $ ReadFutureEBBError epoch currentChunk
@@ -536,8 +533,8 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
 
       let inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin -> True
-            At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
+            Origin      -> True
+            NotOrigin b -> slot > slotNoOfBlockOrEBB chunkInfo b
 
       when inTheFuture $
         throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> currentTip)
@@ -604,9 +601,9 @@ appendBlockImpl dbEnv slot blockNumber headerHash builder binaryBlockInfo =
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> currentTip of
-            At (Block lastSlot)   -> slot  <= lastSlot
-            At (EBB lastEBBEpoch) -> chunk <  unsafeEpochNoToChunkNo lastEBBEpoch
-            Origin                -> False
+            NotOrigin (Block lastSlot)   -> slot  <= lastSlot
+            NotOrigin (EBB lastEBBEpoch) -> chunk <  unsafeEpochNoToChunkNo lastEBBEpoch
+            Origin                       -> False
 
       when inThePast $ lift $
         throwUserError $
@@ -635,10 +632,10 @@ appendEBBImpl dbEnv epoch blockNumber headerHash builder binaryBlockInfo =
           inThePast = case forgetTipInfo <$> currentTip of
             -- There is already a block in this chunk, so the EBB can no
             -- longer be appended in this chunk
-            At (Block _) -> chunk <= currentChunk
+            NotOrigin (Block _) -> chunk <= currentChunk
             -- There is already an EBB in this chunk
-            At (EBB _)   -> chunk <= currentChunk
-            Origin       -> False
+            NotOrigin (EBB _)   -> chunk <= currentChunk
+            Origin              -> False
 
       when inThePast $ lift $ throwUserError $
         AppendToEBBInThePastError epoch currentChunk
@@ -688,10 +685,10 @@ appendChunkSlot hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHas
             -- before currentChunk.
             then firstBlockOrEBB chunkInfo chunk
             else case forgetTipInfo <$> currentTip of
-              Origin -> firstBlockOrEBB chunkInfo firstChunkNo
+              Origin      -> firstBlockOrEBB chunkInfo firstChunkNo
               -- Invariant: the currently open chunk is never full
-              At b   -> unsafeNextRelativeSlot . chunkRelative $
-                          chunkSlotForBlockOrEBB chunkInfo b
+              NotOrigin b -> unsafeNextRelativeSlot . chunkRelative $
+                               chunkSlotForBlockOrEBB chunkInfo b
 
     -- Append to the end of the chunk file.
     (blockSize, entrySize) <- lift $ lift $ do
@@ -722,7 +719,7 @@ appendChunkSlot hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHas
     modify $ \st -> st
       { currentChunkOffset     = currentChunkOffset + fromIntegral blockSize
       , currentSecondaryOffset = currentSecondaryOffset + entrySize
-      , currentTip             = At (TipInfo headerHash blockOrEBB blockNumber)
+      , currentTip             = NotOrigin (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
     ChunkSlot chunk relSlot = chunkSlot
@@ -747,7 +744,7 @@ startNewChunk hasFS index chunkInfo = do
         nextFreeRelSlot = case forgetTipInfo <$> currentTip of
           Origin ->
             NextRelativeSlot $ firstBlockOrEBB chunkInfo firstChunkNo
-          At b ->
+          NotOrigin b ->
             if chunk == currentChunk
               then nextRelativeSlot relSlot
               else NextRelativeSlot $ firstBlockOrEBB chunkInfo currentChunk

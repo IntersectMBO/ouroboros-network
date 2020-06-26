@@ -38,7 +38,6 @@ import           Cardano.Prelude (Natural)
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
-import           Cardano.Slotting.Slot (EpochNo)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

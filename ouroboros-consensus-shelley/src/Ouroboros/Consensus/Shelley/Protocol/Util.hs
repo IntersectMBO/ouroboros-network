@@ -8,8 +8,9 @@ module Ouroboros.Consensus.Shelley.Protocol.Util (
   ) where
 
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot
 import           Data.Functor.Identity (Identity (..))
+
+import           Ouroboros.Consensus.Block
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS

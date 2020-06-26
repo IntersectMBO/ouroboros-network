@@ -31,9 +31,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 import qualified Cardano.Slotting.SlotBounded as SB
 
-import           Ouroboros.Network.Block (SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (firstJust)
 
 {-------------------------------------------------------------------------------
@@ -119,7 +117,7 @@ snapOld k now old = trim k now . go
     lowerBound History{..} =
         case historySnapshots of
           Empty     -> historyAnchor
-          (_ :|> s) -> At (sbUpper s)
+          (_ :|> s) -> NotOrigin (sbUpper s)
 
 -- | Drop snapshots guaranteed not to be needed anymore
 --
@@ -141,12 +139,12 @@ trim :: forall st.
 trim k now h@History{..} =
     case trimSeq historySnapshots of
       Nothing      -> h
-      Just (s, ss) -> History (At (sbUpper s)) ss
+      Just (s, ss) -> History (NotOrigin (sbUpper s)) ss
   where
     -- Earliest slot we might roll back to
     earliest :: WithOrigin SlotNo
     earliest = if now >= (2 * coerce k)
-                 then At $ now - (2 * coerce k)
+                 then NotOrigin $ now - (2 * coerce k)
                  else Origin
 
     -- Trim the list of snapshots, if we can.

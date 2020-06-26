@@ -25,8 +25,6 @@ import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Slotting.Slot
-
 import qualified Cardano.Chain.ProtocolConstants as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
@@ -38,6 +36,7 @@ import qualified Control.State.Transition.Generator as Spec.QC
 
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam

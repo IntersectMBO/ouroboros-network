@@ -9,9 +9,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Conversions (
   , toByronSpecSlotNo
   ) where
 
-import           Cardano.Slotting.Slot (SlotNo (..))
-
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
+import           Ouroboros.Consensus.Block
 
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Ledger.Core as Spec

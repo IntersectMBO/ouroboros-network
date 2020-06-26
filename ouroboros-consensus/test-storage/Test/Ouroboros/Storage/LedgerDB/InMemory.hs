@@ -19,10 +19,9 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -159,7 +158,7 @@ prop_pastLedger setup@ChainSetup{..} =
     tip :: WithOrigin TestBlock
     tip = case prefix of
             []         -> Origin
-            _otherwise -> At (last prefix)
+            _otherwise -> NotOrigin (last prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (eraParams setup) prefix csGenSnaps
@@ -234,7 +233,7 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
     tip :: WithOrigin TestBlock
     tip = case prefix of
             []         -> Origin
-            _otherwise -> At (last prefix)
+            _otherwise -> NotOrigin (last prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (eraParams ssChainSetup) prefix (csGenSnaps ssChainSetup)
@@ -437,4 +436,4 @@ instance Arbitrary (Trivial (WithOrigin Int)) where
   arbitrary = fmap Trivial $ do
                 gen <- arbitrary
                 if gen then return Origin
-                       else At <$> arbitrary
+                       else NotOrigin <$> arbitrary

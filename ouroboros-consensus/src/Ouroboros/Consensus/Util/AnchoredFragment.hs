@@ -20,7 +20,6 @@ import           GHC.Stack
 import           Ouroboros.Network.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, blockPoint)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

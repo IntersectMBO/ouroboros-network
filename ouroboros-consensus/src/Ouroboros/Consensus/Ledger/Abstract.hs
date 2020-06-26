@@ -49,8 +49,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 

@@ -58,8 +58,8 @@ import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
-import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
@@ -368,8 +368,8 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
 
     -- Upper bound is exclusive, so we count from the /next/ ledger tip
     next :: WithOrigin SlotNo -> SlotNo
-    next Origin = SlotNo 0
-    next (At s) = succ s
+    next Origin        = SlotNo 0
+    next (NotOrigin s) = succ s
 
 {-------------------------------------------------------------------------------
   Invariants

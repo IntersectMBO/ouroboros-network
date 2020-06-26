@@ -25,9 +25,7 @@ import           GHC.Stack (HasCallStack)
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Versioned
 
@@ -103,7 +101,7 @@ append
   -> TPraosState c
   -> TPraosState c
 append slot prtclState st = st {
-      historicalStates = Map.insert (At slot) prtclState (historicalStates st)
+      historicalStates = Map.insert (NotOrigin slot) prtclState (historicalStates st)
     }
 
 -- | Prune the state to a given maximum size

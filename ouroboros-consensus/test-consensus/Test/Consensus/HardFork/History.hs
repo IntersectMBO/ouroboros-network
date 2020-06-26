@@ -30,8 +30,8 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HF
@@ -501,7 +501,7 @@ chainTip (Chain xs) = tip . reverse . concat . toList $ xs
   where
     tip :: [Event] -> WithOrigin (EpochNo, SlotNo)
     tip []    = Origin
-    tip (e:_) = At (eventTimeEpochNo (eventTime e), eventTimeSlot (eventTime e))
+    tip (e:_) = NotOrigin (eventTimeEpochNo (eventTime e), eventTimeSlot (eventTime e))
 
 -- | Find all confirmed transitions in the chain
 chainTransitions :: Eras xs -> Chain xs -> HF.Transitions xs
@@ -845,4 +845,4 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
 
     tip :: [Event] -> WithOrigin SlotNo
     tip [] = Origin
-    tip es = At $ eventTimeSlot $ eventTime (last es)
+    tip es = NotOrigin $ eventTimeSlot $ eventTime (last es)

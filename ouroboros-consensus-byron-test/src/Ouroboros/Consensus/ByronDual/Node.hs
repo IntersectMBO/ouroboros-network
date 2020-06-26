@@ -30,8 +30,6 @@ import qualified Cardano.Chain.Update as Impl
 import qualified Cardano.Chain.Update.Validation.Interface as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.HeaderValidation
 
 import           Ouroboros.Consensus.Block

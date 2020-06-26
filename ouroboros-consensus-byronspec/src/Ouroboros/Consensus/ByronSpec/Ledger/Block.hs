@@ -19,8 +19,6 @@ import           GHC.Generics (Generic)
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions

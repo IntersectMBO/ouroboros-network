@@ -14,8 +14,8 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Hash (ShortHash)
 import qualified Cardano.Crypto.KES.Class as KES
-import           Cardano.Slotting.Slot (EpochSize (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo

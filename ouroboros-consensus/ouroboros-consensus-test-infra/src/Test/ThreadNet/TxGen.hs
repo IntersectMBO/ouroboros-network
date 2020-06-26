@@ -4,9 +4,9 @@ module Test.ThreadNet.TxGen
   ( TxGen (..)
   ) where
 
-import           Cardano.Slotting.Slot (SlotNo)
 import           Data.Kind (Type)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)

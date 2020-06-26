@@ -38,8 +38,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block
-
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))

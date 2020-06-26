@@ -78,11 +78,7 @@ import           Streaming.Prelude (Of (..), Stream)
 import qualified Streaming.Prelude as S
 import           System.FilePath ((</>))
 
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
-                     pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash)
-import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Block (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
@@ -265,7 +261,7 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
       []    -> [[]]
       succs -> [ next : candidate
                | next <- succs
-               , candidate <- go (At next)
+               , candidate <- go (NotOrigin next)
                ]
 
 -- | Variant of 'isReachable' that obtains its arguments in the same 'STM'
@@ -355,19 +351,19 @@ computePath predecessor from to = case to of
         StreamFromExclusive (BlockPoint {})
           -> Nothing
 
-      At predHash
+      NotOrigin predHash
         | Just prev' <- predecessor predHash -> case from of
           StreamFromInclusive pt
             | predHash == realPointHash pt
             -> return $ CompletelyInVolDB (predHash : acc)
           StreamFromExclusive pt
-            | BlockHash predHash == Block.pointHash pt
+            | BlockHash predHash == pointHash pt
             -> return $ CompletelyInVolDB acc
           -- Bound not yet reached, invariants both ok!
           _ -> go (predHash : acc) prev'
         -- Predecessor not in the VolatileDB
         | StreamFromExclusive pt <- from
-        , BlockHash predHash == Block.pointHash pt
+        , BlockHash predHash == pointHash pt
           -- That's fine if we don't need to include it in the path.
         -> return $ CompletelyInVolDB acc
         | otherwise
@@ -609,7 +605,7 @@ mustExist _ _    (Just b) = Right $ b
 
 fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
 fromChainHash GenesisHash      = Origin
-fromChainHash (BlockHash hash) = At hash
+fromChainHash (BlockHash hash) = NotOrigin hash
 
 extractInfo :: (GetPrevHash blk, GetHeader blk)
             => blk

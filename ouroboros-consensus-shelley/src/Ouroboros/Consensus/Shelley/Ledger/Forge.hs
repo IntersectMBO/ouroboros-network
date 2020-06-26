@@ -19,10 +19,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Forge (
 import           Control.Exception
 import qualified Data.Sequence.Strict as Seq
 
-import           Cardano.Slotting.Block
-
-import           Ouroboros.Network.Block (castHash)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

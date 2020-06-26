@@ -37,9 +37,6 @@ import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hash as Hash
 import qualified Cardano.Crypto.Hashing as Hashing
 import           Cardano.Prelude (Natural, NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound (..),
@@ -189,10 +186,10 @@ byronTransition ByronPartialLedgerConfig{..}
         endorsementDepth :: Word64
         endorsementDepth =
             case ledgerTipSlot st of
-              Origin -> error "byronTransition: impossible"
-              At s   -> if s < endorsedInSlot
-                          then error "byronTransition: impossible"
-                          else History.countSlots s endorsedInSlot
+              Origin       -> error "byronTransition: impossible"
+              NotOrigin s  -> if s < endorsedInSlot
+                                then error "byronTransition: impossible"
+                                else History.countSlots s endorsedInSlot
 
     -- check if the candidate update protocol induces a hard fork to Shelley
     bumpsMajorProtocolVersion :: CC.Update.CandidateProtocolUpdate -> Bool

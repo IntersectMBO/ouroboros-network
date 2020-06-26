@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (BlockNo, Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound

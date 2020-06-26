@@ -65,9 +65,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block hiding (Tip (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -161,7 +158,7 @@ headerStateTip :: HeaderState blk -> WithOrigin (AnnTip blk)
 headerStateTip HeaderState{..} =
     case headerStateTips of
       Empty     -> headerStateAnchor
-      _ :|> tip -> At tip
+      _ :|> tip -> NotOrigin tip
 
 headerStatePush :: forall blk.
                    SecurityParam
@@ -172,7 +169,7 @@ headerStatePush :: forall blk.
 headerStatePush (SecurityParam k) state newTip HeaderState{..} =
     case trim pushed of
       Nothing                   -> HeaderState state pushed  headerStateAnchor
-      Just (newAnchor, trimmed) -> HeaderState state trimmed (At newAnchor)
+      Just (newAnchor, trimmed) -> HeaderState state trimmed (NotOrigin newAnchor)
   where
     pushed :: StrictSeq (AnnTip blk)
     pushed = headerStateTips :|> newTip
@@ -347,9 +344,9 @@ validateEnvelope cfg ledgerView oldTip hdr = do
     checkPrevHash' :: WithOrigin (HeaderHash blk)
                    -> ChainHash blk
                    -> Bool
-    checkPrevHash' Origin GenesisHash    = True
-    checkPrevHash' (At h) (BlockHash h') = h == h'
-    checkPrevHash' _      _              = False
+    checkPrevHash' Origin        GenesisHash    = True
+    checkPrevHash' (NotOrigin h) (BlockHash h') = h == h'
+    checkPrevHash' _             _              = False
 
     actualSlotNo   :: SlotNo
     actualBlockNo  :: BlockNo
@@ -362,18 +359,18 @@ validateEnvelope cfg ledgerView oldTip hdr = do
     expectedSlotNo :: SlotNo -- Lower bound only
     expectedSlotNo =
         case oldTip of
-          Origin -> minimumPossibleSlotNo p
-          At tip -> minimumNextSlotNo p (annTipInfo tip)
-                                        (getTipInfo hdr)
-                                        (annTipSlotNo tip)
+          Origin        -> minimumPossibleSlotNo p
+          NotOrigin tip -> minimumNextSlotNo p (annTipInfo tip)
+                                               (getTipInfo hdr)
+                                               (annTipSlotNo tip)
 
     expectedBlockNo  :: BlockNo
     expectedBlockNo =
         case oldTip of
-          Origin -> expectedFirstBlockNo p
-          At tip -> expectedNextBlockNo p (annTipInfo tip)
-                                          (getTipInfo hdr)
-                                          (annTipBlockNo tip)
+          Origin        -> expectedFirstBlockNo p
+          NotOrigin tip -> expectedNextBlockNo p (annTipInfo tip)
+                                                 (getTipInfo hdr)
+                                                 (annTipBlockNo tip)
 
     p = Proxy @blk
 

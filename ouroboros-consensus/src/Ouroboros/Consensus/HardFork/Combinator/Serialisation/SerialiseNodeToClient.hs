@@ -21,7 +21,8 @@ import           Control.Exception (throw)
 import           Data.Proxy
 import           Data.SOP.Strict
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator

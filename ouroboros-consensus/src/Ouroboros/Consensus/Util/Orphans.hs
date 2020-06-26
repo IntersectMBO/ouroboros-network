@@ -40,11 +40,9 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
-                     blockPointSlot)
 
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -52,12 +50,8 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 instance Condense (HeaderHash block) => Condense (Point block) where
-    condense (Point Origin)        = "Origin"
-    condense (Point (At blk)) =
-      "(Point " <> condense ptSlot <> ", " <> condense ptHash <> ")"
-      where
-      ptSlot = blockPointSlot blk
-      ptHash = blockPointHash blk
+    condense GenesisPoint     = "Origin"
+    condense (BlockPoint s h) = "(Point " <> condense s <> ", " <> condense h <> ")"
 
 instance Condense block => Condense (Chain block) where
     condense Genesis   = "Genesis"

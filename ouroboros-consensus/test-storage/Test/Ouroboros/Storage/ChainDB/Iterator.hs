@@ -18,15 +18,10 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Slotting.Slot hiding (At)
-
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash)
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -402,7 +397,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       , VolDB.bslot         = blockSlot tb
       , VolDB.bpreBid       = case getPrevHash tb of
           GenesisHash -> Origin
-          BlockHash h -> At h
+          BlockHash h -> NotOrigin h
       , VolDB.bisEBB        = testBlockIsEBB tb
       , VolDB.bheaderOffset = 0
       , VolDB.bheaderSize   = 0

@@ -35,10 +35,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
-import           Ouroboros.Network.Point (WithOrigin)
-
-import           Ouroboros.Consensus.Block (IsEBB)
+import           Ouroboros.Consensus.Block
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 

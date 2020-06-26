@@ -42,8 +42,6 @@ import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
 
 import qualified Cardano.Chain.UTxO as Impl
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

@@ -44,9 +44,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.Block.EBB
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..))
 
 -- Most types in the Chunks interface are opaque in the public API, since their

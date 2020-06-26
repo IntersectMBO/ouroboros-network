@@ -15,8 +15,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Forge (
 import           Data.Functor.Product
 import           Data.SOP.Strict
 
-import           Cardano.Slotting.Slot (SlotNo)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -34,7 +32,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
   type ExtraForgeState (HardForkBlock xs) = PerEraExtraForgeState xs
 
-  forgeBlock cfg forgeState blockNo
+  forgeBlock cfg forgeState bno
              Ticked { tickedSlotNo, tickedLedgerState }
              txs isLeader =
       -- First establish the 'IsLeader' and the 'LedgerState' are from the
@@ -76,7 +74,7 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
           forgeBlock
             matchedCfg
             matchedForgeState
-            blockNo
+            bno
             (Ticked tickedSlotNo matchedLedgerState)
             matchedTxs
             (unwrapIsLeader matchedIsLeader)

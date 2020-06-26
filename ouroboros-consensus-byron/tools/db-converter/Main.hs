@@ -45,8 +45,8 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
                      decodeAbstractHash)
-import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import qualified Ouroboros.Consensus.Node as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))

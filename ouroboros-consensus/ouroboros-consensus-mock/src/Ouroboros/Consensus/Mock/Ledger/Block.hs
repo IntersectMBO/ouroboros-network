@@ -77,8 +77,6 @@ import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

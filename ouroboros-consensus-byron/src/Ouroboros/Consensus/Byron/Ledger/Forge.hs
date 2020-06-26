@@ -29,8 +29,6 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

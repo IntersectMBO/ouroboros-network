@@ -22,9 +22,7 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Crypto.DSIGN
 import qualified Cardano.Prelude
 
-import           Ouroboros.Network.Block (HeaderHash, SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State (EbbInfo (..),
@@ -229,7 +227,7 @@ genTestPBftState = do
     let (mbPre, _) = splitAtSigner (numSignersAB .- k) $ inA <> inB
         anchor = case mbPre of
                    Nothing     -> Origin
-                   Just (_, x) -> At $ S.pbftSignerSlotNo x
+                   Just (_, x) -> NotOrigin $ S.pbftSignerSlotNo x
 
     let newABb = fromInputs paramK paramN anchor
                    (signatureInputs inps)
@@ -259,7 +257,7 @@ genTestPBftState = do
         signedPoint = case mbAPrefix of
           Nothing     -> Origin
           Just (_, x) ->
-            At (S.pbftSignerSlotNo x, headerHashBytesInput (InputSigner x))
+            NotOrigin (S.pbftSignerSlotNo x, headerHashBytesInput (InputSigner x))
 
     -- Pick a point to rewind to
     --
@@ -268,7 +266,7 @@ genTestPBftState = do
         [ Exn.assert (unInputs inSuffixA == int <> tal) $
           ( case lastMaybe int of
               Nothing -> signedPoint
-              Just x  -> At (slotInput x, headerHashBytesInput x)
+              Just x  -> NotOrigin (slotInput x, headerHashBytesInput x)
           , Inputs tal
           )
         | (int, tal) <-
@@ -652,7 +650,7 @@ fromInputs k n anchor signers ebbs0 =
     ebbs1 =
         [ mkEbbInfo slot mSlot
         | PBftEBB mSlot slot <- ebbs0
-        , At slot == anchor || mSlot >= anchor
+        , NotOrigin slot == anchor || mSlot >= anchor
         ]
     ebbs2 = case lastMaybe ebbs1 of
       Nothing -> NothingEbbInfo
@@ -688,14 +686,14 @@ toLastInput = LatestInput . lastMaybe . unInputs
 pointLatestInput :: LatestInput c -> WithOrigin (SlotNo, HeaderHashBytes)
 pointLatestInput (LatestInput mbInp) = case mbInp of
   Nothing  -> Origin
-  Just inp -> At (slotInput inp, headerHashBytesInput inp)
+  Just inp -> NotOrigin (slotInput inp, headerHashBytesInput inp)
 
 -- | The slot of the latest /signed/ block
 signedSlotLatestInput :: LatestInput c -> WithOrigin SlotNo
 signedSlotLatestInput (LatestInput inp) = case inp of
   Nothing              -> Origin
   Just (InputEBB x)    -> pbftEbbPrev x
-  Just (InputSigner x) -> At $ S.pbftSignerSlotNo x
+  Just (InputSigner x) -> NotOrigin $ S.pbftSignerSlotNo x
 
 {-------------------------------------------------------------------------------
   Auxiliary

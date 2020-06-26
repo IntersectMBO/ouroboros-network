@@ -33,9 +33,6 @@ import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (HeaderHash, blockHash, genesisPoint)
-import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -133,8 +130,8 @@ exampleApplyTxErr =
 
 exampleChainDepState :: ChainDepState (BlockProtocol (Block ShortHash))
 exampleChainDepState =
-    TPraosState.append 2      (mkPrtclState 2) $
-    TPraosState.empty  (At 1) (mkPrtclState 1)
+    TPraosState.append 2             (mkPrtclState 2) $
+    TPraosState.empty  (NotOrigin 1) (mkPrtclState 1)
   where
     mkPrtclState :: Word64 -> STS.PrtclState (TPraosMockCrypto ShortHash)
     mkPrtclState seed = STS.PrtclState
@@ -152,7 +149,7 @@ exampleLedgerState = reapplyLedgerBlock
     ledgerCfg
     (mkShelleyBlock newBlock :: Block ShortHash)
     (Ticked 0 ShelleyLedgerState {
-        ledgerTip    = genesisPoint
+        ledgerTip    = GenesisPoint
       , history      = History.empty
       , shelleyState = STS.chainNes startState
       })
@@ -173,7 +170,7 @@ exampleHeaderState = genesisHeaderState st
       (SL.mkNonceFromNumber 2)
 
     st :: TPraosState (ConcreteCrypto ShortHash)
-    st = TPraosState.empty (At 1) prtclState
+    st = TPraosState.empty (NotOrigin 1) prtclState
 
 exampleExtLedgerState :: ExtLedgerState (Block ShortHash)
 exampleExtLedgerState = ExtLedgerState {

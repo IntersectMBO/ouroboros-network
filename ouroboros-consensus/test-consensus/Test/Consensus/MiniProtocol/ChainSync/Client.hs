@@ -27,11 +27,11 @@ import           Test.Tasty.QuickCheck
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto.DSIGN.Mock
-import           Cardano.Slotting.Slot
+
+import           Ouroboros.Network.Block (getTipPoint)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block hiding (ChainUpdate (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
@@ -39,8 +39,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (chainState,
                      initChainProducerState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
-import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
-                     blockPointSlot)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -49,6 +47,7 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -705,15 +704,11 @@ ppBlock :: TestBlock -> String
 ppBlock = condense
 
 ppPoint :: StandardHash blk => Point blk -> String
-ppPoint (Point Origin)   = "Origin"
-ppPoint (Point (At blk)) =
-    "(S:" <> show s <> "; H:" <> show h <> ")"
-  where
-    SlotNo s = blockPointSlot blk
-    h        = blockPointHash blk
+ppPoint GenesisPoint              = "Origin"
+ppPoint (BlockPoint (SlotNo s) h) = "(S:" <> show s <> "; H:" <> show h <> ")"
 
 ppChain :: Chain TestBlock -> String
-ppChain = ppBlocks genesisPoint . Chain.toOldestFirst
+ppChain = ppBlocks GenesisPoint . Chain.toOldestFirst
 
 ppFragment :: AnchoredFragment TestBlock -> String
 ppFragment f = ppBlocks (AF.anchorPoint f) (AF.toOldestFirst f)

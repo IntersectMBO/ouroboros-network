@@ -27,8 +27,9 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.VolatileDB.Types
 
 {-------------------------------------------------------------------------------

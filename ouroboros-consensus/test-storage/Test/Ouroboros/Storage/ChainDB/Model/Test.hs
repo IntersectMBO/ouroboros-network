@@ -16,10 +16,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader (..), Point, genesisPoint)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -52,7 +49,7 @@ addBlocks blks = M.addBlocks cfg blks m
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
         M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
-    === if At (blockNo newBlock) > M.immutableBlockNo secParam model
+    === if NotOrigin (blockNo newBlock) > M.immutableBlockNo secParam model
         then Just newBlock
         else Nothing
   where
@@ -99,7 +96,7 @@ prop_between_currentChain bt =
   where
     blocks   = treeToBlocks bt
     model    = addBlocks blocks
-    from     = StreamFromExclusive genesisPoint
+    from     = StreamFromExclusive GenesisPoint
     to       = StreamToInclusive $ cantBeGenesis (M.tipPoint model)
     secParam = configSecurityParam singleNodeTestConfig
 

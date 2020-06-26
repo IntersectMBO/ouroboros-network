@@ -30,9 +30,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 

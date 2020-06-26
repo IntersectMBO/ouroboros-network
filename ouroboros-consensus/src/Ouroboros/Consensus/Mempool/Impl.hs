@@ -30,13 +30,10 @@ import           GHC.Generics (Generic)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainHash, Point, SlotNo,
-                     StandardHash)
-import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -781,5 +778,5 @@ tickLedgerState  cfg (ForgeInUnknownSlot st) =
     -- Once we do, the ValidateEnvelope constraint can go.
     slot :: SlotNo
     slot = case ledgerTipSlot st of
-             Origin -> minimumPossibleSlotNo (Proxy @blk)
-             At s   -> succ s
+             Origin      -> minimumPossibleSlotNo (Proxy @blk)
+             NotOrigin s -> succ s

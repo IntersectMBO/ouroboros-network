@@ -25,9 +25,7 @@ import           GHC.Stack (HasCallStack)
 import           Streaming (Of (..))
 import qualified Streaming.Prelude as S
 
-import           Ouroboros.Network.Point (WithOrigin (..))
-
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -170,10 +168,10 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
       runExceptT
         (validateChunk validateEnv shouldBeFinalised chunk (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid chunk $> lastValid
-          Right Nothing         -> continueOrStop lastValid            chunk prevHash
-          Right (Just validBlk) -> continueOrStop (chunk, At validBlk) chunk prevHash'
+          Right Nothing         -> continueOrStop lastValid                   chunk prevHash
+          Right (Just validBlk) -> continueOrStop (chunk, NotOrigin validBlk) chunk prevHash'
             where
-              prevHash' = At (tipInfoHash validBlk)
+              prevHash' = NotOrigin (tipInfoHash validBlk)
 
     -- | Validate the next chunk, unless the chunk just validated is the last
     -- chunk to validate. Cleanup files corresponding to chunks after the
@@ -203,7 +201,7 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
     cleanup (lastValidChunk, tip) lastValidatedChunk = case tip of
       Origin ->
         removeFilesStartingFrom hasFS firstChunkNo
-      At _  -> do
+      NotOrigin _ -> do
         removeFilesStartingFrom hasFS (nextChunkNo lastValidChunk)
         when (lastValidChunk < lastValidatedChunk) $
           Primary.unfinalise hasFS chunkInfo lastValidChunk
@@ -226,7 +224,7 @@ validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
         Right (Just validBlk) -> do
             -- Found a valid block, we can stop now.
             removeFilesStartingFrom hasFS (nextChunkNo chunk)
-            return (chunk, At validBlk)
+            return (chunk, NotOrigin validBlk)
         _  -- This chunk file is unusable: either the chunk is empty or
            -- everything after it should be truncated.
           | Just chunk' <- prevChunkNo chunk -> go chunk'
@@ -404,8 +402,8 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     trace = lift . traceWith tracer
 
     summaryToTipInfo :: BlockSummary hash -> TipInfo hash BlockOrEBB
-    summaryToTipInfo (BlockSummary entry blockNo) =
-      TipInfo (Secondary.headerHash entry) (Secondary.blockOrEBB entry) blockNo
+    summaryToTipInfo (BlockSummary entry bno) =
+      TipInfo (Secondary.headerHash entry) (Secondary.blockOrEBB entry) bno
 
     -- | 'InvalidFileError' is the only error that can be thrown while loading
     -- a primary or a secondary index file

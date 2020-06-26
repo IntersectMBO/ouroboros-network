@@ -27,8 +27,6 @@ import           Data.ByteString.Short (ShortByteString)
 import           Data.Word
 import           GHC.Generics
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
@@ -40,8 +38,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 -------------------------------------------------------------------------------}
 
 tipIsGenesis :: WithOrigin r -> Bool
-tipIsGenesis Origin = True
-tipIsGenesis (At _) = False
+tipIsGenesis Origin        = True
+tipIsGenesis (NotOrigin _) = False
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo

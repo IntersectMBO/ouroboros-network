@@ -6,7 +6,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
   , proxySingle
   ) where
 
-import           Cardano.Slotting.Slot
 import           Data.Proxy
 
 import           Ouroboros.Consensus.Block

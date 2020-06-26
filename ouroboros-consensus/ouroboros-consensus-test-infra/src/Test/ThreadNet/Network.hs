@@ -52,14 +52,10 @@ import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
 
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
@@ -726,7 +722,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                     EpochSize y = epochSize0
             let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
 
-            let needEBB = inFirstEra && At ebbSlot > pointSlot p
+            let needEBB = inFirstEra && NotOrigin ebbSlot > pointSlot p
             case mbForgeEbbEnv <* guard needEBB of
               Nothing ->
                  -- no EBB needed, forge without making one

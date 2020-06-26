@@ -23,8 +23,7 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point, SlotNo)
-
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 import           Ouroboros.Consensus.Util.IOLike

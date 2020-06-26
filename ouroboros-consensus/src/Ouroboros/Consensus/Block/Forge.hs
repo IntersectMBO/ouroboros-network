@@ -29,8 +29,6 @@ import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config

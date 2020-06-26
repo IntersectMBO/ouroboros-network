@@ -60,9 +60,9 @@ import           GHC.Generics (Generic)
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot hiding (at)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised (..), decodePoint,
+                     encodePoint, mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -252,7 +252,7 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   ledgerViewForecastAt cfg ledgerState at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
-        case History.find (At for) history of
+        case History.find (NotOrigin for) history of
           Just lv -> return lv
           Nothing -> do
             when (for >= maxHi) $
@@ -277,14 +277,14 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
       -- Inclusive lower bound
       minLo :: WithOrigin SlotNo
       minLo = case tip of
-                At (SlotNo s) | s >= swindow -> At (SlotNo (s - swindow))
-                _otherwise                   -> Origin
+                NotOrigin (SlotNo s) | s >= swindow -> NotOrigin (SlotNo (s - swindow))
+                _otherwise                          -> Origin
 
       -- Exclusive upper bound
       maxHi :: SlotNo
       maxHi = case at of
-                Origin -> SlotNo swindow
-                At s   -> SlotNo $ unSlotNo s + 1 + swindow
+                Origin      -> SlotNo swindow
+                NotOrigin s -> SlotNo $ unSlotNo s + 1 + swindow
 
 instance HasHardForkHistory (ShelleyBlock c) where
   type HardForkIndices (ShelleyBlock c) = '[ShelleyBlock c]

@@ -71,12 +71,8 @@ import           GHC.Stack (HasCallStack, callStack)
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot (EpochNo)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
-                     SlotNo)
-import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

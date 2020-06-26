@@ -19,8 +19,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config.SecurityParam
 

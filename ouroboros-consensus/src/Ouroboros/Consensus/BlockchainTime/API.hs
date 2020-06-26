@@ -17,8 +17,7 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
-import           Ouroboros.Network.Block (SlotNo)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (onEachChange)

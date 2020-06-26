@@ -25,10 +25,7 @@ import           GHC.Stack (HasCallStack, callStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
-                     HeaderHash, Point, SlotNo, blockSlot, castPoint,
-                     genesisPoint, pointHash, pointSlot)
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Block (ChainUpdate (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -241,7 +238,7 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         -- Just return the contents of the state and end the transaction in
         -- these two cases.
         ReaderInit
-          -> return $ Left (RollBackTo genesisPoint, Nothing)
+          -> return $ Left (RollBackTo GenesisPoint, Nothing)
         ReaderInImmDB rollState immIt
           -> return $ Left (rollState, Just immIt)
 
@@ -468,7 +465,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
         -- state of the reader.
         -> case readerState of
             ReaderInit
-              | pt == genesisPoint
+              | pt == GenesisPoint
               -- The 'ReaderInit' state is equivalent to @'RollBackTo'
               -- 'genesisPoint'@, so the state doesn't have to change when
               -- requesting a rollback to genesis.
@@ -498,7 +495,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
                 updateState ReaderInit
                 return $ Just pt
 
-              At pt' -> do
+              NotOrigin pt' -> do
                 inImmDB <- ImmDB.hasBlock cdbImmDB pt'
                 if inImmDB then do
                   immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry

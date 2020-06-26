@@ -15,9 +15,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Block (HeaderHash)
-
-import           Ouroboros.Consensus.Block (ConvertRawHash (..), getHeader)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))

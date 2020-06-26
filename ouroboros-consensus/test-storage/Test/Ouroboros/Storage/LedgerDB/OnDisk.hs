@@ -59,9 +59,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.Slotting.Slot (WithOrigin)
-import qualified Cardano.Slotting.Slot as S
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -303,7 +301,7 @@ data SnapState = SnapOk | SnapCorrupted Corruption
   deriving (Show, Eq, Generic, ToExpr)
 
 mockInit :: LedgerDbParams -> Mock t
-mockInit = Mock [] Map.empty S.Origin 1
+mockInit = Mock [] Map.empty Origin 1
 
 mockCurrent :: forall t. LUT t => Mock t -> LedgerSt t
 mockCurrent Mock{..} =
@@ -373,10 +371,10 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
           (SnapCorrupted Truncate, _) ->
             -- If it's truncated, it will skip it
             MockReadFailure snap $ go snaps
-          (SnapOk, S.Origin) ->
+          (SnapOk, Origin) ->
             -- Took Snapshot at genesis: definitely useable
             MockFromSnapshot snap mr
-          (SnapOk, S.At r) ->
+          (SnapOk, NotOrigin r) ->
             if onChain r
               then MockFromSnapshot snap mr
               else MockTooRecent    snap mr $ go snaps
@@ -391,8 +389,8 @@ applyMockLog :: forall t. MockInitLog t MockSnap -> Mock t -> Mock t
 applyMockLog = go
   where
     go :: MockInitLog t MockSnap -> Mock t -> Mock t
-    go  MockFromGenesis             mock = mock { mockRestore = S.Origin }
-    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip      }
+    go  MockFromGenesis             mock = mock { mockRestore = Origin }
+    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip    }
     go (MockReadFailure  ss   log') mock = go log' $ deleteSnap ss mock
     go (MockTooRecent    ss _ log') mock = go log' $ deleteSnap ss mock
 
@@ -418,9 +416,9 @@ mockMaxRollback Mock{..} = go mockLedger
 
     go :: MockLedger t -> Word64
     go ((b, _l):bs)
-      | S.At (blockRef p b) == mockRestore = 0
-      | otherwise                          = 1 + go bs
-    go []                                  = 0
+      | NotOrigin (blockRef p b) == mockRestore = 0
+      | otherwise                               = 1 + go bs
+    go []                                       = 0
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -457,8 +455,8 @@ runMock cmd initMock =
         blocksAfterAnchor :: WithOrigin (BlockRef t)
                           -> [(BlockVal t, LedgerSt t)] -- old to new
                           -> [(BlockVal t, LedgerSt t)]
-        blocksAfterAnchor S.Origin = id
-        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef p . fst)
+        blocksAfterAnchor Origin        = id
+        blocksAfterAnchor (NotOrigin r) = tail . dropWhile ((/= r) . blockRef p . fst)
 
         -- The snapshot that the real implementation will write to disk
         --
@@ -473,7 +471,7 @@ runMock cmd initMock =
           | n == 0    = mockRestore mock
           | otherwise = case drop (n - 1) blocks of
                           []       -> error "snapped: impossible"
-                          (b, _):_ -> S.At (blockRef p b)
+                          (b, _):_ -> NotOrigin (blockRef p b)
           where
             blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
             n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
@@ -595,15 +593,15 @@ dbStreamAPI DB{..} = StreamAPI {..}
 
     -- Ignore requests to start streaming from blocks not on the current chain
     unknownBlock :: Tip' t -> [BlockRef t] -> Bool
-    unknownBlock S.Origin _  = False
-    unknownBlock (S.At r) rs = r `L.notElem` rs
+    unknownBlock Origin        _  = False
+    unknownBlock (NotOrigin r) rs = r `L.notElem` rs
 
     -- Blocks to stream
     --
     -- Precondition: tip must be on the current chain
     blocksToStream :: Tip' t -> [BlockRef t] -> [BlockRef t]
-    blocksToStream S.Origin = id
-    blocksToStream (S.At r) = tail . dropWhile (/= r)
+    blocksToStream Origin        = id
+    blocksToStream (NotOrigin r) = tail . dropWhile (/= r)
 
     getNext :: StrictTVar m [BlockRef t] -> m (NextBlock' t)
     getNext toStream = do

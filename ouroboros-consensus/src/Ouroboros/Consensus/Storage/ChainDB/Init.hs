@@ -11,8 +11,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Init (
 import           Data.Coerce
 import           Data.Functor.Contravariant
 
-import           Ouroboros.Network.Block
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util.IOLike

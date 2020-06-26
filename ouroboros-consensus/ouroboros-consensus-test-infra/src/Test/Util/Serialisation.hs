@@ -31,8 +31,8 @@ import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 
-import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
-                     StandardHash, fromSerialised, mkSerialised)
+import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
+                     mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
