@@ -198,12 +198,10 @@ instance HasHeader (Header TestBlock) where
   blockNo   = blockNo   . testHeader
 
 instance GetPrevHash TestBlock where
-  getPrevHash b = case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
-    Nothing       -> GenesisHash
-    Just prevHash -> BlockHash (TestHash prevHash)
-
-instance GetPrevHash (Header TestBlock) where
-  getPrevHash = castHash . getPrevHash . testHeader
+  headerPrevHash (TestHeader b) =
+      case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
+        Nothing       -> GenesisHash
+        Just prevHash -> BlockHash (TestHash prevHash)
 
 instance StandardHash TestBlock
 
@@ -285,8 +283,8 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | getPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (getPrevHash tb)
+    | blockPrevHash tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise

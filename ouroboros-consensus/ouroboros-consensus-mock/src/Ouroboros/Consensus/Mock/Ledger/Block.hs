@@ -111,7 +111,8 @@ data SimpleBlock' c ext ext' = SimpleBlock {
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
 
-instance SimpleCrypto c => GetHeader (SimpleBlock' c ext ext') where
+instance (SimpleCrypto c, Typeable ext, Typeable ext')
+      => GetHeader (SimpleBlock' c ext ext') where
   data Header (SimpleBlock' c ext ext') = SimpleHeader {
         -- | The header hash
         --
@@ -194,13 +195,11 @@ countSimpleGenTxs = fromIntegral . length . extractTxs
   HasHeader instance for SimpleHeader
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext) => HasHeader (SimpleHeader c ext) where
+instance (SimpleCrypto c, Typeable ext, Typeable ext')
+      => HasHeader (Header (SimpleBlock' c ext ext')) where
   blockHash = simpleHeaderHash
   blockSlot = simpleSlotNo  . simpleHeaderStd
   blockNo   = simpleBlockNo . simpleHeaderStd
-
-instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleHeader c ext) where
-  getPrevHash = castHash . simplePrev . simpleHeaderStd
 
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleBlock
@@ -209,19 +208,21 @@ instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleHeader c ext) wher
 type instance HeaderHash (SimpleBlock' c ext ext') =
   Hash (SimpleHash c) (Header (SimpleBlock' c ext ext'))
 
-instance (SimpleCrypto c, Typeable ext)
-      => Measured BlockMeasure (SimpleBlock c ext) where
+instance (SimpleCrypto c, Typeable ext, Typeable ext')
+      => Measured BlockMeasure (SimpleBlock' c ext ext') where
   measure = blockMeasure
 
-instance (SimpleCrypto c, Typeable ext) => HasHeader (SimpleBlock c ext) where
+instance (SimpleCrypto c, Typeable ext, Typeable ext')
+      => HasHeader (SimpleBlock' c ext ext') where
   blockHash = blockHash . simpleHeader
   blockSlot = blockSlot . simpleHeader
   blockNo   = blockNo   . simpleHeader
 
 instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleBlock c ext) where
-  getPrevHash = castHash . getPrevHash . simpleHeader
+  headerPrevHash = simplePrev . simpleHeaderStd
 
-instance (SimpleCrypto c, Typeable ext) => StandardHash (SimpleBlock c ext)
+instance (SimpleCrypto c, Typeable ext, Typeable ext')
+      => StandardHash (SimpleBlock' c ext ext')
 
 instance SimpleCrypto c => ConvertRawHash (SimpleBlock' c ext ext') where
   toRawHash   _ = Hash.getHash
@@ -508,8 +509,9 @@ instance (SimpleCrypto c, Serialise ext')
   encode = encodeSimpleHeader encode
   decode = decodeSimpleHeader encode decode
 
-simpleBlockBinaryBlockInfo :: (SimpleCrypto c, Serialise ext')
-                           => SimpleBlock' c ext ext' -> BinaryBlockInfo
+simpleBlockBinaryBlockInfo ::
+     (SimpleCrypto c, Serialise ext', Typeable ext, Typeable ext')
+  => SimpleBlock' c ext ext' -> BinaryBlockInfo
 simpleBlockBinaryBlockInfo b = BinaryBlockInfo
     { headerOffset = 2 -- For the 'encodeListLen'
     , headerSize   = fromIntegral $ Lazy.length $ serialise (getHeader b)

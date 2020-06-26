@@ -4,6 +4,8 @@ module Test.ThreadNet.Util.SimpleBlock (
   prop_validSimpleBlock,
   ) where
 
+import           Data.Typeable
+
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Block
@@ -11,7 +13,7 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Util.Condense (condense)
 
 prop_validSimpleBlock
-  :: HasHeader (SimpleBlock' c ext ext')
+  :: (SimpleCrypto c, Typeable ext, Typeable ext')
   => SimpleBlock' c ext ext' -> Property
 prop_validSimpleBlock blk = conjoin $ map each $ simpleTxs $ simpleBody blk
   where

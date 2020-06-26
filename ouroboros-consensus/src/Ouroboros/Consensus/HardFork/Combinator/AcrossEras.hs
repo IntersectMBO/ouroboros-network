@@ -236,18 +236,6 @@ instance CanHardFork xs => HasHeader (OneEraHeader xs) where
   blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
   blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader
 
-instance CanHardFork xs => GetPrevHash (OneEraHeader xs) where
-  getPrevHash = hcollapse
-              . hcmap proxySingle (K . getOnePrev)
-              . getOneEraHeader
-    where
-      getOnePrev :: forall blk. SingleEraBlock blk
-                 => Header blk -> ChainHash (OneEraHeader xs)
-      getOnePrev hdr =
-          case getPrevHash hdr of
-            GenesisHash -> GenesisHash
-            BlockHash h -> BlockHash (OneEraHash $ toRawHash (Proxy @blk) h)
-
 {-------------------------------------------------------------------------------
   HasHeader instance for OneEraBlock
 -------------------------------------------------------------------------------}
@@ -263,9 +251,6 @@ instance CanHardFork xs => HasHeader (OneEraBlock xs) where
   blockHash = blockHash . oneEraBlockHeader
   blockSlot = blockSlot . oneEraBlockHeader
   blockNo   = blockNo   . oneEraBlockHeader
-
-instance CanHardFork xs => GetPrevHash (OneEraBlock xs) where
-  getPrevHash = castHash . getPrevHash . oneEraBlockHeader
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks instances

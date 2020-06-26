@@ -125,7 +125,7 @@ blockInfo b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator b
     , biHash     = BlockHash $ blockHash b
-    , biPrevious = Just $ getPrevHash b
+    , biPrevious = Just $ blockPrevHash b
     }
 
 data NodeLabel = NodeLabel

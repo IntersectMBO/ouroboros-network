@@ -89,10 +89,7 @@ instance HasHeader ByronSpecHeader where
   blockSlot = fromByronSpecSlotNo . Spec._bhSlot . byronSpecHeader
 
 instance GetPrevHash ByronSpecBlock where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance GetPrevHash ByronSpecHeader where
-  getPrevHash = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
+  headerPrevHash = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
 
 {-------------------------------------------------------------------------------
   Config

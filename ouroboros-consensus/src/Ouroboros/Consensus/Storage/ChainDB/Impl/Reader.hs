@@ -86,7 +86,6 @@ newReader
   :: forall m blk b.
      ( IOLike m
      , HasHeader blk
-     , HasHeader (Header blk)
      , GetHeader blk
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
@@ -127,7 +126,6 @@ makeNewReader
   :: forall m blk b.
      ( IOLike m
      , HasHeader blk
-     , HasHeader (Header blk)
      , GetHeader blk
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
@@ -209,7 +207,6 @@ instructionHelper
   :: forall m blk b f.
      ( IOLike m
      , HasHeader blk
-     , HasHeader (Header blk)
      , GetHeader blk
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk

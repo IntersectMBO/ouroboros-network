@@ -820,7 +820,7 @@ successors :: forall blk. GetPrevHash blk
 successors = Map.unionsWith Map.union . map single
   where
     single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    single b = Map.singleton (getPrevHash b)
+    single b = Map.singleton (blockPrevHash b)
                              (Map.singleton (blockHash b) b)
 
 between :: forall blk. GetPrevHash blk

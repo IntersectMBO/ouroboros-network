@@ -10,6 +10,7 @@ import           Codec.Serialise (Serialise, encode)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
+import           Data.Typeable
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -46,7 +47,8 @@ tests = testGroup "Mock"
 -------------------------------------------------------------------------------}
 
 prop_simpleBlockBinaryBlockInfo
-  :: (SimpleCrypto c, Serialise ext) => SimpleBlock c ext -> Property
+  :: (SimpleCrypto c, Serialise ext, Typeable ext)
+  => SimpleBlock c ext -> Property
 prop_simpleBlockBinaryBlockInfo blk =
     serialisedHeader === extractedHeader
   where

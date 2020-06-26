@@ -223,10 +223,7 @@ instance HasHeader (Header TestBlock) where
   blockNo   = thBlockNo . unTestHeader
 
 instance GetPrevHash TestBlock where
-  getPrevHash = castHash . getPrevHash  . getHeader
-
-instance GetPrevHash (Header TestBlock) where
-  getPrevHash = castHash . thPrevHash . unTestHeader
+  headerPrevHash = castHash . thPrevHash . unTestHeader
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       -- | Whether the test block can be EBBs or not. This can vary per test
@@ -553,8 +550,8 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | getPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (getPrevHash tb)
+    | blockPrevHash tb /= lastAppliedHash
+    = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
     | not $ tbIsValid testBody
     = throwError $ InvalidBlock
     | otherwise

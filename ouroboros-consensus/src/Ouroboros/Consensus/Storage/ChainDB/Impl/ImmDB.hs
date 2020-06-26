@@ -210,7 +210,6 @@ hashInfo p = HashInfo { hashSize, getHash, putHash }
 withImmDB
   :: ( IOLike m
      , GetPrevHash blk
-     , GetHeader blk
      , ConvertRawHash blk
      , ImmDbSerialiseConstraints blk
      )
@@ -222,7 +221,6 @@ openDB
   :: forall m blk.
      ( IOLike m
      , GetPrevHash blk
-     , GetHeader blk
      , ConvertRawHash blk
      , ImmDbSerialiseConstraints blk
      )

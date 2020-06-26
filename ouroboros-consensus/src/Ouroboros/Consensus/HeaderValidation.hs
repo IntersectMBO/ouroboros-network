@@ -307,7 +307,7 @@ class ( HasHeader (Header blk)
 
 -- | Validate header envelope
 class ( BasicEnvelopeValidation blk
-      , GetPrevHash (Header blk)
+      , GetPrevHash blk
       , Eq                 (OtherHeaderEnvelopeError blk)
       , Show               (OtherHeaderEnvelopeError blk)
       , NoUnexpectedThunks (OtherHeaderEnvelopeError blk)
@@ -391,7 +391,7 @@ deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Eq                 (HeaderError blk)
 deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Show               (HeaderError blk)
-deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk, Typeable blk)
                => NoUnexpectedThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
