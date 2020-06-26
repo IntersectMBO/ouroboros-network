@@ -203,15 +203,12 @@ instance HasHeader (Header ByronBlock) where
   blockNo   = fromByronBlockNo . CC.abobHdrChainDifficulty . byronHeaderRaw
 
 instance GetPrevHash ByronBlock where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance GetPrevHash (Header ByronBlock) where
-  getPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
+  headerPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure
 
-fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash (Header ByronBlock)
+fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash ByronBlock
 fromByronPrevHash' = fromByronPrevHash ByronHash
 
 {-------------------------------------------------------------------------------

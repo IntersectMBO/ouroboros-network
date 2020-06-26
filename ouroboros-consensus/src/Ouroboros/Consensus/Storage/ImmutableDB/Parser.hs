@@ -65,7 +65,6 @@ data BlockSummary hash = BlockSummary {
 chunkFileParser
   :: forall m blk h hash. (
        IOLike m
-     , GetHeader blk
      , GetPrevHash blk
      , hash ~ HeaderHash blk
      )
@@ -150,7 +149,7 @@ chunkFileParser hasFS decodeBlock getBinaryBlockInfo isNotCorrupt =
         (BlockSummary entry (blockNo blk), prevHash)
       where
         -- Don't accidentally hold on to the block!
-        !prevHash = convertPrevHash $ getPrevHash blk
+        !prevHash = convertPrevHash $ blockPrevHash blk
         !entry    = Secondary.Entry
           { blockOffset  = Secondary.BlockOffset  offset
           , headerOffset = Secondary.HeaderOffset headerOffset

@@ -139,7 +139,6 @@ copyToImmDB
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , HasHeader (Header blk)
      , VolDbSerialiseConstraints blk
      , ImmDbSerialiseConstraints blk
      , HasCallStack
@@ -248,7 +247,6 @@ copyAndSnapshotRunner
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , HasHeader (Header blk)
      , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk

@@ -141,10 +141,7 @@ instance Crypto c => HasHeader (Header (ShelleyBlock c)) where
   blockNo    = coerce . SL.bheaderBlockNo . SL.bhbody . shelleyHeaderRaw
 
 instance Crypto c => GetPrevHash (ShelleyBlock c)  where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance Crypto c => GetPrevHash (Header (ShelleyBlock c)) where
-  getPrevHash =
+  headerPrevHash =
       fromShelleyPrevHash
     . SL.bheaderPrev
     . SL.bhbody
@@ -166,7 +163,7 @@ instance Crypto c => HasAnnTip (ShelleyBlock c)
 -------------------------------------------------------------------------------}
 
 -- | From @cardano-ledger-specs@ to @ouroboros-consensus@
-fromShelleyPrevHash :: SL.PrevHash c -> ChainHash (Header (ShelleyBlock c))
+fromShelleyPrevHash :: SL.PrevHash c -> ChainHash (ShelleyBlock c)
 fromShelleyPrevHash SL.GenesisHash   = GenesisHash
 fromShelleyPrevHash (SL.BlockHash h) = BlockHash (ShelleyHash h)
 

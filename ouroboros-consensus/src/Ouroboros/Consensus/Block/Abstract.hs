@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Block.Abstract (
   , HasCodecConfig(..)
     -- * Previous hash
   , GetPrevHash(..)
-  , headerPrevHash
+  , blockPrevHash
     -- * Working with headers
   , GetHeader(..)
   , headerHash
@@ -101,22 +101,22 @@ class NoUnexpectedThunks (CodecConfig blk) => HasCodecConfig blk where
   Get hash of previous block
 -------------------------------------------------------------------------------}
 
-class HasHeader blk => GetPrevHash blk where
+class (HasHeader blk, GetHeader blk) => GetPrevHash blk where
   -- | Get the hash of the predecessor of this block
   --
   -- This gets its own abstraction, because it will be a key part of the path
   -- to getting rid of EBBs: when we have blocks @A - EBB - B@, the prev hash
   -- of @B@ will be reported as @A@.
-  getPrevHash :: blk -> ChainHash blk
+  headerPrevHash :: Header blk -> ChainHash blk
 
-headerPrevHash :: GetPrevHash (Header blk) => Header blk -> ChainHash blk
-headerPrevHash = castHash . getPrevHash
+blockPrevHash :: GetPrevHash blk => blk -> ChainHash blk
+blockPrevHash = castHash . headerPrevHash . getHeader
 
 {-------------------------------------------------------------------------------
   Link block to its header
 -------------------------------------------------------------------------------}
 
-class GetHeader blk where
+class HasHeader (Header blk) => GetHeader blk where
   data family Header blk :: *
   getHeader          :: blk -> Header blk
   -- | Check whether the header is the header of the block.

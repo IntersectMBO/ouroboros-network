@@ -173,11 +173,8 @@ instance SingleEraBlock b => HasHeader (Header (DegenFork b)) where
   blockSlot =         blockSlot . unDHdr
   blockNo   =         blockNo   . unDHdr
 
-instance SingleEraBlock b => GetPrevHash (DegenFork b) where
-  getPrevHash = castHash . getPrevHash . unDBlk
-
-instance SingleEraBlock b => GetPrevHash (Header (DegenFork b)) where
-  getPrevHash = castHash . getPrevHash . unDHdr
+instance NoHardForks b => GetPrevHash (DegenFork b) where
+  headerPrevHash = castHash . headerPrevHash . unDHdr
 
 {-------------------------------------------------------------------------------
   Forward the 'ConsensusProtocol' instance

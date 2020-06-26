@@ -55,11 +55,7 @@ deriving instance StandardHash blk => Show (MockError blk)
 deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 
-updateMockState :: ( GetHeader blk
-                   , GetPrevHash (Header blk)
-                   , StandardHash blk
-                   , HasMockTxs blk
-                   )
+updateMockState :: (GetPrevHash blk, HasMockTxs blk)
                 => blk
                 -> MockState blk
                 -> Except (MockError blk) (MockState blk)
@@ -68,7 +64,7 @@ updateMockState blk st = do
     st' <- updateMockTip hdr st
     updateMockUTxO (blockSlot hdr) blk st'
 
-updateMockTip :: (GetPrevHash (Header blk), StandardHash blk)
+updateMockTip :: GetPrevHash blk
               => Header blk
               -> MockState blk
               -> Except (MockError blk) (MockState blk)

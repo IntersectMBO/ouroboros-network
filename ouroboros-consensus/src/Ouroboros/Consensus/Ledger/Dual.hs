@@ -128,7 +128,7 @@ instance ConvertRawHash m => ConvertRawHash (DualBlock m a) where
   Header
 -------------------------------------------------------------------------------}
 
-instance GetHeader m => GetHeader (DualBlock m a) where
+instance Bridge m a => GetHeader (DualBlock m a) where
   newtype Header (DualBlock m a) = DualHeader { dualHeaderMain :: Header m }
     deriving NoUnexpectedThunks via AllowThunk (Header (DualBlock m a))
 
@@ -248,10 +248,7 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   blockNo   = blockNo   . dualHeaderMain
 
 instance Bridge m a => GetPrevHash (DualBlock m a) where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance Bridge m a => GetPrevHash (DualHeader m a) where
-  getPrevHash = castHash . getPrevHash . dualHeaderMain
+  headerPrevHash = castHash . headerPrevHash . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Protocol

@@ -189,10 +189,7 @@ instance HasHeader (Header BlockA) where
   blockNo   = headerFieldNo   . hdrA_fields
 
 instance GetPrevHash BlockA where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance GetPrevHash (Header BlockA) where
-  getPrevHash = castHash . headerFieldPrevHash . hdrA_fields
+  headerPrevHash = headerFieldPrevHash . hdrA_fields
 
 instance HasAnnTip BlockA where
 

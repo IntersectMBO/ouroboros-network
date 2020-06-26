@@ -395,7 +395,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     blockInfo tb = VolDB.BlockInfo
       { VolDB.bbid          = blockHash tb
       , VolDB.bslot         = blockSlot tb
-      , VolDB.bpreBid       = case getPrevHash tb of
+      , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> NotOrigin h
       , VolDB.bisEBB        = testBlockIsEBB tb

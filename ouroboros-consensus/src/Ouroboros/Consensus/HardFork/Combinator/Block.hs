@@ -91,10 +91,18 @@ instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
   blockNo   = blockNo   . getHardForkHeader
 
 instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
-  getPrevHash = castHash . getPrevHash . getHeader
-
-instance CanHardFork xs => GetPrevHash (Header (HardForkBlock xs)) where
-  getPrevHash = castHash . getPrevHash . getHardForkHeader
+  headerPrevHash =
+        hcollapse
+      . hcmap proxySingle (K . getOnePrev)
+      . getOneEraHeader
+      . getHardForkHeader
+    where
+      getOnePrev :: forall blk. SingleEraBlock blk
+                 => Header blk -> ChainHash (HardForkBlock xs)
+      getOnePrev hdr =
+          case headerPrevHash hdr of
+            GenesisHash -> GenesisHash
+            BlockHash h -> BlockHash (OneEraHash $ toRawHash (Proxy @blk) h)
 
 {-------------------------------------------------------------------------------
   Codec config

@@ -163,7 +163,7 @@ defaultArgs fp = VolDbArgs {
 
 openDB
   :: forall m blk.
-     (IOLike m, GetPrevHash blk, GetHeader blk, VolDbSerialiseConstraints blk)
+     (IOLike m, GetPrevHash blk, VolDbSerialiseConstraints blk)
   => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
@@ -216,7 +216,7 @@ getMaxSlotNo :: VolDB m blk
 getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock
-  :: (MonadCatch m, GetPrevHash blk, GetHeader blk, VolDbSerialiseConstraints blk)
+  :: (MonadCatch m, GetPrevHash blk, VolDbSerialiseConstraints blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
     VolDB.putBlock vol (extractInfo b binaryBlockInfo) binaryBlob
@@ -487,7 +487,6 @@ blockFileParser
   :: forall m blk.
      ( IOLike m
      , GetPrevHash blk
-     , GetHeader blk
      , VolDbSerialiseConstraints blk
      )
   => VolDbArgs m blk
@@ -518,7 +517,7 @@ blockFileParser VolDbArgs{..} =
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
 blockFileParser'
-  :: forall m blk h. (IOLike m, GetPrevHash blk, GetHeader blk)
+  :: forall m blk h. (IOLike m, GetPrevHash blk)
   => HasFS m h
   -> (blk -> BinaryBlockInfo)
   -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
@@ -607,14 +606,14 @@ fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
 fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = NotOrigin hash
 
-extractInfo :: (GetPrevHash blk, GetHeader blk)
+extractInfo :: GetPrevHash blk
             => blk
             -> BinaryBlockInfo
             -> VolDB.BlockInfo (HeaderHash blk)
 extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
-    , bpreBid       = fromChainHash (getPrevHash b)
+    , bpreBid       = fromChainHash (blockPrevHash b)
     , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize
