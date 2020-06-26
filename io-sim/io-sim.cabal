@@ -47,11 +47,11 @@ library
 
   ghc-options:         -Wall
                        -Wcompat
-                       -Wincomplete-uni-patterns                            
-                       -Wincomplete-record-updates                          
-                       -Wpartial-fields                                     
-                       -Widentities                                         
-                       -Wredundant-constraints                              
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
 
