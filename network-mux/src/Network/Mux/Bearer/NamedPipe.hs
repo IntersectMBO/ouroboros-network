@@ -10,8 +10,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Foldable (traverse_)
 
-import           GHC.Stack
-
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -43,7 +41,7 @@ namedPipeAsBearer tracer h =
         Mx.sduSize = 24576
       }
   where
-    readNamedPipe :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+    readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
     readNamedPipe _ = do
       traceWith tracer Mx.MuxTraceRecvHeaderStart
       hbuf <- recvLen' True 8 []
@@ -68,7 +66,7 @@ namedPipeAsBearer tracer h =
             $ threadDelay 1
           throwM $ Mx.MuxError Mx.MuxBearerClosed (show h ++
               " closed when reading data, waiting on next header " ++
-              show waitingOnNextHeader) callStack
+              show waitingOnNextHeader)
         else do
           traceWith tracer (Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf))
           recvLen' False (l - BL.length buf) (buf : bufs)

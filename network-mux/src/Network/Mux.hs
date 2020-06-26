@@ -56,7 +56,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
-import           GHC.Stack
 
 import           Network.Mux.Channel
 import           Network.Mux.Egress  as Egress
@@ -421,7 +420,6 @@ data MuxJobResult =
 muxChannel
     :: forall m.
        ( MonadSTM m
-       , HasCallStack
        )
     => Tracer m MuxTrace
     -> EgressQueue m
@@ -560,7 +558,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       case st of
            MuxReady -> readTMVar completionVar
            MuxStopped  -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux stopped" callStack))
+             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux stopped"))
            MuxFailed _ -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux Failed" callStack))
+             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux Failed"))
 

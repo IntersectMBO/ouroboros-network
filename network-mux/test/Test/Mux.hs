@@ -28,7 +28,6 @@ import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd, and, nub)
 import           Data.Tuple (swap)
 import           Data.Word
-import           GHC.Stack
 import           Test.QuickCheck hiding ((.&.))
 import           Test.QuickCheck.Gen
 import           Test.Tasty
@@ -1211,7 +1210,6 @@ dummyAppToChannel :: forall m.
                      ( MonadAsync m
                      , MonadCatch m
                      , MonadTimer m
-                     , HasCallStack
                      )
                   => DummyApp
                   -> (Channel m -> m ((), Maybe BL.ByteString))
@@ -1219,7 +1217,7 @@ dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
          DummyAppSucceed -> return ((), Nothing)
-         DummyAppFail    -> throwM $ MuxError MuxShutdown "App Fail" callStack
+         DummyAppFail    -> throwM $ MuxError MuxShutdown "App Fail"
 
 appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
 appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits

@@ -24,7 +24,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception
 import           GHC.Generics (Generic (..))
-import           GHC.Stack
 import           Quiet (Quiet (..))
 
 import           Network.Mux.Types
@@ -39,7 +38,6 @@ import           Network.Mux.Types
 data MuxError = MuxError {
       errorType  :: !MuxErrorType
     , errorMsg   :: !String
-    , errorStack :: !CallStack
     }
   deriving Generic
   deriving Show via Quiet MuxError
@@ -70,11 +68,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   deriving (Show, Eq)
 
 instance Exception MuxError where
-    displayException MuxError{errorType, errorMsg, errorStack}
-      = printf "%s %s at %s"
-          (show errorType)
-          (show errorMsg)
-          (prettyCallStack errorStack)
+    displayException MuxError{errorType, errorMsg}
+      = (show errorType) ++ " " ++ (show errorMsg)
 
 -- | Handler for 'IOException's which wrappes them in 'MuxError'.
 --
@@ -85,8 +80,7 @@ instance Exception MuxError where
 handleIOException :: MonadThrow m => String -> IOException -> m a
 handleIOException errorMsg e = throwM MuxError {
     errorType  = MuxIOException e,
-    errorMsg   = '(' : errorMsg ++ ")",
-    errorStack = callStack 
+    errorMsg   = '(' : errorMsg ++ ")"
   }
 
 
