@@ -131,14 +131,14 @@ mkShelleyHeader raw = ShelleyHeader {
     }
 
 instance Crypto c => HasHeader (ShelleyBlock c)  where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance Crypto c => HasHeader (Header (ShelleyBlock c)) where
-  blockHash  = shelleyHeaderHash
-  blockSlot  =          SL.bheaderSlotNo  . SL.bhbody . shelleyHeaderRaw
-  blockNo    = coerce . SL.bheaderBlockNo . SL.bhbody . shelleyHeaderRaw
+  getHeaderFields hdr = HeaderFields {
+      headerFieldHash    = shelleyHeaderHash hdr
+    , headerFieldSlot    =          SL.bheaderSlotNo  . SL.bhbody . shelleyHeaderRaw $ hdr
+    , headerFieldBlockNo = coerce . SL.bheaderBlockNo . SL.bhbody . shelleyHeaderRaw $ hdr
+    }
 
 instance Crypto c => GetPrevHash (ShelleyBlock c)  where
   headerPrevHash =

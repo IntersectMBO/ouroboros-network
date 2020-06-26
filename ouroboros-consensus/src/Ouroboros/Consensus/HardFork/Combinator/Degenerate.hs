@@ -160,18 +160,20 @@ type instance HeaderHash (DegenFork b) = DegenForkHeaderHash b
 
 instance SingleEraBlock b => StandardHash (DegenFork b)
 
-instance SingleEraBlock b => Measured BlockMeasure (DegenFork b) where
+instance NoHardForks b => Measured BlockMeasure (DegenFork b) where
   measure = blockMeasure
 
-instance SingleEraBlock b => HasHeader (DegenFork b) where
-  blockHash = DHash . blockHash . unDBlk
-  blockSlot =         blockSlot . unDBlk
-  blockNo   =         blockNo   . unDBlk
+instance NoHardForks b => HasHeader (DegenFork b) where
+  getHeaderFields = getBlockHeaderFields
 
-instance SingleEraBlock b => HasHeader (Header (DegenFork b)) where
-  blockHash = DHash . blockHash . unDHdr
-  blockSlot =         blockSlot . unDHdr
-  blockNo   =         blockNo   . unDHdr
+instance NoHardForks b => HasHeader (Header (DegenFork b)) where
+  getHeaderFields (DHdr hdr) = HeaderFields {
+        headerFieldHash    = DHash headerFieldHash
+      , headerFieldSlot    = headerFieldSlot
+      , headerFieldBlockNo = headerFieldBlockNo
+      }
+    where
+      HeaderFields{..} = getHeaderFields hdr
 
 instance NoHardForks b => GetPrevHash (DegenFork b) where
   headerPrevHash = castHash . headerPrevHash . unDHdr
@@ -251,7 +253,7 @@ instance SingleEraBlock b => IsLedger (LedgerState (DegenFork b)) where
 
   applyChainTick cfg slot (DLgr lgr) = DLgr <$> applyChainTick cfg slot lgr
 
-instance SingleEraBlock b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
+instance NoHardForks b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
   applyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
     DLgr <$> applyLedgerBlock cfg b (Ticked slot lgr)
   reapplyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
@@ -259,7 +261,7 @@ instance SingleEraBlock b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b
   ledgerTipPoint (DLgr l) =
     (castPoint :: Point (HardForkBlock '[b]) -> Point (DegenFork b)) $ ledgerTipPoint l
 
-instance SingleEraBlock b => UpdateLedger (DegenFork b)
+instance NoHardForks b => UpdateLedger (DegenFork b)
 
 instance SingleEraBlock b => HasHardForkHistory (DegenFork b) where
   type HardForkIndices (DegenFork b) = '[b]
@@ -272,7 +274,7 @@ instance SingleEraBlock b => HasAnnTip (DegenFork b) where
   tipInfoHash _ = DHash . tipInfoHash (Proxy @(HardForkBlock '[b]))
   getTipInfo (DHdr hdr) = getTipInfo hdr
 
-instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
+instance NoHardForks b => BasicEnvelopeValidation (DegenFork b) where
   expectedFirstBlockNo  _ = expectedFirstBlockNo  (Proxy @(HardForkBlock '[b]))
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @(HardForkBlock '[b]))
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @(HardForkBlock '[b]))
@@ -334,7 +336,7 @@ instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
 instance SingleEraBlock b => ShowQuery (Query (DegenFork b)) where
   showResult (DQry qry) = showResult qry
 
-instance SingleEraBlock b => QueryLedger (DegenFork b) where
+instance NoHardForks b => QueryLedger (DegenFork b) where
   newtype Query (DegenFork b) result = DQry {
         unDQry :: Query (HardForkBlock '[b]) result
       }

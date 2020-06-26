@@ -197,9 +197,11 @@ countSimpleGenTxs = fromIntegral . length . extractTxs
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => HasHeader (Header (SimpleBlock' c ext ext')) where
-  blockHash = simpleHeaderHash
-  blockSlot = simpleSlotNo  . simpleHeaderStd
-  blockNo   = simpleBlockNo . simpleHeaderStd
+  getHeaderFields hdr = HeaderFields {
+        headerFieldHash    = simpleHeaderHash hdr
+      , headerFieldSlot    = simpleSlotNo  . simpleHeaderStd $ hdr
+      , headerFieldBlockNo = simpleBlockNo . simpleHeaderStd $ hdr
+      }
 
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleBlock
@@ -214,9 +216,7 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => HasHeader (SimpleBlock' c ext ext') where
-  blockHash = blockHash . simpleHeader
-  blockSlot = blockSlot . simpleHeader
-  blockNo   = blockNo   . simpleHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleBlock c ext) where
   headerPrevHash = simplePrev . simpleHeaderStd

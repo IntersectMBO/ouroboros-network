@@ -188,14 +188,14 @@ instance GetHeader TestBlock where
 type instance HeaderHash TestBlock = TestHash
 
 instance HasHeader TestBlock where
-  blockHash = tbHash
-  blockSlot = tbSlot
-  blockNo   = fromIntegral . NE.length . unTestHash . tbHash
+  getHeaderFields = getBlockHeaderFields
 
 instance HasHeader (Header TestBlock) where
-  blockHash = blockHash . testHeader
-  blockSlot = blockSlot . testHeader
-  blockNo   = blockNo   . testHeader
+  getHeaderFields (TestHeader TestBlock{..}) = HeaderFields {
+        headerFieldHash    = tbHash
+      , headerFieldSlot    = tbSlot
+      , headerFieldBlockNo = fromIntegral . NE.length . unTestHash $ tbHash
+      }
 
 instance GetPrevHash TestBlock where
   headerPrevHash (TestHeader b) =

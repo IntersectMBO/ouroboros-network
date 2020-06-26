@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -81,14 +82,25 @@ instance CanHardFork xs => Measured BlockMeasure (HardForkBlock xs) where
   measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (HardForkBlock xs) where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
-  blockHash = blockHash . getHardForkHeader
-  blockSlot = blockSlot . getHardForkHeader
-  blockNo   = blockNo   . getHardForkHeader
+  getHeaderFields =
+        hcollapse
+      . hcmap proxySingle (K . getOne)
+      . getOneEraHeader
+      . getHardForkHeader
+    where
+      getOne :: forall blk. SingleEraBlock blk
+             => Header blk -> HeaderFields (Header (HardForkBlock xs))
+      getOne hdr = HeaderFields {
+            headerFieldHash    = OneEraHash $
+                                   toRawHash (Proxy @blk) headerFieldHash
+          , headerFieldSlot    = headerFieldSlot
+          , headerFieldBlockNo = headerFieldBlockNo
+          }
+        where
+          HeaderFields{..} = getHeaderFields hdr
 
 instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
   headerPrevHash =

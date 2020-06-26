@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NumDecimals                #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -21,7 +22,12 @@ module Ouroboros.Network.Block (
     SlotNo(..)
   , BlockNo(..)
   , HeaderHash
+  , HeaderFields(..)
+  , castHeaderFields
   , HasHeader(..)
+  , blockNo
+  , blockSlot
+  , blockHash
   , HasFullHeader(..)
   , StandardHash
   , ChainHash(..)
@@ -79,7 +85,7 @@ import qualified Data.ByteString.Base16.Lazy as B16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import           Data.Coerce (Coercible, coerce)
-import           Data.FingerTree.Strict (Measured)
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -103,11 +109,51 @@ genesisPoint = Point origin
 -- | Header hash
 type family HeaderHash b :: *
 
+-- | Header fields we expect to be present in a block
+--
+-- These fields are lazy because they are extracted from a block or block
+-- header; this type is not intended for storage.
+data HeaderFields b = HeaderFields {
+      headerFieldHash    :: HeaderHash b
+    , headerFieldSlot    :: SlotNo
+    , headerFieldBlockNo :: BlockNo
+    }
+  deriving (Generic)
+
+deriving instance StandardHash b => Show (HeaderFields b)
+deriving instance StandardHash b => Eq   (HeaderFields b)
+deriving instance StandardHash b => Ord  (HeaderFields b)
+
+-- Serialise instance only for the benefit of tests
+deriving instance Serialise (HeaderHash b) => Serialise (HeaderFields b)
+
+type instance HeaderHash (HeaderFields b) = HeaderHash b
+
+castHeaderFields :: HeaderHash b ~ HeaderHash b'
+                 => HeaderFields b -> HeaderFields b'
+castHeaderFields (HeaderFields h s b) = HeaderFields h s b
+
+instance StandardHash b => StandardHash (HeaderFields b)
+
+instance (StandardHash b, Typeable b)
+      => Measured BlockMeasure (HeaderFields b) where
+  measure = blockMeasure
+
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
-    blockHash :: b -> HeaderHash b
-    blockSlot :: b -> SlotNo
-    blockNo   :: b -> BlockNo
+  getHeaderFields :: b -> HeaderFields b
+
+instance (StandardHash b, Typeable b) => HasHeader (HeaderFields b) where
+  getHeaderFields = castHeaderFields
+
+blockHash :: HasHeader b => b -> HeaderHash b
+blockHash = headerFieldHash . getHeaderFields
+
+blockSlot :: HasHeader b => b -> SlotNo
+blockSlot = headerFieldSlot . getHeaderFields
+
+blockNo   :: HasHeader b => b -> BlockNo
+blockNo = headerFieldBlockNo . getHeaderFields
 
 -- | Extension of 'HasHeader' with some additional information
 --

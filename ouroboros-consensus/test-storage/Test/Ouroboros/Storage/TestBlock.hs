@@ -213,14 +213,14 @@ instance Measured BlockMeasure TestBlock where
   measure = blockMeasure
 
 instance HasHeader TestBlock where
-  blockHash = blockHash . getHeader
-  blockSlot = blockSlot . getHeader
-  blockNo   = blockNo   . getHeader
+  getHeaderFields = getBlockHeaderFields
 
 instance HasHeader (Header TestBlock) where
-  blockHash = thHash    . unTestHeader
-  blockSlot = thSlotNo  . unTestHeader
-  blockNo   = thBlockNo . unTestHeader
+  getHeaderFields (TestHeader' TestHeader{..}) = HeaderFields {
+        headerFieldHash    = thHash
+      , headerFieldSlot    = thSlotNo
+      , headerFieldBlockNo = thBlockNo
+      }
 
 instance GetPrevHash TestBlock where
   headerPrevHash = castHash . thPrevHash . unTestHeader
