@@ -90,11 +90,11 @@ library
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
-                       -Wincomplete-uni-patterns                            
-                       -Wincomplete-record-updates                          
-                       -Wpartial-fields                                     
-                       -Widentities                                         
-                       -Wredundant-constraints                              
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
 
 test-suite ouroboros-network-framework-tests
@@ -144,11 +144,11 @@ test-suite ouroboros-network-framework-tests
                        -threaded
                        -Wall
                        -Wcompat
-                       -Wincomplete-uni-patterns                            
-                       -Wincomplete-record-updates                          
-                       -Wpartial-fields                                     
-                       -Widentities                                         
-                       -Wredundant-constraints                              
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
 
 executable demo-ping-pong
@@ -179,9 +179,9 @@ executable demo-ping-pong
   ghc-options:         -Wall
                        -threaded
                        -Wcompat
-                       -Wincomplete-uni-patterns                            
-                       -Wincomplete-record-updates                          
-                       -Wpartial-fields                                     
-                       -Widentities                                         
-                       -Wredundant-constraints                              
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
