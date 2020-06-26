@@ -303,6 +303,7 @@ testBlockToBlockInfo :: TestBlock -> BlockInfo TestHeaderHash
 testBlockToBlockInfo tb = BlockInfo {
       bbid          = thHash
     , bslot         = thSlotNo
+    , bbno          = thBlockNo
     , bpreBid       = case thPrevHash of
         GenesisHash -> Origin
         BlockHash h -> NotOrigin h

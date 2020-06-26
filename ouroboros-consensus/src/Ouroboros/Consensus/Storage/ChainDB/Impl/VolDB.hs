@@ -613,6 +613,7 @@ extractInfo :: GetPrevHash blk
 extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
+    , bbno          = blockNo   b
     , bpreBid       = fromChainHash (blockPrevHash b)
     , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset
