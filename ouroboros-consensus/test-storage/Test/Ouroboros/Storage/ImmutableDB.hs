@@ -8,8 +8,7 @@ import           Control.Tracer (nullTracer)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

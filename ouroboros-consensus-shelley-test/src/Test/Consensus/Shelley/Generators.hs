@@ -17,9 +17,7 @@ module Test.Consensus.Shelley.Generators (
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 
-import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     Point, SlotNo (..), mkSerialised)
-import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
+import           Ouroboros.Network.Block (mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -113,7 +111,7 @@ instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
       steps     <- choose (0, 5)
       startSlot <- frequency
         [ (1, return Origin)
-        , (5, At . SlotNo <$> choose (0, 100))
+        , (5, NotOrigin . SlotNo <$> choose (0, 100))
         ]
       initState <- TPraosState.empty startSlot <$> arbitrary
       go steps startSlot initState
@@ -127,7 +125,7 @@ instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
         | otherwise  = do
           let slot = withOrigin (SlotNo 0) succ prevSlot
           newPrtclState <- arbitrary
-          go (steps - 1) (At slot) (TPraosState.append slot newPrtclState st)
+          go (steps - 1) (NotOrigin slot) (TPraosState.append slot newPrtclState st)
 
 instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
       => Arbitrary (History.LedgerViewHistory (TPraosMockCrypto h)) where

@@ -44,8 +44,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.RedundantConstraints
 

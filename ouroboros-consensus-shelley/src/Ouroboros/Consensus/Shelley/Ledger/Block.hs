@@ -47,10 +47,6 @@ import           Cardano.Binary (Annotator (..), FromCBOR (..),
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block (BlockMeasure, ChainHash (..),
-                     HasHeader (..), HeaderHash, StandardHash, blockMeasure,
-                     castHash)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))

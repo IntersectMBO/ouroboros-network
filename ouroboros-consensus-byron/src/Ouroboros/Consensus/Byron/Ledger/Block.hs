@@ -42,7 +42,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
-import           Cardano.Slotting.Slot (EpochNo (..))
 
 import qualified Crypto.Hash as Crypto
 
@@ -51,7 +50,6 @@ import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Crypto.Hashing as CC
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block

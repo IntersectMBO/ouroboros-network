@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -26,6 +27,29 @@ module Ouroboros.Consensus.Block.Abstract (
   , decodeRawHash
     -- * Existentials
   , SomeBlock(..)
+    -- * Re-export basic definitions from @ouroboros-network@
+  , blockMeasure
+  , BlockMeasure -- opaque
+  , blockPoint
+  , castHash
+  , castPoint
+  , ChainHash(..)
+  , HasHeader(..)
+  , HeaderHash
+  , Point(GenesisPoint, BlockPoint)
+  , pointHash
+  , pointSlot
+  , StandardHash
+    -- * Re-export basic definitions from @cardano-base@
+  , BlockNo(..)
+  , EpochNo(..)
+  , EpochSize(..)
+  , fromWithOrigin
+  , SlotNo(..)
+  , withOrigin
+  , withOriginFromMaybe
+  , WithOrigin(Origin, NotOrigin)
+  , withOriginToMaybe
   ) where
 
 import qualified Codec.Serialise as Serialise
@@ -37,11 +61,16 @@ import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (EpochNo)
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
+                     SlotNo (..), WithOrigin (Origin), fromWithOrigin,
+                     withOrigin, withOriginFromMaybe, withOriginToMaybe)
+import qualified Cardano.Slotting.Slot as Cardano
 
--- TODO: Should we re-export (a subset of?) this module so that we don't need
--- to import from ouroboros-network so often?
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (BlockMeasure, pattern BlockPoint,
+                     ChainHash (..), pattern GenesisPoint, HasHeader (..),
+                     HeaderHash, Point, StandardHash, blockMeasure, blockPoint,
+                     castHash, castPoint, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block.EBB
 
@@ -175,3 +204,14 @@ decodeRawHash p = fromRawHash p <$> Serialise.decode
 -- in partial applications.
 data SomeBlock (f :: * -> * -> *) blk where
   SomeBlock :: f blk a -> SomeBlock f blk
+
+{-------------------------------------------------------------------------------
+  Custom patterns for WithOrigin
+
+  This avoids clashing with our (extensive) use of 'At' for testing.
+-------------------------------------------------------------------------------}
+
+{-# COMPLETE Origin, NotOrigin #-}
+
+pattern NotOrigin :: t -> WithOrigin t
+pattern NotOrigin t = Cardano.At t

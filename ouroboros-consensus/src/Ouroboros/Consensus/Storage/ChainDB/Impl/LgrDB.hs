@@ -69,11 +69,6 @@ import           System.FilePath ((</>))
 
 import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Point,
-                     SlotNo)
-import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Point (WithOrigin)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -459,7 +454,7 @@ streamAPI immDB = StreamAPI streamAfter
                 -> m a
     streamAfter tip k = do
       slotNoAtTip <- ImmDB.getSlotNoAtTip immDB
-      if Block.pointSlot tip' > slotNoAtTip
+      if pointSlot tip' > slotNoAtTip
         then k Nothing
         else withRegistry $ \registry -> do
           mItr <- ImmDB.streamAfter immDB registry GetBlock tip'

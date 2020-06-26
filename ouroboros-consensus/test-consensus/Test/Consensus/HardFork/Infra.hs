@@ -32,8 +32,7 @@ import           Data.SOP.Strict
 import           Data.Word
 import           Test.QuickCheck
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting

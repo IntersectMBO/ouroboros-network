@@ -82,12 +82,9 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -311,7 +308,7 @@ testBlockToBlockInfo tb = BlockInfo {
     , bslot         = thSlotNo
     , bpreBid       = case thPrevHash of
         GenesisHash -> Origin
-        BlockHash h -> At h
+        BlockHash h -> NotOrigin h
     , bisEBB        = blockToIsEBB tb
     , bheaderOffset = testBlockHeaderOffset
     , bheaderSize   = testBlockHeaderSize tb

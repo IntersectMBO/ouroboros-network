@@ -6,8 +6,7 @@ module Test.ThreadNet.Util.SimpleBlock (
 
 import           Test.QuickCheck
 
-import           Ouroboros.Network.Block (HasHeader, SlotNo (..), blockSlot)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Util.Condense (condense)
 

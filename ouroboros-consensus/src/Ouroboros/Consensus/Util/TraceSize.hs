@@ -14,9 +14,6 @@ import           Control.Monad.IO.Class
 import           Control.Tracer
 import           Data.Word
 
-import           Ouroboros.Network.Block (Point (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
@@ -72,5 +69,5 @@ traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
             }
   where
     shouldTrace :: WithOrigin (RealPoint blk) -> Bool
-    shouldTrace Origin  = p 0
-    shouldTrace (At pt) = p (unSlotNo (realPointSlot pt))
+    shouldTrace Origin         = p 0
+    shouldTrace (NotOrigin pt) = p (unSlotNo (realPointSlot pt))

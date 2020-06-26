@@ -51,11 +51,6 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (Ticked (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -331,7 +326,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
           -- FIXME confirm that non-strict inequality is ok in general.
           -- It's here because EBBs have the same slot as the first block of their
           -- epoch.
-          unless (At slot >= S.lastSignedSlot state)
+          unless (NotOrigin slot >= S.lastSignedSlot state)
             $ throwError PBftInvalidSlot
 
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
@@ -415,7 +410,7 @@ rewind k p = S.rewind k (pbftWindowSize k) p'
   where
     p' = case p of
       GenesisPoint    -> Origin
-      BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)
+      BlockPoint s hh -> NotOrigin (s, headerHashBytes (Proxy :: Proxy hdr) hh)
 
 {-------------------------------------------------------------------------------
   PBFT specific types

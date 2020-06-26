@@ -53,7 +53,6 @@ import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Slotting as CC
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block

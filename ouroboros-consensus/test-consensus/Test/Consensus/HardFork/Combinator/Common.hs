@@ -20,9 +20,8 @@ import qualified Data.ByteString as Strict
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Consensus.Block
 
 {-------------------------------------------------------------------------------
   Types shared by A and B

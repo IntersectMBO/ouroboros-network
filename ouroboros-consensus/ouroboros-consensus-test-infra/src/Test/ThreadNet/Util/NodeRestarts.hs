@@ -12,8 +12,7 @@ import qualified Data.Set as Set
 import           Data.Traversable (forM)
 import           Test.QuickCheck
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 

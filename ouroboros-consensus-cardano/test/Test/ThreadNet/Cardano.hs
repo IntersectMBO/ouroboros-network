@@ -22,13 +22,13 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.Slot (EpochNo, EpochSize (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import qualified Cardano.Crypto.KES.Class as KES
 
 import           Ouroboros.Network.MockChain.Chain (chainToList)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)

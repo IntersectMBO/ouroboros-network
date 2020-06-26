@@ -11,11 +11,11 @@ import           Data.Proxy
 
 import           Cardano.Chain.Slotting (EpochSlots)
 
-import           Ouroboros.Network.Block
-
-import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)

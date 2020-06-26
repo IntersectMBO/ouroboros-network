@@ -43,11 +43,11 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot
 
 import           Test.Util.Time (dawnOfTime)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block

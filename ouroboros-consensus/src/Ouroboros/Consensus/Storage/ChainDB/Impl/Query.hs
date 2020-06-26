@@ -24,13 +24,9 @@ import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
 
-import           Cardano.Slotting.Slot (WithOrigin (..))
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     MaxSlotNo, Point, StandardHash, castPoint,
-                     maxSlotNoFromWithOrigin, pointHash)
+import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -94,8 +90,8 @@ getTipBlock
 getTipBlock cdb@CDB{..} = do
     tipPoint <- atomically $ getTipPoint cdb
     case pointToWithOriginRealPoint tipPoint of
-      Origin -> return Nothing
-      At p   -> Just <$> getAnyKnownBlock cdbImmDB cdbVolDB p
+      Origin      -> return Nothing
+      NotOrigin p -> Just <$> getAnyKnownBlock cdbImmDB cdbVolDB p
 
 getTipHeader
   :: forall m blk.
@@ -112,8 +108,8 @@ getTipHeader CDB{..} = do
       Right hdr   -> return $ Just hdr
       Left anchor ->
         case pointToWithOriginRealPoint (castPoint (AF.anchorToPoint anchor)) of
-          Origin -> return Nothing
-          At p   ->
+          Origin      -> return Nothing
+          NotOrigin p ->
             -- In this case, the fragment is empty but the anchor point is not
             -- genesis. It must be that the VolatileDB got emptied and that our
             -- current tip is now the tip of the ImmutableDB.
@@ -261,7 +257,7 @@ getAnyBlockComponent immDB volDB blockComponent p = do
       Nothing    -> do
         -- ImmDB will throw an exception if we ask for a block past the tip
         immTipSlot <- ImmDB.getSlotNoAtTip immDB
-        if At (realPointSlot p) > immTipSlot
+        if NotOrigin (realPointSlot p) > immTipSlot
           -- It's not supposed to be in the ImmutableDB and the VolatileDB
           -- didn't contain it, so return 'Nothing'.
           then return Nothing

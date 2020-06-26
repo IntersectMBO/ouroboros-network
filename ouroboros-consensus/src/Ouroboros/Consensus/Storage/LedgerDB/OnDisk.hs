@@ -45,8 +45,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)

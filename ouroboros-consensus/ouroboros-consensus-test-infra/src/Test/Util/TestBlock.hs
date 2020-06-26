@@ -75,9 +75,6 @@ import           Test.QuickCheck hiding (Result)
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash,
-                     SlotNo (..))
-import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -167,7 +164,7 @@ instance Condense TestHash where
 
 data TestBlock = TestBlock {
       tbHash  :: TestHash
-    , tbSlot  :: Block.SlotNo
+    , tbSlot  :: SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
       -- them, unlike block numbers.
       --
@@ -190,15 +187,15 @@ instance GetHeader TestBlock where
 
 type instance HeaderHash TestBlock = TestHash
 
-instance Block.HasHeader TestBlock where
+instance HasHeader TestBlock where
   blockHash = tbHash
   blockSlot = tbSlot
   blockNo   = fromIntegral . NE.length . unTestHash . tbHash
 
-instance Block.HasHeader (Header TestBlock) where
-  blockHash = Block.blockHash . testHeader
-  blockSlot = Block.blockSlot . testHeader
-  blockNo   = Block.blockNo   . testHeader
+instance HasHeader (Header TestBlock) where
+  blockHash = blockHash . testHeader
+  blockSlot = blockSlot . testHeader
+  blockNo   = blockNo   . testHeader
 
 instance GetPrevHash TestBlock where
   getPrevHash b = case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
@@ -206,21 +203,21 @@ instance GetPrevHash TestBlock where
     Just prevHash -> BlockHash (TestHash prevHash)
 
 instance GetPrevHash (Header TestBlock) where
-  getPrevHash = Block.castHash . getPrevHash . testHeader
+  getPrevHash = castHash . getPrevHash . testHeader
 
-instance Block.StandardHash TestBlock
+instance StandardHash TestBlock
 
-instance Measured Block.BlockMeasure TestBlock where
-  measure = Block.blockMeasure
+instance Measured BlockMeasure TestBlock where
+  measure = blockMeasure
 
 instance Condense TestBlock where
   condense b = mconcat [
         "(H:"
-      , condense (Block.blockHash b)
+      , condense (blockHash b)
       , ",S:"
-      , condense (Block.blockSlot b)
+      , condense (blockSlot b)
       , ",B:"
-      , condense (Block.unBlockNo (Block.blockNo b))
+      , condense (unBlockNo (blockNo b))
       , ")"
       ]
 
@@ -276,7 +273,7 @@ instance BlockSupportsProtocol TestBlock where
 
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
-      signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
+      signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
@@ -288,8 +285,8 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | getPrevHash tb /= Block.pointHash lastAppliedPoint
-    = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (getPrevHash tb)
+    | getPrevHash tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (getPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
@@ -317,15 +314,15 @@ lastAppliedBlock (TestLedger p) = go p
   where
     -- We can only have applied valid blocks
     go :: Point TestBlock -> Maybe TestBlock
-    go Block.GenesisPoint           = Nothing
-    go (Block.BlockPoint slot hash) = Just $ TestBlock hash slot True
+    go GenesisPoint           = Nothing
+    go (BlockPoint slot hash) = Just $ TestBlock hash slot True
 
 instance HasAnnTip TestBlock where
   -- Use defaults
 
 instance BasicEnvelopeValidation TestBlock where
   -- The block number of a test block is derived from the length of the hash
-  expectedFirstBlockNo _ = Block.BlockNo 1
+  expectedFirstBlockNo _ = BlockNo 1
 
 instance ValidateEnvelope TestBlock where
   -- Use defaults
@@ -353,7 +350,7 @@ instance ShowQuery (Query TestBlock) where
   showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger Block.genesisPoint
+testInitLedger = TestLedger GenesisPoint
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {
@@ -471,7 +468,7 @@ treePreferredChain cfg =
       fromMaybe Genesis
     . selectUnvalidatedChain
         (Proxy @(BlockProtocol TestBlock))
-        Block.blockNo
+        blockNo
         (chainSelConfig (configConsensus cfg))
         Genesis
     . treeToChains

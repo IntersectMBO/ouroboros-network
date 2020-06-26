@@ -21,7 +21,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Consensus.Block
 
 newtype HeaderHashBytes = HeaderHashBytes BS.ByteString
   deriving stock (Generic, Show)

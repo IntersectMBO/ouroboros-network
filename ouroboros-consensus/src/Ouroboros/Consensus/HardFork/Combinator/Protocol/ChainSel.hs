@@ -15,8 +15,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel (
 import           Data.Functor.Product
 import           Data.SOP.Strict
 
-import           Cardano.Slotting.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers

@@ -38,7 +38,8 @@ import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
+                     encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec

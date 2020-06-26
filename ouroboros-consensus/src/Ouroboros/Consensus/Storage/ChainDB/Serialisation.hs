@@ -70,7 +70,8 @@ import           GHC.Generics (Generic)
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
+                     mkSerialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
 import           Ouroboros.Consensus.Block

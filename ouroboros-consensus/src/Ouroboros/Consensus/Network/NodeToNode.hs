@@ -38,7 +38,8 @@ import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised (..), decodePoint,
+                     decodeTip, encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)

@@ -30,13 +30,6 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Slotting.Block (BlockNo)
-
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
-                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     SlotNo, StandardHash, pointHash)
-import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -282,8 +275,8 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     start :: HasCallStack
           => ExceptT (UnknownRange blk) m (Iterator m blk b)
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
-      Origin                                       -> findPathInVolDB
-      At (tipSlot, tipHash, tipIsEBB, _tipBlockNo) ->
+      Origin                                              -> findPathInVolDB
+      NotOrigin (tipSlot, tipHash, tipIsEBB, _tipBlockNo) ->
         case realPointSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
@@ -394,7 +387,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
             -- The ImmutableDB is empty
             Origin -> throwError $ ForkTooOld from
             -- The incomplete path fits onto the tip of the ImmutableDB.
-            At pt@(RealPoint _ tipHash)
+            NotOrigin pt@(RealPoint _ tipHash)
               | tipHash == predHash
               -> case NE.nonEmpty hashes of
                    Just hashes' -> startStream pt hashes'
@@ -439,8 +432,8 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
           lift $ createIterator $ InImmDB from immIt immEnd
 
         toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo) -> Point blk
-        toPoint Origin                            = GenesisPoint
-        toPoint (At (slot, hash, _isEBB, _block)) = BlockPoint slot hash
+        toPoint Origin                                   = GenesisPoint
+        toPoint (NotOrigin (slot, hash, _isEBB, _block)) = BlockPoint slot hash
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
                  -> IteratorState m blk b
@@ -647,7 +640,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
                 -- empty (because GC will only be triggered after some newly
                 -- immutable blocks have been copied to the imm DB).
                 error "nextInVolDB: impossible"
-              At tip ->
+              NotOrigin tip ->
                 ImmDB.stream itImmDB registry
                   ((,) <$> getPoint <*> blockComponent)
                   continueFrom

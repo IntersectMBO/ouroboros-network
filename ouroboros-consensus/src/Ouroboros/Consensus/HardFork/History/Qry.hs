@@ -25,8 +25,7 @@ import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Stack
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Util.IOLike
 

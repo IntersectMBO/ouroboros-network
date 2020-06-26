@@ -12,9 +12,7 @@ import qualified Data.Set as Set
 import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto.Hash (ShortHash)
 
-import           Ouroboros.Network.Block (Point (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
@@ -116,7 +114,7 @@ testQueries = testGroup "Queries"
 testResults :: TestTree
 testResults = testGroup "Results"
     [ testCase "LedgerTip"
-        $ goldenTestResult GetLedgerTip (Point Origin) [TkListLen 0]
+        $ goldenTestResult GetLedgerTip GenesisPoint [TkListLen 0]
     , testCase "EpochNo"
         $ goldenTestResult GetEpochNo 0 [TkInt 0]
     , testCase "NonMyopicMemberRewards"

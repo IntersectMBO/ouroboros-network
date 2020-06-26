@@ -48,8 +48,6 @@ import           Streaming (Of, Stream)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Common

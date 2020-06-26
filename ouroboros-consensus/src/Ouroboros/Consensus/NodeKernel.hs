@@ -36,11 +36,10 @@ import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -261,8 +260,8 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
           let slotsBehind = case curChainSlot of
                 -- There's nothing in the chain. If the current slot is 0, then
                 -- we're 1 slot behind.
-                Origin  -> unSlotNo curSlot + 1
-                At slot -> unSlotNo curSlot - unSlotNo slot
+                Origin         -> unSlotNo curSlot + 1
+                NotOrigin slot -> unSlotNo curSlot - unSlotNo slot
               maxSlotsBehind = 1000
           return $ if slotsBehind < maxSlotsBehind
             -- When the current chain is near to "now", use deadline mode,
@@ -489,7 +488,7 @@ mkCurrentBlockContext
 mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->
       -- The chain is entirely empty.
-      Right $ BlockContext (expectedFirstBlockNo (Proxy @blk)) genesisPoint
+      Right $ BlockContext (expectedFirstBlockNo (Proxy @blk)) GenesisPoint
 
     Empty (AF.Anchor anchorSlot anchorHash anchorBlockNo) ->
       let p :: Point blk = BlockPoint anchorSlot anchorHash

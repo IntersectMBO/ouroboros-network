@@ -7,8 +7,6 @@ module Test.ThreadNet.Util.BlockProduction (
 import           Control.Monad.Trans (lift)
 import           Control.Tracer (natTracer)
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

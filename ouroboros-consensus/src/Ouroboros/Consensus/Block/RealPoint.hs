@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -10,8 +9,7 @@
 
 module Ouroboros.Consensus.Block.RealPoint (
     -- * Non-genesis points
-    RealPoint -- Opaque
-  , pattern RealPoint
+    RealPoint(..)
   , encodeRealPoint
   , decodeRealPoint
     -- * Derived
@@ -33,10 +31,6 @@ import           GHC.Generics
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
@@ -46,7 +40,7 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 -- | Point of an actual block (i.e., not genesis)
-newtype RealPoint blk = MkRealPoint (Point.Block SlotNo (HeaderHash blk))
+data RealPoint blk = RealPoint !SlotNo !(HeaderHash blk)
   deriving (Generic)
 
 -- TODO: The Ord instance should go
@@ -58,10 +52,6 @@ deriving instance StandardHash blk => Show (RealPoint blk)
 instance (StandardHash blk, Typeable blk)
       => NoUnexpectedThunks (RealPoint blk) where
   showTypeOf _ = show $ typeRep (Proxy @(RealPoint blk))
-
-{-# COMPLETE RealPoint #-}
-pattern RealPoint :: SlotNo -> HeaderHash blk -> RealPoint blk
-pattern RealPoint s h = MkRealPoint (Point.Block s h)
 
 instance Condense (HeaderHash blk) => Condense (RealPoint blk) where
   condense (RealPoint s h) = "(Point " <> condense s <> ", " <> condense h <> ")"
@@ -100,9 +90,9 @@ realPointToPoint :: RealPoint blk -> Point blk
 realPointToPoint (RealPoint s h) = BlockPoint s h
 
 withOriginRealPointToPoint :: WithOrigin (RealPoint blk) -> Point blk
-withOriginRealPointToPoint Origin = GenesisPoint
-withOriginRealPointToPoint (At p) = realPointToPoint p
+withOriginRealPointToPoint Origin        = GenesisPoint
+withOriginRealPointToPoint (NotOrigin p) = realPointToPoint p
 
 pointToWithOriginRealPoint :: Point blk -> WithOrigin (RealPoint blk)
 pointToWithOriginRealPoint GenesisPoint     = Origin
-pointToWithOriginRealPoint (BlockPoint s h) = At $ RealPoint s h
+pointToWithOriginRealPoint (BlockPoint s h) = NotOrigin $ RealPoint s h

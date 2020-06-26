@@ -39,8 +39,7 @@ import qualified Cardano.Chain.Update.Vote as Vote
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),

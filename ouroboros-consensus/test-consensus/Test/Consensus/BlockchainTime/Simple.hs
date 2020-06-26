@@ -25,11 +25,11 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry

@@ -34,11 +34,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block hiding (hashSize, headerHash)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API

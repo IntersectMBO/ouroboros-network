@@ -13,7 +13,6 @@ module Test.Consensus.Cardano.Generators (
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
-import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 import           Data.Coerce
 import qualified Data.List.NonEmpty as NE
 import           Data.Proxy

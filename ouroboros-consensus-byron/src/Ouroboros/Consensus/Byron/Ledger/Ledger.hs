@@ -55,10 +55,6 @@ import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
 
-import           Ouroboros.Network.Block (Point (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-import qualified Ouroboros.Network.Point as Point
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
@@ -108,8 +104,8 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
       case CC.cvsPreviousHash state of
         -- In this case there are no blocks in the ledger state. The genesis
         -- block does not occupy a slot, so its point is Origin.
-        Left _genHash -> Point Point.origin
-        Right hdrHash -> Point (Point.block slot (ByronHash hdrHash))
+        Left _genHash -> GenesisPoint
+        Right hdrHash -> BlockPoint slot (ByronHash hdrHash)
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
 
@@ -224,7 +220,7 @@ instance LedgerSupportsProtocol ByronBlock where
   ledgerViewForecastAt cfg (ByronLedgerState ls ss) at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
-        case History.find (At for) ss of
+        case History.find (NotOrigin for) ss of
           Just sb -> return $ toPBftLedgerView sb -- Case (A)
           Nothing -> do
             -- Case (B), (C) or (D): the delegation map in the current state
@@ -246,13 +242,13 @@ instance LedgerSupportsProtocol ByronBlock where
       minLo :: WithOrigin SlotNo
       minLo = if (2 * k) > unSlotNo tip
                 then Origin
-                else At (SlotNo $ unSlotNo tip - (2 * k))
+                else NotOrigin (SlotNo $ unSlotNo tip - (2 * k))
 
       -- The upper bound is exclusive
       maxHi :: SlotNo
       maxHi = case at of
-                Origin -> SlotNo $ 2 * k
-                At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
+                Origin      -> SlotNo $ 2 * k
+                NotOrigin s -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
 byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {

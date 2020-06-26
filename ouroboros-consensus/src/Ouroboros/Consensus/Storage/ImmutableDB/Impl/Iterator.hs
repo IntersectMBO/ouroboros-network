@@ -32,11 +32,10 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      allNoUnexpectedThunks, forceElemsToWHNF)
-import           Cardano.Slotting.Slot
 
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
                      ResourceRegistry, allocate, release, unsafeRelease)
@@ -146,7 +145,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
           -- If any of the two bounds were specified, 'validateIteratorRange'
           -- would have thrown a 'ReadFutureSlotError'.
           assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
-        At tip -> do
+        NotOrigin tip -> do
           WithHash endHash endChunkSlot <- fillInEndBound   currentIndex tip mbEnd
           (secondaryOffset, start)      <- fillInStartBound currentIndex     mbStart
 

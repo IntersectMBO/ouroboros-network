@@ -23,7 +23,8 @@ import           Cardano.Prelude (cborError)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation

@@ -10,8 +10,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger
 
 import           Test.ThreadNet.TxGen

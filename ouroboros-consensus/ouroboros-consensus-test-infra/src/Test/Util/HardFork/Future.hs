@@ -22,9 +22,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 
-import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
-                     SlotNo (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SlotLength (..))
 import           Ouroboros.Consensus.Util (nTimes)
 

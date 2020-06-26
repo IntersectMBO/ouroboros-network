@@ -27,13 +27,12 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Text.Read (readMaybe)
 
-import           Ouroboros.Network.Point (WithOrigin)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (lastMaybe)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.Types
-import           Ouroboros.Consensus.Util.IOLike
 
 {------------------------------------------------------------------------------
   FileId utilities

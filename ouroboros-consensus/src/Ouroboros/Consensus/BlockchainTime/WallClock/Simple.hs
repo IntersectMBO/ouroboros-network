@@ -15,10 +15,7 @@ import           Data.Fixed (divMod')
 import           Data.Time (NominalDiffTime)
 import           Data.Void
 
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block (SlotNo)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Util

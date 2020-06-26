@@ -60,12 +60,6 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
-import           Cardano.Slotting.Slot hiding (At)
-import qualified Cardano.Slotting.Slot as S
-
-import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
-                     HeaderHash, SlotNo (..))
-import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Util.Classify as C
@@ -94,6 +88,7 @@ import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
 import           Test.Util.Orphans.Slotting.Arbitrary ()
+import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck (collects)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
@@ -615,7 +610,7 @@ generateCmd Model {..} = At <$> frequency
         chunk = chunkIndexOfSlot dbmChunkInfo s
         size  = getChunkSize     dbmChunkInfo chunk
 
-    empty = dbmTip dbModel == S.Origin
+    empty = dbmTip dbModel == Origin
 
     noBlocks = all isNothing (dbmRegular dbModel)
 
@@ -790,8 +785,8 @@ precondition Model {..} (At (CmdErr { cmd })) =
   where
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
-      Nothing    -> getPrevHash b .== Block.GenesisHash
-      Just bPrev -> getPrevHash b .== Block.BlockHash (blockHash bPrev)
+      Nothing    -> getPrevHash b .== GenesisHash
+      Just bPrev -> getPrevHash b .== BlockHash (blockHash bPrev)
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -1164,9 +1159,6 @@ instance CommandNames (At CmdErr m) where
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
-instance ToExpr SlotNo where
-  toExpr (SlotNo w) = App "SlotNo" [toExpr w]
-
 instance ToExpr EpochNo
 instance ToExpr EpochSize
 instance ToExpr ChunkSize
@@ -1183,7 +1175,7 @@ instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
       ]
 instance ToExpr (IteratorResult AllComponents)
 instance ToExpr (IteratorModel Hash)
-instance ToExpr (HeaderHash h) => ToExpr (Block.ChainHash h)
+instance ToExpr (HeaderHash h) => ToExpr (ChainHash h)
 instance ToExpr EBB
 instance ToExpr IsEBB
 instance ToExpr ChainLength
@@ -1194,7 +1186,6 @@ instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
 instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
-instance ToExpr r => ToExpr (S.WithOrigin r)
 instance ToExpr BinaryBlockInfo
 instance ToExpr hash => ToExpr (InSlot hash)
 instance ToExpr PrefixLen

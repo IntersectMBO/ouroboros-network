@@ -24,10 +24,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (SlotNo)
-
-import           Ouroboros.Network.Block (ChainHash, HeaderHash, Point,
-                     StandardHash, blockSlot, genesisPoint, pointHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -117,5 +113,5 @@ genesisMockState :: AddrDist -> MockState blk
 genesisMockState addrDist = MockState {
       mockUtxo      = genesisUtxo addrDist
     , mockConfirmed = Set.singleton (hash (genesisTx addrDist))
-    , mockTip       = genesisPoint
+    , mockTip       = GenesisPoint
     }

@@ -9,9 +9,6 @@ module Ouroboros.Consensus.Ledger.SupportsProtocol (
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.Block (SlotNo)
-import           Ouroboros.Network.Point hiding (at)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
@@ -98,7 +95,7 @@ _lemma_ledgerViewForecastAt_applyChainTick
   -> SlotNo
   -> Either String ()
 _lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
-    | At for >= ledgerTipSlot st
+    | NotOrigin for >= ledgerTipSlot st
     , let lhs = forecastFor forecast for
           rhs = protocolLedgerView cfg
               . tickedLedgerState

@@ -16,9 +16,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.Proxy
 
-import           Ouroboros.Network.Block (pattern BlockPoint, HasHeader,
-                     HeaderHash, SlotNo)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 

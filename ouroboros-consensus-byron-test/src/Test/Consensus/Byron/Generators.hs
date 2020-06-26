@@ -35,9 +35,6 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
 
-import           Ouroboros.Network.Block (BlockNo (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
@@ -311,7 +308,7 @@ instance Arbitrary (PBftState PBftByronCrypto) where
             else do
               newSigner <- PBftState.PBftSigner slot <$> arbitrary
               return $ PBftState.append k windowSize newSigner st
-          go (steps - 1) (At slot) st'
+          go (steps - 1) (NotOrigin slot) st'
 
       windowSize = PBftState.WindowSize (maxRollbacks k)
 

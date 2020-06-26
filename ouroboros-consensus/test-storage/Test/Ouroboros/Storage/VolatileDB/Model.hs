@@ -42,9 +42,9 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
-import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
                      BlockComponent (..), PrefixLen (..), extractHeader,
                      takePrefix)

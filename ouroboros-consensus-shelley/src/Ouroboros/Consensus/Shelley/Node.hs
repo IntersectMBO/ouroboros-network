@@ -34,10 +34,6 @@ import           Cardano.Prelude (Natural)
 
 import           Cardano.Crypto.KES.Class
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
-                     SlotNo (..), WithOrigin (Origin))
-
-import           Ouroboros.Network.Block (genesisPoint)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -184,7 +180,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
     initLedgerState :: LedgerState (ShelleyBlock c)
     initLedgerState = ShelleyLedgerState {
-        ledgerTip    = genesisPoint
+        ledgerTip    = GenesisPoint
       , history      = History.empty
       , shelleyState = SL.chainNes initShelleyState
       }

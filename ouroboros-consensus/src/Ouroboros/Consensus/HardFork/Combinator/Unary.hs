@@ -39,8 +39,6 @@ import           Data.Void
 
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History

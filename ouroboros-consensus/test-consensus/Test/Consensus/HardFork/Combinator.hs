@@ -29,14 +29,11 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 
-import           Cardano.Slotting.Slot
-
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
 
-import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.MockChain.Chain as Mock
 
 import           Ouroboros.Consensus.Block

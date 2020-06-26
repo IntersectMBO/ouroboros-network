@@ -36,10 +36,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
 
-import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
-                     SlotNo, pointSlot)
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -555,8 +552,8 @@ applyTxToLedger (SimpleLedgerState mockState) tx =
       SimpleLedgerState mockState' { mockTip = BlockPoint slot' hash' }
 
     slot' = case pointSlot $ mockTip mockState of
-      Origin -> 0
-      At s   -> succ s
+      Origin      -> 0
+      NotOrigin s -> succ s
 
     -- A little trick to instantiate the phantom parameter of 'Hash' (and
     -- 'HeaderHash') with 'TestBlock' while actually hashing the slot number:

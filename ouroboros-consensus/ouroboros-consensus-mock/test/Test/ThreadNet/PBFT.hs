@@ -12,11 +12,9 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 import           Ouroboros.Network.MockChain.Chain (foldChain)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

@@ -32,7 +32,6 @@ import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 

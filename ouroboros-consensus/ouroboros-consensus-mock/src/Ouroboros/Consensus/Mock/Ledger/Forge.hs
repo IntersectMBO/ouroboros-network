@@ -16,8 +16,6 @@ import           Data.Word
 
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.Block (BlockNo, SlotNo)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

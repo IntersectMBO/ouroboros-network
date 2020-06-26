@@ -30,9 +30,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, Point, castPoint)
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block
 
 
 -- | A diff of a chain (fragment).

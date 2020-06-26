@@ -18,7 +18,7 @@ import           Prelude hiding (lookup)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash)
+import           Ouroboros.Consensus.Block
 
 newtype BlockCache blk = BlockCache (Map (HeaderHash blk) blk)
 

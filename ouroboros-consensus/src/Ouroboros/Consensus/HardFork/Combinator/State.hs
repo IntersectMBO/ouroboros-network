@@ -30,12 +30,11 @@ import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
 
-import           Cardano.Slotting.Slot
-
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics

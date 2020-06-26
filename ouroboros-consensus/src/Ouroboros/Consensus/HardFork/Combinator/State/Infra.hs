@@ -33,8 +33,7 @@ import           Prelude hiding (sequence)
 import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..))
@@ -192,8 +191,8 @@ retractToSlot slot (HardForkState st) =
     containsSlot :: K Bool blk -> Past f blk -> K Bool blk
     containsSlot (K isFirst) Past{..} = K $
         case slot of
-          Origin -> isFirst -- Assume 'Origin' in the first era
-          At s   -> boundSlot pastStart <= s && s < boundSlot pastEnd
+          Origin      -> isFirst -- Assume 'Origin' in the first era
+          NotOrigin s -> boundSlot pastStart <= s && s < boundSlot pastEnd
 
     retract :: Retract Maybe (Past f) (Current f) blk blk'
     retract = Retract $ \past _oldCur ->
@@ -279,5 +278,5 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
         . History.addSlots (History.safeFromTip eraSafeZone)
 
     next :: WithOrigin SlotNo -> SlotNo
-    next Origin = SlotNo 0
-    next (At s) = succ s
+    next Origin        = SlotNo 0
+    next (NotOrigin s) = succ s

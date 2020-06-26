@@ -52,11 +52,11 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot
 
 import           Test.Util.Time (dawnOfTime)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
@@ -371,10 +371,10 @@ instance SingleEraBlock BlockA where
       -- time (when successful) must not be subject to rollback.
       let confirmationDepth =
             case ledgerTipSlot st of
-              Origin -> error "impossible"
-              At s   -> if s < confirmedInSlot
-                          then error "impossible"
-                          else History.countSlots s confirmedInSlot
+              Origin      -> error "impossible"
+              NotOrigin s -> if s < confirmedInSlot
+                               then error "impossible"
+                               else History.countSlots s confirmedInSlot
       guard $ confirmationDepth >= stabilityWindowA (lcfgA_k cfg)
 
       -- Consensus /also/ insists that as long as the transition to the next era

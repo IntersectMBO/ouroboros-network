@@ -39,12 +39,7 @@ import           GHC.Stack
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
-import           Cardano.Slotting.Slot (EpochNo (..))
-
-import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
-                     MaxSlotNo (..), SlotNo (..), blockHash)
-import           Ouroboros.Network.Point (WithOrigin)
-import qualified Ouroboros.Network.Point as WithOrigin
+import           Ouroboros.Network.Block (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
@@ -426,8 +421,8 @@ generatorCmdImpl Model {..} = frequency
 
     genWithOriginBlockId :: Gen (WithOrigin BlockId)
     genWithOriginBlockId = frequency
-      [ (1, return WithOrigin.Origin)
-      , (8, WithOrigin.At <$> genBlockId)
+      [ (1, return Origin)
+      , (8, NotOrigin <$> genBlockId)
       ]
 
     -- In general, we only want to GC part of the blocks, not all of them

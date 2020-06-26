@@ -40,8 +40,7 @@ import qualified Data.Text as T
 import           GHC.Stack (HasCallStack, callStack)
 import           Text.Read (readMaybe)
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -174,8 +173,8 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
   where
     isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      Origin -> True
-      At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
+      Origin      -> True
+      NotOrigin b -> slot > slotNoOfBlockOrEBB chunkInfo b
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
 -- it failed or when there was unconsumed input.

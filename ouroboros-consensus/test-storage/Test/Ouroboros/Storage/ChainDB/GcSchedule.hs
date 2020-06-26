@@ -14,8 +14,7 @@ import           Data.Void (Void)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike

@@ -18,8 +18,7 @@ import           Prelude hiding (sequence)
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope

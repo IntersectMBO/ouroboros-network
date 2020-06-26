@@ -6,11 +6,9 @@ module Test.ThreadNet.Rekeying (
   fromRekeyingToRekeyM,
   ) where
 
-import           Cardano.Slotting.Slot
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.ThreadNet.Network

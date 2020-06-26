@@ -24,8 +24,6 @@ import           Cardano.Crypto.Hash
 
 import           Test.QuickCheck
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool

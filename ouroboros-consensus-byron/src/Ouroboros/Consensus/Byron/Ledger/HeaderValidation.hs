@@ -18,8 +18,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Slotting as CC
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation

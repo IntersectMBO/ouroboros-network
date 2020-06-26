@@ -13,8 +13,6 @@ module Ouroboros.Consensus.Node.BlockProduction (
 import           Control.Tracer (Tracer, traceWith)
 import           Crypto.Random (MonadRandom)
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

@@ -63,12 +63,8 @@ import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
-                     pointSlot)
-import           Ouroboros.Network.Point (WithOrigin (At))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -351,7 +347,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   -- filled; instead we roll back the the block just before it.
   rewindChainDepState _proxy _k rewindTo =
       -- This may drop us back to the empty list if we go back to genesis
-      Just . dropWhile (\bi -> At (biSlot bi) > pointSlot rewindTo)
+      Just . dropWhile (\bi -> NotOrigin (biSlot bi) > pointSlot rewindTo)
 
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).

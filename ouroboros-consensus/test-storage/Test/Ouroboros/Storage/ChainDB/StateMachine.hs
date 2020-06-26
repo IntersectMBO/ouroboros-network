@@ -59,20 +59,15 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
-import           Cardano.Slotting.Slot hiding (At)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
-                     HasHeader (..), HeaderHash, MaxSlotNo, Point, SlotNo (..),
-                     StandardHash)
-import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      ReaderNext, ReaderState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
-import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -115,6 +110,7 @@ import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
+import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
@@ -390,8 +386,8 @@ runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
 runBgTasks ChainDB.Internal{..} = do
     mSlotNo <- intCopyToImmDB
     case mSlotNo of
-      Point.Origin    -> pure ()
-      Point.At slotNo -> intGarbageCollect slotNo
+      Origin           -> pure ()
+      NotOrigin slotNo -> intGarbageCollect slotNo
     intUpdateLedgerSnapshots
 
 -- | Result type for 'getBlock'. Note that the real implementation of
@@ -807,7 +803,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genPoint :: Gen (Point blk)
     genPoint = frequency
-      [ (1, return Block.genesisPoint)
+      [ (1, return GenesisPoint)
       , (9, realPointToPoint <$> genRealPoint)
       ]
 
@@ -827,7 +823,7 @@ generator genBlock m@Model {..} = At <$> frequency
         -- Non-empty list of points on the volatile fragment of our chain
         onChain :: [Point blk]
         onChain = AF.anchorPoint volatileFrag
-                : map Block.blockPoint (AF.toOldestFirst volatileFrag)
+                : map blockPoint (AF.toOldestFirst volatileFrag)
 
     genAddBlock = do
       let curSlot = Model.currentSlot dbModel
@@ -892,7 +888,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genReaderForwardPoints :: Gen [Point blk]
     genReaderForwardPoints = choose (1, 3) >>= \n ->
-      sortOn (Down . Block.pointSlot) <$> replicateM n genReaderForwardPoint
+      sortOn (Down . pointSlot) <$> replicateM n genReaderForwardPoint
 
     genReaderForwardPoint :: Gen (Point blk)
     genReaderForwardPoint = genPoint
@@ -1123,13 +1119,9 @@ deriving instance ( ToExpr (HeaderState blk)
                  => ToExpr (ExtLedgerState blk)
 deriving instance ToExpr Fingerprint
 deriving instance ToExpr BlockNo
-deriving instance ToExpr SlotNo
 deriving instance ToExpr ReaderNext
 deriving instance ToExpr MaxSlotNo
-deriving instance ToExpr blk  => ToExpr (Point.WithOrigin blk)
-deriving instance ToExpr hash => ToExpr (Point.Block SlotNo hash)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
-deriving instance ToExpr (HeaderHash blk) => ToExpr (Point blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (RealPoint blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ReaderState blk)
 deriving instance ToExpr blk => ToExpr (Chain blk)

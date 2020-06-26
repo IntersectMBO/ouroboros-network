@@ -16,9 +16,9 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
-import           Ouroboros.Network.Block (MaxSlotNo, SlotNo)
-import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Block (MaxSlotNo)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),

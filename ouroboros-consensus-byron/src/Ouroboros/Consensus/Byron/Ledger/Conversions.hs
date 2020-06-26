@@ -20,8 +20,6 @@ import           Data.Coerce
 import qualified Data.Set as Set
 
 import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
@@ -29,8 +27,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Chain.Update as CC
 
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Config.SecurityParam

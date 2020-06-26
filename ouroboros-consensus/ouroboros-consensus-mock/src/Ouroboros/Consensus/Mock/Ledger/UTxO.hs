@@ -43,9 +43,9 @@ import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
-import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()

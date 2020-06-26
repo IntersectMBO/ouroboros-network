@@ -32,9 +32,7 @@ import qualified Cardano.Chain.Delegation as Delegation
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.History (History (..))
 import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Protocol.PBFT

@@ -48,7 +48,7 @@ import           Data.Type.Equality
 import           Data.Typeable
 import           Data.Void
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

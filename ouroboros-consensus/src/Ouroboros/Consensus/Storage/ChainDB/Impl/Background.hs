@@ -53,9 +53,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
-                     SlotNo (..), blockPoint, pointHash, pointSlot)
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -297,8 +294,8 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
         loop mPrevSnapshot distance'
 
     scheduleGC' :: WithOrigin SlotNo -> m ()
-    scheduleGC' Origin      = return ()
-    scheduleGC' (At slotNo) =
+    scheduleGC' Origin             = return ()
+    scheduleGC' (NotOrigin slotNo) =
         scheduleGC
           (contramap TraceGCEvent cdbTracer)
           slotNo

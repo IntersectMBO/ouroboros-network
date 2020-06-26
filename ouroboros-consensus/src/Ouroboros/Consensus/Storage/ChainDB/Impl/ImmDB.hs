@@ -82,14 +82,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           System.FilePath ((</>))
 
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
-
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, pointSlot, withHash)
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import qualified Ouroboros.Consensus.Block as Block
@@ -302,10 +295,10 @@ hasBlock db (RealPoint slot hash) =
 
           ebbAtTip :: Maybe EpochNo
           ebbAtTip = case forgetTipInfo <$> immTip of
-                       At (ImmDB.EBB epochNo) -> Just epochNo
-                       _otherwise             -> Nothing
+                       NotOrigin (ImmDB.EBB epochNo) -> Just epochNo
+                       _otherwise                    -> Nothing
 
-      case At slot `compare` slotNoAtTip of
+      case NotOrigin slot `compare` slotNoAtTip of
         -- The request is greater than the tip, so we cannot have the block
         GT -> return False
         -- Same slot, but our tip is an EBB, so we cannot check if the
@@ -344,14 +337,14 @@ getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Point blk)
 getPointAtTip db = getTipInfo db <&> \case
-    Origin                -> GenesisPoint
-    At (slot, hash, _, _) -> BlockPoint slot hash
+    Origin                       -> GenesisPoint
+    NotOrigin (slot, hash, _, _) -> BlockPoint slot hash
 
 getAnchorForTip :: (MonadCatch m, HasCallStack)
                 => ImmDB m blk -> m (AF.Anchor blk)
 getAnchorForTip db = getTipInfo db <&> \case
-   Origin                    -> AF.AnchorGenesis
-   At (slot, hash, _, block) -> AF.Anchor slot hash block
+   Origin                           -> AF.AnchorGenesis
+   NotOrigin (slot, hash, _, block) -> AF.Anchor slot hash block
 
 getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = pointSlot <$> getPointAtTip db
@@ -480,14 +473,14 @@ stream db registry blockComponent from to = runExceptT $ do
 
     end <- case to of
       StreamToExclusive pt@(RealPoint slot hash) -> do
-        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
+        when (NotOrigin slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
       StreamToInclusive pt@(RealPoint slot hash) -> do
-        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
+        when (NotOrigin slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
 
     case from of
-      StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
+      StreamFromExclusive pt@(BlockPoint slot hash) -> do
         when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock (RealPoint slot hash)
         it <- openStream (Just (slot, hash)) end
         -- Skip the first block, as the bound is exclusive
@@ -496,7 +489,7 @@ stream db registry blockComponent from to = runExceptT $ do
       StreamFromExclusive    GenesisPoint ->
         openStream Nothing end
       StreamFromInclusive pt@(RealPoint slot hash) -> do
-        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
+        when (NotOrigin slot > slotNoAtTip) $ throwError $ MissingBlock pt
         openStream (Just (slot, hash)) end
   where
     openStream

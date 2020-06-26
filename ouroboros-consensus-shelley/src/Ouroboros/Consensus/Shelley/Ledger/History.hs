@@ -28,8 +28,8 @@ import           Data.Word (Word64)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
-import           Cardano.Slotting.Slot (SlotNo (..), WithOrigin)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.History (History (..))
 import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Util.CBOR (decodeSeq, encodeSeq)

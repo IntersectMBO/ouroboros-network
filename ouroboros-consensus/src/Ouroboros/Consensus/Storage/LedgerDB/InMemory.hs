@@ -81,9 +81,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.Block.RealPoint
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util
@@ -507,7 +506,7 @@ ledgerDbTip :: LedgerDB l r -> WithOrigin r
 ledgerDbTip LedgerDB{..} =
     case ledgerDbBlocks of
       Empty    -> csTip ledgerDbAnchor
-      _ :|> cp -> At (cpBlock cp)
+      _ :|> cp -> NotOrigin (cpBlock cp)
 
 -- | Have we seen at least @k@ blocks?
 ledgerDbIsSaturated :: LedgerDB l r -> Bool
@@ -527,7 +526,7 @@ ledgerDbIsSaturated LedgerDB{..} =
 shiftAnchor :: forall r l. HasCallStack
             => StrictSeq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
 shiftAnchor toRemove ChainSummary{..} = ChainSummary {
-      csTip    = At csTip'
+      csTip    = NotOrigin csTip'
     , csLength = csLength + fromIntegral (Seq.length toRemove)
     , csLedger = csLedger'
     }
@@ -720,7 +719,7 @@ ledgerDbPast cfg tip db
           _otherwise                  -> Just blocks'
       where
         blocks' :: StrictSeq (Checkpoint l r)
-        blocks' = Seq.dropWhileR (\cp -> At (cpBlock cp) /= tip) blocks
+        blocks' = Seq.dropWhileR (\cp -> NotOrigin (cpBlock cp) /= tip) blocks
 
 {-------------------------------------------------------------------------------
   Updates

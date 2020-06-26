@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Mock.Node.Serialisation (
 import           Codec.Serialise (Serialise, decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip,

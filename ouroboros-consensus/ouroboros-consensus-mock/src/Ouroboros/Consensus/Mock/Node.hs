@@ -13,8 +13,6 @@ module Ouroboros.Consensus.Mock.Node (
 import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam

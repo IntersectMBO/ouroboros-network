@@ -32,7 +32,6 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
-import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

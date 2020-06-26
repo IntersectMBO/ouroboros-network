@@ -114,9 +114,9 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
-import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,

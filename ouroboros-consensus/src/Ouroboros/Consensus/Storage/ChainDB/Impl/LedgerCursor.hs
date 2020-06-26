@@ -5,8 +5,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
   ( newLedgerCursor
   ) where
 
-import           Ouroboros.Network.Block (Point, pointSlot)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike

@@ -42,8 +42,6 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.AnchoredFragment (Anchor,
                      AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -337,11 +335,11 @@ olderThanK
      -- block @k@ blocks back.
   -> Bool
 olderThanK hdr isEBB immBlockNo
-    | At bNo == immBlockNo
+    | NotOrigin bNo == immBlockNo
     , isEBB == IsEBB
     = False
     | otherwise
-    = At bNo <= immBlockNo
+    = NotOrigin bNo <= immBlockNo
   where
     bNo = blockNo hdr
 
@@ -631,8 +629,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         (tipPoint, (tipEpoch, tipSlotInEpoch)) =
           case pointToWithOriginRealPoint
                  (ledgerTipPoint' (Proxy @blk) ledger) of
-            Origin -> error "cannot have switched to an empty chain"
-            At tip ->
+            Origin        -> error "cannot have switched to an empty chain"
+            NotOrigin tip ->
               let query = History.slotToEpoch' (realPointSlot tip)
               in (tip, History.runQueryPure query summary)
 

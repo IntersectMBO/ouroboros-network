@@ -24,8 +24,6 @@ import           Cardano.Crypto.DSIGN
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 
-import           Ouroboros.Network.Block (HasHeader (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT

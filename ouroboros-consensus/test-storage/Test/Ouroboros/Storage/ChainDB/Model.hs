@@ -97,14 +97,10 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
-                     pattern GenesisPoint, HasHeader, HeaderHash,
-                     MaxSlotNo (..), Point, SlotNo (..), pointSlot)
-import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -157,7 +153,7 @@ data Model blk = Model {
 deriving instance
   ( ConsensusProtocol (BlockProtocol blk)
   , LedgerSupportsProtocol           blk
-  , Block.StandardHash               blk
+  , StandardHash                     blk
   , Show                             blk
   ) => Show (Model blk)
 
@@ -167,7 +163,7 @@ deriving instance
 
 immDbBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 immDbBlocks Model { immDbChain } = Map.fromList $
-    [ (Block.blockHash blk, blk)
+    [ (blockHash blk, blk)
     | blk <- Chain.toOldestFirst immDbChain
     ]
 
@@ -176,7 +172,7 @@ blocks m = volDbBlocks m <> immDbBlocks m
 
 futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 futureBlocks m =
-    Map.filter ((currentSlot m >) . Block.blockSlot) (volDbBlocks m)
+    Map.filter ((currentSlot m >) . blockSlot) (volDbBlocks m)
 
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
@@ -202,7 +198,7 @@ getBlockComponentByPoint blockComponent pt m = Right $
 
 hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
-hasBlockByPoint pt = case Block.pointHash pt of
+hasBlockByPoint pt = case pointHash pt of
     GenesisHash    -> const False
     BlockHash hash -> hasBlock hash
 
@@ -210,10 +206,10 @@ tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
-tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
+tipPoint = maybe GenesisPoint blockPoint . tipBlock
 
 getMaxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
-getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . blocks
+getMaxSlotNo = foldMap (MaxSlotNo . blockSlot) . blocks
 
 lastK :: HasHeader a
       => SecurityParam
@@ -239,7 +235,7 @@ maxActualRollback k m =
       fromIntegral
     . length
     . takeWhile (/= immutableTipPoint)
-    . map Block.blockPoint
+    . map blockPoint
     . Chain.toNewestFirst
     . currentChain
     $ m
@@ -291,14 +287,14 @@ volatileChain
 volatileChain k f m =
       Fragment.fromNewestFirst anchor
     . map f
-    . takeWhile ((/= immutableTipPoint) . Block.blockPoint)
+    . takeWhile ((/= immutableTipPoint) . blockPoint)
     . Chain.toNewestFirst
     . currentChain
     $ m
   where
     (immutableTipPoint, anchor) = case Chain.head (immutableChain k m) of
-        Nothing -> (GenesisPoint,       Fragment.AnchorGenesis)
-        Just b  -> (Block.blockPoint b, Fragment.anchorFromBlock (f b))
+        Nothing -> (GenesisPoint, Fragment.AnchorGenesis)
+        Just b  -> (blockPoint b, Fragment.anchorFromBlock (f b))
 
 -- | The block number of the most recent \"immutable\" block, i.e. the oldest
 -- block we can roll back to. We cannot roll back the block itself.
@@ -307,7 +303,7 @@ volatileChain k f m =
 -- because the background thread copying blocks to the ImmutableDB might not
 -- have caught up.
 immutableBlockNo :: HasHeader blk
-                 => SecurityParam -> Model blk -> WithOrigin Block.BlockNo
+                 => SecurityParam -> Model blk -> WithOrigin BlockNo
 immutableBlockNo k = Chain.headBlockNo . immutableChain k
 
 -- | The slot number of the most recent \"immutable\" block (see
@@ -333,14 +329,14 @@ getPastLedger :: forall blk. LedgerSupportsProtocol blk
               -> Point blk -> Model blk -> Maybe (ExtLedgerState blk)
 getPastLedger cfg p m@Model{..} =
     case prefix of
-      [] | p /= Block.genesisPoint ->
+      [] | p /= GenesisPoint ->
         Nothing
       _otherwise ->
         Just $ refoldLedger cfg prefix initLedger
   where
     prefix :: [blk]
     prefix = reverse
-           . dropWhile (\blk -> Block.blockPoint blk /= p)
+           . dropWhile (\blk -> blockPoint blk /= p)
            . Chain.toNewestFirst
            . currentChain
            $ m
@@ -403,14 +399,14 @@ addBlock cfg blk m = Model {
         -- than @k@, we ignore it, as we can never switch to it.
         olderThanK hdr (headerToIsEBB hdr) immBlockNo ||
         -- If it's an invalid block we've seen before, ignore it.
-        Map.member (Block.blockHash blk) (invalid m)
+        Map.member (blockHash blk) (invalid m)
 
     volDbBlocks' :: Map (HeaderHash blk) blk
     volDbBlocks'
         | ignoreBlock
         = volDbBlocks m
         | otherwise
-        = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
+        = Map.insert (blockHash blk) blk (volDbBlocks m)
 
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
@@ -419,7 +415,7 @@ addBlock cfg blk m = Model {
     (invalid', candidates) = validChains cfg m (immDbBlocks m <> volDbBlocks')
 
     immutableChainHashes =
-        map Block.blockHash
+        map blockHash
       . Chain.toOldestFirst
       . immutableChain secParam
       $ m
@@ -427,7 +423,7 @@ addBlock cfg blk m = Model {
     extendsImmutableChain :: Chain blk -> Bool
     extendsImmutableChain fork =
       immutableChainHashes `isPrefixOf`
-      map Block.blockHash (Chain.toOldestFirst fork)
+      map blockHash (Chain.toOldestFirst fork)
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -457,8 +453,8 @@ addBlockPromise
 addBlockPromise cfg blk m = (result, m')
   where
     m' = addBlock cfg blk m
-    blockWritten = Map.notMember (Block.blockHash blk) (blocks m)
-                && Map.member    (Block.blockHash blk) (blocks m')
+    blockWritten = Map.notMember (blockHash blk) (blocks m)
+                && Map.member    (blockHash blk) (blocks m')
     result = AddBlockPromise
       { blockWrittenToDisk = return blockWritten
       , blockProcessed     = return $ tipPoint m'
@@ -512,8 +508,8 @@ getBlockComponent blk = \case
     GetHeader     -> return $ getHeader blk
     GetRawHeader  -> serialise $ getHeader blk
 
-    GetHash       -> Block.blockHash blk
-    GetSlot       -> Block.blockSlot blk
+    GetHash       -> blockHash blk
+    GetSlot       -> blockSlot blk
     GetIsEBB      -> headerToIsEBB (getHeader blk)
     GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
@@ -547,7 +543,7 @@ checkIfReaderExists rdrId m a
 newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
 newReader m = (rdrId, m { cps = cps' })
   where
-    (cps', rdrId) = CPS.initReader Block.genesisPoint (cps m)
+    (cps', rdrId) = CPS.initReader GenesisPoint (cps m)
 
 readerInstruction
   :: forall m blk b. (ModelSupportsBlock blk, Monad m)
@@ -674,7 +670,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
   where
     mkInvalid :: blk -> InvalidBlockReason blk -> InvalidBlocks blk
     mkInvalid b reason =
-      Map.singleton (Block.blockHash b) (reason, Block.blockSlot b)
+      Map.singleton (blockHash b) (reason, blockSlot b)
 
     go :: ExtLedgerState blk  -- ^ Corresponds to the tip of the valid prefix
        -> Chain blk           -- ^ Valid prefix
@@ -696,12 +692,12 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
 
           -- But the block has been recorded as an invalid block. It must be
           -- that it exceeded the clock skew in the past.
-          | Map.member (Block.blockHash b) invalid
+          | Map.member (blockHash b) invalid
           -> ValidatedChain validPrefix ledger invalid
 
           -- Block is in the future and exceeds the clock skew, it is
           -- considered to be invalid
-          | Block.blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
+          | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
           -> ValidatedChain
                validPrefix
                ledger
@@ -713,7 +709,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
           -- because the real implementation validates before truncating
           -- future blocks, and we try to detect the same invalid blocks as
           -- the real implementation.
-          | Block.blockSlot b > currentSlot
+          | blockSlot b > currentSlot
           -> ValidatedChain
                validPrefix
                ledger
@@ -755,7 +751,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       b:bs' -> case runExcept (tickThenApply cfg b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
         Right ledger'
-          | Block.blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
+          | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
           -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>
              findInvalidBlockInTheFuture ledger' bs'
           | otherwise
@@ -825,7 +821,7 @@ successors = Map.unionsWith Map.union . map single
   where
     single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
     single b = Map.singleton (getPrevHash b)
-                             (Map.singleton (Block.blockHash b) b)
+                             (Map.singleton (blockHash b) b)
 
 between :: forall blk. GetPrevHash blk
         => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
@@ -844,8 +840,8 @@ between k from to m = do
 
     partOfCurrentChain :: AnchoredFragment blk -> Bool
     partOfCurrentChain fork =
-      map Block.blockPoint (Fragment.toOldestFirst fork) `isInfixOf`
-      map Block.blockPoint (Chain.toOldestFirst (currentChain m))
+      map blockPoint (Fragment.toOldestFirst fork) `isInfixOf`
+      map blockPoint (Chain.toOldestFirst (currentChain m))
 
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
@@ -928,7 +924,7 @@ garbageCollectable :: forall blk. HasHeader blk
 garbageCollectable secParam m@Model{..} b =
     -- Note: we don't use the block number but the slot number, as the
     -- VolatileDB's garbage collection is in terms of slot numbers.
-    At (Block.blockSlot b) < immutableSlotNo secParam m
+    NotOrigin (blockSlot b) < immutableSlotNo secParam m
 
 -- | Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real
@@ -1026,4 +1022,4 @@ wipeVolDB cfg m =
         | otherwise
         -> error "Did not select the ImmutableDB's chain"
 
-    toHashes = map Block.blockHash . Chain.toOldestFirst
+    toHashes = map blockHash . Chain.toOldestFirst

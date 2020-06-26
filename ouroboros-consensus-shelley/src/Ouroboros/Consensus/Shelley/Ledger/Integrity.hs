@@ -8,8 +8,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Integrity (
 import           Data.Either (isRight)
 import           Data.Word (Word64)
 
-import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
-
 import           Ouroboros.Consensus.Block
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
