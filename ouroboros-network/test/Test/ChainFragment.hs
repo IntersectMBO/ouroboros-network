@@ -14,7 +14,7 @@ module Test.ChainFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe, maybe,
+import           Data.Maybe (fromJust, fromMaybe, listToMaybe, maybe,
                      maybeToList)
 
 import           Test.QuickCheck
@@ -96,11 +96,6 @@ tests = testGroup "ChainFragment"
   , testProperty "serialise chain"                           prop_serialise_chain
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
-  , testProperty "filter"                                    prop_filter
-  , testProperty "filterWithStop always stop"                prop_filterWithStop_always_stop
-  , testProperty "filterWithStop never stop"                 prop_filterWithStop_never_stop
-  , testProperty "filterWithStop"                            prop_filterWithStop
-  , testProperty "filterWithStop filter"                     prop_filterWithStop_filter
   , testProperty "selectPoints"                              prop_selectPoints
   , testProperty "splitAfterPoint"                           prop_splitAfterPoint
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
@@ -233,8 +228,8 @@ prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =
             .&&. L.intersect (CF.toNewestFirst c1) (CF.toNewestFirst c2) === []
     Just (l1, l2, r1, r2) ->
            counterexample "headPoint" (CF.headPoint l1 === CF.headPoint l2)
-      .&&. counterexample "c1" (CF.joinChainFragments l1 r1 === Just c1)
-      .&&. counterexample "c2" (CF.joinChainFragments l2 r2 === Just c2)
+      .&&. counterexample "c1" (CF.joinSuccessor l1 r1 === c1)
+      .&&. counterexample "c2" (CF.joinSuccessor l2 r2 === c2)
 
 prop_serialise_chain :: TestBlockChainFragment -> Property
 prop_serialise_chain (TestBlockChainFragment chain) =
@@ -251,7 +246,7 @@ prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
            CF.pointOnChainFragment p c
         && not (CF.pointOnChainFragment p r)
         && CF.headPoint l == Just p
-        && CF.joinChainFragments l r == Just c
+        && CF.joinSuccessor l r == c
         && all (<= slot) (slots l)
         && all (>= slot) (slots r)
       where
@@ -271,7 +266,7 @@ prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
           CF.pointOnChainFragment p c
        && not (CF.pointOnChainFragment p l)
        && CF.lastPoint r == Just p
-       && CF.joinChainFragments l r == Just c
+       && CF.joinSuccessor l r == c
        && all (<= slot) (slots l)
        && all (>= slot) (slots r)
      where
@@ -309,66 +304,6 @@ prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
   case CF.lookupByIndexFromEnd c i of
     CF.Position _ b _ -> b === CF.toNewestFirst c !! i
     _                 -> property (i < 0 || i >= CF.length c)
-
-prop_filter :: (Block -> Bool) -> TestBlockChainFragment -> Property
-prop_filter p (TestBlockChainFragment chain) =
-  let fragments = CF.filter p chain in
-      cover 70 (length fragments > 1) "multiple fragments" $
-      counterexample ("fragments: " ++ show fragments) $
-
-      -- The fragments contain exactly the blocks where p holds, in order
-      (   L.map CF.blockPoint (L.filter p (CF.toOldestFirst chain))
-       ===
-          L.map CF.blockPoint (concatMap CF.toOldestFirst fragments)
-      )
-   .&&.
-      -- The fragments are non-empty
-      all (not . CF.null) fragments
-   .&&.
-      -- The fragments are of maximum size
-      and [ isNothing (CF.joinChainFragments a b)
-          | (a,b) <- zip fragments (tail fragments) ]
-
-prop_filterWithStop_always_stop :: (Block -> Bool) -> TestBlockChainFragment -> Property
-prop_filterWithStop_always_stop p (TestBlockChainFragment chain) =
-    CF.filterWithStop p (const True) chain ===
-    if CF.null chain then [] else [chain]
-
-prop_filterWithStop_never_stop :: (Block -> Bool) -> TestBlockChainFragment -> Property
-prop_filterWithStop_never_stop p (TestBlockChainFragment chain) =
-    CF.filterWithStop p (const False) chain === CF.filter p chain
-
--- If the stop condition implies that the predicate is true for all the
--- remaining arguments, 'filterWithStop' must be equivalent to 'filter', just
--- optimised.
-prop_filterWithStop :: (Block -> Bool) -> (Block -> Bool) -> TestBlockChainFragment -> Property
-prop_filterWithStop p stop (TestBlockChainFragment chain) =
-    CF.filterWithStop p stop chain ===
-    if CF.null chain
-    then []
-    else appendStopped $ CF.filter p (CF.fromOldestFirst before)
-  where
-    (before, stopped) = break stop $ CF.toOldestFirst chain
-    stoppedFrag = CF.fromOldestFirst stopped
-
-    -- If the last fragment in @c@ can be joined with @stoppedFrag@, do so,
-    -- otherwise append @stoppedFrag@ as a separate, final fragment. If it is
-    -- empty, ignore it.
-    appendStopped c
-      | null stopped
-      = c
-      | lastFrag:frags <- reverse c
-      , Just lastFrag' <- CF.joinChainFragments lastFrag stoppedFrag
-      = reverse $ lastFrag':frags
-      | otherwise
-      = c ++ [stoppedFrag]
-
-prop_filterWithStop_filter :: TestBlockChainFragment -> Property
-prop_filterWithStop_filter (TestBlockChainFragment chain) =
-    CF.filterWithStop p stop chain === CF.filter p chain
-  where
-    p    = (> 5)  . blockSlot
-    stop = (> 10) . blockSlot
 
 prop_selectPoints :: TestBlockChainFragment -> Property
 prop_selectPoints (TestBlockChainFragment c) =

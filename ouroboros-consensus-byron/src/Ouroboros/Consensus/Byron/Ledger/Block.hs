@@ -195,18 +195,20 @@ type instance HeaderHash ByronBlock = ByronHash
 instance StandardHash ByronBlock
 
 instance HasHeader ByronBlock where
-  blockHash      =            blockHash     . getHeader
-  blockPrevHash  = castHash . blockPrevHash . getHeader
-  blockSlot      =            blockSlot     . getHeader
-  blockNo        =            blockNo       . getHeader
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance HasHeader (Header ByronBlock) where
-  blockHash      = byronHeaderHash
-  blockSlot      = byronHeaderSlotNo
-  blockPrevHash  = fromByronPrevHash' . CC.abobHdrPrevHash        . byronHeaderRaw
-  blockNo        = fromByronBlockNo   . CC.abobHdrChainDifficulty . byronHeaderRaw
-  blockInvariant = const True
+  blockHash = byronHeaderHash
+  blockSlot = byronHeaderSlotNo
+  blockNo   = fromByronBlockNo . CC.abobHdrChainDifficulty . byronHeaderRaw
+
+instance GetPrevHash ByronBlock where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance GetPrevHash (Header ByronBlock) where
+  getPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure

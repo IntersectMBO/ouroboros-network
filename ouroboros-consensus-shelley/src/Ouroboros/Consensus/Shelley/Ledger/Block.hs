@@ -135,24 +135,24 @@ mkShelleyHeader raw = ShelleyHeader {
     }
 
 instance Crypto c => HasHeader (ShelleyBlock c)  where
-  blockHash      =            blockHash     . getHeader
-  blockPrevHash  = castHash . blockPrevHash . getHeader
-  blockSlot      =            blockSlot     . getHeader
-  blockNo        =            blockNo       . getHeader
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance Crypto c => HasHeader (Header (ShelleyBlock c)) where
-  blockHash      = shelleyHeaderHash
+  blockHash  = shelleyHeaderHash
+  blockSlot  =          SL.bheaderSlotNo  . SL.bhbody . shelleyHeaderRaw
+  blockNo    = coerce . SL.bheaderBlockNo . SL.bhbody . shelleyHeaderRaw
 
-  blockPrevHash  =
+instance Crypto c => GetPrevHash (ShelleyBlock c)  where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance Crypto c => GetPrevHash (Header (ShelleyBlock c)) where
+  getPrevHash =
       fromShelleyPrevHash
     . SL.bheaderPrev
     . SL.bhbody
     . shelleyHeaderRaw
-
-  blockSlot      =            SL.bheaderSlotNo  . SL.bhbody . shelleyHeaderRaw
-  blockNo        = coerce .   SL.bheaderBlockNo . SL.bhbody . shelleyHeaderRaw
-  blockInvariant = const True
 
 instance Crypto c => Measured BlockMeasure (ShelleyBlock c) where
   measure = blockMeasure

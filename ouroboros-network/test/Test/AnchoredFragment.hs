@@ -9,7 +9,7 @@ module Test.AnchoredFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (isJust, listToMaybe, maybe, maybeToList)
+import           Data.Maybe (isJust, isNothing, listToMaybe, maybe, maybeToList)
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -77,6 +77,11 @@ tests = testGroup "AnchoredFragment"
   , testProperty "intersect when within bounds"       prop_intersect_bounds
   , testProperty "toChain/fromChain"                  prop_toChain_fromChain
   , testProperty  "anchorNewest"                      prop_anchorNewest
+  , testProperty "filter"                             prop_filter
+  , testProperty "filterWithStop_always_stop"         prop_filterWithStop_always_stop
+  , testProperty "filterWithStop_never_stop"          prop_filterWithStop_never_stop
+  , testProperty "filterWithStop"                     prop_filterWithStop
+  , testProperty "filterWithStop_filter"              prop_filterWithStop_filter
   ]
 
 --
@@ -644,3 +649,76 @@ instance Arbitrary TestAnchoredFragmentFork where
     , let cf1' = CF.dropNewest n1 cf1
           cf2' = CF.dropNewest n2 cf2
     ]
+
+--
+-- Test filtering
+--
+
+prop_filter :: (Block -> Bool) -> TestBlockAnchoredFragment -> Property
+prop_filter p (TestBlockAnchoredFragment chain) =
+  let fragments = AF.filter p chain in
+      cover 70 (length fragments > 1) "multiple fragments" $
+      counterexample ("fragments: " ++ show fragments) $
+
+      -- The fragments contain exactly the blocks where p holds, in order
+      (   L.map AF.blockPoint (L.filter p (AF.toOldestFirst chain))
+       ===
+          L.map AF.blockPoint (concatMap AF.toOldestFirst fragments)
+      )
+   .&&.
+      -- The fragments are non-empty
+      all (not . AF.null) fragments
+   .&&.
+      -- The fragments are of maximum size
+      and [ isNothing (AF.join a b)
+          | (a,b) <- zip fragments (tail fragments) ]
+
+prop_filterWithStop_always_stop :: (Block -> Bool) -> TestBlockAnchoredFragment -> Property
+prop_filterWithStop_always_stop p (TestBlockAnchoredFragment chain) =
+    AF.filterWithStop p (const True) chain ===
+    if AF.null chain then [] else [chain]
+
+prop_filterWithStop_never_stop :: (Block -> Bool) -> TestBlockAnchoredFragment -> Property
+prop_filterWithStop_never_stop p (TestBlockAnchoredFragment chain) =
+    AF.filterWithStop p (const False) chain === AF.filter p chain
+
+-- If the stop condition implies that the predicate is true for all the
+-- remaining arguments, 'filterWithStop' must be equivalent to 'filter', just
+-- optimised.
+prop_filterWithStop :: (Block -> Bool) -> (Block -> Bool) -> TestBlockAnchoredFragment -> Property
+prop_filterWithStop p stop (TestBlockAnchoredFragment_ anchor chain) =
+    AF.filterWithStop p stop chain ===
+    if AF.null chain
+    then []
+    else appendStopped $ AF.filter p (AF.fromOldestFirst (AF.anchorFromBlock anchor) before)
+  where
+    before, stopped :: [Block]
+    (before, stopped) = break stop $ AF.toOldestFirst chain
+
+    anchor' :: Block
+    anchor' = if null before
+                then anchor
+                else last before
+
+    stoppedFrag :: AnchoredFragment Block
+    stoppedFrag = AF.fromOldestFirst (AF.anchorFromBlock anchor') stopped
+
+    -- If the last fragment in @c@ can be joined with @stoppedFrag@, do so,
+    -- otherwise append @stoppedFrag@ as a separate, final fragment. If it is
+    -- empty, ignore it.
+    appendStopped :: [AnchoredFragment Block] -> [AnchoredFragment Block]
+    appendStopped c
+      | null stopped
+      = c
+      | lastFrag:frags <- reverse c
+      , Just lastFrag' <- AF.join lastFrag stoppedFrag
+      = reverse $ lastFrag':frags
+      | otherwise
+      = c ++ [stoppedFrag]
+
+prop_filterWithStop_filter :: TestBlockAnchoredFragment -> Property
+prop_filterWithStop_filter (TestBlockAnchoredFragment chain) =
+    AF.filterWithStop p stop chain === AF.filter p chain
+  where
+    p    = (> 5)  . blockSlot
+    stop = (> 10) . blockSlot

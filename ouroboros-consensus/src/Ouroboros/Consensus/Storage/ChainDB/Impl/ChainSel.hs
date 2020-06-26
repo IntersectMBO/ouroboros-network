@@ -233,7 +233,7 @@ addBlockAsync CDB { cdbTracer, cdbBlocksToAdd } =
 addBlockSync
   :: forall m blk.
      ( IOLike m
-     , HasHeader blk
+     , GetPrevHash blk
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
@@ -458,7 +458,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         return tipPoint
 
       -- The block @b@ fits onto the end of our current chain
-      | pointHash tipPoint == castHash (blockPrevHash hdr) -> do
+      | pointHash tipPoint == castHash (getPrevHash hdr) -> do
         -- ### Add to current chain
         trace (TryAddToCurrentChain p)
         addToCurrentChain succsOf' curChainAndLedger
@@ -509,8 +509,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                       -> ChainAndLedger blk
                          -- ^ The current chain and ledger
                       -> m (Point blk)
-    addToCurrentChain succsOf curChainAndLedger
-                    = assert (AF.validExtension curChain hdr) $ do
+    addToCurrentChain succsOf curChainAndLedger = do
         let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
 
         -- Fragments that are anchored at @curHead@, i.e. suffixes of the

@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE TypeFamilies             #-}
 -- | The ImmutableDB doesn't care about the serialisation format, but in
 -- practice we use CBOR. If we were to change the serialisation format, we
 -- would have to write a new 'ChunkFileParser' implementation, but the rest of
@@ -14,7 +15,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Parser
     ChunkFileError (..)
   , BlockSummary(..)
   , chunkFileParser
-  , chunkFileParser'
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -27,13 +27,13 @@ import qualified Streaming as S
 import qualified Streaming.Prelude as S
 
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader, blockIsEBB)
+import           Ouroboros.Consensus.Block (GetHeader (..), GetPrevHash (..),
+                     blockIsEBB)
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -69,25 +69,23 @@ data BlockSummary hash = BlockSummary {
     , summaryBlockNo :: !BlockNo
     }
 
-chunkFileParser'
-  :: forall m blk hash h. (IOLike m, Eq hash)
-  => (blk -> SlotNo)
-  -> (blk -> BlockNo)
-  -> (blk -> hash)
-  -> (blk -> WithOrigin hash)  -- ^ Previous hash
-  -> (blk -> Maybe EpochNo)    -- ^ If an EBB, return the epoch number
-  -> HasFS m h
+chunkFileParser
+  :: forall m blk h hash. (
+       IOLike m
+     , GetHeader blk
+     , GetPrevHash blk
+     , hash ~ HeaderHash blk
+     )
+  => HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
   -> (blk -> BinaryBlockInfo)
-  -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
-                               -- corrupt.
+  -> (blk -> Bool)        -- ^ Check integrity of the block. 'False' = corrupt.
   -> ChunkFileParser
        (ChunkFileError hash)
        m
        (BlockSummary hash)
        hash
-chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBlock
-                 getBinaryBlockInfo isNotCorrupt =
+chunkFileParser hasFS decodeBlock getBinaryBlockInfo isNotCorrupt =
     ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k
@@ -96,6 +94,10 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBloc
         . fmap (fmap (first ChunkErrRead))
         )
   where
+    convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
+    convertPrevHash GenesisHash   = Origin
+    convertPrevHash (BlockHash h) = At h
+
     decoder :: forall s. Decoder s (BL.ByteString -> (blk, CRC))
     decoder = decodeBlock <&> \mkBlk bs ->
       let !blk      = mkBlk bs
@@ -152,19 +154,19 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBloc
       :: (Word64, (Word64, (blk, CRC)))
       -> (BlockSummary hash, WithOrigin hash)
     entryForBlockAndInfo (offset, (_size, (blk, checksum))) =
-        (BlockSummary entry (getBlockNo blk), prevHash)
+        (BlockSummary entry (blockNo blk), prevHash)
       where
         -- Don't accidentally hold on to the block!
-        !prevHash = getPrevHash blk
+        !prevHash = convertPrevHash $ getPrevHash blk
         !entry    = Secondary.Entry
           { blockOffset  = Secondary.BlockOffset  offset
           , headerOffset = Secondary.HeaderOffset headerOffset
           , headerSize   = Secondary.HeaderSize   headerSize
           , checksum     = checksum
-          , headerHash   = getHash blk
-          , blockOrEBB   = case isEBB blk of
+          , headerHash   = blockHash blk
+          , blockOrEBB   = case blockIsEBB blk of
               Just epoch -> EBB epoch
-              Nothing    -> Block (getSlotNo blk)
+              Nothing    -> Block (blockSlot blk)
           }
         BinaryBlockInfo { headerOffset, headerSize } = getBinaryBlockInfo blk
 
@@ -189,31 +191,6 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBloc
             where
               err = ChunkErrHashMismatch (At hashOfPrevBlock) prevHash
               offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
-
--- | A version of 'chunkFileParser'' for blocks that implement 'HasHeader'.
-chunkFileParser
-  :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
-  => HasFS m h
-  -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> BinaryBlockInfo)
-  -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
-                             -- corrupt.
-  -> ChunkFileParser
-       (ChunkFileError (HeaderHash blk))
-       m
-       (BlockSummary (HeaderHash blk))
-       (HeaderHash blk)
-chunkFileParser =
-    chunkFileParser'
-      blockSlot
-      blockNo
-      blockHash
-      (convertPrevHash . blockPrevHash)
-      blockIsEBB
-  where
-    convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
-    convertPrevHash GenesisHash   = Origin
-    convertPrevHash (BlockHash h) = At h
 
 {-------------------------------------------------------------------------------
   Streaming utilities

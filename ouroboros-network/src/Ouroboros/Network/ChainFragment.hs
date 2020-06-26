@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PatternSynonyms  #-}
-{-# LANGUAGE TypeFamilies     #-}
-{-# LANGUAGE ViewPatterns     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
@@ -60,13 +61,11 @@ module Ouroboros.Network.ChainFragment (
   splitBeforePoint,
   sliceRange,
   lookupByIndexFromEnd, FT.SearchResult(..),
-  filter,
-  filterWithStop,
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
   isPrefixOf,
-  joinChainFragments,
+  joinSuccessor,
 
   -- * Helper functions
   prettyPrintChainFragment,
@@ -82,13 +81,11 @@ import           Prelude hiding (drop, filter, head, last, length, null)
 import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
-import           Control.Exception (assert)
 import           Data.Either (isRight)
 import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
-import           Data.Maybe (fromMaybe)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -145,16 +142,13 @@ pattern Empty <- (viewRight -> FT.EmptyR) where
 pattern (:>) :: (HasHeader block, HasCallStack)
              => ChainFragment block -> block -> ChainFragment block
 pattern c :> b <- (viewRight -> (c FT.:> b)) where
-  ChainFragment c :> b = assert (validExtension (ChainFragment c) b) $
-                         ChainFragment (c FT.|> b)
+  ChainFragment c :> b = ChainFragment (c FT.|> b)
 
 -- | \( O(1) \). Add a block to the left of the chain fragment.
 pattern (:<) :: HasHeader block
              => block -> ChainFragment block -> ChainFragment block
 pattern b :< c <- (viewLeft -> (b FT.:< c)) where
-  b :< ChainFragment c = assert (maybe True (`isValidSuccessorOf` b)
-                                       (last (ChainFragment c))) $
-                         ChainFragment (b FT.<| c)
+  b :< ChainFragment c = ChainFragment (b FT.<| c)
 
 infixl 5 :>, :<
 
@@ -192,7 +186,7 @@ mapChainFragment :: (HasHeader block1, HasHeader block2)
 mapChainFragment f (ChainFragment c) = ChainFragment (FT.fmap' f c)
 
 -- | \( O(n) \).
-valid :: HasHeader block => ChainFragment block -> Bool
+valid :: HasFullHeader block => ChainFragment block -> Bool
 valid Empty    = True
 valid (c :> b) = valid c && validExtension c b
 
@@ -205,14 +199,14 @@ valid (c :> b) = valid c && validExtension c b
 --
 -- This function does not check whether any of the two blocks satisfy
 -- 'blockInvariant'.
-isValidSuccessorOf :: (HasCallStack, HasHeader block)
+isValidSuccessorOf :: (HasCallStack, HasFullHeader block)
                    => block  -- ^ @bSucc@
                    -> block  -- ^ @b@
                    -> Bool
 isValidSuccessorOf bSucc b = isRight $ isValidSuccessorOf' bSucc b
 
 -- | Variation on 'isValidSuccessorOf' that provides more information
-isValidSuccessorOf' :: (HasCallStack, HasHeader block)
+isValidSuccessorOf' :: (HasCallStack, HasFullHeader block)
                     => block  -- ^ @bSucc@
                     -> block  -- ^ @b@
                     -> Either String ()
@@ -264,11 +258,12 @@ isValidSuccessorOf' bSucc b
     p = blockPoint b
 
 -- | \( O(1) \).
-validExtension :: (HasHeader block, HasCallStack) => ChainFragment block -> block -> Bool
+validExtension :: (HasFullHeader block, HasCallStack)
+               => ChainFragment block -> block -> Bool
 validExtension c bSucc = isRight $ validExtension' c bSucc
 
 -- | Variation on 'validExtension' that provides more information
-validExtension' :: (HasHeader block, HasCallStack)
+validExtension' :: (HasFullHeader block, HasCallStack)
                 => ChainFragment block -> block -> Either String ()
 validExtension' c bSucc
   | not (blockInvariant bSucc)
@@ -330,9 +325,7 @@ fromNewestFirst = foldr (flip (:>)) Empty
 -- | \( O(n) \). Make a 'ChainFragment' from a list of blocks in
 -- oldest-to-newest order.
 fromOldestFirst :: HasHeader block => [block] -> ChainFragment block
-fromOldestFirst bs = assert (valid c) c
-  where
-    c = ChainFragment $ FT.fromList bs
+fromOldestFirst bs = ChainFragment $ FT.fromList bs
 
 -- | \( O(\log(\min(i,n-i)) \). Drop the newest @n@ blocks from the
 -- 'ChainFragment'.
@@ -478,51 +471,6 @@ lookupByIndexFromEnd (ChainFragment t) n =
     FT.search (\vl vr -> bmSize vl >= len - n && bmSize vr <= n) t
   where
     len = bmSize (FT.measure t)
-
--- | \( O\(n\) \). Filter the chain based on a predicate. As filtering
--- removes blocks the result is a sequence of disconnected fragments.
--- The fragments are in the original order and are of maximum size.
---
-filter :: HasHeader block
-       => (block -> Bool)
-       -> ChainFragment block
-       -> [ChainFragment block]
-filter p = filterWithStop p (const False)
-
--- | \( O\(n\) \). Same as 'filter', but as soon as the stop condition is
--- true, the filtering stops and the remaining fragment (starting with the
--- first element for which the stop condition is true) is the final fragment
--- in the returned list.
---
--- The stop condition wins from the filtering predicate: if the stop condition
--- is true for an element, but the filter predicate not, then the element
--- still ends up in final fragment.
---
--- For example, given the fragment containing @[1, 2, 3, 4, 5, 6]@:
---
--- > filter         odd        -> [[1], [3], [5]]
--- > filterWithStop odd (>= 4) -> [[1], [3], [4, 5, 6]]
---
-filterWithStop :: HasHeader block
-               => (block -> Bool)  -- ^ Filtering predicate
-               -> (block -> Bool)  -- ^ Stop condition
-               -> ChainFragment block
-               -> [ChainFragment block]
-filterWithStop p stop = go [] Empty
-  where
-    go cs c'    (b :< c) | stop b = reverse (addToAcc (join c' (b :< c)) cs)
-                         | p    b = go              cs (c' :> b) c
-    go cs c'    (_ :< c)          = go (addToAcc c' cs) Empty    c
-
-    go cs c'     Empty            = reverse (addToAcc c' cs)
-
-    addToAcc Empty acc =    acc
-    addToAcc c'    acc = c':acc
-
-    -- This is called with @c'@ and @(b : < c)@. @c'@ is the fragment
-    -- containing the blocks before @b@, so they must be joinable.
-    join a b = fromMaybe (error "could not join fragments") $
-               joinChainFragments a b
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer
@@ -791,21 +739,16 @@ isPrefixOf :: Eq block
            => ChainFragment block -> ChainFragment block -> Bool
 a `isPrefixOf` b = toOldestFirst a `L.isPrefixOf` toOldestFirst b
 
-
--- | \( O(\log(\min(n_1, n_2))) \). Join two 'ChainFragment's if the first
--- (oldest) block of the second fragment is the successor of the last (newest)
--- block of the first fragment.
-joinChainFragments :: HasHeader block
-                   => ChainFragment block
-                   -> ChainFragment block
-                   -> Maybe (ChainFragment block)
-joinChainFragments c1@(ChainFragment t1) c2@(ChainFragment t2) =
-    case (FT.viewr t1, FT.viewl t2) of
-      (FT.EmptyR, _)           -> Just c2
-      (_,         FT.EmptyL)   -> Just c1
-      (_ FT.:> b1, b2 FT.:< _) | b2 `isValidSuccessorOf` b1
-                               -> Just (ChainFragment (t1 FT.>< t2))
-      _                        -> Nothing
+-- | \( O(\log(\min(n_1, n_2))) \). Join two 'ChainFragment's.
+--
+-- PRECONDITION: the first (oldest) block of the second fragment is the
+-- successor of the last (newest) block of the first fragment.
+joinSuccessor :: HasHeader block
+              => ChainFragment block
+              -> ChainFragment block
+              -> ChainFragment block
+joinSuccessor (ChainFragment t1) (ChainFragment t2) =
+    ChainFragment (t1 FT.>< t2)
 
 --
 -- Serialisation

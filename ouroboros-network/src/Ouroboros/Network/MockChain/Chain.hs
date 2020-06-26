@@ -116,12 +116,12 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 genesis :: Chain b
 genesis = Genesis
 
-valid :: HasHeader block => Chain block -> Bool
+valid :: HasFullHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
 validExtension
-  :: (HasCallStack, HasHeader block)
+  :: (HasCallStack, HasFullHeader block)
   => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
@@ -183,15 +183,11 @@ toOldestFirst = reverse . toNewestFirst
 -- of the chain.
 --
 fromNewestFirst :: HasHeader block => [block] -> Chain block
-fromNewestFirst bs = assert (valid c) c
-  where
-    c = foldr (flip (:>)) Genesis bs
+fromNewestFirst bs = foldr (flip (:>)) Genesis bs
 
 -- | Construct chain from list of blocks from oldest to newest
 fromOldestFirst :: HasHeader block => [block] -> Chain block
-fromOldestFirst bs = assert (valid c) c
-  where
-    c = L.foldl' (:>) Genesis bs
+fromOldestFirst bs = L.foldl' (:>) Genesis bs
 
 drop :: Int -> Chain block -> Chain block
 drop 0 c        = c
@@ -205,9 +201,8 @@ null :: Chain block -> Bool
 null Genesis = True
 null _       = False
 
-addBlock :: (HasCallStack, HasHeader block) => block -> Chain block -> Chain block
-addBlock b c = assert (validExtension c b) $
-               c :> b
+addBlock :: HasHeader block => block -> Chain block -> Chain block
+addBlock b c = c :> b
 
 pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
 pointOnChain GenesisPoint               _       = True

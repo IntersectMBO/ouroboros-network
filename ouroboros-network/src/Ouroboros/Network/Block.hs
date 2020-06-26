@@ -22,6 +22,7 @@ module Ouroboros.Network.Block (
   , BlockNo(..)
   , HeaderHash
   , HasHeader(..)
+  , HasFullHeader(..)
   , StandardHash
   , ChainHash(..)
   , castHash
@@ -104,11 +105,15 @@ type family HeaderHash b :: *
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
-    blockHash      :: b -> HeaderHash b
-    blockPrevHash  :: b -> ChainHash b
-    blockSlot      :: b -> SlotNo
-    blockNo        :: b -> BlockNo
+    blockHash :: b -> HeaderHash b
+    blockSlot :: b -> SlotNo
+    blockNo   :: b -> BlockNo
 
+-- | Extension of 'HasHeader' with some additional information
+--
+-- Used in tests and assertions only.
+class HasHeader b => HasFullHeader b where
+    blockPrevHash  :: b -> ChainHash b
     blockInvariant :: b -> Bool
 
 -- | When implementing 'HasHeader', use this method to implement the 'measure'

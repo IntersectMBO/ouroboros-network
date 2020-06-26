@@ -28,8 +28,7 @@ import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
-import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
-import qualified Ouroboros.Network.ChainFragment    as ChainFragment
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
@@ -155,7 +154,7 @@ fetchLogicIteration decisionTracer clientStateTracer
       -- Flatten multiple fragments and trace points, not full headers
       [ blockPoint header
       | headers <- headerss
-      , header  <- ChainFragment.toOldestFirst headers ]
+      , header  <- AF.toOldestFirst headers ]
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.
@@ -319,8 +318,8 @@ readStateVariables FetchTriggerVariables{..}
     -- Construct the change detection fingerprint
     let !fetchStateFingerprint' =
           FetchStateFingerprint
-            (Just (castPoint (AnchoredFragment.headPoint fetchStateCurrentChain)))
-            (Map.map AnchoredFragment.headPoint fetchStatePeerChains)
+            (Just (castPoint (AF.headPoint fetchStateCurrentChain)))
+            (Map.map AF.headPoint fetchStatePeerChains)
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does
@@ -348,4 +347,3 @@ readStateVariables FetchTriggerVariables{..}
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
-

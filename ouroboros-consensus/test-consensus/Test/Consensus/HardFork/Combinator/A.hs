@@ -179,18 +179,20 @@ instance Measured BlockMeasure BlockA where
   measure = blockMeasure
 
 instance HasHeader BlockA where
-  blockHash      =            blockHash     . getHeader
-  blockPrevHash  = castHash . blockPrevHash . getHeader
-  blockSlot      =            blockSlot     . getHeader
-  blockNo        =            blockNo       . getHeader
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance HasHeader (Header BlockA) where
-  blockHash      =            headerFieldHash     . hdrA_fields
-  blockPrevHash  = castHash . headerFieldPrevHash . hdrA_fields
-  blockSlot      =            headerFieldSlot     . hdrA_fields
-  blockNo        =            headerFieldNo       . hdrA_fields
-  blockInvariant = const True
+  blockHash = headerFieldHash . hdrA_fields
+  blockSlot = headerFieldSlot . hdrA_fields
+  blockNo   = headerFieldNo   . hdrA_fields
+
+instance GetPrevHash BlockA where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance GetPrevHash (Header BlockA) where
+  getPrevHash = castHash . headerFieldPrevHash . hdrA_fields
 
 instance HasAnnTip BlockA where
 

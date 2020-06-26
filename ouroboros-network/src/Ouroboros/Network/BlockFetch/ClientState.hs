@@ -38,15 +38,16 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
                    ( HasHeader, MaxSlotNo (..), Point, blockPoint )
-import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange(..))
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits
                    , SizeInBytes, PeerGSV )
+import           Ouroboros.Network.Point (withOriginToMaybe)
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -244,7 +245,7 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
     -- command merging.
     assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fetchRequestFragments addedReq
-                , header   <- CF.toOldestFirst fragment ]) $
+                , header   <- AF.toOldestFirst fragment ]) $
 
     PeerFetchInFlight {
 
@@ -262,13 +263,13 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               + sum [ blockFetchSize header
                                     | fragment <- fetchRequestFragments addedReq
-                                    , header   <- CF.toOldestFirst fragment ],
+                                    , header   <- AF.toOldestFirst fragment ],
 
       peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
                     `Set.union` Set.fromList
                                   [ blockPoint header
                                   | fragment <- fetchRequestFragments addedReq
-                                  , header   <- CF.toOldestFirst fragment ],
+                                  , header   <- AF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
                           `max` fetchRequestMaxSlotNo addedReq
@@ -305,7 +306,7 @@ deleteHeadersInFlight blockFetchSize headers inflight =
 
 
 newtype FetchRequest header =
-        FetchRequest { fetchRequestFragments :: [ChainFragment header] }
+        FetchRequest { fetchRequestFragments :: [AnchoredFragment header] }
   deriving Show
 
 -- | We sometimes have the opportunity to merge fetch request fragments to
@@ -328,7 +329,7 @@ newtype FetchRequest header =
 --
 instance HasHeader header => Semigroup (FetchRequest header) where
   FetchRequest afs@(_:_) <> FetchRequest bfs@(_:_)
-    | Just f <- CF.joinChainFragments (last afs) (head bfs)
+    | Just f <- AF.join (last afs) (head bfs)
     = FetchRequest (init afs ++ f : tail bfs)
 
   FetchRequest afs <> FetchRequest bfs
@@ -336,7 +337,8 @@ instance HasHeader header => Semigroup (FetchRequest header) where
 
 fetchRequestMaxSlotNo :: HasHeader header => FetchRequest header -> MaxSlotNo
 fetchRequestMaxSlotNo (FetchRequest afs) =
-    foldl' max NoMaxSlotNo $ map MaxSlotNo $ mapMaybe CF.headSlot afs
+    foldl' max NoMaxSlotNo $ map MaxSlotNo $
+      mapMaybe (withOriginToMaybe . AF.headSlot) afs
 
 -- | Tracing types for the various events that change the state
 -- (i.e. 'FetchClientStateVars') for a block fetch client.

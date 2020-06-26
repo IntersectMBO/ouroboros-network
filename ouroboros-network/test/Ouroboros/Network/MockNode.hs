@@ -86,7 +86,7 @@ longestChainSelection candidateChainVars cpsVar =
         else writeTVar cpsVar (switchFork chain' cps)
 
 
-chainValidation :: forall block m. (HasHeader block, MonadSTM m)
+chainValidation :: forall block m. (HasFullHeader block, MonadSTM m)
                 => StrictTVar m (Chain block)
                 -> StrictTVar m (Maybe (Chain block))
                 -> m ()
@@ -239,7 +239,7 @@ data ProducerId = ProducerId NodeId Int
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 forkRelayKernel :: forall block m.
-                ( HasHeader block
+                ( HasFullHeader block
                 , MonadSTM m
                 , MonadFork m
                 )
@@ -274,7 +274,7 @@ relayNode :: forall m block.
              , MonadFork m
              , MonadThrow m
              , MonadSay m
-             , HasHeader block
+             , HasFullHeader block
              , Show block
              , MonadTimer m
              )
@@ -338,7 +338,7 @@ relayNode _nid initChain chans = do
 -- public network layer altogether.
 --
 forkCoreKernel :: forall block m.
-                  ( HasHeader block
+                  ( HasFullHeader block
                   , MonadSTM m
                   , MonadFork m
                   , MonadTimer m

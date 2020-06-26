@@ -32,11 +32,10 @@ import           Data.Set (Set)
 import           Control.Exception (assert)
 import           Control.Monad (guard)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
+import           Ouroboros.Network.Point (withOriginToMaybe)
 
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
@@ -139,7 +138,7 @@ Nothing ?! e = Left  e
 -- * To track which blocks of that candidate still have to be downloaded, we
 --   use a list of discontiguous 'ChainFragment's.
 --
-type CandidateFragments header = (ChainSuffix header, [ChainFragment header])
+type CandidateFragments header = (ChainSuffix header, [AnchoredFragment header])
 
 
 fetchDecisions
@@ -355,8 +354,8 @@ empty fetch range, but this is ok since we never request empty ranges.
 -- current chain.
 --
 -- The anchor point of a 'ChainSuffix' will be a point within the bounds of
--- the currrent chain ('AnchoredFragment.withinFragmentBounds'), indicating
--- that it forks off in the last @K@ blocks.
+-- the currrent chain ('AF.withinFragmentBounds'), indicating that it forks off
+-- in the last @K@ blocks.
 --
 -- A 'ChainSuffix' must be non-empty, as an empty suffix, i.e. the candidate
 -- chain is equal to the current chain, would not be a plausible candidate.
@@ -404,13 +403,13 @@ chainForkSuffix
   -> AnchoredFragment header -- ^ Candidate chain
   -> Maybe (ChainSuffix header)
 chainForkSuffix current candidate =
-    case AnchoredFragment.intersect current candidate of
+    case AF.intersect current candidate of
       Nothing                         -> Nothing
       Just (_, _, _, candidateSuffix) ->
         -- If the suffix is empty, it means the candidate chain was equal to
         -- the current chain and didn't fork off. Such a candidate chain is
         -- not a plausible candidate, so it must have been filtered out.
-        assert (not (AnchoredFragment.null candidateSuffix)) $
+        assert (not (AF.null candidateSuffix)) $
         Just (ChainSuffix candidateSuffix)
 
 selectForkSuffixes
@@ -477,12 +476,10 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
     | (mcandidate,  peer) <- chains
     , let mcandidates = do
             candidate <- mcandidate
-            let chainfragment = AnchoredFragment.unanchorFragment
-                              $ getChainSuffix candidate
-                fragments = filterWithMaxSlotNo
+            let fragments = filterWithMaxSlotNo
                               notAlreadyFetched
                               fetchedMaxSlotNo
-                              chainfragment
+                              (getChainSuffix candidate)
             guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
             return (candidate, fragments)
     ]
@@ -523,10 +520,11 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
-                                             PeerFetchInFlight header,
-                                             peerinfo)]
-  -> [(FetchDecision [ChainFragment header], peerinfo)]
+  -> [( FetchDecision [AnchoredFragment header]
+      , PeerFetchStatus header
+      , PeerFetchInFlight header
+      , peerinfo )]
+  -> [(FetchDecision [AnchoredFragment header], peerinfo)]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
     [ (mchainfragments,       peer)
@@ -593,10 +591,10 @@ filterWithMaxSlotNo
   :: forall header. HasHeader header
   => (header -> Bool)
   -> MaxSlotNo  -- ^ @maxSlotNo@
-  -> ChainFragment header
-  -> [ChainFragment header]
+  -> AnchoredFragment header
+  -> [AnchoredFragment header]
 filterWithMaxSlotNo p maxSlotNo =
-    ChainFragment.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
+    AF.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
 
 prioritisePeerChains
   :: forall header peer. HasHeader header
@@ -606,7 +604,7 @@ prioritisePeerChains
   -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
                                                   PeerGSV,
                                                   peer)]
-  -> [(FetchDecision [ChainFragment header],      peer)]
+  -> [(FetchDecision [AnchoredFragment header],   peer)]
 prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
     --TODO: last tie-breaker is still original order (which is probably
     -- peerid order). We should use a random tie breaker so that adversaries
@@ -659,7 +657,7 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
       | EQ <- compareCandidateChains chain1 chain2 = True
       | otherwise                                  = False
 
-    chainHeadPoint (_,ChainSuffix c,_) = AnchoredFragment.headPoint c
+    chainHeadPoint (_,ChainSuffix c,_) = AF.headPoint c
 
 prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
@@ -686,12 +684,12 @@ prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
                      (totalFetchSize blockFetchSize fragments)
 
 totalFetchSize :: (header -> SizeInBytes)
-               -> [ChainFragment header]
+               -> [AnchoredFragment header]
                -> SizeInBytes
 totalFetchSize blockFetchSize fragments =
   sum [ blockFetchSize header
       | fragment <- fragments
-      , header   <- ChainFragment.toOldestFirst fragment ]
+      , header   <- AF.toOldestFirst fragment ]
 
 type Comparing a = a -> a -> Ordering
 type Equating  a = a -> a -> Bool
@@ -777,10 +775,11 @@ fetchRequestDecisions
   :: forall header peer. HasHeader header
   => FetchDecisionPolicy header
   -> FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
-                                             PeerFetchInFlight header,
-                                             PeerGSV,
-                                             peer)]
+  -> [( FetchDecision [AnchoredFragment header]
+      , PeerFetchStatus header
+      , PeerFetchInFlight header
+      , PeerGSV
+      , peer )]
   -> [(FetchDecision (FetchRequest header),  peer)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
@@ -788,7 +787,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go :: Word
        -> Set (Point header)
        -> MaxSlotNo
-       -> [(Either FetchDecline [ChainFragment header],
+       -> [(Either FetchDecline [AnchoredFragment header],
             PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, b)]
        -> [(FetchDecision (FetchRequest header), b)]
     go !_ !_ !_ [] = []
@@ -843,13 +842,13 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
               where
                 maxSlotNoFetchedThisDecision =
                   foldl' max NoMaxSlotNo $ map MaxSlotNo $
-                  mapMaybe ChainFragment.headSlot fragments
+                  mapMaybe (withOriginToMaybe . AF.headSlot) fragments
 
                 blocksFetchedThisDecision =
                   Set.fromList
                     [ blockPoint header
                     | fragment <- fragments
-                    , header   <- ChainFragment.toOldestFirst fragment ]
+                    , header   <- AF.toOldestFirst fragment ]
 
     nConcurrentFetchPeers0 =
         fromIntegral
@@ -868,7 +867,7 @@ fetchRequestDecision
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus header
-  -> FetchDecision [ChainFragment header]
+  -> FetchDecision [AnchoredFragment header]
   -> FetchDecision (FetchRequest  header)
 
 fetchRequestDecision _ _ _ _ _ _ (Left decline)
@@ -941,20 +940,20 @@ fetchRequestDecision FetchDecisionPolicy {
               fetchFragments
 
 
--- | 
+-- |
 --
 -- Precondition: The result will be non-empty if
 --
 -- Property: result is non-empty if preconditions satisfied
 --
 selectBlocksUpToLimits
-  :: HasHeader header
+  :: forall header. HasHeader header
   => (header -> SizeInBytes) -- ^ Block body size
   -> Word -- ^ Current number of requests in flight
   -> Word -- ^ Maximum number of requests in flight allowed
   -> SizeInBytes -- ^ Current number of bytes in flight
   -> SizeInBytes -- ^ Maximum number of bytes in flight allowed
-  -> [ChainFragment header]
+  -> [AnchoredFragment header]
   -> FetchRequest header
 selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments =
     assert (nreqs0 < maxreqs && nbytes0 < maxbytes && not (null fragments)) $
@@ -962,24 +961,31 @@ selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments 
     -- outside of this function. From here on however we check for limits.
 
     let fragments' = goFrags nreqs0 nbytes0 fragments in
-    assert (all (not . ChainFragment.null) fragments') $
+    assert (all (not . AF.null) fragments') $
     FetchRequest fragments'
   where
+    goFrags :: Word
+            -> SizeInBytes
+            -> [AnchoredFragment header] -> [AnchoredFragment header]
     goFrags _     _      []     = []
     goFrags nreqs nbytes (c:cs)
       | nreqs+1  > maxreqs      = []
-      | otherwise               = goFrag (nreqs+1) nbytes Empty c cs
+      | otherwise               = goFrag (nreqs+1) nbytes (AF.Empty (AF.anchor c)) c cs
       -- Each time we have to pick from a new discontiguous chain fragment then
       -- that will become a new request, which contributes to our in-flight
       -- request count. We never break the maxreqs limit.
 
-    goFrag nreqs nbytes c' Empty    cs = c' : goFrags nreqs nbytes cs
-    goFrag nreqs nbytes c' (b :< c) cs
-      | nbytes' >= maxbytes            = [c' :> b]
-      | otherwise                      = goFrag nreqs nbytes' (c' :> b) c cs
+    goFrag :: Word
+           -> SizeInBytes
+           -> AnchoredFragment header
+           -> AnchoredFragment header
+           -> [AnchoredFragment header] -> [AnchoredFragment header]
+    goFrag nreqs nbytes c' (Empty _) cs = c' : goFrags nreqs nbytes cs
+    goFrag nreqs nbytes c' (b :< c)  cs
+      | nbytes' >= maxbytes             = [c' :> b]
+      | otherwise                       = goFrag nreqs nbytes' (c' :> b) c cs
       where
         nbytes' = nbytes + blockFetchSize b
       -- Note that we always pick the one last block that crosses the maxbytes
       -- limit. This cover the case where we otherwise wouldn't even be able to
       -- request a single block, as it's too large.
-

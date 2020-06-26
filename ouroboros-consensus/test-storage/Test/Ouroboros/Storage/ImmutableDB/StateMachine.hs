@@ -790,8 +790,8 @@ precondition Model {..} (At (CmdErr { cmd })) =
   where
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
-      Nothing    -> blockPrevHash b .== Block.GenesisHash
-      Just bPrev -> blockPrevHash b .== Block.BlockHash (blockHash bPrev)
+      Nothing    -> getPrevHash b .== Block.GenesisHash
+      Just bPrev -> getPrevHash b .== Block.BlockHash (blockHash bPrev)
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r

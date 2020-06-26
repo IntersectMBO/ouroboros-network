@@ -39,7 +39,6 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.Examples
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -229,7 +228,7 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
     requestedFetchPoints :: Map Int [Point BlockHeader]
     requestedFetchPoints =
       Map.fromListWith (flip (++))
-        [ (peer, map blockPoint (ChainFragment.toOldestFirst fragment))
+        [ (peer, map blockPoint (AnchoredFragment.toOldestFirst fragment))
         | TraceFetchClientState
             (TraceLabelPeer peer
               (AddedFetchRequest
@@ -278,7 +277,7 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
               (AddedFetchRequest
                 (FetchRequest fragments) _ _ _)) <- es
         , fragment <- fragments
-        , block    <- ChainFragment.toOldestFirst fragment
+        , block    <- AnchoredFragment.toOldestFirst fragment
         ]
 
     receivedFetchPoints :: Set (Point BlockHeader)
@@ -331,7 +330,7 @@ tracePropertyNoDuplicateBlocksBetweenPeers fork1 fork2 es =
                 (FetchRequest fragments) _ _ _)) <- es
         , fragment <- fragments
         , let points = Set.fromList . map blockPoint
-                     . ChainFragment.toOldestFirst
+                     . AnchoredFragment.toOldestFirst
         ]
 
 

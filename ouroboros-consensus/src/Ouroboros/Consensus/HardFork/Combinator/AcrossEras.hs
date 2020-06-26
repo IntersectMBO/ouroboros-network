@@ -227,29 +227,28 @@ instance CanHardFork xs => Measured BlockMeasure (OneEraHeader xs) where
   measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (OneEraHeader xs) where
-  blockHash     = hcollapse
-                . hcmap proxySingle (K . getOneHash)
-                . getOneEraHeader
+  blockHash = hcollapse
+            . hcmap proxySingle (K . getOneHash)
+            . getOneEraHeader
    where
      getOneHash :: forall blk. SingleEraBlock blk
                 => Header blk -> OneEraHash xs
      getOneHash = OneEraHash . toRawHash (Proxy @blk) . blockHash
 
-  blockPrevHash = hcollapse
-                . hcmap proxySingle (K . getOnePrev)
-                . getOneEraHeader
+  blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
+  blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader
+
+instance CanHardFork xs => GetPrevHash (OneEraHeader xs) where
+  getPrevHash = hcollapse
+              . hcmap proxySingle (K . getOnePrev)
+              . getOneEraHeader
     where
       getOnePrev :: forall blk. SingleEraBlock blk
                  => Header blk -> ChainHash (OneEraHeader xs)
       getOnePrev hdr =
-          case blockPrevHash hdr of
+          case getPrevHash hdr of
             GenesisHash -> GenesisHash
             BlockHash h -> BlockHash (OneEraHash $ toRawHash (Proxy @blk) h)
-
-  blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
-  blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader
-
-  blockInvariant = const True
 
 {-------------------------------------------------------------------------------
   HasHeader instance for OneEraBlock
@@ -263,11 +262,12 @@ instance CanHardFork xs => Measured BlockMeasure (OneEraBlock xs) where
   measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (OneEraBlock xs) where
-  blockHash      =            blockHash     . oneEraBlockHeader
-  blockPrevHash  = castHash . blockPrevHash . oneEraBlockHeader
-  blockSlot      =            blockSlot     . oneEraBlockHeader
-  blockNo        =            blockNo       . oneEraBlockHeader
-  blockInvariant = const True
+  blockHash = blockHash . oneEraBlockHeader
+  blockSlot = blockSlot . oneEraBlockHeader
+  blockNo   = blockNo   . oneEraBlockHeader
+
+instance CanHardFork xs => GetPrevHash (OneEraBlock xs) where
+  getPrevHash = castHash . getPrevHash . oneEraBlockHeader
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks instances

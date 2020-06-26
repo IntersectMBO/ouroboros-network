@@ -83,18 +83,20 @@ instance CanHardFork xs => Measured BlockMeasure (HardForkBlock xs) where
   measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (HardForkBlock xs) where
-  blockHash      =            blockHash     . getHeader
-  blockPrevHash  = castHash . blockPrevHash . getHeader
-  blockSlot      =            blockSlot     . getHeader
-  blockNo        =            blockNo       . getHeader
-  blockInvariant = const True
+  blockHash = blockHash . getHeader
+  blockSlot = blockSlot . getHeader
+  blockNo   = blockNo   . getHeader
 
 instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
-  blockHash      =            blockHash     . getHardForkHeader
-  blockPrevHash  = castHash . blockPrevHash . getHardForkHeader
-  blockSlot      =            blockSlot     . getHardForkHeader
-  blockNo        =            blockNo       . getHardForkHeader
-  blockInvariant = const True
+  blockHash = blockHash . getHardForkHeader
+  blockSlot = blockSlot . getHardForkHeader
+  blockNo   = blockNo   . getHardForkHeader
+
+instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
+  getPrevHash = castHash . getPrevHash . getHeader
+
+instance CanHardFork xs => GetPrevHash (Header (HardForkBlock xs)) where
+  getPrevHash = castHash . getPrevHash . getHardForkHeader
 
 {-------------------------------------------------------------------------------
   Codec config
@@ -112,7 +114,6 @@ instance CanHardFork xs => HasCodecConfig (HardForkBlock xs) where
       . hcmap (Proxy @SingleEraBlock) getCodecConfig
       . getPerEraBlockConfig
       . hardForkBlockConfigPerEra
-
 
 {-------------------------------------------------------------------------------
   NestedContent
