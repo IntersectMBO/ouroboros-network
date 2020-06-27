@@ -119,13 +119,17 @@ protocolInfoByron :: forall m. Monad m
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftConfig {
-                pbftParams = byronPBftParams genesisConfig mSigThresh
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = PBftConfig {
+                    pbftParams = byronPBftParams genesisConfig mSigThresh
+                  }
+              , protocolConfigIndep = ()
               }
-          , configIndep  = ()
-          , configLedger = genesisConfig
-          , configBlock  = byronConfig
-          , configCodec  = mkByronCodecConfig genesisConfig
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = genesisConfig
+              , blockConfigBlock  = byronConfig
+              , blockConfigCodec  = mkByronCodecConfig genesisConfig
+              }
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing

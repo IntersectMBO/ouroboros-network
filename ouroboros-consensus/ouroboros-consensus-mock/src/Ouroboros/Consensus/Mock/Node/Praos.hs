@@ -36,17 +36,21 @@ protocolInfoPraos :: IOLike m
 protocolInfoPraos numCoreNodes nid params eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PraosConfig {
-                praosParams       = params
-              , praosSignKeyVRF   = signKeyVRF nid
-              , praosInitialEta   = 0
-              , praosInitialStake = genesisStakeDist addrDist
-              , praosVerKeys      = verKeys
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = PraosConfig {
+                    praosParams       = params
+                  , praosSignKeyVRF   = signKeyVRF nid
+                  , praosInitialEta   = 0
+                  , praosInitialStake = genesisStakeDist addrDist
+                  , praosVerKeys      = verKeys
+                  }
+              , protocolConfigIndep = ()
               }
-          , configIndep  = ()
-          , configLedger = SimpleLedgerConfig addrDist eraParams
-          , configBlock  = SimpleBlockConfig (praosSecurityParam params)
-          , configCodec  = SimpleCodecConfig (praosSecurityParam params)
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = SimpleLedgerConfig addrDist eraParams
+              , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
+              , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+              }
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = genesisSimpleLedgerState addrDist
