@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
@@ -63,6 +64,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
@@ -173,12 +175,16 @@ instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   CodecConfig
 -------------------------------------------------------------------------------}
 
-newtype instance CodecConfig (DualBlock m a) = DualCodecConfig {
+data instance CodecConfig (DualBlock m a) = DualCodecConfig {
       dualCodecConfigMain :: CodecConfig m
+    , dualCodecConfigAux  :: CodecConfig a
     }
+  deriving (Generic)
 
-deriving newtype instance NoUnexpectedThunks (CodecConfig m)
-                       => NoUnexpectedThunks (CodecConfig (DualBlock m a))
+instance ( NoUnexpectedThunks (CodecConfig m)
+         , NoUnexpectedThunks (CodecConfig a)
+         ) => NoUnexpectedThunks (CodecConfig (DualBlock m a))
+  -- Use generic instance
 
 {-------------------------------------------------------------------------------
   Bridge two ledgers
@@ -204,6 +210,7 @@ class (
       , LedgerSupportsMempool a
       , Show (ApplyTxErr      a)
       , NoUnexpectedThunks (LedgerConfig a)
+      , NoUnexpectedThunks (CodecConfig a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)

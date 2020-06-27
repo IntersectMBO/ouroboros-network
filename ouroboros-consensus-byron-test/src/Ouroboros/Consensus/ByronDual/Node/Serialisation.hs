@@ -69,7 +69,8 @@ instance DecodeDisk DualByronBlock (Lazy.ByteString -> DualByronBlock) where
       epochSlots = extractEpochSlots ccfg
 
 instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
-  decodeDiskDep (DualCodecConfig ccfg) (NestedCtxt (CtxtDual ctxt)) =
+  decodeDiskDep (DualCodecConfig ccfg ByronSpecCodecConfig)
+                (NestedCtxt (CtxtDual ctxt)) =
       decodeDiskDep ccfg (NestedCtxt ctxt)
 
 instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
