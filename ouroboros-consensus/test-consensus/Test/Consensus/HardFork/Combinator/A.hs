@@ -219,7 +219,7 @@ instance IsLedger (LedgerState BlockA) where
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
-      . repeatedlyM (applyTx cfg) (blkA_body blk)
+      . repeatedlyM (applyTx (blockConfigLedger cfg)) (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (Ticked _ st) = st { lgrA_tip = blockPoint blk }

@@ -23,9 +23,10 @@ import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util hiding (Trivial (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -113,7 +114,7 @@ verifyShape snapEvery = \ss ->
 prop_pushIncrementsLength :: ChainSetup -> Property
 prop_pushIncrementsLength setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
-          ledgerDbChainLength (ledgerDbPush' (eraParams setup) nextBlock csPushed)
+          ledgerDbChainLength (ledgerDbPush' (csBlockConfig setup) nextBlock csPushed)
       === ledgerDbChainLength csPushed + 1
   where
     nextBlock :: TestBlock
@@ -136,7 +137,7 @@ prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger (eraParams setup) (expectedChain o) testInitLedger
+          l === refoldLedger (csBlockConfig setup) (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
@@ -147,7 +148,7 @@ prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated"    $
     classify withinReach                 "within reach" $
-          ledgerDbPast' (eraParams setup) tip csPushed
+          ledgerDbPast' (csBlockConfig setup) tip csPushed
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -161,7 +162,7 @@ prop_pastLedger setup@ChainSetup{..} =
             _otherwise -> NotOrigin (last prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
-    afterPrefix = ledgerDbPushMany' (eraParams setup) prefix csGenSnaps
+    afterPrefix = ledgerDbPushMany' (csBlockConfig setup) prefix csGenSnaps
 
     -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
@@ -193,7 +194,7 @@ prop_snapshotsMaxRollback setup@ChainSetup{..} =
 prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
-          ledgerDbSwitch' (eraParams ssChainSetup) ssNumRollback blockInfo csPushed
+          ledgerDbSwitch' (csBlockConfig ssChainSetup) ssNumRollback blockInfo csPushed
       === Just csPushed
   where
     ChainSetup{csPushed} = ssChainSetup
@@ -210,7 +211,7 @@ prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger (eraParams ssChainSetup) (expectedChain o) testInitLedger
+          l === refoldLedger (csBlockConfig ssChainSetup) (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where
@@ -222,7 +223,7 @@ prop_pastAfterSwitch :: SwitchSetup -> Property
 prop_pastAfterSwitch setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated"    $
     classify withinReach                  "within reach" $
-          ledgerDbPast' (eraParams ssChainSetup) tip ssSwitched
+          ledgerDbPast' (csBlockConfig ssChainSetup) tip ssSwitched
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -236,7 +237,7 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
             _otherwise -> NotOrigin (last prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
-    afterPrefix = ledgerDbPushMany' (eraParams ssChainSetup) prefix (csGenSnaps ssChainSetup)
+    afterPrefix = ledgerDbPushMany' (csBlockConfig ssChainSetup) prefix (csGenSnaps ssChainSetup)
 
     -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
@@ -273,11 +274,15 @@ data ChainSetup = ChainSetup {
     }
   deriving (Show)
 
-eraParams :: ChainSetup -> HardFork.EraParams
-eraParams ChainSetup{..} = eraParams' csParams
+csBlockConfig :: ChainSetup -> FullBlockConfig (LedgerState TestBlock) TestBlock
+csBlockConfig = csBlockConfig' . csParams
 
-eraParams' :: LedgerDbParams -> HardFork.EraParams
-eraParams' dbParams = HardFork.defaultEraParams k slotLength
+csBlockConfig' :: LedgerDbParams -> FullBlockConfig (LedgerState TestBlock) TestBlock
+csBlockConfig' dbParams = FullBlockConfig {
+      blockConfigLedger = HardFork.defaultEraParams k slotLength
+    , blockConfigBlock  = TestBlockConfig (NumCoreNodes 1) -- Ledger DB doesn't care
+    , blockConfigCodec  = TestBlockCodecConfig
+    }
   where
     k          = ledgerDbSecurityParam dbParams
     slotLength = slotLengthFromSec 20
@@ -327,7 +332,7 @@ mkTestSetup csParams csNumBlocks csPrefixLen =
     csGenSnaps = ledgerDbFromGenesis csParams testInitLedger
     csChain    = take (fromIntegral csNumBlocks) $
                    iterate successorBlock (firstBlock 0)
-    csPushed   = ledgerDbPushMany' (eraParams' csParams) csChain csGenSnaps
+    csPushed   = ledgerDbPushMany' (csBlockConfig' csParams) csChain csGenSnaps
 
 mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> Word64 -> SwitchSetup
 mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
@@ -348,7 +353,7 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
                          take (fromIntegral (csNumBlocks - ssNumRollback)) csChain
                        , ssNewBlocks
                        ]
-    ssSwitched  = fromJust $ ledgerDbSwitch' (eraParams ssChainSetup) ssNumRollback ssNewBlocks csPushed
+    ssSwitched  = fromJust $ ledgerDbSwitch' (csBlockConfig ssChainSetup) ssNumRollback ssNewBlocks csPushed
 
 instance Arbitrary ChainSetup where
   arbitrary = do

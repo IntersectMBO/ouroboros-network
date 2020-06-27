@@ -256,9 +256,9 @@ instance SingleEraBlock b => IsLedger (LedgerState (DegenFork b)) where
 
 instance NoHardForks b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
   applyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr <$> applyLedgerBlock cfg b (Ticked slot lgr)
+    DLgr <$> applyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
   reapplyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr $ reapplyLedgerBlock cfg b (Ticked slot lgr)
+    DLgr $ reapplyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
 
 instance NoHardForks b => UpdateLedger (DegenFork b)
 

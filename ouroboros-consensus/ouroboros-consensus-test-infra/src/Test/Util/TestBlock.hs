@@ -82,7 +82,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -234,11 +233,11 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
       testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | The 'TestBlock' does not need any codec config
 data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults

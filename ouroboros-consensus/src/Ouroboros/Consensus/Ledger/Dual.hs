@@ -351,17 +351,17 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                  . dualLedgerStateMain
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
-  applyLedgerBlock DualLedgerConfig{..}
+  applyLedgerBlock cfg
                    block@DualBlock{..}
                    (Ticked slot DualLedgerState{..}) = do
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
-              dualLedgerConfigMain
+              (dualFullBlockConfigMain cfg)
               dualBlockMain
               (Ticked slot dualLedgerStateMain)
           , applyMaybeBlock
-              dualLedgerConfigAux
+              (dualFullBlockConfigAux cfg)
               dualBlockAux
               (Ticked slot dualLedgerStateAux)
           )
@@ -373,16 +373,16 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                                     dualLedgerStateBridge
         }
 
-  reapplyLedgerBlock DualLedgerConfig{..}
+  reapplyLedgerBlock cfg
                      block@DualBlock{..}
                      (Ticked slot DualLedgerState{..}) =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
-                                    dualLedgerConfigMain
+                                    (dualFullBlockConfigMain cfg)
                                     dualBlockMain
                                     (Ticked slot dualLedgerStateMain)
         , dualLedgerStateAux    = reapplyMaybeBlock
-                                    dualLedgerConfigAux
+                                    (dualFullBlockConfigAux cfg)
                                     dualBlockAux
                                     (Ticked slot dualLedgerStateAux)
         , dualLedgerStateBridge = updateBridgeWithBlock
@@ -626,7 +626,7 @@ instance EncodeDiskDep (NestedCtxt Header) m
 --
 -- Returns state unchanged on 'Nothing'
 applyMaybeBlock :: UpdateLedger blk
-                => LedgerConfig blk
+                => FullBlockConfig (LedgerState blk) blk
                 -> Maybe blk
                 -> TickedLedgerState blk
                 -> Except (LedgerError blk) (LedgerState blk)
@@ -637,7 +637,7 @@ applyMaybeBlock cfg (Just block) = applyLedgerBlock cfg block
 --
 -- See also 'applyMaybeBlock'
 reapplyMaybeBlock :: UpdateLedger blk
-                  => LedgerConfig blk
+                  => FullBlockConfig (LedgerState blk) blk
                   -> Maybe blk
                   -> TickedLedgerState blk
                   -> LedgerState blk

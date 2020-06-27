@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -23,6 +24,9 @@ module Ouroboros.Consensus.Config (
     -- * Block config
   , FullBlockConfig(..)
   , castFullBlockConfig
+  , mapLedgerCfg
+    -- * Re-exports
+  , module Ouroboros.Consensus.Config.SecurityParam
   ) where
 
 import           Data.Coerce
@@ -31,6 +35,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -139,6 +144,10 @@ instance ( NoUnexpectedThunks (LedgerCfg l)
          , NoUnexpectedThunks (BlockConfig blk)
          , NoUnexpectedThunks (CodecConfig blk)
          ) => NoUnexpectedThunks (FullBlockConfig l blk)
+deriving instance ( Show (LedgerCfg l)
+                  , Show (BlockConfig blk)
+                  , Show (CodecConfig blk)
+                  ) => Show (FullBlockConfig l blk)
 
 castFullBlockConfig ::
      ( LedgerCfg l ~ LedgerCfg l'
@@ -150,4 +159,12 @@ castFullBlockConfig FullBlockConfig{..} = FullBlockConfig{
       blockConfigLedger = blockConfigLedger
     , blockConfigBlock  = coerce blockConfigBlock
     , blockConfigCodec  = coerce blockConfigCodec
+    }
+
+mapLedgerCfg :: (LedgerCfg l -> LedgerCfg l')
+             -> FullBlockConfig l blk -> FullBlockConfig l' blk
+mapLedgerCfg f FullBlockConfig{..} = FullBlockConfig {
+      blockConfigLedger = f blockConfigLedger
+    , blockConfigBlock  = blockConfigBlock
+    , blockConfigCodec  = blockConfigCodec
     }

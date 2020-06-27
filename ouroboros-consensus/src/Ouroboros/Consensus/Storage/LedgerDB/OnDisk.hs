@@ -46,6 +46,7 @@ import           GHC.Stack
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
@@ -162,7 +163,7 @@ initLedgerDB :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
              -> LedgerDbParams
-             -> LedgerCfg l
+             -> FullBlockConfig l b
              -> m l -- ^ Genesis ledger state
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r, Word64)
@@ -233,7 +234,7 @@ initFromSnapshot :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
                  -> LedgerDbParams
-                 -> LedgerCfg l
+                 -> FullBlockConfig l b
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
@@ -247,7 +248,7 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b. (Monad m, ApplyBlock l b, HasCallStack)
                  => Tracer m (TraceReplayEvent r ())
-                 -> LedgerCfg l
+                 -> FullBlockConfig l b
                  -> StreamAPI m r b
                  -> LedgerDB l r
                  -> ExceptT (InitFailure r) m (LedgerDB l r, Word64)

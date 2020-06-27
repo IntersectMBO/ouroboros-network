@@ -40,6 +40,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 
@@ -57,7 +58,8 @@ class ( IsLedger l
   -- This is passed the ledger state ticked with the slot of the given block,
   -- so 'applyChainTick' has already been called.
   applyLedgerBlock :: HasCallStack
-                   => LedgerCfg l -> blk -> Ticked l -> Except (LedgerErr l) l
+                   => FullBlockConfig l blk
+                   -> blk -> Ticked l -> Except (LedgerErr l) l
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -69,7 +71,7 @@ class ( IsLedger l
   -- the provided ledger state, the ledger layer should not perform /any/
   -- validation checks.
   reapplyLedgerBlock :: HasCallStack
-                     => LedgerCfg l -> blk -> Ticked l -> l
+                     => FullBlockConfig l blk -> blk -> Ticked l -> l
 
 -- | Interaction with the ledger layer
 class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
@@ -79,21 +81,23 @@ class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
 -------------------------------------------------------------------------------}
 
 tickThenApply :: ApplyBlock l blk
-              => LedgerCfg l -> blk -> l -> Except (LedgerErr l) l
+              => FullBlockConfig l blk -> blk -> l -> Except (LedgerErr l) l
 tickThenApply cfg blk =
       applyLedgerBlock cfg blk
-    . applyChainTick   cfg (blockSlot blk)
+    . applyChainTick (blockConfigLedger cfg) (blockSlot blk)
 
-tickThenReapply :: ApplyBlock l blk  => LedgerCfg l -> blk -> l -> l
+tickThenReapply :: ApplyBlock l blk
+                => FullBlockConfig l blk -> blk -> l -> l
 tickThenReapply cfg blk =
       reapplyLedgerBlock cfg blk
-    . applyChainTick     cfg (blockSlot blk)
+    . applyChainTick (blockConfigLedger cfg) (blockSlot blk)
 
 foldLedger :: ApplyBlock l blk
-           => LedgerCfg l -> [blk] -> l -> Except (LedgerErr l) l
+           => FullBlockConfig l blk -> [blk] -> l -> Except (LedgerErr l) l
 foldLedger = repeatedlyM . tickThenApply
 
-refoldLedger :: ApplyBlock l blk => LedgerCfg l -> [blk] -> l -> l
+refoldLedger :: ApplyBlock l blk
+             => FullBlockConfig l blk -> [blk] -> l -> l
 refoldLedger = repeatedly . tickThenReapply
 
 {-------------------------------------------------------------------------------

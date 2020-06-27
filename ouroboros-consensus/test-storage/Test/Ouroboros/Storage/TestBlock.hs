@@ -92,7 +92,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

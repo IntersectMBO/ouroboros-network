@@ -44,7 +44,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)

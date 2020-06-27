@@ -28,6 +28,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , completeLedgerConfig''
   , completeConsensusConfig'
   , completeConsensusConfig''
+  , distribFullBlockConfig
   , distribTopLevelConfig
     -- ** Convenience re-exports
   , EpochInfo
@@ -43,7 +44,6 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -201,6 +201,28 @@ completeConsensusConfig'' ei =
       WrapConsensusConfig
     . completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
     . unwrapPartialConsensusConfig
+
+distribFullBlockConfig :: CanHardFork xs
+                       => EpochInfo Identity
+                       -> FullBlockConfig (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+                       -> NP WrapFullBlockConfig xs
+distribFullBlockConfig ei cfg =
+    hcpure proxySingle
+      (fn_3 (\cfgLedger cfgBlock cfgCodec -> WrapFullBlockConfig $
+           FullBlockConfig {
+               blockConfigLedger = completeLedgerConfig' ei cfgLedger
+             , blockConfigBlock  = cfgBlock
+             , blockConfigCodec  = cfgCodec
+             }))
+    `hap`
+      (getPerEraLedgerConfig $
+         hardForkLedgerConfigPerEra (blockConfigLedger cfg))
+    `hap`
+      (getPerEraBlockConfig $
+         hardForkBlockConfigPerEra (blockConfigBlock cfg))
+    `hap`
+      (getPerEraCodecConfig $
+         hardForkCodecConfigPerEra (blockConfigCodec cfg))
 
 distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity

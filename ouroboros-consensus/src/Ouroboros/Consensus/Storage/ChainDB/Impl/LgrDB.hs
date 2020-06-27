@@ -263,7 +263,7 @@ initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
         decodeExtLedgerState'
         (decodeRealPoint decode)
         lgrParams
-        lgrTopLevelConfig
+        (extLedgerCfgFromTopLevel lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
@@ -320,7 +320,7 @@ getPastState LgrDB{..} p = do
     db <- atomically $ readTVar varDB
     LedgerDB.defaultResolveBlocks resolveBlock $
       LedgerDB.ledgerDbPast
-        (lgrTopLevelConfig args)
+        (extLedgerCfgFromTopLevel (lgrTopLevelConfig args))
         (pointToWithOriginRealPoint p)
         db
 
@@ -389,7 +389,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
-               (lgrTopLevelConfig args)
+               (extLedgerCfgFromTopLevel (lgrTopLevelConfig args))
                numRollbacks
                aps
                ledgerDB

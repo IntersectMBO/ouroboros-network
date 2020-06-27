@@ -56,7 +56,7 @@ import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -294,16 +294,19 @@ validationErrorImpossible = cantBeError . runExcept
 -------------------------------------------------------------------------------}
 
 applyByronBlock :: CC.ValidationMode
-                -> LedgerConfig ByronBlock
+                -> FullBlockConfig (LedgerState ByronBlock) ByronBlock
                 -> ByronBlock
                 -> TickedLedgerState ByronBlock
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyByronBlock validationMode
                 cfg
                 (ByronBlock blk _ (ByronHash blkHash))
-                (Ticked _slot ls) = case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
+                (Ticked _slot ls) =
+    case blk of
+      CC.ABOBBlock    blk' -> applyABlock validationMode lcfg blk' blkHash ls
+      CC.ABOBBoundary blk' -> applyABoundaryBlock        lcfg blk'         ls
+  where
+    lcfg = blockConfigLedger cfg
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config

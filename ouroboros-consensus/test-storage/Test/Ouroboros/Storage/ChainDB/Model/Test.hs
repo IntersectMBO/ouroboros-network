@@ -20,7 +20,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),

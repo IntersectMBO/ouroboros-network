@@ -61,9 +61,10 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Ledger.Abstract as Lgr
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
@@ -98,7 +99,7 @@ tests = testGroup "OnDisk" [
 data LedgerUnderTest = LedgerSimple
 
 class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
-      , Eq     (BlockVal  t)
+      , Eq     (BlockVal    t)
       , Ord    (BlockRef    t)
       , Show   (BlockVal    t)
       , Show   (BlockRef    t)
@@ -129,7 +130,7 @@ class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
   genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
 
 type LedgerErr t = Lgr.LedgerErr (LedgerSt t)
-type LedgerCfg t = Lgr.LedgerCfg (LedgerSt t)
+type LedgerCfg t = FullBlockConfig (LedgerSt t) (BlockVal t)
 
 refValPair :: LUT t => Proxy t -> BlockVal t -> (BlockRef t, BlockVal t)
 refValPair p b = (blockRef p b, b)
@@ -162,11 +163,18 @@ instance LUT 'LedgerSimple where
   type BlockRef 'LedgerSimple = TestBlock
 
   ledgerGenesis _   = testInitLedger
-  ledgerConfig _    = \lgrDbParams -> HardFork.defaultEraParams
-                                        (ledgerDbSecurityParam lgrDbParams)
-                                        (slotLengthFromSec 20)
   ledgerApply _ c b = runExcept . Lgr.tickThenApply c b
   blockRef      _ b = b
+
+  ledgerConfig _ dbParams = FullBlockConfig {
+        blockConfigLedger = HardFork.defaultEraParams k slotLength
+      , blockConfigBlock  = TestBlockConfig (NumCoreNodes 1) -- Ledger DB doesn't care
+      , blockConfigCodec  = TestBlockCodecConfig
+      }
+    where
+      k          = ledgerDbSecurityParam dbParams
+      slotLength = slotLengthFromSec 20
+
   genBlock      _ l = return $
                         case lastAppliedBlock l of
                           Nothing -> firstBlock 0
@@ -544,7 +552,7 @@ data StandaloneDB m t = DB {
     , dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
 
       -- | Ledger config
-    , dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
+    , dbLedgerCfg :: FullBlockConfig (LedgerSt t) (BlockVal t)
     }
 
 initStandaloneDB :: forall m t. (IOLike m, LUT t)
@@ -556,7 +564,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     let dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
-        dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
+        dbLedgerCfg :: LedgerCfg t
         dbLedgerCfg = ledgerConfig p dbLgrParams
 
     return DB{..}

@@ -332,7 +332,7 @@ getPastLedger cfg p m@Model{..} =
       [] | p /= GenesisPoint ->
         Nothing
       _otherwise ->
-        Just $ refoldLedger cfg prefix initLedger
+        Just $ refoldLedger (extLedgerCfgFromTopLevel cfg) prefix initLedger
   where
     prefix :: [blk]
     prefix = reverse
@@ -679,7 +679,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     go ledger validPrefix = \case
       -- Return 'mbFinal' if it contains an "earlier" result
       []    -> ValidatedChain validPrefix ledger invalid
-      b:bs' -> case runExcept (tickThenApply cfg b ledger) of
+      b:bs' -> case runExcept (tickThenApply (extLedgerCfgFromTopLevel cfg) b ledger) of
         -- Invalid block according to the ledger
         Left e
           -> ValidatedChain
@@ -748,7 +748,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       -> InvalidBlocks blk
     findInvalidBlockInTheFuture ledger = \case
       []    -> Map.empty
-      b:bs' -> case runExcept (tickThenApply cfg b ledger) of
+      b:bs' -> case runExcept (tickThenApply (extLedgerCfgFromTopLevel cfg) b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
         Right ledger'
           | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)

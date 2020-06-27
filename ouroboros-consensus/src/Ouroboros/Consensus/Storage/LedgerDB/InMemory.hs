@@ -83,7 +83,7 @@ import           GHC.Stack (HasCallStack)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
@@ -441,7 +441,7 @@ apRef (Weaken     ap)  = apRef ap
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
 applyBlock :: forall m c l r b. (ApplyBlock l b, Monad m, c)
-           => LedgerCfg l
+           => FullBlockConfig l b
            -> Ap m l r b c
            -> LedgerDB l r -> m l
 applyBlock cfg ap db = case ap of
@@ -470,7 +470,7 @@ applyBlock cfg ap db = case ap of
 -- This is not defined in terms of 'applyBlock' because we don't need the
 -- full ledger DB here (because we never throw any errors).
 reapplyRef :: forall m l b r. (ResolvesBlocks r b m, ApplyBlock l b)
-           => LedgerCfg l -> r -> l -> m l
+           => FullBlockConfig l b -> r -> l -> m l
 reapplyRef cfg r l = (flip (tickThenReapply cfg) l) <$> resolveBlock r
 
 {-------------------------------------------------------------------------------
@@ -626,7 +626,7 @@ pushLedgerState current' ref db@LedgerDB{..}  = prune $ db {
 -- associated ledger state, compute the list of blocks that should be applied
 -- on top of that ledger state, then reapply those blocks from old to new.
 ledgerAfter :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-            => LedgerCfg l
+            => FullBlockConfig l b
             -> ChainSummary l r
             -> StrictSeq (Checkpoint l r)
             -> m l
@@ -647,7 +647,7 @@ ledgerAfter cfg anchor blocks' =
 
 -- | Reconstruct ledger DB from a list of checkpoints
 reconstructFrom :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-                => LedgerCfg l
+                => FullBlockConfig l b
                 -> LedgerDbParams
                 -> ChainSummary l r
                 -> StrictSeq (Checkpoint l r)
@@ -665,7 +665,7 @@ reconstructFrom cfg params anchor blocks =
 
 -- | Generalization of rollback using a function on the checkpoints
 rollbackTo :: (ApplyBlock l b, ResolvesBlocks r b m)
-           => LedgerCfg l
+           => FullBlockConfig l b
            -> (   ChainSummary l r
                -> StrictSeq (Checkpoint l r)
                -> Maybe (StrictSeq (Checkpoint l r))
@@ -681,7 +681,7 @@ rollbackTo cfg f (LedgerDB _current blocks anchor params) =
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
 rollback :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-         => LedgerCfg l
+         => FullBlockConfig l b
          -> Word64
          -> LedgerDB l r
          -> m (Maybe (LedgerDB l r))
@@ -702,7 +702,7 @@ rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
 --
 -- This may have to re-apply blocks, and hence read from disk.
 ledgerDbPast :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m, Eq r)
-             => LedgerCfg l
+             => FullBlockConfig l b
              -> WithOrigin r
              -> LedgerDB l r
              -> m (Maybe l)
@@ -738,7 +738,7 @@ data ExceededRollback = ExceededRollback {
     }
 
 ledgerDbPush :: forall m c l r b. (ApplyBlock l b, Monad m, c)
-             => LedgerCfg l
+             => FullBlockConfig l b
              -> Ap m l r b c -> LedgerDB l r -> m (LedgerDB l r)
 ledgerDbPush cfg ap db =
     (\current' -> pushLedgerState current' (apRef ap) db) <$>
@@ -746,13 +746,13 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
-                 => LedgerCfg l
+                 => FullBlockConfig l b
                  -> [Ap m l r b c] -> LedgerDB l r -> m (LedgerDB l r)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l b, ResolvesBlocks r b m, c)
-               => LedgerCfg l
+               => FullBlockConfig l b
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l r b c]  -- ^ New blocks to apply
                -> LedgerDB l r
@@ -795,11 +795,11 @@ instance ( IsLedger l
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
   applyLedgerBlock cfg blk (Ticked slot db) = do
       fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
-        applyLedgerBlock cfg blk $
+        applyLedgerBlock (castFullBlockConfig cfg) blk $
           Ticked slot (ledgerDbCurrent db)
   reapplyLedgerBlock cfg blk (Ticked slot db) =
       (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
-        reapplyLedgerBlock cfg blk $
+        reapplyLedgerBlock (castFullBlockConfig cfg) blk $
           Ticked slot (ledgerDbCurrent db)
 
 {-------------------------------------------------------------------------------
@@ -814,15 +814,15 @@ triviallyResolve :: forall b a. Proxy b
 triviallyResolve _ = runIdentity . defaultResolveBlocks return
 
 ledgerDbPush' :: ApplyBlock l b
-              => LedgerCfg l -> b -> LedgerDB l b -> LedgerDB l b
+              => FullBlockConfig l b -> b -> LedgerDB l b -> LedgerDB l b
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: ApplyBlock l b
-                  => LedgerCfg l -> [b] -> LedgerDB l b -> LedgerDB l b
+                  => FullBlockConfig l b -> [b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l b. ApplyBlock l b
-                => LedgerCfg l
+                => FullBlockConfig l b
                 -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs db =
     case triviallyResolve (Proxy @b) $
@@ -831,7 +831,7 @@ ledgerDbSwitch' cfg n bs db =
       Right db'                -> Just db'
 
 ledgerDbPast' :: forall l b. (ApplyBlock l b, Eq b)
-              => LedgerCfg l -> WithOrigin b -> LedgerDB l b -> Maybe l
+              => FullBlockConfig l b -> WithOrigin b -> LedgerDB l b -> Maybe l
 ledgerDbPast' cfg tip = triviallyResolve (Proxy @b) . ledgerDbPast cfg tip
 
 {-------------------------------------------------------------------------------
