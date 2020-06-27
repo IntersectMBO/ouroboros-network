@@ -42,8 +42,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version (DictVersion,
                      Versions, foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket
 
-import           Ouroboros.Consensus.Block (getCodecConfig)
-import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
+import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock,
+                     configCodec)
 import           Ouroboros.Consensus.Config.SupportsNode (getNetworkMagic)
 import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
                      cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
@@ -110,4 +110,4 @@ versionedProtocols blkProxy topLevelConfig p
       versionedNodeToClientProtocols
         (nodeToClientProtocolVersion blkProxy v)
         (NodeToClientVersionData { networkMagic = getNetworkMagic blockConfig })
-        (p v $ clientCodecs (getCodecConfig blockConfig) v)
+        (p v $ clientCodecs (configCodec topLevelConfig) v)

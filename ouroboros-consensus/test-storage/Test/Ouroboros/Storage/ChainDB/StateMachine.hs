@@ -268,7 +268,6 @@ type TestConstraints blk =
   , Show                     (Header  blk)
   , ConvertRawHash                    blk
   , HasHardForkHistory                blk
-  , HasCodecConfig                    blk
   , SerialiseDiskConstraints          blk
   )
 

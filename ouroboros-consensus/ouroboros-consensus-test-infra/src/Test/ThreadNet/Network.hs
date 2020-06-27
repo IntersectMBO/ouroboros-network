@@ -917,7 +917,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       where
         binaryProtocolCodecs =
           NTN.defaultCodecs
-            (getCodecConfig (configBlock cfg))
+            (configCodec cfg)
             (mostRecentSupportedNodeToNode (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'

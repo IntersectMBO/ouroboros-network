@@ -43,6 +43,7 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
           , configIndep  = ()
           , configLedger = SimpleLedgerConfig () eraParams
           , configBlock  = SimpleBlockConfig securityParam
+          , configCodec  = SimpleCodecConfig securityParam
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

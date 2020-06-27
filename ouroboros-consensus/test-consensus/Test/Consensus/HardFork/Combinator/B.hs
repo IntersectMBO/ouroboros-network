@@ -24,6 +24,7 @@ module Test.Consensus.HardFork.Combinator.B (
   , safeZoneB
     -- * Type family instances
   , BlockConfig(..)
+  , CodecConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -141,11 +142,8 @@ data instance BlockConfig BlockB = BCfgB
 type instance BlockProtocol BlockB = ProtocolB
 type instance HeaderHash    BlockB = Strict.ByteString
 
-instance HasCodecConfig BlockB where
-  data CodecConfig BlockB = CCfgB
-    deriving (Generic, NoUnexpectedThunks)
-
-  getCodecConfig     _ = CCfgB
+data instance CodecConfig BlockB = CCfgB
+  deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockB where
   getSystemStart     _ = SystemStart dawnOfTime

@@ -386,12 +386,12 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               :* Nil
               )
           }
-      , configIndep     = PerEraChainIndepStateConfig
+      , configIndep = PerEraChainIndepStateConfig
               (  WrapChainIndepStateConfig ()
               :* WrapChainIndepStateConfig tpraosParams
               :* Nil
               )
-      , configLedger    = HardForkLedgerConfig {
+      , configLedger = HardForkLedgerConfig {
             hardForkLedgerConfigK      = k
           , hardForkLedgerConfigShape  = shape
           , hardForkLedgerConfigPerEra = PerEraLedgerConfig
@@ -400,7 +400,14 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               :* Nil
               )
           }
-      , configBlock     = CardanoBlockConfig blockConfigByron blockConfigShelley
+      , configBlock =
+          CardanoBlockConfig
+            blockConfigByron
+            blockConfigShelley
+      , configCodec =
+          CardanoCodecConfig
+            (Byron.mkByronCodecConfig genesisByron)
+            Shelley.ShelleyCodecConfig
       }
 
     creds :: Maybe
@@ -467,6 +474,7 @@ projByronTopLevelConfig cfg = byronCfg
         configBlock     = CardanoBlockConfig     byronBlockCfg     _
       , configConsensus = CardanoConsensusConfig byronConsensusCfg _
       , configLedger    = CardanoLedgerConfig    byronLedgerCfg    _
+      , configCodec     = CardanoCodecConfig     byronCodecCfg     _
       } = cfg
 
     byronCfg :: TopLevelConfig ByronBlock
@@ -475,4 +483,5 @@ projByronTopLevelConfig cfg = byronCfg
       , configConsensus = byronConsensusCfg
       , configIndep     = ()
       , configLedger    = byronLedgerConfig byronLedgerCfg
+      , configCodec     = byronCodecCfg
       }

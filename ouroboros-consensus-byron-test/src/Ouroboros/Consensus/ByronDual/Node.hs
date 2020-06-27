@@ -80,6 +80,9 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                 dualBlockConfigMain = concreteConfig
               , dualBlockConfigAux  = ByronSpecBlockConfig
               }
+          , configCodec = DualCodecConfig {
+                dualCodecConfigMain = mkByronCodecConfig concreteGenesis
+              }
           }
       , pInfoInitLedger = ExtLedgerState {
              ledgerState = DualLedgerState {

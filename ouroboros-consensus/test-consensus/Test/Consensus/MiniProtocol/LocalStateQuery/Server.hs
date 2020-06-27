@@ -224,6 +224,7 @@ testCfg securityParam = TopLevelConfig {
     , configIndep  = ()
     , configLedger = eraParams
     , configBlock  = TestBlockConfig numCoreNodes
+    , configCodec  = TestBlockCodecConfig
     }
   where
     slotLength :: SlotLength

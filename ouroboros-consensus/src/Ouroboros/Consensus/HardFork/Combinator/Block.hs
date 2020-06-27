@@ -18,7 +18,6 @@
 module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
     Header(..)
-  , CodecConfig(..)
   , NestedCtxt_(..)
   ) where
 
@@ -115,23 +114,6 @@ instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
           case headerPrevHash hdr of
             GenesisHash -> GenesisHash
             BlockHash h -> BlockHash (OneEraHash $ toRawHash (Proxy @blk) h)
-
-{-------------------------------------------------------------------------------
-  Codec config
--------------------------------------------------------------------------------}
-
-instance CanHardFork xs => HasCodecConfig (HardForkBlock xs) where
-  newtype CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
-        hardForkCodecConfigPerEra :: PerEraCodecConfig xs
-      }
-    deriving (NoUnexpectedThunks)
-
-  getCodecConfig =
-        HardForkCodecConfig
-      . PerEraCodecConfig
-      . hcmap (Proxy @SingleEraBlock) getCodecConfig
-      . getPerEraBlockConfig
-      . hardForkBlockConfigPerEra
 
 {-------------------------------------------------------------------------------
   NestedContent

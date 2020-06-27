@@ -77,7 +77,6 @@ withDB
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , HasCodecConfig blk
      , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk
@@ -91,7 +90,6 @@ openDB
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , HasCodecConfig blk
      , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk
@@ -104,7 +102,6 @@ openDBInternal
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , HasCodecConfig blk
      , SerialiseDiskConstraints blk
      )
   => ChainDbArgs m blk

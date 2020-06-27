@@ -87,7 +87,6 @@ newReader
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
@@ -127,7 +126,6 @@ makeNewReader
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
@@ -208,7 +206,6 @@ instructionHelper
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
@@ -280,7 +277,7 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
     codecConfig :: CodecConfig blk
-    codecConfig = getCodecConfig (configBlock cdbTopLevelConfig)
+    codecConfig = configCodec cdbTopLevelConfig
 
     headerUpdateToBlockComponentUpdate
       :: f (ChainUpdate blk (Header blk)) -> m (f (ChainUpdate blk b))
