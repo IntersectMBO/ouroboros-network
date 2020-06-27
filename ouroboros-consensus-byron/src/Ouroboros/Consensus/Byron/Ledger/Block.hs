@@ -199,17 +199,28 @@ instance HasHeader (Header ByronBlock) where
   getHeaderFields hdr = HeaderFields {
         headerFieldHash    = byronHeaderHash hdr
       , headerFieldSlot    = byronHeaderSlotNo hdr
-      , headerFieldBlockNo = fromByronBlockNo . CC.abobHdrChainDifficulty $ byronHeaderRaw hdr
+      , headerFieldBlockNo = fromByronBlockNo $
+                               CC.abobHdrChainDifficulty (byronHeaderRaw hdr)
       }
 
 instance GetPrevHash ByronBlock where
-  headerPrevHash _cfg = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
+  headerPrevHash cfg =
+        fromByronPrevHash cfg
+      . CC.abobHdrPrevHash
+      . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure
 
-fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash ByronBlock
-fromByronPrevHash' = fromByronPrevHash ByronHash
+-- | Translate from a raw Byron prev-hash to 'ChainHash'
+--
+-- This takes the 'CodecConfig' so that we can "translate away" EBBs (#2156).
+fromByronPrevHash :: CodecConfig ByronBlock
+                  -> Maybe CC.HeaderHash
+                  -> ChainHash ByronBlock
+fromByronPrevHash _cfg = \case
+    Nothing -> GenesisHash
+    Just h  -> BlockHash (ByronHash h)
 
 {-------------------------------------------------------------------------------
   Auxiliary functions
