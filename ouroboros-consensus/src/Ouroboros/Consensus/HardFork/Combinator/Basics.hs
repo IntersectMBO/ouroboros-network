@@ -21,6 +21,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Config
   , ConsensusConfig(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , HardForkLedgerConfig(..)
     -- ** Functions on config
   , completeLedgerConfig'
@@ -48,6 +49,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -135,6 +137,15 @@ newtype instance BlockConfig (HardForkBlock xs) = HardForkBlockConfig {
   deriving newtype (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
+
+newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
+      hardForkCodecConfigPerEra :: PerEraCodecConfig xs
+    }
+  deriving newtype (NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
   Ledger config
 -------------------------------------------------------------------------------}
 
@@ -197,12 +208,13 @@ distribTopLevelConfig :: CanHardFork xs
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei TopLevelConfig{..} =
     hcpure proxySingle
-      (fn_4 (\cfgConsensus cfgIndep cfgLedger cfgBlock ->
+      (fn_5 (\cfgConsensus cfgIndep cfgLedger cfgBlock cfgCodec ->
            TopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
              (unwrapChainIndepStateConfig cfgIndep)
              (completeLedgerConfig'    ei cfgLedger)
-             cfgBlock))
+             cfgBlock
+             cfgCodec))
     `hap`
       (getPerEraConsensusConfig $
          hardForkConsensusConfigPerEra configConsensus)
@@ -214,3 +226,6 @@ distribTopLevelConfig ei TopLevelConfig{..} =
     `hap`
       (getPerEraBlockConfig $
          hardForkBlockConfigPerEra configBlock)
+    `hap`
+      (getPerEraCodecConfig $
+         hardForkCodecConfigPerEra configCodec)

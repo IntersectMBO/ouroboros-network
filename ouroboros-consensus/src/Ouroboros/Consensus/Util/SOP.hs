@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Util.SOP (
   , lenses_NP
   , npToSListI
   , allComposeShowK
+  , fn_5
     -- * Type-level non-empty lists
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
@@ -137,6 +138,15 @@ npToSListI = sListToSListI . npToSList
 allComposeShowK :: (SListI xs, Show a)
                 => Proxy xs -> Proxy a -> Dict (All (Compose Show (K a))) xs
 allComposeShowK _ _ = all_NP $ hpure Dict
+
+fn_5 :: (f0 a -> f1 a -> f2 a -> f3 a -> f4 a -> f5 a)
+     -> (f0 -.-> f1 -.-> f2 -.-> f3 -.-> f4 -.-> f5) a
+fn_5 f = Fn $ \x0 ->
+         Fn $ \x1 ->
+         Fn $ \x2 ->
+         Fn $ \x3 ->
+         Fn $ \x4 ->
+         f x0 x1 x2 x3 x4
 
 {-------------------------------------------------------------------------------
   Type-level non-empty lists

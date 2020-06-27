@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Block.Abstract (
     BlockProtocol
     -- * Configuration
   , BlockConfig
-  , HasCodecConfig(..)
+  , CodecConfig
     -- * Previous hash
   , GetPrevHash(..)
   , blockPrevHash
@@ -66,7 +66,6 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin), fromWithOrigin,
@@ -96,14 +95,11 @@ type family BlockProtocol blk :: *
 -- | Static configuration required to work with this type of blocks
 data family BlockConfig blk :: *
 
-class NoUnexpectedThunks (CodecConfig blk) => HasCodecConfig blk where
-  -- | Static configuration required for serialisation and deserialisation of
-  -- types pertaining to this type of block.
-  --
-  -- Data family instead of type family to get better type inference.
-  data family CodecConfig blk :: *
-
-  getCodecConfig :: BlockConfig blk -> CodecConfig blk
+-- | Static configuration required for serialisation and deserialisation of
+-- types pertaining to this type of block.
+--
+-- Data family instead of type family to get better type inference.
+data family CodecConfig blk :: *
 
 {-------------------------------------------------------------------------------
   Get hash of previous block

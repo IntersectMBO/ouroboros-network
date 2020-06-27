@@ -5,8 +5,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
-  , CodecConfig (..)
   , mkShelleyBlockConfig
+  , CodecConfig (..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -39,13 +39,6 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
   deriving stock (Show, Generic)
   deriving anyclass NoUnexpectedThunks
 
-instance HasCodecConfig (ShelleyBlock c) where
-  -- | No particular codec configuration is needed for Shelley
-  data CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
-    deriving (Generic, NoUnexpectedThunks)
-
-  getCodecConfig = const ShelleyCodecConfig
-
 mkShelleyBlockConfig :: SL.ProtVer -> SL.ShelleyGenesis c -> BlockConfig (ShelleyBlock c)
 mkShelleyBlockConfig protVer genesis = ShelleyConfig {
       shelleyProtocolVersion = protVer
@@ -53,3 +46,11 @@ mkShelleyBlockConfig protVer genesis = ShelleyConfig {
     , shelleyNetworkMagic    = NetworkMagic $ SL.sgNetworkMagic    genesis
     , shelleyProtocolMagicId =                SL.sgProtocolMagicId genesis
     }
+
+{-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
+
+-- | No particular codec configuration is needed for Shelley
+data instance CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+  deriving (Generic, NoUnexpectedThunks)

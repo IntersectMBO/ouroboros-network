@@ -241,10 +241,8 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance HasCodecConfig TestBlock where
-  data CodecConfig TestBlock = TestBlockCodecConfig
-    deriving (Generic, NoUnexpectedThunks)
-  getCodecConfig = const TestBlockCodecConfig
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -692,6 +690,7 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
             testBlockEBBsAllowed  = chunkCanContainEBB
           , testBlockNumCoreNodes = numCoreNodes
           }
+      , configCodec  = TestBlockCodecConfig
       }
   where
     slotLength :: SlotLength

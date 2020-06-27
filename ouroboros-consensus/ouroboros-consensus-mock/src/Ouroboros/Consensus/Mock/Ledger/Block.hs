@@ -253,7 +253,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
 
 {-------------------------------------------------------------------------------
-  Config
+  Block config
 -------------------------------------------------------------------------------}
 
 newtype instance BlockConfig (SimpleBlock c ext) =
@@ -261,13 +261,17 @@ newtype instance BlockConfig (SimpleBlock c ext) =
   deriving stock   (Generic)
   deriving newtype (NoUnexpectedThunks)
 
-instance HasCodecConfig (SimpleBlock c ext) where
+{-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
 
-  -- | Only the 'SecurityParam' is required for simple blocks
-  newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
-    deriving newtype (NoUnexpectedThunks)
+-- | Only the 'SecurityParam' is required for simple blocks
+newtype instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+  deriving newtype (NoUnexpectedThunks)
 
-  getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
+{-------------------------------------------------------------------------------
+  Hard fork history
+-------------------------------------------------------------------------------}
 
 instance HasHardForkHistory (SimpleBlock c ext) where
   type HardForkIndices (SimpleBlock c ext) = '[SimpleBlock c ext]

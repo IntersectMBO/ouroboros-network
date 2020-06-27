@@ -124,13 +124,10 @@ newtype instance BlockConfig (DegenFork b) = DBCfg {
     }
   deriving (NoUnexpectedThunks)
 
-instance SingleEraBlock b => HasCodecConfig (DegenFork b) where
-  newtype CodecConfig (DegenFork b) = DCCfg {
-        unDCCfg :: CodecConfig (HardForkBlock '[b])
-      }
-    deriving (NoUnexpectedThunks)
-
-  getCodecConfig = DCCfg . getCodecConfig . unDBCfg
+newtype instance CodecConfig (DegenFork b) = DCCfg {
+      unDCCfg :: CodecConfig (HardForkBlock '[b])
+    }
+  deriving (NoUnexpectedThunks)
 
 newtype instance ConsensusConfig (DegenForkProtocol b) = DConCfg {
       unDConCfg :: ConsensusConfig (HardForkProtocol '[b])

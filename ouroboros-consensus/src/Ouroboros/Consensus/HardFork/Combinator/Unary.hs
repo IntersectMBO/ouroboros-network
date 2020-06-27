@@ -262,6 +262,7 @@ instance Isomorphic TopLevelConfig where
       , configIndep      = auxIndep     configIndep
       , configLedger     = auxLedger    configLedger
       , configBlock      = project      configBlock
+      , configCodec      = project      configCodec
       }
     where
       ei :: EpochInfo Identity
@@ -300,6 +301,7 @@ instance Isomorphic TopLevelConfig where
       , configIndep     = auxIndep     configIndep
       , configLedger    = auxLedger    configLedger
       , configBlock     = inject       configBlock
+      , configCodec     = inject       configCodec
       }
     where
       eraParams = getEraParams tlc

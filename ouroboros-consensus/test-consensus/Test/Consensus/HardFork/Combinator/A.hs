@@ -28,6 +28,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , TxPayloadA(..)
     -- * Type family instances
   , BlockConfig(..)
+  , CodecConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -162,11 +163,8 @@ data instance BlockConfig BlockA = BCfgA
 type instance BlockProtocol BlockA = ProtocolA
 type instance HeaderHash    BlockA = Strict.ByteString
 
-instance HasCodecConfig BlockA where
-  data CodecConfig BlockA = CCfgA
-    deriving (Generic, NoUnexpectedThunks)
-
-  getCodecConfig     _ = CCfgA
+data instance CodecConfig BlockA = CCfgA
+  deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockA where
   getSystemStart     _ = SystemStart dawnOfTime

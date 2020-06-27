@@ -151,6 +151,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       , configIndep     = tpraosParams
       , configLedger    = ledgerConfig
       , configBlock     = blockConfig
+      , configCodec     = ShelleyCodecConfig
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))

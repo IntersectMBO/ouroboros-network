@@ -399,6 +399,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       , configIndep  = ()
       , configLedger = eraParams
       , configBlock  = TestBlockConfig numCoreNodes
+      , configCodec  = TestBlockCodecConfig
       }
 
     eraParams :: HardFork.EraParams

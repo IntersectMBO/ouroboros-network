@@ -282,6 +282,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* blockConfigB nid
                 :* Nil
             }
+        , configCodec = HardForkCodecConfig {
+              hardForkCodecConfigPerEra = PerEraCodecConfig $
+                   CCfgA
+                :* CCfgB
+                :* Nil
+            }
         }
 
     consensusConfigA :: CoreNodeId -> ConsensusConfig ProtocolA

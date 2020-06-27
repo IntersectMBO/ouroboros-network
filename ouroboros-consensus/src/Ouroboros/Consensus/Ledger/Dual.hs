@@ -161,25 +161,24 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
     , configIndep     =                      configIndep
     , configLedger    = dualLedgerConfigMain configLedger
     , configBlock     = dualBlockConfigMain  configBlock
+    , configCodec     = dualCodecConfigMain  configCodec
     }
-
-instance HasCodecConfig m => HasCodecConfig (DualBlock m a) where
-  newtype CodecConfig (DualBlock m a) = DualCodecConfig {
-        dualCodecConfigMain :: CodecConfig m
-     }
-
-  getCodecConfig DualBlockConfig{..} = DualCodecConfig {
-        dualCodecConfigMain = getCodecConfig dualBlockConfigMain
-      }
-
-deriving newtype instance HasCodecConfig m
-                       => NoUnexpectedThunks (CodecConfig (DualBlock m a))
 
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain
   getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
   getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
 
+{-------------------------------------------------------------------------------
+  CodecConfig
+-------------------------------------------------------------------------------}
+
+newtype instance CodecConfig (DualBlock m a) = DualCodecConfig {
+      dualCodecConfigMain :: CodecConfig m
+    }
+
+deriving newtype instance NoUnexpectedThunks (CodecConfig m)
+                       => NoUnexpectedThunks (CodecConfig (DualBlock m a))
 
 {-------------------------------------------------------------------------------
   Bridge two ledgers

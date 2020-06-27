@@ -32,7 +32,6 @@ class ( LedgerSupportsProtocol blk
       , HasPartialConsensusConfig (BlockProtocol blk)
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
-      , HasCodecConfig blk
       , ReconstructNestedCtxt Header blk
       , CommonProtocolParams blk
         -- Instances required to support testing

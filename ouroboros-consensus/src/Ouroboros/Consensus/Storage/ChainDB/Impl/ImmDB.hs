@@ -120,8 +120,8 @@ data ImmDB m blk = ImmDB {
     }
   deriving (Generic)
 
-deriving instance HasCodecConfig blk => NoUnexpectedThunks (ImmDB m blk)
-  -- use generic instance
+deriving instance NoUnexpectedThunks (CodecConfig blk)
+               => NoUnexpectedThunks (ImmDB m blk)
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmDB.
 class ( EncodeDisk blk blk

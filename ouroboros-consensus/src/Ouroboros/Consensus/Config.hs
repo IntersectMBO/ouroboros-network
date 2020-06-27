@@ -25,12 +25,14 @@ data TopLevelConfig blk = TopLevelConfig {
     , configIndep     :: !(ChainIndepStateConfig (BlockProtocol blk))
     , configLedger    :: !(LedgerConfig                         blk)
     , configBlock     :: !(BlockConfig                          blk)
+    , configCodec     :: !(CodecConfig                          blk)
     }
   deriving (Generic)
 
 instance ( ConsensusProtocol  (BlockProtocol blk)
          , UpdateLedger                      blk
          , NoUnexpectedThunks (BlockConfig   blk)
+         , NoUnexpectedThunks (CodecConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
@@ -44,6 +46,7 @@ castTopLevelConfig ::
        ~ ChainIndepStateConfig (BlockProtocol blk')
      , LedgerConfig blk ~ LedgerConfig blk'
      , Coercible (BlockConfig blk) (BlockConfig blk')
+     , Coercible (CodecConfig blk) (CodecConfig blk')
      )
   => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
@@ -51,4 +54,5 @@ castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
     , configIndep     = configIndep
     , configLedger    = configLedger
     , configBlock     = coerce configBlock
+    , configCodec     = coerce configCodec
     }

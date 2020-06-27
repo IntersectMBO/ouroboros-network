@@ -7,12 +7,15 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
+    -- * Block config
     BlockConfig(..)
-  , CodecConfig(..)
   , byronGenesisHash
   , byronProtocolMagicId
   , byronProtocolMagic
   , byronEpochSlots
+    -- * Codec config
+  , CodecConfig(..)
+  , mkByronCodecConfig
   ) where
 
 import           GHC.Generics (Generic)
@@ -29,6 +32,10 @@ import           Ouroboros.Consensus.Config.SecurityParam
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+
+{-------------------------------------------------------------------------------
+  Block config
+-------------------------------------------------------------------------------}
 
 -- | Extended configuration we need for Byron
 data instance BlockConfig ByronBlock = ByronConfig {
@@ -61,14 +68,18 @@ byronProtocolMagic = CC.Genesis.configProtocolMagic . byronGenesisConfig
 byronEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
 byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig
 
-instance HasCodecConfig ByronBlock where
-  data CodecConfig ByronBlock = ByronCodecConfig {
-        getByronEpochSlots    :: !CC.Slot.EpochSlots
-      , getByronSecurityParam :: !SecurityParam
-      }
-    deriving (Generic, NoUnexpectedThunks)
+{-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
 
-  getCodecConfig bcfg = ByronCodecConfig {
-      getByronEpochSlots    = byronEpochSlots bcfg
-    , getByronSecurityParam = genesisSecurityParam (byronGenesisConfig bcfg)
+data instance CodecConfig ByronBlock = ByronCodecConfig {
+      getByronEpochSlots    :: !CC.Slot.EpochSlots
+    , getByronSecurityParam :: !SecurityParam
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+mkByronCodecConfig :: CC.Genesis.Config -> CodecConfig ByronBlock
+mkByronCodecConfig cfg = ByronCodecConfig {
+      getByronEpochSlots    = CC.Genesis.configEpochSlots cfg
+    , getByronSecurityParam = genesisSecurityParam cfg
     }

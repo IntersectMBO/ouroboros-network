@@ -119,8 +119,8 @@ data VolDB m blk = VolDB {
     }
   deriving (Generic)
 
-deriving instance HasCodecConfig blk => NoUnexpectedThunks (VolDB m blk)
-  -- use generic instance
+deriving instance NoUnexpectedThunks (CodecConfig blk)
+               => NoUnexpectedThunks (VolDB m blk)
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the VolDB.
 class ( EncodeDisk blk blk

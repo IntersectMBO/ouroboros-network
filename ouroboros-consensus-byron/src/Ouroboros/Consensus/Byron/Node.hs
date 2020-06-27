@@ -125,6 +125,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
           , configIndep  = ()
           , configLedger = genesisConfig
           , configBlock  = byronConfig
+          , configCodec  = mkByronCodecConfig genesisConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing

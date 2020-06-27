@@ -27,6 +27,7 @@ module Test.Util.TestBlock (
   , TestBlockError(..)
   , Header(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -235,6 +236,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
+
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
 
@@ -369,6 +374,7 @@ singleNodeTestConfig = TopLevelConfig {
     , configIndep  = ()
     , configLedger = eraParams
     , configBlock  = TestBlockConfig numCoreNodes
+    , configCodec  = TestBlockCodecConfig
     }
   where
     slotLength :: SlotLength
