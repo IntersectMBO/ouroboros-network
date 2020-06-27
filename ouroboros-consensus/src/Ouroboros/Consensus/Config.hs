@@ -16,7 +16,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The top-level node configuration
@@ -30,7 +30,7 @@ data TopLevelConfig blk = TopLevelConfig {
   deriving (Generic)
 
 instance ( ConsensusProtocol  (BlockProtocol blk)
-         , UpdateLedger                      blk
+         , NoUnexpectedThunks (LedgerConfig  blk)
          , NoUnexpectedThunks (BlockConfig   blk)
          , NoUnexpectedThunks (CodecConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
