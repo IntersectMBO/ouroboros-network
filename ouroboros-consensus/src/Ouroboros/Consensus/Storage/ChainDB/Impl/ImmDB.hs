@@ -247,8 +247,12 @@ openDB ImmDbArgs {..} = do
       , parser      = parser
       , prefixLen   = reconstructPrefixLen (Proxy @(Header blk))
       }
-    parser = ImmDB.chunkFileParser immHasFS (decodeDisk immCodecConfig)
-      immGetBinaryBlockInfo immCheckIntegrity
+    parser = ImmDB.chunkFileParser
+               immCodecConfig
+               immHasFS
+               (decodeDisk immCodecConfig)
+               immGetBinaryBlockInfo
+               immCheckIntegrity
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m

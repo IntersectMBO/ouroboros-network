@@ -173,7 +173,7 @@ instance NoHardForks b => HasHeader (Header (DegenFork b)) where
       HeaderFields{..} = getHeaderFields hdr
 
 instance NoHardForks b => GetPrevHash (DegenFork b) where
-  headerPrevHash = castHash . headerPrevHash . unDHdr
+  headerPrevHash cfg = castHash . headerPrevHash (unDCCfg cfg) . unDHdr
 
 {-------------------------------------------------------------------------------
   Forward the 'ConsensusProtocol' instance

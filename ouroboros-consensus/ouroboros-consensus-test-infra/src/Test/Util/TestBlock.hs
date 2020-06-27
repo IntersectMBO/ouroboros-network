@@ -82,7 +82,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -199,7 +198,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash (TestHeader b) =
+  headerPrevHash _cfg (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
@@ -288,12 +287,14 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
+    | getPrevHash tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (getPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb)
+    where
+      getPrevHash = blockPrevHash TestBlockCodecConfig
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 

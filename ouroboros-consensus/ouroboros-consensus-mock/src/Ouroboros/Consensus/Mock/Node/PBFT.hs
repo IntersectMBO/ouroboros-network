@@ -38,9 +38,9 @@ protocolInfoMockPBFT params eraParams nid =
               , protocolConfigIndep = ()
               }
           , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = SimpleLedgerConfig ledgerView eraParams
-              , blockConfigBlock  = SimpleBlockConfig  (pbftSecurityParam params)
-              , blockConfigCodec  = SimpleCodecConfig  (pbftSecurityParam params)
+                blockConfigLedger = SimpleLedgerConfig ledgerView eraParams k
+              , blockConfigBlock  = SimpleBlockConfig k
+              , blockConfigCodec  = SimpleCodecConfig k
               }
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
@@ -51,6 +51,9 @@ protocolInfoMockPBFT params eraParams nid =
           )
       }
   where
+    k :: SecurityParam
+    k = pbftSecurityParam params
+
     canBeLeader :: PBftIsLeader PBftMockCrypto
     canBeLeader = PBftIsLeader {
           pbftCoreNodeId = nid

@@ -9,7 +9,6 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -26,14 +25,14 @@ protocolInfoBft :: Monad m
                 -> SecurityParam
                 -> HardFork.EraParams
                 -> ProtocolInfo m MockBftBlock
-protocolInfoBft numCoreNodes nid securityParam eraParams =
+protocolInfoBft numCoreNodes nid k eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = FullProtocolConfig {
                 protocolConfigConsensus = BftConfig {
                     bftParams   = BftParams {
                                       bftNumNodes      = numCoreNodes
-                                    , bftSecurityParam = securityParam
+                                    , bftSecurityParam = k
                                     }
                   , bftSignKey  = signKey nid
                   , bftVerKeys  = Map.fromList [
@@ -44,9 +43,9 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
               , protocolConfigIndep = ()
               }
           , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = SimpleLedgerConfig () eraParams
-              , blockConfigBlock  = SimpleBlockConfig securityParam
-              , blockConfigCodec  = SimpleCodecConfig securityParam
+                blockConfigLedger = SimpleLedgerConfig () eraParams k
+              , blockConfigBlock  = SimpleBlockConfig k
+              , blockConfigCodec  = SimpleCodecConfig k
               }
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)

@@ -56,23 +56,25 @@ deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 
 updateMockState :: (GetPrevHash blk, HasMockTxs blk)
-                => blk
+                => CodecConfig blk
+                -> blk
                 -> MockState blk
                 -> Except (MockError blk) (MockState blk)
-updateMockState blk st = do
+updateMockState cfg blk st = do
     let hdr = getHeader blk
-    st' <- updateMockTip hdr st
+    st' <- updateMockTip cfg hdr st
     updateMockUTxO (blockSlot hdr) blk st'
 
 updateMockTip :: GetPrevHash blk
-              => Header blk
+              => CodecConfig blk
+              -> Header blk
               -> MockState blk
               -> Except (MockError blk) (MockState blk)
-updateMockTip hdr (MockState u c t)
-    | headerPrevHash hdr == pointHash t
+updateMockTip cfg hdr (MockState u c t)
+    | headerPrevHash cfg hdr == pointHash t
     = return $ MockState u c (headerPoint hdr)
     | otherwise
-    = throwError $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
+    = throwError $ MockInvalidHash (headerPrevHash cfg hdr) (pointHash t)
 
 updateMockUTxO :: HasMockTxs a
                => SlotNo

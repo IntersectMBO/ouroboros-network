@@ -594,6 +594,7 @@ test cmds = do
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser'
+          TestBlockCodecConfig
           hasFS
           testBlockBinaryBlockInfo
           ((\blk bytes -> (takePrefix testPrefixLen bytes, blk)) <$> decode)

@@ -319,11 +319,13 @@ testInitLedger = genesisSimpleLedgerState $ mkAddrDist (NumCoreNodes 5)
 testLedgerConfig :: LedgerConfig TestBlock
 testLedgerConfig = SimpleLedgerConfig {
       simpleMockLedgerConfig = ()
-    , simpleLedgerEraParams  =
-        HardFork.defaultEraParams
-          (SecurityParam 4)
-          (slotLengthFromSec 20)
+    , simpleLedgerK          = k
+    , simpleLedgerEraParams  = HardFork.defaultEraParams
+                                 k
+                                 (slotLengthFromSec 20)
     }
+  where
+    k = SecurityParam 4
 
 data TestSetup = TestSetup
   { testLedgerState        :: LedgerState TestBlock

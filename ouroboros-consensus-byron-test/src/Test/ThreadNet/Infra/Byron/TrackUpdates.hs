@@ -41,7 +41,6 @@ import qualified Cardano.Crypto.DSIGN as Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))

@@ -53,9 +53,9 @@ protocolInfoPraosRule numCoreNodes
             , protocolConfigIndep = ()
             }
         , topLevelConfigBlock = FullBlockConfig {
-              blockConfigLedger = SimpleLedgerConfig () eraParams
-            , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
-            , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+              blockConfigLedger = SimpleLedgerConfig () eraParams k
+            , blockConfigBlock  = SimpleBlockConfig k
+            , blockConfigCodec  = SimpleCodecConfig k
             }
         }
     , pInfoInitLedger = ExtLedgerState
@@ -69,6 +69,9 @@ protocolInfoPraosRule numCoreNodes
     }
   where
     addrDist = mkAddrDist numCoreNodes
+
+    k :: SecurityParam
+    k = praosSecurityParam params
 
     verKeys :: Map CoreNodeId (VerKeyKES NeverKES, VerKeyVRF NeverVRF)
     verKeys = Map.fromList [ (nid', (NeverUsedVerKeyKES, NeverUsedVerKeyVRF))

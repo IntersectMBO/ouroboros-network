@@ -43,7 +43,6 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract

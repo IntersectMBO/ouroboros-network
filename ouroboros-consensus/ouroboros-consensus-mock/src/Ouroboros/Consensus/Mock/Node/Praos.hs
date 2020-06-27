@@ -47,9 +47,9 @@ protocolInfoPraos numCoreNodes nid params eraParams =
               , protocolConfigIndep = ()
               }
           , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = SimpleLedgerConfig addrDist eraParams
-              , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
-              , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+                blockConfigLedger = SimpleLedgerConfig addrDist eraParams k
+              , blockConfigBlock  = SimpleBlockConfig k
+              , blockConfigCodec  = SimpleCodecConfig k
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -68,6 +68,9 @@ protocolInfoPraos numCoreNodes nid params eraParams =
           )
       }
   where
+    k :: SecurityParam
+    k = praosSecurityParam params
+
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
     signKeyVRF (CoreNodeId n) = SignKeyMockVRF n
 

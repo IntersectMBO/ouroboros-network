@@ -203,7 +203,7 @@ instance HasHeader (Header ByronBlock) where
       }
 
 instance GetPrevHash ByronBlock where
-  headerPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
+  headerPrevHash _cfg = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure

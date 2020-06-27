@@ -23,6 +23,8 @@ module Ouroboros.Consensus.Config (
     -- * Block config
   , FullBlockConfig(..)
   , castFullBlockConfig
+    -- * Re-exports
+  , module Ouroboros.Consensus.Config.SecurityParam
   ) where
 
 import           Data.Coerce
@@ -31,6 +33,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Protocol.Abstract
 
