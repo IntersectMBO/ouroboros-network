@@ -82,6 +82,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               }
           , configCodec = DualCodecConfig {
                 dualCodecConfigMain = mkByronCodecConfig concreteGenesis
+              , dualCodecConfigAux  = ByronSpecCodecConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {
