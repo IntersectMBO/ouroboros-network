@@ -385,21 +385,25 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     nodeCfg :: TopLevelConfig TestBlock
     nodeCfg = TopLevelConfig {
-        configConsensus = BftConfig
-          { bftParams   = BftParams
-                            { bftSecurityParam = securityParam
-                            , bftNumNodes      = numCoreNodes
-                            }
-          , bftSignKey  = SignKeyMockDSIGN 0
-          , bftVerKeys  = Map.fromList
-                          [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
-                          , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
-                          ]
+        topLevelConfigProtocol = FullProtocolConfig{
+            protocolConfigConsensus = BftConfig
+              { bftParams  = BftParams
+                               { bftSecurityParam = securityParam
+                               , bftNumNodes      = numCoreNodes
+                               }
+              , bftSignKey = SignKeyMockDSIGN 0
+              , bftVerKeys = Map.fromList
+                             [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
+                             , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
+                             ]
+              }
+          , protocolConfigIndep = ()
           }
-      , configIndep  = ()
-      , configLedger = eraParams
-      , configBlock  = TestBlockConfig numCoreNodes
-      , configCodec  = TestBlockCodecConfig
+      , topLevelConfigBlock = FullBlockConfig{
+            blockConfigLedger = eraParams
+          , blockConfigBlock  = TestBlockConfig numCoreNodes
+          , blockConfigCodec  = TestBlockCodecConfig
+          }
       }
 
     eraParams :: HardFork.EraParams

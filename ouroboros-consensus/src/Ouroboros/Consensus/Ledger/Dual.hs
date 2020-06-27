@@ -29,6 +29,8 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtValidationErrorMain
+  , dualFullBlockConfigMain
+  , dualFullBlockConfigAux
   , dualTopLevelConfigMain
   , ctxtDualMain
     -- * Type class family instances
@@ -156,20 +158,39 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
--- | This is only used for block production
-dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
-dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
-      configConsensus =                      configConsensus
-    , configIndep     =                      configIndep
-    , configLedger    = dualLedgerConfigMain configLedger
-    , configBlock     = dualBlockConfigMain  configBlock
-    , configCodec     = dualCodecConfigMain  configCodec
-    }
-
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain
   getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
   getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
+
+{-------------------------------------------------------------------------------
+  Splitting the config
+-------------------------------------------------------------------------------}
+
+dualFullBlockConfigMain ::
+     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
+  -> FullBlockConfig (LedgerState m) m
+dualFullBlockConfigMain FullBlockConfig{..} = FullBlockConfig{
+      blockConfigLedger = dualLedgerConfigMain blockConfigLedger
+    , blockConfigBlock  = dualBlockConfigMain  blockConfigBlock
+    , blockConfigCodec  = dualCodecConfigMain  blockConfigCodec
+    }
+
+dualFullBlockConfigAux ::
+     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
+  -> FullBlockConfig (LedgerState a) a
+dualFullBlockConfigAux FullBlockConfig{..} = FullBlockConfig{
+      blockConfigLedger = dualLedgerConfigAux blockConfigLedger
+    , blockConfigBlock  = dualBlockConfigAux  blockConfigBlock
+    , blockConfigCodec  = dualCodecConfigAux  blockConfigCodec
+    }
+
+-- | This is only used for block production
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      topLevelConfigProtocol = topLevelConfigProtocol
+    , topLevelConfigBlock    = dualFullBlockConfigMain topLevelConfigBlock
+    }
 
 {-------------------------------------------------------------------------------
   CodecConfig

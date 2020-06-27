@@ -68,21 +68,25 @@ protocolInfoDualByron :: forall m. Monad m
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftConfig {
-                pbftParams = params
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = PBftConfig {
+                    pbftParams = params
+                  }
+              , protocolConfigIndep  = ()
               }
-          , configIndep  = ()
-          , configLedger = DualLedgerConfig {
-                dualLedgerConfigMain = concreteGenesis
-              , dualLedgerConfigAux  = abstractConfig
-              }
-          , configBlock = DualBlockConfig {
-                dualBlockConfigMain = concreteConfig
-              , dualBlockConfigAux  = ByronSpecBlockConfig
-              }
-          , configCodec = DualCodecConfig {
-                dualCodecConfigMain = mkByronCodecConfig concreteGenesis
-              , dualCodecConfigAux  = ByronSpecCodecConfig
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = DualLedgerConfig {
+                    dualLedgerConfigMain = concreteGenesis
+                  , dualLedgerConfigAux  = abstractConfig
+                  }
+              , blockConfigBlock = DualBlockConfig {
+                    dualBlockConfigMain = concreteConfig
+                  , dualBlockConfigAux  = ByronSpecBlockConfig
+                  }
+              , blockConfigCodec = DualCodecConfig {
+                    dualCodecConfigMain = mkByronCodecConfig concreteGenesis
+                  , dualCodecConfigAux  = ByronSpecCodecConfig
+                  }
               }
           }
       , pInfoInitLedger = ExtLedgerState {

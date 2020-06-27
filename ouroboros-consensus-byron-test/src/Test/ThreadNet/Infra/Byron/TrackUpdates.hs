@@ -40,7 +40,7 @@ import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config (TopLevelConfig (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
@@ -384,8 +384,8 @@ mkProtocolRealPBftAndHardForkTxs
       , tniProtocolInfo = pInfo
       }
   where
-    ProtocolInfo{pInfoConfig}   = pInfo
-    TopLevelConfig{configBlock} = pInfoConfig
+    ProtocolInfo{pInfoConfig} = pInfo
+    bcfg = configBlock pInfoConfig
 
     pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
@@ -408,7 +408,7 @@ mkProtocolRealPBftAndHardForkTxs
         loopbackAnnotations $
         -- signed by delegate SK
         Vote.signVote
-          (Byron.byronProtocolMagicId configBlock)
+          (Byron.byronProtocolMagicId bcfg)
           (Update.recoverUpId proposal)
           True   -- the serialization hardwires this value anyway
           (Crypto.noPassSafeSigner opKey)
@@ -435,15 +435,15 @@ mkHardForkProposal
 mkHardForkProposal params genesisConfig genesisSecrets propPV =
     -- signed by delegate SK
     Proposal.signProposal
-      (Byron.byronProtocolMagicId configBlock)
+      (Byron.byronProtocolMagicId bcfg)
       propBody
       (Crypto.noPassSafeSigner opKey)
   where
     pInfo :: ProtocolInfo Identity ByronBlock
     pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
 
-    ProtocolInfo{pInfoConfig}   = pInfo
-    TopLevelConfig{configBlock} = pInfoConfig
+    ProtocolInfo{pInfoConfig} = pInfo
+    bcfg = configBlock pInfoConfig
 
     Crypto.SignKeyByronDSIGN opKey = getOpKey pInfo
 

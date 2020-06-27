@@ -236,7 +236,7 @@ instance CommonProtocolParams BlockA where
   maxTxSize     _ = maxBound
 
 instance CanForge BlockA where
-  forgeBlock TopLevelConfig{..} _ bno (Ticked sno st) _txs _ = BlkA {
+  forgeBlock tlc _ bno (Ticked sno st) _txs _ = BlkA {
         blkA_header = HdrA {
             hdrA_fields = HeaderFields {
                 headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
@@ -249,7 +249,7 @@ instance CanForge BlockA where
       }
     where
       ledgerConfig :: PartialLedgerConfig BlockA
-      ledgerConfig = snd configLedger
+      ledgerConfig = snd $ configLedger tlc
 
 instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()

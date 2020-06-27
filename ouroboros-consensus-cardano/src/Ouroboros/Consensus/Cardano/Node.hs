@@ -267,8 +267,12 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
         Shelley.verifyBlockIntegrity tpraosSlotsPerKESPeriod shelleyBlock
     where
       TopLevelConfig {
-          configConsensus = CardanoConsensusConfig _ shelleyPartialConsensusCfg
-        , configBlock = CardanoBlockConfig byronBlockCfg _
+          topLevelConfigProtocol = FullProtocolConfig {
+              protocolConfigConsensus = CardanoConsensusConfig _ shelleyPartialConsensusCfg
+            }
+        , topLevelConfigBlock = FullBlockConfig {
+              blockConfigBlock = CardanoBlockConfig byronBlockCfg _
+            }
         } = cfg
 
       TPraosParams { tpraosSlotsPerKESPeriod } = shelleyPartialConsensusCfg
@@ -315,12 +319,16 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
   where
     -- Byron
     ProtocolInfo {
-        pInfoConfig      = TopLevelConfig {
-            configConsensus = consensusConfigByron
-          , configLedger    = ledgerConfigByron
-          , configBlock     = blockConfigByron
+        pInfoConfig = TopLevelConfig {
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = consensusConfigByron
+              }
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = ledgerConfigByron
+              , blockConfigBlock  = blockConfigByron
+              }
           }
-      , pInfoInitLedger  = ExtLedgerState {
+      , pInfoInitLedger = ExtLedgerState {
             ledgerState = initLedgerStateByron
           , headerState = HeaderState {
                 headerStateConsensus = initChainDepStateByron
@@ -377,37 +385,41 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     cfg :: TopLevelConfig (CardanoBlock sc)
     cfg = TopLevelConfig {
-        configConsensus = HardForkConsensusConfig {
-            hardForkConsensusConfigK      = k
-          , hardForkConsensusConfigShape  = shape
-          , hardForkConsensusConfigPerEra = PerEraConsensusConfig
-              (  WrapPartialConsensusConfig partialConsensusConfigByron
-              :* WrapPartialConsensusConfig partialConsensusConfigShelley
-              :* Nil
-              )
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = HardForkConsensusConfig {
+                hardForkConsensusConfigK      = k
+              , hardForkConsensusConfigShape  = shape
+              , hardForkConsensusConfigPerEra = PerEraConsensusConfig
+                  (  WrapPartialConsensusConfig partialConsensusConfigByron
+                  :* WrapPartialConsensusConfig partialConsensusConfigShelley
+                  :* Nil
+                  )
+              }
+          , protocolConfigIndep = PerEraChainIndepStateConfig
+                  (  WrapChainIndepStateConfig ()
+                  :* WrapChainIndepStateConfig tpraosParams
+                  :* Nil
+                  )
           }
-      , configIndep = PerEraChainIndepStateConfig
-              (  WrapChainIndepStateConfig ()
-              :* WrapChainIndepStateConfig tpraosParams
-              :* Nil
-              )
-      , configLedger = HardForkLedgerConfig {
-            hardForkLedgerConfigK      = k
-          , hardForkLedgerConfigShape  = shape
-          , hardForkLedgerConfigPerEra = PerEraLedgerConfig
-              (  WrapPartialLedgerConfig partialLedgerConfigByron
-              :* WrapPartialLedgerConfig partialLedgerConfigShelley
-              :* Nil
-              )
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigLedger = HardForkLedgerConfig {
+                hardForkLedgerConfigK      = k
+              , hardForkLedgerConfigShape  = shape
+              , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+                  (  WrapPartialLedgerConfig partialLedgerConfigByron
+                  :* WrapPartialLedgerConfig partialLedgerConfigShelley
+                  :* Nil
+                  )
+              }
+          , blockConfigBlock =
+              CardanoBlockConfig
+                blockConfigByron
+                blockConfigShelley
+          , blockConfigCodec =
+              CardanoCodecConfig
+                (Byron.mkByronCodecConfig genesisByron)
+                Shelley.ShelleyCodecConfig
           }
-      , configBlock =
-          CardanoBlockConfig
-            blockConfigByron
-            blockConfigShelley
-      , configCodec =
-          CardanoCodecConfig
-            (Byron.mkByronCodecConfig genesisByron)
-            Shelley.ShelleyCodecConfig
       }
 
     creds :: Maybe
@@ -471,17 +483,25 @@ projByronTopLevelConfig
 projByronTopLevelConfig cfg = byronCfg
   where
     TopLevelConfig {
-        configBlock     = CardanoBlockConfig     byronBlockCfg     _
-      , configConsensus = CardanoConsensusConfig byronConsensusCfg _
-      , configLedger    = CardanoLedgerConfig    byronLedgerCfg    _
-      , configCodec     = CardanoCodecConfig     byronCodecCfg     _
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = CardanoConsensusConfig byronConsensusCfg _
+          }
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigBlock  = CardanoBlockConfig  byronBlockCfg  _
+          , blockConfigLedger = CardanoLedgerConfig byronLedgerCfg _
+          , blockConfigCodec  = CardanoCodecConfig  byronCodecCfg  _
+          }
       } = cfg
 
     byronCfg :: TopLevelConfig ByronBlock
     byronCfg = TopLevelConfig {
-        configBlock     = byronBlockCfg
-      , configConsensus = byronConsensusCfg
-      , configIndep     = ()
-      , configLedger    = byronLedgerConfig byronLedgerCfg
-      , configCodec     = byronCodecCfg
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = byronConsensusCfg
+          , protocolConfigIndep     = ()
+          }
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigBlock  = byronBlockCfg
+          , blockConfigLedger = byronLedgerConfig byronLedgerCfg
+          , blockConfigCodec  = byronCodecCfg
+          }
       }

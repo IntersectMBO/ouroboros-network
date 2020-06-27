@@ -147,11 +147,15 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
     topLevelConfig = TopLevelConfig {
-        configConsensus = consensusConfig
-      , configIndep     = tpraosParams
-      , configLedger    = ledgerConfig
-      , configBlock     = blockConfig
-      , configCodec     = ShelleyCodecConfig
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = consensusConfig
+          , protocolConfigIndep     = tpraosParams
+          }
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigLedger = ledgerConfig
+          , blockConfigBlock  = blockConfig
+          , blockConfigCodec  = ShelleyCodecConfig
+          }
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))

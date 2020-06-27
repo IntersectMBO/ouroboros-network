@@ -206,10 +206,10 @@ distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs
-distribTopLevelConfig ei TopLevelConfig{..} =
+distribTopLevelConfig ei tlc =
     hcpure proxySingle
       (fn_5 (\cfgConsensus cfgIndep cfgLedger cfgBlock cfgCodec ->
-           TopLevelConfig
+           mkTopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
              (unwrapChainIndepStateConfig cfgIndep)
              (completeLedgerConfig'    ei cfgLedger)
@@ -217,15 +217,15 @@ distribTopLevelConfig ei TopLevelConfig{..} =
              cfgCodec))
     `hap`
       (getPerEraConsensusConfig $
-         hardForkConsensusConfigPerEra configConsensus)
+         hardForkConsensusConfigPerEra (configConsensus tlc))
     `hap`
-      (getPerEraChainIndepStateConfig configIndep)
+      (getPerEraChainIndepStateConfig (configIndep tlc))
     `hap`
       (getPerEraLedgerConfig $
-         hardForkLedgerConfigPerEra configLedger)
+         hardForkLedgerConfigPerEra (configLedger tlc))
     `hap`
       (getPerEraBlockConfig $
-         hardForkBlockConfigPerEra configBlock)
+         hardForkBlockConfigPerEra (configBlock tlc))
     `hap`
       (getPerEraCodecConfig $
-         hardForkCodecConfigPerEra configCodec)
+         hardForkCodecConfigPerEra (configCodec tlc))
