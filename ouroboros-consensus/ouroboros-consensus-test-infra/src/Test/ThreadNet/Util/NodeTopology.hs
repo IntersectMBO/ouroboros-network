@@ -8,8 +8,10 @@ module Test.ThreadNet.Util.NodeTopology
   , edgesNodeTopology
   , genNodeTopology
   , shrinkNodeTopology
+  , mapNodeTopology
   , meshNodeTopology
   , minimumDegreeNodeTopology
+  , unionNodeTopology
   ) where
 
 import           Data.Map.Strict (Map)
@@ -137,3 +139,17 @@ minimumDegreeNodeTopology top@(NodeTopology m) =
     check = \case
         []   -> Nothing
         x:xs -> Just $ foldl min x xs
+
+unionNodeTopology :: NodeTopology -> NodeTopology -> NodeTopology
+unionNodeTopology (NodeTopology l) (NodeTopology r) =
+    NodeTopology $ Map.unionWith Set.union l r
+
+mapNodeTopology :: (CoreNodeId -> CoreNodeId) -> NodeTopology -> NodeTopology
+mapNodeTopology f topo =
+    NodeTopology $ Map.fromListWith Set.union $
+    [ f l `sortedSingleton` f r
+    | (l, r) <- edgesNodeTopology topo
+    ]
+  where
+    sortedSingleton l r =
+        if l > r then (l, Set.singleton r) else (r, Set.singleton l)
