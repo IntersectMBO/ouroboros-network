@@ -23,9 +23,10 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
   , mkByronHeader
   , mkRegularByronHeader
   , mkBoundaryByronHeader
-    -- * Auxiliary functions
+    -- * Dealing with EBBs
   , byronHeaderIsEBB
   , byronBlockIsEBB
+  , knownEBBs
     -- * Low-level API
   , UnsizedHeader(..)
   , mkUnsizedHeader
@@ -36,6 +37,8 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -55,6 +58,7 @@ import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Ouroboros.Consensus.Byron.EBBs as EBBs
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 
@@ -212,7 +216,7 @@ fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash ByronBlock
 fromByronPrevHash' = fromByronPrevHash ByronHash
 
 {-------------------------------------------------------------------------------
-  Auxiliary functions
+  Dealing with EBBs
 -------------------------------------------------------------------------------}
 
 byronHeaderIsEBB :: Header ByronBlock -> IsEBB
@@ -224,6 +228,14 @@ byronHeaderIsEBB = go . byronHeaderRaw
 
 byronBlockIsEBB :: ByronBlock -> IsEBB
 byronBlockIsEBB = byronHeaderIsEBB . getHeader
+
+knownEBBs :: Map (HeaderHash ByronBlock) (ChainHash ByronBlock)
+knownEBBs = Map.fromList $ map aux EBBs.knownEBBs
+  where
+    aux :: (CC.HeaderHash, Maybe CC.HeaderHash)
+        -> (ByronHash, ChainHash ByronBlock)
+    aux (ebb, Nothing)   = (ByronHash ebb, GenesisHash)
+    aux (ebb, Just prev) = (ByronHash ebb, BlockHash (ByronHash prev))
 
 {-------------------------------------------------------------------------------
   Unsized header
