@@ -785,8 +785,11 @@ precondition Model {..} (At (CmdErr { cmd })) =
   where
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
-      Nothing    -> blockPrevHash b .== GenesisHash
-      Just bPrev -> blockPrevHash b .== BlockHash (blockHash bPrev)
+      Nothing    -> getPrevHash b .== GenesisHash
+      Just bPrev -> getPrevHash b .== BlockHash (blockHash bPrev)
+
+    getPrevHash :: TestBlock -> ChainHash TestBlock
+    getPrevHash = blockPrevHash TestBlockCodecConfig
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -1259,6 +1262,7 @@ test cacheConfig chunkInfo cmds = do
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = chunkFileParser
+                   TestBlockCodecConfig
                    hasFS
                    (const <$> decode)
                    testBlockBinaryBlockInfo

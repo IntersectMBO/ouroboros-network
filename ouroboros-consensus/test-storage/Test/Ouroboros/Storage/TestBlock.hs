@@ -225,7 +225,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash = castHash . thPrevHash . unTestHeader
+  headerPrevHash _cfg = castHash . thPrevHash . unTestHeader
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       -- | Whether the test block can be EBBs or not. This can vary per test
@@ -581,13 +581,15 @@ instance IsLedger (LedgerState TestBlock) where
   ledgerTipPoint = castPoint . lastAppliedPoint
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
+  applyLedgerBlock cfg tb@TestBlock{..} (Ticked _ TestLedger{..})
+    | blockPrevHash ccfg tb /= lastAppliedHash
+    = throwError $ InvalidHash lastAppliedHash (blockPrevHash ccfg tb)
     | not $ tbIsValid testBody
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
+    where
+      ccfg = blockConfigCodec cfg
 
   reapplyLedgerBlock _ tb _ =
     TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))

@@ -1,7 +1,6 @@
 module Ouroboros.Consensus.Byron.Ledger.Conversions (
     -- * From @cardano-ledger@ to @ouroboros-consensus@
-    fromByronPrevHash
-  , fromByronSlotNo
+    fromByronSlotNo
   , fromByronBlockNo
   , fromByronBlockCount
   , fromByronEpochSlots
@@ -21,7 +20,6 @@ import qualified Data.Set as Set
 
 import           Cardano.Prelude (Natural)
 
-import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Slotting as CC
@@ -36,11 +34,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 {-------------------------------------------------------------------------------
   From @cardano-ledger@ to @ouroboros-consensus@
 -------------------------------------------------------------------------------}
-
-fromByronPrevHash :: (CC.HeaderHash -> HeaderHash b)
-                  -> Maybe CC.HeaderHash -> ChainHash b
-fromByronPrevHash _ Nothing  = GenesisHash
-fromByronPrevHash f (Just h) = BlockHash (f h)
 
 fromByronSlotNo :: CC.SlotNumber -> SlotNo
 fromByronSlotNo = coerce

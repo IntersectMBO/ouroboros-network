@@ -91,13 +91,14 @@ prop_alwaysPickPreferredChain bt p =
 prop_between_currentChain :: BlockTree -> Property
 prop_between_currentChain bt =
     Right (AF.toOldestFirst $ Chain.toAnchoredFragment $ M.currentChain model) ===
-    M.between secParam from to model
+    M.between secParam ccfg from to model
   where
     blocks   = treeToBlocks bt
     model    = addBlocks blocks
     from     = StreamFromExclusive GenesisPoint
     to       = StreamToInclusive $ cantBeGenesis (M.tipPoint model)
     secParam = configSecurityParam singleNodeTestConfig
+    ccfg     = configCodec         singleNodeTestConfig
 
 -- | Workaround when we know the DB can't be empty, but the types don't
 cantBeGenesis :: HasCallStack => Point blk -> RealPoint blk

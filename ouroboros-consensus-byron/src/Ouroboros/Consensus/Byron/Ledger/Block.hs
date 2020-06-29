@@ -207,13 +207,16 @@ instance HasHeader (Header ByronBlock) where
       }
 
 instance GetPrevHash ByronBlock where
-  headerPrevHash = fromByronPrevHash' . CC.abobHdrPrevHash . byronHeaderRaw
+  headerPrevHash cfg = fromByronPrevHash cfg . CC.abobHdrPrevHash . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure
 
-fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash ByronBlock
-fromByronPrevHash' = fromByronPrevHash ByronHash
+fromByronPrevHash :: CodecConfig ByronBlock
+                  -> Maybe CC.HeaderHash -> ChainHash ByronBlock
+fromByronPrevHash _cfg = \case
+    Nothing -> GenesisHash
+    Just h  -> BlockHash (ByronHash h)
 
 {-------------------------------------------------------------------------------
   Dealing with EBBs

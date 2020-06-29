@@ -162,7 +162,7 @@ instance HasHeader (Header BlockB) where
   getHeaderFields = castHeaderFields . hdrB_fields
 
 instance GetPrevHash BlockB where
-  headerPrevHash = hdrB_prev
+  headerPrevHash _cfg = hdrB_prev
 
 instance HasAnnTip BlockB where
 

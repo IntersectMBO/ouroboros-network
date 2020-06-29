@@ -352,9 +352,9 @@ validateEnvelope cfg ledgerView oldTip hdr = do
     actualBlockNo  :: BlockNo
     actualPrevHash :: ChainHash blk
 
-    actualSlotNo   = blockSlot      hdr
-    actualBlockNo  = blockNo        hdr
-    actualPrevHash = headerPrevHash hdr
+    actualSlotNo   = blockSlot hdr
+    actualBlockNo  = blockNo   hdr
+    actualPrevHash = headerPrevHash (configCodec cfg) hdr
 
     expectedSlotNo :: SlotNo -- Lower bound only
     expectedSlotNo =

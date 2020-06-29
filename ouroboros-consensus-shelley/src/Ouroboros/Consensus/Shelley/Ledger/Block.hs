@@ -141,7 +141,7 @@ instance Crypto c => HasHeader (Header (ShelleyBlock c)) where
     }
 
 instance Crypto c => GetPrevHash (ShelleyBlock c)  where
-  headerPrevHash =
+  headerPrevHash _cfg =
       fromShelleyPrevHash
     . SL.bheaderPrev
     . SL.bhbody

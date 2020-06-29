@@ -198,7 +198,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash (TestHeader b) =
+  headerPrevHash _cfg (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
@@ -288,13 +288,15 @@ instance IsLedger (LedgerState TestBlock) where
   ledgerTipPoint = castPoint . lastAppliedPoint
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
+  applyLedgerBlock cfg tb@TestBlock{..} (Ticked _ TestLedger{..})
+    | blockPrevHash ccfg tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash ccfg tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb)
+    where
+      ccfg = blockConfigCodec cfg
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
