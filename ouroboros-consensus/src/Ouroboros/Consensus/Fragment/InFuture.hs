@@ -46,7 +46,7 @@ data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
-       checkInFuture :: ValidatedFragment blk (LedgerState blk)
+       checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
                      -> m (AnchoredFragment (Header blk), [InFuture blk])
     }
   deriving NoUnexpectedThunks

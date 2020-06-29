@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 -- | Intended for qualified import
@@ -7,12 +6,11 @@
 -- > import Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 -- > import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 module Ouroboros.Consensus.Fragment.Diff
-  ( ChainDiff(ChainDiff)
+  ( ChainDiff(..)
     -- * Queries
-  , getRollback
-  , getSuffix
   , getTip
   , getAnchorPoint
+  , rollbackExceedsSuffix
     -- * Constructors
   , extend
   , diff
@@ -36,62 +34,48 @@ import           Ouroboros.Consensus.Block
 
 -- | A diff of a chain (fragment).
 --
--- INVARIANT: the length of the suffix must always be >= the rollback
+-- Typical instantiations of the type argument @b@: a block type @blk@,
+-- @Header blk@, @HeaderFields@, ..., anything that supports 'HasHeader'.
 --
--- Note: we allow the suffix with new headers to be empty, even though it is
--- rather pointless. Allowing empty ones makes working with them easier: fewer
--- cases to deal with. Without any headers, the rollback must be 0, so such a
--- diff would be an empty diff.
-data ChainDiff blk = UnsafeChainDiff
+-- Note: we allow the suffix to be shorter than the number of blocks to roll
+-- back. In other words, applying a 'ChainDiff' can result in a chain shorter
+-- than the chain to which the diff was applied.
+data ChainDiff b = ChainDiff
     { getRollback :: !Word64
-      -- ^ The number of headers to roll back the current chain
-    , getSuffix   :: !(AnchoredFragment (Header blk))
-      -- ^ The new headers to add after rolling back the current chain.
+      -- ^ The number of blocks/headers to roll back the current chain
+    , getSuffix   :: !(AnchoredFragment b)
+      -- ^ The new blocks/headers to add after rolling back the current chain.
     }
 
-deriving instance (HasHeader blk, Eq (Header blk))
-               => Eq   (ChainDiff blk)
-deriving instance (HasHeader blk, Show (Header blk))
-               => Show (ChainDiff blk)
-
--- | Allow for pattern matching on a 'ChainDiff' without exposing the (unsafe)
--- constructor. Use 'extend' and 'diff' to construct a 'ChainDiff'.
-pattern ChainDiff
-  :: Word64 -> AnchoredFragment (Header blk) -> ChainDiff blk
-pattern ChainDiff r s <- UnsafeChainDiff r s
-{-# COMPLETE ChainDiff #-}
-
--- | Internal. Return 'Nothing' if the length of the suffix < the rollback.
-mkRollback
-  :: HasHeader (Header blk)
-  => Word64
-  -> AnchoredFragment (Header blk)
-  -> Maybe (ChainDiff blk)
-mkRollback nbRollback suffix
-    | fromIntegral (AF.length suffix) >= nbRollback
-    = Just $ UnsafeChainDiff nbRollback suffix
-    | otherwise
-    = Nothing
+deriving instance (StandardHash b, Eq   b) => Eq   (ChainDiff b)
+deriving instance (StandardHash b, Show b) => Show (ChainDiff b)
 
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
 
 -- | Return the tip of the new suffix
-getTip :: HasHeader (Header blk) => ChainDiff blk -> Point blk
+getTip :: HasHeader b => ChainDiff b -> Point b
 getTip = castPoint . AF.headPoint . getSuffix
 
 -- | Return the anchor point of the new suffix
-getAnchorPoint :: ChainDiff blk -> Point blk
+getAnchorPoint :: ChainDiff b -> Point b
 getAnchorPoint = castPoint . AF.anchorPoint . getSuffix
+
+-- | Return 'True' iff applying the 'ChainDiff' to a chain @C@ will result in
+-- a chain shorter than @C@, i.e., the number of blocks to roll back is
+-- greater than the length of the new elements in the suffix to add.
+rollbackExceedsSuffix :: HasHeader b => ChainDiff b -> Bool
+rollbackExceedsSuffix (ChainDiff nbRollback suffix) =
+    nbRollback > fromIntegral (AF.length suffix)
 
 {-------------------------------------------------------------------------------
   Constructors
 -------------------------------------------------------------------------------}
 
 -- | Make an extension-only (no rollback) 'ChainDiff'.
-extend :: AnchoredFragment (Header blk) -> ChainDiff blk
-extend = UnsafeChainDiff 0
+extend :: AnchoredFragment b -> ChainDiff b
+extend = ChainDiff 0
 
 -- | Diff a candidate chain with the current chain.
 --
@@ -101,14 +85,14 @@ extend = UnsafeChainDiff 0
 -- PRECONDITION: the candidate fragment must intersect with the current chain
 -- fragment.
 diff
-  :: (HasHeader (Header blk), HasCallStack)
-  => AnchoredFragment (Header blk)  -- ^ Current chain
-  -> AnchoredFragment (Header blk)  -- ^ Candidate chain
-  -> Maybe (ChainDiff blk)
+  :: (HasHeader b, HasCallStack)
+  => AnchoredFragment b  -- ^ Current chain
+  -> AnchoredFragment b  -- ^ Candidate chain
+  -> ChainDiff b
 diff curChain candChain =
   case AF.intersect curChain candChain of
     Just (_curChainPrefix, _candPrefix, curChainSuffix, candSuffix)
-      -> mkRollback
+      -> ChainDiff
            (fromIntegral (AF.length curChainSuffix))
            candSuffix
     -- Precondition violated.
@@ -129,10 +113,10 @@ diff curChain candChain =
 -- The returned fragment will have the same anchor point as the given
 -- fragment.
 apply
-  :: HasHeader (Header blk)
-  => AnchoredFragment (Header blk)
-  -> ChainDiff blk
-  -> Maybe (AnchoredFragment (Header blk))
+  :: HasHeader b
+  => AnchoredFragment b
+  -> ChainDiff b
+  -> Maybe (AnchoredFragment b)
 apply curChain (ChainDiff nbRollback suffix) =
     AF.join (AF.dropNewest (fromIntegral nbRollback) curChain) suffix
 
@@ -142,20 +126,20 @@ apply curChain (ChainDiff nbRollback suffix) =
 
 -- | Truncate the diff by rolling back the new suffix to the given point.
 --
--- PRECONDITION: the given point must correspond to one of the new headers of
--- the new suffix or its anchor (i.e, @'AF.withinFragmentBounds' pt (getSuffix
--- diff)@).
+-- PRECONDITION: the given point must correspond to one of the new
+-- blocks/headers of the new suffix or its anchor (i.e,
+-- @'AF.withinFragmentBounds' pt (getSuffix diff)@).
 --
 -- If the length of the truncated suffix is shorter than the rollback,
 -- 'Nothing' is returned.
 truncate
-  :: (HasHeader (Header blk), HasCallStack, HasHeader blk)
-  => Point blk
-  -> ChainDiff blk
-  -> Maybe (ChainDiff blk)
+  :: (HasHeader b, HasCallStack)
+  => Point b
+  -> ChainDiff b
+  -> ChainDiff b
 truncate pt (ChainDiff nbRollback suffix)
     | Just suffix' <- AF.rollback (castPoint pt) suffix
-    = mkRollback nbRollback suffix'
+    = ChainDiff nbRollback suffix'
     | otherwise
     = error $ "rollback point not on the candidate suffix: " <> show pt
 
@@ -164,9 +148,9 @@ truncate pt (ChainDiff nbRollback suffix)
 --
 -- If the new suffix is shorter than the diff's rollback, return 'Nothing'.
 takeWhileOldest
-  :: HasHeader (Header blk)
-  => (Header blk -> Bool)
-  -> ChainDiff blk
-  -> Maybe (ChainDiff blk)
+  :: HasHeader b
+  => (b -> Bool)
+  -> ChainDiff b
+  -> ChainDiff b
 takeWhileOldest accept (ChainDiff nbRollback suffix) =
-    mkRollback nbRollback (AF.takeWhileOldest accept suffix)
+    ChainDiff nbRollback (AF.takeWhileOldest accept suffix)

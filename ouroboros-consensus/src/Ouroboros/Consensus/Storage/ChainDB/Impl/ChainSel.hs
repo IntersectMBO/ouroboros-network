@@ -33,7 +33,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust, mapMaybe)
+import           Data.Maybe (isJust)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -127,7 +127,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
     -- This is guaranteed by the fact that all constructed candidates start
     -- from this tip.
     toChainAndLedger
-      :: ValidatedChainDiff blk (LgrDB.LedgerDB blk)
+      :: ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)
       -> ChainAndLedger blk
     toChainAndLedger (ValidatedChainDiff chainDiff ledger) =
       case chainDiff of
@@ -162,13 +162,14 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
     -- PRECONDITION: all candidates are anchored at @i@.
     --
     -- PRECONDITION: all candidates must be preferred over the current chain.
-    chainSelection' :: HasCallStack
-                    => ChainAndLedger blk
-                       -- ^ The current chain and ledger, corresponding to
-                       -- @i@.
-                    -> NonEmpty (AnchoredFragment (Header blk))
-                       -- ^ Candidates anchored at @i@
-                    -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+    chainSelection' ::
+         HasCallStack
+      => ChainAndLedger blk
+         -- ^ The current chain and ledger, corresponding to
+         -- @i@.
+      -> NonEmpty (AnchoredFragment (Header blk))
+         -- ^ Candidates anchored at @i@
+      -> m (Maybe (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)))
     chainSelection' curChainAndLedger candidates =
         assert (all ((LgrDB.currentPoint ledger ==) .
                      castPoint . AF.anchorPoint)
@@ -584,10 +585,13 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                 -- The suffixes all fork off from the current chain within @k@
                 -- blocks, so it satisfies the precondition of
                 -- 'preferCandidate'.
+                --
+                -- 'ChainDiff's resulting in chains shorter than the current
+                -- chain will be filtered out by 'preferAnchoredCandidate'.
                 filter
                   (preferAnchoredCandidate cdbTopLevelConfig curChain .
                    Diff.getSuffix)
-              . mapMaybe (Diff.diff curChain)
+              . map (Diff.diff curChain)
               $ NE.toList candidates
 
         case NE.nonEmpty chainDiffs of
@@ -647,7 +651,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- us, as we cannot roll back more than @k@ headers anyway.
     switchTo
       :: HasCallStack
-      => ValidatedChainDiff blk (LgrDB.LedgerDB blk)
+      => ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)
          -- ^ Chain and ledger to switch to
       -> (    NewTipInfo blk
            -> AnchoredFragment (Header blk)
@@ -672,7 +676,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               --
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
-              let ipoint = Diff.getAnchorPoint chainDiff
+              let ipoint = castPoint $ Diff.getAnchorPoint chainDiff
               readerHandles <- Map.elems <$> readTVar cdbReaders
               forM_ readerHandles $ \readerHandle ->
                 rhSwitchFork readerHandle ipoint newChain
@@ -766,8 +770,8 @@ chainSelection
      , HasCallStack
      )
   => ChainSelEnv m blk
-  -> NonEmpty (ChainDiff blk)
-  -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+  -> NonEmpty (ChainDiff (Header blk))
+  -> m (Maybe (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)))
      -- ^ The (valid) chain diff and corresponding LedgerDB that was selected,
      -- or 'Nothing' if there is no valid chain diff preferred over the
      -- current chain.
@@ -783,7 +787,7 @@ chainSelection chainSelEnv chainDiffs =
 
     curChain = VF.validatedFragment curChainAndLedger
 
-    sortCandidates :: [ChainDiff blk] -> [ChainDiff blk]
+    sortCandidates :: [ChainDiff (Header blk)] -> [ChainDiff (Header blk)]
     sortCandidates =
       sortBy (flip (compareAnchoredCandidates cfg) `on` Diff.getSuffix)
 
@@ -795,7 +799,9 @@ chainSelection chainSelEnv chainDiffs =
     --    - If it is valid, but is a prefix of the original ->
     --        add it to the list, sort it and go to 1. See the comment
     --        [Ouroboros] below.
-    go :: [ChainDiff blk] -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+    go ::
+         [ChainDiff (Header blk)]
+      -> m (Maybe (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)))
     go []            = return Nothing
     go (candidate:candidates0) =
       validateCandidate chainSelEnv candidate >>= \case
@@ -836,7 +842,9 @@ chainSelection chainSelEnv chainDiffs =
     -- * It is invalid (present in 'varInvalid', i.e., 'cdbInvalid').
     -- * It is from the future (present in 'varFutureBlocks', i.e.,
     --   'cdbFutureBlocks').
-    truncateRejectedBlocks :: [ChainDiff blk] -> m [ChainDiff blk]
+    truncateRejectedBlocks ::
+         [ChainDiff (Header blk)]
+      -> m [ChainDiff (Header blk)]
     truncateRejectedBlocks cands = do
       (invalid, futureBlocks) <-
         atomically $ (,) <$> readTVar varInvalid <*> readTVar varFutureBlocks
@@ -844,7 +852,7 @@ chainSelection chainSelEnv chainDiffs =
                Map.member (headerHash hdr) (forgetFingerprint invalid)
             || Map.member (headerHash hdr) futureBlocks
       return $ filter (preferAnchoredCandidate cfg curChain . Diff.getSuffix)
-             $ mapMaybe (Diff.takeWhileOldest (not . isRejected)) cands
+             $ map (Diff.takeWhileOldest (not . isRejected)) cands
 
     -- [Ouroboros]
     --
@@ -867,11 +875,11 @@ chainSelection chainSelEnv chainDiffs =
 data ValidationResult blk =
       -- | The entire candidate fragment was valid. No blocks were from the
       -- future.
-      FullyValid (ValidatedChainDiff blk (LgrDB.LedgerDB blk))
+      FullyValid (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk))
 
       -- | The candidate fragment contained invalid blocks and/or blocks from
       -- the future that had to be truncated from the fragment.
-    | ValidPrefix (ChainDiff blk)
+    | ValidPrefix (ChainDiff (Header blk))
 
       -- | After truncating the invalid blocks or blocks from the future from
       -- the 'ChainDiff', it no longer contains enough blocks in its suffix to
@@ -892,10 +900,6 @@ data ValidationResult blk =
 -- If a block in the fragment is invalid, then the fragment in the returned
 -- 'ValidatedChainDiff' is a prefix of the given candidate chain diff (upto
 -- the last valid block).
---
--- Returns 'Nothing' if after truncating the invalid blocks from the
--- candidate, it no longer has enough new blocks to compensate for the
--- required roll back.
 ledgerValidateCandidate
   :: forall m blk.
      ( IOLike m
@@ -903,8 +907,8 @@ ledgerValidateCandidate
      , HasCallStack
      )
   => ChainSelEnv m blk
-  -> ChainDiff blk
-  -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+  -> ChainDiff (Header blk)
+  -> m (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk))
 ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
     LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
       LgrDB.ValidateExceededRollBack {} ->
@@ -915,20 +919,15 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
 
       LgrDB.ValidateLedgerError (LgrDB.AnnLedgerError ledger' pt e) -> do
         let lastValid = LgrDB.currentPoint ledger'
+            chainDiff' = Diff.truncate (castPoint lastValid) chainDiff
         trace (InvalidBlock e pt)
         addInvalidBlock e pt
-        case Diff.truncate lastValid chainDiff of
-          -- After truncating the invalid blocks on the fragment, it no longer
-          -- contains enough blocks to compensate for the rollback.
-          Nothing -> return Nothing
-
-          Just chainDiff' -> do
-            trace (ValidCandidate (Diff.getSuffix chainDiff'))
-            return $ Just $ ValidatedDiff.new chainDiff' ledger'
+        trace (ValidCandidate (Diff.getSuffix chainDiff'))
+        return $ ValidatedDiff.new chainDiff' ledger'
 
       LgrDB.ValidateSuccessful ledger' -> do
         trace (ValidCandidate suffix)
-        return $ Just $ ValidatedDiff.new chainDiff ledger'
+        return $ ValidatedDiff.new chainDiff ledger'
   where
     ChainSelEnv { lgrDB, trace, curChainAndLedger, blockCache, varInvalid } =
       chainSelEnv
@@ -955,22 +954,20 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
 -- Future headers that exceed the clock skew are added to 'cdbInvalid' with
 -- 'InFutureExceedsClockSkew' as the reason.
 --
--- When truncation happened, 'Left' is returned, otherwise 'Right'. If too
--- many blocks have been truncated such that the invariant of 'ChainDiff' no
--- longer holds, 'Nothing' is returned.
+-- When truncation happened, 'Left' is returned, otherwise 'Right'.
 futureCheckCandidate
   :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainSelEnv m blk
-  -> ValidatedChainDiff blk (LgrDB.LedgerDB blk)
-  -> m (Maybe (Either (ChainDiff blk)
-                      (ValidatedChainDiff blk (LgrDB.LedgerDB blk))))
+  -> ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)
+  -> m (Either (ChainDiff (Header blk))
+               (ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)))
 futureCheckCandidate chainSelEnv validatedChainDiff =
     checkInFuture futureCheck validatedSuffix >>= \case
 
       (suffix', []) ->
         -- If no headers are in the future, then the fragment must be untouched
         assert (AF.headPoint suffix == AF.headPoint suffix') $
-        return $ Just $ Right validatedChainDiff
+        return $ Right validatedChainDiff
 
       (suffix', inFuture) -> do
         let (exceedClockSkew, inNearFuture) =
@@ -1005,15 +1002,14 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 
         -- Truncate the original 'ChainDiff' to match the truncated
         -- 'AnchoredFragment'.
-        return $
-          Left <$> Diff.truncate (castPoint (AF.headPoint suffix')) chainDiff
+        return $ Left $ Diff.truncate (castPoint (AF.headPoint suffix')) chainDiff
   where
     ChainSelEnv { trace, varInvalid, varFutureBlocks, futureCheck } =
       chainSelEnv
 
     ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
 
-    validatedSuffix :: ValidatedFragment blk (LedgerState blk)
+    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
     validatedSuffix =
       ledgerState . LgrDB.ledgerDbCurrent <$>
       ValidatedDiff.toValidatedFragment validatedChainDiff
@@ -1025,18 +1021,23 @@ validateCandidate
      , HasCallStack
      )
   => ChainSelEnv m blk
-  -> ChainDiff blk
+  -> ChainDiff (Header blk)
   -> m (ValidationResult blk)
 validateCandidate chainSelEnv chainDiff =
     ledgerValidateCandidate chainSelEnv chainDiff >>= \case
-      Nothing                 -> return InsufficientSuffix
-      Just validatedChainDiff ->
-        futureCheckCandidate chainSelEnv validatedChainDiff >>= \case
-          Nothing
+      validatedChainDiff
+        | ValidatedDiff.rollbackExceedsSuffix validatedChainDiff
+        -> return InsufficientSuffix
+        | otherwise
+        -> futureCheckCandidate chainSelEnv validatedChainDiff >>= \case
+          Left chainDiff'
+              | Diff.rollbackExceedsSuffix chainDiff'
               -> return InsufficientSuffix
-          Just (Left chainDiff')
+              | otherwise
               -> return $ ValidPrefix chainDiff'
-          Just (Right validatedChainDiff')
+          Right validatedChainDiff'
+              | ValidatedDiff.rollbackExceedsSuffix validatedChainDiff'
+              -> return InsufficientSuffix
               | AF.length (Diff.getSuffix chainDiff) ==
                 AF.length (Diff.getSuffix chainDiff')
                 -- No truncation
@@ -1055,7 +1056,7 @@ validateCandidate chainSelEnv chainDiff =
 -------------------------------------------------------------------------------}
 
 -- | Instantiate 'ValidatedFragment' in the way that chain selection requires.
-type ChainAndLedger blk = ValidatedFragment blk (LgrDB.LedgerDB blk)
+type ChainAndLedger blk = ValidatedFragment (Header blk) (LgrDB.LedgerDB blk)
 
 {-------------------------------------------------------------------------------
   Helpers

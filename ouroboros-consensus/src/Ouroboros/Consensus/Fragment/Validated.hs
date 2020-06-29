@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Intended for qualified import
 --
@@ -30,20 +31,23 @@ import           Ouroboros.Consensus.Util.Assert
 -- INVARIANT:
 --
 -- > AF.headPoint validatedFragment == ledgerTipPoint validatedLedger
-data ValidatedFragment blk l = ValidatedFragment {
+data ValidatedFragment b l = ValidatedFragment {
       -- | Chain fragment
-      validatedFragment :: !(AnchoredFragment (Header blk))
+      validatedFragment :: !(AnchoredFragment b)
 
       -- | Ledger after after validation
     , validatedLedger   :: !l
     }
   deriving (Functor)
 
-validatedTip :: HasHeader (Header blk) => ValidatedFragment blk l -> Point blk
-validatedTip = castPoint . AF.headPoint . validatedFragment
+validatedTip :: HasHeader b => ValidatedFragment b l -> Point b
+validatedTip = AF.headPoint . validatedFragment
 
-invariant :: forall l blk. ApplyBlock l blk
-          => ValidatedFragment blk l -> Either String ()
+invariant ::
+     forall l b.
+     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l)
+  => ValidatedFragment b l
+  -> Either String ()
 invariant ValidatedFragment{..}
     | ledgerTip /= headPoint
     = Left $ concat [
@@ -55,20 +59,22 @@ invariant ValidatedFragment{..}
     | otherwise
     = Right ()
   where
-   ledgerTip, headPoint :: Point blk
+   ledgerTip, headPoint :: Point b
    ledgerTip = castPoint $ ledgerTipPoint validatedLedger
    headPoint = castPoint $ AF.headPoint validatedFragment
 
 -- | Constructor for 'ValidatedFragment' that checks the invariant
-new :: forall l blk. (ApplyBlock l blk, HasCallStack)
-    => AnchoredFragment (Header blk)
-    -> l
-    -> ValidatedFragment blk l
+new ::
+     forall l b.
+     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
+  => AnchoredFragment b
+  -> l
+  -> ValidatedFragment b l
 new fragment ledger =
     assertWithMsg (invariant validated) $
       validated
   where
-    validated :: ValidatedFragment blk l
+    validated :: ValidatedFragment b l
     validated = ValidatedFragment {
           validatedFragment = fragment
         , validatedLedger   = ledger
