@@ -50,6 +50,7 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
                      combineVersions, defaultMiniProtocolParameters,
                      nodeToNodeCodecCBORTerm)
+import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime hiding (getSystemStart)
@@ -255,18 +256,26 @@ run runargs@RunNodeArgs{..} =
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
-          -- These values approximately correspond to false positive thresholds
-          -- for streaks of empty slots with 99% probability, 99.9% probability up to
-          -- 99.999% probability.
-          -- t = T_s [log (1-Y) / log (1-f)]
-          -- Y = [0.99, 0.999...]
-          -- T_s = slot length of 1s.
-          -- f = 0.05
-          -- The timeout is randomly picked per bearer to avoid all bearers going down
-          -- at the same time in case of a long streak of empty slots.
-          -- TODO: workaround until peer selection governor.
-          (Just <$> randomElem [90, 135, 180, 224, 269])
+          chainSyncTimeout
           (NTN.mkHandlers nodeArgs nodeKernel)
+      where
+        chainSyncTimeout :: IO NTN.ChainSyncTimeout
+        chainSyncTimeout = do
+            -- These values approximately correspond to false positive
+            -- thresholds for streaks of empty slots with 99% probability,
+            -- 99.9% probability up to 99.999% probability.
+            -- t = T_s [log (1-Y) / log (1-f)]
+            -- Y = [0.99, 0.999...]
+            -- T_s = slot length of 1s.
+            -- f = 0.05
+            -- The timeout is randomly picked per bearer to avoid all bearers
+            -- going down at the same time in case of a long streak of empty
+            -- slots. TODO: workaround until peer selection governor.
+            mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
+            return NTN.ChainSyncTimeout
+              { canAwaitTimeout  = shortWait
+              , mustReplyTimeout
+              }
 
     mkNodeToClientApps
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk

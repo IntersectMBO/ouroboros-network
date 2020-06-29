@@ -11,6 +11,8 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
 
   , byteLimitsChainSync
   , timeLimitsChainSync
+
+  , ChainSyncTimeout (..)
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -45,22 +47,40 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
     stateToLimit (ServerAgency (TokNext TokMustReply)) = smallByteLimit
     stateToLimit (ServerAgency TokIntersect)           = smallByteLimit
 
+-- | Configurable timeouts
+--
+-- These are configurable for at least the following reasons.
+--
+-- o So that deployment and testing can use different values.
+--
+-- o So that a net running Praos can better cope with streaks of empty slots.
+--   (See @input-output-hk/ouroboros-network#2245@.)
+data ChainSyncTimeout = ChainSyncTimeout
+  { canAwaitTimeout  :: Maybe DiffTime
+  , mustReplyTimeout :: Maybe DiffTime
+  }
+
 -- | Time Limits
 --
--- `TokIdle`  No timeout
--- `TokNext TokCanAwait` `longWait` timeout
--- `TokNext TokMustReply` consensusTimeout timeout
--- `TokIntersect` `longWait` timeout
+-- > 'TokIdle'               'waitForever' (ie never times out)
+-- > 'TokNext TokCanAwait'   the given 'canAwaitTimeout'
+-- > 'TokNext TokMustReply'  the given 'mustReplyTimeout'
+-- > 'TokIntersect'          'shortWait'
 timeLimitsChainSync :: forall header tip.
-                       Maybe DiffTime
+                       ChainSyncTimeout
                     -> ProtocolTimeLimits (ChainSync header tip)
-timeLimitsChainSync consensusTimeout = ProtocolTimeLimits stateToLimit
+timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
   where
+    ChainSyncTimeout
+      { canAwaitTimeout
+      , mustReplyTimeout
+      } = csTimeouts
+
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokIdle)                = waitForever
-    stateToLimit (ServerAgency (TokNext TokCanAwait))  = shortWait
-    stateToLimit (ServerAgency (TokNext TokMustReply)) = consensusTimeout
+    stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
+    stateToLimit (ServerAgency (TokNext TokMustReply)) = mustReplyTimeout
     stateToLimit (ServerAgency TokIntersect)           = shortWait
 
 -- | Codec for chain sync that encodes/decodes headers

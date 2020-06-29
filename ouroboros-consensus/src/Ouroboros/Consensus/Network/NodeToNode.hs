@@ -26,6 +26,8 @@ module Ouroboros.Consensus.Network.NodeToNode (
     -- ** Projections
   , initiator
   , responder
+    -- * Re-exports
+  , ChainSyncTimeout (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -359,7 +361,7 @@ mkApps
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> Codecs blk e m bCS bCS bBF bBF bTX
-  -> m (Maybe DiffTime)
+  -> m ChainSyncTimeout
   -> Handlers m remotePeer blk
   -> Apps m remotePeer blk bCS bBF bTX ()
 mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
