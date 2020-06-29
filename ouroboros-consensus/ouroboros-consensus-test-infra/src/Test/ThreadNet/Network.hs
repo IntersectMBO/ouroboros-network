@@ -59,6 +59,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.Protocol.Limits (shortWait, waitForever)
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
@@ -846,7 +847,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- node
                   nullDebugProtocolTracers
                   (customNodeToNodeCodecs pInfoConfig)
-                  (return Nothing) -- Workaround for #1882, tests that can't cope with timeouts.
+                  -- see #1882, tests that can't cope with timeouts.
+                  (pure $ NTN.ChainSyncTimeout
+                     { canAwaitTimeout  = shortWait
+                     , mustReplyTimeout = waitForever
+                     })
                   (NTN.mkHandlers nodeArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction
