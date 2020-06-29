@@ -84,6 +84,23 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
+  ledgerTipPoint =
+        hcollapse
+      . hcmap proxySingle (K . getOne)
+      . State.tip
+      . getHardForkLedgerState
+    where
+      getOne :: forall blk. SingleEraBlock blk
+             => LedgerState blk -> Point (LedgerState (HardForkBlock xs))
+      getOne = castPoint . injPoint . ledgerTipPoint' (Proxy @blk)
+
+      injPoint :: forall blk. SingleEraBlock blk
+               => Point blk -> Point (HardForkBlock xs)
+      injPoint GenesisPoint     = GenesisPoint
+      injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
+                                    toRawHash (Proxy @blk) h
+
+
 tickOne :: forall blk. SingleEraBlock blk
         => EpochInfo Identity
         -> SlotNo
@@ -111,11 +128,14 @@ instance CanHardFork xs
                          Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
         Right matched ->
           fmap (HardForkLedgerState . State.tickAllPast k) $ hsequence' $
-            hczipWith3 proxySingle (apply ei) cfgs injections matched
+            hczipWith3 proxySingle (apply ei) cfgs errInjections matched
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       k    = hardForkLedgerConfigK
       ei   = State.epochInfoLedger ledgerCfg st
+
+      errInjections :: NP (Injection WrapLedgerErr xs) xs
+      errInjections = injections
 
   reapplyLedgerBlock ledgerCfg@HardForkLedgerConfig{..}
                      (HardForkBlock (OneEraBlock block))
@@ -132,22 +152,6 @@ instance CanHardFork xs
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       k    = hardForkLedgerConfigK
       ei   = State.epochInfoLedger ledgerCfg st
-
-  ledgerTipPoint =
-        hcollapse
-      . hcmap proxySingle (K . getOne)
-      . State.tip
-      . getHardForkLedgerState
-    where
-      getOne :: forall blk. SingleEraBlock blk
-             => LedgerState blk -> Point (HardForkBlock xs)
-      getOne = injPoint . ledgerTipPoint' (Proxy @blk)
-
-      injPoint :: forall blk. SingleEraBlock blk
-               => Point blk -> Point (HardForkBlock xs)
-      injPoint GenesisPoint     = GenesisPoint
-      injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
-                                    toRawHash (Proxy @blk) h
 
 apply :: SingleEraBlock blk
       => EpochInfo Identity
@@ -210,7 +214,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
             HardForkEnvelopeErrWrongEra . MismatchEraInfo $
               Match.bihcmap proxySingle singleEraInfo ledgerViewInfo mismatch
         Right matched ->
-          hcollapse $ hczipWith3 proxySingle aux cfgs injections matched
+          hcollapse $ hczipWith3 proxySingle aux cfgs errInjections matched
     where
       ei :: EpochInfo Identity
       ei = State.epochInfoLedgerView
@@ -219,6 +223,9 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
 
       cfgs :: NP TopLevelConfig xs
       cfgs = distribTopLevelConfig ei tlc
+
+      errInjections :: NP (Injection WrapEnvelopeErr xs) xs
+      errInjections = injections
 
       aux :: forall blk. SingleEraBlock blk
           => TopLevelConfig blk

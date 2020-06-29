@@ -253,12 +253,15 @@ update cfg@HardForkConsensusConfig{..}
          . State.tickAllPast hardForkConsensusConfigK
          . State.align
             (translateConsensus ei cfg)
-            (hczipWith proxySingle (fn_2 .: updateEra ei slot) cfgs injections)
+            (hczipWith proxySingle (fn_2 .: updateEra ei slot) cfgs errInjections)
             matched
          $ chainDepState
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+
+    errInjections :: NP (Injection WrapValidationErr xs) xs
+    errInjections = injections
 
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity

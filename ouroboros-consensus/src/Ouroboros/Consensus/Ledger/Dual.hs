@@ -319,6 +319,10 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                   slot
                   dualLedgerStateAux
 
+  ledgerTipPoint = castPoint
+                 . (ledgerTipPoint :: LedgerState m -> Point (LedgerState m))
+                 . dualLedgerStateMain
+
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
   applyLedgerBlock DualLedgerConfig{..}
                    block@DualBlock{..}
@@ -358,10 +362,6 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                                     block
                                     dualLedgerStateBridge
       }
-
-  ledgerTipPoint = castPoint
-                 . (ledgerTipPoint :: LedgerState m -> Point m)
-                 . dualLedgerStateMain
 
 data instance LedgerState (DualBlock m a) = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m

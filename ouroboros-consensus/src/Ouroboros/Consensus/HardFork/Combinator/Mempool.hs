@@ -112,10 +112,13 @@ applyHelper apply
           Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
       Right matched ->
         fmap (fmap HardForkLedgerState . State.sequence) $ hsequence' $
-          hczipWith3 proxySingle applyCurrent cfgs injections matched
+          hczipWith3 proxySingle applyCurrent cfgs errInjections matched
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     ei   = State.epochInfoLedger hardForkConfig hardForkState
+
+    errInjections :: NP (Injection WrapApplyTxErr xs) xs
+    errInjections = injections
 
     applyCurrent
       :: forall blk. SingleEraBlock blk

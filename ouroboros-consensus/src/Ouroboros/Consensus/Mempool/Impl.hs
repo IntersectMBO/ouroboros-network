@@ -291,7 +291,9 @@ forkSyncStateOnTipPointChange registry menv =
 
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
-    getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState (mpEnvLedger menv)
+    getCurrentTip =
+          ledgerTipPoint' (Proxy @blk)
+      <$> getCurrentLedgerState (mpEnvLedger menv)
 
 {-------------------------------------------------------------------------------
   Mempool Implementation

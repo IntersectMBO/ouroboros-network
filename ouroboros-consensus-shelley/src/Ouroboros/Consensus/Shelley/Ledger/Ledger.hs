@@ -182,6 +182,8 @@ instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
         . ShelleyLedgerState pt history
         $ SL.applyTickTransition (shelleyLedgerGlobals cfg) bhState slotNo
 
+  ledgerTipPoint = castPoint . ledgerTip
+
 instance TPraosCrypto c
       => ApplyBlock (LedgerState (ShelleyBlock c)) (ShelleyBlock c) where
   -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
@@ -234,8 +236,6 @@ instance TPraosCrypto c
       Right ledgerState' -> ledgerState'
       Left  err          -> error $
         "Reapplication of Shelley ledger block failed: " <> show err
-
-  ledgerTipPoint = ledgerTip
 
 data instance LedgerState (ShelleyBlock c) = ShelleyLedgerState {
       ledgerTip    :: !(Point (ShelleyBlock c))

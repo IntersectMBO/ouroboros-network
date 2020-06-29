@@ -56,7 +56,7 @@ invariant ValidatedFragment{..}
     = Right ()
   where
    ledgerTip, headPoint :: Point blk
-   ledgerTip = ledgerTipPoint validatedLedger
+   ledgerTip = castPoint $ ledgerTipPoint validatedLedger
    headPoint = castPoint $ AF.headPoint validatedFragment
 
 -- | Constructor for 'ValidatedFragment' that checks the invariant

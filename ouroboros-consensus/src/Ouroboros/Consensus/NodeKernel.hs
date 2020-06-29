@@ -398,7 +398,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
             proof
         trace $ TraceForgedBlock
                   currentSlot
-                  (ledgerTipPoint (ledgerState extLedger))
+                  (ledgerTipPoint' (Proxy @blk) (ledgerState extLedger))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
 

@@ -308,6 +308,7 @@ instance MockProtocolSpecific c ext
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
   applyChainTick _ = Ticked
+  ledgerTipPoint (SimpleLedgerState st) = castPoint $ mockTip st
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
@@ -316,7 +317,6 @@ instance MockProtocolSpecific c ext
     where
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
-  ledgerTipPoint (SimpleLedgerState st) = mockTip st
 
 newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
@@ -415,7 +415,7 @@ instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result where
       QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
-  answerQuery _cfg QueryLedgerTip = ledgerTipPoint
+  answerQuery _cfg QueryLedgerTip = castPoint . ledgerTipPoint
 
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 

@@ -253,13 +253,15 @@ instance SingleEraBlock b => IsLedger (LedgerState (DegenFork b)) where
 
   applyChainTick cfg slot (DLgr lgr) = DLgr <$> applyChainTick cfg slot lgr
 
+  ledgerTipPoint (DLgr l) =
+    (castPoint :: Point (LedgerState (HardForkBlock '[b])) -> Point (LedgerState (DegenFork b))) $
+    ledgerTipPoint l
+
 instance NoHardForks b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
   applyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
     DLgr <$> applyLedgerBlock cfg b (Ticked slot lgr)
   reapplyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
     DLgr $ reapplyLedgerBlock cfg b (Ticked slot lgr)
-  ledgerTipPoint (DLgr l) =
-    (castPoint :: Point (HardForkBlock '[b]) -> Point (DegenFork b)) $ ledgerTipPoint l
 
 instance NoHardForks b => UpdateLedger (DegenFork b)
 

@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Fragment.ValidatedDiff
 import           Control.Monad.Except (throwError)
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
@@ -52,7 +53,7 @@ new chainDiff ledger =
     UnsafeValidatedChainDiff chainDiff ledger
   where
     chainDiffTip = getTip chainDiff
-    ledgerTip    = ledgerTipPoint ledger
+    ledgerTip    = castPoint $ ledgerTipPoint ledger
     precondition
       | chainDiffTip == ledgerTip
       = return ()
