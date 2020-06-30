@@ -353,7 +353,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     tpraosParams = Shelley.mkTPraosParams maxMajorPV initialNonce genesisShelley
 
     blockConfigShelley :: BlockConfig (ShelleyBlock sc)
-    blockConfigShelley = Shelley.mkShelleyBlockConfig protVer genesisShelley
+    blockConfigShelley =
+        Shelley.mkShelleyBlockConfig
+          protVer
+          genesisShelley
+          (tpraosBlockIssuerVKey mbCredsShelley)
 
     partialConsensusConfigShelley :: PartialConsensusConfig (BlockProtocol (ShelleyBlock sc))
     partialConsensusConfigShelley = tpraosParams

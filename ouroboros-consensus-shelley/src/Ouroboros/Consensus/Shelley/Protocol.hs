@@ -16,6 +16,7 @@
 module Ouroboros.Consensus.Shelley.Protocol (
     TPraos
   , TPraosChainSelectView (..)
+  , SelfIssued (..)
   , TPraosFields (..)
   , forgeTPraosFields
   , TPraosToSign (..)
@@ -41,9 +42,11 @@ module Ouroboros.Consensus.Shelley.Protocol (
 import           Control.Monad.Reader (runReader)
 import           Control.Monad.Trans.Except (except)
 import           Data.Coerce (coerce)
+import           Data.Function (on)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Ord (Down (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -293,26 +296,61 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
 -- Use generic instance
 instance TPraosCrypto c => NoUnexpectedThunks (ConsensusConfig (TPraos c))
 
+-- | Separate type instead of 'Bool' for the custom 'Ord' instance +
+-- documentation.
+data SelfIssued =
+    -- | A block we produced ourself
+    SelfIssued
+    -- | A block produced by another node
+  | NotSelfIssued
+  deriving (Show, Eq)
+
+instance Ord SelfIssued where
+  compare SelfIssued    SelfIssued    = EQ
+  compare NotSelfIssued NotSelfIssued = EQ
+  compare SelfIssued    NotSelfIssued = GT
+  compare NotSelfIssued SelfIssued    = LT
+
 -- | View of the ledger tip for chain selection.
 --
---   We order between chains as follows:
---   - By chain length, with longer chains always preferred; _else_
---   - By the leader value of the chain tip, with lower values preferred; _else_
---   - If the tip of each chain was issued by the same agent, then we prefer the
---     chain whose tip has the highest ocert issue number, if one exists; _else_
---   - All chains are considered equally preferable
-data TPraosChainSelectView c = ChainSelectView {
+-- We order between chains as follows:
+--
+-- 1. By chain length, with longer chains always preferred.
+-- 2. If the tip of each chain has the same slot number, we prefer the one tip
+--    that we produced ourselves.
+-- 3. If the tip of each chain was issued by the same agent, then we prefer
+--    the chain whose tip has the highest ocert issue number.
+-- 4. By the leader value of the chain tip, with lower values preferred.
+data TPraosChainSelectView c = TPraosChainSelectView {
     csvChainLength :: BlockNo
-  , csvLeaderVRF   :: VRF.OutputVRF (SL.VRF c)
+  , csvSlotNo      :: SlotNo
+  , csvSelfIssued  :: SelfIssued
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Natural
+  , csvLeaderVRF   :: VRF.OutputVRF (SL.VRF c)
   } deriving (Show, Eq)
 
 instance Crypto c => Ord (TPraosChainSelectView c) where
-  compare (ChainSelectView l1 v1 i1 in1) (ChainSelectView l2 v2 i2 in2) =
-    compare l1 l2
-    <> compare v2 v1 -- note inverted, since we prefer lower values!
-    <> if i1 == i2 then compare in1 in2 else EQ
+  compare =
+      mconcat [
+          compare `on` csvChainLength
+        , whenSame csvSlotNo (compare `on` csvSelfIssued)
+        , whenSame csvIssuer (compare `on` csvIssueNo)
+        , compare `on` Down . csvLeaderVRF
+        ]
+    where
+      -- | When the @a@s are equal, use the given comparison function,
+      -- otherwise, no preference.
+      whenSame ::
+           Eq a
+        => (view -> a)
+        -> (view -> view -> Ordering)
+        -> (view -> view -> Ordering)
+      whenSame f comp v1 v2
+        | f v1 == f v2
+        = comp v1 v2
+        | otherwise
+        = EQ
 
 instance TPraosCrypto c => ChainSelection (TPraos c) where
 
