@@ -66,7 +66,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.Protocol.Limits (shortWait, waitForever)
+import           Ouroboros.Network.Protocol.Limits (waitForever)
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
@@ -909,7 +909,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   (customNodeToNodeCodecs pInfoConfig)
                   -- see #1882, tests that can't cope with timeouts.
                   (pure $ NTN.ChainSyncTimeout
-                     { canAwaitTimeout  = shortWait
+                     { canAwaitTimeout  = waitForever
                      , mustReplyTimeout = waitForever
                      })
                   (NTN.mkHandlers nodeArgs nodeKernel)
