@@ -11,7 +11,10 @@
 
 module Test.ThreadNet.General (
     PropGeneralArgs (..)
+  , calcFinalIntersectionDepth
   , prop_general
+  , prop_general_semisync
+  , prop_inSync
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
@@ -25,9 +28,11 @@ module Test.ThreadNet.General (
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
+  , noCalcMessageDelay
   , plainTestNodeInitialization
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (guard)
 import           Control.Tracer (nullTracer)
 import qualified Data.Map as Map
@@ -42,6 +47,7 @@ import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.Block.Abstract as BA
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
@@ -166,6 +172,7 @@ instance Arbitrary TestConfig where
 data TestConfigB blk = TestConfigB
   { forgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , future       :: Future
+  , messageDelay :: CalcMessageDelay blk
   , nodeJoinPlan :: NodeJoinPlan
   , nodeRestarts :: NodeRestarts
   , txGenExtra   :: TxGenExtra blk
@@ -210,6 +217,7 @@ runTestNetwork TestConfig
   } TestConfigB
   { forgeEbbEnv
   , future
+  , messageDelay
   , nodeJoinPlan
   , nodeRestarts
   , txGenExtra
@@ -221,7 +229,6 @@ runTestNetwork TestConfig
           { nodeInfo
           , mkRekeyM
           } = mkTestConfigMB
-    setCurrentTime dawnOfTime
     let systemTime =
             BTime.defaultSystemTime
               (BTime.SystemStart dawnOfTime)
@@ -230,6 +237,7 @@ runTestNetwork TestConfig
       { tnaForgeEbbEnv  = forgeEbbEnv
       , tnaFuture       = future
       , tnaJoinPlan     = nodeJoinPlan
+      , tnaMessageDelay = messageDelay
       , tnaNodeInfo     = nodeInfo
       , tnaNumCoreNodes = numCoreNodes
       , tnaNumSlots     = numSlots
@@ -298,6 +306,9 @@ noExpectedCannotLeads :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
 noExpectedCannotLeads _ _ _ = False
 
 -- | The properties always required
+--
+-- Assumes: /Synchrony/ ie (long) chains diffuse to all connected nodes before
+-- the onset of the next slot.
 --
 -- Includes:
 --
@@ -392,13 +403,51 @@ prop_general ::
   forall blk.
      ( Condense blk
      , Eq blk
-     , HasHeader blk
      , RunNode blk
      )
   => PropGeneralArgs blk
   -> TestOutput blk
   -> Property
-prop_general pga testOutput =
+prop_general = prop_general_internal Sync
+
+-- | /Synchrony/ or /Semi-synchrony/
+--
+-- /Synchrony/ is characterized by every (relevant) message arriving during the
+-- same slot in which it was sent. The Ouroboros research papers instead
+-- characterize /semi-synchrony/ by a constant @Δ@ that bounds the number of
+-- slots that it takes for any (relevant) message to arrive under " nominal "
+-- circumstances (ie undersea cables have not been cut). Synchrony corresponds
+-- to @Δ=1@ (ie " before the next slot ").
+--
+-- The net strictly cannot know @Δ@, but it can strive towards some value as an
+-- objective eg.
+data Synchronicity = SemiSync | Sync
+
+-- | Like 'prop_general' but instead assuming /semi-synchrony/
+--
+-- For now, this simply disables a few 'Property's that depend on synchrony.
+prop_general_semisync ::
+  forall blk.
+     ( Condense blk
+     , Eq blk
+     , RunNode blk
+     )
+  => PropGeneralArgs blk
+  -> TestOutput blk
+  -> Property
+prop_general_semisync = prop_general_internal SemiSync
+
+prop_general_internal ::
+  forall blk.
+     ( Condense blk
+     , Eq blk
+     , RunNode blk
+     )
+  => Synchronicity
+  -> PropGeneralArgs blk
+  -> TestOutput blk
+  -> Property
+prop_general_internal syncity pga testOutput =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
@@ -409,7 +458,7 @@ prop_general pga testOutput =
     counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
     counterexample ("maxForkLength: " <> show maxForkLength) $
-    tabulate "consensus expected" [show isConsensusExpected] $
+    tabulateSync "consensus expected" [show isConsensusExpected] $
     tabulate "k" [show (maxRollbacks k)] $
     tabulate ("shortestLength (k = " <> show (maxRollbacks k) <> ")")
       [show (rangeK k (shortestLength nodeChains))] $
@@ -420,15 +469,22 @@ prop_general pga testOutput =
     prop_no_BlockRejections .&&.
     prop_no_unexpected_CannotLeads .&&.
     prop_no_invalid_blocks .&&.
-    prop_all_common_prefix
-        maxForkLength
-        (Map.elems nodeChains) .&&.
-    prop_all_growth .&&.
-    prop_no_unexpected_message_delays .&&.
+    propSync
+      ( prop_all_common_prefix maxForkLength (Map.elems nodeChains) .&&.
+        prop_all_growth .&&.
+        prop_no_unexpected_message_delays
+      ) .&&.
     conjoin
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    tabulateSync  = case syncity of
+        Sync     -> tabulate
+        SemiSync -> \_ _ -> id
+    propSync prop = case syncity of
+        Sync     -> prop
+        SemiSync -> property True
+
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
     PropGeneralArgs
@@ -780,4 +836,67 @@ prop_general pga testOutput =
           -- checking all forged blocks, even if they were never or only
           -- temporarily selected.
         , (s, blk) <- Map.toAscList nodeOutputForges
+        ]
+
+{-------------------------------------------------------------------------------
+  Final chains properties
+-------------------------------------------------------------------------------}
+
+-- | What was the most number of blocks needed to be dropped from a final chain
+-- in order to reach the final chains' common prefix?
+calcFinalIntersectionDepth :: forall blk. (BA.HasHeader blk)
+                           => TestOutput blk
+                           -> NumBlocks
+calcFinalIntersectionDepth TestOutput{testOutputNodes} =
+    NumBlocks difference
+  where
+    difference :: Word64
+    difference =
+        assert (dl >= dr) $   -- guaranteed by the foldl below
+        dl - dr
+      where
+        dl = count maxLength
+        dr = count $ MockChain.headBlockNo commonPrefix
+
+    -- NOTE: this test involves only the epoch 0 EBB required by Byron
+    count :: BA.WithOrigin BlockNo -> Word64
+    count = \case
+        BA.Origin                -> error "the Byron epoch 0 EBB is missing!"
+        BA.NotOrigin (BlockNo d) -> d   -- recall pgaFirstBlockNo is 0
+
+    -- length of longest chain
+    maxLength    :: BA.WithOrigin BlockNo
+    -- the common prefix
+    commonPrefix :: MockChain.Chain blk
+    (maxLength, commonPrefix) =
+        case map prj $ Map.toList testOutputNodes of
+          []   -> (BA.Origin, MockChain.Genesis)
+          x:xs -> foldl combine x xs
+      where
+        prj (_nid, NodeOutput{nodeOutputFinalChain}) = (d, c)
+          where
+            d = MockChain.headBlockNo nodeOutputFinalChain
+            c = nodeOutputFinalChain
+
+        combine (dl, cl) (dr, cr) = (max dl dr, chainCommonPrefix cl cr)
+
+-- | All final chains have the same block number
+prop_inSync :: forall blk. (BA.HasHeader blk)
+            => TestOutput blk -> Property
+prop_inSync testOutput =
+    counterexample (show lengths) $
+    counterexample "the nodes' final chains have different block numbers" $
+    property $
+    case lengths of
+      []   -> False
+      l:ls -> all (== l) ls
+  where
+    TestOutput{testOutputNodes} = testOutput
+
+    -- the length of each final chain
+    lengths :: [BA.WithOrigin BlockNo]
+    lengths =
+        [ MockChain.headBlockNo nodeOutputFinalChain
+        | (_nid, no) <- Map.toList testOutputNodes
+        , let NodeOutput{nodeOutputFinalChain} = no
         ]

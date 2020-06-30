@@ -120,6 +120,7 @@ prop_simple_praos_convergence TestSetup
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       = singleEraFuture slotLength epochSize
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()

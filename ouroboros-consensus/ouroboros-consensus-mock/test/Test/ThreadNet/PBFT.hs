@@ -124,6 +124,7 @@ prop_simple_pbft_convergence TestSetup
           (EpochSize $ maxRollbacks k * 10)
           -- The mock ledger doesn't really care, and neither does PBFT. We
           -- stick with the common @k * 10@ size for now.
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
