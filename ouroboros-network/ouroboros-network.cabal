@@ -86,6 +86,7 @@ library
                        Ouroboros.Network.Protocol.LocalStateQuery.Type
                        Ouroboros.Network.Protocol.LocalTxMonitor.Type
                        Ouroboros.Network.Protocol.TipSample.Type
+                       Ouroboros.Network.Protocol.TipSample.Client
                        Ouroboros.Network.Protocol.TipSample.Codec
                        Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Protocol.TxSubmission.Client
