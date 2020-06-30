@@ -131,6 +131,7 @@ data Handlers m peer blk = Handlers {
 
     , hKeepAliveClient
         :: BlockNodeToNodeVersion blk
+        -> ScheduledStop m
         -> peer
         -> (StrictTVar m (M.Map peer PeerGSV))
         -> KeepAliveInterval
@@ -376,7 +377,7 @@ data Apps m peer blk bCS bBF bTX bKA a = Apps {
     , aTxSubmissionServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m a
 
       -- | Start a keep-alive client.
-    , aKeepAliveClient :: BlockNodeToNodeVersion blk -> peer -> Channel m bKA -> m a
+    , aKeepAliveClient :: BlockNodeToNodeVersion blk -> ScheduledStop m -> peer -> Channel m bKA -> m a
 
       -- | Start a keep-alive server.
     , aKeepAliveServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bKA -> m a
@@ -514,10 +515,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aKeepAliveClient
       :: BlockNodeToNodeVersion blk
+      -> ScheduledStop m
       -> remotePeer
       -> Channel m bKA
       -> m ()
-    aKeepAliveClient version them channel = do
+    aKeepAliveClient version shouldStopSTM them channel = do
       labelThisThread "KeepAliveClient"
       startTs <- newTVarM Nothing
       let version' = nodeToNodeProtocolVersion (Proxy @blk) version
@@ -534,7 +536,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                             timeLimitsKeepAlive
                             channel
                             $ keepAliveClientPeer
-                            $ hKeepAliveClient version them dqCtx (KeepAliveInterval 10) startTs
+                            $ hKeepAliveClient version shouldStopSTM them dqCtx (KeepAliveInterval 10) startTs
 
       bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
 
@@ -579,7 +581,7 @@ initiator n2nv miniProtocolParameters version Apps {..} =
       -- p2p-governor & connection-manager.  Then consenus can use peer's ip
       -- address & port number, rather than 'ConnectionId' (which is
       -- a quadruple uniquely determinaing a connection).
-      (\them _shouldStopSTM -> NodeToNodeProtocols {
+      (\them shouldStopSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version them))),
           blockFetchProtocol =
@@ -587,7 +589,7 @@ initiator n2nv miniProtocolParameters version Apps {..} =
           txSubmissionProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them))),
           keepAliveProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version them)))
+            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version shouldStopSTM them)))
         })
       n2nv
 

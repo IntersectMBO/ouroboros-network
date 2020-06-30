@@ -20,7 +20,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.Map.Strict as M
 
-import           Ouroboros.Network.Mux (RunOrStop (..))
+import           Ouroboros.Network.Mux (RunOrStop (..), ScheduledStop)
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
@@ -43,19 +43,28 @@ keepAliveClient
        , Ord peer
        )
     => Tracer m (TraceKeepAliveClient peer)
+    -> ScheduledStop m
     -> peer
     -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
     -> StrictTVar m (Maybe Time)
     -> KeepAliveClient m ()
-keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
+keepAliveClient tracer shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
     SendMsgKeepAlive go
   where
     payloadSize = 2
 
     decisionSTM :: Lazy.TVar m Bool
                 -> STM  m RunOrStop
-    decisionSTM delayVar = Lazy.readTVar delayVar >>= fmap (const Run) . check
+    decisionSTM delayVar = do
+       shouldStop <- shouldStopSTM
+       case shouldStop of
+            Stop -> return Stop
+            Run  -> do
+              done <- Lazy.readTVar delayVar
+              if done
+                 then return Run
+                 else retry
 
     go :: m (KeepAliveClient m ())
     go = do
