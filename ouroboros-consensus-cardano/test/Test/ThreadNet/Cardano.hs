@@ -70,7 +70,7 @@ import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..))
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
-import           Test.ThreadNet.Util.NodeTopology (meshNodeTopology)
+import qualified Test.ThreadNet.Util.NodeTopology as Topo
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
@@ -116,26 +116,7 @@ instance Arbitrary TestSetup where
     setupSlotLengthByron   <- arbitrary
     setupSlotLengthShelley <- arbitrary
 
-    setupTestConfig <- do
-      tc <- arbitrary
-
-      -- This test has more slots than most, so we de-emphasize the relatively
-      -- expensive n=5 case. For example:
-      --
-      -- > 250 tests with 30% 2, 30% 3, 30% 4, and 10% 5 took 500s
-      -- > 250 tests with 100% 5 took 1000s
-      ncn <- frequency [(9, choose (2, 4)), (1, pure 5)]
-
-      let NumSlots t = numSlots tc
-      pure tc
-        { numCoreNodes = NumCoreNodes ncn
-        , numSlots     =
-            NumSlots $
-            min 150 $
-            -- make it very likely that there are multiple epochs
-            numByronEpochs * 10 * maxRollbacks setupK + div t 2
-        }
-
+    setupTestConfig                       <- genTestConfig setupK
     let TestConfig{numCoreNodes, numSlots} = setupTestConfig
 
     setupByronLowerBound <- arbitrary
@@ -150,15 +131,54 @@ instance Arbitrary TestSetup where
       , setupPartition
       , setupSlotLengthByron
       , setupSlotLengthShelley
-      , setupTestConfig = setupTestConfig
-        { nodeTopology =
-            -- use a mesh topology so the partition classes definitely remain
-            -- internally connected
-            meshNodeTopology numCoreNodes
-        }
+      , setupTestConfig
       }
 
   -- TODO shrink
+
+-- | Generate 'setupTestConfig'
+genTestConfig :: SecurityParam -> Gen TestConfig
+genTestConfig k = do
+    initSeed <- arbitrary
+
+    -- Ensure there are almost always sufficient slots for multiple eras.
+    numSlots <- do
+      t <- choose (5, 50)
+      pure $ NumSlots $
+        min 150 $
+        numByronEpochs * 9 * maxRollbacks k + t
+
+    -- This test has more slots than most, so we de-emphasize the relatively
+    -- expensive n=5 case. For example:
+    --
+    -- > 250 tests with 30% 2, 30% 3, 30% 4, and 10% 5 took 500s
+    -- > 250 tests with 100% 5 took 1000s
+    ncn <- frequency [(9, choose (2, 4)), (1, pure 5)]
+
+    -- Ensure that each partition class is internally connected.
+    nodeTopology <- do
+      topo0   <- Topo.genNodeTopology $ NumCoreNodes ncn
+      oddTopo <- do
+        -- eg nodes 1 3 for ncn = 5
+        topo <- Topo.genNodeTopology $ NumCoreNodes $ div ncn 2
+        let rename (CoreNodeId i) = CoreNodeId (2 * i + 1)
+        pure $ Topo.mapNodeTopology rename topo
+      evenTopo <- do
+        -- eg nodes 0 2 4 for ncn = 5
+        topo <- Topo.genNodeTopology $ NumCoreNodes $ ncn - div ncn 2
+        let rename (CoreNodeId i) = CoreNodeId (2 * i)
+        pure $ Topo.mapNodeTopology rename topo
+      pure $
+        Topo.unionNodeTopology evenTopo $
+        Topo.unionNodeTopology oddTopo $
+        topo0
+
+    pure TestConfig
+      { initSeed
+      , nodeTopology
+      , numCoreNodes = NumCoreNodes ncn
+      , numSlots
+      }
 
 -- | Generate 'setupPartition'
 genPartition :: NumCoreNodes -> NumSlots -> SecurityParam -> Gen Partition
