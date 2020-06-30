@@ -134,6 +134,7 @@ prop_simple_bft_convergence TestSetup
           (EpochSize $ maxRollbacks k * 10)
           -- The mock ledger doesn't really care, and neither does BFT. We
           -- stick with the common @k * 10@ size for now.
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()

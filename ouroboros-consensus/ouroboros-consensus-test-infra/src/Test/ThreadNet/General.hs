@@ -12,6 +12,7 @@
 module Test.ThreadNet.General (
     PropGeneralArgs (..)
   , prop_general
+  , prop_general_semisync
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
@@ -25,6 +26,7 @@ module Test.ThreadNet.General (
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
+  , noCalcMessageDelay
   , plainTestNodeInitialization
   ) where
 
@@ -166,6 +168,7 @@ instance Arbitrary TestConfig where
 data TestConfigB blk = TestConfigB
   { forgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , future       :: Future
+  , messageDelay :: CalcMessageDelay blk
   , nodeJoinPlan :: NodeJoinPlan
   , nodeRestarts :: NodeRestarts
   , txGenExtra   :: TxGenExtra blk
@@ -210,6 +213,7 @@ runTestNetwork TestConfig
   } TestConfigB
   { forgeEbbEnv
   , future
+  , messageDelay
   , nodeJoinPlan
   , nodeRestarts
   , txGenExtra
@@ -230,6 +234,7 @@ runTestNetwork TestConfig
       { tnaForgeEbbEnv  = forgeEbbEnv
       , tnaFuture       = future
       , tnaJoinPlan     = nodeJoinPlan
+      , tnaMessageDelay = messageDelay
       , tnaNodeInfo     = nodeInfo
       , tnaNumCoreNodes = numCoreNodes
       , tnaNumSlots     = numSlots
@@ -298,6 +303,9 @@ noExpectedCannotLeads :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
 noExpectedCannotLeads _ _ _ = False
 
 -- | The properties always required
+--
+-- Assumes: /Synchrony/ ie (long) chains diffuse to all connected nodes before
+-- the onset of the next slot.
 --
 -- Includes:
 --
@@ -392,13 +400,51 @@ prop_general ::
   forall blk.
      ( Condense blk
      , Eq blk
-     , HasHeader blk
      , RunNode blk
      )
   => PropGeneralArgs blk
   -> TestOutput blk
   -> Property
-prop_general pga testOutput =
+prop_general = prop_general_internal Sync
+
+-- | /Synchrony/ or /Semi-synchrony/
+--
+-- /Synchrony/ is characterized by every (relevant) message arriving during the
+-- same slot in which it was sent. The Ouroboros research papers instead
+-- characterize /semi-synchrony/ by a constant @Δ@ that bounds the number of
+-- slots that it takes for any (relevant) message to arrive under " nominal "
+-- circumstances (ie undersea cables have not been cut). Synchrony corresponds
+-- to @Δ=1@ (ie " before the next slot ").
+--
+-- The net strictly cannot know @Δ@, but it can strive towards some value as an
+-- objective eg.
+data Synchronicity = SemiSync | Sync
+
+-- | Like 'prop_general' but instead assuming /semi-synchrony/
+--
+-- For now, this simply disables a few 'Property's that depend on synchrony.
+prop_general_semisync ::
+  forall blk.
+     ( Condense blk
+     , Eq blk
+     , RunNode blk
+     )
+  => PropGeneralArgs blk
+  -> TestOutput blk
+  -> Property
+prop_general_semisync = prop_general_internal SemiSync
+
+prop_general_internal ::
+  forall blk.
+     ( Condense blk
+     , Eq blk
+     , RunNode blk
+     )
+  => Synchronicity
+  -> PropGeneralArgs blk
+  -> TestOutput blk
+  -> Property
+prop_general_internal syncity pga testOutput =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
@@ -409,7 +455,7 @@ prop_general pga testOutput =
     counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
     counterexample ("maxForkLength: " <> show maxForkLength) $
-    tabulate "consensus expected" [show isConsensusExpected] $
+    tabulateSync "consensus expected" [show isConsensusExpected] $
     tabulate "k" [show (maxRollbacks k)] $
     tabulate ("shortestLength (k = " <> show (maxRollbacks k) <> ")")
       [show (rangeK k (shortestLength nodeChains))] $
@@ -420,15 +466,22 @@ prop_general pga testOutput =
     prop_no_BlockRejections .&&.
     prop_no_unexpected_CannotLeads .&&.
     prop_no_invalid_blocks .&&.
-    prop_all_common_prefix
-        maxForkLength
-        (Map.elems nodeChains) .&&.
-    prop_all_growth .&&.
-    prop_no_unexpected_message_delays .&&.
+    propSync
+      ( prop_all_common_prefix maxForkLength (Map.elems nodeChains) .&&.
+        prop_all_growth .&&.
+        prop_no_unexpected_message_delays
+      ) .&&.
     conjoin
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    tabulateSync  = case syncity of
+        Sync     -> tabulate
+        SemiSync -> \_ _ -> id
+    propSync prop = case syncity of
+        Sync     -> prop
+        SemiSync -> property True
+
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
     PropGeneralArgs

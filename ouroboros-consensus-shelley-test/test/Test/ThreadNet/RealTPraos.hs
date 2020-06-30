@@ -96,6 +96,7 @@ prop_simple_real_tpraos_convergence TestSetup
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       = singleEraFuture tpraosSlotLength epochSize
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ShelleyTxGenExtra $ mkGenEnv coreNodes

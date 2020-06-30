@@ -16,10 +16,12 @@
 -- | Setup network
 module Test.ThreadNet.Network (
     runThreadNetwork
+  , CalcMessageDelay (..)
   , ForgeEbbEnv (..)
   , RekeyM
   , ThreadNetworkArgs (..)
   , TestNodeInitialization (..)
+  , noCalcMessageDelay
   , plainTestNodeInitialization
   , TracingConstraints
     -- * Tracers
@@ -36,6 +38,7 @@ module Test.ThreadNet.Network (
 import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
+import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
@@ -55,7 +58,10 @@ import           GHC.Stack
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
+import qualified Ouroboros.Network.Codec as Codec
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
+import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
@@ -165,6 +171,22 @@ plainTestNodeInitialization pInfo = TestNodeInitialization
     , tniProtocolInfo = pInfo
     }
 
+-- | Compute the chain diffusion delay
+--
+-- This is the number of slots a 'CS.MsgRollForward' should arrive after the
+-- forge slot of the header it is carrying.
+--
+-- It may depend on the @(sender, recipient)@, the current slot, and header.
+newtype CalcMessageDelay blk = CalcMessageDelay
+    ((CoreNodeId, CoreNodeId) -> SlotNo -> Header blk -> NumSlots)
+
+noCalcMessageDelay :: CalcMessageDelay blk
+noCalcMessageDelay = CalcMessageDelay $ \_ _ _ -> NumSlots 0
+
+-- | This type occurs in records where most of the fields are data
+instance Show (CalcMessageDelay blk) where
+  show _ = "_CalcMessageDelay"
+
 -- | Parameters for the test node net
 --
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
@@ -174,6 +196,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization m blk
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
+  , tnaMessageDelay :: CalcMessageDelay blk
   , tnaRNG          :: ChaChaDRG
   , tnaMkRekeyM     :: Maybe (m (RekeyM m blk))
   , tnaRestarts     :: NodeRestarts
@@ -257,6 +280,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
   , tnaNodeInfo       = mkProtocolInfo
   , tnaNumCoreNodes   = numCoreNodes
   , tnaNumSlots       = numSlots
+  , tnaMessageDelay   = calcMessageDelay
   , tnaRNG            = initRNG
   , tnaMkRekeyM       = mbMkRekeyM
   , tnaRestarts       = nodeRestarts
@@ -307,12 +331,18 @@ runThreadNetwork systemTime ThreadNetworkArgs
     -- fork the directed edges, which also allocates their status variables
     let uedges = edgesNodeTopology nodeTopology
     edgeStatusVars <- fmap (Map.fromList . concat) $ do
+      -- assume they all use the same CodecConfig
+      let nodeInitData = mkProtocolInfo (CoreNodeId 0)
+          TestNodeInitialization{tniProtocolInfo} = nodeInitData
+          ProtocolInfo{pInfoConfig} = tniProtocolInfo
+          codecConfig = configCodec pInfoConfig
       forM uedges $ \uedge -> do
         forkBothEdges
           sharedRegistry
           clock
           -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
+          (codecConfig, calcMessageDelay)
           vertexStatusVars
           uedge
 
@@ -953,14 +983,15 @@ data RestartCause
 -- | Fork two directed edges, one in each direction between the two vertices
 --
 forkBothEdges
-  :: (IOLike m, TranslateNetworkProtocolVersion blk, HasCallStack)
+  :: (IOLike m, RunNode blk, HasCallStack)
   => ResourceRegistry m
   -> OracularClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> (CodecConfig blk, CalcMessageDelay blk)
   -> Map CoreNodeId (VertexStatusVar m blk)
   -> (CoreNodeId, CoreNodeId)
   -> m [((CoreNodeId, CoreNodeId), EdgeStatusVar m)]
-forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
+forkBothEdges sharedRegistry clock tr cfg vertexStatusVars (node1, node2) = do
   let endpoint1 = mkEndpoint node1
       endpoint2 = mkEndpoint node2
       mkEndpoint node = case Map.lookup node vertexStatusVars of
@@ -972,7 +1003,7 @@ forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
         let label = concat
               ["directed-edge-", condense (fst e1), "-", condense (fst e2)]
         void $ forkLinkedThread sharedRegistry label $ do
-          directedEdge tr clock v e1 e2
+          directedEdge sharedRegistry tr cfg clock v e1 e2
         pure ((fst e1, fst e2), v)
 
   ev12 <- mkDirEdge endpoint1 endpoint2
@@ -1000,18 +1031,20 @@ forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
 -- edge via the @async@ interface rather than relying on some sort of mock
 -- socket semantics to convey the cancellation.
 directedEdge ::
-  forall m blk. (IOLike m, TranslateNetworkProtocolVersion blk)
-  => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  forall m blk. (IOLike m, RunNode blk)
+  => ResourceRegistry m
+  -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> (CodecConfig blk, CalcMessageDelay blk)
   -> OracularClock m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
   -> m ()
-directedEdge tr clock edgeStatusVar client server =
+directedEdge registry tr cfg clock edgeStatusVar client server =
     loop
   where
     loop = do
-        restart <- directedEdgeInner edgeStatusVar client server
+        restart <- directedEdgeInner registry clock cfg edgeStatusVar client server
           `catch` (pure . RestartExn)
           `catch` hUnexpected
         atomically $ writeTVar edgeStatusVar EDown
@@ -1044,14 +1077,17 @@ directedEdge tr clock edgeStatusVar client server =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk. (IOLike m, TranslateNetworkProtocolVersion blk)
-  => EdgeStatusVar m
+  forall m blk. (IOLike m, RunNode blk)
+  => ResourceRegistry m
+  -> OracularClock m
+  -> (CodecConfig blk, CalcMessageDelay blk)
+  -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ client threads on this node
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ server threads on this node
   -> m RestartCause
-directedEdgeInner edgeStatusVar
+directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
   (node1, vertexStatusVar1) (node2, vertexStatusVar2) = do
     -- block until both nodes are 'VUp'
     (LimitedApp app1, LimitedApp app2) <- atomically $ do
@@ -1060,7 +1096,9 @@ directedEdgeInner edgeStatusVar
     atomically $ writeTVar edgeStatusVar EUp
 
     let miniProtocol ::
-             (  LimitedApp' m NodeId blk
+             String
+             -- ^ protocol name
+          -> (  LimitedApp' m NodeId blk
              -> BlockNodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
@@ -1074,9 +1112,11 @@ directedEdgeInner edgeStatusVar
              -> m ((), trailingBytes)
              )
              -- ^ server action to run on node2
+          -> (msg -> m ())
           -> m (m (), m ())
-        miniProtocol client server = do
-           (chan, dualChan) <- createConnectedChannels
+        miniProtocol proto client server middle = do
+           (chan, dualChan) <-
+             createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
              ( fst <$> client app1 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node2) chan
              , fst <$> server app2 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node1) dualChan
@@ -1089,16 +1129,19 @@ directedEdgeInner edgeStatusVar
       sequence $
         pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
         NE.:|
-      [ miniProtocol
+      [ miniProtocol "ChainSync"
           (wrapMPEE MPEEChainSyncClient NTN.aChainSyncClient)
           NTN.aChainSyncServer
+          chainSyncMiddle
         -- TODO do not swallow exceptions from these protocols
-      , miniProtocol
+      , miniProtocol "BlockFetch"
           NTN.aBlockFetchClient
           NTN.aBlockFetchServer
-      , miniProtocol
+          (\_ -> pure ())
+      , miniProtocol "TxSubmission"
           NTN.aTxSubmissionClient
           NTN.aTxSubmissionServer
+          (\_ -> pure ())
       ]
   where
     getApp v = readTVar v >>= \case
@@ -1126,6 +1169,69 @@ directedEdgeInner edgeStatusVar
         atomically $ readTVar v >>= \case
           VFalling -> pure ()
           _        -> retry
+
+    -- introduce a delay for 'CS.MsgRollForward'
+    --
+    -- It is reasonable to delay only this message because this message is the
+    -- first step in process of one node diffusing a block to another node.
+    chainSyncMiddle :: Lazy.ByteString -> m ()
+    chainSyncMiddle bs = do
+        let tok = Codec.ServerAgency $ CS.TokNext CS.TokMustReply
+        decodeStep <- Codec.decode codec tok
+        Codec.runDecoder [bs] decodeStep >>= \case
+          Right (Codec.SomeMessage (CS.MsgRollForward hdr _tip)) -> do
+              s <- OracularClock.getCurrentSlot clock
+              let NumSlots d = f (node1, node2) s hdr
+                    where
+                      CalcMessageDelay f = calcMessageDelay
+              void $ OracularClock.blockUntilSlot clock $ blockSlot hdr + SlotNo d
+          _ -> pure ()
+      where
+        codec =
+            NTN.cChainSyncCodec $
+            NTN.defaultCodecs cfg $
+            mostRecentSupportedNodeToNode (Proxy @blk)
+
+-- | Variant of 'createConnectChannels' with intermediate queues for
+-- delayed-but-in-order messages
+--
+-- Sending adds the message to a queue. The delaying argument should use
+-- 'threadDelay' in order to delay the transfer of the given message from the
+-- queue to the recipient.
+createConnectedChannelsWithDelay
+  :: IOLike m
+  => ResourceRegistry m
+  -> (CoreNodeId, CoreNodeId, String)
+     -- ^ (client, server, protocol)
+  -> (a -> m ())
+     -- ^ per-message delay
+  -> m (Channel m a, Channel m a)
+createConnectedChannelsWithDelay registry (client, server, proto) middle = do
+    -- queue for async send and an mvar for delayed-but-in-order reads from the
+    -- queue
+    qA <- atomically $ MonadSTM.newTQueue
+    bA <- atomically $ MonadSTM.newEmptyTMVar
+    spawn (client, server) qA bA
+
+    qB <- atomically $ MonadSTM.newTQueue
+    bB <- atomically $ MonadSTM.newEmptyTMVar
+    spawn (server, client) qB bB
+
+    return (chan qA bB, chan qB bA)   -- note the crossover
+  where
+    spawn (cid1, cid2) q b = do
+        let label =
+                "delaying thread for " <> proto <> " " <>
+                show cid1 <> " to " <> show cid2
+        void $ forkLinkedThread registry label $ forever $ do
+          x <- atomically $ MonadSTM.readTQueue q
+          middle x
+          atomically $ MonadSTM.putTMVar b x
+
+    chan q b = Channel
+        { recv = fmap Just $ atomically $ MonadSTM.takeTMVar b
+        , send = atomically . MonadSTM.writeTQueue q
+        }
 
 {-------------------------------------------------------------------------------
   Node information not bound to lifetime of a specific node instance
