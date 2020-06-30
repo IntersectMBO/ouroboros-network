@@ -55,6 +55,7 @@ import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -644,13 +645,15 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
               -- ^ added block tracer
+           -> Tracer m (RealPoint blk, BlockNo)
+              -- ^ block selection tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> CoreNodeId
            -> ChainDbArgs m blk
     mkArgs
       clock registry
       cfg initLedger
-      invalidTracer addTracer
+      invalidTracer addTracer selTracer
       nodeDBs _coreNodeId = ChainDbArgs
         { -- HasFS instances
           cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
@@ -681,14 +684,27 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
+        prj af = case AF.headBlockNo af of
+            At bno -> bno
+            Origin -> error "selTracer"
+
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
           ChainDB.TraceAddBlockEvent
               (ChainDB.AddBlockValidation (ChainDB.InvalidBlock e p))
               -> traceWith invalidTracer (p, e)
+
           ChainDB.TraceAddBlockEvent
               (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
               -> traceWith addTracer (p, bno)
+
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.AddedToCurrentChain p _old new)
+              -> traceWith selTracer (ChainDB.newTipPoint p, prj new)
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.SwitchedToAFork p _old new)
+              -> traceWith selTracer (ChainDB.newTipPoint p, prj new)
+
           _   -> pure ()
 
     -- | Augment a tracer message with the node which produces it.
@@ -720,14 +736,18 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
       -- prop_general relies on these tracers
       let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
-          addTracer = Tracer $ \(p, bno) -> do
+          wrapTracer tr   = Tracer $ \(p, bno) -> do
             s <- OracularClock.getCurrentSlot clock
-            traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
+            traceWith tr (s, p, bno)
+          addTracer       = wrapTracer $ nodeEventsAdds nodeInfoEvents
+          selTracer       = wrapTracer $ nodeEventsSelects nodeInfoEvents
+          headerAddTracer = wrapTracer $ nodeEventsHeaderAdds nodeInfoEvents
       let chainDbArgs = mkArgs
             clock registry
             pInfoConfig pInfoInitLedger
             invalidTracer
             addTracer
+            selTracer
             nodeInfoDBs
             coreNodeId
       chainDB <- snd <$>
@@ -810,7 +830,17 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
-                { forgeTracer = nodeEventsForges nodeInfoEvents
+                { chainSyncClientTracer = Tracer $ \case
+                    CSClient.TraceDownloadedHeader hdr
+                      -> case blockPoint hdr of
+                            GenesisPoint   -> pure ()
+                            BlockPoint s h ->
+                                -- TODO include tip in TraceDownloadedHeader
+                                -- and only trace if hdr == tip?
+                                traceWith headerAddTracer
+                                  (RealPoint s h, blockNo hdr)
+                    _ -> pure ()
+                , forgeTracer           = nodeEventsForges nodeInfoEvents
                 }
 
           -- traces the node's local events other than those from the -- ChainDB
@@ -1252,8 +1282,12 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'AddedBlockToVolDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk)
     -- ^ every 'TraceForgeEvent'
+  , nodeEventsHeaderAdds  :: ev (SlotNo, RealPoint blk, BlockNo)
+    -- ^ every 'TraceDownloadedHeader', excluding EBBs
   , nodeEventsInvalids    :: ev (RealPoint blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
+  , nodeEventsSelects     :: ev (SlotNo, RealPoint blk, BlockNo)
+    -- ^ every 'ChainDB.AddedToCurrentChain' and 'ChainDB.SwitchedToAFork'
   , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
   }
@@ -1280,9 +1314,11 @@ newNodeInfo = do
       (t2, m2) <- recordingTracerTVar
       (t3, m3) <- recordingTracerTVar
       (t4, m4) <- recordingTracerTVar
+      (t5, m5) <- recordingTracerTVar
+      (t6, m6) <- recordingTracerTVar
       pure
-          ( NodeEvents     t1     t2     t3     t4
-          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4
+          ( NodeEvents     t1     t2     t3     t4     t5     t6
+          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5 <*> m6
           )
 
   (nodeInfoDBs, readDBs) <- do
@@ -1313,8 +1349,10 @@ data NodeOutput blk = NodeOutput
   , nodeOutputFinalChain  :: Chain blk
   , nodeOutputFinalLedger :: LedgerState blk
   , nodeOutputForges      :: Map SlotNo blk
+  , nodeOutputHeaderAdds  :: Map SlotNo [(RealPoint blk, BlockNo)]
   , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
   , nodeOutputNodeDBs     :: NodeDBs MockFS
+  , nodeOutputSelects     :: Map SlotNo [(RealPoint blk, BlockNo)]
   }
 
 data TestOutput blk = TestOutput
@@ -1343,7 +1381,9 @@ mkTestOutput vertexInfos = do
         let NodeEvents
               { nodeEventsAdds
               , nodeEventsForges
+              , nodeEventsHeaderAdds
               , nodeEventsInvalids
+              , nodeEventsSelects
               , nodeEventsTipBlockNos
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
@@ -1358,6 +1398,16 @@ mkTestOutput vertexInfos = do
               , nodeOutputForges      =
                   Map.fromList $
                   [ (s, b) | TraceForgedBlock s _ b _ <- nodeEventsForges ]
+              , nodeOutputHeaderAdds  =
+                  Map.fromListWith (flip (++)) $
+                  [ (s, [(p, bno)])
+                  | (s, p, bno) <- nodeEventsHeaderAdds
+                  ]
+              , nodeOutputSelects     =
+                  Map.fromListWith (flip (++)) $
+                  [ (s, [(p, bno)])
+                  | (s, p, bno) <- nodeEventsSelects
+                  ]
               , nodeOutputInvalids    = (:[]) <$> Map.fromList nodeEventsInvalids
               , nodeOutputNodeDBs     = nodeInfoDBs
               }
