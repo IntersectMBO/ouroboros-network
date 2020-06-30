@@ -6,7 +6,8 @@
 
 module Test.ThreadNet.Util (
   -- * Chain properties
-    prop_all_common_prefix
+    chainCommonPrefix
+  , prop_all_common_prefix
   , shortestLength
   -- * LeaderSchedule
   , emptyLeaderSchedule
@@ -98,6 +99,19 @@ prop_common_prefix l x y = go x y .&&. go y x
                         Just s  ->    ", last slot "
                                    <> show (unSlotNo s)
                                    <> ")"
+
+-- | Find the common prefix of two chains
+chainCommonPrefix :: HasHeader b => Chain b -> Chain b -> Chain b
+chainCommonPrefix Genesis        _              = Genesis
+chainCommonPrefix _              Genesis        = Genesis
+chainCommonPrefix cl@(cl' :> bl) cr@(cr' :> br) =
+    case blockNo bl `compare` blockNo br of
+      LT -> chainCommonPrefix cl  cr'
+      GT -> chainCommonPrefix cl' cr
+      EQ ->
+          if blockHash bl /= blockHash br
+          then chainCommonPrefix cl' cr'
+          else cl
 
 {-------------------------------------------------------------------------------
   Generation of a dot-file to represent the trace as a graph

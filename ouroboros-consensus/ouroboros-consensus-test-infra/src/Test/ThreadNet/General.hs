@@ -11,8 +11,10 @@
 
 module Test.ThreadNet.General (
     PropGeneralArgs (..)
+  , calcFinalIntersectionDepth
   , prop_general
   , prop_general_semisync
+  , prop_inSync
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
@@ -30,6 +32,7 @@ module Test.ThreadNet.General (
   , plainTestNodeInitialization
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (guard)
 import           Control.Tracer (nullTracer)
 import qualified Data.Map as Map
@@ -44,6 +47,7 @@ import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.Block.Abstract as BA
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
@@ -832,4 +836,67 @@ prop_general_internal syncity pga testOutput =
           -- checking all forged blocks, even if they were never or only
           -- temporarily selected.
         , (s, blk) <- Map.toAscList nodeOutputForges
+        ]
+
+{-------------------------------------------------------------------------------
+  Final chains properties
+-------------------------------------------------------------------------------}
+
+-- | What was the most number of blocks needed to be dropped from a final chain
+-- in order to reach the final chains' common prefix?
+calcFinalIntersectionDepth :: forall blk. (BA.HasHeader blk)
+                           => TestOutput blk
+                           -> NumBlocks
+calcFinalIntersectionDepth TestOutput{testOutputNodes} =
+    NumBlocks difference
+  where
+    difference :: Word64
+    difference =
+        assert (dl >= dr) $   -- guaranteed by the foldl below
+        dl - dr
+      where
+        dl = count maxLength
+        dr = count $ MockChain.headBlockNo commonPrefix
+
+    -- NOTE: this test involves only the epoch 0 EBB required by Byron
+    count :: BA.WithOrigin BlockNo -> Word64
+    count = \case
+        BA.Origin                -> error "the Byron epoch 0 EBB is missing!"
+        BA.NotOrigin (BlockNo d) -> d   -- recall pgaFirstBlockNo is 0
+
+    -- length of longest chain
+    maxLength    :: BA.WithOrigin BlockNo
+    -- the common prefix
+    commonPrefix :: MockChain.Chain blk
+    (maxLength, commonPrefix) =
+        case map prj $ Map.toList testOutputNodes of
+          []   -> (BA.Origin, MockChain.Genesis)
+          x:xs -> foldl combine x xs
+      where
+        prj (_nid, NodeOutput{nodeOutputFinalChain}) = (d, c)
+          where
+            d = MockChain.headBlockNo nodeOutputFinalChain
+            c = nodeOutputFinalChain
+
+        combine (dl, cl) (dr, cr) = (max dl dr, chainCommonPrefix cl cr)
+
+-- | All final chains have the same block number
+prop_inSync :: forall blk. (BA.HasHeader blk)
+            => TestOutput blk -> Property
+prop_inSync testOutput =
+    counterexample (show lengths) $
+    counterexample "the nodes' final chains have different block numbers" $
+    property $
+    case lengths of
+      []   -> False
+      l:ls -> all (== l) ls
+  where
+    TestOutput{testOutputNodes} = testOutput
+
+    -- the length of each final chain
+    lengths :: [BA.WithOrigin BlockNo]
+    lengths =
+        [ MockChain.headBlockNo nodeOutputFinalChain
+        | (_nid, no) <- Map.toList testOutputNodes
+        , let NodeOutput{nodeOutputFinalChain} = no
         ]
