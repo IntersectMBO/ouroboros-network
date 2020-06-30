@@ -56,6 +56,13 @@ instance IsLedger (LedgerState ByronSpecBlock) where
           (toByronSpecSlotNo       slot)
           (byronSpecLedgerState    state)
 
+  ledgerTipPoint state =
+      case byronSpecLedgerTip state of
+        Nothing   -> GenesisPoint
+        Just slot -> BlockPoint
+                       slot
+                       (getChainStateHash (byronSpecLedgerState state))
+
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
   applyLedgerBlock cfg block (Ticked slot state) =
     withExcept ByronSpecLedgerError $
@@ -78,13 +85,6 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
       dontExpectError mb = case runExcept mb of
         Left  _ -> error "reapplyLedgerBlock: unexpected error"
         Right b -> b
-
-  ledgerTipPoint state =
-      case byronSpecLedgerTip state of
-        Nothing   -> GenesisPoint
-        Just slot -> BlockPoint
-                       slot
-                       (getChainStateHash (byronSpecLedgerState state))
 
 data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
       -- | Tip of the ledger (most recently applied block, if any)

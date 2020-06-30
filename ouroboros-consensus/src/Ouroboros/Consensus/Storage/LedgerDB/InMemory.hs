@@ -774,6 +774,8 @@ ledgerDbSwitch cfg numRollbacks newBlocks db = do
 
 type instance LedgerCfg (LedgerDB l r) = LedgerCfg l
 
+type instance HeaderHash (LedgerDB l r) = HeaderHash l
+
 instance ( IsLedger l
            -- Required superclass constraints of 'IsLedger'
          , Show               r
@@ -787,6 +789,9 @@ instance ( IsLedger l
     where
       Ticked _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
 
+  ledgerTipPoint =
+      castPoint . ledgerTipPoint . ledgerDbCurrent
+
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
   applyLedgerBlock cfg blk (Ticked slot db) = do
       fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
@@ -796,8 +801,6 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
       (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
         reapplyLedgerBlock cfg blk $
           Ticked slot (ledgerDbCurrent db)
-  ledgerTipPoint =
-      ledgerTipPoint . ledgerDbCurrent
 
 {-------------------------------------------------------------------------------
   Suppor for testing

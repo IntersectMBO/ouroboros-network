@@ -101,6 +101,11 @@ class ( -- Requirements on the ledger state itself
   -- the tip of the ledger (except for EBBs, obviously..).
   applyChainTick :: LedgerCfg l -> SlotNo -> l -> Ticked l
 
+  -- | Point of the most recently applied block
+  --
+  -- Should be 'genesisPoint' when no blocks have been applied yet
+  ledgerTipPoint :: l -> Point l
+
 -- | Mark a ledger state or ledger view as " ticked "
 --
 -- Ticking refers to the passage of time (the ticking of the clock). When a
@@ -138,6 +143,7 @@ data Ticked l = Ticked {
 -------------------------------------------------------------------------------}
 
 class ( IsLedger l
+      , HeaderHash l ~ HeaderHash blk
       , HasHeader blk
       , HasHeader (Header blk)
       ) => ApplyBlock l blk where
@@ -159,11 +165,6 @@ class ( IsLedger l
   -- validation checks.
   reapplyLedgerBlock :: HasCallStack
                      => LedgerCfg l -> blk -> Ticked l -> l
-
-  -- | Point of the most recently applied block
-  --
-  -- Should be 'genesisPoint' when no blocks have been applied yet
-  ledgerTipPoint :: l -> Point blk
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -194,6 +195,8 @@ refoldLedger = repeatedly . tickThenReapply
 -- | Ledger state associated with a block
 data family LedgerState blk :: *
 
+type instance HeaderHash (LedgerState blk) = HeaderHash blk
+
 -- | Interaction with the ledger layer
 class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
 
@@ -209,7 +212,7 @@ type TickedLedgerState blk = Ticked    (LedgerState blk)
 --
 -- This is occassionally useful to guide type inference
 ledgerTipPoint' :: UpdateLedger blk => Proxy blk -> LedgerState blk -> Point blk
-ledgerTipPoint' _ = ledgerTipPoint
+ledgerTipPoint' _ =  castPoint . ledgerTipPoint
 
 ledgerTipHash :: forall blk. UpdateLedger blk => LedgerState blk -> ChainHash blk
 ledgerTipHash = pointHash . (ledgerTipPoint' (Proxy @blk))

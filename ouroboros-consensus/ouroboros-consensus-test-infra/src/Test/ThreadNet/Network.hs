@@ -721,7 +721,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   where
                     EpochNo   x = currentEpoch
                     EpochSize y = epochSize0
-            let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
+            let p = ledgerTipPoint' (Proxy @blk) $ tickedLedgerState tickedLdgSt
 
             let needEBB = inFirstEra && NotOrigin ebbSlot > pointSlot p
             case mbForgeEbbEnv <* guard needEBB of

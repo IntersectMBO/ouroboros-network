@@ -281,6 +281,8 @@ instance IsLedger (LedgerState TestBlock) where
 
   applyChainTick _ = Ticked
 
+  ledgerTipPoint = castPoint . lastAppliedPoint
+
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
@@ -291,8 +293,6 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
     = return     $ TestLedger (Chain.blockPoint tb)
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
-
-  ledgerTipPoint = lastAppliedPoint
 
 newtype instance LedgerState TestBlock =
     TestLedger {

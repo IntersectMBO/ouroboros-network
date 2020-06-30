@@ -166,6 +166,7 @@ data ParsedBlockInfo blockId = ParsedBlockInfo {
 data BlockInfo blockId = BlockInfo {
       bbid          :: !blockId
     , bslot         :: !SlotNo
+    , bbno          :: !BlockNo
     , bpreBid       :: !(WithOrigin blockId)
     , bisEBB        :: !IsEBB
     , bheaderOffset :: !Word16

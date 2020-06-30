@@ -24,9 +24,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   , defaultArgs
   , openDB
     -- * Candidates
+  , LookupBlockInfo
   , candidates
+  , extendWithSuccessors
   , isReachable
-  , isReachableSTM
     -- * Paths
   , Path(..)
   , computePath
@@ -55,6 +56,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
     -- * Exported for testing purposes
   , mkVolDB
   , blockFileParser'
+  , fromChainHash
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -64,9 +66,10 @@ import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
+import           Data.Foldable (foldl')
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust, mapMaybe)
+import           Data.Maybe (fromMaybe, isJust, mapMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -78,9 +81,13 @@ import           Streaming.Prelude (Of (..), Stream)
 import qualified Streaming.Prelude as S
 import           System.FilePath ((</>))
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
+import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -195,7 +202,7 @@ mkVolDB volDB getBinaryBlockInfo codecConfig = VolDB {..}
 
 getBlockInfo
   :: VolDB m blk
-  -> STM m (HeaderHash blk -> Maybe (VolDB.BlockInfo (HeaderHash blk)))
+  -> STM m (LookupBlockInfo blk)
 getBlockInfo db = withSTM db VolDB.getBlockInfo
 
 getIsMember :: Functor (STM m) => VolDB m blk -> STM m (HeaderHash blk -> Bool)
@@ -235,7 +242,7 @@ garbageCollect db slotNo = withDB db $ \vol ->
   Compute candidates
 -------------------------------------------------------------------------------}
 
--- | Compute all candidates starting at the specified hash
+-- | Compute all candidates starting at the specified point
 --
 -- PRECONDITION: the block to which the given point corresponds is part of the
 -- VolatileDB.
@@ -264,47 +271,271 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
                , candidate <- go (NotOrigin next)
                ]
 
--- | Variant of 'isReachable' that obtains its arguments in the same 'STM'
--- transaction.
-isReachableSTM :: (IOLike m, HasHeader blk)
-               => VolDB m blk
-               -> STM m (Point blk) -- ^ The tip of the ImmutableDB (@I@).
-               -> RealPoint blk     -- ^ The point of the block (@B@) to check
-                                    -- the reachability of
-               -> STM m (Maybe (NonEmpty (HeaderHash blk)))
-isReachableSTM volDB getI b = do
-    (predecessor, i) <- (,) <$> getPredecessor volDB <*> getI
-    return $ isReachable predecessor i b
-
--- | Check whether the given point, corresponding to a block @B@, is reachable
--- from the tip of the ImmutableDB (@I@) by chasing the predecessors.
+-- | Extend the 'ChainDiff' with the successors found by 'candidates'.
 --
--- Returns a path (of hashes) from @I@ (excluded) to @B@ (included).
+-- In case no successors were found, the original 'ChainDiff' is returned as a
+-- singleton.
 --
--- PRECONDITION: @B ∈ V@, i.e. @B@ is part of the VolatileDB.
+-- In case successors /were/ found, the original 'ChainDiff' is /not/
+-- included, only its extensions.
 --
--- 'True' <=> for all transitive predecessors @B'@ of @B@ we have @B' ∈ V@ or
--- @B' = I@.
-isReachable :: forall blk. (HasHeader blk, HasCallStack)
-            => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
-            -> Point blk                                        -- ^ @I@
-            -> RealPoint blk                                    -- ^ @B@
-            -> Maybe (NonEmpty (HeaderHash blk))
-isReachable predecessor i b =
-    case computePath predecessor from to of
-      -- Bounds are not on the same fork
-      Nothing   -> Nothing
-      Just path -> case path of
-        CompletelyInVolDB hashes -> case NE.nonEmpty hashes of
-          Just hashes' -> Just hashes'
-          Nothing      ->
-            error "impossible: empty list of hashes with an inclusive bound"
-        PartiallyInVolDB  {}     -> Nothing
-        NotInVolDB        _      ->
-          error "impossible: block just added to VolatileDB missing"
+-- Only the longest possible extensions are returned, no intermediary prefixes
+-- of extensions.
+extendWithSuccessors ::
+     forall blk. HasHeader blk
+  => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+  -> LookupBlockInfo blk
+  -> ChainDiff (HeaderFields blk)
+  -> NonEmpty (ChainDiff (HeaderFields blk))
+extendWithSuccessors succsOf lookupBlockInfo diff =
+    case NE.nonEmpty extensions of
+      Nothing          -> diff NE.:| []
+      Just extensions' -> extensions'
   where
-    from = StreamFromExclusive i
-    to   = StreamToInclusive   b
+    extensions =
+        [ foldl' Diff.append diff (lookupHeaderFields <$> candHashes)
+        | candHashes <- candidates succsOf (Diff.getTip diff)
+        ]
+
+    lookupHeaderFields :: HeaderHash blk -> HeaderFields blk
+    lookupHeaderFields =
+          headerFieldsFromBlockInfo
+          -- The successor mapping is populated with the blocks in the
+          -- VolatileDB, so looking up the block info of a successor /must/
+          -- succeed.
+        . fromMaybe (error "successor must in the VolatileDB")
+        . lookupBlockInfo
+
+{-------------------------------------------------------------------------------
+  Paths through the VolatileDB
+-------------------------------------------------------------------------------}
+
+-- | Return the block info for the block with the given hash. Return 'Nothing'
+-- when not in the VolatileDB.
+type LookupBlockInfo blk =
+  HeaderHash blk -> Maybe (VolDB.BlockInfo (HeaderHash blk))
+
+headerFieldsFromBlockInfo ::
+     VolDB.BlockInfo (HeaderHash blk)
+  -> HeaderFields blk
+headerFieldsFromBlockInfo VolDB.BlockInfo { bslot, bbid, bbno } =
+    HeaderFields {
+        headerFieldHash    = bbid
+      , headerFieldSlot    = bslot
+      , headerFieldBlockNo = bbno
+      }
+
+-- | A reverse path through the VolatileDB starting at a block in the
+-- VolatileDB until we reach genesis or leave the VolatileDB.
+data ReversePath blk =
+      -- | The path stopped at genesis
+      StoppedAtGenesis
+
+      -- | The path stopped at this hash, which is the hash of the predecessor
+      -- of the last block in the path (that was still stored in the
+      -- VolatileDB).
+      --
+      -- The block corresponding to the predecessor is /not/ stored in the
+      -- VolatileDB. Either because it is missing, or because it is old and
+      -- has been garbage collected.
+      --
+      -- Since block numbers are consecutive, we subtract 1 from the block
+      -- number of the last block to obtain the block number corresponding to
+      -- this hash.
+      --
+      -- EBBs share their block number with their predecessor:
+      --
+      -- > block:         regular block 1 | EBB | regular block 2
+      -- > block number:                X |   X | X + 1
+      --
+      -- So when the hash refers to regular block 1, we see that the successor
+      -- block is an EBB and use its block number without subtracting 1.
+      --
+      -- Edge case: if there are two or more consecutive EBBs, we might
+      -- predict the wrong block number, but there are no consecutive EBBs in
+      -- practice, they are one epoch apart.
+    | StoppedAt (HeaderHash blk) BlockNo
+
+      -- | Snoc: the block with the given 'HeaderFields' is in the VolatileDB.
+      -- We also track whether it is an EBB or not.
+      --
+      -- NOTE: we are intentionally lazy in the spine, as constructing the
+      -- path requires lookups in the VolatileDB's in-memory indices, which
+      -- are logarithmic in the size of the index.
+    | (ReversePath blk) ::> (HeaderFields blk, IsEBB)
+
+-- | Lazily compute the 'ReversePath' that starts (i.e., ends) with the given
+-- 'HeaderHash'.
+computeReversePath
+  :: forall blk.
+     LookupBlockInfo blk
+  -> HeaderHash blk
+     -- ^ End hash
+  -> Maybe (ReversePath blk)
+     -- ^ Reverse path from the end point to genesis or the first predecessor
+     -- not in the VolatileDB. Nothing when the end hash is not in the
+     -- VolatileDB.
+computeReversePath lookupBlockInfo endHash =
+    case lookupBlockInfo endHash of
+      Nothing                                               -> Nothing
+      Just blockInfo@VolDB.BlockInfo { bbno, bisEBB, bpreBid } -> Just $
+        go bpreBid bbno bisEBB ::> (headerFieldsFromBlockInfo blockInfo, bisEBB)
+  where
+    go ::
+         WithOrigin (HeaderHash blk)
+         -- ^ The predecessor of the last block added to the path. Not
+         -- necessarily in the VolatileDB.
+      -> BlockNo  -- ^ The block number of the last block
+      -> IsEBB    -- ^ Whether the last block is an EBB or not
+      -> ReversePath blk
+    go predecessor lastBlockNo lastIsEBB = case predecessor of
+      Origin             -> StoppedAtGenesis
+      NotOrigin prevHash -> case lookupBlockInfo prevHash of
+        Nothing ->
+          StoppedAt prevHash (prevBlockNo lastBlockNo lastIsEBB)
+        Just blockInfo@VolDB.BlockInfo { bbno, bisEBB, bpreBid } ->
+          go bpreBid bbno bisEBB ::> (headerFieldsFromBlockInfo blockInfo, bisEBB)
+
+    -- | Predict the block number of the missing predecessor.
+    --
+    -- PRECONDITION: the block number and 'IsEBB' correspond to a block that
+    -- has a predecessor.
+    --
+    -- For regular blocks, this is just block number - 1, EBBs are special of
+    -- course: they share their block number with their predecessor:
+    --
+    -- > block:         regular block 1 | EBB | regular block 2
+    -- > block number:                X |   X | X + 1
+    --
+    -- Edge case: if there are two or more consecutive EBBs, we might predict
+    -- the wrong block number, but there are no consecutive EBBs in practice
+    -- (nor in the tests), they are one epoch apart.
+    prevBlockNo :: BlockNo -> IsEBB -> BlockNo
+    prevBlockNo bno isEBB = case (bno, isEBB) of
+      (0, IsNotEBB) -> error "precondition violated"
+      (_, IsNotEBB) -> bno - 1
+      (_, IsEBB)    -> bno
+
+{-------------------------------------------------------------------------------
+  Reachability
+-------------------------------------------------------------------------------}
+
+-- | Try to connect the point @P@ to the chain fragment by chasing the
+-- predecessors.
+--
+-- When successful, return a 'ChainDiff': the number of blocks to roll back
+-- the chain fragment to the intersection point and a fragment anchored at the
+-- intersection point containing the 'HeaderFields' corresponding to the
+-- blocks needed to connect to @P@. The intersection point will be the most
+-- recent intersection point.
+--
+-- Returns 'Nothing' when @P@ is not in the VolatileDB or when @P@ is not
+-- connected to the given chain fragment.
+--
+-- POSTCONDITION: the returned number of blocks to roll back is less than or
+-- equal to the length of the given chain fragment.
+--
+-- Note that the number of returned points can be smaller than the number of
+-- blocks to roll back. This means @P@ is on a fork shorter than the given
+-- chain fragment.
+--
+-- A 'ChainDiff' is returned iff @P@ is on the chain fragment. Moreover, when
+-- the number of blocks to roll back is also 0, it must be that @P@ is the tip
+-- of the chain fragment.
+--
+-- When the suffix of the 'ChainDiff' is non-empty, @P@ will be the last point
+-- in the suffix.
+isReachable
+  :: forall blk. (HasHeader blk, GetHeader blk, HasCallStack)
+  => LookupBlockInfo blk
+  -> AnchoredFragment (Header blk) -- ^ Chain fragment to connect the point to
+  -> RealPoint blk
+  -> Maybe (ChainDiff (HeaderFields blk))
+isReachable lookupBlockInfo = \chain b ->
+    case computeReversePath lookupBlockInfo (realPointHash b) of
+      -- Block not in the VolatileDB, so it's unreachable
+      Nothing          -> Nothing
+      Just reversePath -> go chain reversePath 0 []
+  where
+    -- | NOTE: the 'ReversePath' is lazy in its spine. We will only force as
+    -- many elements as 'RealPoint's we return. In the worst case, the path is
+    -- not connected to the current chain at all, in which case we do force
+    -- the entire path.
+    --
+    -- We're trying to find a common block, i.e., one with the same point and
+    -- thus the same slot. Both the chain and the path are ordered by slots,
+    -- so we compare the slots and drop the largest one until we have a match
+    -- in slot, then we check hashes. If those don't match, we drop both.
+    -- Note: EBBs complicate things, see 'ebbAwareCompare'.
+    go
+      :: AnchoredFragment (Header blk)
+         -- ^ Prefix of the current chain
+      -> ReversePath blk
+         -- ^ Prefix of the path through the VolatileDB
+      -> Word64
+         -- ^ Number of blocks we have had to roll back from the current chain
+      -> [HeaderFields blk]
+         -- ^ Accumulator for the suffix, from oldest to newest
+      -> Maybe (ChainDiff (HeaderFields blk))
+    go chain path !rollback acc = case (chain, path) of
+        (AF.Empty anchor, StoppedAt hash bno)
+          | AF.anchorToBlockNo anchor == NotOrigin bno
+          , AF.anchorToHash anchor == BlockHash hash
+          -> Just (ChainDiff rollback (AF.fromOldestFirst (AF.castAnchor anchor) acc))
+          | otherwise
+          -> Nothing
+
+        (AF.Empty anchor, path' ::> (flds, _))
+          | AF.anchorToHeaderFields (AF.castAnchor anchor) == NotOrigin flds
+          -> Just (ChainDiff rollback (AF.fromOldestFirst (AF.castAnchor anchor) acc))
+          | AF.anchorToBlockNo anchor > NotOrigin (headerFieldBlockNo flds)
+          -> Nothing
+          | otherwise
+          -> go chain path' rollback (flds:acc)
+
+        (chain' AF.:> hdr, StoppedAt hash bno)
+          | blockNo hdr == bno
+          , headerHash hdr == hash
+          , let anchor = AF.castAnchor (AF.anchorFromBlock hdr)
+          -> Just (ChainDiff rollback (AF.fromOldestFirst anchor acc))
+          | blockNo hdr < bno
+          -> Nothing
+          | otherwise
+          -> go chain' path (rollback + 1) acc
+
+        (_, StoppedAtGenesis)
+          | AF.anchorIsGenesis (AF.anchor chain)
+          -> let !rollback' = rollback + fromIntegral (AF.length chain)
+             in Just (ChainDiff rollback' (AF.fromOldestFirst AF.AnchorGenesis acc))
+          | otherwise
+          -> Nothing
+
+        (chain' AF.:> hdr, path' ::> (flds, ptIsEBB)) ->
+          case hdr `ebbAwareCompare` (headerFieldBlockNo flds, ptIsEBB) of
+            -- Drop from the path
+            LT -> go chain path' rollback (flds:acc)
+            -- Drop from the current chain fragment
+            GT -> go chain' path (rollback + 1) acc
+            -- Same slot and value for 'IsEBB'
+            EQ | blockHash hdr == headerFieldHash flds
+               , let anchor = AF.castAnchor (AF.anchorFromBlock hdr)
+               -- Found a match
+               -> Just (ChainDiff rollback (AF.fromOldestFirst anchor acc))
+               -- Different hashes, drop both
+               | otherwise
+               -> go chain' path' (rollback + 1) (flds:acc)
+
+    -- | EBBs have the same block number as their predecessor, which means
+    -- that in case we have an EBB and a regular block with the same slot, the
+    -- EBB comes /after/ the regular block.
+    ebbAwareCompare :: Header blk -> (BlockNo, IsEBB) -> Ordering
+    ebbAwareCompare hdr (ptBlockNo, ptIsEBB) =
+      compare (blockNo hdr) ptBlockNo `mappend`
+      case (headerToIsEBB hdr, ptIsEBB) of
+        (IsEBB,    IsNotEBB) -> GT
+        (IsNotEBB, IsEBB)    -> LT
+        (IsEBB,    IsEBB)    -> EQ
+        (IsNotEBB, IsNotEBB) -> EQ
 
 {-------------------------------------------------------------------------------
   Compute paths
@@ -318,56 +549,92 @@ isReachable predecessor i b =
 -- If the range is invalid, 'Nothing' is returned.
 --
 -- See the documentation of 'Path'.
-computePath
-  :: forall blk. HasHeader blk
-  => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
-     -- Return the predecessor
+computePath ::
+     forall blk. HasHeader blk
+  => LookupBlockInfo blk
   -> StreamFrom blk
   -> StreamTo   blk
   -> Maybe (Path blk)
-computePath predecessor from to = case to of
-    StreamToInclusive (RealPoint _ end)
-      | Just prev <- predecessor end -> case from of
-          -- Easier to handle this special case (@StreamFromInclusive start,
-          -- StreamToInclusive end, start == end@) here:
-          StreamFromInclusive (RealPoint _ start)
-            | start == end -> return $ CompletelyInVolDB [end]
-          _                -> go [end] prev
-      | otherwise        -> return $ NotInVolDB end
-    StreamToExclusive (RealPoint _ end)
-      | Just prev <- predecessor end -> go [] prev
-      | otherwise                    -> return $ NotInVolDB end
+computePath lookupBlockInfo from to =
+    case computeReversePath lookupBlockInfo (realPointHash endPt) of
+      Nothing
+        -> Just $ NotInVolDB endPt
+      Just volPath
+        | exclUpperBound
+        -- When there's an exclusive upper bound, we must exclude the first
+        -- point of the reverse path from the returned 'Path'. We simply drop
+        -- it from the path before starting the main loop (@go@).
+        -> case volPath of
+             volPath' ::> _   -> go [] volPath'
+             -- If we're immediately stopped, the accumulator will be empty,
+             -- so no need to drop the last element. Reuse the termination
+             -- logic of @go@.
+             StoppedAt {}     -> go [] volPath
+             -- The exclusive end bound cannot be genesis, as it must be a
+             -- 'RealPoint', so the reverse path cannot start with
+             -- 'StoppedAtGenesis'.
+             StoppedAtGenesis -> error "exclusive end bound cannot be genesis"
+        | otherwise
+        -> go [] volPath
   where
-    -- | It only needs the predecessor @prev@ and not the actual hash, because
-    -- the hash is already added to @acc@ (if allowed by the bounds).
-    go :: [HeaderHash blk] -> WithOrigin (HeaderHash blk) -> Maybe (Path blk)
-    go acc prev = case prev of
-      -- Found genesis
-      Origin -> case from of
-        StreamFromInclusive _
-          -> Nothing
-        StreamFromExclusive GenesisPoint
-          -> return $ CompletelyInVolDB acc
-        StreamFromExclusive (BlockPoint {})
+    (endPt, exclUpperBound) = case to of
+        StreamToInclusive pt -> (pt, False)
+        StreamToExclusive pt -> (pt, True)
+
+    fieldsToRealPoint :: HeaderFields blk -> RealPoint blk
+    fieldsToRealPoint flds =
+        RealPoint (headerFieldSlot flds) (headerFieldHash flds)
+
+    -- | Convert the 'HeaderFields' to a 'RealPoint' and prepend that to the
+    -- accumulator.
+    --
+    -- NOTE: we will store the returned list in the state of a ChainDB
+    -- iterator as a lazy non-empty list. To avoid thunks, we force the
+    -- elements now, when adding them to the accumulator. TODO #2341
+    addToAcc :: HeaderFields blk -> [RealPoint blk] -> [RealPoint blk]
+    addToAcc flds pts = pt : pts
+        -- When the returned list is forced, @pt@ is forced. The returned list
+        -- is forced because the accumulator is forced in @go@.
+      where
+        !pt = fieldsToRealPoint flds
+
+    go ::
+         [RealPoint blk]  -- ^ Accumulator for the 'Path'
+      -> ReversePath blk  -- ^ Prefix of the path to 'StreamFrom'
+      -> Maybe (Path blk)
+    go !acc = \case
+        StoppedAtGenesis
+          | StreamFromExclusive GenesisPoint <- from
+          -> Just $ CompletelyInVolDB acc
+          | otherwise
+            -- If 'StreamFrom' was not from genesis, then the range must be
+            -- invalid.
           -> Nothing
 
-      NotOrigin predHash
-        | Just prev' <- predecessor predHash -> case from of
-          StreamFromInclusive pt
-            | predHash == realPointHash pt
-            -> return $ CompletelyInVolDB (predHash : acc)
-          StreamFromExclusive pt
-            | BlockHash predHash == pointHash pt
-            -> return $ CompletelyInVolDB acc
-          -- Bound not yet reached, invariants both ok!
-          _ -> go (predHash : acc) prev'
-        -- Predecessor not in the VolatileDB
-        | StreamFromExclusive pt <- from
-        , BlockHash predHash == pointHash pt
-          -- That's fine if we don't need to include it in the path.
-        -> return $ CompletelyInVolDB acc
-        | otherwise
-        -> return $ PartiallyInVolDB predHash acc
+        StoppedAt hash _bno
+          | StreamFromExclusive GenesisPoint <- from
+          -> Just $ PartiallyInVolDB hash acc
+          | StreamFromExclusive (BlockPoint _ hash') <- from
+          , hash == hash'
+          -> Just $ CompletelyInVolDB acc
+          | StreamFromExclusive (BlockPoint _ _) <- from
+          -> Just $ PartiallyInVolDB hash acc
+          | StreamFromInclusive _ <- from
+          -> Just $ PartiallyInVolDB hash acc
+
+        volPath' ::> (flds, _isEBB)
+          | StreamFromExclusive GenesisPoint <- from
+          -> go (addToAcc flds acc) volPath'
+          | StreamFromExclusive (BlockPoint _ hash') <- from
+          , headerFieldHash flds == hash'
+          -> Just $ CompletelyInVolDB acc
+          | StreamFromExclusive (BlockPoint _ _) <- from
+          -> go (addToAcc flds acc) volPath'
+          | StreamFromInclusive pt' <- from
+          , fieldsToRealPoint flds == pt'
+          -> Just $ CompletelyInVolDB (addToAcc flds acc)
+          | StreamFromInclusive _ <- from
+          -> go (addToAcc flds acc) volPath'
 
 -- | Variant of 'computePath' that obtains its arguments in the same 'STM'
 -- transaction. Throws an 'InvalidIteratorRange' exception when the range is
@@ -379,23 +646,23 @@ computePathSTM
   -> StreamTo   blk
   -> STM m (Path blk)
 computePathSTM volDB from to = do
-    predecessor <- getPredecessor volDB
-    case computePath predecessor from to of
+    lookupBlockInfo <- getBlockInfo volDB
+    case computePath lookupBlockInfo from to of
       Just path -> return path
       Nothing   -> throwM $ InvalidIteratorRange from to
 
 -- | A path through the VolatileDB from a 'StreamFrom' to a 'StreamTo'.
 --
 -- Invariant: the @ChainFragment@ (oldest first) constructed using the blocks
--- corresponding to the hashes in the path will be valid, i.e. the blocks will
--- fit onto each other.
-data Path blk
-  = NotInVolDB (HeaderHash blk)
+-- corresponding to the points in the path will be valid, i.e., the blocks
+-- will fit onto each other.
+data Path blk =
+    NotInVolDB (RealPoint blk)
     -- ^ The @end@ point (@'StreamToInclusive' end@ or @'StreamToExclusive'
     -- end@) was not part of the VolatileDB.
-  | CompletelyInVolDB [HeaderHash blk]
+  | CompletelyInVolDB [RealPoint blk]
     -- ^ A complete path, from start point to end point was constructed from
-    -- the VolatileDB. The list contains the hashes from oldest to newest.
+    -- the VolatileDB. The list contains the points from oldest to newest.
     --
     -- * If the lower bound was @'StreamFromInclusive' pt@, then @pt@ will be
     --   the first element of the list.
@@ -406,10 +673,10 @@ data Path blk
     --   the last element of the list.
     -- * If the upper bound was @'StreamToExclusive' pt@, then the last
     --   element of the list will correspond to the first block before @pt@.
-  | PartiallyInVolDB (HeaderHash blk) [HeaderHash blk]
+  | PartiallyInVolDB (HeaderHash blk) [RealPoint blk]
     -- ^ Only a partial path could be constructed from the VolatileDB. The
     -- missing predecessor could still be in the ImmutableDB. The list
-    -- contains the hashes from oldest to newest.
+    -- contains the points from oldest to newest.
     --
     -- * The first element in the list is the point for which no predecessor
     --   is available in the VolatileDB. The block corresponding to the point
@@ -423,7 +690,8 @@ data Path blk
     --
     -- The same invariants hold for the upper bound as for 'StartToEnd'.
 
-deriving instance Show (HeaderHash blk) => Show (Path blk)
+deriving instance HasHeader blk => Eq   (Path blk)
+deriving instance HasHeader blk => Show (Path blk)
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -613,6 +881,7 @@ extractInfo :: GetPrevHash blk
 extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
+    , bbno          = blockNo   b
     , bpreBid       = fromChainHash (blockPrevHash b)
     , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset

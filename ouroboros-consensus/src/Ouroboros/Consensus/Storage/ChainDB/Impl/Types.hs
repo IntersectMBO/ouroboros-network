@@ -59,7 +59,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   ) where
 
 import           Control.Tracer
-import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
@@ -76,6 +75,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -570,7 +570,7 @@ data TraceAddBlockEvent blk =
 
     -- | The block fits onto some fork, we'll try to switch to that fork (if
     -- it is preferable to our chain).
-  | TrySwitchToAFork (RealPoint blk) (NonEmpty (HeaderHash blk))
+  | TrySwitchToAFork (RealPoint blk) (ChainDiff (HeaderFields blk))
 
     -- | The block doesn't fit onto any other block, so we store it and ignore
     -- it.
@@ -714,7 +714,7 @@ data TraceIteratorEvent blk
   | StreamFromVolDB
       (StreamFrom blk)
       (StreamTo   blk)
-      [HeaderHash blk]
+      [RealPoint  blk]
 
     -- ^ Stream only from the VolatileDB.
   | StreamFromImmDB
@@ -725,17 +725,17 @@ data TraceIteratorEvent blk
   | StreamFromBoth
       (StreamFrom blk)
       (StreamTo   blk)
-      [HeaderHash blk]
+      [RealPoint  blk]
 
     -- ^ Stream from both the VolatileDB and the ImmutableDB.
-  | BlockMissingFromVolDB (HeaderHash blk)
+  | BlockMissingFromVolDB (RealPoint blk)
     -- ^ A block is no longer in the VolatileDB because it has been garbage
     -- collected. It might now be in the ImmutableDB if it was part of the
     -- current chain.
-  | BlockWasCopiedToImmDB (HeaderHash blk)
+  | BlockWasCopiedToImmDB (RealPoint blk)
     -- ^ A block that has been garbage collected from the VolatileDB is now
     -- found and streamed from the ImmutableDB.
-  | BlockGCedFromVolDB    (HeaderHash blk)
+  | BlockGCedFromVolDB    (RealPoint blk)
     -- ^ A block is no longer in the VolatileDB and isn't in the ImmutableDB
     -- either; it wasn't part of the current chain.
   | SwitchBackToVolDB

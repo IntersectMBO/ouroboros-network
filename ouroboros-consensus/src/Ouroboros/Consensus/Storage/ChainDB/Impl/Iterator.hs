@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- | Iterators
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
@@ -70,10 +71,10 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -- To stream blocks from the ImmutableDB we can simply use the iterators
 -- offered by the ImmutableDB.
 --
--- To stream blocks from the VolatileDB we have to construct a path of block
--- hashes backwards through the VolatileDB, starting from the end point using
+-- To stream blocks from the VolatileDB we have to construct a path of points
+-- backwards through the VolatileDB, starting from the end point using
 -- 'getPredecessor' until we get to the start point, genesis, or we get to a
--- block that is not in the VolatileDB. Then, for each hash in the path, we
+-- block that is not in the VolatileDB. Then, for each point in the path, we
 -- can ask the VolatileDB for the corresponding block.
 --
 -- If the path through the VolatileDB is incomplete, we will first have to
@@ -105,13 +106,13 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- This iterator is opened with an open upper bound and will be used to stream
 -- blocks until the path has been fully streamed, the iterator is exhausted,
--- or a block doesn't match the expected hash. In the latter two cases, we
+-- or a block doesn't match the expected point. In the latter two cases, we
 -- switch back to the VolatileDB. If the block is missing from the VolatileDB,
 -- we will switch back to streaming from the ImmutableDB. If that fails, we
 -- switch back to the VolatileDB. To avoid eternally switching between the two
 -- DBs, we only switch back to the VolatileDB if the stream from the
 -- ImmutableDB has made progress, i.e. streamed at least one block with the
--- expected hash. If no block was streamed from the ImmutableDB, not even the
+-- expected point. If no block was streamed from the ImmutableDB, not even the
 -- first one, we know for sure that that block isn't part of the VolatileDB
 -- (the reason we switch to the ImmutableDB) and isn't part of the ImmutableDB
 -- (no block was streamed). In that case, we return 'IteratorBlockGCed' and
@@ -344,16 +345,16 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     findPathInVolDB = do
       path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
       case path of
-        VolDB.NotInVolDB        _hash           -> throwError $ ForkTooOld from
-        VolDB.PartiallyInVolDB  predHash hashes -> streamFromBoth predHash hashes
-        VolDB.CompletelyInVolDB hashes          -> case NE.nonEmpty hashes of
-          Just hashes' -> lift $ streamFromVolDB hashes'
-          Nothing      -> lift $ emptyIterator
+        VolDB.NotInVolDB        _hash        -> throwError $ ForkTooOld from
+        VolDB.PartiallyInVolDB  predHash pts -> streamFromBoth predHash pts
+        VolDB.CompletelyInVolDB pts          -> case NE.nonEmpty pts of
+          Just pts' -> lift $ streamFromVolDB pts'
+          Nothing   -> lift $ emptyIterator
 
-    streamFromVolDB :: NonEmpty (HeaderHash blk) -> m (Iterator m blk b)
-    streamFromVolDB hashes = do
-      trace $ StreamFromVolDB from to (NE.toList hashes)
-      createIterator $ InVolDB from hashes
+    streamFromVolDB :: NonEmpty (RealPoint blk) -> m (Iterator m blk b)
+    streamFromVolDB pts = do
+      trace $ StreamFromVolDB from to (NE.toList pts)
+      createIterator $ InVolDB from pts
 
     streamFromImmDB :: ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromImmDB = do
@@ -378,10 +379,10 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     -- stream.
     streamFromBoth :: HasCallStack
                    => HeaderHash blk
-                   -> [HeaderHash blk]
+                   -> [RealPoint blk]
                    -> ExceptT (UnknownRange blk) m (Iterator m blk b)
-    streamFromBoth predHash hashes = do
-        lift $ trace $ StreamFromBoth from to hashes
+    streamFromBoth predHash pts = do
+        lift $ trace $ StreamFromBoth from to pts
         lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \tip ->
           case pointToWithOriginRealPoint tip of
             -- The ImmutableDB is empty
@@ -389,43 +390,44 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
             -- The incomplete path fits onto the tip of the ImmutableDB.
             NotOrigin pt@(RealPoint _ tipHash)
               | tipHash == predHash
-              -> case NE.nonEmpty hashes of
-                   Just hashes' -> startStream pt hashes'
+              -> case NE.nonEmpty pts of
+                   Just pts' -> startStream pt pts'
                    -- The lower bound was in the ImmutableDB and the upper was
-                   -- in the VolatileDB, but the path of hashes in the
+                   -- in the VolatileDB, but the path of points in the
                    -- VolatileDB is actually empty. It must be that the
                    -- exclusive bound was in the VolatileDB and its
                    -- predecessor is the tip of the ImmutableDB.
-                   Nothing      -> streamFromImmDBHelper (StreamToInclusive pt)
-              -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
-              -- Note that since we have constructed the incomplete path through
-              -- the VolatileDB, blocks might have moved from the VolatileDB to
-              -- the ImmutableDB so that the tip of the ImmutableDB has changed.
-              -- Either the path used to fit onto the tip but the tip has changed,
-              -- or the path simply never fitted onto the tip.
-              | otherwise  -> case dropWhile (/= tipHash) hashes of
+                   Nothing   -> streamFromImmDBHelper (StreamToInclusive pt)
+              -- The incomplete path doesn't fit onto the tip of the
+              -- ImmutableDB. Note that since we have constructed the
+              -- incomplete path through the VolatileDB, blocks might have
+              -- moved from the VolatileDB to the ImmutableDB so that the tip
+              -- of the ImmutableDB has changed. Either the path used to fit
+              -- onto the tip but the tip has changed, or the path simply
+              -- never fitted onto the tip.
+              | otherwise  -> case dropWhile (/= pt) pts of
                 -- The current tip is not in the path, this means that the path
                 -- never fitted onto the tip of the ImmutableDB. We refuse this
                 -- stream.
-                []                    -> throwError $ ForkTooOld from
-                -- The current tip is in the path, with some hashes after it, this
-                -- means that some blocks in our path have moved from the
+                []              -> throwError $ ForkTooOld from
+                -- The current tip is in the path, with some points after it,
+                -- this means that some blocks in our path have moved from the
                 -- VolatileDB to the ImmutableDB. We can shift the switchover
                 -- point to the current tip.
-                _tipHash:hash:hashes' -> startStream pt (hash NE.:| hashes')
+                _tipPt:pt':pts' -> startStream pt (pt' NE.:| pts')
                 -- The current tip is the end of the path, this means we can
                 -- actually stream everything from just the ImmutableDB. It
                 -- could be that the exclusive end bound was not part of the
                 -- ImmutableDB, so stream to the current tip of the ImmutableDB
                 -- (inclusive) to avoid trying to stream (exclusive) to a block
                 -- that's not in the ImmutableDB.
-                [_tipHash]            -> streamFromImmDBHelper (StreamToInclusive pt)
+                [_tipPt]        -> streamFromImmDBHelper (StreamToInclusive pt)
       where
         startStream :: RealPoint blk -- ^ Tip of the imm DB
-                    -> NonEmpty (HeaderHash blk)
+                    -> NonEmpty (RealPoint blk)
                     -> ExceptT (UnknownRange blk) m (Iterator m blk b)
-        startStream immTip hashes' = do
-          let immEnd = SwitchToVolDBFrom (StreamToInclusive immTip) hashes'
+        startStream immTip pts' = do
+          let immEnd = SwitchToVolDBFrom (StreamToInclusive immTip) pts'
           immIt <- ExceptT $
             ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
               from (StreamToInclusive immTip)
@@ -504,13 +506,13 @@ implIteratorClose varItState itrKey IteratorEnv{..} = do
 -- 1. We have just switched to it because a block was missing from the
 --    VolatileDB. We have an iterator that could stream this block from the
 --    ImmutableDB (if it was indeed moved to the ImmutableDB). If the streamed
---    block matches the expected hash, we continue. If not, or if the iterator
---    is immediately exhausted, then the block is missing and we return
---    'IteratorBlockGCed' and close the iterator.
+--    block matches the expected point, we continue. If not, or if the
+--    iterator is immediately exhausted, then the block is missing and we
+--    return 'IteratorBlockGCed' and close the iterator.
 --
 -- 2. We have successfully streamed one or more blocks from the ImmutableDB
 --    that were previously part of the VolatileDB. When we now encounter a
---    block of which the hash does not match the expected hash or when the
+--    block of which the point does not match the expected point or when the
 --    iterator is exhausted, we switch back to the 'InVolDB' state.
 --
 data IteratorState m blk b
@@ -531,23 +533,23 @@ data IteratorState m blk b
     -- Invariant: the iterator is not exhausted.
   | InVolDB
       !(StreamFrom blk)
-      !(NonEmpty (HeaderHash blk))
+      !(NonEmpty (RealPoint blk))
     -- ^ Streaming from the VolatileDB.
     --
-    -- The (non-empty) list of hashes is the path to follow through the
+    -- The (non-empty) list of points is the path to follow through the
     -- VolatileDB.
     --
-    -- Invariant: if the blocks corresponding to the hashes have been moved to
+    -- Invariant: if the blocks corresponding to the points have been moved to
     -- the ImmutableDB, it should be possible to stream these blocks from the
     -- ImmutableDB by starting an iterator using the 'StreamFrom' parameter.
-    -- Note that the hashes of these blocks still have to be checked against
-    -- the hashes in the path, because the blocks might not have been part of
+    -- Note that the points of these blocks still have to be checked against
+    -- the points in the path, because the blocks might not have been part of
     -- the current chain, in which case they will not be in the ImmutableDB.
   | InImmDBRetry
       !(StreamFrom blk)
       !(ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
-      !(NonEmpty (HeaderHash blk))
-    -- ^ When streaming blocks (a list of hashes) from the VolatileDB, we
+      !(NonEmpty (RealPoint blk))
+    -- ^ When streaming blocks (a list of points) from the VolatileDB, we
     -- noticed a block was missing from the VolatileDB. It may have moved to
     -- the ImmutableDB since we initialised the iterator (and built the path),
     -- so we'll try if we can stream it from the ImmutableDB.
@@ -578,7 +580,7 @@ data InImmDBEnd blk
     -- ^ Don't stop streaming until the iterator is exhausted.
   | StreamTo          !(StreamTo blk)
     -- ^ Stream to the upper bound.
-  | SwitchToVolDBFrom !(StreamTo blk)  !(NonEmpty (HeaderHash blk))
+  | SwitchToVolDBFrom !(StreamTo blk)  !(NonEmpty (RealPoint blk))
     -- ^ Stream to the upper bound. Afterwards, start streaming the path (the
     -- second parameter) from the VolatileDB.
   deriving (Generic, NoUnexpectedThunks)
@@ -601,26 +603,26 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
         return IteratorExhausted
       InImmDB continueAfter immIt immEnd ->
         nextInImmDB continueAfter immIt immEnd
-      InImmDBRetry continueAfter immIt immHashes ->
-        nextInImmDBRetry (Just continueAfter) immIt immHashes
-      InVolDB continueAfter volHashes ->
-        nextInVolDB continueAfter volHashes
+      InImmDBRetry continueAfter immIt immPts ->
+        nextInImmDBRetry (Just continueAfter) immIt immPts
+      InVolDB continueAfter volPts ->
+        nextInVolDB continueAfter volPts
   where
     trace = traceWith itTracer
 
     -- | Read the next block while in the 'InVolDB' state.
     nextInVolDB :: StreamFrom blk
-                   -- ^ In case the block corresponding to the first hash in
+                   -- ^ In case the block corresponding to the first point in
                    -- the path is missing from the VolatileDB, we can use this
                    -- lower bound to try to stream it from the ImmutableDB (if
                    -- the block indeed has been moved there).
-                -> NonEmpty (HeaderHash blk)
+                -> NonEmpty (RealPoint blk)
                 -> m (IteratorResult blk b)
-    nextInVolDB continueFrom (hash NE.:| hashes) =
-      VolDB.getBlockComponent itVolDB ((,) <$> getPoint <*> blockComponent) hash >>= \case
+    nextInVolDB continueFrom (pt@(realPointHash -> hash) NE.:| pts) =
+      VolDB.getBlockComponent itVolDB blockComponent hash >>= \case
         -- Block is missing
         Nothing -> do
-            trace $ BlockMissingFromVolDB hash
+            trace $ BlockMissingFromVolDB pt
             -- Try if we can stream a block from the ImmutableDB that was
             -- previously in the VolatileDB. This will only work if the block
             -- was part of the current chain, otherwise it will not have been
@@ -648,18 +650,18 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
                     -- The block was not found in the ImmutableDB, it must have
                     -- been garbage-collected
                     Left  _ -> do
-                      trace $ BlockGCedFromVolDB hash
-                      return $ IteratorBlockGCed hash
+                      trace $ BlockGCedFromVolDB pt
+                      return $ IteratorBlockGCed pt
                     Right immIt ->
-                      nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
+                      nextInImmDBRetry Nothing immIt (pt NE.:| pts)
 
         -- Block is there
-        Just (pt, b) | Just hashes' <- NE.nonEmpty hashes -> do
-          let continueFrom' = StreamFromExclusive pt
-          atomically $ writeTVar varItState (InVolDB continueFrom' hashes')
+        Just b | Just pts' <- NE.nonEmpty pts -> do
+          let continueFrom' = StreamFromExclusive (realPointToPoint pt)
+          atomically $ writeTVar varItState (InVolDB continueFrom' pts')
           return $ IteratorResult b
-        -- No more hashes, so we can stop
-        Just (_pt, b) -> do
+        -- No more points, so we can stop
+        Just b -> do
           atomically $ writeTVar varItState Closed
           return $ IteratorResult b
 
@@ -675,15 +677,15 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           atomically $ writeTVar varItState (InImmDB continueFrom' immIt immEnd)
           return $ IteratorResult b
         -- True indicates that this is the last element in the stream
-        DoneAfter (pt, b) | SwitchToVolDBFrom _ hashes <- immEnd -> do
+        DoneAfter (pt, b) | SwitchToVolDBFrom _ pts <- immEnd -> do
           let continueFrom' = StreamFromExclusive pt
-          atomically $ writeTVar varItState (InVolDB continueFrom' hashes)
+          atomically $ writeTVar varItState (InVolDB continueFrom' pts)
           return $ IteratorResult b
         DoneAfter (_pt, b) -> do
           atomically $ writeTVar varItState Closed
           return $ IteratorResult b
-        Done | SwitchToVolDBFrom _ hashes <- immEnd ->
-          nextInVolDB continueFrom hashes
+        Done | SwitchToVolDBFrom _ pts <- immEnd ->
+          nextInVolDB continueFrom pts
         Done -> do
           -- No need to switch to the VolatileDB, so we can stop
           atomically $ writeTVar varItState Closed
@@ -693,42 +695,42 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
     --
     -- We try to stream blocks that we suspect are now in the ImmutableDB
     -- because they are no longer in the VolatileDB. We don't know this for
-    -- sure, so we must check whether they match the expected hashes.
+    -- sure, so we must check whether they match the expected points.
     nextInImmDBRetry
       :: Maybe (StreamFrom blk)
          -- ^ 'Nothing' iff the iterator was just opened and nothing has been
          -- streamed from it yet. This is used to avoid switching right back
          -- to the VolatileDB if we came from there.
        -> ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
-       -> NonEmpty (HeaderHash blk)
+       -> NonEmpty (RealPoint blk)
        -> m (IteratorResult blk b)
-    nextInImmDBRetry mbContinueFrom immIt (hash NE.:| hashes) =
+    nextInImmDBRetry mbContinueFrom immIt (expectedPt NE.:| pts) =
       selectResult immIt >>= \case
-        NotDone (pt, b) | pointHash pt == BlockHash hash -> do
-          trace $ BlockWasCopiedToImmDB hash
-          let continueFrom' = StreamFromExclusive pt
-          case NE.nonEmpty hashes of
+        NotDone (actualPt, b) | actualPt == realPointToPoint expectedPt -> do
+          trace $ BlockWasCopiedToImmDB expectedPt
+          let continueFrom' = StreamFromExclusive (realPointToPoint expectedPt)
+          case NE.nonEmpty pts of
             Nothing      -> do
               atomically $ writeTVar varItState Closed
               ImmDB.iteratorClose itImmDB immIt
-            Just hashes' ->
+            Just pts' ->
               atomically $ writeTVar varItState $
-                InImmDBRetry continueFrom' immIt hashes'
+                InImmDBRetry continueFrom' immIt pts'
           return $ IteratorResult b
 
-        DoneAfter (pt, b) | pointHash pt == BlockHash hash -> do
+        DoneAfter (actualPt, b) | actualPt == realPointToPoint expectedPt -> do
           -- 'DoneAfter': 'selectResult' will have closed the ImmDB iterator
           -- already
-          trace $ BlockWasCopiedToImmDB hash
-          let continueFrom' = StreamFromExclusive pt
-          case NE.nonEmpty hashes of
+          trace $ BlockWasCopiedToImmDB expectedPt
+          let continueFrom' = StreamFromExclusive (realPointToPoint expectedPt)
+          case NE.nonEmpty pts of
             Nothing      -> atomically $ writeTVar varItState Closed
-            Just hashes' -> do
-              atomically $ writeTVar varItState $ InVolDB continueFrom' hashes'
+            Just pts' -> do
+              atomically $ writeTVar varItState $ InVolDB continueFrom' pts'
               trace SwitchBackToVolDB
           return $ IteratorResult b
 
-        -- Hash mismatch or 'Done'. Close the ImmDB Iterator (idempotent).
+        -- Point mismatch or 'Done'. Close the ImmDB Iterator (idempotent).
         _ -> ImmDB.iteratorClose itImmDB immIt *> case mbContinueFrom of
           -- We just switched to this state and the iterator was just opened.
           -- The block must be GC'ed, since we opened the iterator because it
@@ -736,8 +738,8 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           -- ImmutableDB either.
           Nothing -> do
             atomically $ writeTVar varItState Closed
-            trace $ BlockGCedFromVolDB hash
-            return $ IteratorBlockGCed hash
+            trace $ BlockGCedFromVolDB expectedPt
+            return $ IteratorBlockGCed expectedPt
 
           -- We have already streamed something from the iterator. We can try
           -- looking in the VolatileDB again. If we hadn't streamed something
@@ -745,7 +747,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           -- came from there.
           Just continueFrom -> do
             trace SwitchBackToVolDB
-            nextInVolDB continueFrom (hash NE.:| hashes)
+            nextInVolDB continueFrom (expectedPt NE.:| pts)
 
     -- | Given an ImmutableDB iterator, try to stream a value from it and
     -- convert it to a 'Done'. See the documentation of 'Done' for more

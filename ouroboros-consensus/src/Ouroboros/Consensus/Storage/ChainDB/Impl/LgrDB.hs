@@ -334,7 +334,8 @@ setCurrent :: IOLike m => LgrDB m blk -> LedgerDB blk -> STM m ()
 setCurrent LgrDB{..} = writeTVar $! varDB
 
 currentPoint :: UpdateLedger blk => LedgerDB blk -> Point blk
-currentPoint = ledgerTipPoint
+currentPoint = castPoint
+             . ledgerTipPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 

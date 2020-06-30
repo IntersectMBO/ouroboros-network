@@ -115,6 +115,8 @@ _lemma_protocoLedgerView_applyLedgerBlock cfg blk st
 
 type instance LedgerCfg (ExtLedgerState blk) = TopLevelConfig blk
 
+type instance HeaderHash (ExtLedgerState blk) = HeaderHash (LedgerState blk)
+
 instance ( IsLedger (LedgerState  blk)
          , LedgerSupportsProtocol blk
          )
@@ -125,6 +127,8 @@ instance ( IsLedger (LedgerState  blk)
       Ticked slot $ ExtLedgerState ledger' header
     where
       Ticked _slot ledger' = applyChainTick (configLedger cfg) slot ledger
+
+  ledgerTipPoint = castPoint . ledgerTipPoint . ledgerState
 
 instance ( LedgerSupportsProtocol blk
          ) => ApplyBlock (ExtLedgerState blk) blk where
@@ -172,8 +176,6 @@ instance ( LedgerSupportsProtocol blk
 
       ledgerView :: LedgerView (BlockProtocol blk)
       ledgerView = protocolLedgerView (configLedger cfg) lgr
-
-  ledgerTipPoint = ledgerTipPoint . ledgerState
 
 {-------------------------------------------------------------------------------
   Serialisation

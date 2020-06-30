@@ -114,9 +114,12 @@ type family HeaderHash b :: *
 -- These fields are lazy because they are extracted from a block or block
 -- header; this type is not intended for storage.
 data HeaderFields b = HeaderFields {
-      headerFieldHash    :: HeaderHash b
-    , headerFieldSlot    :: SlotNo
+      headerFieldSlot    :: SlotNo
     , headerFieldBlockNo :: BlockNo
+    , headerFieldHash    :: HeaderHash b
+      -- ^ NOTE: this field is last so that the derived 'Eq' and 'Ord'
+      -- instances first compare the slot and block numbers, which is cheaper
+      -- than comparing hashes.
     }
   deriving (Generic)
 

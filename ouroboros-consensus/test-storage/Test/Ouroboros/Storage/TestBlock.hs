@@ -32,10 +32,13 @@ module Test.Ouroboros.Storage.TestBlock (
   , firstEBB
   , mkNextBlock
   , mkNextEBB
+  , mkNextBlock'
+  , mkNextEBB'
     -- ** Query
   , testBlockToBlockInfo
   , testBlockIsValid
   , testBlockIsEBB
+  , testBlockChainLength
     -- ** Serialisation
   , testHashInfo
   , testBlockToBuilder
@@ -265,6 +268,9 @@ testHashInfo = HashInfo
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = headerToIsEBB . getHeader
 
+testBlockChainLength :: TestBlock -> ChainLength
+testBlockChainLength = thChainLength . unTestHeader . getHeader
+
 -- | Check whether the header matches its hash and whether the body matches
 -- its hash.
 testBlockIsValid :: TestBlock -> Bool
@@ -303,6 +309,7 @@ testBlockToBlockInfo :: TestBlock -> BlockInfo TestHeaderHash
 testBlockToBlockInfo tb = BlockInfo {
       bbid          = thHash
     , bslot         = thSlotNo
+    , bbno          = thBlockNo
     , bpreBid       = case thPrevHash of
         GenesisHash -> Origin
         BlockHash h -> NotOrigin h
@@ -416,18 +423,20 @@ firstBlock slotNo testBody =
       (ChainLength 1)
       Nothing
 
-mkNextBlock :: TestBlock  -- ^ Previous block
-            -> SlotNo
-            -> TestBody
-            -> TestBlock
-mkNextBlock prev slotNo testBody =
+mkNextBlock' ::
+     (HeaderFields TestBlock, ChainLength)
+     -- ^ Information about the previous block
+  -> SlotNo
+  -> TestBody
+  -> TestBlock
+mkNextBlock' (prevHeaderFields, prevChainLength) slotNo testBody =
     mkBlock
       (const False)
       testBody
-      (BlockHash (blockHash prev))
+      (BlockHash (headerFieldHash prevHeaderFields))
       slotNo
-      (succ (blockNo prev))
-      (succ (thChainLength (testHeader prev)))
+      (succ (headerFieldBlockNo prevHeaderFields))
+      (succ prevChainLength)
       Nothing
 
 firstEBB :: (SlotNo -> Bool)
@@ -439,21 +448,45 @@ firstEBB canContainEBB testBody =
 -- | Note that in various places, e.g., the ImmutableDB, we rely on the fact
 -- that the @slotNo@ should correspond to the first slot number of the epoch,
 -- as is the case for real EBBs.
-mkNextEBB :: (SlotNo -> Bool)
-          -> TestBlock  -- ^ Previous block
-          -> SlotNo     -- ^ @slotNo@
-          -> EpochNo
-          -> TestBody
-          -> TestBlock
-mkNextEBB canContainEBB prev slotNo epochNo testBody =
+mkNextEBB' ::
+     (SlotNo -> Bool)
+  -> (HeaderFields TestBlock, ChainLength)
+     -- ^ Information about the previous block
+  -> SlotNo
+  -> EpochNo
+  -> TestBody
+  -> TestBlock
+mkNextEBB' canContainEBB (prevHeaderFields, prevChainLength) slotNo epochNo testBody =
     mkBlock
       canContainEBB
       testBody
-      (BlockHash (blockHash prev))
+      (BlockHash (headerFieldHash prevHeaderFields))
       slotNo
-      (blockNo prev)
-      (succ (thChainLength (testHeader prev)))
+      (headerFieldBlockNo prevHeaderFields)
+      (succ prevChainLength)
       (Just epochNo)
+
+-- | Variant of 'mkNextBlock' that takes the entire previous block.
+mkNextBlock ::
+     TestBlock
+     -- ^ Previous block
+  -> SlotNo
+  -> TestBody
+  -> TestBlock
+mkNextBlock tb =
+    mkNextBlock' (getBlockHeaderFields tb, testBlockChainLength tb)
+
+-- | Variant of 'mkNextEBB' that takes the entire previous block.
+mkNextEBB ::
+     (SlotNo -> Bool)
+  -> TestBlock
+     -- ^ Previous block
+  -> SlotNo
+  -> EpochNo
+  -> TestBody
+  -> TestBlock
+mkNextEBB canContainEBB tb =
+    mkNextEBB' canContainEBB (getBlockHeaderFields tb, testBlockChainLength tb)
 
 {-------------------------------------------------------------------------------
   Test infrastructure: protocol
@@ -548,6 +581,8 @@ instance IsLedger (LedgerState TestBlock) where
 
   applyChainTick _ = Ticked
 
+  ledgerTipPoint = castPoint . lastAppliedPoint
+
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
     | blockPrevHash tb /= lastAppliedHash
@@ -559,8 +594,6 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
 
   reapplyLedgerBlock _ tb _ =
     TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
-
-  ledgerTipPoint = lastAppliedPoint
 
 data instance LedgerState TestBlock =
     TestLedger {

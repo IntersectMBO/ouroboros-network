@@ -89,6 +89,15 @@ instance IsLedger (LedgerState ByronBlock) where
                                       byronLedgerState
         }
 
+  ledgerTipPoint (ByronLedgerState state _) =
+      case CC.cvsPreviousHash state of
+        -- In this case there are no blocks in the ledger state. The genesis
+        -- block does not occupy a slot, so its point is Origin.
+        Left _genHash -> GenesisPoint
+        Right hdrHash -> BlockPoint slot (ByronHash hdrHash)
+          where
+            slot = fromByronSlotNo (CC.cvsLastSlot state)
+
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
   applyLedgerBlock = applyByronBlock validationMode
     where
@@ -99,15 +108,6 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
         applyByronBlock validationMode cfg blk st
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
-
-  ledgerTipPoint (ByronLedgerState state _) =
-      case CC.cvsPreviousHash state of
-        -- In this case there are no blocks in the ledger state. The genesis
-        -- block does not occupy a slot, so its point is Origin.
-        Left _genHash -> GenesisPoint
-        Right hdrHash -> BlockPoint slot (ByronHash hdrHash)
-          where
-            slot = fromByronSlotNo (CC.cvsLastSlot state)
 
 data instance LedgerState ByronBlock = ByronLedgerState {
       byronLedgerState       :: !CC.ChainValidationState

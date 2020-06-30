@@ -289,7 +289,7 @@ prop_general_test setup from to expected =
     (_trace, actual) = runIterator setup from to
     failure msg = counterexample msg False
 
-    ppStream :: [Either (HeaderHash TestBlock) TestBlock] -> String
+    ppStream :: [Either (RealPoint TestBlock) TestBlock] -> String
     ppStream = intercalate " :> " . map ppGCedOrBlock
 
 {-------------------------------------------------------------------------------
@@ -316,9 +316,9 @@ testSetupInfo TestSetup { immutable, volatile } = mconcat
     , intercalate ", " (map ppBlock volatile)
     ]
 
-ppGCedOrBlock :: Either (HeaderHash TestBlock) TestBlock -> String
-ppGCedOrBlock (Left  gcedHash) = "GCed: " <> condense gcedHash
-ppGCedOrBlock (Right blk)      = ppBlock blk
+ppGCedOrBlock :: Either (RealPoint TestBlock) TestBlock -> String
+ppGCedOrBlock (Left  gcedPt) = "GCed: " <> condense gcedPt
+ppGCedOrBlock (Right blk)    = ppBlock blk
 
 ppBlock :: TestBlock -> String
 ppBlock = condense
@@ -328,8 +328,8 @@ ppBlock = condense
 -------------------------------------------------------------------------------}
 
 type IterRes = Either (UnknownRange TestBlock)
-                      [Either (HeaderHash TestBlock) TestBlock]
-                      -- Left:  hash of garbage collected block
+                      [Either (RealPoint TestBlock) TestBlock]
+                      -- Left:  point of garbage collected block
                       -- Right: regular block
 
 -- | Open an iterator with the given bounds on the given 'TestSetup'. Return a
@@ -351,7 +351,7 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
   where
     consume :: Monad m
             => Iterator m TestBlock TestBlock
-            -> m [Either (HeaderHash TestBlock) TestBlock]
+            -> m [Either (RealPoint TestBlock) TestBlock]
     consume it = iteratorNext it >>= \case
       IteratorResult blk -> (Right blk :) <$> consume it
       IteratorBlockGCed hash -> do
@@ -395,6 +395,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     blockInfo tb = VolDB.BlockInfo
       { VolDB.bbid          = blockHash tb
       , VolDB.bslot         = blockSlot tb
+      , VolDB.bbno          = blockNo   tb
       , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> NotOrigin h

@@ -1,4 +1,6 @@
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 -- | Intended for qualified import
 --
 -- > import Ouroboros.Consensus.Fragment.ValidatedDiff (ValidatedChainDiff (..))
@@ -9,12 +11,15 @@ module Ouroboros.Consensus.Fragment.ValidatedDiff
   , getLedger
   , new
   , toValidatedFragment
+  , rollbackExceedsSuffix
   ) where
 
 import           Control.Monad.Except (throwError)
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Consensus.Fragment.Diff
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
+import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -25,15 +30,15 @@ import           Ouroboros.Consensus.Util.Assert
 -- INVARIANT:
 --
 -- > getTip chainDiff == ledgerTipPoint ledger
-data ValidatedChainDiff blk l = UnsafeValidatedChainDiff
-    { getChainDiff :: ChainDiff blk
+data ValidatedChainDiff b l = UnsafeValidatedChainDiff
+    { getChainDiff :: ChainDiff b
     , getLedger    :: l
     }
 
 -- | Allow for pattern matching on a 'ValidatedChainDiff' without exposing the
 -- (unsafe) constructor. Use 'new' to construct a 'ValidatedChainDiff'.
 pattern ValidatedChainDiff
-  :: ChainDiff blk -> l -> ValidatedChainDiff blk l
+  :: ChainDiff b -> l -> ValidatedChainDiff b l
 pattern ValidatedChainDiff d l <- UnsafeValidatedChainDiff d l
 {-# COMPLETE ValidatedChainDiff #-}
 
@@ -42,17 +47,19 @@ pattern ValidatedChainDiff d l <- UnsafeValidatedChainDiff d l
 -- PRECONDITION:
 --
 -- > getTip chainDiff == ledgerTipPoint ledger
-new
-  :: (ApplyBlock l blk, HasCallStack)
-  => ChainDiff blk
+new ::
+     forall b l.
+     (IsLedger l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
+  => ChainDiff b
   -> l
-  -> ValidatedChainDiff blk l
+  -> ValidatedChainDiff b l
 new chainDiff ledger =
     assertWithMsg precondition $
     UnsafeValidatedChainDiff chainDiff ledger
   where
-    chainDiffTip = getTip chainDiff
-    ledgerTip    = ledgerTipPoint ledger
+    chainDiffTip, ledgerTip :: Point b
+    chainDiffTip = Diff.getTip chainDiff
+    ledgerTip    = castPoint $ ledgerTipPoint ledger
     precondition
       | chainDiffTip == ledgerTip
       = return ()
@@ -62,8 +69,11 @@ new chainDiff ledger =
           show chainDiffTip <> " /= " <> show ledgerTip
 
 toValidatedFragment
-  :: (ApplyBlock l blk, HasCallStack)
-  => ValidatedChainDiff blk l
-  -> ValidatedFragment blk l
+  :: (IsLedger l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
+  => ValidatedChainDiff b l
+  -> ValidatedFragment b l
 toValidatedFragment (UnsafeValidatedChainDiff cs l) =
-    VF.new (getSuffix cs) l
+    VF.new (Diff.getSuffix cs) l
+
+rollbackExceedsSuffix :: HasHeader b => ValidatedChainDiff b l -> Bool
+rollbackExceedsSuffix = Diff.rollbackExceedsSuffix . getChainDiff

@@ -216,6 +216,7 @@ type instance LedgerCfg (LedgerState BlockA) =
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
   applyChainTick _ = Ticked
+  ledgerTipPoint   = castPoint . lgrA_tip
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
@@ -229,8 +230,6 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
       case runExcept $ applyLedgerBlock cfg blk st of
         Left  _   -> error "reapplyLedgerBlock: impossible"
         Right st' -> st'
-
-  ledgerTipPoint = lgrA_tip
 
 instance UpdateLedger BlockA
 

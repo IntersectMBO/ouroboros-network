@@ -184,11 +184,11 @@ type instance LedgerCfg (LedgerState BlockB) = ()
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
   applyChainTick _ = Ticked
+  ledgerTipPoint   = castPoint . lgrB_tip
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyLedgerBlock   = \_ b _ -> return $ LgrB (blockPoint b)
   reapplyLedgerBlock = \_ b _ -> LgrB (blockPoint b)
-  ledgerTipPoint     = lgrB_tip
 
 instance UpdateLedger BlockB
 
