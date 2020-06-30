@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
@@ -28,6 +29,8 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtValidationErrorMain
+  , dualFullBlockConfigMain
+  , dualFullBlockConfigAux
   , dualTopLevelConfigMain
   , ctxtDualMain
     -- * Type class family instances
@@ -63,6 +66,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
@@ -154,32 +158,54 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
--- | This is only used for block production
-dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
-dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
-      configConsensus =                      configConsensus
-    , configIndep     =                      configIndep
-    , configLedger    = dualLedgerConfigMain configLedger
-    , configBlock     = dualBlockConfigMain  configBlock
-    }
-
-instance HasCodecConfig m => HasCodecConfig (DualBlock m a) where
-  newtype CodecConfig (DualBlock m a) = DualCodecConfig {
-        dualCodecConfigMain :: CodecConfig m
-     }
-
-  getCodecConfig DualBlockConfig{..} = DualCodecConfig {
-        dualCodecConfigMain = getCodecConfig dualBlockConfigMain
-      }
-
-deriving newtype instance HasCodecConfig m
-                       => NoUnexpectedThunks (CodecConfig (DualBlock m a))
-
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain
   getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
   getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
 
+{-------------------------------------------------------------------------------
+  Splitting the config
+-------------------------------------------------------------------------------}
+
+dualFullBlockConfigMain ::
+     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
+  -> FullBlockConfig (LedgerState m) m
+dualFullBlockConfigMain FullBlockConfig{..} = FullBlockConfig{
+      blockConfigLedger = dualLedgerConfigMain blockConfigLedger
+    , blockConfigBlock  = dualBlockConfigMain  blockConfigBlock
+    , blockConfigCodec  = dualCodecConfigMain  blockConfigCodec
+    }
+
+dualFullBlockConfigAux ::
+     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
+  -> FullBlockConfig (LedgerState a) a
+dualFullBlockConfigAux FullBlockConfig{..} = FullBlockConfig{
+      blockConfigLedger = dualLedgerConfigAux blockConfigLedger
+    , blockConfigBlock  = dualBlockConfigAux  blockConfigBlock
+    , blockConfigCodec  = dualCodecConfigAux  blockConfigCodec
+    }
+
+-- | This is only used for block production
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      topLevelConfigProtocol = topLevelConfigProtocol
+    , topLevelConfigBlock    = dualFullBlockConfigMain topLevelConfigBlock
+    }
+
+{-------------------------------------------------------------------------------
+  CodecConfig
+-------------------------------------------------------------------------------}
+
+data instance CodecConfig (DualBlock m a) = DualCodecConfig {
+      dualCodecConfigMain :: CodecConfig m
+    , dualCodecConfigAux  :: CodecConfig a
+    }
+  deriving (Generic)
+
+instance ( NoUnexpectedThunks (CodecConfig m)
+         , NoUnexpectedThunks (CodecConfig a)
+         ) => NoUnexpectedThunks (CodecConfig (DualBlock m a))
+  -- Use generic instance
 
 {-------------------------------------------------------------------------------
   Bridge two ledgers
@@ -205,6 +231,7 @@ class (
       , LedgerSupportsMempool a
       , Show (ApplyTxErr      a)
       , NoUnexpectedThunks (LedgerConfig a)
+      , NoUnexpectedThunks (CodecConfig a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)
@@ -244,7 +271,10 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   getHeaderFields = castHeaderFields . getHeaderFields . dualHeaderMain
 
 instance Bridge m a => GetPrevHash (DualBlock m a) where
-  headerPrevHash = castHash . headerPrevHash . dualHeaderMain
+  headerPrevHash cfg =
+        castHash
+      . headerPrevHash (dualCodecConfigMain cfg)
+      . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Protocol
@@ -324,17 +354,17 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                  . dualLedgerStateMain
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
-  applyLedgerBlock DualLedgerConfig{..}
+  applyLedgerBlock cfg
                    block@DualBlock{..}
                    (Ticked slot DualLedgerState{..}) = do
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
-              dualLedgerConfigMain
+              (dualFullBlockConfigMain cfg)
               dualBlockMain
               (Ticked slot dualLedgerStateMain)
           , applyMaybeBlock
-              dualLedgerConfigAux
+              (dualFullBlockConfigAux cfg)
               dualBlockAux
               (Ticked slot dualLedgerStateAux)
           )
@@ -346,16 +376,16 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                                     dualLedgerStateBridge
         }
 
-  reapplyLedgerBlock DualLedgerConfig{..}
+  reapplyLedgerBlock cfg
                      block@DualBlock{..}
                      (Ticked slot DualLedgerState{..}) =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
-                                    dualLedgerConfigMain
+                                    (dualFullBlockConfigMain cfg)
                                     dualBlockMain
                                     (Ticked slot dualLedgerStateMain)
         , dualLedgerStateAux    = reapplyMaybeBlock
-                                    dualLedgerConfigAux
+                                    (dualFullBlockConfigAux cfg)
                                     dualBlockAux
                                     (Ticked slot dualLedgerStateAux)
         , dualLedgerStateBridge = updateBridgeWithBlock
@@ -599,7 +629,7 @@ instance EncodeDiskDep (NestedCtxt Header) m
 --
 -- Returns state unchanged on 'Nothing'
 applyMaybeBlock :: UpdateLedger blk
-                => LedgerConfig blk
+                => FullBlockConfig (LedgerState blk) blk
                 -> Maybe blk
                 -> TickedLedgerState blk
                 -> Except (LedgerError blk) (LedgerState blk)
@@ -610,7 +640,7 @@ applyMaybeBlock cfg (Just block) = applyLedgerBlock cfg block
 --
 -- See also 'applyMaybeBlock'
 reapplyMaybeBlock :: UpdateLedger blk
-                  => LedgerConfig blk
+                  => FullBlockConfig (LedgerState blk) blk
                   -> Maybe blk
                   -> TickedLedgerState blk
                   -> LedgerState blk

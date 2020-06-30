@@ -187,7 +187,6 @@ defaultArgs fp = LgrDbArgs {
 openDB :: forall m blk.
           ( IOLike m
           , LedgerSupportsProtocol blk
-          , HasCodecConfig blk
           , LgrDbSerialiseConstraints blk
           , ImmDbSerialiseConstraints blk
           , HasCallStack
@@ -230,7 +229,6 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
 -- Returns the number of immutable blocks replayed.
 reopen :: ( IOLike m
           , LedgerSupportsProtocol blk
-          , HasCodecConfig blk
           , LgrDbSerialiseConstraints blk
           , ImmDbSerialiseConstraints blk
           , HasCallStack
@@ -248,7 +246,6 @@ initFromDisk
   :: forall blk m.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , HasCodecConfig blk
      , LgrDbSerialiseConstraints blk
      , ImmDbSerialiseConstraints blk
      , HasCallStack
@@ -266,12 +263,12 @@ initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
         decodeExtLedgerState'
         (decodeRealPoint decode)
         lgrParams
-        lgrTopLevelConfig
+        (extLedgerCfgFromTopLevel lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
   where
-    ccfg = getCodecConfig (configBlock lgrTopLevelConfig)
+    ccfg = configCodec lgrTopLevelConfig
 
     decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
     decodeExtLedgerState' = decodeExtLedgerState
@@ -323,7 +320,7 @@ getPastState LgrDB{..} p = do
     db <- atomically $ readTVar varDB
     LedgerDB.defaultResolveBlocks resolveBlock $
       LedgerDB.ledgerDbPast
-        (lgrTopLevelConfig args)
+        (extLedgerCfgFromTopLevel (lgrTopLevelConfig args))
         (pointToWithOriginRealPoint p)
         db
 
@@ -340,7 +337,7 @@ currentPoint = castPoint
              . LedgerDB.ledgerDbCurrent
 
 takeSnapshot :: forall m blk.
-                (IOLike m, HasCodecConfig blk, LgrDbSerialiseConstraints blk)
+                (IOLike m, LgrDbSerialiseConstraints blk)
              => LgrDB m blk -> m (DiskSnapshot, Point blk)
 takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
     ledgerDB <- atomically $ getCurrent lgrDB
@@ -351,7 +348,7 @@ takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
       (encodeRealPoint encode)
       ledgerDB
   where
-    ccfg = getCodecConfig (configBlock lgrTopLevelConfig)
+    ccfg = configCodec lgrTopLevelConfig
 
     encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
@@ -392,7 +389,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
-               (lgrTopLevelConfig args)
+               (extLedgerCfgFromTopLevel (lgrTopLevelConfig args))
                numRollbacks
                aps
                ledgerDB

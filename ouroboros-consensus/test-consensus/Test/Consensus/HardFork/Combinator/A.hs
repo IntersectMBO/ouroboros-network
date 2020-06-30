@@ -28,6 +28,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , TxPayloadA(..)
     -- * Type family instances
   , BlockConfig(..)
+  , CodecConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -162,11 +163,8 @@ data instance BlockConfig BlockA = BCfgA
 type instance BlockProtocol BlockA = ProtocolA
 type instance HeaderHash    BlockA = Strict.ByteString
 
-instance HasCodecConfig BlockA where
-  data CodecConfig BlockA = CCfgA
-    deriving (Generic, NoUnexpectedThunks)
-
-  getCodecConfig     _ = CCfgA
+data instance CodecConfig BlockA = CCfgA
+  deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockA where
   getSystemStart     _ = SystemStart dawnOfTime
@@ -185,7 +183,7 @@ instance HasHeader (Header BlockA) where
   getHeaderFields = castHeaderFields . hdrA_fields
 
 instance GetPrevHash BlockA where
-  headerPrevHash = hdrA_prev
+  headerPrevHash _cfg = hdrA_prev
 
 instance HasAnnTip BlockA where
 
@@ -221,7 +219,7 @@ instance IsLedger (LedgerState BlockA) where
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
-      . repeatedlyM (applyTx cfg) (blkA_body blk)
+      . repeatedlyM (applyTx (blockConfigLedger cfg)) (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (Ticked _ st) = st { lgrA_tip = blockPoint blk }
@@ -238,7 +236,7 @@ instance CommonProtocolParams BlockA where
   maxTxSize     _ = maxBound
 
 instance CanForge BlockA where
-  forgeBlock TopLevelConfig{..} _ bno (Ticked sno st) _txs _ = BlkA {
+  forgeBlock tlc _ bno (Ticked sno st) _txs _ = BlkA {
         blkA_header = HdrA {
             hdrA_fields = HeaderFields {
                 headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
@@ -251,7 +249,7 @@ instance CanForge BlockA where
       }
     where
       ledgerConfig :: PartialLedgerConfig BlockA
-      ledgerConfig = snd configLedger
+      ledgerConfig = snd $ configLedger tlc
 
 instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()

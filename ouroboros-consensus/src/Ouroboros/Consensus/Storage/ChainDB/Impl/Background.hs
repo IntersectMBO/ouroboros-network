@@ -88,7 +88,6 @@ launchBgTasks
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasHardForkHistory blk
-     , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
@@ -247,7 +246,6 @@ copyAndSnapshotRunner
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , HasCodecConfig blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
      , VolDbSerialiseConstraints blk
@@ -306,7 +304,7 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots
-  :: (IOLike m, HasCodecConfig blk, LgrDbSerialiseConstraints blk)
+  :: (IOLike m, LgrDbSerialiseConstraints blk)
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
     -- TODO avoid taking multiple snapshots corresponding to the same tip.

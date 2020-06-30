@@ -27,6 +27,7 @@ module Test.Util.TestBlock (
   , TestBlockError(..)
   , Header(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -81,7 +82,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -198,7 +198,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash (TestHeader b) =
+  headerPrevHash _cfg (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
@@ -233,7 +233,11 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
       testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoUnexpectedThunks)
+
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
@@ -284,13 +288,15 @@ instance IsLedger (LedgerState TestBlock) where
   ledgerTipPoint = castPoint . lastAppliedPoint
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
+  applyLedgerBlock cfg tb@TestBlock{..} (Ticked _ TestLedger{..})
+    | blockPrevHash ccfg tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash ccfg tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb)
+    where
+      ccfg = blockConfigCodec cfg
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
@@ -359,16 +365,21 @@ testInitExtLedger = ExtLedgerState {
 -- | Trivial test configuration with a single core node
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
-      configConsensus = BftConfig {
-          bftParams  = BftParams { bftSecurityParam = k
-                                 , bftNumNodes      = numCoreNodes
-                                 }
-        , bftSignKey = SignKeyMockDSIGN 0
-        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+      topLevelConfigProtocol = FullProtocolConfig {
+          protocolConfigConsensus = BftConfig {
+              bftParams  = BftParams { bftSecurityParam = k
+                                     , bftNumNodes      = numCoreNodes
+                                     }
+            , bftSignKey = SignKeyMockDSIGN 0
+            , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+            }
+        , protocolConfigIndep = ()
         }
-    , configIndep  = ()
-    , configLedger = eraParams
-    , configBlock  = TestBlockConfig numCoreNodes
+    , topLevelConfigBlock = FullBlockConfig {
+          blockConfigLedger = eraParams
+        , blockConfigBlock  = TestBlockConfig numCoreNodes
+        , blockConfigCodec  = TestBlockCodecConfig
+        }
     }
   where
     slotLength :: SlotLength

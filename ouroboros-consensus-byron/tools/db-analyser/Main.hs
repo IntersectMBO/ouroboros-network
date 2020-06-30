@@ -350,7 +350,7 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
           immGetBinaryBlockInfo = nodeGetBinaryBlockInfo
-        , immCodecConfig        = getCodecConfig $ configBlock cfg
+        , immCodecConfig        = configCodec cfg
         , immChunkInfo          = chunkInfo
         , immValidation         = ValidateMostRecentChunk
         , immCheckIntegrity     = nodeCheckIntegrity cfg

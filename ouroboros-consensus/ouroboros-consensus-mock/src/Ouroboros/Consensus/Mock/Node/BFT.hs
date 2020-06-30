@@ -9,7 +9,6 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -29,20 +28,25 @@ protocolInfoBft :: Monad m
 protocolInfoBft numCoreNodes nid securityParam eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = BftConfig {
-                bftParams   = BftParams {
-                                  bftNumNodes      = numCoreNodes
-                                , bftSecurityParam = securityParam
-                                }
-              , bftSignKey  = signKey nid
-              , bftVerKeys  = Map.fromList [
-                    (CoreId n, verKey n)
-                  | n <- enumCoreNodes numCoreNodes
-                  ]
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = BftConfig {
+                    bftParams   = BftParams {
+                                      bftNumNodes      = numCoreNodes
+                                    , bftSecurityParam = securityParam
+                                    }
+                  , bftSignKey  = signKey nid
+                  , bftVerKeys  = Map.fromList [
+                        (CoreId n, verKey n)
+                      | n <- enumCoreNodes numCoreNodes
+                      ]
+                  }
+              , protocolConfigIndep = ()
               }
-          , configIndep  = ()
-          , configLedger = SimpleLedgerConfig () eraParams
-          , configBlock  = SimpleBlockConfig securityParam
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = SimpleLedgerConfig () eraParams
+              , blockConfigBlock  = SimpleBlockConfig securityParam
+              , blockConfigCodec  = SimpleCodecConfig securityParam
+              }
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

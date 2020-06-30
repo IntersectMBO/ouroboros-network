@@ -332,7 +332,7 @@ getPastLedger cfg p m@Model{..} =
       [] | p /= GenesisPoint ->
         Nothing
       _otherwise ->
-        Just $ refoldLedger cfg prefix initLedger
+        Just $ refoldLedger (extLedgerCfgFromTopLevel cfg) prefix initLedger
   where
     prefix :: [blk]
     prefix = reverse
@@ -467,13 +467,15 @@ addBlockPromise cfg blk m = (result, m')
 stream
   :: GetPrevHash blk
   => SecurityParam
-  -> StreamFrom blk -> StreamTo blk
-  -> Model blk
+  -> CodecConfig blk
+  -> StreamFrom  blk
+  -> StreamTo    blk
+  -> Model       blk
   -> Either ChainDbError
             (Either (UnknownRange blk) IteratorId, Model blk)
-stream securityParam from to m = do
+stream securityParam cfg from to m = do
     unless (validBounds from to) $ Left (InvalidIteratorRange from to)
-    case between securityParam from to m of
+    case between securityParam cfg from to m of
       Left  e    -> return (Left e,      m)
       Right blks -> return (Right itrId, m {
           iterators = Map.insert itrId blks (iterators m)
@@ -679,7 +681,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     go ledger validPrefix = \case
       -- Return 'mbFinal' if it contains an "earlier" result
       []    -> ValidatedChain validPrefix ledger invalid
-      b:bs' -> case runExcept (tickThenApply cfg b ledger) of
+      b:bs' -> case runExcept (tickThenApply (extLedgerCfgFromTopLevel cfg) b ledger) of
         -- Invalid block according to the ledger
         Left e
           -> ValidatedChain
@@ -748,7 +750,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       -> InvalidBlocks blk
     findInvalidBlockInTheFuture ledger = \case
       []    -> Map.empty
-      b:bs' -> case runExcept (tickThenApply cfg b ledger) of
+      b:bs' -> case runExcept (tickThenApply (extLedgerCfgFromTopLevel cfg) b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
         Right ledger'
           | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
@@ -759,8 +761,9 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
 
 
 chains :: forall blk. (GetPrevHash blk)
-       => Map (HeaderHash blk) blk -> [Chain blk]
-chains bs = go Chain.Genesis
+       => CodecConfig blk
+       -> Map (HeaderHash blk) blk -> [Chain blk]
+chains cfg bs = go Chain.Genesis
   where
     -- Construct chains,
     go :: Chain blk -> [Chain blk]
@@ -777,7 +780,7 @@ chains bs = go Chain.Genesis
           Map.findWithDefault Map.empty (Chain.headHash ch) fwd
 
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    fwd = successors (Map.elems bs)
+    fwd = successors cfg (Map.elems bs)
 
 validChains :: forall blk. LedgerSupportsProtocol blk
             => TopLevelConfig blk
@@ -803,7 +806,7 @@ validChains cfg m bs =
     -- over the equally preferable A->B as it will be the first in the list
     -- after a stable sort.
     sortChains $
-    chains bs
+    chains (configCodec cfg) bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
@@ -816,17 +819,23 @@ validChains cfg m bs =
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. GetPrevHash blk
-           => [blk] -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-successors = Map.unionsWith Map.union . map single
+           => CodecConfig blk
+           -> [blk]
+           -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
+successors cfg = Map.unionsWith Map.union . map single
   where
     single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    single b = Map.singleton (blockPrevHash b)
+    single b = Map.singleton (blockPrevHash cfg b)
                              (Map.singleton (blockHash b) b)
 
 between :: forall blk. GetPrevHash blk
-        => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
+        => SecurityParam
+        -> CodecConfig blk
+        -> StreamFrom  blk
+        -> StreamTo    blk
+        -> Model       blk
         -> Either (UnknownRange blk) [blk]
-between k from to m = do
+between k cfg from to m = do
     fork <- errFork
     -- See #871.
     if partOfCurrentChain fork ||
@@ -846,7 +855,7 @@ between k from to m = do
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
     fragments = map Chain.toAnchoredFragment
-              . chains
+              . chains cfg
               . blocks
               $ m
 

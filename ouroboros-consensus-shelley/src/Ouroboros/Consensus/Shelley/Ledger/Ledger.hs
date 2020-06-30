@@ -67,7 +67,6 @@ import           Ouroboros.Network.Block (Serialised (..), decodePoint,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -227,7 +226,7 @@ instance TPraosCrypto c
         , shelleyState = newShelleyState
         }
     where
-      globals = shelleyLedgerGlobals cfg
+      globals = shelleyLedgerGlobals (blockConfigLedger cfg)
 
   -- TODO actual reapplication:
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1303

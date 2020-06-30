@@ -38,20 +38,25 @@ protocolInfoPraosRule numCoreNodes
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
-          configConsensus = WLSConfig {
-              wlsConfigSchedule = schedule
-            , wlsConfigP        = PraosConfig
-                { praosParams       = params
-                , praosSignKeyVRF   = NeverUsedSignKeyVRF
-                , praosInitialEta   = 0
-                , praosInitialStake = genesisStakeDist addrDist
-                , praosVerKeys      = verKeys
+          topLevelConfigProtocol = FullProtocolConfig {
+              protocolConfigConsensus = WLSConfig {
+                  wlsConfigSchedule = schedule
+                , wlsConfigP        = PraosConfig
+                    { praosParams       = params
+                    , praosSignKeyVRF   = NeverUsedSignKeyVRF
+                    , praosInitialEta   = 0
+                    , praosInitialStake = genesisStakeDist addrDist
+                    , praosVerKeys      = verKeys
+                    }
+                , wlsConfigNodeId   = nid
                 }
-            , wlsConfigNodeId   = nid
+            , protocolConfigIndep = ()
             }
-        , configIndep  = ()
-        , configLedger = SimpleLedgerConfig () eraParams
-        , configBlock  = SimpleBlockConfig (praosSecurityParam params)
+        , topLevelConfigBlock = FullBlockConfig {
+              blockConfigLedger = SimpleLedgerConfig () eraParams
+            , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
+            , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+            }
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist

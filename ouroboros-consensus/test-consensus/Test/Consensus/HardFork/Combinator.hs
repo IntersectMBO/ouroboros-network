@@ -256,31 +256,41 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
     topLevelConfig :: CoreNodeId -> TopLevelConfig TestBlock
     topLevelConfig nid = TopLevelConfig {
-          configConsensus = HardForkConsensusConfig {
-              hardForkConsensusConfigK      = k
-            , hardForkConsensusConfigShape  = shape
-            , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
-                   (WrapPartialConsensusConfig $ consensusConfigA nid)
-                :* (WrapPartialConsensusConfig $ consensusConfigB nid)
+          topLevelConfigProtocol = FullProtocolConfig {
+              protocolConfigConsensus = HardForkConsensusConfig {
+                  hardForkConsensusConfigK      = k
+                , hardForkConsensusConfigShape  = shape
+                , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+                       (WrapPartialConsensusConfig $ consensusConfigA nid)
+                    :* (WrapPartialConsensusConfig $ consensusConfigB nid)
+                    :* Nil
+                }
+            , protocolConfigIndep = PerEraChainIndepStateConfig $
+                   (WrapChainIndepStateConfig ())
+                :* (WrapChainIndepStateConfig ())
                 :* Nil
             }
-        , configIndep  = PerEraChainIndepStateConfig $
-                              (WrapChainIndepStateConfig ())
-                           :* (WrapChainIndepStateConfig ())
-                           :* Nil
-        , configLedger = HardForkLedgerConfig {
-              hardForkLedgerConfigK      = k
-            , hardForkLedgerConfigShape  = shape
-            , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
-                   (WrapPartialLedgerConfig $ ledgerConfigA nid)
-                :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
-                :* Nil
-            }
-        , configBlock = HardForkBlockConfig {
-              hardForkBlockConfigPerEra = PerEraBlockConfig $
-                   blockConfigA nid
-                :* blockConfigB nid
-                :* Nil
+        , topLevelConfigBlock = FullBlockConfig {
+              blockConfigLedger = HardForkLedgerConfig {
+                  hardForkLedgerConfigK      = k
+                , hardForkLedgerConfigShape  = shape
+                , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+                       (WrapPartialLedgerConfig $ ledgerConfigA nid)
+                    :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
+                    :* Nil
+                }
+            , blockConfigBlock = HardForkBlockConfig {
+                  hardForkBlockConfigPerEra = PerEraBlockConfig $
+                       blockConfigA nid
+                    :* blockConfigB nid
+                    :* Nil
+                }
+            , blockConfigCodec = HardForkCodecConfig {
+                  hardForkCodecConfigPerEra = PerEraCodecConfig $
+                       CCfgA
+                    :* CCfgB
+                    :* Nil
+                }
             }
         }
 

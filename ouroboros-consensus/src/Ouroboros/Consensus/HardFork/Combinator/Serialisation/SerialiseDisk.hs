@@ -18,7 +18,6 @@ import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.TypeFamilyWrappers

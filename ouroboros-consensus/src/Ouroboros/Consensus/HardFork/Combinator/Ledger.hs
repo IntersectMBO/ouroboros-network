@@ -117,7 +117,7 @@ tickOne ei slot pcfg st = Comp $
 instance CanHardFork xs
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
-  applyLedgerBlock ledgerCfg@HardForkLedgerConfig{..}
+  applyLedgerBlock cfg
                    (HardForkBlock (OneEraBlock block))
                    (Ticked slot (HardForkLedgerState st)) =
       case State.match block (hmap (Comp . Ticked slot) st) of
@@ -128,16 +128,17 @@ instance CanHardFork xs
                          Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
         Right matched ->
           fmap (HardForkLedgerState . State.tickAllPast k) $ hsequence' $
-            hczipWith3 proxySingle (apply ei) cfgs errInjections matched
+            hczipWith3 proxySingle apply cfgs errInjections matched
     where
-      cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-      k    = hardForkLedgerConfigK
-      ei   = State.epochInfoLedger ledgerCfg st
+      cfgs = distribFullBlockConfig ei cfg
+      lcfg = blockConfigLedger cfg
+      k    = hardForkLedgerConfigK lcfg
+      ei   = State.epochInfoLedger lcfg st
 
       errInjections :: NP (Injection WrapLedgerErr xs) xs
       errInjections = injections
 
-  reapplyLedgerBlock ledgerCfg@HardForkLedgerConfig{..}
+  reapplyLedgerBlock cfg
                      (HardForkBlock (OneEraBlock block))
                      (Ticked slot (HardForkLedgerState st)) =
       case State.match block (hmap (Comp . Ticked slot) st) of
@@ -147,29 +148,28 @@ instance CanHardFork xs
           error "reapplyLedgerBlock: can't be from other era"
         Right matched ->
           HardForkLedgerState . State.tickAllPast k $
-            hczipWith proxySingle (reapply ei) cfgs matched
+            hczipWith proxySingle reapply cfgs matched
     where
-      cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-      k    = hardForkLedgerConfigK
-      ei   = State.epochInfoLedger ledgerCfg st
+      cfgs = distribFullBlockConfig ei cfg
+      lcfg = blockConfigLedger cfg
+      k    = hardForkLedgerConfigK lcfg
+      ei   = State.epochInfoLedger lcfg st
 
 apply :: SingleEraBlock blk
-      => EpochInfo Identity
-      -> WrapPartialLedgerConfig                           blk
+      => WrapFullBlockConfig                               blk
       -> Injection WrapLedgerErr xs                        blk
       -> Product I (Ticked :.: LedgerState)                blk
       -> (Except (HardForkLedgerError xs) :.: LedgerState) blk
-apply ei cfg injectErr (Pair (I block) (Comp st)) = Comp $
+apply (WrapFullBlockConfig cfg) injectErr (Pair (I block) (Comp st)) = Comp $
     withExcept (injectLedgerError injectErr) $
-      applyLedgerBlock (completeLedgerConfig' ei cfg) block st
+      applyLedgerBlock cfg block st
 
 reapply :: SingleEraBlock blk
-        => EpochInfo Identity
-        -> WrapPartialLedgerConfig            blk
+        => WrapFullBlockConfig                blk
         -> Product I (Ticked :.: LedgerState) blk
         -> LedgerState                        blk
-reapply ei cfg (Pair (I block) (Comp st)) =
-    reapplyLedgerBlock (completeLedgerConfig' ei cfg) block st
+reapply (WrapFullBlockConfig cfg) (Pair (I block) (Comp st)) =
+    reapplyLedgerBlock cfg block st
 
 {-------------------------------------------------------------------------------
   UpdateLedger

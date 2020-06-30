@@ -14,7 +14,6 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap)
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended
@@ -138,8 +137,7 @@ defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
 
 -- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolDbArgs, 'LgrDbArgs',
 -- and 'ChainDbSpecificArgs'.
-fromChainDbArgs :: HasCodecConfig blk
-                => ChainDbArgs m blk
+fromChainDbArgs :: ChainDbArgs m blk
                 -> ( ImmDB.ImmDbArgs     m blk
                    , VolDB.VolDbArgs     m blk
                    , LgrDB.LgrDbArgs     m blk
@@ -148,7 +146,7 @@ fromChainDbArgs :: HasCodecConfig blk
 fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
           immGetBinaryBlockInfo = cdbGetBinaryBlockInfo
-        , immCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
+        , immCodecConfig        = configCodec cdbTopLevelConfig
         , immChunkInfo          = cdbChunkInfo
         , immValidation         = cdbImmValidation
         , immCheckIntegrity     = cdbCheckIntegrity
@@ -162,7 +160,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volCheckIntegrity     = cdbCheckIntegrity
         , volBlocksPerFile      = cdbBlocksPerFile
         , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
-        , volCodecConfig        = getCodecConfig (configBlock cdbTopLevelConfig)
+        , volCodecConfig        = configCodec cdbTopLevelConfig
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer
         }

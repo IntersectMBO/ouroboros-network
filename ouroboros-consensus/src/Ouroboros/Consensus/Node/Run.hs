@@ -72,7 +72,6 @@ class ( LedgerSupportsProtocol           blk
       , TranslateNetworkProtocolVersion  blk
       , CanForge                         blk
       , ConfigSupportsNode               blk
-      , HasCodecConfig                   blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
       , SerialiseDiskConstraints         blk

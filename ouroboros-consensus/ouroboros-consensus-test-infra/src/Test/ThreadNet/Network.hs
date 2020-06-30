@@ -753,7 +753,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                   -- fail if the EBB is invalid
                   -- if it is valid, we retick to the /same/ slot
-                  let apply = applyLedgerBlock (configLedger pInfoConfig)
+                  let apply = applyLedgerBlock (topLevelConfigBlock pInfoConfig)
                   tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
                     Left e   -> Exn.throw $ JitEbbError @blk e
                     Right st -> pure $ applyChainTick
@@ -922,7 +922,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       where
         binaryProtocolCodecs =
           NTN.defaultCodecs
-            (getCodecConfig (configBlock cfg))
+            (configCodec cfg)
             (mostRecentSupportedNodeToNode (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'

@@ -34,6 +34,7 @@ import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -146,7 +147,7 @@ exampleChainDepState =
 
 exampleLedgerState :: LedgerState (Block ShortHash)
 exampleLedgerState = reapplyLedgerBlock
-    ledgerCfg
+    cfg
     (mkShelleyBlock newBlock :: Block ShortHash)
     (Ticked 0 ShelleyLedgerState {
         ledgerTip    = GenesisPoint
@@ -155,7 +156,11 @@ exampleLedgerState = reapplyLedgerBlock
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A (Proxy @ShortHash)
-    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
+    cfg = FullBlockConfig {
+          blockConfigLedger = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
+        , blockConfigBlock  = mkShelleyBlockConfig (SL.ProtVer 2 0) testShelleyGenesis
+        , blockConfigCodec  = ShelleyCodecConfig
+        }
 
 exampleHeaderState :: HeaderState (Block ShortHash)
 exampleHeaderState = genesisHeaderState st

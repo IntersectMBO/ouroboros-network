@@ -254,7 +254,7 @@ data ChainDbEnv m blk = CDB
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
-instance (IOLike m, LedgerSupportsProtocol blk, HasCodecConfig blk)
+instance (IOLike m, LedgerSupportsProtocol blk)
       => NoUnexpectedThunks (ChainDbEnv m blk) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 

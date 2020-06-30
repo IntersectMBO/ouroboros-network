@@ -78,6 +78,7 @@ import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -219,7 +220,7 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
   getHeaderFields = getBlockHeaderFields
 
 instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleBlock c ext) where
-  headerPrevHash = simplePrev . simpleHeaderStd
+  headerPrevHash _cfg = simplePrev . simpleHeaderStd
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => StandardHash (SimpleBlock' c ext ext')
@@ -253,7 +254,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
 
 {-------------------------------------------------------------------------------
-  Config
+  Block config
 -------------------------------------------------------------------------------}
 
 newtype instance BlockConfig (SimpleBlock c ext) =
@@ -261,13 +262,17 @@ newtype instance BlockConfig (SimpleBlock c ext) =
   deriving stock   (Generic)
   deriving newtype (NoUnexpectedThunks)
 
-instance HasCodecConfig (SimpleBlock c ext) where
+{-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
 
-  -- | Only the 'SecurityParam' is required for simple blocks
-  newtype CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
-    deriving newtype (NoUnexpectedThunks)
+-- | Only the 'SecurityParam' is required for simple blocks
+newtype instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+  deriving newtype (NoUnexpectedThunks)
 
-  getCodecConfig (SimpleBlockConfig secParam) = SimpleCodecConfig secParam
+{-------------------------------------------------------------------------------
+  Hard fork history
+-------------------------------------------------------------------------------}
 
 instance HasHardForkHistory (SimpleBlock c ext) where
   type HardForkIndices (SimpleBlock c ext) = '[SimpleBlock c ext]
@@ -312,8 +317,11 @@ instance MockProtocolSpecific c ext
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  applyLedgerBlock _cfg = updateSimpleLedgerState
-  reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
+  applyLedgerBlock cfg =
+      updateSimpleLedgerState (blockConfigCodec cfg)
+
+  reapplyLedgerBlock cfg =
+      (mustSucceed . runExcept) .: applyLedgerBlock cfg
     where
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
@@ -327,12 +335,13 @@ newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
-                        => SimpleBlock c ext
+                        => CodecConfig (SimpleBlock c ext)
+                        -> SimpleBlock c ext
                         -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext))
-updateSimpleLedgerState b (Ticked _ (SimpleLedgerState st)) =
-    SimpleLedgerState <$> updateMockState b st
+updateSimpleLedgerState cfg b (Ticked _ (SimpleLedgerState st)) =
+    SimpleLedgerState <$> updateMockState cfg b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
                  => a

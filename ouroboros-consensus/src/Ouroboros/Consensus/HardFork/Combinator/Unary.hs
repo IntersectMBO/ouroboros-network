@@ -257,12 +257,13 @@ instance Isomorphic ChainHash where
 instance Isomorphic TopLevelConfig where
   project :: forall blk. NoHardForks blk
           => TopLevelConfig (HardForkBlock '[blk]) -> TopLevelConfig blk
-  project TopLevelConfig{..} = TopLevelConfig{
-        configConsensus  = auxConsensus configConsensus
-      , configIndep      = auxIndep     configIndep
-      , configLedger     = auxLedger    configLedger
-      , configBlock      = project      configBlock
-      }
+  project tlc =
+      mkTopLevelConfig
+        (auxConsensus $ configConsensus tlc)
+        (auxIndep     $ configIndep     tlc)
+        (auxLedger    $ configLedger    tlc)
+        (project      $ configBlock     tlc)
+        (project      $ configCodec     tlc)
     where
       ei :: EpochInfo Identity
       ei = fixedSizeEpochInfo
@@ -270,7 +271,7 @@ instance Isomorphic TopLevelConfig where
          . unK . hd
          . History.getShape
          . hardForkLedgerConfigShape
-         $ configLedger
+         $ configLedger tlc
 
       auxLedger :: LedgerConfig (HardForkBlock '[blk]) -> LedgerConfig blk
       auxLedger =
@@ -295,15 +296,16 @@ instance Isomorphic TopLevelConfig where
 
   inject :: forall blk. NoHardForks blk
          => TopLevelConfig blk -> TopLevelConfig (HardForkBlock '[blk])
-  inject tlc@TopLevelConfig{..} = TopLevelConfig{
-        configConsensus = auxConsensus configConsensus
-      , configIndep     = auxIndep     configIndep
-      , configLedger    = auxLedger    configLedger
-      , configBlock     = inject       configBlock
-      }
+  inject tlc =
+      mkTopLevelConfig
+        (auxConsensus $ configConsensus tlc)
+        (auxIndep     $ configIndep     tlc)
+        (auxLedger    $ configLedger    tlc)
+        (inject       $ configBlock     tlc)
+        (inject       $ configCodec     tlc)
     where
       eraParams = getEraParams tlc
-      k         = protocolSecurityParam configConsensus
+      k         = configSecurityParam tlc
 
       auxLedger :: LedgerConfig blk -> LedgerConfig (HardForkBlock '[blk])
       auxLedger cfg = HardForkLedgerConfig {

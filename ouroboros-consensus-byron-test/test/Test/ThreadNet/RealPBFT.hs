@@ -37,7 +37,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -1285,12 +1284,12 @@ mkRekeyUpd
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pInfoLeaderCreds of
+  case pInfoLeaderCreds pInfo of
     Nothing              -> Nothing
     Just (isLeader, mfs) ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
+          isLeader' = updSignKey genSK bcfg isLeader (coerce eno) newSK
           pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
@@ -1299,10 +1298,7 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
         , tniProtocolInfo = pInfo'
         }
   where
-    ProtocolInfo{
-        pInfoConfig = TopLevelConfig{configBlock}
-      , pInfoLeaderCreds
-      } = pInfo
+    bcfg = configBlock (pInfoConfig pInfo)
 
 -- | The secret key for a node index
 --

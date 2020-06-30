@@ -21,12 +21,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Config
   , ConsensusConfig(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , HardForkLedgerConfig(..)
     -- ** Functions on config
   , completeLedgerConfig'
   , completeLedgerConfig''
   , completeConsensusConfig'
   , completeConsensusConfig''
+  , distribFullBlockConfig
   , distribTopLevelConfig
     -- ** Convenience re-exports
   , EpochInfo
@@ -42,12 +44,12 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -135,6 +137,15 @@ newtype instance BlockConfig (HardForkBlock xs) = HardForkBlockConfig {
   deriving newtype (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
+  Codec config
+-------------------------------------------------------------------------------}
+
+newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
+      hardForkCodecConfigPerEra :: PerEraCodecConfig xs
+    }
+  deriving newtype (NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
   Ledger config
 -------------------------------------------------------------------------------}
 
@@ -191,26 +202,52 @@ completeConsensusConfig'' ei =
     . completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
     . unwrapPartialConsensusConfig
 
+distribFullBlockConfig :: CanHardFork xs
+                       => EpochInfo Identity
+                       -> FullBlockConfig (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+                       -> NP WrapFullBlockConfig xs
+distribFullBlockConfig ei cfg =
+    hcpure proxySingle
+      (fn_3 (\cfgLedger cfgBlock cfgCodec -> WrapFullBlockConfig $
+           FullBlockConfig {
+               blockConfigLedger = completeLedgerConfig' ei cfgLedger
+             , blockConfigBlock  = cfgBlock
+             , blockConfigCodec  = cfgCodec
+             }))
+    `hap`
+      (getPerEraLedgerConfig $
+         hardForkLedgerConfigPerEra (blockConfigLedger cfg))
+    `hap`
+      (getPerEraBlockConfig $
+         hardForkBlockConfigPerEra (blockConfigBlock cfg))
+    `hap`
+      (getPerEraCodecConfig $
+         hardForkCodecConfigPerEra (blockConfigCodec cfg))
+
 distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs
-distribTopLevelConfig ei TopLevelConfig{..} =
+distribTopLevelConfig ei tlc =
     hcpure proxySingle
-      (fn_4 (\cfgConsensus cfgIndep cfgLedger cfgBlock ->
-           TopLevelConfig
+      (fn_5 (\cfgConsensus cfgIndep cfgLedger cfgBlock cfgCodec ->
+           mkTopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
              (unwrapChainIndepStateConfig cfgIndep)
              (completeLedgerConfig'    ei cfgLedger)
-             cfgBlock))
+             cfgBlock
+             cfgCodec))
     `hap`
       (getPerEraConsensusConfig $
-         hardForkConsensusConfigPerEra configConsensus)
+         hardForkConsensusConfigPerEra (configConsensus tlc))
     `hap`
-      (getPerEraChainIndepStateConfig configIndep)
+      (getPerEraChainIndepStateConfig (configIndep tlc))
     `hap`
       (getPerEraLedgerConfig $
-         hardForkLedgerConfigPerEra configLedger)
+         hardForkLedgerConfigPerEra (configLedger tlc))
     `hap`
       (getPerEraBlockConfig $
-         hardForkBlockConfigPerEra configBlock)
+         hardForkBlockConfigPerEra (configBlock tlc))
+    `hap`
+      (getPerEraCodecConfig $
+         hardForkCodecConfigPerEra (configCodec tlc))

@@ -22,8 +22,6 @@ import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
 
-
-import           Ouroboros.Consensus.Block (getCodecConfig)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()
@@ -116,4 +114,4 @@ testCfg = pInfoConfig protocolInfo
 
 -- | Matches the values used for the generators.
 testCodecCfg :: CodecConfig ByronBlock
-testCodecCfg = getCodecConfig (configBlock testCfg)
+testCodecCfg = configCodec testCfg

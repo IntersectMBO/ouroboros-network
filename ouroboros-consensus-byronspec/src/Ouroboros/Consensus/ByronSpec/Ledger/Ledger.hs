@@ -28,6 +28,7 @@ import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 
@@ -73,7 +74,7 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
         -- it is idempotent. If we wanted to avoid the repeated tick, we would
         -- have to call the subtransitions of CHAIN (except for ticking).
         Rules.liftCHAIN
-          cfg
+          (blockConfigLedger cfg)
           (byronSpecBlock          block)
           (byronSpecLedgerState    state)
 

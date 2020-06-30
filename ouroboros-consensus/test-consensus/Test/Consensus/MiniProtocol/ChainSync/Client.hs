@@ -50,7 +50,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
@@ -385,20 +384,25 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     nodeCfg :: TopLevelConfig TestBlock
     nodeCfg = TopLevelConfig {
-        configConsensus = BftConfig
-          { bftParams   = BftParams
-                            { bftSecurityParam = securityParam
-                            , bftNumNodes      = numCoreNodes
-                            }
-          , bftSignKey  = SignKeyMockDSIGN 0
-          , bftVerKeys  = Map.fromList
-                          [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
-                          , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
-                          ]
+        topLevelConfigProtocol = FullProtocolConfig{
+            protocolConfigConsensus = BftConfig
+              { bftParams  = BftParams
+                               { bftSecurityParam = securityParam
+                               , bftNumNodes      = numCoreNodes
+                               }
+              , bftSignKey = SignKeyMockDSIGN 0
+              , bftVerKeys = Map.fromList
+                             [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
+                             , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
+                             ]
+              }
+          , protocolConfigIndep = ()
           }
-      , configIndep  = ()
-      , configLedger = eraParams
-      , configBlock  = TestBlockConfig numCoreNodes
+      , topLevelConfigBlock = FullBlockConfig{
+            blockConfigLedger = eraParams
+          , blockConfigBlock  = TestBlockConfig numCoreNodes
+          , blockConfigCodec  = TestBlockCodecConfig
+          }
       }
 
     eraParams :: HardFork.EraParams
@@ -437,13 +441,18 @@ updateClientState cfg chain ledgerState chainUpdates =
       Just bs -> (chain', ledgerState')
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
-          ledgerState' = runValidate $ foldLedger cfg bs ledgerState
+          ledgerState' = runValidate $ foldLedger
+                                         (extLedgerCfgFromTopLevel cfg)
+                                         bs
+                                         ledgerState
       Nothing
       -- There was a roll back in the updates, so validate the chain from
       -- scratch
         | Just chain' <- Chain.applyChainUpdates (toChainUpdates chainUpdates) chain
-        -> let ledgerState' = runValidate $
-                 foldLedger cfg (Chain.toOldestFirst chain') testInitExtLedger
+        -> let ledgerState' = runValidate $ foldLedger
+                                              (extLedgerCfgFromTopLevel cfg)
+                                              (Chain.toOldestFirst chain')
+                                              testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"

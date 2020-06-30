@@ -124,13 +124,10 @@ newtype instance BlockConfig (DegenFork b) = DBCfg {
     }
   deriving (NoUnexpectedThunks)
 
-instance SingleEraBlock b => HasCodecConfig (DegenFork b) where
-  newtype CodecConfig (DegenFork b) = DCCfg {
-        unDCCfg :: CodecConfig (HardForkBlock '[b])
-      }
-    deriving (NoUnexpectedThunks)
-
-  getCodecConfig = DCCfg . getCodecConfig . unDBCfg
+newtype instance CodecConfig (DegenFork b) = DCCfg {
+      unDCCfg :: CodecConfig (HardForkBlock '[b])
+    }
+  deriving (NoUnexpectedThunks)
 
 newtype instance ConsensusConfig (DegenForkProtocol b) = DConCfg {
       unDConCfg :: ConsensusConfig (HardForkProtocol '[b])
@@ -176,7 +173,7 @@ instance NoHardForks b => HasHeader (Header (DegenFork b)) where
       HeaderFields{..} = getHeaderFields hdr
 
 instance NoHardForks b => GetPrevHash (DegenFork b) where
-  headerPrevHash = castHash . headerPrevHash . unDHdr
+  headerPrevHash cfg = castHash . headerPrevHash (unDCCfg cfg) . unDHdr
 
 {-------------------------------------------------------------------------------
   Forward the 'ConsensusProtocol' instance
@@ -259,9 +256,9 @@ instance SingleEraBlock b => IsLedger (LedgerState (DegenFork b)) where
 
 instance NoHardForks b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
   applyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr <$> applyLedgerBlock cfg b (Ticked slot lgr)
+    DLgr <$> applyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
   reapplyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr $ reapplyLedgerBlock cfg b (Ticked slot lgr)
+    DLgr $ reapplyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
 
 instance NoHardForks b => UpdateLedger (DegenFork b)
 

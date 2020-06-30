@@ -33,7 +33,6 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -119,12 +118,17 @@ protocolInfoByron :: forall m. Monad m
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftConfig {
-                pbftParams = byronPBftParams genesisConfig mSigThresh
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = PBftConfig {
+                    pbftParams = byronPBftParams genesisConfig mSigThresh
+                  }
+              , protocolConfigIndep = ()
               }
-          , configIndep  = ()
-          , configLedger = genesisConfig
-          , configBlock  = byronConfig
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = genesisConfig
+              , blockConfigBlock  = byronConfig
+              , blockConfigCodec  = mkByronCodecConfig genesisConfig
+              }
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing

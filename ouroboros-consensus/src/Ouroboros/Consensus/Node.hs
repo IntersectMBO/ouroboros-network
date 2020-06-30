@@ -244,7 +244,7 @@ run runargs@RunNodeArgs{..} =
       } = rnProtocolInfo
 
     codecConfig :: CodecConfig blk
-    codecConfig = getCodecConfig $ configBlock cfg
+    codecConfig = configCodec cfg
 
     mkNodeToNodeApps
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk

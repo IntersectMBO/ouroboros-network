@@ -31,12 +31,17 @@ protocolInfoMockPBFT :: Monad m
 protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftConfig {
-                pbftParams = params
+            topLevelConfigProtocol = FullProtocolConfig {
+                protocolConfigConsensus = PBftConfig {
+                    pbftParams = params
+                  }
+              , protocolConfigIndep = ()
               }
-          , configIndep  = ()
-          , configLedger = SimpleLedgerConfig ledgerView eraParams
-          , configBlock  = SimpleBlockConfig  (pbftSecurityParam params)
+          , topLevelConfigBlock = FullBlockConfig {
+                blockConfigLedger = SimpleLedgerConfig ledgerView eraParams
+              , blockConfigBlock  = SimpleBlockConfig  (pbftSecurityParam params)
+              , blockConfigCodec  = SimpleCodecConfig  (pbftSecurityParam params)
+              }
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)

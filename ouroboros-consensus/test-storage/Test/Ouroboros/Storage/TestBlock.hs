@@ -92,7 +92,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -226,7 +225,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash = castHash . thPrevHash . unTestHeader
+  headerPrevHash _cfg = castHash . thPrevHash . unTestHeader
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       -- | Whether the test block can be EBBs or not. This can vary per test
@@ -241,10 +240,8 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance HasCodecConfig TestBlock where
-  data CodecConfig TestBlock = TestBlockCodecConfig
-    deriving (Generic, NoUnexpectedThunks)
-  getCodecConfig = const TestBlockCodecConfig
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -584,13 +581,15 @@ instance IsLedger (LedgerState TestBlock) where
   ledgerTipPoint = castPoint . lastAppliedPoint
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
-    | blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
+  applyLedgerBlock cfg tb@TestBlock{..} (Ticked _ TestLedger{..})
+    | blockPrevHash ccfg tb /= lastAppliedHash
+    = throwError $ InvalidHash lastAppliedHash (blockPrevHash ccfg tb)
     | not $ tbIsValid testBody
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
+    where
+      ccfg = blockConfigCodec cfg
 
   reapplyLedgerBlock _ tb _ =
     TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
@@ -678,19 +677,24 @@ testInitExtLedger = ExtLedgerState {
 mkTestConfig :: SecurityParam -> ChunkSize -> TopLevelConfig TestBlock
 mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
     TopLevelConfig {
-        configConsensus = McsConsensusConfig () $ BftConfig {
-            bftParams  = BftParams {
-                             bftSecurityParam = k
-                           , bftNumNodes      = numCoreNodes
-                           }
-          , bftSignKey = SignKeyMockDSIGN 0
-          , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = McsConsensusConfig () $ BftConfig {
+                bftParams  = BftParams {
+                                 bftSecurityParam = k
+                               , bftNumNodes      = numCoreNodes
+                               }
+              , bftSignKey = SignKeyMockDSIGN 0
+              , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+              }
+          , protocolConfigIndep  = ()
           }
-      , configIndep  = ()
-      , configLedger = eraParams
-      , configBlock  = TestBlockConfig {
-            testBlockEBBsAllowed  = chunkCanContainEBB
-          , testBlockNumCoreNodes = numCoreNodes
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigLedger = eraParams
+          , blockConfigBlock  = TestBlockConfig {
+                testBlockEBBsAllowed  = chunkCanContainEBB
+              , testBlockNumCoreNodes = numCoreNodes
+              }
+          , blockConfigCodec  = TestBlockCodecConfig
           }
       }
   where

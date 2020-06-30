@@ -37,7 +37,6 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -147,10 +146,15 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
     topLevelConfig = TopLevelConfig {
-        configConsensus = consensusConfig
-      , configIndep     = tpraosParams
-      , configLedger    = ledgerConfig
-      , configBlock     = blockConfig
+        topLevelConfigProtocol = FullProtocolConfig {
+            protocolConfigConsensus = consensusConfig
+          , protocolConfigIndep     = tpraosParams
+          }
+      , topLevelConfigBlock = FullBlockConfig {
+            blockConfigLedger = ledgerConfig
+          , blockConfigBlock  = blockConfig
+          , blockConfigCodec  = ShelleyCodecConfig
+          }
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))

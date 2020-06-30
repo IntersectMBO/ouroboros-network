@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Block.Abstract (
     BlockProtocol
     -- * Configuration
   , BlockConfig
-  , HasCodecConfig(..)
+  , CodecConfig
     -- * Previous hash
   , GetPrevHash(..)
   , blockPrevHash
@@ -66,7 +66,6 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin), fromWithOrigin,
@@ -96,14 +95,11 @@ type family BlockProtocol blk :: *
 -- | Static configuration required to work with this type of blocks
 data family BlockConfig blk :: *
 
-class NoUnexpectedThunks (CodecConfig blk) => HasCodecConfig blk where
-  -- | Static configuration required for serialisation and deserialisation of
-  -- types pertaining to this type of block.
-  --
-  -- Data family instead of type family to get better type inference.
-  data family CodecConfig blk :: *
-
-  getCodecConfig :: BlockConfig blk -> CodecConfig blk
+-- | Static configuration required for serialisation and deserialisation of
+-- types pertaining to this type of block.
+--
+-- Data family instead of type family to get better type inference.
+data family CodecConfig blk :: *
 
 {-------------------------------------------------------------------------------
   Get hash of previous block
@@ -115,10 +111,10 @@ class (HasHeader blk, GetHeader blk) => GetPrevHash blk where
   -- This gets its own abstraction, because it will be a key part of the path
   -- to getting rid of EBBs: when we have blocks @A - EBB - B@, the prev hash
   -- of @B@ will be reported as @A@.
-  headerPrevHash :: Header blk -> ChainHash blk
+  headerPrevHash :: CodecConfig blk -> Header blk -> ChainHash blk
 
-blockPrevHash :: GetPrevHash blk => blk -> ChainHash blk
-blockPrevHash = castHash . headerPrevHash . getHeader
+blockPrevHash :: GetPrevHash blk => CodecConfig blk -> blk -> ChainHash blk
+blockPrevHash cfg = castHash . headerPrevHash cfg . getHeader
 
 {-------------------------------------------------------------------------------
   Link block to its header
