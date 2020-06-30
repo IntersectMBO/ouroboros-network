@@ -130,6 +130,7 @@ executable db-analyser
                      , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-slotting
+                     , containers
                      , filepath
                      , mtl
                      , optparse-applicative

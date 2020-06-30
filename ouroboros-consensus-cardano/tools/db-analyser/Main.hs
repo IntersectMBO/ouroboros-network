@@ -13,6 +13,7 @@ import           Data.Either (fromRight)
 import           Data.Foldable (asum)
 import           Data.IORef
 import           Data.List (intercalate)
+import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import           Options.Applicative
@@ -82,7 +83,7 @@ analyse CmdLine{..} _ = do
     cfg :: TopLevelConfig blk <- Analysis.mkTopLevelConfig clConfig clIsMainNet
     withRegistry $ \registry ->
       withImmDB clImmDB cfg (nodeImmDbChunkInfo cfg) registry $ \immDB -> do
-        runAnalysis clAnalysis immDB registry
+        runAnalysis clAnalysis cfg immDB registry
         putStrLn "Done"
 
 {-------------------------------------------------------------------------------
@@ -94,9 +95,11 @@ data AnalysisName =
   | CountTxOutputs
   | ShowBlockHeaderSize
   | ShowBlockTxsSize
+  | ShowEBBs
   deriving Show
 
-type Analysis blk = ImmDB IO blk
+type Analysis blk = TopLevelConfig blk
+                 -> ImmDB IO blk
                  -> ResourceRegistry IO
                  -> IO ()
 
@@ -106,6 +109,7 @@ runAnalysis ShowSlotBlockNo     = showSlotBlockNo
 runAnalysis CountTxOutputs      = countTxOutputs
 runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
 runAnalysis ShowBlockTxsSize    = showBlockTxsSize
+runAnalysis ShowEBBs            = showEBBs
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
@@ -113,7 +117,7 @@ runAnalysis ShowBlockTxsSize    = showBlockTxsSize
 
 showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
                 => Analysis blk
-showSlotBlockNo immDB rr =
+showSlotBlockNo _cfg immDB rr =
     processAll immDB rr go
   where
     go :: blk -> IO ()
@@ -127,9 +131,9 @@ showSlotBlockNo immDB rr =
 -------------------------------------------------------------------------------}
 
 countTxOutputs
-  :: forall blk. (HasHeader blk, HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-countTxOutputs immDB rr = do
+countTxOutputs _cfg immDB rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
@@ -151,9 +155,9 @@ countTxOutputs immDB rr = do
 -------------------------------------------------------------------------------}
 
 showBlockHeaderSize
-  :: forall blk. (HasAnalysis blk, HasHeader blk, ImmDbSerialiseConstraints blk)
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockHeaderSize immDB rr = do
+showBlockHeaderSize _cfg immDB rr = do
     maxBlockHeaderSizeRef <- newIORef 0
     processAll immDB rr (go maxBlockHeaderSizeRef)
     maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
@@ -174,9 +178,9 @@ showBlockHeaderSize immDB rr = do
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize
-  :: forall blk. (HasHeader blk, HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockTxsSize immDB rr = processAll immDB rr process
+showBlockTxsSize _cfg immDB rr = processAll immDB rr process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -195,6 +199,33 @@ showBlockTxsSize immDB rr = processAll immDB rr process
         blockTxsSize = sum txSizes
 
         slotNo = blockSlot blk
+
+{-------------------------------------------------------------------------------
+  Analysis: show EBBs and their predecessors
+-------------------------------------------------------------------------------}
+
+showEBBs
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  => Analysis blk
+showEBBs cfg immDB rr = do
+    putStrLn "EBB\tPrev\tKnown"
+    processAll immDB rr processIfEBB
+  where
+    processIfEBB :: blk -> IO ()
+    processIfEBB blk =
+        case blockIsEBB blk of
+          Just _epoch ->
+            putStrLn $ intercalate "\t" [
+                show (blockHash blk)
+              , show (blockPrevHash (configCodec cfg) blk)
+              , show (    Map.lookup
+                            (blockHash blk)
+                            (Analysis.knownEBBs (Proxy @blk))
+                       == Just (blockPrevHash (configCodec cfg) blk)
+                     )
+              ]
+          _otherwise ->
+            return () -- Skip regular blocks
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the imm DB
@@ -292,6 +323,10 @@ parseAnalysis = asum [
           long "show-block-txs-size"
         , help "Show the total transaction sizes per block"
         ]
+    , flag' ShowEBBs $ mconcat [
+          long "show-ebbs"
+        , help "Show all EBBs and their predecessors"
+        ]
     ]
 
 getCmdLine :: IO CmdLine
@@ -319,7 +354,7 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
     args :: ImmDbArgs IO blk
     args = (defaultArgs fp) {
           immGetBinaryBlockInfo = nodeGetBinaryBlockInfo
-        , immCodecConfig        = getCodecConfig $ configBlock cfg
+        , immCodecConfig        = configCodec cfg
         , immChunkInfo          = chunkInfo
         , immValidation         = ValidateMostRecentChunk
         , immCheckIntegrity     = nodeCheckIntegrity cfg
