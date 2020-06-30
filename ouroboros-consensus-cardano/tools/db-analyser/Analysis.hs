@@ -12,6 +12,8 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (toList)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           GHC.Natural (Natural)
 
 import           Cardano.Binary (unAnnotated)
@@ -26,6 +28,7 @@ import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Tx as SL
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
@@ -49,10 +52,11 @@ import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
   HasAnalysis
 -------------------------------------------------------------------------------}
 
-class HasAnalysis blk where
+class GetPrevHash blk => HasAnalysis blk where
     countTxOutputs   :: blk -> Int
     blockHeaderSize  :: blk -> SizeInBytes
     blockTxSizes     :: blk -> [SizeInBytes]
+    knownEBBs        :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
     mkTopLevelConfig :: [FilePath] -- Genesis file or files.
                      -> Bool       -- is it mainnet?
                      -> IO (TopLevelConfig blk)
@@ -66,6 +70,7 @@ instance HasAnalysis ByronBlock where
     blockHeaderSize = fromIntegral .
       aBlockOrBoundary blockBoundaryHeaderSize blockHeaderSizeByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
+    knownEBBs = const Map.empty -- TODO: Once this PR is rebased, use Byron.knownEBBs
     mkTopLevelConfig [configFile] onMainNet = do
       genesisConfig <- openGenesisByron configFile onMainNet
       return $ mkByronTopLevelConfig genesisConfig
@@ -148,6 +153,7 @@ instance TPraosCrypto c => HasAnalysis (ShelleyBlock c) where
     blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) ->
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
+    knownEBBs = const Map.empty
     mkTopLevelConfig [configFile] _onMainNet = do
       genesis  <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' configFile
       return $ mkShelleyTopLevelConfig genesis
@@ -185,6 +191,7 @@ instance TPraosCrypto c => HasAnalysis (CardanoBlock c) where
   blockTxSizes blk = case blk of
     Cardano.BlockByron b    -> blockTxSizes b
     Cardano.BlockShelley sh -> blockTxSizes sh
+  knownEBBs = undefined
   mkTopLevelConfig [byronGenesis, shelleyGenesis] onMainNet = do
     byronConfig <- openGenesisByron byronGenesis onMainNet
     shelleyConfig <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' shelleyGenesis
