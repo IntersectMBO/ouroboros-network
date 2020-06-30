@@ -225,7 +225,6 @@ runTestNetwork TestConfig
           { nodeInfo
           , mkRekeyM
           } = mkTestConfigMB
-    setCurrentTime dawnOfTime
     let systemTime =
             BTime.defaultSystemTime
               (BTime.SystemStart dawnOfTime)
