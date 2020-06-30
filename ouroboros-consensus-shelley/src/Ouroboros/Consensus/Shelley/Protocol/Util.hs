@@ -4,16 +4,12 @@
 -- package from cardano-ledger-specs.
 module Ouroboros.Consensus.Shelley.Protocol.Util (
     isNewEpoch
-  , prtclStateEta0
   ) where
 
 import           Cardano.Slotting.EpochInfo
 import           Data.Functor.Identity (Identity (..))
 
 import           Ouroboros.Consensus.Block
-
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
 -- | Verify whether a slot represents a change to a new epoch with regard to
 -- some other slot.
@@ -32,8 +28,3 @@ isNewEpoch ei newSlot referenceWO = runIdentity $ do
     reference = fromWithOrigin genesisSlotNo referenceWO
     -- TODO
     genesisSlotNo = SlotNo 0
-
-prtclStateEta0
-  :: STS.State (STS.PRTCL c)
-  -> SL.Nonce
-prtclStateEta0 (STS.PrtclState _ eta0 _ _ _) = eta0

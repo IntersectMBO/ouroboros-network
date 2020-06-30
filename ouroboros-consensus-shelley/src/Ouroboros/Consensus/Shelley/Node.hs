@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Shelley.Spec.Ledger.Address as SL
+import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
@@ -61,6 +62,7 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
+import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -202,12 +204,17 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
     initChainDepState :: State.TPraosState c
     initChainDepState = State.empty Origin $
-      SL.PrtclState
-         (SL.chainOCertIssue     initShelleyState)
-         (SL.chainEpochNonce     initShelleyState)
-         (SL.chainEvolvingNonce  initShelleyState)
-         (SL.chainCandidateNonce initShelleyState)
-         (SL.chainPrevEpochNonce initShelleyState)
+      SL.ChainDepState {
+          SL.csProtocol = SL.PrtclState
+            (SL.chainOCertIssue     initShelleyState)
+            (SL.chainEvolvingNonce  initShelleyState)
+            (SL.chainCandidateNonce initShelleyState)
+        , SL.csTickn = SL.TicknState
+            (SL.chainEpochNonce     initShelleyState)
+            (SL.chainPrevEpochNonce initShelleyState)
+        , SL.csLabNonce =
+            (SL.chainPrevEpochNonce initShelleyState)
+        }
 
     initialEpochNo :: EpochNo
     initialEpochNo = 0

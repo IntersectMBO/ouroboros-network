@@ -6,13 +6,14 @@
 -- | Consensus state for Transitional Praos
 module Ouroboros.Consensus.Shelley.Protocol.State (
     TPraosState -- opaque
-  , currentPRTCLState
+  , currentState
   , empty
   , lastSlot
   , append
   , rewind
   , prune
   , size
+  , updateLast
   ) where
 
 import qualified Codec.CBOR.Encoding as CBOR
@@ -29,8 +30,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Versioned
 
+import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.Crypto
-import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
 -- | Praos consensus state.
 --
@@ -53,7 +54,7 @@ data TPraosState c = TPraosState {
       anchor           :: !(WithOrigin SlotNo)
 
       -- | Historical state snapshots.
-    , historicalStates :: !(Map (WithOrigin SlotNo) (STS.State (STS.PRTCL c)))
+    , historicalStates :: !(Map (WithOrigin SlotNo) (SL.ChainDepState c))
     }
   deriving (Generic, Show, Eq)
 
@@ -76,10 +77,10 @@ assertInvariants :: HasCallStack => TPraosState c -> TPraosState c
 assertInvariants st = assertWithMsg (checkInvariants st) st
 
 -- | Extract the current state
-currentPRTCLState :: HasCallStack => TPraosState c -> STS.State (STS.PRTCL c)
-currentPRTCLState st
-    | Just (currentState, _) <- Map.maxView (historicalStates st)
-    = currentState
+currentState :: HasCallStack => TPraosState c -> SL.ChainDepState c
+currentState st
+    | Just (cs, _) <- Map.maxView (historicalStates st)
+    = cs
     | otherwise
     = error "Empty state"
 
@@ -97,12 +98,24 @@ lastSlot st
 -- calling this to have a state containing more history than needed.
 append
   :: SlotNo
-  -> STS.State (STS.PRTCL c)
+  -> SL.ChainDepState c
   -> TPraosState c
   -> TPraosState c
 append slot prtclState st = st {
       historicalStates = Map.insert (NotOrigin slot) prtclState (historicalStates st)
     }
+
+-- | Update the last entry in the history.
+--
+--   This function is used to 'tick' the chain state. We expect it to be removed
+--   when we update the Ticked family.
+updateLast
+  :: SL.ChainDepState c
+  -> TPraosState c
+  -> TPraosState c
+updateLast prtclState st = st {
+    historicalStates = Map.insert (lastSlot st) prtclState (historicalStates st)
+  }
 
 -- | Prune the state to a given maximum size
 prune
@@ -154,7 +167,7 @@ rewind toSlot st
         Nothing      -> older
         Just current -> Map.insert toSlot current older
 
-empty :: WithOrigin SlotNo -> STS.State (STS.PRTCL c) -> TPraosState c
+empty :: WithOrigin SlotNo -> SL.ChainDepState c -> TPraosState c
 empty slot prtclState = TPraosState {
       anchor           = slot
     , historicalStates = Map.singleton slot prtclState
