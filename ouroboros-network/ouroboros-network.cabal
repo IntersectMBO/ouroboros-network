@@ -199,6 +199,7 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Protocol.TipSample.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Test
@@ -221,6 +222,7 @@ library ouroboros-protocol-tests
                        text,
 
                        cardano-prelude,
+                       cardano-slotting,
                        contra-tracer,
 
                        io-sim,
