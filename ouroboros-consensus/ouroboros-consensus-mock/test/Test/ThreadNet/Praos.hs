@@ -1,5 +1,4 @@
 {-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Test.ThreadNet.Praos (
@@ -7,6 +6,8 @@ module Test.ThreadNet.Praos (
   ) where
 
 import           Data.Proxy (Proxy (..))
+import           Data.Word (Word64)
+import           Numeric.Natural (Natural)
 
 import           Test.QuickCheck
 
@@ -36,11 +37,15 @@ import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 
 data TestSetup = TestSetup
-  { setupK            :: SecurityParam
-  , setupTestConfig   :: TestConfig
-  , setupEpochSize    :: EpochSize
+  { setupEpochSize    :: EpochSize
+  , setupInitialNonce :: Natural
+    -- ^ the initial Shelley 'praosInitialEta'
+    --
+    -- This test varies it too ensure it explores different leader schedules.
+  , setupK            :: SecurityParam
   , setupNodeJoinPlan :: NodeJoinPlan
   , setupSlotLength   :: SlotLength
+  , setupTestConfig   :: TestConfig
   }
   deriving (Show)
 
@@ -51,17 +56,20 @@ instance Arbitrary TestSetup where
       epochSize  <- EpochSize     <$> choose (1, 10)
       slotLength <- arbitrary
 
+      initialNonce <- fromIntegral <$> choose (0, maxBound :: Word64)
+
       testConfig <- arbitrary
       let TestConfig{numCoreNodes, numSlots} = testConfig
 
       nodeJoinPlan   <- genNodeJoinPlan numCoreNodes numSlots
 
       pure $ TestSetup
-        k
-        testConfig
         epochSize
+        initialNonce
+        k
         nodeJoinPlan
         slotLength
+        testConfig
 
   -- TODO shrink
 
@@ -73,11 +81,12 @@ tests = testGroup "Praos"
 
 prop_simple_praos_convergence :: TestSetup -> Property
 prop_simple_praos_convergence TestSetup
-  { setupK            = k
-  , setupTestConfig   = testConfig
-  , setupEpochSize    = epochSize
+  { setupEpochSize    = epochSize
+  , setupK            = k
+  , setupInitialNonce
   , setupNodeJoinPlan = nodeJoinPlan
   , setupSlotLength   = slotLength
+  , setupTestConfig   = testConfig
   } =
     counterexample (tracesToDot (SimpleCodecConfig k) testOutputNodes) $
     prop_general PropGeneralArgs
@@ -122,5 +131,6 @@ prop_simple_praos_convergence TestSetup
                                       (HardFork.defaultEraParams
                                         k
                                         slotLength)
+                                      setupInitialNonce
             , mkRekeyM = Nothing
             }
