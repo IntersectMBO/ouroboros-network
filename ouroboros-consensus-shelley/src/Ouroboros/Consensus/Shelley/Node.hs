@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
+  , tpraosBlockIssuerVKey
   , SL.ProtVer
   , SL.Nonce (..)
   , SL.emptyGenesisStaking
@@ -85,6 +86,12 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
   }
 
+tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials c) -> BlockIssuerVKey c
+tpraosBlockIssuerVKey mbCredentials =
+    case tpraosIsCoreNodeColdVerKey . tpraosLeaderCredentialsIsCoreNode
+           <$> mbCredentials of
+      Nothing   -> NotABlockIssuer
+      Just vkey -> BlockIssuerVKey vkey
 
 shelleyMaintainForgeState
   :: forall m c. (IOLike m, TPraosCrypto c)
@@ -180,7 +187,11 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         )
 
     blockConfig :: BlockConfig (ShelleyBlock c)
-    blockConfig = mkShelleyBlockConfig protVer genesis
+    blockConfig =
+        mkShelleyBlockConfig
+          protVer
+          genesis
+          (tpraosBlockIssuerVKey mbCredentials)
 
     initLedgerState :: LedgerState (ShelleyBlock c)
     initLedgerState = ShelleyLedgerState {

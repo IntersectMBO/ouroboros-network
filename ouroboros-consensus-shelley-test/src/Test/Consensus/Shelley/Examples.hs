@@ -158,7 +158,7 @@ exampleLedgerState = reapplyLedgerBlock
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A (Proxy @ShortHash)
     cfg = FullBlockConfig {
           blockConfigLedger = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
-        , blockConfigBlock  = mkShelleyBlockConfig (SL.ProtVer 2 0) testShelleyGenesis
+        , blockConfigBlock  = mkShelleyBlockConfig (SL.ProtVer 2 0) testShelleyGenesis NotABlockIssuer
         , blockConfigCodec  = ShelleyCodecConfig
         }
 
