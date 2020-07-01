@@ -15,7 +15,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClie
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as Enc
 import qualified Codec.Serialise as Serialise
 import           Control.Exception (throw)
 import           Data.Proxy
@@ -158,8 +160,33 @@ instance SerialiseHFC xs
 
 instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (SomeBlock Query (HardForkBlock xs)) where
-  encodeNodeToClient = dispatchEncoder `after` distribSomeQuery
-  decodeNodeToClient = fmap undistribSomeQuery .: dispatchDecoder
+  encodeNodeToClient ccfg version (SomeBlock q) = case q of
+      QueryIfCurrent qry -> mconcat [
+            Enc.encodeListLen 1
+          , dispatchEncoder ccfg version (distribQueryIfCurrent (Some qry))
+          ]
+      QueryAnytime qry eraIndex -> mconcat [
+            Enc.encodeListLen 2
+          , Serialise.encode (Some qry)
+          , Serialise.encode eraIndex
+          ]
+
+  decodeNodeToClient ccfg version = case isNonEmpty (Proxy @xs) of
+      ProofNonEmpty _ -> do
+        size <- Dec.decodeListLen
+        case size of
+          1 -> injQueryIfCurrent <$> dispatchDecoder ccfg version
+          2 -> do
+            Some qry <- Serialise.decode
+            eraIndex <- Serialise.decode
+            return $ SomeBlock (QueryAnytime qry eraIndex)
+          _ -> fail $ "HardForkQuery: invalid listLen" <> show size
+    where
+      injQueryIfCurrent :: NS (SomeBlock Query) xs
+                        -> SomeBlock Query (HardForkBlock xs)
+      injQueryIfCurrent ns =
+          case undistribQueryIfCurrent ns of
+            Some q -> SomeBlock (QueryIfCurrent q)
 
 {-------------------------------------------------------------------------------
   Results
@@ -167,7 +194,7 @@ instance SerialiseHFC xs
 
 instance SerialiseHFC xs
       => SerialiseResult (HardForkBlock xs) (Query (HardForkBlock xs)) where
-  encodeResult ccfg version (HardForkQuery qry) =
+  encodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
         ProofNonEmpty _ ->
           encodeEitherMismatch version $
@@ -177,11 +204,13 @@ instance SerialiseHFC xs
               (_, HardForkNodeToClientDisabled _, QS qry') ->
                 throw $ futureEraException (hardForkQueryInfo qry')
               (_, HardForkNodeToClientEnabled versions, _) ->
-                encodeOneResult ccfgs versions qry
+                encodeQueryIfCurrentResult ccfgs versions qry
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-  decodeResult ccfg version (HardForkQuery qry) =
+  encodeResult _ _ (QueryAnytime qry _) = encodeQueryAnytimeResult qry
+
+  decodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
         ProofNonEmpty _ ->
           decodeEitherMismatch version $
@@ -191,30 +220,34 @@ instance SerialiseHFC xs
               (_, HardForkNodeToClientDisabled _, QS qry') ->
                 throw $ futureEraException (hardForkQueryInfo qry')
               (_, HardForkNodeToClientEnabled versions, _) ->
-                decodeOneResult ccfgs versions qry
+                decodeQueryIfCurrentResult ccfgs versions qry
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-encodeOneResult :: All SerialiseConstraintsHFC xs
-                => NP CodecConfig xs
-                -> NP WrapNodeToClientVersion xs
-                -> HardForkQuery xs result
-                -> result -> Encoding
-encodeOneResult (c :* _) (v :* _) (QZ qry) =
+  decodeResult _ _ (QueryAnytime qry _) = decodeQueryAnytimeResult qry
+
+encodeQueryIfCurrentResult ::
+     All SerialiseConstraintsHFC xs
+  => NP CodecConfig xs
+  -> NP WrapNodeToClientVersion xs
+  -> QueryIfCurrent xs result
+  -> result -> Encoding
+encodeQueryIfCurrentResult (c :* _) (v :* _) (QZ qry) =
     encodeResult c (unwrapNodeToClientVersion v) qry
-encodeOneResult (_ :* cs) (_ :* vs) (QS qry) =
-    encodeOneResult cs vs qry
-encodeOneResult Nil _ qry =
+encodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
+    encodeQueryIfCurrentResult cs vs qry
+encodeQueryIfCurrentResult Nil _ qry =
     case qry of {}
 
-decodeOneResult :: All SerialiseConstraintsHFC xs
-                => NP CodecConfig xs
-                -> NP WrapNodeToClientVersion xs
-                -> HardForkQuery xs result
-                -> Decoder s result
-decodeOneResult (c :* _) (v :* _) (QZ qry) =
+decodeQueryIfCurrentResult ::
+     All SerialiseConstraintsHFC xs
+  => NP CodecConfig xs
+  -> NP WrapNodeToClientVersion xs
+  -> QueryIfCurrent xs result
+  -> Decoder s result
+decodeQueryIfCurrentResult (c :* _) (v :* _) (QZ qry) =
     decodeResult c (unwrapNodeToClientVersion v) qry
-decodeOneResult (_ :* cs) (_ :* vs) (QS qry) =
-    decodeOneResult cs vs qry
-decodeOneResult Nil _ qry =
+decodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
+    decodeQueryIfCurrentResult cs vs qry
+decodeQueryIfCurrentResult Nil _ qry =
     case qry of {}

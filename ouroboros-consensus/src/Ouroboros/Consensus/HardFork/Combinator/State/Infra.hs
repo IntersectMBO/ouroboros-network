@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -20,6 +21,9 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
   , sequence
   , bihczipWith
   , fromTZ
+    -- * Situated
+  , Situated(..)
+  , situate
     -- * Aligning
   , align
     -- * Rewinding
@@ -124,6 +128,30 @@ bihczipWith g f ns (HardForkState st) = HardForkState $
 
 fromTZ :: HardForkState_ g f '[blk] -> f blk
 fromTZ = currentState . Telescope.fromTZ . getHardForkState
+
+{-------------------------------------------------------------------------------
+  Situated
+-------------------------------------------------------------------------------}
+
+-- | A @h@ situated in time
+data Situated h f xs where
+  SituatedCurrent :: Current f x ->    h x  -> Situated h f (x ': xs)
+  SituatedNext    :: Current f x ->    h y  -> Situated h f (x ': y ': xs)
+  SituatedFuture  :: Current f x -> NS h xs -> Situated h f (x ': y ': xs)
+  SituatedPast    :: Past    f x ->    h x  -> Situated h f (x ': xs)
+  SituatedShift   :: Situated h f xs        -> Situated h f (x ': xs)
+
+situate :: NS h xs -> HardForkState f xs -> Situated h f xs
+situate ns = go ns . getHardForkState
+  where
+    go :: NS h xs'
+       -> Telescope (Past f) (Current f) xs'
+       -> Situated h f xs'
+    go (Z    era)  (TZ cur)    = SituatedCurrent cur era
+    go (S (Z era)) (TZ cur)    = SituatedNext    cur era
+    go (S (S era)) (TZ cur)    = SituatedFuture  cur era
+    go (Z    era)  (TS past _) = SituatedPast   past era
+    go (S    era)  (TS _ st)   = SituatedShift $ go era st
 
 {-------------------------------------------------------------------------------
   Aligning

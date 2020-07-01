@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -85,7 +86,7 @@ recover =
   Reconstruct EpochInfo
 -------------------------------------------------------------------------------}
 
-mostRecentTransitionInfo :: CanHardFork xs
+mostRecentTransitionInfo :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
                          -> HardForkState_ g LedgerState xs
                          -> TransitionInfo
@@ -110,7 +111,7 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
           Nothing -> TransitionUnknown (ledgerTipSlot currentState)
           Just e  -> TransitionKnown e
 
-reconstructSummaryLedger :: CanHardFork xs
+reconstructSummaryLedger :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
                          -> HardForkState_ g LedgerState xs
                          -> History.Summary xs
@@ -124,7 +125,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 --
 -- NOTE: The resulting 'EpochInfo' is a snapshot only, with a limited range.
 -- It should not be stored.
-epochInfoLedger :: CanHardFork xs
+epochInfoLedger :: All SingleEraBlock xs
                 => HardForkLedgerConfig xs
                 -> HardForkState_ g LedgerState xs
                 -> EpochInfo Identity
