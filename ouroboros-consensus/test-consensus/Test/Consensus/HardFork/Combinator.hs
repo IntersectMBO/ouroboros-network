@@ -383,14 +383,14 @@ instance CanHardFork '[BlockA, BlockB] where
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
 versionN2N = HardForkNodeToNodeEnabled $
-                  WrapNodeToNodeVersion ()
-               :* WrapNodeToNodeVersion ()
+                  EraNodeToNodeEnabled ()
+               :* EraNodeToNodeEnabled ()
                :* Nil
 
 versionN2C :: BlockNodeToClientVersion TestBlock
 versionN2C = HardForkNodeToClientEnabled $
-                  WrapNodeToClientVersion ()
-               :* WrapNodeToClientVersion ()
+                  EraNodeToClientEnabled ()
+               :* EraNodeToClientEnabled ()
                :* Nil
 
 instance SupportedNetworkProtocolVersion TestBlock where

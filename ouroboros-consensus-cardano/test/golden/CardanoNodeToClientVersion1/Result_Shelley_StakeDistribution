@@ -1,1 +1,1 @@
-FutureEraException (SingleEraInfo {singleEraName = "Shelley"})
+HardForkEncoderFutureEra (SingleEraInfo {singleEraName = "Shelley"})

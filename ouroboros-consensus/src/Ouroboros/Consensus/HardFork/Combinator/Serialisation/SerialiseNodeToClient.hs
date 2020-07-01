@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Serialise
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.SOP (checkIsNonEmpty)
 
@@ -58,7 +57,7 @@ dispatchEncoder ccfg version ns =
       ProofNonEmpty {} ->
         case (ccfgs, version, ns) of
           (c0 :* _, HardForkNodeToClientDisabled v0, Z x0) ->
-            encodeNodeToClient c0 (unwrapNodeToClientVersion v0) x0
+            encodeNodeToClient c0 v0 x0
           (_, HardForkNodeToClientDisabled _, S later) ->
             throw $ futureEraException (notFirstEra later)
           (_, HardForkNodeToClientEnabled versions, _) ->
@@ -66,11 +65,13 @@ dispatchEncoder ccfg version ns =
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-    aux :: SerialiseNodeToClientConstraints blk
+    aux :: forall blk. (SingleEraBlock blk, SerialiseNodeToClientConstraints blk)
         => CodecConfig blk
-        -> WrapNodeToClientVersion blk
+        -> EraNodeToClientVersion blk
         -> (f -.-> K Encoding) blk
-    aux ccfg' (WrapNodeToClientVersion v) = Fn $ K . encodeNodeToClient ccfg' v
+    aux ccfg' (EraNodeToClientEnabled v) = Fn $ K . encodeNodeToClient ccfg' v
+    aux _      EraNodeToClientDisabled   =
+        throw $ disabledEraException (Proxy @blk)
 
 dispatchDecoder :: forall f xs. (
                      SerialiseHFC xs
@@ -85,17 +86,19 @@ dispatchDecoder ccfg version =
       ProofNonEmpty {} ->
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToClientDisabled v0) ->
-            Z <$> decodeNodeToClient c0 (unwrapNodeToClientVersion v0)
+            Z <$> decodeNodeToClient c0 v0
           (_, HardForkNodeToClientEnabled versions) ->
             decodeNS (hczipWith pSHFC aux ccfgs versions)
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-    aux :: SerialiseNodeToClientConstraints blk
+    aux :: forall blk. (SingleEraBlock blk, SerialiseNodeToClientConstraints blk)
         => CodecConfig blk
-        -> WrapNodeToClientVersion blk
-        -> (Decoder s :.: f) blk
-    aux ccfg' (WrapNodeToClientVersion v) = Comp $ decodeNodeToClient ccfg' v
+        -> EraNodeToClientVersion blk
+        -> forall s. (Decoder s :.: f) blk
+    aux ccfg' (EraNodeToClientEnabled v) = Comp $ decodeNodeToClient ccfg' v
+    aux _      EraNodeToClientDisabled   = Comp $
+        fail . show $ disabledEraException (Proxy @blk)
 
 dispatchEncoderErr :: forall f xs. (
                         SerialiseHFC xs
@@ -222,7 +225,7 @@ instance SerialiseHFC xs
           encodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
-                encodeResult c0 (unwrapNodeToClientVersion v0) qry'
+                encodeResult c0 v0 qry'
               (_, HardForkNodeToClientDisabled _, QS qry') ->
                 throw $ futureEraException (hardForkQueryInfo qry')
               (_, HardForkNodeToClientEnabled versions, _) ->
@@ -239,7 +242,7 @@ instance SerialiseHFC xs
           decodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
-                decodeResult c0 (unwrapNodeToClientVersion v0) qry'
+                decodeResult c0 v0 qry'
               (_, HardForkNodeToClientDisabled _, QS qry') ->
                 throw $ futureEraException (hardForkQueryInfo qry')
               (_, HardForkNodeToClientEnabled versions, _) ->
@@ -253,11 +256,17 @@ instance SerialiseHFC xs
 encodeQueryIfCurrentResult ::
      All SerialiseConstraintsHFC xs
   => NP CodecConfig xs
-  -> NP WrapNodeToClientVersion xs
+  -> NP EraNodeToClientVersion xs
   -> QueryIfCurrent xs result
   -> result -> Encoding
-encodeQueryIfCurrentResult (c :* _) (v :* _) (QZ qry) =
-    encodeResult c (unwrapNodeToClientVersion v) qry
+encodeQueryIfCurrentResult (c :* _) (EraNodeToClientEnabled v :* _) (QZ qry) =
+    encodeResult c v qry
+encodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
+    qryDisabledEra qry
+  where
+    qryDisabledEra :: forall blk result. SingleEraBlock blk
+                   => Query blk result -> result -> Encoding
+    qryDisabledEra _ _ = throw $ disabledEraException (Proxy @blk)
 encodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     encodeQueryIfCurrentResult cs vs qry
 encodeQueryIfCurrentResult Nil _ qry =
@@ -266,11 +275,17 @@ encodeQueryIfCurrentResult Nil _ qry =
 decodeQueryIfCurrentResult ::
      All SerialiseConstraintsHFC xs
   => NP CodecConfig xs
-  -> NP WrapNodeToClientVersion xs
+  -> NP EraNodeToClientVersion xs
   -> QueryIfCurrent xs result
   -> Decoder s result
-decodeQueryIfCurrentResult (c :* _) (v :* _) (QZ qry) =
-    decodeResult c (unwrapNodeToClientVersion v) qry
+decodeQueryIfCurrentResult (c :* _) (EraNodeToClientEnabled v :* _) (QZ qry) =
+    decodeResult c v qry
+decodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
+    qryDisabledEra qry
+  where
+    qryDisabledEra :: forall blk result. SingleEraBlock blk
+                   => Query blk result -> forall s. Decoder s result
+    qryDisabledEra _ = fail . show $ disabledEraException (Proxy @blk)
 decodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     decodeQueryIfCurrentResult cs vs qry
 decodeQueryIfCurrentResult Nil _ qry =

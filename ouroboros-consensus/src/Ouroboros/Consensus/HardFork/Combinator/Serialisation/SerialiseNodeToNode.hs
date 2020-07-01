@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs)
@@ -57,7 +56,7 @@ dispatchEncoder ccfg version ns =
       ProofNonEmpty {} ->
         case (ccfgs, version, ns) of
           (c0 :* _, HardForkNodeToNodeDisabled v0, Z x0) ->
-            encodeNodeToNode c0 (unwrapNodeToNodeVersion v0) x0
+            encodeNodeToNode c0 v0 x0
           (_, HardForkNodeToNodeDisabled _, S later) ->
             throw $ futureEraException (notFirstEra later)
           (_, HardForkNodeToNodeEnabled versions, _) ->
@@ -65,11 +64,13 @@ dispatchEncoder ccfg version ns =
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-    aux :: SerialiseNodeToNodeConstraints blk
+    aux :: forall blk. (SingleEraBlock blk, SerialiseNodeToNodeConstraints blk)
         => CodecConfig blk
-        -> WrapNodeToNodeVersion blk
+        -> EraNodeToNodeVersion blk
         -> (f -.-> K Encoding) blk
-    aux ccfg' (WrapNodeToNodeVersion v) = Fn $ K . encodeNodeToNode ccfg' v
+    aux ccfg' (EraNodeToNodeEnabled v) = Fn $ K . encodeNodeToNode ccfg' v
+    aux _      EraNodeToNodeDisabled   =
+        throw $ disabledEraException (Proxy @blk)
 
 dispatchDecoder :: forall f xs. (
                      SerialiseHFC xs
@@ -84,17 +85,19 @@ dispatchDecoder ccfg version =
       ProofNonEmpty {} ->
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToNodeDisabled v0) ->
-            Z <$> decodeNodeToNode c0 (unwrapNodeToNodeVersion v0)
+            Z <$> decodeNodeToNode c0 v0
           (_, HardForkNodeToNodeEnabled versions) ->
             decodeNS (hczipWith pSHFC aux ccfgs versions)
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-    aux :: SerialiseNodeToNodeConstraints blk
+    aux :: forall blk. (SingleEraBlock blk, SerialiseNodeToNodeConstraints blk)
         => CodecConfig blk
-        -> WrapNodeToNodeVersion blk
-        -> (Decoder s :.: f) blk
-    aux ccfg' (WrapNodeToNodeVersion v) = Comp $ decodeNodeToNode ccfg' v
+        -> EraNodeToNodeVersion blk
+        -> forall s. (Decoder s :.: f) blk
+    aux ccfg' (EraNodeToNodeEnabled v) = Comp $ decodeNodeToNode ccfg' v
+    aux _      EraNodeToNodeDisabled   = Comp $
+        fail . show $ disabledEraException (Proxy @blk)
 
 after :: (a -> b -> d -> e) -> (c -> d) -> a -> b -> c -> e
 after f g x y z = f x y (g z)

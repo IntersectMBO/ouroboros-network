@@ -4,7 +4,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation (
   ) where
 
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common as X
-                     (HardForkNodeToClientVersion (..),
+                     (EraNodeToClientVersion (..), EraNodeToNodeVersion (..),
+                     HardForkNodeToClientVersion (..),
                      HardForkNodeToNodeVersion (..), SerialiseConstraintsHFC,
                      SerialiseHFC (..), isHardForkNodeToClientEnabled,
                      isHardForkNodeToNodeEnabled)
