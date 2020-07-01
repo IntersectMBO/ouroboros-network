@@ -82,6 +82,7 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
@@ -332,8 +333,8 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                  DualLedgerState{..} =
       assert (tickedSlotNo tickedM == tickedSlotNo tickedA) $
       Ticked (tickedSlotNo tickedM) DualLedgerState {
-          dualLedgerStateMain   = tickedLedgerState tickedM
-        , dualLedgerStateAux    = tickedLedgerState tickedA
+          dualLedgerStateMain   = tickedState tickedM
+        , dualLedgerStateAux    = tickedState tickedA
         , dualLedgerStateBridge = dualLedgerStateBridge
         }
     where
@@ -633,7 +634,7 @@ applyMaybeBlock :: UpdateLedger blk
                 -> Maybe blk
                 -> TickedLedgerState blk
                 -> Except (LedgerError blk) (LedgerState blk)
-applyMaybeBlock _   Nothing      = return . tickedLedgerState
+applyMaybeBlock _   Nothing      = return . tickedState
 applyMaybeBlock cfg (Just block) = applyLedgerBlock cfg block
 
 -- | Lift 'reapplyLedgerBlock' to @Maybe blk@
@@ -644,7 +645,7 @@ reapplyMaybeBlock :: UpdateLedger blk
                   -> Maybe blk
                   -> TickedLedgerState blk
                   -> LedgerState blk
-reapplyMaybeBlock _   Nothing      = tickedLedgerState
+reapplyMaybeBlock _   Nothing      = tickedState
 reapplyMaybeBlock cfg (Just block) = reapplyLedgerBlock cfg block
 
 -- | Used when the concrete and abstract implementation should agree on errors

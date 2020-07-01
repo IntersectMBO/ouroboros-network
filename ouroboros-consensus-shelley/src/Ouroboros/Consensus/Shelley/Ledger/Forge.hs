@@ -22,6 +22,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ticked
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -71,7 +72,7 @@ forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader =
         toShelleyPrevHash
       . castHash
       . ledgerTipHash
-      . tickedLedgerState
+      . tickedState
       $ tickedLedger
 
     mkBhBody toSign = SL.BHBody {

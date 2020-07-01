@@ -14,6 +14,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 
 -- | Link protocol to ledger
 class ( BlockSupportsProtocol blk
@@ -98,7 +99,7 @@ _lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
     | NotOrigin for >= ledgerTipSlot st
     , let lhs = forecastFor forecast for
           rhs = protocolLedgerView cfg
-              . tickedLedgerState
+              . tickedState
               . applyChainTick cfg for
               $ st
     , Right lhs' <- runExcept lhs

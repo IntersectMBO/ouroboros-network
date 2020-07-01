@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 
 -- | Construct the protocol specific part of the block
 --
@@ -60,7 +61,7 @@ forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock tickedLedger txs proof
 
     stdHeader :: SimpleStdHeader c ext
     stdHeader = SimpleStdHeader {
-          simplePrev      = ledgerTipHash (tickedLedgerState tickedLedger)
+          simplePrev      = ledgerTipHash (tickedState tickedLedger)
         , simpleSlotNo    = curSlot
         , simpleBlockNo   = curBlock
         , simpleBodyHash  = hash body

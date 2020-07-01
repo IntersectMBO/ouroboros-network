@@ -25,7 +25,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Ledger.Basics (Ticked)
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Static configuration required to run the consensus protocol

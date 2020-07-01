@@ -68,8 +68,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
 {-------------------------------------------------------------------------------

@@ -41,6 +41,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -110,7 +111,7 @@ _lemma_protocoLedgerView_applyLedgerBlock cfg blk st
     tickedLedger = applyChainTick lcfg (blockSlot blk) st
     lcfg = blockConfigLedger cfg
     lhs = protocolLedgerView lcfg <$> applyLedgerBlock cfg blk tickedLedger
-    rhs = protocolLedgerView lcfg  $  tickedLedgerState        tickedLedger
+    rhs = protocolLedgerView lcfg  $  tickedState              tickedLedger
 
 {-------------------------------------------------------------------------------
   The extended ledger can behave like a ledger
@@ -175,8 +176,8 @@ instance ( IsLedger (LedgerState  blk)
 instance ( LedgerSupportsProtocol blk
          ) => ApplyBlock (ExtLedgerState blk) blk where
   applyLedgerBlock cfg blk (Ticked {
-                                tickedSlotNo      = slot
-                              , tickedLedgerState = ExtLedgerState lgr hdr
+                                tickedSlotNo = slot
+                              , tickedState  = ExtLedgerState lgr hdr
                               }) = do
       hdr' <- withExcept ExtValidationErrorHeader $
                 validateHeader
@@ -199,8 +200,8 @@ instance ( LedgerSupportsProtocol blk
       ledgerView = protocolLedgerView (configLedger tlc) lgr
 
   reapplyLedgerBlock cfg blk (Ticked {
-                                tickedSlotNo      = slot
-                              , tickedLedgerState = ExtLedgerState lgr hdr
+                                tickedSlotNo = slot
+                              , tickedState  = ExtLedgerState lgr hdr
                               }) =
       ExtLedgerState {
           ledgerState = reapplyLedgerBlock

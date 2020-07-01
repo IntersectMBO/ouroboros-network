@@ -65,11 +65,11 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------

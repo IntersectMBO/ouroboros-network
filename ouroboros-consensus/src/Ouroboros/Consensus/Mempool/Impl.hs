@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..), zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -223,7 +224,7 @@ initInternalState capacityOverride lastTicketNo st = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
     , isLedgerState  = st
-    , isTip          = ledgerTipHash $ tickedLedgerState st
+    , isTip          = ledgerTipHash $ tickedState st
     , isSlotNo       = tickedSlotNo st
     , isLastTicketNo = lastTicketNo
     , isCapacity     = computeMempoolCapacity st capacityOverride
@@ -733,7 +734,7 @@ validateStateFor
   -> InternalState    blk
   -> ValidationResult blk
 validateStateFor capacityOverride cfg blockLedgerState is
-    | isTip    == ledgerTipHash (tickedLedgerState st')
+    | isTip    == ledgerTipHash (tickedState st')
     , isSlotNo == tickedSlotNo st'
     = validationResultFromIS is
     | otherwise

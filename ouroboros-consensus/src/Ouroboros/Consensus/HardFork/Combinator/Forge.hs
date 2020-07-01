@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
@@ -33,14 +34,14 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
   type ExtraForgeState (HardForkBlock xs) = PerEraExtraForgeState xs
 
   forgeBlock cfg forgeState bno
-             Ticked { tickedSlotNo, tickedLedgerState }
+             Ticked { tickedSlotNo, tickedState }
              txs isLeader =
       -- First establish the 'IsLeader' and the 'LedgerState' are from the
       -- same era. As we have passed the ledger view of the ticked ledger to
       -- obtain the 'IsLeader' value, it __must__ be from the same era.
       case State.match
              (getOneEraIsLeader isLeader)
-             (getHardForkLedgerState tickedLedgerState) of
+             (getHardForkLedgerState tickedState) of
         Left _mismatch ->
           error "IsLeader from different era than the TickedLedgerState"
         Right matched  ->
@@ -57,7 +58,7 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
       ei :: EpochInfo Identity
       ei = State.epochInfoLedger
              (configLedger cfg)
-             (getHardForkLedgerState tickedLedgerState)
+             (getHardForkLedgerState tickedState)
 
       -- | Unwraps all the layers needed for SOP and call 'forgeBlock'.
       matchedForgeBlock

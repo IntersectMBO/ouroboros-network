@@ -92,6 +92,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -771,7 +772,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   where
                     EpochNo   x = currentEpoch
                     EpochSize y = epochSize0
-            let p = ledgerTipPoint' (Proxy @blk) $ tickedLedgerState tickedLdgSt
+            let p = ledgerTipPoint' (Proxy @blk) $ tickedState tickedLdgSt
 
             let needEBB = inFirstEra && NotOrigin ebbSlot > pointSlot p
             case mbForgeEbbEnv <* guard needEBB of

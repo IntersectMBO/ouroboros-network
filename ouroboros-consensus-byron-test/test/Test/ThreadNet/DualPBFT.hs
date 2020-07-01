@@ -45,6 +45,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -275,7 +276,7 @@ instance TxGen DualByronBlock where
          -> m [GenTx DualByronBlock]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-          mTx <- hedgehogAdapter $ genTx cfg (tickedLedgerState st)
+          mTx <- hedgehogAdapter $ genTx cfg (tickedState st)
           case mTx of
             Nothing -> return (reverse acc)
             Just tx ->

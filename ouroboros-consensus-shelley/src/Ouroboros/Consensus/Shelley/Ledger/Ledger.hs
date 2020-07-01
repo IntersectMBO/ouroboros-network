@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
@@ -198,7 +199,7 @@ instance TPraosCrypto c
   applyLedgerBlock cfg
                    blk
                    Ticked {
-                       tickedLedgerState = ShelleyLedgerState {
+                       tickedState = ShelleyLedgerState {
                            history
                          , shelleyState = oldShelleyState
                          }
