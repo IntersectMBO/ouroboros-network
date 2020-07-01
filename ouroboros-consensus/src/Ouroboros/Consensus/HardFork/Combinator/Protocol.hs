@@ -23,11 +23,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Functor.Product
 import           Data.SOP.Strict
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -35,7 +37,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((..:), (.:))
+import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -74,6 +76,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
 
   -- Operations on the state
 
+  tickChainDepState     = tick
   checkIsLeader         = check
   updateChainDepState   = update
   rewindChainDepState _ = rewind
@@ -122,6 +125,37 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
       cfgs = getPerEraBlockConfig hardForkBlockConfigPerEra
 
 {-------------------------------------------------------------------------------
+  Ticking the chain dependent state
+-------------------------------------------------------------------------------}
+
+tick :: CanHardFork xs
+     => ConsensusConfig (HardForkProtocol xs)
+     -> Ticked (HardForkLedgerView xs)
+     -> HardForkChainDepState xs
+     -> Ticked (HardForkChainDepState xs)
+tick cfg@HardForkConsensusConfig{..} (Ticked slot ledgerView) =
+      Ticked slot
+    . State.align
+        (translateConsensus ei cfg)
+        (hcmap proxySingle (fn_2 . tickOne) cfgs)
+        (hardForkLedgerViewPerEra ledgerView)
+  where
+    cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
+    ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+
+    tickOne :: SingleEraBlock             blk
+            => WrapPartialConsensusConfig blk
+            -> WrapLedgerView             blk
+            -> WrapChainDepState          blk
+            -> WrapChainDepState          blk
+    tickOne cfg' ledgerView' chainDepState' =
+        WrapChainDepState . tickedState $
+          tickChainDepState
+            (completeConsensusConfig' ei cfg')
+            (Ticked slot (unwrapLedgerView ledgerView'))
+            (unwrapChainDepState chainDepState')
+
+{-------------------------------------------------------------------------------
   Leader check
 
   NOTE: The precondition to `align` is satisfied: the consensus state will never
@@ -142,29 +176,66 @@ type HardForkCannotLead xs = OneEraCannotLead xs
 -- /cannot/ be a leader).
 type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
 
-check :: forall m xs. (MonadRandom m, CanHardFork xs)
+check :: forall m xs. (MonadRandom m, CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
-      -> Ticked (HardForkLedgerView xs)
       -> ChainIndepState (HardForkProtocol xs)
-      -> ChainDepState   (HardForkProtocol xs)
-      -> m (LeaderCheck  (HardForkProtocol xs))
-check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) cis =
-      fmap distrib
-    . hsequence'
-    . State.tip
-    . State.align
-        (translateConsensus ei cfg)
-        (hczipWith3
-           proxySingle
-           (fn_2 ..: checkOne ei slot)
-           cfgs
-           (fromOptNP canBeLeader)
-           (getPerEraChainIndepState cis))
-        (hardForkLedgerViewPerEra ledgerView)
+      -> Ticked (HardForkLedgerView xs)
+      -> Ticked (ChainDepState (HardForkProtocol xs))
+      -> m (LeaderCheck (HardForkProtocol xs))
+check HardForkConsensusConfig{..}
+      canBeLeader
+      chainIndepState
+      (Ticked slot ledgerView)
+      (Ticked slot' chainDepState) = assert (slot == slot') $
+    case Match.matchNS
+           (State.tip chainDepState)
+           (State.tip (hardForkLedgerViewPerEra ledgerView)) of
+      Left mismatch ->
+        -- This shouldn't happen: 'checkIsLeader' aligned the two telescopes
+        let mismatch' :: MismatchEraInfo xs
+            mismatch' = MismatchEraInfo $
+                          Match.bihcmap
+                            proxySingle
+                            chainDepStateInfo
+                            ledgerInfo'
+                            mismatch
+        in error $ "check: unexpected mismatch: " ++ show mismatch'
+      Right aligned ->
+        (fmap distrib . hsequence') $
+            hcpure proxySingle (fn_4 checkOne)
+          `hap`
+            cfgs
+          `hap`
+            (fromOptNP canBeLeader)
+          `hap`
+            (getPerEraChainIndepState chainIndepState)
+          `hap`
+            aligned
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+
+    checkOne :: SingleEraBlock                           blk
+             => WrapPartialConsensusConfig               blk
+             -> (Maybe :.: WrapCanBeLeader)              blk
+             -> WrapChainIndepState                      blk
+             -> Product WrapChainDepState WrapLedgerView blk
+             -> (m :.: WrapLeaderCheck)                  blk
+    checkOne cfg'
+             (Comp mCanBeLeader)
+             chainIndepState'
+             (Pair chainDepState' ledgerView') = Comp . fmap WrapLeaderCheck $
+         case mCanBeLeader of
+           Nothing ->
+             return NotLeader
+           Just canBeLeader' ->
+             checkIsLeader
+               (completeConsensusConfig' ei cfg')
+               (unwrapCanBeLeader canBeLeader')
+               (unwrapChainIndepState chainIndepState')
+               (Ticked slot (unwrapLedgerView ledgerView'))
+               (Ticked slot (unwrapChainDepState chainDepState'))
 
     distrib :: NS WrapLeaderCheck xs -> LeaderCheck (HardForkProtocol xs)
     distrib = hcollapse . hzipWith3 inj injections injections
@@ -180,30 +251,6 @@ check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) cis =
                             apFn injIsLeader (WrapIsLeader p)
           CannotLead e -> CannotLead $ OneEraCannotLead . unK $
                             apFn injCannotLead (WrapCannotLead e)
-
-checkOne :: (MonadRandom m, SingleEraBlock blk)
-         => EpochInfo Identity
-         -> SlotNo
-         -> WrapPartialConsensusConfig  blk
-         -> (Maybe :.: WrapCanBeLeader) blk
-         -> WrapChainIndepState         blk
-         -> WrapLedgerView              blk
-         -> WrapChainDepState           blk
-         -> (m :.: WrapLeaderCheck)     blk
-checkOne ei slot cfg (Comp mCanBeLeader)
-         (WrapChainIndepState chainIndepState)
-         ledgerView
-         (WrapChainDepState chainDepState) = Comp $ WrapLeaderCheck <$>
-     case mCanBeLeader of
-       Nothing ->
-         return NotLeader
-       Just canBeLeader ->
-         checkIsLeader
-           (completeConsensusConfig' ei cfg)
-           (unwrapCanBeLeader canBeLeader)
-           (Ticked slot (unwrapLedgerView ledgerView))
-           chainIndepState
-           chainDepState
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward
@@ -236,14 +283,14 @@ rewind k p =
 
 update :: forall xs. CanHardFork xs
        => ConsensusConfig (HardForkProtocol xs)
-       -> Ticked (HardForkLedgerView xs)
        -> OneEraValidateView xs
-       -> HardForkChainDepState xs
+       -> Ticked (HardForkLedgerView xs)
+       -> Ticked (HardForkChainDepState xs)
        -> Except (HardForkValidationErr xs) (HardForkChainDepState xs)
 update cfg@HardForkConsensusConfig{..}
-       (Ticked slot ledgerView)
        (OneEraValidateView view)
-       chainDepState =
+       (Ticked slot ledgerView)
+       (Ticked _slot chainDepState) =
     case State.match view (hardForkLedgerViewPerEra ledgerView) of
       Left mismatch ->
         throwError $ HardForkValidationErrWrongEra . MismatchEraInfo $
@@ -278,9 +325,9 @@ updateEra ei slot cfg injectErr
       fmap WrapChainDepState $
         updateChainDepState
           (completeConsensusConfig' ei cfg)
-          (Ticked slot (unwrapLedgerView ledgerView))
           view
-          chainDepState
+          (Ticked slot (unwrapLedgerView ledgerView))
+          (Ticked slot chainDepState)
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -289,6 +336,14 @@ updateEra ei slot cfg injectErr
 ledgerInfo :: forall f blk. SingleEraBlock blk
            => State.Current f blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
+
+ledgerInfo' :: forall blk. SingleEraBlock blk
+            => WrapLedgerView blk -> LedgerEraInfo blk
+ledgerInfo' _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
+
+chainDepStateInfo :: forall blk. SingleEraBlock blk
+                  => WrapChainDepState blk -> SingleEraInfo blk
+chainDepStateInfo _ = singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
                    => EpochInfo Identity

@@ -248,7 +248,7 @@ data ForgeLedgerState blk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
-    -- and we are actually producing a block. It is the caller's responsibilit
+    -- and we are actually producing a block. It is the caller's responsibility
     -- to call 'applyChainTick' and produce the ticked ledger state.
     ForgeInKnownSlot (TickedLedgerState blk)
 

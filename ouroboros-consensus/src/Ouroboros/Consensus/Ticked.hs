@@ -20,7 +20,7 @@ import           Cardano.Slotting.Slot
 --
 -- Ticking refers to the passage of time (the ticking of the clock). When a
 -- piece of state is marked as ticked, it means that time-related
--- changes have been applied to ledger state (or forecast).
+-- changes have been applied to the state (or forecast).
 --
 -- Some examples of time related changes:
 --

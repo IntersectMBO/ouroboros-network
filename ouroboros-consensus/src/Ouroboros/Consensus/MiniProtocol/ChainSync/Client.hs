@@ -661,7 +661,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
 
           theirHeaderState' <-
-            case runExcept $ validateHeader cfg ledgerView hdr theirHeaderState of
+            case runExcept $ validateHeader' cfg ledgerView hdr theirHeaderState of
               Right theirHeaderState' -> return theirHeaderState'
               Left  vErr              -> disconnect $
                 HeaderError hdrPoint vErr ourTip theirTip

@@ -102,12 +102,14 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP
 
-  checkIsLeader WLSConfig{..} () (Ticked slot _) _ _ = return $
+  checkIsLeader WLSConfig{..} () _ (Ticked slot _) _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing -> error $ "WithLeaderSchedule: missing slot " ++ show slot
         Just nids
             | wlsConfigNodeId `elem` nids -> IsLeader ()
             | otherwise                   -> NotLeader
+
+  tickChainDepState _ (Ticked slot _lv) = Ticked slot
 
   updateChainDepState _ _ _ _ = return ()
   rewindChainDepState _ _ _ _ = Just ()

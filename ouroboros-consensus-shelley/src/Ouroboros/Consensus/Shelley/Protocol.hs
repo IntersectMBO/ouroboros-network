@@ -343,7 +343,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg@TPraosConfig{..} icn (Ticked slot lv) hk cs = do
+  checkIsLeader cfg@TPraosConfig{..} icn hk (Ticked slot lv) (Ticked _ cs) = do
       rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
       y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
       -- First, check whether we're in the overlay schedule
@@ -407,7 +407,12 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       wallclockPeriod = SL.KESPeriod $ fromIntegral $
           unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
 
-  updateChainDepState TPraosConfig{..} (Ticked _ lv) b cs = do
+  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- TODO (@nc6)
+
+  updateChainDepState TPraosConfig{..}
+                      b
+                      (Ticked _ lv)
+                      (Ticked _ cs) = do
       newCS <- except . flip runReader shelleyGlobals $
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return

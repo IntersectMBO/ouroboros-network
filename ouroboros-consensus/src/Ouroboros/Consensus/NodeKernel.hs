@@ -297,7 +297,7 @@ forkBlockProduction
     -> InternalState m remotePeer localPeer blk
     -> BlockProduction m blk
     -> m ()
-forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
+forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
     void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
       withEarlyExit_ . go
   where
@@ -325,14 +325,13 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- 'getPastLedger', we switched to a fork where 'bcPrevPoint' is no longer
         -- on our chain. When that happens, we simply give up on the chance to
         -- produce a block.
-        extLedger <- do
+        unticked <- do
           mExtLedger <- lift $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
             Just l  -> return l
             Nothing -> do
               trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
-        let unticked = ledgerState extLedger
 
         -- Check if we are not too far ahead of the chain
         --
@@ -340,7 +339,9 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- the consensus tests at the moment.
         -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
         case runExcept $ forecastFor
-                           (ledgerViewForecastAtTip (configLedger cfg) unticked)
+                           (ledgerViewForecastAtTip
+                              (configLedger cfg)
+                              (ledgerState unticked))
                            currentSlot of
           Left err -> do
             -- There are so many empty slots between the tip of our chain and
@@ -355,15 +356,21 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
             return ()
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let ticked = applyChainTick (configLedger cfg) currentSlot unticked
+        let ticked = applyChainTick
+                       (ExtLedgerCfg {
+                            extLedgerCfgProtocol = topLevelConfigProtocol cfg
+                          , extLedgerCfgLedger   = configLedger cfg
+                          })
+                       currentSlot
+                       unticked
 
         -- Check if we are the leader
         proof <- do
           mIsLeader <- lift $
-            getLeaderProof
+            getLeaderProof blockProduction
               (forgeStateTracer tracers)
-              (protocolLedgerView (configLedger cfg) <$> ticked)
-              (headerStateConsensus (headerState extLedger))
+              (protocolLedgerView (configLedger cfg) . ledgerState <$> ticked)
+              (headerStateConsensus . headerState <$> ticked)
           case mIsLeader of
             IsLeader   p -> return p
             CannotLead e -> do trace $ TraceNodeCannotLead currentSlot e
@@ -384,21 +391,21 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         mempoolSnapshot <- lift $ atomically $
                              getSnapshotFor
                                mempool
-                               (ForgeInKnownSlot ticked)
+                               (ForgeInKnownSlot (ledgerState <$> ticked))
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (computeMaxTxCapacity ticked)
+                              (computeMaxTxCapacity (ledgerState <$> ticked))
 
         -- Actually produce the block
         newBlock <- lift $
-          produceBlock
+          produceBlock blockProduction
             bcBlockNo
-            ticked
+            (ledgerState <$> ticked)
             txs
             proof
         trace $ TraceForgedBlock
                   currentSlot
-                  (ledgerTipPoint' (Proxy @blk) (ledgerState extLedger))
+                  (ledgerTipPoint' (Proxy @blk) (ledgerState unticked))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
 

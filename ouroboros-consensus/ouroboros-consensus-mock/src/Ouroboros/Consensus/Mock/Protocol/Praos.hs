@@ -99,17 +99,16 @@ instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
 
 data PraosValidateView c =
     forall signed. Cardano.Crypto.KES.Class.Signable (PraosKES c) signed
-                => PraosValidateView SlotNo (PraosFields c signed) signed
+                => PraosValidateView (PraosFields c signed) signed
 
 -- | Convenience constructor for 'PraosValidateView'
-praosValidateView :: ( HasHeader    hdr
-                     , SignedHeader hdr
+praosValidateView :: ( SignedHeader hdr
                      , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
                      )
                   => (hdr -> PraosFields c (Signed hdr))
                   -> (hdr -> PraosValidateView c)
 praosValidateView getFields hdr =
-    PraosValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
+    PraosValidateView (getFields hdr) (headerSigned hdr)
 
 {-------------------------------------------------------------------------------
   Forging
@@ -257,7 +256,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type CanBeLeader   (Praos c) = CoreNodeId
   type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) _cis cds = do
+  checkIsLeader cfg@PraosConfig{..} nid _cis (Ticked slot _u) (Ticked _ cds) = do
       rho <- evalCertified () rho' praosSignKeyVRF
       y   <- evalCertified () y'   praosSignKeyVRF
       return $ if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
@@ -271,10 +270,15 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
     where
       (rho', y', t) = rhoYT cfg cds slot nid
 
+  -- Unlike the real Praos (which must switch nonce at the right time), there
+  -- is nothing to do for the mock Praos implementation in 'tickChainDepState'
+  -- since we have the /full/ history, and pick the right nonce from that.
+  tickChainDepState _ (Ticked slot _lv) = Ticked slot
+
   updateChainDepState cfg@PraosConfig{..}
+                      (PraosValidateView PraosFields{..} toSign)
                       (Ticked _ sd)
-                      (PraosValidateView slot PraosFields{..} toSign)
-                      cs = do
+                      (Ticked slot cs) = do
     let PraosExtraFields{..} = praosExtraFields
         nid                  = praosCreator
 

@@ -16,6 +16,7 @@
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
+  , validateHeader'
     -- * Annotated tips
   , AnnTip(..)
   , annTipHash
@@ -26,6 +27,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , getAnnTip
     -- * Header state
   , HeaderState(..)
+  , tickHeaderState
   , headerStateTip
   , headerStatePush
   , genesisHeaderState
@@ -153,6 +155,20 @@ data HeaderState blk = HeaderState {
     , headerStateAnchor    :: !(WithOrigin (AnnTip blk))
     }
   deriving (Generic)
+
+-- | Tick the 'ChainDepState' inside the 'HeaderState'
+tickHeaderState :: ConsensusProtocol (BlockProtocol blk)
+                => ConsensusConfig (BlockProtocol blk)
+                -> Ticked (LedgerView (BlockProtocol blk))
+                -> HeaderState blk -> Ticked (HeaderState blk)
+tickHeaderState cfg ledgerView@(Ticked slot _) headerState =
+    Ticked slot $ headerState { headerStateConsensus = chainDepState' }
+  where
+    Ticked _slot chainDepState' =
+        tickChainDepState
+          cfg
+          ledgerView
+          (headerStateConsensus headerState)
 
 headerStateTip :: HeaderState blk -> WithOrigin (AnnTip blk)
 headerStateTip HeaderState{..} =
@@ -445,22 +461,45 @@ validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => TopLevelConfig blk
                -> Ticked (LedgerView (BlockProtocol blk))
                -> Header blk
-               -> HeaderState blk
+               -> Ticked (HeaderState blk)
                -> Except (HeaderError blk) (HeaderState blk)
 validateHeader cfg ledgerView hdr st = do
     withExcept HeaderEnvelopeError $
-      validateEnvelope cfg ledgerView (headerStateTip st) hdr
+      validateEnvelope
+        cfg
+        ledgerView
+        (headerStateTip (tickedState st))
+        hdr
     chainDepState' <- withExcept HeaderProtocolError $
                         updateChainDepState
                           (configConsensus cfg)
-                          ledgerView
                           (validateView (configBlock cfg) hdr)
-                          (headerStateConsensus st)
+                          ledgerView
+                          (headerStateConsensus <$> st)
     return $ headerStatePush
                (configSecurityParam cfg)
                chainDepState'
                (getAnnTip hdr)
-               st
+               (tickedState st)
+
+-- | Variation on 'validateHeader' that takes an unticked HeaderState
+--
+-- This is used only in the chain sync client for header-only validation.
+validateHeader' :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
+                => TopLevelConfig blk
+                -> Ticked (LedgerView (BlockProtocol blk))
+                -> Header blk
+                -> HeaderState blk
+                -> Except (HeaderError blk) (HeaderState blk)
+validateHeader' cfg ledgerView hdr hdrState =
+    validateHeader
+      cfg
+      ledgerView
+      hdr
+      (tickHeaderState
+         (configConsensus cfg)
+         ledgerView
+         hdrState)
 
 {-------------------------------------------------------------------------------
   TipInfoIsEBB

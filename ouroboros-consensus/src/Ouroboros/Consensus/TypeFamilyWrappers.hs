@@ -18,11 +18,11 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
     -- * Protocol based
   , WrapCanBeLeader(..)
   , WrapCannotLead(..)
-  , WrapChainSelConfig(..)
-  , WrapConsensusConfig(..)
   , WrapChainDepState(..)
   , WrapChainIndepState(..)
   , WrapChainIndepStateConfig(..)
+  , WrapChainSelConfig(..)
+  , WrapConsensusConfig(..)
   , WrapIsLeader(..)
   , WrapLeaderCheck(..)
   , WrapLedgerView(..)
@@ -65,19 +65,19 @@ newtype WrapFullBlockConfig blk = WrapFullBlockConfig { unwrapFullBlockConfig ::
   Consensus based
 -------------------------------------------------------------------------------}
 
-newtype WrapCanBeLeader           blk = WrapCanBeLeader           { unwrapCanBeLeader           :: CanBeLeader           (BlockProtocol blk) }
-newtype WrapCannotLead            blk = WrapCannotLead            { unwrapCannotLead            :: CannotLead            (BlockProtocol blk) }
-newtype WrapChainSelConfig        blk = WrapChainSelConfig        { unwrapChainSelConfig        :: ChainSelConfig        (BlockProtocol blk) }
-newtype WrapConsensusConfig       blk = WrapConsensusConfig       { unwrapConsensusConfig       :: ConsensusConfig       (BlockProtocol blk) }
-newtype WrapChainDepState         blk = WrapChainDepState         { unwrapChainDepState         :: ChainDepState         (BlockProtocol blk) }
-newtype WrapChainIndepState       blk = WrapChainIndepState       { unwrapChainIndepState       :: ChainIndepState       (BlockProtocol blk) }
-newtype WrapChainIndepStateConfig blk = WrapChainIndepStateConfig { unwrapChainIndepStateConfig :: ChainIndepStateConfig (BlockProtocol blk) }
-newtype WrapIsLeader              blk = WrapIsLeader              { unwrapIsLeader              :: IsLeader              (BlockProtocol blk) }
-newtype WrapLeaderCheck           blk = WrapLeaderCheck           { unwrapLeaderCheck           :: LeaderCheck           (BlockProtocol blk) }
-newtype WrapLedgerView            blk = WrapLedgerView            { unwrapLedgerView            :: LedgerView            (BlockProtocol blk) }
-newtype WrapSelectView            blk = WrapSelectView            { unwrapSelectView            :: SelectView            (BlockProtocol blk) }
-newtype WrapValidateView          blk = WrapValidateView          { unwrapValidateView          :: ValidateView          (BlockProtocol blk) }
-newtype WrapValidationErr         blk = WrapValidationErr         { unwrapValidationErr         :: ValidationErr         (BlockProtocol blk) }
+newtype WrapCanBeLeader           blk = WrapCanBeLeader           { unwrapCanBeLeader           :: CanBeLeader           (BlockProtocol blk)  }
+newtype WrapCannotLead            blk = WrapCannotLead            { unwrapCannotLead            :: CannotLead            (BlockProtocol blk)  }
+newtype WrapChainDepState         blk = WrapChainDepState         { unwrapChainDepState         :: ChainDepState         (BlockProtocol blk)  }
+newtype WrapChainIndepState       blk = WrapChainIndepState       { unwrapChainIndepState       :: ChainIndepState       (BlockProtocol blk)  }
+newtype WrapChainIndepStateConfig blk = WrapChainIndepStateConfig { unwrapChainIndepStateConfig :: ChainIndepStateConfig (BlockProtocol blk)  }
+newtype WrapChainSelConfig        blk = WrapChainSelConfig        { unwrapChainSelConfig        :: ChainSelConfig        (BlockProtocol blk)  }
+newtype WrapConsensusConfig       blk = WrapConsensusConfig       { unwrapConsensusConfig       :: ConsensusConfig       (BlockProtocol blk)  }
+newtype WrapIsLeader              blk = WrapIsLeader              { unwrapIsLeader              :: IsLeader              (BlockProtocol blk)  }
+newtype WrapLeaderCheck           blk = WrapLeaderCheck           { unwrapLeaderCheck           :: LeaderCheck           (BlockProtocol blk)  }
+newtype WrapLedgerView            blk = WrapLedgerView            { unwrapLedgerView            :: LedgerView            (BlockProtocol blk)  }
+newtype WrapSelectView            blk = WrapSelectView            { unwrapSelectView            :: SelectView            (BlockProtocol blk)  }
+newtype WrapValidateView          blk = WrapValidateView          { unwrapValidateView          :: ValidateView          (BlockProtocol blk)  }
+newtype WrapValidationErr         blk = WrapValidationErr         { unwrapValidationErr         :: ValidationErr         (BlockProtocol blk)  }
 
 {-------------------------------------------------------------------------------
   Versioning

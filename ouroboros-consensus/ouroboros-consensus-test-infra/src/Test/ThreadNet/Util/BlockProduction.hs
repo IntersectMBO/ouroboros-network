@@ -43,7 +43,7 @@ blockProductionIOLike ::
 blockProductionIOLike cfg canBeLeader mfs varRNG forge = do
     varForgeState :: StrictMVar m (ForgeState blk) <- newMVar (initForgeState mfs)
     return $ BlockProduction {
-        getLeaderProof = \tracer ledgerState chainDepState ->
+        getLeaderProof_ = \tracer ledgerState chainDepState ->
           simMonadRandom varRNG $
             defaultGetLeaderProof
               cfg

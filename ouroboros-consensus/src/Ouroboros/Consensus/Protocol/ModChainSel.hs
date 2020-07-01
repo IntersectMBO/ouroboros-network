@@ -64,6 +64,7 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
           chainDepState
           chainIndepState
 
+    tickChainDepState     = tickChainDepState     . mcsConfigP
     updateChainDepState   = updateChainDepState   . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP
 

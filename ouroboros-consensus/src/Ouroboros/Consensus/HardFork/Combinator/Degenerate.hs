@@ -221,18 +221,39 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
   type ValidateView  (DegenForkProtocol b) = ValidateView    (HardForkProtocol '[b])
 
   -- Operations on the state
-  checkIsLeader (DConCfg cfg) canBeLeader tickedLedgerView chainIndepState (DCSt chainDepState) =
+  checkIsLeader (DConCfg cfg)
+                canBeLeader
+                chainIndepState
+                tickedLedgerView
+                tickedChainDepState =
     castLeaderCheck <$>
-      checkIsLeader cfg canBeLeader tickedLedgerView chainIndepState chainDepState
-  updateChainDepState (DConCfg cfg) tickedLedgerView valView (DCSt chainDepState) =
-    DCSt <$> updateChainDepState cfg tickedLedgerView valView chainDepState
+      checkIsLeader
+        cfg
+        canBeLeader
+        chainIndepState
+        tickedLedgerView
+        (unDCSt <$> tickedChainDepState)
+
+  tickChainDepState (DConCfg cfg) view (DCSt st) =
+      DCSt <$> tickChainDepState cfg view st
+
+  updateChainDepState (DConCfg cfg)
+                      tickedLedgerView
+                      valView
+                      (Ticked slot (DCSt chainDepState)) =
+      DCSt <$> updateChainDepState
+                 cfg
+                 tickedLedgerView
+                 valView
+                 (Ticked slot chainDepState)
+
   rewindChainDepState _ secParam pt (DCSt chainDepState) =
-    DCSt <$>
-      rewindChainDepState
-        (Proxy @(HardForkProtocol '[b]))
-        secParam
-        pt
-        chainDepState
+      DCSt <$>
+        rewindChainDepState
+          (Proxy @(HardForkProtocol '[b]))
+          secParam
+          pt
+          chainDepState
 
   -- Straight-forward extensions
   protocolSecurityParam = protocolSecurityParam . unDConCfg
