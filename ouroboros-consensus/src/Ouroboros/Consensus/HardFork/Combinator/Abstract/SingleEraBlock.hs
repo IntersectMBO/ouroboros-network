@@ -1,12 +1,27 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE EmptyCase            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
+    -- * Single era block
     SingleEraBlock(..)
   , singleEraTransition'
   , proxySingle
+    -- * Era index
+  , EraIndex(..)
+  , emptyEraIndex
   ) where
 
+import           Codec.Serialise
+import           Data.Either (isRight)
 import           Data.Proxy
+import           Data.SOP.BasicFunctors (K (..))
+import           Data.SOP.Strict
+import qualified Data.Text as Text
+import           Data.Void
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
@@ -15,9 +30,11 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
 
 {-------------------------------------------------------------------------------
   SingleEraBlock
@@ -67,3 +84,37 @@ singleEraTransition' :: SingleEraBlock blk
                      -> Bound
                      -> LedgerState blk -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
+
+{-------------------------------------------------------------------------------
+  Era index
+-------------------------------------------------------------------------------}
+
+newtype EraIndex xs = EraIndex {
+      getEraIndex :: NS (K ()) xs
+    }
+
+instance Eq (EraIndex xs) where
+  EraIndex era == EraIndex era' = isRight (matchNS era era')
+
+instance All SingleEraBlock xs => Show (EraIndex xs) where
+  show = hcollapse . hcmap proxySingle getEraName . getEraIndex
+    where
+      getEraName :: forall blk. SingleEraBlock blk
+                 => K () blk -> K String blk
+      getEraName _ =
+            K
+          . ("EraIndex " <>)
+          . Text.unpack
+          . singleEraName
+          $ singleEraInfo (Proxy @blk)
+
+instance SListI xs => Serialise (EraIndex xs) where
+  encode = encode . nsToIndex . getEraIndex
+  decode = do
+    idx <- decode
+    case nsFromIndex idx of
+      Nothing       -> fail $ "EraIndex: invalid index " <> show idx
+      Just eraIndex -> return (EraIndex eraIndex)
+
+emptyEraIndex :: EraIndex '[] -> Void
+emptyEraIndex (EraIndex ns) = case ns of {}

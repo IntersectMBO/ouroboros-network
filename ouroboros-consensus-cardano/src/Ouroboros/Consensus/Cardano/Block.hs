@@ -44,7 +44,7 @@ module Ouroboros.Consensus.Cardano.Block (
   , OneEraTipInfo (TipInfoByron, TipInfoShelley)
     -- * Query
   , CardanoQuery
-  , Query (QueryByron, QueryShelley)
+  , Query (QueryIfCurrentByron, QueryIfCurrentShelley, QueryAnytimeShelley)
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
     -- * CodecConfig
@@ -296,20 +296,40 @@ pattern TipInfoShelley ti = OneEraTipInfo (S (Z (WrapTipInfo ti)))
 -- | The 'Query' of Cardano chain.
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
--- constructors 'QueryByron' and 'QueryShelley'.
+-- constructors 'QueryIfCurrentByron', 'QueryIfCurerntShelley', and
+-- 'QueryAnytimeShelley'.
 type CardanoQuery sc = Query (CardanoBlock sc)
 
-pattern QueryByron
+-- | Byron-specific query that can only be answered when the ledger in the
+-- Byron era.
+pattern QueryIfCurrentByron
   :: Query ByronBlock result
   -> CardanoQuery sc (CardanoQueryResult sc result)
-pattern QueryByron q = HardForkQuery (QZ q)
+pattern QueryIfCurrentByron q = QueryIfCurrent (QZ q)
 
-pattern QueryShelley
+-- | Shelley-specific query that can only be answered when the ledger in the
+-- Shelley era.
+pattern QueryIfCurrentShelley
   :: Query (ShelleyBlock sc) result
   -> CardanoQuery sc (CardanoQueryResult sc result)
-pattern QueryShelley q = HardForkQuery (QS (QZ q))
+pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 
-{-# COMPLETE QueryByron, QueryShelley #-}
+-- | Query about the Shelley era that can be answered anytime, i.e.,
+-- independent from where the tip of the ledger is.
+--
+-- For example, to ask for the start of the Shelley era (whether the tip of
+-- the ledger is in the Byron or Shelley era), use:
+--
+-- > QueryAnytimeShelley EraStart
+--
+pattern QueryAnytimeShelley
+  :: QueryAnytime result
+  -> CardanoQuery sc result
+pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (Z (K ())))
+
+{-# COMPLETE QueryIfCurrentByron
+           , QueryIfCurrentShelley
+           , QueryAnytimeShelley #-}
 
 -- | The result of a 'CardanoQuery'
 --

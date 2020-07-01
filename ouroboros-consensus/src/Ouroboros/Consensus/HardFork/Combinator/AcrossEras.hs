@@ -291,8 +291,8 @@ deriving via LiftNP WrapExtraForgeState xs instance CanHardFork xs => Show (PerE
 
 deriving via LiftNS WrapApplyTxErr      xs instance CanHardFork xs => Eq   (OneEraApplyTxErr xs)
 
-deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Eq   (MismatchEraInfo xs)
-deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance CanHardFork xs => Show (MismatchEraInfo xs)
+deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Eq   (MismatchEraInfo xs)
+deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Show (MismatchEraInfo xs)
 
 deriving newtype instance All (Trivial `Compose` WrapChainIndepState)  xs => Trivial (PerEraChainIndepState xs)
 deriving newtype instance All (Trivial `Compose` WrapExtraForgeState)  xs => Trivial (PerEraExtraForgeState xs)

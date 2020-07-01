@@ -124,10 +124,10 @@ ledgerTipSlot = pointSlot . (ledgerTipPoint' (Proxy @blk))
 --
 -- Used by the LocalStateQuery protocol to allow clients to query the ledger
 -- state.
-class (UpdateLedger blk, ShowQuery (Query blk)) => QueryLedger blk where
+class ShowQuery (Query blk) => QueryLedger blk where
 
   -- | Different queries supported by the ledger, indexed by the result type.
-  data family Query  blk :: * -> *
+  data family Query blk :: * -> *
 
   -- | Answer the given query about the ledger state.
   answerQuery :: LedgerConfig blk -> Query blk result -> LedgerState blk -> result

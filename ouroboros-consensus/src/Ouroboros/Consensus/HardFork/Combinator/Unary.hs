@@ -531,9 +531,13 @@ projQuery :: Query (HardForkBlock '[b]) result
                -> Query b result'
                -> a)
           -> a
-projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . aux
+projQuery qry k =
+    getHardForkQuery
+      qry
+      (\Refl -> k Refl . aux)
+      (\Refl _ eraIndex -> absurd $ emptyEraIndex eraIndex)
   where
-    aux :: HardForkQuery '[b] result -> Query b result
+    aux :: QueryIfCurrent '[b] result -> Query b result
     aux (QZ q) = q
     aux (QS q) = case q of {}
 
@@ -542,7 +546,7 @@ projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . aux
 -- Not an instance of 'Isomorphic' because the types change.
 injQuery :: Query b result
          -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
-injQuery = HardForkQuery . QZ
+injQuery = QueryIfCurrent . QZ
 
 projNestedCtxt :: NestedCtxt f (HardForkBlock '[blk]) a -> NestedCtxt f blk a
 projNestedCtxt = NestedCtxt . aux . flipNestedCtxt

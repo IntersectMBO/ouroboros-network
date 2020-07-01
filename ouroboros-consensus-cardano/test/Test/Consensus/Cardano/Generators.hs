@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.BlockchainTime (RelativeTime (..))
 import           Ouroboros.Consensus.HardFork.History (Bound (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
@@ -275,39 +276,52 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h 
               <$> arbitrary)
       ]
 
+instance Arbitrary (Some QueryAnytime) where
+  arbitrary = return $ Some EraStart
+
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeBlock Query (CardanoBlock sc))) where
-  arbitrary = arbitraryNodeToClient injByron injShelley
+  arbitrary = frequency
+      [ (9, arbitraryNodeToClient injByron injShelley)
+      , (1, WithVersion (mostRecentSupportedNodeToClient pc) . injAnytimeShelley
+              <$> arbitrary)
+      ]
     where
-      injByron   (SomeBlock query) = SomeBlock (QueryByron   query)
-      injShelley (SomeBlock query) = SomeBlock (QueryShelley query)
+      injByron          (SomeBlock query) = SomeBlock (QueryIfCurrentByron   query)
+      injShelley        (SomeBlock query) = SomeBlock (QueryIfCurrentShelley query)
+      injAnytimeShelley (Some      query) = SomeBlock (QueryAnytimeShelley   query)
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeResult (CardanoBlock sc))) where
   arbitrary = frequency
       [ (8, arbitraryNodeToClient injByron injShelley)
-      , (2, WithVersion (mostRecentSupportedNodeToClient pc) <$> genQueryResultEraMismatch)
+      , (2, WithVersion (mostRecentSupportedNodeToClient pc) <$> genQueryIfCurrentResultEraMismatch)
+      , (1, WithVersion (mostRecentSupportedNodeToClient pc) <$> genQueryAnytimeResult)
       ]
     where
-      injByron   (SomeResult q r) = SomeResult (QueryByron   q) (QueryResultSuccess r)
-      injShelley (SomeResult q r) = SomeResult (QueryShelley q) (QueryResultSuccess r)
+      injByron   (SomeResult q r) = SomeResult (QueryIfCurrentByron   q) (QueryResultSuccess r)
+      injShelley (SomeResult q r) = SomeResult (QueryIfCurrentShelley q) (QueryResultSuccess r)
 
       -- In practice, when sending a Byron query you'll never get a mismatch
       -- saying that your query is from the Shelley era while the ledger is
       -- from Byron. Only the inverse. We ignore that in this generator, as it
       -- doesn't matter for serialisation purposes, we just generate a random
       -- 'MismatchEraInfo'.
-      genQueryResultEraMismatch :: Gen (SomeResult (CardanoBlock sc))
-      genQueryResultEraMismatch = oneof
+      genQueryIfCurrentResultEraMismatch :: Gen (SomeResult (CardanoBlock sc))
+      genQueryIfCurrentResultEraMismatch = oneof
           [ (\(SomeResult q (_ :: result)) mismatch ->
-                SomeResult (QueryByron q) (Left @_ @result mismatch))
+                SomeResult (QueryIfCurrentByron q) (Left @_ @result mismatch))
               <$> arbitrary <*> arbitrary
           , (\(SomeResult q (_ :: result)) mismatch ->
-                SomeResult (QueryShelley q) (Left @_ @result mismatch))
+                SomeResult (QueryIfCurrentShelley q) (Left @_ @result mismatch))
               <$> arbitrary <*> arbitrary
           ]
+
+      genQueryAnytimeResult :: Gen (SomeResult (CardanoBlock sc))
+      genQueryAnytimeResult =
+          SomeResult (QueryAnytimeShelley EraStart) <$> arbitrary
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (MismatchEraInfo (CardanoEras sc)) where

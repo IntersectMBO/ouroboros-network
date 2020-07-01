@@ -54,8 +54,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
   , undistribAnnTip
   , distribSerialisedHeader
   , undistribSerialisedHeader
-  , distribSomeQuery
-  , undistribSomeQuery
+  , distribQueryIfCurrent
+  , undistribQueryIfCurrent
     -- * Deriving-via support for tests
   , SerialiseNS(..)
   ) where
@@ -90,6 +90,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
@@ -297,7 +298,7 @@ encodeTelescope es (HardForkState st) = mconcat [
   where
     -- The tip of the telescope also tells us the length
     ix :: Word8
-    ix = hcollapse $ hzipWith const npWithIndices (Telescope.tip st)
+    ix = nsToIndex (Telescope.tip st)
 
     encPast :: (f -.-> K Encoding) blk -> Past f blk -> K Encoding blk
     encPast enc = K . encodePast (unK . apFn enc)
@@ -326,7 +327,7 @@ decodeTelescope = \ds -> do
 encodeNS :: SListI xs => NP (f -.-> K Encoding) xs -> NS f xs -> Encoding
 encodeNS es ns = mconcat [
       Enc.encodeListLen 2
-    , Enc.encodeWord8 $ hcollapse $ hzipWith const npWithIndices ns
+    , Enc.encodeWord8 $ nsToIndex ns
     , hcollapse $ hzipWith apFn es ns
     ]
 
@@ -541,27 +542,27 @@ undistribSerialisedHeader =
     go (S bs) =
         depPairFirst (mapNestedCtxt NCS) $ go bs
 
-distribSomeQuery :: SomeBlock Query (HardForkBlock xs)
-                 -> NS (SomeBlock Query) xs
-distribSomeQuery = \(SomeBlock (HardForkQuery qry)) ->
-    go qry
+distribQueryIfCurrent ::
+     Some (QueryIfCurrent xs)
+  -> NS (SomeBlock Query) xs
+distribQueryIfCurrent = \(Some qry) -> go qry
   where
-    go :: HardForkQuery xs result -> NS (SomeBlock Query) xs
+    go :: QueryIfCurrent xs result -> NS (SomeBlock Query) xs
     go (QZ qry) = Z (SomeBlock qry)
     go (QS qry) = S (go qry)
 
-undistribSomeQuery :: NS (SomeBlock Query) xs
-                   -> SomeBlock Query (HardForkBlock xs)
-undistribSomeQuery = go
+undistribQueryIfCurrent ::
+     NS (SomeBlock Query) xs
+  -> Some (QueryIfCurrent xs)
+undistribQueryIfCurrent = go
   where
-    go :: NS (SomeBlock Query) xs
-       -> SomeBlock Query (HardForkBlock xs)
+    go :: NS (SomeBlock Query) xs -> Some (QueryIfCurrent xs)
     go (Z qry) = case qry of
                    SomeBlock qry' ->
-                     SomeBlock $ HardForkQuery (QZ qry')
+                     Some (QZ qry')
     go (S qry) = case go qry of
-                   SomeBlock (HardForkQuery qry') ->
-                     SomeBlock $ HardForkQuery (QS qry')
+                   Some qry' ->
+                     Some (QS qry')
 
 {-------------------------------------------------------------------------------
   Deriving-via support

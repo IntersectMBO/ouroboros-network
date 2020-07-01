@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Util.SOP (
   , map_NP'
   , partition_NS
   , npWithIndices
+  , nsToIndex
   , nsFromIndex
   , Lens(..)
   , lenses_NP
@@ -85,6 +86,9 @@ npWithIndices = go 0 sList
     go !_ SNil  = Nil
     go 24 SCons = error "npWithIndices out of range"
     go !i SCons = K i :* go (i + 1) sList
+
+nsToIndex :: SListI xs => NS f xs -> Word8
+nsToIndex = hcollapse . hzipWith const npWithIndices
 
 -- | We only allow up to 23, see 'npWithIndices'.
 nsFromIndex :: SListI xs => Word8 -> Maybe (NS (K ()) xs)
