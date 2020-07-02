@@ -20,6 +20,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
     Mismatch(..)
   , matchNS
   , matchTelescope
+  , flip
     -- * Utilities
   , mismatchToNS
   , mismatchOne
@@ -32,6 +33,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
   , bihmap
   , bihcmap
   ) where
+
+import           Prelude hiding (flip)
 
 import           Data.Bifunctor
 import           Data.Functor.Product
@@ -55,6 +58,14 @@ data Mismatch :: (k -> *) -> (k -> *) -> [k] -> * where
   ML :: f x -> NS g xs -> Mismatch f g (x ': xs)
   MR :: NS f xs -> g x -> Mismatch f g (x ': xs)
   MS :: Mismatch f g xs -> Mismatch f g (x ': xs)
+
+flip :: Mismatch f g xs -> Mismatch g f xs
+flip = go
+  where
+    go :: Mismatch f g xs -> Mismatch g f xs
+    go (ML fx gy) = MR gy fx
+    go (MR fy gx) = ML gx fy
+    go (MS m)     = MS (go m)
 
 matchNS :: NS f xs -> NS g xs -> Either (Mismatch f g xs) (NS (Product f g) xs)
 matchNS = go

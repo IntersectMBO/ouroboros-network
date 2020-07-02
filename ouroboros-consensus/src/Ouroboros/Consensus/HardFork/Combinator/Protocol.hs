@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util (pairSnd, (.:))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -315,9 +315,9 @@ update HardForkConsensusConfig{..}
                      mismatch' = MismatchEraInfo $
                                    Match.bihcmap
                                      proxySingle
-                                     singleEraInfo
                                      (chainDepStateInfo . State.currentState)
-                                     mismatch
+                                     (ledgerViewInfo . pairSnd)
+                                     (Match.flip mismatch)
                  in error $ "update: unexpected mismatch: " ++ show mismatch'
                Right match -> match)
          . State.match (State.tip matched)
@@ -356,8 +356,8 @@ ledgerViewInfo :: forall blk. SingleEraBlock blk
 ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 chainDepStateInfo :: forall blk. SingleEraBlock blk
-                   => WrapChainDepState blk -> LedgerEraInfo blk
-chainDepStateInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
+                  => WrapChainDepState blk -> SingleEraInfo blk
+chainDepStateInfo _ = singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
                    => EpochInfo Identity
