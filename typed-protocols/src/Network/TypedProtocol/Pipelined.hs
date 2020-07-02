@@ -1,9 +1,11 @@
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE PolyKinds       #-}
-{-# LANGUAGE RankNTypes      #-}
-{-# LANGUAGE ViewPatterns    #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE PolyKinds          #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE ViewPatterns       #-}
 
 module Network.TypedProtocol.Pipelined
   ( PeerPipelined (..)
@@ -13,6 +15,7 @@ module Network.TypedProtocol.Pipelined
   , N (..)
   , Nat (Zero, Succ)
   , natToInt
+  , unsafeIntToNat
   ) where
 
 import           Unsafe.Coerce (unsafeCoerce)
@@ -151,6 +154,7 @@ data N = Z | S N
 -- 'SenderCollect' and 'SenderDone' are being used correctly.
 --
 newtype Nat (n :: N) = UnsafeInt Int
+  deriving Show via Int
 
 data IsNat (n :: N) where
   IsZero ::          IsNat Z
@@ -172,3 +176,6 @@ pattern Succ n <- (toIsNat -> IsSucc n) where
 
 natToInt :: Nat n -> Int
 natToInt (UnsafeInt n) = n
+
+unsafeIntToNat :: Int -> Nat n
+unsafeIntToNat = UnsafeInt
