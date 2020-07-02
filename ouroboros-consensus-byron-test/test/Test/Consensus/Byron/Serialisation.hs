@@ -40,7 +40,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation
+import           Test.Util.Serialisation.Roundtrip
 
 import           Test.Consensus.Byron.Generators
 

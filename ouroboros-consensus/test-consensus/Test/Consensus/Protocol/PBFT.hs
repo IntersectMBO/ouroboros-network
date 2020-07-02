@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Test.Util.Roundtrip (roundtrip)
+import           Test.Util.Serialisation.Roundtrip (roundtrip)
 import           Test.Util.Split (spanLeft, splitAtJust)
 
 {-------------------------------------------------------------------------------

@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.Cardano.CanHardFork ()
 import           Ouroboros.Consensus.Cardano.Node ()
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation (WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
 
 import           Test.Consensus.Byron.Generators
 

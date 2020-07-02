@@ -60,8 +60,7 @@ library
                        Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
-                       Test.Util.Roundtrip
-                       Test.Util.Serialisation
+                       Test.Util.Serialisation.Roundtrip
                        Test.Util.Shrink
                        Test.Util.SOP
                        Test.Util.Slots

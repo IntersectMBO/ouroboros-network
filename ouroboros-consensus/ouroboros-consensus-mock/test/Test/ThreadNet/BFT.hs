@@ -40,7 +40,7 @@ import           Test.Consensus.Ledger.Mock.Generators ()
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
-import           Test.Util.Serialisation
+import           Test.Util.Serialisation.Roundtrip
 import           Test.Util.Slots (NumSlots (..))
 
 data TestSetup = TestSetup

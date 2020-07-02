@@ -37,7 +37,7 @@ import           Ouroboros.Consensus.Mock.Node.Serialisation ()
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.Slotting.Arbitrary ()
-import           Test.Util.Serialisation
+import           Test.Util.Serialisation.Roundtrip
 
 {-------------------------------------------------------------------------------
   General instances
