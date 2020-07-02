@@ -198,8 +198,8 @@ check HardForkConsensusConfig{..}
             mismatch' = MismatchEraInfo $
                           Match.bihcmap
                             proxySingle
-                            chainDepStateInfo
-                            ledgerInfo'
+                            singleEraInfo
+                            ledgerViewInfo
                             mismatch
         in error $ "check: unexpected mismatch: " ++ show mismatch'
       Right aligned ->
@@ -295,7 +295,11 @@ update HardForkConsensusConfig{..}
     case State.match view (hardForkLedgerViewPerEra ledgerView) of
       Left mismatch ->
         throwError $ HardForkValidationErrWrongEra . MismatchEraInfo $
-          Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
+          Match.bihcmap
+            proxySingle
+            singleEraInfo
+            (ledgerViewInfo . State.currentState)
+            mismatch
       Right matched ->
            hsequence'
          . State.tickAllPast hardForkConsensusConfigK
@@ -311,8 +315,8 @@ update HardForkConsensusConfig{..}
                      mismatch' = MismatchEraInfo $
                                    Match.bihcmap
                                      proxySingle
-                                     ledgerViewInfo
-                                     ledgerInfo
+                                     singleEraInfo
+                                     (chainDepStateInfo . State.currentState)
                                      mismatch
                  in error $ "update: unexpected mismatch: " ++ show mismatch'
                Right match -> match)
@@ -324,11 +328,6 @@ update HardForkConsensusConfig{..}
 
     errInjections :: NP (Injection WrapValidationErr xs) xs
     errInjections = injections
-
-    ledgerViewInfo :: forall blk. SingleEraBlock blk
-                   => Product WrapValidateView WrapLedgerView blk
-                   -> SingleEraInfo blk
-    ledgerViewInfo _ = singleEraInfo (Proxy @blk)
 
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
@@ -352,17 +351,13 @@ updateEra ei slot cfg injectErr
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall f blk. SingleEraBlock blk
-           => State.Current f blk -> LedgerEraInfo blk
-ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
-
-ledgerInfo' :: forall blk. SingleEraBlock blk
-            => WrapLedgerView blk -> LedgerEraInfo blk
-ledgerInfo' _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
+ledgerViewInfo :: forall blk. SingleEraBlock blk
+                => WrapLedgerView blk -> LedgerEraInfo blk
+ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 chainDepStateInfo :: forall blk. SingleEraBlock blk
-                  => WrapChainDepState blk -> SingleEraInfo blk
-chainDepStateInfo _ = singleEraInfo (Proxy @blk)
+                   => WrapChainDepState blk -> LedgerEraInfo blk
+chainDepStateInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
                    => EpochInfo Identity
