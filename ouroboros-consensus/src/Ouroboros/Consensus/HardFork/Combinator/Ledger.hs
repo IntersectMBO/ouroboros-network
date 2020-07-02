@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract

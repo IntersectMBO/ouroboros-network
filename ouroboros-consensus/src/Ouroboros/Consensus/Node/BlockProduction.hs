@@ -5,6 +5,7 @@
 
 module Ouroboros.Consensus.Node.BlockProduction (
     BlockProduction(..)
+  , getLeaderProof
   , blockProductionIO
     -- * Get leader proof
   , defaultGetLeaderProof
@@ -12,21 +13,24 @@ module Ouroboros.Consensus.Node.BlockProduction (
 
 import           Control.Tracer (Tracer, traceWith)
 import           Crypto.Random (MonadRandom)
+import           GHC.Stack
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Stateful wrapper around block production
 data BlockProduction m blk = BlockProduction {
       -- | Check if we should produce a block
-      getLeaderProof :: Tracer m (ForgeState blk)
-                     -> Ticked (LedgerView (BlockProtocol blk))
-                     -> ChainDepState      (BlockProtocol blk)
-                     -> m (LeaderCheck     (BlockProtocol blk))
+      getLeaderProof_ :: HasCallStack
+                      => Tracer m (ForgeState blk)
+                      -> Ticked (LedgerView    (BlockProtocol blk))
+                      -> Ticked (ChainDepState (BlockProtocol blk))
+                      -> m (LeaderCheck        (BlockProtocol blk))
 
       -- | Produce a block
       --
@@ -46,6 +50,14 @@ data BlockProduction m blk = BlockProduction {
                    -> m blk
     }
 
+getLeaderProof :: HasCallStack
+               => BlockProduction m blk
+               -> Tracer m (ForgeState blk)
+               -> Ticked (LedgerView    (BlockProtocol blk))
+               -> Ticked (ChainDepState (BlockProtocol blk))
+               -> m (LeaderCheck        (BlockProtocol blk))
+getLeaderProof = getLeaderProof_
+
 blockProductionIO :: forall blk. (BlockSupportsProtocol blk, CanForge blk)
                   => TopLevelConfig blk
                   -> CanBeLeader (BlockProtocol blk)
@@ -54,7 +66,7 @@ blockProductionIO :: forall blk. (BlockSupportsProtocol blk, CanForge blk)
 blockProductionIO cfg canBeLeader mfs = do
     varForgeState <- newMVar (initForgeState mfs)
     return $ BlockProduction {
-        getLeaderProof =
+        getLeaderProof_ =
           defaultGetLeaderProof
             cfg
             canBeLeader
@@ -74,6 +86,7 @@ defaultGetLeaderProof ::
      , MonadCatch m
      , MonadRandom m
      , ConsensusProtocol (BlockProtocol blk)
+     , HasCallStack
      )
   => TopLevelConfig blk
   -> CanBeLeader (BlockProtocol blk)
@@ -81,8 +94,8 @@ defaultGetLeaderProof ::
   -> StrictMVar m (ForgeState blk)
   -> Tracer m (ForgeState blk)
   -> Ticked (LedgerView (BlockProtocol blk))
-  -> ChainDepState      (BlockProtocol blk)
-  -> m (LeaderCheck     (BlockProtocol blk))
+  -> Ticked (ChainDepState (BlockProtocol blk))
+  -> m (LeaderCheck (BlockProtocol blk))
 defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
     forgeState' <- modifyMVar varForgeState $ \forgeState -> do
       forgeState' <-
@@ -96,6 +109,6 @@ defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
     checkIsLeader
       (configConsensus cfg)
       proof
-      lgrSt
       (chainIndepState forgeState')
+      lgrSt
       chainDepSt

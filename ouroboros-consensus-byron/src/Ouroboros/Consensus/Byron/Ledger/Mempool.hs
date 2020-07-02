@@ -66,6 +66,7 @@ import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Byron.Ledger.Block

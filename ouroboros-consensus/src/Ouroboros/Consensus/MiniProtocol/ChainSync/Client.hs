@@ -60,11 +60,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike
@@ -661,7 +661,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
 
           theirHeaderState' <-
-            case runExcept $ validateHeader cfg ledgerView hdr theirHeaderState of
+            case runExcept $ validateHeader' cfg ledgerView hdr theirHeaderState of
               Right theirHeaderState' -> return theirHeaderState'
               Left  vErr              -> disconnect $
                 HeaderError hdrPoint vErr ourTip theirTip

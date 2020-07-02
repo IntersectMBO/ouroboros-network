@@ -39,11 +39,11 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -64,17 +64,16 @@ instance (BftCrypto c, Typeable toSign) => NoUnexpectedThunks (BftFields c toSig
 
 data BftValidateView c =
     forall signed. Signable (BftDSIGN c) signed
-                => BftValidateView SlotNo (BftFields c signed) signed
+                => BftValidateView (BftFields c signed) signed
 
 -- | Convenience constructor for 'BftValidateView'
-bftValidateView :: ( HasHeader    hdr
-                   , SignedHeader hdr
+bftValidateView :: ( SignedHeader hdr
                    , Signable (BftDSIGN c) (Signed hdr)
                    )
                 => (hdr -> BftFields c (Signed hdr))
                 -> (hdr -> BftValidateView c)
 bftValidateView getFields hdr =
-    BftValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
+    BftValidateView (getFields hdr) (headerSigned hdr)
 
 forgeBftFields :: ( BftCrypto c
                   , Signable (BftDSIGN c) toSign
@@ -140,7 +139,11 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftConfig{..} (CoreNodeId i) (Ticked (SlotNo n) _l) _cis _cds = do
+  checkIsLeader BftConfig{..}
+                (CoreNodeId i)
+                _cis
+                (Ticked (SlotNo n) _l)
+                _cds = do
       return $ if n `mod` numCoreNodes == i
                  then IsLeader ()
                  else NotLeader
@@ -149,9 +152,9 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       NumCoreNodes numCoreNodes = bftNumNodes
 
   updateChainDepState BftConfig{..}
-                      _l
-                      (BftValidateView (SlotNo n) BftFields{..} signed)
-                      _cs =
+                      (BftValidateView BftFields{..} signed)
+                      (Ticked _ ())
+                      (Ticked (SlotNo n) ()) =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
              ()
@@ -164,6 +167,8 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       BftParams{..}  = bftParams
       expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
+
+  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- Nothing to do
 
   rewindChainDepState _ _ _ _ = Just ()
 

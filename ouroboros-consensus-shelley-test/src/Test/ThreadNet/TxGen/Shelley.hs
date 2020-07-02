@@ -23,6 +23,7 @@ import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ticked
 
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
@@ -77,7 +78,7 @@ genTx
   -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
   -> Gen.GenEnv h
   -> Gen (GenTx (ShelleyBlock (TPraosMockCrypto h)))
-genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
+genTx _cfg Ticked { tickedSlotNo, tickedState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
@@ -91,7 +92,7 @@ genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
     -- that point.
     isSimpleTx (SL._body -> txb) =
       (Seq.null $ SL._certs txb)
-    ShelleyLedgerState { shelleyState } = tickedLedgerState
+    ShelleyLedgerState { shelleyState } = tickedState
 
     epochState :: CSL.EpochState h
     epochState = SL.nesEs shelleyState

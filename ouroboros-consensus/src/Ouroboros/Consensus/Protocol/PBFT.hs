@@ -52,7 +52,6 @@ import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract (Ticked (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -62,6 +61,7 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
                      (HeaderHashBytes, headerHashBytes)
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -288,7 +288,9 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   checkIsLeader
     cfg@PBftConfig{pbftParams}
     credentials
-    (Ticked slot@(SlotNo n) (PBftLedgerView dms)) _cis cds =
+    _cis
+    (Ticked slot@(SlotNo n) (PBftLedgerView dms))
+    (Ticked _ cds) =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
@@ -308,7 +310,12 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  updateChainDepState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =
+  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- Nothing to do
+
+  updateChainDepState cfg@PBftConfig{..}
+                      toValidate
+                      (Ticked _ lv@(PBftLedgerView dms))
+                      (Ticked _ state) =
       case toValidate of
         PBftValidateBoundary slot hash ->
           return $! appendEBB cfg params slot hash state

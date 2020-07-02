@@ -96,6 +96,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 

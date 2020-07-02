@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
     ExtLedgerState(..)
   , ExtValidationError(..)
+  , ExtLedgerCfg(..)
   , extLedgerCfgToTopLevel
   , extLedgerCfgFromTopLevel
     -- * Serialisation
@@ -41,6 +42,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -110,7 +112,7 @@ _lemma_protocoLedgerView_applyLedgerBlock cfg blk st
     tickedLedger = applyChainTick lcfg (blockSlot blk) st
     lcfg = blockConfigLedger cfg
     lhs = protocolLedgerView lcfg <$> applyLedgerBlock cfg blk tickedLedger
-    rhs = protocolLedgerView lcfg  $  tickedLedgerState        tickedLedger
+    rhs = protocolLedgerView lcfg  $  tickedState              tickedLedger
 
 {-------------------------------------------------------------------------------
   The extended ledger can behave like a ledger
@@ -166,24 +168,36 @@ instance ( IsLedger (LedgerState  blk)
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
   applyChainTick cfg slot (ExtLedgerState ledger header) =
-      Ticked slot $ ExtLedgerState ledger' header
+      Ticked slot $ ExtLedgerState ledger' header'
     where
-      Ticked _slot ledger' = applyChainTick (extLedgerCfgLedger cfg) slot ledger
+      Ticked _slot1 ledger' =
+          applyChainTick
+            (extLedgerCfgLedger cfg)
+            slot
+            ledger
+
+      Ticked _slot2 header' =
+          tickHeaderState
+            (protocolConfigConsensus $ extLedgerCfgProtocol cfg)
+            (Ticked slot $ protocolLedgerView
+                             (extLedgerCfgLedger cfg)
+                             ledger')
+            header
 
   ledgerTipPoint = castPoint . ledgerTipPoint . ledgerState
 
 instance ( LedgerSupportsProtocol blk
          ) => ApplyBlock (ExtLedgerState blk) blk where
   applyLedgerBlock cfg blk (Ticked {
-                                tickedSlotNo      = slot
-                              , tickedLedgerState = ExtLedgerState lgr hdr
+                                tickedSlotNo = slot
+                              , tickedState  = ExtLedgerState lgr hdr
                               }) = do
       hdr' <- withExcept ExtValidationErrorHeader $
                 validateHeader
                   tlc
                   (Ticked slot ledgerView)
                   (getHeader blk)
-                  hdr
+                  (Ticked slot hdr)
       lgr' <- withExcept ExtValidationErrorLedger $
                 applyLedgerBlock
                   (mapLedgerCfg extLedgerCfgLedger cfg)
@@ -199,8 +213,8 @@ instance ( LedgerSupportsProtocol blk
       ledgerView = protocolLedgerView (configLedger tlc) lgr
 
   reapplyLedgerBlock cfg blk (Ticked {
-                                tickedSlotNo      = slot
-                              , tickedLedgerState = ExtLedgerState lgr hdr
+                                tickedSlotNo = slot
+                              , tickedState  = ExtLedgerState lgr hdr
                               }) =
       ExtLedgerState {
           ledgerState = reapplyLedgerBlock
@@ -212,7 +226,7 @@ instance ( LedgerSupportsProtocol blk
                            tlc
                            (Ticked slot ledgerView)
                            (getHeader blk)
-                           hdr
+                           (Ticked slot hdr)
         }
     where
       tlc :: TopLevelConfig blk

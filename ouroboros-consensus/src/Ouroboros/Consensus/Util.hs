@@ -51,6 +51,9 @@ module Ouroboros.Consensus.Util (
   , (..:)
   , (...:)
   , (....:)
+    -- * Product
+  , pairFst
+  , pairSnd
     -- * Miscellaneous
   , fib
     -- * Trivial
@@ -62,6 +65,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (asum, toList)
 import           Data.Function (on)
 import           Data.Functor.Identity
+import           Data.Functor.Product
 import           Data.Kind
 import           Data.List (foldl', maximumBy)
 import           Data.Set (Set)
@@ -250,6 +254,16 @@ allDisjoint = go Set.empty
 
 (....:) :: (f -> g) -> (a -> b -> c -> d -> e -> f) -> (a -> b -> c -> d -> e -> g)
 (f ....: g) a b c d e = f (g a b c d e)
+
+{-------------------------------------------------------------------------------
+  Product
+-------------------------------------------------------------------------------}
+
+pairFst :: Product f g a -> f a
+pairFst (Pair a _) = a
+
+pairSnd :: Product f g a -> g a
+pairSnd (Pair _ b) = b
 
 {-------------------------------------------------------------------------------
   Miscellaneous

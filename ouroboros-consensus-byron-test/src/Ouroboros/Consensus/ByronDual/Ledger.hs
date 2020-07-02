@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -240,9 +241,9 @@ forgeDualByronBlock cfg forgeState curBlockNo tickedLedger txs isLeader =
              (castForgeState forgeState)
              curBlockNo
              (Ticked {
-                  tickedSlotNo      = curSlotNo
-                , tickedLedgerState = dualLedgerStateMain $
-                                        tickedLedgerState tickedLedger
+                  tickedSlotNo = curSlotNo
+                , tickedState  = dualLedgerStateMain $
+                                   tickedState tickedLedger
                 })
              (map dualGenTxMain txs)
              isLeader
@@ -251,8 +252,8 @@ forgeDualByronBlock cfg forgeState curBlockNo tickedLedger txs isLeader =
     aux = forgeByronSpecBlock
             curSlotNo
             curBlockNo
-            (dualLedgerStateAux $ tickedLedgerState tickedLedger)
+            (dualLedgerStateAux $ tickedState tickedLedger)
             (map dualGenTxAux txs)
             (bridgeToSpecKey
-               (dualLedgerStateBridge $ tickedLedgerState tickedLedger)
+               (dualLedgerStateBridge $ tickedState tickedLedger)
                (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))

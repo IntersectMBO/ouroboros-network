@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Time
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL

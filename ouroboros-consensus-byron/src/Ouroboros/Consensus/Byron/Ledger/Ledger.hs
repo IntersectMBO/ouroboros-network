@@ -65,6 +65,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions

@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -189,7 +190,7 @@ forgeRegularBlock cfg _forgeState curNo tickedLedger txs isLeader =
     proof = CC.Block.mkProof body
 
     prevHeaderHash :: CC.Block.HeaderHash
-    prevHeaderHash = case ledgerTipHash (tickedLedgerState tickedLedger) of
+    prevHeaderHash = case ledgerTipHash (tickedState tickedLedger) of
       GenesisHash             -> error
         "the first block on the Byron chain must be an EBB"
       BlockHash (ByronHash h) -> h

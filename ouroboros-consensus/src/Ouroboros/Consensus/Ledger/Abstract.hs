@@ -42,6 +42,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 
 {-------------------------------------------------------------------------------

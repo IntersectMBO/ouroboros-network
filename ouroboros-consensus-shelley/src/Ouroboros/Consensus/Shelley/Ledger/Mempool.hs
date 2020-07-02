@@ -33,6 +33,7 @@ import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
