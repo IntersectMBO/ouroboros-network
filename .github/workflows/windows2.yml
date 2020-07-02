@@ -1,0 +1,118 @@
+name: "ouroboros-network V2"
+on: [push]
+
+jobs:
+  cabal:
+    name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        ghc:
+          - "8.6.5"
+        cabal:
+          - "3.2.0.0"
+    steps:
+    - name: checkout ouroboros-network repository
+      uses: actions/checkout@v2
+
+    - name: Use cabal.project.local.ci
+      run: Copy-Item "./cabal.project.local.ci" -Destination "./cabal.project.local"
+
+    - uses: actions/setup-haskell@v1.1.1
+      id: setup-haskell-cabal
+      name: Setup Haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: ${{ matrix.cabal }}
+
+    - name: Freeze
+      run: |
+        cabal freeze
+
+    - uses: actions/cache@v1
+      name: Cache ~/.cabal/store
+      with:
+        path: ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
+        key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+
+    - name: Win32-network
+      run: |
+        cabal run test-Win32-network
+
+    - name: ntp-client
+      run: |
+        cabal run test-ntp-client
+
+    - name: io-sim-classes
+      run: |
+        cabal build io-sim-classes
+
+    - name: io-sim
+      run: |
+        cabal run test-sim
+
+    - name: typed-protocols
+      run: |
+        cabal build typed-protocols
+
+    - name: typed-protocols-examples
+      run: |
+        cabal run typed-protocols-tests
+
+    - name: network-mux
+      run: |
+        cabal run test-network-mux
+
+    - name: ouroboros-network-framework
+      # issue: #1818
+      run: |
+        cabal run ouroboros-network-framework-tests -- -p '$0 != \"typed-protocols.Socket.socket send receive IPv4\"'
+
+    - name: ouroboros-network
+      run: |
+        cabal run test-network
+
+    - name: ouroboros-consensus
+      run: |
+        cabal build ouroboros-consensus
+
+    - name: ouroboros-consensus test-consensus
+      run: |
+        cabal run ouroboros-consensus:test:test-consensus
+
+    - name: ouroboros-consensus test-storage
+      run: |
+        cabal run ouroboros-consensus:test:test-storage
+
+    - name: ouroboros-consensus-test-infra
+      run: |
+        cabal run ouroboros-consensus-test-infra:test
+
+    - name: ouroboros-consensus-mock
+      run: |
+        cabal run ouroboros-consensus-mock:test
+
+    - name: ouroboros-consensus-byronspec
+      run: |
+        cabal build ouroboros-consensus-byronspec
+
+    - name: ouroboros-consensus-byron
+      run: |
+        cabal build ouroboros-consensus-byron
+
+    - name: ouroboros-consensus-byron-test
+      run: |
+        cabal run ouroboros-consensus-byron-test
+
+    - name: ouroboros-consensus-shelley
+      run: |
+        cabal build ouroboros-consensus-shelley
+
+    - name: ouroboros-consensus-shelley-test
+      run: |
+        cabal run ouroboros-consensus-shelley-test
+
+    - name: ouroboros-consensus-cardano
+      run: |
+        cabal run ouroboros-consensus-cardano
