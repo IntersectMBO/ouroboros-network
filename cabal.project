@@ -106,6 +106,18 @@ package byron-spec-chain
 package byron-spec-ledger
   tests: False
 
+package shelley-spec-ledger
+  tests: False
+
+package shelley-spec-non-integral
+  tests: False
+
+package cardano-ledger
+  tests: False
+
+package cardano-ledger-test
+  tests: False
+
 package goblins
   tests: False
 
@@ -248,6 +260,3 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto/
   tag: 2547ad1e80aeabca2899951601079408becbc92c
   --sha256: 1p2kg2w02q5w1cvqzhfhqmxviy4xrzada3mmb096j2n6hfr20kri
-
-package quickcheck-state-machine
-  tests: False
