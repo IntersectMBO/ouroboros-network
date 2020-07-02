@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -281,16 +282,16 @@ rewind k p =
         WrapChainDepState <$>
           rewindChainDepState (Proxy @(BlockProtocol blk)) k p st
 
-update :: forall xs. CanHardFork xs
+update :: forall xs. (CanHardFork xs, HasCallStack)
        => ConsensusConfig (HardForkProtocol xs)
        -> OneEraValidateView xs
        -> Ticked (HardForkLedgerView xs)
        -> Ticked (HardForkChainDepState xs)
        -> Except (HardForkValidationErr xs) (HardForkChainDepState xs)
-update cfg@HardForkConsensusConfig{..}
+update HardForkConsensusConfig{..}
        (OneEraValidateView view)
        (Ticked slot ledgerView)
-       (Ticked _slot chainDepState) =
+       (Ticked slot' chainDepState) = assert (slot == slot') $
     case State.match view (hardForkLedgerViewPerEra ledgerView) of
       Left mismatch ->
         throwError $ HardForkValidationErrWrongEra . MismatchEraInfo $
@@ -298,10 +299,24 @@ update cfg@HardForkConsensusConfig{..}
       Right matched ->
            hsequence'
          . State.tickAllPast hardForkConsensusConfigK
-         . State.align
-            (translateConsensus ei cfg)
-            (hczipWith proxySingle (fn_2 .: updateEra ei slot) cfgs errInjections)
-            matched
+         . hczipWith3 proxySingle (updateEra ei slot) cfgs errInjections
+         . (\case
+               Left mismatch ->
+                 -- This shouldn't happen: the 'LedgerView' and
+                 -- 'ChainDepState' were ticked together by 'applyChainTick'
+                 -- (on 'ExtLedgerState', containing both the 'ChainDepState'
+                 -- and the 'LedgerState' from which the 'LedgerView' was
+                 -- produced) and must thus be aligned.
+                 let mismatch' :: MismatchEraInfo xs
+                     mismatch' = MismatchEraInfo $
+                                   Match.bihcmap
+                                     proxySingle
+                                     ledgerViewInfo
+                                     ledgerInfo
+                                     mismatch
+                 in error $ "update: unexpected mismatch: " ++ show mismatch'
+               Right match -> match)
+         . State.match (State.tip matched)
          $ chainDepState
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
@@ -310,17 +325,21 @@ update cfg@HardForkConsensusConfig{..}
     errInjections :: NP (Injection WrapValidationErr xs) xs
     errInjections = injections
 
+    ledgerViewInfo :: forall blk. SingleEraBlock blk
+                   => Product WrapValidateView WrapLedgerView blk
+                   -> SingleEraInfo blk
+    ledgerViewInfo _ = singleEraInfo (Proxy @blk)
+
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
           -> WrapPartialConsensusConfig blk
           -> Injection WrapValidationErr xs blk
-          -> Product WrapValidateView WrapLedgerView blk
-          -> WrapChainDepState blk
+          -> Product (Product WrapValidateView WrapLedgerView) WrapChainDepState blk
           -> (Except (HardForkValidationErr xs) :.: WrapChainDepState) blk
 updateEra ei slot cfg injectErr
-          (Pair (WrapValidateView view) ledgerView)
-          (WrapChainDepState chainDepState) = Comp $
+          (Pair (Pair (WrapValidateView view) ledgerView)
+                (WrapChainDepState chainDepState)) = Comp $
     withExcept (injectValidationErr injectErr) $
       fmap WrapChainDepState $
         updateChainDepState
