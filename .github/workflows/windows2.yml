@@ -64,10 +64,11 @@ jobs:
       run: |
         cabal run test-network-mux
 
-    - name: ouroboros-network-framework
-      # issue: #1818
-      run: |
-        cabal run ouroboros-network-framework-tests -- -p '$0 != \"typed-protocols.Socket.socket send receive IPv4\"'
+    # TODO
+    # - name: ouroboros-network-framework
+    #   # issue: #1818
+    #   run: |
+    #     cabal run ouroboros-network-framework-tests -- -p '$0 != \"typed-protocols.Socket.socket send receive IPv4\"'
 
     - name: ouroboros-network
       run: |
