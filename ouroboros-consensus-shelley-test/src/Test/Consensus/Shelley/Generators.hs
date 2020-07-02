@@ -191,6 +191,11 @@ instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
+instance (HashAlgorithm h)
+    => Arbitrary (SL.ChainDepState (TPraosMockCrypto h)) where
+  arbitrary = genericArbitraryU
+  shrink = genericShrink
+
 {-------------------------------------------------------------------------------
   Versioned generators for serialisation
 -------------------------------------------------------------------------------}

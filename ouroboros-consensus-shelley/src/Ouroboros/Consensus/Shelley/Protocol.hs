@@ -39,8 +39,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , ConsensusConfig (..)
   ) where
 
-import           Control.Monad.Reader (runReader)
-import           Control.Monad.Trans.Except (except)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity)
@@ -64,8 +62,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
-import           Control.State.Transition.Extended (applySTS)
-import qualified Control.State.Transition.Extended as STS
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -75,7 +71,7 @@ import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
+import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
@@ -376,7 +372,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type CanBeLeader   (TPraos c) = TPraosIsCoreNode c
   type CannotLead    (TPraos c) = TPraosCannotLead c
   type LedgerView    (TPraos c) = SL.LedgerView c
-  type ValidationErr (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
+  type ValidationErr (TPraos c) = SL.ChainTransitionError c
   type ValidateView  (TPraos c) = TPraosValidateView c
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
@@ -434,42 +430,41 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         , tpraosIsCoreNodeSignKeyVRF
         } = icn
 
-      prtclState = State.currentPRTCLState cs
-      eta0       = prtclStateEta0 prtclState
+      chainState = State.currentState cs
+      eta0       = tickEta0 $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
+
+      tickEta0 (STS.TicknState _ x) = x
 
       -- The current wallclock KES period
       wallclockPeriod :: SL.KESPeriod
       wallclockPeriod = SL.KESPeriod $ fromIntegral $
           unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
 
-  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- TODO (@nc6)
+  tickChainDepState TPraosConfig{..} (Ticked slot lv) cds = Ticked slot cds'
+    where
+      cds' = State.append slot cs' cds
+      cs' = SL.tickChainDepState
+              shelleyGlobals
+              lv
+              (isNewEpoch tpraosEpochInfo slot (State.lastSlot cds))
+              (State.currentState cds)
+      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
 
   updateChainDepState TPraosConfig{..}
                       b
                       (Ticked _ lv)
                       (Ticked _ cs) = do
-      newCS <- except . flip runReader shelleyGlobals $
-        applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
+      newCS <- SL.updateChainDepState shelleyGlobals lv b (State.currentState cs)
       return
         $ State.prune (fromIntegral k)
-        $ State.append slot newCS cs
+        $ State.updateLast newCS cs
     where
-      slot = SL.bheaderSlotNo $ SL.bhbody b
-      prevHash = SL.bheaderPrev $ SL.bhbody b
       SecurityParam k = tpraosSecurityParam tpraosParams
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
 
-      prtclEnv :: STS.PrtclEnv c
-      prtclEnv = SL.mkPrtclEnv
-        lv
-        (isNewEpoch tpraosEpochInfo slot (State.lastSlot cs))
-        (SL.prevHashToNonce prevHash)
-
-      prtclState :: STS.PrtclState c
-      prtclState = State.currentPRTCLState cs
 
   -- Rewind the chain state
   --

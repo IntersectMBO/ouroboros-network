@@ -76,6 +76,7 @@ import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
+import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
@@ -471,12 +472,11 @@ translateChainDepStateByronToShelley
   -> TPraosState sc
 translateChainDepStateByronToShelley TPraosConfig { tpraosParams } pbftState =
     TPraosState.empty (PBftState.tipSlot pbftState) $
-      SL.PrtclState
-        Map.empty
-        nonce
-        nonce
-        nonce
-        nonce
+      SL.ChainDepState
+        { SL.csProtocol = SL.PrtclState Map.empty nonce nonce
+        , SL.csTickn = SL.TicknState nonce nonce
+        , SL.csLabNonce = nonce
+        }
   where
     nonce = tpraosInitialNonce tpraosParams
 

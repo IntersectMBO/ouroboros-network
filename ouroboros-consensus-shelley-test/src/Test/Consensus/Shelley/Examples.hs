@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Time
 
+import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
@@ -52,6 +53,7 @@ import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
+import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto)
 import qualified Test.Shelley.Spec.Ledger.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
@@ -135,16 +137,21 @@ exampleChainDepState =
     TPraosState.append 2             (mkPrtclState 2) $
     TPraosState.empty  (NotOrigin 1) (mkPrtclState 1)
   where
-    mkPrtclState :: Word64 -> STS.PrtclState (TPraosMockCrypto ShortHash)
-    mkPrtclState seed = STS.PrtclState
-      (Map.fromList
-       [ (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)
-       , (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 2), 2)
-       ])
-      SL.NeutralNonce
-      (SL.mkNonceFromNumber seed)
-      (SL.mkNonceFromNumber seed)
-      (SL.mkNonceFromNumber seed)
+    mkPrtclState :: Word64 -> SL.ChainDepState (TPraosMockCrypto ShortHash)
+    mkPrtclState seed = SL.ChainDepState
+      { SL.csProtocol = STS.PrtclState
+          (Map.fromList
+          [ (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)
+          , (SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 2), 2)
+          ])
+          (SL.mkNonceFromNumber seed)
+          (SL.mkNonceFromNumber seed)
+      , SL.csTickn = STS.TicknState
+          SL.NeutralNonce
+          (SL.mkNonceFromNumber seed)
+      , SL.csLabNonce =
+          SL.mkNonceFromNumber seed
+      }
 
 exampleLedgerState :: LedgerState (Block ShortHash)
 exampleLedgerState = reapplyLedgerBlock
@@ -166,14 +173,19 @@ exampleLedgerState = reapplyLedgerBlock
 exampleHeaderState :: HeaderState (Block ShortHash)
 exampleHeaderState = genesisHeaderState st
   where
-    prtclState :: STS.PrtclState (TPraosMockCrypto ShortHash)
-    prtclState = STS.PrtclState
-      (Map.fromList
-        [(SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)])
-      SL.NeutralNonce
-      (SL.mkNonceFromNumber 1)
-      SL.NeutralNonce
-      (SL.mkNonceFromNumber 2)
+    prtclState :: SL.ChainDepState (TPraosMockCrypto ShortHash)
+    prtclState = SL.ChainDepState
+      { SL.csProtocol = STS.PrtclState
+          (Map.fromList
+            [(SL.KeyHash (mkDummyHash (Proxy @(TPraosMockCrypto ShortHash)) 1), 1)])
+          (SL.mkNonceFromNumber 1)
+          SL.NeutralNonce
+      , SL.csTickn = STS.TicknState
+          SL.NeutralNonce
+          (SL.mkNonceFromNumber 2)
+      , SL.csLabNonce =
+          SL.mkNonceFromNumber 2
+      }
 
     st :: TPraosState (ConcreteCrypto ShortHash)
     st = TPraosState.empty (NotOrigin 1) prtclState
