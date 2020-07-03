@@ -51,6 +51,7 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 -- TODO: remove Mx prefixes
 import           Ouroboros.Network.Mux
+
 import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..))
 import qualified Network.Mux.Compat as Mx (muxStart)
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
@@ -61,6 +62,8 @@ import           Network.Mux.Timeout
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
+
+import           Test.Ouroboros.Network.Orphans ()
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)

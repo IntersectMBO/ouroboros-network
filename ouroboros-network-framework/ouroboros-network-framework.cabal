@@ -107,6 +107,7 @@ test-suite ouroboros-network-framework-tests
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
                        Test.Ouroboros.Network.Driver
+                       Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting

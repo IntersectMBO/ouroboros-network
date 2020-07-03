@@ -13,6 +13,7 @@
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Ouroboros.Network.Block (Point, StandardHash)
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 import Network.TypedProtocol.Core
 
@@ -39,6 +40,10 @@ data ChainSync header tip where
 
   -- | Both the client and server are in the terminal state. They're done.
   StDone      :: ChainSync header tip
+
+
+instance ShowProxy (ChainSync header tip) where
+    showProxy _ = "ChainSync"
 
 -- | Sub-cases of the 'StNext' state. This is needed since the server can
 -- either send one reply back, or two.
