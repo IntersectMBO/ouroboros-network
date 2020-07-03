@@ -7,10 +7,7 @@ module Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion (
   , ByronNodeToClientVersion(..)
   ) where
 
-import           Data.List.NonEmpty (NonEmpty (..))
-
-import qualified Ouroboros.Network.NodeToClient as N
-import qualified Ouroboros.Network.NodeToNode as N
+import qualified Data.Map.Strict as Map
 
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
@@ -25,30 +22,22 @@ data ByronNodeToNodeVersion =
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 data ByronNodeToClientVersion =
-    -- | No local state query protocol
     ByronNodeToClientVersion1
-
-    -- | Use local state query protocol
-  | ByronNodeToClientVersion2
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion ByronBlock where
   type BlockNodeToNodeVersion   ByronBlock = ByronNodeToNodeVersion
   type BlockNodeToClientVersion ByronBlock = ByronNodeToClientVersion
 
-instance TranslateNetworkProtocolVersion ByronBlock where
-  supportedNodeToNodeVersions   _ = ByronNodeToNodeVersion1
-                                  :| []
-  supportedNodeToClientVersions _ = ByronNodeToClientVersion1
-                                  :| [ ByronNodeToClientVersion2 ]
-
-  mostRecentSupportedNodeToNode   _ = ByronNodeToNodeVersion1
-  mostRecentSupportedNodeToClient _ = ByronNodeToClientVersion2
-
-  -- Note ByronNodeToNodeVersion2 is enabled as part of the hard-fork-enabled
-  -- CardanoNodeToNodeVersion2
-  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion1 = N.NodeToNodeV_1
-  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = error "version 2 not supported"
-
-  nodeToClientProtocolVersion _ ByronNodeToClientVersion1 = N.NodeToClientV_1
-  nodeToClientProtocolVersion _ ByronNodeToClientVersion2 = N.NodeToClientV_2
+instance SupportedNetworkProtocolVersion ByronBlock where
+  supportedNodeToNodeVersions   _ = Map.fromList [
+        (NodeToNodeV_1, ByronNodeToNodeVersion1)
+        -- V_2 enables block size hints for Byron headers within the hard fork
+        -- combinator, not supported by Byron-only.
+      ]
+  supportedNodeToClientVersions _ = Map.fromList [
+        (NodeToClientV_1, ByronNodeToClientVersion1)
+        -- Enable the LocalStateQuery protocol, no serialisation changes
+      , (NodeToClientV_2, ByronNodeToClientVersion1)
+        -- V_3 enables the hard fork, not supported by Byron-only.
+      ]

@@ -37,8 +37,8 @@ import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List.NonEmpty (NonEmpty)
-import           Data.Proxy (Proxy (..))
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           System.Random (randomRIO)
 
 import           Ouroboros.Network.Diffusion
@@ -127,12 +127,10 @@ data RunNodeArgs blk = RunNodeArgs {
                           -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
 
       -- | node-to-node protocol versions to run.
-      --
-    , rnNodeToNodeVersions   :: NonEmpty (BlockNodeToNodeVersion blk)
+    , rnNodeToNodeVersions   :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
 
       -- | node-to-client protocol versions to run.
-      --
-    , rnNodeToClientVersions :: NonEmpty (BlockNodeToClientVersion blk)
+    , rnNodeToClientVersions :: Map NodeToClientVersion (BlockNodeToClientVersion blk)
 
       -- | Hook called after the initialisation of the 'NodeKernel'
       --
@@ -250,7 +248,7 @@ run runargs@RunNodeArgs{..} =
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
+      -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
@@ -291,7 +289,7 @@ run runargs@RunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
+          -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
           -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()
@@ -301,30 +299,27 @@ run runargs@RunNodeArgs{..} =
       DiffusionApplications {
           daResponderApplication = combineVersions [
               simpleSingletonVersions
-                version'
+                version
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.responder miniProtocolParams version $ ntnApps version)
-            | version <- rnNodeToNodeVersions
-            , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
+                (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
+            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daInitiatorApplication = combineVersions [
               simpleSingletonVersions
-                version'
+                version
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.initiator miniProtocolParams version $ ntnApps version)
-            | version <- rnNodeToNodeVersions
-            , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
+                (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
+            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
-                version'
+                version
                 nodeToClientVersionData
                 (DictVersion nodeToClientCodecCBORTerm)
-                (NTC.responder version' $ ntcApps version)
-            | version <- rnNodeToClientVersions
-            , let version' = nodeToClientProtocolVersion (Proxy @blk) version
+                (NTC.responder version $ ntcApps blockVersion)
+            | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]
         , daErrorPolicies = consensusErrorPolicy
         }

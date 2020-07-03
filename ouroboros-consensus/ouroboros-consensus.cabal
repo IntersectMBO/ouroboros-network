@@ -402,6 +402,7 @@ test-suite test-consensus
                        Test.ThreadNet.Util.HasCreator
                        Test.ThreadNet.Util.NodeJoinPlan
                        Test.ThreadNet.Util.NodeRestarts
+                       Test.ThreadNet.Util.NodeToNodeVersion
                        Test.ThreadNet.Util.NodeTopology
 
   build-depends:       base

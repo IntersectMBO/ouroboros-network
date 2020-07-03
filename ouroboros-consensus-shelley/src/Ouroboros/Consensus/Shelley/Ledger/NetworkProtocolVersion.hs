@@ -7,10 +7,7 @@ module Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion (
   , ShelleyNodeToClientVersion(..)
   ) where
 
-import           Data.List.NonEmpty (NonEmpty (..))
-
-import qualified Ouroboros.Network.NodeToClient as N
-import qualified Ouroboros.Network.NodeToNode as N
+import qualified Data.Map.Strict as Map
 
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
@@ -26,17 +23,15 @@ instance HasNetworkProtocolVersion (ShelleyBlock c) where
   type BlockNodeToNodeVersion   (ShelleyBlock c) = ShelleyNodeToNodeVersion
   type BlockNodeToClientVersion (ShelleyBlock c) = ShelleyNodeToClientVersion
 
-instance TranslateNetworkProtocolVersion (ShelleyBlock c) where
-  supportedNodeToNodeVersions   _ = ShelleyNodeToNodeVersion1
-                                  :| []
-  supportedNodeToClientVersions _ = ShelleyNodeToClientVersion1
-                                  :| []
-
-  mostRecentSupportedNodeToNode   _ = ShelleyNodeToNodeVersion1
-  mostRecentSupportedNodeToClient _ = ShelleyNodeToClientVersion1
-
-  nodeToNodeProtocolVersion _ ShelleyNodeToNodeVersion1 = N.NodeToNodeV_1
-
-  -- From the beginning, Shelley supports version 2 of the node-to-client
-  -- protocol (i.e. the local state query protocol is enabled from the start).
-  nodeToClientProtocolVersion _ ShelleyNodeToClientVersion1 = N.NodeToClientV_2
+instance SupportedNetworkProtocolVersion (ShelleyBlock c) where
+  supportedNodeToNodeVersions   _ = Map.fromList [
+        (NodeToNodeV_1, ShelleyNodeToNodeVersion1)
+        -- V_2 enables block size hints for Byron headers and the hard fork
+        -- combinator, unused by Shelley-only
+      ]
+  supportedNodeToClientVersions _ = Map.fromList [
+        (NodeToClientV_1, ShelleyNodeToClientVersion1)
+        -- Enable the LocalStateQuery protocol, no serialisation changes
+      , (NodeToClientV_2, ShelleyNodeToClientVersion1)
+        -- V_3 enables the hard fork, unused by Shelley-only
+      ]

@@ -341,7 +341,7 @@ chainSyncClient
     -> Tracer m (TraceChainSyncClientEvent blk)
     -> TopLevelConfig blk
     -> ChainDbView m blk
-    -> BlockNodeToNodeVersion blk
+    -> NodeToNodeVersion
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg

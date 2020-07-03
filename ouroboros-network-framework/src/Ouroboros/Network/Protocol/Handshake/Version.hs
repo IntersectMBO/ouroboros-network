@@ -1,10 +1,11 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
@@ -22,16 +23,14 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
-  , foldMapVersions'
-  , combineVersions'
   ) where
 
+import           Data.Foldable (toList)
 import           Data.Map (Map)
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Text (Text)
 import qualified Data.Map as Map
-import           Data.Typeable ((:~:)(Refl), Typeable, eqT)
+import           Data.Text (Text)
+import           Data.Typeable ((:~:) (Refl), Typeable, eqT)
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.CodecCBORTerm
 
@@ -64,7 +63,7 @@ import           Ouroboros.Network.CodecCBORTerm
 newtype Versions vNum extra r = Versions
   { getVersions :: Map vNum (Sigma (Version extra r))
   }
-  deriving Semigroup via (Map vNum (Sigma (Version extra r)))
+  deriving (Semigroup)
 
 instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
@@ -75,35 +74,24 @@ data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
 
 
--- | Useful for folding a non-empty list of `Versions`.
+-- | Useful for folding multiple 'Versions'.
 --
--- A 'foldMap' version for 'Semigroup's which is restricted to 'Versions'.
+-- A 'foldMap' restricted to the 'Versions' 'Semigroup'.
 --
-foldMapVersions :: Ord vNum
+-- PRECONDITION: @f x@ is non-empty.
+--
+foldMapVersions :: (Ord vNum, Foldable f, HasCallStack)
                 => (x -> Versions vNum extra r)
-                -> NonEmpty x
+                -> f x
                 -> Versions vNum extra r
-foldMapVersions f = foldMapVersions' f . NonEmpty.toList
+foldMapVersions f fx = case toList fx of
+    [] -> error "foldMapVersions: precondition violated"
+    xs -> foldl1 (<>) (map f xs)
 
-combineVersions :: Ord vNum
-                => NonEmpty (Versions vNum extra r)
+combineVersions :: (Ord vNum, Foldable f, HasCallStack)
+                => f (Versions vNum extra r)
                 -> Versions vNum extra r
 combineVersions = foldMapVersions id
-
-foldMapVersions' :: Ord vNum
-                 => (x -> Versions vNum extra r)
-                 -> [x] -- ^ a non empty list of 'Versions'
-                 -> Versions vNum extra r
-foldMapVersions' f [x] = f x
-foldMapVersions' f (x : xs) = f x <> foldMapVersions' f xs
-foldMapVersions' _ []  = error "foldMapVersion': invariant violation"
-
-combineVersions' :: Ord vNum
-                 => [Versions vNum extra r]
-                 -- ^ non empty list of 'Versions'
-                 -> Versions vNum extra r
-combineVersions' = foldMapVersions' id
-
 
 -- |
 -- A @'Maybe'@ like type which better explains its purpose.

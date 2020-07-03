@@ -1,12 +1,14 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.ThreadNet.BFT (
     tests
   ) where
 
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -29,6 +31,7 @@ import           Test.ThreadNet.TxGen.Mock ()
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
@@ -138,6 +141,7 @@ prop_simple_bft_convergence TestSetup
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
+      , version      = newestVersion (Proxy @MockBftBlock)
       }
 
     testOutput =

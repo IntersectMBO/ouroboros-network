@@ -42,7 +42,7 @@ chainSyncHeadersServer
        )
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> BlockNodeToNodeVersion blk
+    -> NodeToNodeVersion
     -> ResourceRegistry m
     -> ChainSyncServer (SerialisedHeader blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB _version registry =

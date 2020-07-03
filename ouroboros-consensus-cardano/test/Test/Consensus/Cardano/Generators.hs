@@ -1,12 +1,14 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
@@ -14,7 +16,7 @@ module Test.Consensus.Cardano.Generators (
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Data.Coerce
-import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.SOP.Strict (NP (..), NS (..))
 
@@ -144,7 +146,7 @@ instance HashAlgorithm h => Arbitrary (AnnTip (CardanoBlock (TPraosMockCrypto h)
 
 instance TPraosCrypto sc => Arbitrary (HardForkNodeToNodeVersion (CardanoEras sc)) where
   arbitrary =
-    elements $ NE.toList $ supportedNodeToNodeVersions (Proxy @(CardanoBlock sc))
+    elements $ Map.elems $ supportedNodeToNodeVersions (Proxy @(CardanoBlock sc))
 
 arbitraryNodeToNode
   :: ( Arbitrary (WithVersion ByronNodeToNodeVersion byron)
@@ -215,10 +217,23 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
   NodeToClient
 -------------------------------------------------------------------------------}
 
-
 instance TPraosCrypto sc => Arbitrary (HardForkNodeToClientVersion (CardanoEras sc)) where
   arbitrary =
-    elements $ NE.toList $ supportedNodeToClientVersions (Proxy @(CardanoBlock sc))
+    elements $ Map.elems $ supportedNodeToClientVersions (Proxy @(CardanoBlock sc))
+
+newtype HardForkEnabledNodeToClientVersion sc = HardForkEnabledNodeToClientVersion {
+      getHardForkEnabledNodeToClientVersion :: HardForkNodeToClientVersion (CardanoEras sc)
+    }
+  deriving newtype (Eq, Show)
+
+instance TPraosCrypto sc => Arbitrary (HardForkEnabledNodeToClientVersion sc) where
+  arbitrary =
+        elements
+      . map HardForkEnabledNodeToClientVersion
+      . filter isHardForkNodeToClientEnabled
+      . Map.elems
+      . supportedNodeToClientVersions
+      $ Proxy @(CardanoBlock sc)
 
 arbitraryNodeToClient
   :: ( Arbitrary (WithVersion ByronNodeToClientVersion byron)
@@ -254,9 +269,6 @@ arbitraryNodeToClient injByron injShelley = oneof
         <$> arbitrary <*> arbitrary
     ]
 
-pc :: Proxy (CardanoBlock sc)
-pc = Proxy
-
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (CardanoBlock sc)) where
@@ -272,8 +284,9 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h 
                                 (CardanoApplyTxErr sc)) where
   arbitrary = frequency
       [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley)
-      , (2, WithVersion (mostRecentSupportedNodeToClient pc) . HardForkApplyTxErrWrongEra
-              <$> arbitrary)
+      , (2, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> (HardForkApplyTxErrWrongEra <$> arbitrary))
       ]
 
 instance Arbitrary (Some QueryAnytime) where
@@ -284,8 +297,9 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
                                 (SomeBlock Query (CardanoBlock sc))) where
   arbitrary = frequency
       [ (9, arbitraryNodeToClient injByron injShelley)
-      , (1, WithVersion (mostRecentSupportedNodeToClient pc) . injAnytimeShelley
-              <$> arbitrary)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> (injAnytimeShelley <$> arbitrary))
       ]
     where
       injByron          (SomeBlock query) = SomeBlock (QueryIfCurrentByron   query)
@@ -297,8 +311,12 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
                                 (SomeResult (CardanoBlock sc))) where
   arbitrary = frequency
       [ (8, arbitraryNodeToClient injByron injShelley)
-      , (2, WithVersion (mostRecentSupportedNodeToClient pc) <$> genQueryIfCurrentResultEraMismatch)
-      , (1, WithVersion (mostRecentSupportedNodeToClient pc) <$> genQueryAnytimeResult)
+      , (2, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryIfCurrentResultEraMismatch)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryAnytimeResult)
       ]
     where
       injByron   (SomeResult q r) = SomeResult (QueryIfCurrentByron   q) (QueryResultSuccess r)

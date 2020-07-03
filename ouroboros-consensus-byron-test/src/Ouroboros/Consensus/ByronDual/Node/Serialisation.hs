@@ -44,13 +44,9 @@ instance HasNetworkProtocolVersion DualByronBlock where
   type BlockNodeToNodeVersion   DualByronBlock = BlockNodeToNodeVersion   ByronBlock
   type BlockNodeToClientVersion DualByronBlock = BlockNodeToClientVersion ByronBlock
 
-instance TranslateNetworkProtocolVersion DualByronBlock where
+instance SupportedNetworkProtocolVersion DualByronBlock where
   supportedNodeToNodeVersions     _ = supportedNodeToNodeVersions     pb
   supportedNodeToClientVersions   _ = supportedNodeToClientVersions   pb
-  mostRecentSupportedNodeToNode   _ = mostRecentSupportedNodeToNode   pb
-  mostRecentSupportedNodeToClient _ = mostRecentSupportedNodeToClient pb
-  nodeToNodeProtocolVersion       _ = nodeToNodeProtocolVersion       pb
-  nodeToClientProtocolVersion     _ = nodeToClientProtocolVersion     pb
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

@@ -14,6 +14,7 @@ import           Crypto.Number.Generate as Cryptonite
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import qualified Data.Map as Map
+import           Data.Proxy
 import qualified Data.Set as Set
 import           Data.Word
 import qualified Hedgehog
@@ -64,6 +65,7 @@ import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+import           Test.ThreadNet.Util.NodeToNodeVersion (newestVersion)
 
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Slots (NumSlots (..))
@@ -146,6 +148,7 @@ setupTestConfigB SetupDualPBft{..} = TestConfigB
   , nodeJoinPlan = setupNodeJoinPlan
   , nodeRestarts = setupNodeRestarts
   , txGenExtra   = ()
+  , version      = newestVersion (Proxy @DualByronBlock)
   }
   where
     RealPBFT.TestSetup{..} = setupRealPBft

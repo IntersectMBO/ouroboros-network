@@ -204,6 +204,8 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaRestarts     :: NodeRestarts
   , tnaTopology     :: NodeTopology
   , tnaTxGenExtra   :: TxGenExtra blk
+  , tnaVersion      :: NodeToNodeVersion
+  , tnaBlockVersion :: BlockNodeToNodeVersion blk
   }
 
 {-------------------------------------------------------------------------------
@@ -288,6 +290,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
   , tnaRestarts       = nodeRestarts
   , tnaTopology       = nodeTopology
   , tnaTxGenExtra     = txGenExtra
+  , tnaVersion        = version
+  , tnaBlockVersion   = blockVersion
   } = withRegistry $ \sharedRegistry -> do
     mbRekeyM <- sequence mbMkRekeyM
 
@@ -344,6 +348,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           clock
           -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
+          (version, blockVersion)
           (codecConfig, calcMessageDelay)
           vertexStatusVars
           uedge
@@ -981,10 +986,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               NTN.cTxSubmissionCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs =
-          NTN.defaultCodecs
-            (configCodec cfg)
-            (mostRecentSupportedNodeToNode (Proxy @blk))
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1018,11 +1020,12 @@ forkBothEdges
   => ResourceRegistry m
   -> OracularClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
   -> Map CoreNodeId (VertexStatusVar m blk)
   -> (CoreNodeId, CoreNodeId)
   -> m [((CoreNodeId, CoreNodeId), EdgeStatusVar m)]
-forkBothEdges sharedRegistry clock tr cfg vertexStatusVars (node1, node2) = do
+forkBothEdges sharedRegistry clock tr version cfg vertexStatusVars (node1, node2) = do
   let endpoint1 = mkEndpoint node1
       endpoint2 = mkEndpoint node2
       mkEndpoint node = case Map.lookup node vertexStatusVars of
@@ -1034,7 +1037,7 @@ forkBothEdges sharedRegistry clock tr cfg vertexStatusVars (node1, node2) = do
         let label = concat
               ["directed-edge-", condense (fst e1), "-", condense (fst e2)]
         void $ forkLinkedThread sharedRegistry label $ do
-          directedEdge sharedRegistry tr cfg clock v e1 e2
+          directedEdge sharedRegistry tr version cfg clock v e1 e2
         pure ((fst e1, fst e2), v)
 
   ev12 <- mkDirEdge endpoint1 endpoint2
@@ -1065,17 +1068,18 @@ directedEdge ::
   forall m blk. (IOLike m, RunNode blk)
   => ResourceRegistry m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
   -> OracularClock m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
   -> m ()
-directedEdge registry tr cfg clock edgeStatusVar client server =
+directedEdge registry tr version cfg clock edgeStatusVar client server =
     loop
   where
     loop = do
-        restart <- directedEdgeInner registry clock cfg edgeStatusVar client server
+        restart <- directedEdgeInner registry clock version cfg edgeStatusVar client server
           `catch` (pure . RestartExn)
           `catch` hUnexpected
         atomically $ writeTVar edgeStatusVar EDown
@@ -1111,6 +1115,7 @@ directedEdgeInner ::
   forall m blk. (IOLike m, RunNode blk)
   => ResourceRegistry m
   -> OracularClock m
+  -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
@@ -1118,7 +1123,7 @@ directedEdgeInner ::
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ server threads on this node
   -> m RestartCause
-directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
+directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay) edgeStatusVar
   (node1, vertexStatusVar1) (node2, vertexStatusVar2) = do
     -- block until both nodes are 'VUp'
     (LimitedApp app1, LimitedApp app2) <- atomically $ do
@@ -1130,14 +1135,14 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
              String
              -- ^ protocol name
           -> (  LimitedApp' m NodeId blk
-             -> BlockNodeToNodeVersion blk
+             -> NodeToNodeVersion
              -> NodeId
              -> Channel m msg
              -> m ((), trailingBytes)
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
-             -> BlockNodeToNodeVersion blk
+             -> NodeToNodeVersion
              -> NodeId
              -> Channel m msg
              -> m ((), trailingBytes)
@@ -1149,8 +1154,8 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( fst <$> client app1 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node2) chan
-             , fst <$> server app2 (mostRecentSupportedNodeToNode (Proxy @blk)) (fromCoreNodeId node1) dualChan
+             ( fst <$> client app1 version (fromCoreNodeId node2) chan
+             , fst <$> server app2 version (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests
@@ -1188,8 +1193,8 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
       => (e -> MiniProtocolExpectedException)
       -> (app -> version -> peer -> chan -> m a)
       -> (app -> version -> peer -> chan -> m a)
-    wrapMPEE f m = \app version them chan ->
-        catch (m app version them chan) $ throwM . f
+    wrapMPEE f m = \app ver them chan ->
+        catch (m app ver them chan) $ throwM . f
 
     -- terminates when the vertex starts 'VFalling'
     --
@@ -1219,9 +1224,7 @@ directedEdgeInner registry clock (cfg, calcMessageDelay) edgeStatusVar
           _ -> pure ()
       where
         codec =
-            NTN.cChainSyncCodec $
-            NTN.defaultCodecs cfg $
-            mostRecentSupportedNodeToNode (Proxy @blk)
+            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion
 
 -- | Variant of 'createConnectChannels' with intermediate queues for
 -- delayed-but-in-order messages
@@ -1496,7 +1499,7 @@ data LimitedApp m peer blk =
 --
 -- Used internal to this module, essentially as an abbreviation.
 type LimitedApp' m peer blk =
-    NTN.Apps m peer blk
+    NTN.Apps m peer
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we
