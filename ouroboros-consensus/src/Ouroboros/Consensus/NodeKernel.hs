@@ -178,7 +178,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
     blockFetchConfiguration :: BlockFetchConfiguration
     blockFetchConfiguration = BlockFetchConfiguration
       { bfcMaxConcurrencyBulkSync = 1 -- Set to 1 for now, see #1526
-      , bfcMaxConcurrencyDeadline = 1
+      , bfcMaxConcurrencyDeadline = 8
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax miniProtocolParameters
       }
 
