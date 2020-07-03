@@ -1,8 +1,10 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Ouroboros.Network.Mux
   ( MuxMode (..)
@@ -28,9 +30,9 @@ module Ouroboros.Network.Mux
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (Exception)
 import           Control.Tracer (Tracer)
 
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as LBS
 
@@ -47,6 +49,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
 data RunOrStop = Run | Stop
@@ -93,14 +96,28 @@ data RunMiniProtocol (mode :: MuxMode) bytes m a b where
        -> RunMiniProtocol InitiatorResponderMode bytes m a b
 
 data MuxPeer bytes m a where
-    MuxPeer :: Exception failure
+    MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
+               ( Typeable ps
+               , Typeable failure
+               , Show failure
+               , forall (st' :: ps). Show (ClientHasAgency st')
+               , forall (st' :: ps). Show (ServerHasAgency st')
+               , ShowProxy ps
+               )
             => Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> Peer ps pr st m a
             -> MuxPeer bytes m a
 
     MuxPeerPipelined
-            :: Exception failure
+             :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
+               ( Typeable ps
+               , Typeable failure
+               , Show failure
+               , forall (st' :: ps). Show (ClientHasAgency st')
+               , forall (st' :: ps). Show (ServerHasAgency st')
+               , ShowProxy ps
+               )
             => Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
