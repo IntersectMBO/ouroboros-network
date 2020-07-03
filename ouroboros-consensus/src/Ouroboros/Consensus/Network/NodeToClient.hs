@@ -36,6 +36,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
@@ -311,7 +312,12 @@ data Apps m peer bCS bTX bSQ a = Apps {
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
 mkApps
-  :: forall m peer blk e bCS bTX bSQ. (IOLike m, Exception e)
+  :: forall m peer blk e bCS bTX bSQ.
+     ( IOLike m
+     , Exception e
+     , Typeable blk
+     , Typeable (ApplyTxErr blk)
+     )
   => Tracers m peer blk e
   -> Codecs blk e m bCS bTX bSQ
   -> Handlers m peer blk

@@ -17,6 +17,8 @@ module Ouroboros.Consensus.Node.Run (
   , RunNode (..)
   ) where
 
+import           Data.Typeable (Typeable)
+
 import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
@@ -77,6 +79,8 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
+      , Typeable                         blk
+      , Typeable                         (ApplyTxErr blk)
       ) => RunNode blk where
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
 
