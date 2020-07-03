@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util ((....:))
+import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Stateful wrapper around block production
@@ -29,6 +29,7 @@ data BlockProduction m blk = BlockProduction {
       -- | Check if we should produce a block
       getLeaderProof_ :: HasCallStack
                       => Tracer m (ForgeState blk)
+                      -> SlotNo
                       -> Ticked (LedgerView    (BlockProtocol blk))
                       -> Ticked (ChainDepState (BlockProtocol blk))
                       -> m (LeaderCheck        (BlockProtocol blk))
@@ -45,6 +46,7 @@ data BlockProduction m blk = BlockProduction {
       -- which only has the ability to produce random number and access to the
       -- 'ForgeState'.
     , produceBlock :: BlockNo               -- Current block number
+                   -> SlotNo                -- Current slot number
                    -> TickedLedgerState blk -- Current ledger state
                    -> [GenTx blk]           -- Contents of the mempool
                    -> IsLeader (BlockProtocol blk) -- Proof we are leader
@@ -54,6 +56,7 @@ data BlockProduction m blk = BlockProduction {
 getLeaderProof :: HasCallStack
                => BlockProduction m blk
                -> Tracer m (ForgeState blk)
+               -> SlotNo
                -> Ticked (LedgerView    (BlockProtocol blk))
                -> Ticked (ChainDepState (BlockProtocol blk))
                -> m (LeaderCheck        (BlockProtocol blk))
@@ -72,7 +75,7 @@ defaultBlockProduction ::
 defaultBlockProduction cfg canBeLeader mfs =
     customForgeBlockProduction cfg canBeLeader mfs forge
   where
-    forge = return ....: forgeBlock cfg
+    forge = return .....: forgeBlock cfg
 
 -- | Variant of 'defaultBlockProduction' that allows overriding the function
 -- to forge a block.
@@ -89,6 +92,7 @@ customForgeBlockProduction ::
   -> MaintainForgeState m blk
   -> (   ForgeState blk
       -> BlockNo
+      -> SlotNo
       -> TickedLedgerState blk
       -> [GenTx blk]
       -> IsLeader (BlockProtocol blk)
@@ -103,11 +107,12 @@ customForgeBlockProduction cfg canBeLeader mfs forge = do
             canBeLeader
             mfs
             varForgeState
-      , produceBlock = \bno ledgerState txs proof -> do
+      , produceBlock = \bno sno ledgerState txs proof -> do
           forgeState <- readMVar varForgeState
           forge
             forgeState
             bno
+            sno
             ledgerState
             txs
             proof
@@ -128,16 +133,17 @@ defaultGetLeaderProof ::
   -> MaintainForgeState m blk
   -> StrictMVar m (ForgeState blk)
   -> Tracer m (ForgeState blk)
+  -> SlotNo
   -> Ticked (LedgerView (BlockProtocol blk))
   -> Ticked (ChainDepState (BlockProtocol blk))
   -> m (LeaderCheck (BlockProtocol blk))
-defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
+defaultGetLeaderProof cfg proof mfs varForgeState tracer slot lgrSt chainDepSt = do
     forgeState' <- modifyMVar varForgeState $ \forgeState -> do
       forgeState' <-
         updateForgeState
           mfs
           (configIndep cfg)
-          (tickedSlotNo lgrSt)
+          slot
           forgeState
       return (forgeState', forgeState')
     traceWith tracer forgeState'
@@ -145,5 +151,6 @@ defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
                (configConsensus cfg)
                proof
                (chainIndepState forgeState')
+               slot
                lgrSt
                chainDepSt

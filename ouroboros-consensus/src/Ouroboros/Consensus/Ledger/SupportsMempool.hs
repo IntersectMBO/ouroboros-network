@@ -11,11 +11,14 @@ import           Control.Monad.Except
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 class ( UpdateLedger blk
       , NoUnexpectedThunks (GenTx blk)
+      , NoUnexpectedThunks (Ticked (LedgerState blk))
       , Show (GenTx blk)
       , Show (ApplyTxErr blk)
       ) => LedgerSupportsMempool blk where
@@ -36,6 +39,7 @@ class ( UpdateLedger blk
 
   -- | Apply transaction we have not previously seen before
   applyTx :: LedgerConfig blk
+          -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
           -> TickedLedgerState blk
           -> Except (ApplyTxErr blk) (TickedLedgerState blk)
@@ -47,6 +51,7 @@ class ( UpdateLedger blk
   -- checks (such as checking for double spending) must still be done.
   reapplyTx :: HasCallStack
             => LedgerConfig blk
+            -> SlotNo -- ^ Slot number of the block containing the tx
             -> GenTx blk
             -> TickedLedgerState blk
             -> Except (ApplyTxErr blk) (TickedLedgerState blk)

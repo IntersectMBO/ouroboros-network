@@ -16,7 +16,6 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
 import           Ouroboros.Consensus.ByronSpec.Ledger.GenTx
@@ -35,12 +34,9 @@ instance LedgerSupportsMempool ByronSpecBlock where
 
   type ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
-  applyTx cfg tx (Ticked slot st) =
-      (Ticked slot . updateByronSpecLedgerStateKeepTip st) <$>
-        GenTx.apply
-          cfg
-          (unByronSpecGenTx     tx)
-          (byronSpecLedgerState st)
+  applyTx cfg _slot tx (TickedByronSpecLedgerState tip st) =
+      TickedByronSpecLedgerState tip <$>
+        GenTx.apply cfg (unByronSpecGenTx tx) st
 
   -- Byron spec doesn't have multiple validation modes
   reapplyTx = applyTx

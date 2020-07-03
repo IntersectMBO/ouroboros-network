@@ -172,7 +172,7 @@ summary =
     State.reconstructSummary
       (History.Shape (exactlyTwo byronEraParams shelleyEraParams))
       (State.TransitionKnown transitionEpoch)
-      (getHardForkLedgerState (ledgerStateByron byronLedger))
+      (hardForkLedgerStatePerEra (ledgerStateByron byronLedger))
   where
     (_, byronLedger) = head $ Golden.exampleLedgerState Byron.examples
 

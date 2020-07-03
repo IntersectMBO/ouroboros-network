@@ -14,17 +14,19 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 
 -- | Link protocol to ledger
 class ( BlockSupportsProtocol blk
       , UpdateLedger          blk
       , ValidateEnvelope      blk
       ) => LedgerSupportsProtocol blk where
-  -- | Extract ledger view from the ledger state
+  -- | Extract ticked ledger view from ticked ledger state
+  --
+  -- See 'ledgerViewForecastAt' for a discussion and precise definition of the
+  -- relation between this and forecasting.
   protocolLedgerView :: LedgerConfig blk
-                     -> LedgerState blk
-                     -> LedgerView (BlockProtocol blk)
+                     -> Ticked (LedgerState blk)
+                     -> Ticked (LedgerView (BlockProtocol blk))
 
   -- | Get a (historical) forecast at the given slot
   --
@@ -51,8 +53,20 @@ class ( BlockSupportsProtocol blk
   -- cannot make such an assumption. Thus, 'applyChainTick' cannot fail, whereas
   -- the forecast returned by 'ledgerViewForecastAt' might report an
   -- 'OutsideForecastRange' for the same 'SlotNo'. We expect the two functions
-  -- to produce the same view whenever the 'SlotNo' /is/ in range, however;
-  -- see 'lemma_ledgerViewForecastAt_applyChainTick'.
+  -- to produce the same view whenever the 'SlotNo' /is/ in range, however.
+  -- More precisely:
+  --
+  -- For all slots @at@ such that @At at >= ledgerTipSlot st@, if
+  --
+  -- >    forecastFor (ledgerViewForecastAt cfg st at) for
+  -- > == Right view
+  --
+  -- then
+  --
+  -- >    protocolLedgerView cfg (applyChainTick cfg for st)
+  -- > == view
+  --
+  -- See 'lemma_ledgerViewForecastAt_applyChainTick'.
   ledgerViewForecastAt :: HasCallStack
                        => LedgerConfig blk
                        -> LedgerState blk
@@ -76,20 +90,11 @@ ledgerViewForecastAtTip cfg st =
       Nothing       -> error "ledgerViewForecastAtTip: impossible"
 
 -- | Relation between 'ledgerViewForecastAt' and 'applyChainTick'
---
--- For all slots @s@ such that @At s >= ledgerTip st@, if
---
--- >    predictionFor (ledgerViewForecastAt cfg st at) s
--- > == Right view
---
--- then
---
--- >    protocolLedgerView cfg (tickedLedgerState (applyChainTick cfg s st))
--- > == view
---
--- This should be true for each ledger because consensus depends on it.
 _lemma_ledgerViewForecastAt_applyChainTick
-  :: (LedgerSupportsProtocol blk, Eq (LedgerView (BlockProtocol blk)))
+  :: ( LedgerSupportsProtocol blk
+     , Eq   (Ticked (LedgerView (BlockProtocol blk)))
+     , Show (Ticked (LedgerView (BlockProtocol blk)))
+     )
   => LedgerConfig blk
   -> LedgerState blk
   -> Forecast (LedgerView (BlockProtocol blk))
@@ -99,7 +104,6 @@ _lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
     | NotOrigin for >= ledgerTipSlot st
     , let lhs = forecastFor forecast for
           rhs = protocolLedgerView cfg
-              . tickedState
               . applyChainTick cfg for
               $ st
     , Right lhs' <- runExcept lhs

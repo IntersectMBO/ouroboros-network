@@ -45,9 +45,10 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
+import           Ouroboros.Consensus.Mock.Ledger.Block
+                     (Ticked (TickedSimpleLedgerState))
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
                      safeMaximumOn, whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -772,18 +773,18 @@ withTestMempool setup@TestSetup {..} prop =
     checkMempoolValidity :: LedgerState TestBlock
                          -> MempoolSnapshot TestBlock TicketNo
                          -> Property
-    checkMempoolValidity ledgerState MempoolSnapshot { snapshotTxs } =
+    checkMempoolValidity ledgerState
+                         MempoolSnapshot {
+                             snapshotTxs
+                           , snapshotSlotNo
+                           } =
         case runExcept $ repeatedlyM
-               (applyTx testLedgerConfig)
+               (applyTx testLedgerConfig snapshotSlotNo)
                txs
-               (notReallyTicked ledgerState) of
+               (TickedSimpleLedgerState ledgerState) of
           Right _ -> property True
           Left  e -> counterexample (mkErrMsg e) $ property False
       where
-        -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
-        notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
-        notReallyTicked = Ticked 0
-
         txs = map fst snapshotTxs
         mkErrMsg e =
           "At the end of the test, the Mempool contents were invalid: " <>

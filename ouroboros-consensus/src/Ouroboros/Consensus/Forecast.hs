@@ -2,6 +2,7 @@
 
 module Ouroboros.Consensus.Forecast (
     Forecast(..)
+  , mapForecast
   , trivialForecast
   , constantForecastOf
   , OutsideForecastRange(..)
@@ -11,26 +12,33 @@ import           Control.Exception (Exception)
 import           Control.Monad.Except
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ticked
 
+-- | Forecast the effect of time ticking
 data Forecast a = Forecast {
       forecastAt  :: WithOrigin SlotNo
 
       -- Precondition: @At s >= forecastAt@
-    , forecastFor :: SlotNo -> Except OutsideForecastRange a
+    , forecastFor :: SlotNo -> Except OutsideForecastRange (Ticked a)
     }
-  deriving (Functor)
+
+mapForecast :: (Ticked a -> Ticked b) -> Forecast a -> Forecast b
+mapForecast f (Forecast at for) = Forecast{
+      forecastAt  = at
+    , forecastFor = fmap f . for
+    }
 
 -- | Trivial forecast of values of type @()@
 --
 -- Specialization of 'constantForecast'.
 trivialForecast :: WithOrigin SlotNo -> Forecast ()
-trivialForecast = constantForecastOf ()
+trivialForecast = constantForecastOf TickedTrivial
 
 -- | Forecast where the values are never changing
 --
 -- This is primarily useful for tests; the forecast range is infinite, but we
 -- do still check the precondition, to catch any bugs.
-constantForecastOf :: a -> WithOrigin SlotNo -> Forecast a
+constantForecastOf :: Ticked a -> WithOrigin SlotNo -> Forecast a
 constantForecastOf a at = Forecast {
       forecastAt  = at
     , forecastFor = \for ->

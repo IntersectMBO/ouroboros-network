@@ -41,6 +41,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx(..)
   , TxId(..)
   , NestedCtxt_(..)
+  , Ticked(..)
     -- * Serialisation
   , encodeDualBlock
   , decodeDualBlock
@@ -60,7 +61,6 @@ module Ouroboros.Consensus.Ledger.Dual (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
-import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
@@ -70,7 +70,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -82,7 +82,6 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
@@ -325,73 +324,85 @@ data DualLedgerConfig m a = DualLedgerConfig {
 
 type instance LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
 
+instance Bridge m a => GetTip (LedgerState (DualBlock m a)) where
+  getTip = castPoint . getTip . dualLedgerStateMain
+
+instance Bridge m a => GetTip (Ticked (LedgerState (DualBlock m a))) where
+  getTip = castPoint . getTip . tickedDualLedgerStateMain
+
+data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
+      tickedDualLedgerStateMain    :: Ticked (LedgerState m)
+    , tickedDualLedgerStateAux     :: Ticked (LedgerState a)
+    , tickedDualLedgerStateBridge  :: BridgeLedger m a
+
+      -- | The original, unticked ledger for the auxiliary block
+      --
+      -- The reason we keep this in addition to the ticked ledger state is that
+      -- not every main block is paired with an auxiliary block. When there is
+      -- no auxiliary block, the auxiliary ledger state remains unchanged.
+    , tickedDualLedgerStateAuxOrig :: LedgerState a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (Ticked (LedgerState (DualBlock m a)))
+
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
   applyChainTick DualLedgerConfig{..}
                  slot
-                 DualLedgerState{..} =
-      assert (tickedSlotNo tickedM == tickedSlotNo tickedA) $
-      Ticked (tickedSlotNo tickedM) DualLedgerState {
-          dualLedgerStateMain   = tickedState tickedM
-        , dualLedgerStateAux    = tickedState tickedA
-        , dualLedgerStateBridge = dualLedgerStateBridge
-        }
-    where
-      tickedM :: TickedLedgerState m
-      tickedM = applyChainTick
-                  dualLedgerConfigMain
-                  slot
-                  dualLedgerStateMain
-
-      tickedA :: TickedLedgerState a
-      tickedA = applyChainTick
-                  dualLedgerConfigAux
-                  slot
-                  dualLedgerStateAux
-
-  ledgerTipPoint = castPoint
-                 . (ledgerTipPoint :: LedgerState m -> Point (LedgerState m))
-                 . dualLedgerStateMain
+                 DualLedgerState{..} = TickedDualLedgerState {
+        tickedDualLedgerStateMain    = applyChainTick
+                                         dualLedgerConfigMain
+                                         slot
+                                         dualLedgerStateMain
+      , tickedDualLedgerStateAux     = applyChainTick
+                                         dualLedgerConfigAux
+                                         slot
+                                         dualLedgerStateAux
+      , tickedDualLedgerStateAuxOrig = dualLedgerStateAux
+      , tickedDualLedgerStateBridge  = dualLedgerStateBridge
+      }
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
+
   applyLedgerBlock cfg
                    block@DualBlock{..}
-                   (Ticked slot DualLedgerState{..}) = do
+                   TickedDualLedgerState{..} = do
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
               (dualFullBlockConfigMain cfg)
               dualBlockMain
-              (Ticked slot dualLedgerStateMain)
+              tickedDualLedgerStateMain
           , applyMaybeBlock
               (dualFullBlockConfigAux cfg)
               dualBlockAux
-              (Ticked slot dualLedgerStateAux)
+              tickedDualLedgerStateAux
+              tickedDualLedgerStateAuxOrig
           )
       return DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithBlock
                                     block
-                                    dualLedgerStateBridge
+                                    tickedDualLedgerStateBridge
         }
 
   reapplyLedgerBlock cfg
                      block@DualBlock{..}
-                     (Ticked slot DualLedgerState{..}) =
+                     TickedDualLedgerState{..} =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
                                     (dualFullBlockConfigMain cfg)
                                     dualBlockMain
-                                    (Ticked slot dualLedgerStateMain)
+                                    tickedDualLedgerStateMain
         , dualLedgerStateAux    = reapplyMaybeBlock
                                     (dualFullBlockConfigAux cfg)
                                     dualBlockAux
-                                    (Ticked slot dualLedgerStateAux)
+                                    tickedDualLedgerStateAux
+                                    tickedDualLedgerStateAuxOrig
         , dualLedgerStateBridge = updateBridgeWithBlock
                                     block
-                                    dualLedgerStateBridge
+                                    tickedDualLedgerStateBridge
       }
 
 data instance LedgerState (DualBlock m a) = DualLedgerState {
@@ -452,8 +463,8 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
 instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
   protocolLedgerView cfg state =
       protocolLedgerView
-        (dualLedgerConfigMain cfg)
-        (dualLedgerStateMain  state)
+        (dualLedgerConfigMain      cfg)
+        (tickedDualLedgerStateMain state)
 
   ledgerViewForecastAt cfg state =
       ledgerViewForecastAt
@@ -508,52 +519,58 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   type ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 
   applyTx DualLedgerConfig{..}
+          slot
           tx@DualGenTx{..}
-          (Ticked slot DualLedgerState{..}) = do
-      (Ticked _ main', Ticked _ aux') <-
+          TickedDualLedgerState{..} = do
+      (main', aux') <-
         agreeOnError DualGenTxErr (
             applyTx
               dualLedgerConfigMain
+              slot
               dualGenTxMain
-              (Ticked slot dualLedgerStateMain)
+              tickedDualLedgerStateMain
           , applyTx
               dualLedgerConfigAux
+              slot
               dualGenTxAux
-              (Ticked slot dualLedgerStateAux)
+              tickedDualLedgerStateAux
           )
-      return $ Ticked slot DualLedgerState {
-          dualLedgerStateMain   = main'
-        , dualLedgerStateAux    = aux'
-        , dualLedgerStateBridge = updateBridgeWithTx
-                                    tx
-                                    dualLedgerStateBridge
+      return $ TickedDualLedgerState {
+          tickedDualLedgerStateMain    = main'
+        , tickedDualLedgerStateAux     = aux'
+        , tickedDualLedgerStateAuxOrig = tickedDualLedgerStateAuxOrig
+        , tickedDualLedgerStateBridge  = updateBridgeWithTx
+                                           tx
+                                           tickedDualLedgerStateBridge
         }
 
   reapplyTx DualLedgerConfig{..}
+            slot
             tx@DualGenTx{..}
-            (Ticked slot DualLedgerState{..}) = do
-      (Ticked _ main', Ticked _ aux') <-
+            TickedDualLedgerState{..} = do
+      (main', aux') <-
         agreeOnError DualGenTxErr (
             reapplyTx
               dualLedgerConfigMain
+              slot
               dualGenTxMain
-              (Ticked slot dualLedgerStateMain)
+              tickedDualLedgerStateMain
           , reapplyTx
               dualLedgerConfigAux
+              slot
               dualGenTxAux
-              (Ticked slot dualLedgerStateAux)
+              tickedDualLedgerStateAux
           )
-      return $ Ticked slot DualLedgerState {
-          dualLedgerStateMain   = main'
-        , dualLedgerStateAux    = aux'
-        , dualLedgerStateBridge = updateBridgeWithTx
-                                    tx
-                                    dualLedgerStateBridge
+      return $ TickedDualLedgerState {
+          tickedDualLedgerStateMain    = main'
+        , tickedDualLedgerStateAux     = aux'
+        , tickedDualLedgerStateAuxOrig = tickedDualLedgerStateAuxOrig
+        , tickedDualLedgerStateBridge  = updateBridgeWithTx
+                                           tx
+                                           tickedDualLedgerStateBridge
         }
 
-  maxTxCapacity (Ticked slot DualLedgerState{..}) =
-      maxTxCapacity (Ticked slot dualLedgerStateMain)
-
+  maxTxCapacity = maxTxCapacity . tickedDualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
@@ -633,9 +650,10 @@ applyMaybeBlock :: UpdateLedger blk
                 => FullBlockConfig (LedgerState blk) blk
                 -> Maybe blk
                 -> TickedLedgerState blk
+                -> LedgerState blk
                 -> Except (LedgerError blk) (LedgerState blk)
-applyMaybeBlock _   Nothing      = return . tickedState
-applyMaybeBlock cfg (Just block) = applyLedgerBlock cfg block
+applyMaybeBlock _   Nothing      _   st = return st
+applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
 
 -- | Lift 'reapplyLedgerBlock' to @Maybe blk@
 --
@@ -644,9 +662,10 @@ reapplyMaybeBlock :: UpdateLedger blk
                   => FullBlockConfig (LedgerState blk) blk
                   -> Maybe blk
                   -> TickedLedgerState blk
+                -> LedgerState blk
                   -> LedgerState blk
-reapplyMaybeBlock _   Nothing      = tickedState
-reapplyMaybeBlock cfg (Just block) = reapplyLedgerBlock cfg block
+reapplyMaybeBlock _   Nothing      _   st = st
+reapplyMaybeBlock cfg (Just block) tst _  = reapplyLedgerBlock cfg block tst
 
 -- | Used when the concrete and abstract implementation should agree on errors
 --

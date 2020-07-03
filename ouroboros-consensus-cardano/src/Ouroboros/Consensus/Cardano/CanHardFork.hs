@@ -442,7 +442,7 @@ translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
     ledgerTipShelley :: Point (ShelleyBlock sc)
     ledgerTipShelley =
       translatePointByronToShelley $
-      ledgerTipPoint' (Proxy @ByronBlock) ledgerByron
+      ledgerTipPoint (Proxy @ByronBlock) ledgerByron
 
     overlaySchedule :: Map SlotNo (SL.OBftSlot sc)
     overlaySchedule =
@@ -490,7 +490,8 @@ translateLedgerViewByronToShelleyWrapper
 translateLedgerViewByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig shelleyCfg) ->
       TranslateForecast $ \epochNo _forecastFor _finalByronView ->
-        WrapLedgerView (translateLedgerViewByronToShelley shelleyCfg epochNo)
+        WrapTickedLedgerView $
+          translateLedgerViewByronToShelley shelleyCfg epochNo
 
 -- | We construct a 'SL.LedgerView' using the Shelley genesis config in the
 -- same way as 'translateLedgerStateByronToShelley'.
@@ -498,13 +499,14 @@ translateLedgerViewByronToShelley
   :: forall sc.
      LedgerConfig (ShelleyBlock sc)
   -> EpochNo
-  -> SL.LedgerView sc
-translateLedgerViewByronToShelley shelleyCfg epochNo = SL.LedgerView {
-      lvProtParams   = sgProtocolParams genesisShelley
-    , lvOverlaySched = overlaySchedule
-    , lvPoolDistr    = SL.PoolDistr Map.empty
-    , lvGenDelegs    = SL.GenDelegs $ sgGenDelegs genesisShelley
-    }
+  -> Ticked (SL.LedgerView sc)
+translateLedgerViewByronToShelley shelleyCfg epochNo = TickedPraosLedgerView $
+    SL.LedgerView {
+        lvProtParams   = sgProtocolParams genesisShelley
+      , lvOverlaySched = overlaySchedule
+      , lvPoolDistr    = SL.PoolDistr Map.empty
+      , lvGenDelegs    = SL.GenDelegs $ sgGenDelegs genesisShelley
+      }
   where
     ShelleyLedgerConfig {
         shelleyLedgerGenesis = genesisShelley

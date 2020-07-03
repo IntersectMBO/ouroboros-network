@@ -14,14 +14,13 @@ import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
-import           Cardano.Crypto.Hash
+import           Cardano.Crypto.Hash (hash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 
 -- | Construct the protocol specific part of the block
 --
@@ -43,25 +42,23 @@ forgeSimple :: forall c ext.
             -> TopLevelConfig (SimpleBlock c ext)
             -> ForgeState (SimpleBlock c ext)
             -> BlockNo                               -- ^ Current block number
+            -> SlotNo                                -- ^ Current slot number
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> SimpleBlock c ext
-forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock tickedLedger txs proof =
+forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock curSlot tickedLedger txs proof =
     forgeExt cfg forgeState proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
       }
   where
-    curSlot :: SlotNo
-    curSlot = tickedSlotNo tickedLedger
-
     body :: SimpleBody
     body = SimpleBody { simpleTxs = map simpleGenTx txs }
 
     stdHeader :: SimpleStdHeader c ext
     stdHeader = SimpleStdHeader {
-          simplePrev      = ledgerTipHash (tickedState tickedLedger)
+          simplePrev      = castHash $ getTipHash tickedLedger
         , simpleSlotNo    = curSlot
         , simpleBlockNo   = curBlock
         , simpleBodyHash  = hash body

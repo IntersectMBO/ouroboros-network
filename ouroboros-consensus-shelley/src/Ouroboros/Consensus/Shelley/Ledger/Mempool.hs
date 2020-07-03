@@ -31,9 +31,9 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -65,7 +65,7 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
   reapplyTx = applyShelleyTx
 
-  maxTxCapacity (Ticked _ (ShelleyLedgerState _ _ shelleyState)) =
+  maxTxCapacity (TickedShelleyLedgerState _ _ shelleyState) =
       fromIntegral maxBlockBodySize
     where
       SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
@@ -130,16 +130,15 @@ instance Show (GenTxId (ShelleyBlock c)) where
 applyShelleyTx
   :: TPraosCrypto c
   => LedgerConfig (ShelleyBlock c)
+  -> SlotNo
   -> GenTx (ShelleyBlock c)
   -> TickedLedgerState (ShelleyBlock c)
   -> Except (ApplyTxErr (ShelleyBlock c)) (TickedLedgerState (ShelleyBlock c))
-applyShelleyTx cfg (ShelleyTx _ tx) (Ticked slot st) =
-    (\state -> Ticked slot $ st { shelleyState = state }) <$>
+applyShelleyTx cfg slot (ShelleyTx _ tx) st =
+    (\state -> st { tickedShelleyState = state }) <$>
        SL.overShelleyState
         (SL.applyTxs globals mempoolEnv (Seq.singleton tx))
-        shelleyState
+        (tickedShelleyState st)
   where
     globals    = shelleyLedgerGlobals cfg
-    mempoolEnv = SL.mkMempoolEnv shelleyState slot
-
-    ShelleyLedgerState { shelleyState } = st
+    mempoolEnv = SL.mkMempoolEnv (tickedShelleyState st) slot

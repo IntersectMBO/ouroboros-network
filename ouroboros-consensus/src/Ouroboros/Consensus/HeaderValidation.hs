@@ -28,8 +28,6 @@ module Ouroboros.Consensus.HeaderValidation (
     -- * Header state
   , HeaderState(..)
   , tickHeaderState
-  , headerStateTip
-  , headerStatePush
   , genesisHeaderState
   , castHeaderState
   , rewindHeaderState
@@ -50,6 +48,8 @@ module Ouroboros.Consensus.HeaderValidation (
   , decodeAnnTipIsEBB
   , encodeHeaderState
   , decodeHeaderState
+    -- * Type family instances
+  , Ticked(..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -156,39 +156,47 @@ data HeaderState blk = HeaderState {
     }
   deriving (Generic)
 
+data instance Ticked (HeaderState blk) = TickedHeaderState {
+      tickedHeaderStateConsensus :: Ticked (ChainDepState (BlockProtocol blk))
+    , untickedHeaderStateTips    :: StrictSeq (AnnTip blk)
+    , untickedHeaderStateAnchor  :: WithOrigin (AnnTip blk)
+    }
+
 -- | Tick the 'ChainDepState' inside the 'HeaderState'
 tickHeaderState :: ConsensusProtocol (BlockProtocol blk)
                 => ConsensusConfig (BlockProtocol blk)
                 -> Ticked (LedgerView (BlockProtocol blk))
+                -> SlotNo
                 -> HeaderState blk -> Ticked (HeaderState blk)
-tickHeaderState cfg ledgerView@(Ticked slot _) headerState =
-    Ticked slot $ headerState { headerStateConsensus = chainDepState' }
-  where
-    Ticked _slot chainDepState' =
-        tickChainDepState
-          cfg
-          ledgerView
-          (headerStateConsensus headerState)
+tickHeaderState cfg ledgerView slot HeaderState{..} = TickedHeaderState {
+      untickedHeaderStateTips    = headerStateTips
+    , untickedHeaderStateAnchor  = headerStateAnchor
+    , tickedHeaderStateConsensus = tickChainDepState
+                                     cfg
+                                     ledgerView
+                                     slot
+                                     headerStateConsensus
+    }
 
-headerStateTip :: HeaderState blk -> WithOrigin (AnnTip blk)
-headerStateTip HeaderState{..} =
-    case headerStateTips of
-      Empty     -> headerStateAnchor
+headerStateTip :: Ticked (HeaderState blk) -> WithOrigin (AnnTip blk)
+headerStateTip TickedHeaderState{..} =
+    case untickedHeaderStateTips of
+      Empty     -> untickedHeaderStateAnchor
       _ :|> tip -> NotOrigin tip
 
 headerStatePush :: forall blk.
                    SecurityParam
                 -> ChainDepState (BlockProtocol blk)
                 -> AnnTip blk
+                -> Ticked (HeaderState blk)
                 -> HeaderState blk
-                -> HeaderState blk
-headerStatePush (SecurityParam k) state newTip HeaderState{..} =
+headerStatePush (SecurityParam k) state newTip TickedHeaderState{..} =
     case trim pushed of
-      Nothing                   -> HeaderState state pushed  headerStateAnchor
+      Nothing                   -> HeaderState state pushed  untickedHeaderStateAnchor
       Just (newAnchor, trimmed) -> HeaderState state trimmed (NotOrigin newAnchor)
   where
     pushed :: StrictSeq (AnnTip blk)
-    pushed = headerStateTips :|> newTip
+    pushed = untickedHeaderStateTips :|> newTip
 
     trim :: StrictSeq (AnnTip blk) -> Maybe (AnnTip blk, StrictSeq (AnnTip blk))
     trim (newAnchor :<| trimmed) | Seq.length trimmed >= fromIntegral k =
@@ -468,19 +476,21 @@ validateHeader cfg ledgerView hdr st = do
       validateEnvelope
         cfg
         ledgerView
-        (headerStateTip (tickedState st))
+        (headerStateTip st)
         hdr
     chainDepState' <- withExcept HeaderProtocolError $
-                        updateChainDepState
-                          (configConsensus cfg)
-                          (validateView (configBlock cfg) hdr)
-                          ledgerView
-                          (headerStateConsensus <$> st)
-    return $ headerStatePush
-               (configSecurityParam cfg)
-               chainDepState'
-               (getAnnTip hdr)
-               (tickedState st)
+      updateChainDepState
+        (configConsensus cfg)
+        (validateView (configBlock cfg) hdr)
+        (blockSlot hdr)
+        ledgerView
+        (tickedHeaderStateConsensus st)
+    return $
+      headerStatePush
+        (configSecurityParam cfg)
+        chainDepState'
+        (getAnnTip hdr)
+        st
 
 -- | Variation on 'validateHeader' that takes an unticked HeaderState
 --
@@ -499,6 +509,7 @@ validateHeader' cfg ledgerView hdr hdrState =
       (tickHeaderState
          (configConsensus cfg)
          ledgerView
+         (blockSlot hdr)
          hdrState)
 
 {-------------------------------------------------------------------------------

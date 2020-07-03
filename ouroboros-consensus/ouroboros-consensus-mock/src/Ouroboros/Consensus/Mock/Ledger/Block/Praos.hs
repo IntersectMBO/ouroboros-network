@@ -18,9 +18,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SignedSimplePraos(..)
   ) where
 
-import           Codec.CBOR.Decoding (decodeListLenOf)
 import qualified Codec.CBOR.Decoding as CBOR
-import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
@@ -106,20 +104,6 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
 
-instance PraosCrypto c' => Serialise (BlockInfo c') where
-  encode BlockInfo {..} = mconcat
-    [ encodeListLen 3
-    , encode biSlot
-    , toCBOR biRho
-    , encode biStake
-    ]
-  decode = do
-    decodeListLenOf 3
-    biSlot  <- decode
-    biRho   <- fromCBOR
-    biStake <- decode
-    return BlockInfo {..}
-
 instance ( SimpleCrypto c
          , PraosCrypto c'
          ) => RunMockBlock c (SimplePraosExt c c') where
@@ -135,8 +119,9 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView   cfg _ =                            stakeDist cfg
-  ledgerViewForecastAt cfg _ = Just . constantForecastOf (stakeDist cfg)
+  protocolLedgerView   cfg _ = pretendTicked $ stakeDist cfg
+  ledgerViewForecastAt cfg _ = Just . constantForecastOf
+                                 (pretendTicked $ stakeDist cfg)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
@@ -149,6 +134,8 @@ instance ( SimpleCrypto c
 stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
 stakeDist = equalStakeDist . simpleMockLedgerConfig
 
+pretendTicked :: StakeDist -> Ticked StakeDist
+pretendTicked (StakeDist sd) = TickedStakeDist sd
 
 {-------------------------------------------------------------------------------
   Forging
@@ -226,8 +213,8 @@ decodePraosExtraFields = do
     praosY       <- fromCBOR
     return PraosExtraFields{..}
 
-instance PraosCrypto c' => EncodeDisk (SimplePraosBlock c c') [BlockInfo c']
+instance PraosCrypto c' => EncodeDisk (SimplePraosBlock c c') (PraosChainDepState c')
   -- Default instance
 
-instance PraosCrypto c' => DecodeDisk (SimplePraosBlock c c') [BlockInfo c']
+instance PraosCrypto c' => DecodeDisk (SimplePraosBlock c c') (PraosChainDepState c')
   -- Default instance

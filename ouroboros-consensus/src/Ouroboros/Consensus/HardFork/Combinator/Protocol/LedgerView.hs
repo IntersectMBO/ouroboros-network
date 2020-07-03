@@ -4,17 +4,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
     -- * Hard fork
     HardForkLedgerView_(..)
   , HardForkLedgerView
+    -- * Type family instances
+  , Ticked(..)
   ) where
 
 import           Data.SOP.Dict
 import           Data.SOP.Strict
 import           Data.Void
 
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -40,6 +45,15 @@ deriving instance CanHardFork xs => Show (HardForkLedgerView_ WrapLedgerView xs)
 type HardForkLedgerView = HardForkLedgerView_ WrapLedgerView
 
 {-------------------------------------------------------------------------------
+  Ticked
+-------------------------------------------------------------------------------}
+
+data instance Ticked (HardForkLedgerView_ f xs) = TickedHardForkLedgerView {
+      tickedHardForkLedgerViewTransition :: TransitionInfo
+    , tickedHardForkLedgerViewPerEra     :: HardForkState_ (K Void) (Ticked :.: f) xs
+    }
+
+{-------------------------------------------------------------------------------
   Show instance for the benefit of tests
 -------------------------------------------------------------------------------}
 
@@ -56,3 +70,21 @@ instance (SListI xs, Show a) => Show (HardForkLedgerView_ (K a) xs) where
 
       dictCurrent :: Dict (All (Compose Show (Current (K a)))) xs
       dictCurrent = all_NP $ hpure Dict
+
+instance (SListI xs, Show (Ticked a)) => Show (Ticked (HardForkLedgerView_ (K a) xs)) where
+  show TickedHardForkLedgerView{..} =
+      case (dictPast, dictCurrent) of
+        (Dict, Dict) -> show (
+            tickedHardForkLedgerViewTransition
+          , getHardForkState tickedHardForkLedgerViewPerEra
+          )
+    where
+      dictPast :: Dict (All (Compose Show (Past (K Void)))) xs
+      dictPast = all_NP $ hpure Dict
+
+      dictCurrent :: Dict (All (Compose Show (Current (Ticked :.: K a)))) xs
+      dictCurrent = all_NP $ hpure dictCurrentOne
+
+dictCurrentOne :: forall blk a. Show (Ticked a)
+               => Dict (Compose Show (Current (Ticked :.: K a))) blk
+dictCurrentOne = Dict

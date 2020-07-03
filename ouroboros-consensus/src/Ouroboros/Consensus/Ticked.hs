@@ -1,16 +1,18 @@
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveFunctor      #-}
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Consensus.Ticked (
     Ticked(..)
   ) where
 
-import           GHC.Generics (Generic)
+import           Data.SOP.BasicFunctors
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 
 {-------------------------------------------------------------------------------
   Ticked state
@@ -28,12 +30,27 @@ import           Cardano.Slotting.Slot
 -- * New leader schedule computed for Shelley
 -- * Transition from Byron to Shelley activated in the hard fork combinator.
 -- * Nonces switched out at the start of a new epoch.
-data Ticked l = Ticked {
-      -- | The slot number marking the time the state got ticked to
-      tickedSlotNo :: !SlotNo
+data family Ticked st :: *
 
-      -- | The ticked state itself
-    , tickedState  :: !l
-    }
-  deriving stock    (Generic, Functor)
-  deriving anyclass (NoUnexpectedThunks)
+-- Standard instance for use with trivial state
+
+data instance Ticked () = TickedTrivial
+  deriving (Show)
+
+data instance Ticked (K a x) = TickedK (Ticked a)
+
+{-------------------------------------------------------------------------------
+  Forwarding type class instances
+-------------------------------------------------------------------------------}
+
+deriving instance
+     Show (Ticked a)
+  => Show (Ticked (K a x))
+
+deriving newtype instance {-# OVERLAPPING #-}
+     Show (Ticked (f a))
+  => Show ((Ticked :.: f) a)
+
+deriving newtype instance
+     NoUnexpectedThunks (Ticked (f a))
+  => NoUnexpectedThunks ((Ticked :.: f) a)

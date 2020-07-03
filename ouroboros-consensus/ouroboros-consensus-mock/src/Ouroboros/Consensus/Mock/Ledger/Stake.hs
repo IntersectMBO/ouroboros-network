@@ -1,4 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
+
 module Ouroboros.Consensus.Mock.Ledger.Stake (
     -- * Stakeholders
     StakeHolder(..)
@@ -11,6 +13,8 @@ module Ouroboros.Consensus.Mock.Ledger.Stake (
   , totalStakes
   , equalStakeDist
   , genesisStakeDist
+    -- * Type family instances
+  , Ticked(..)
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -23,6 +27,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.Ticked
 
 {-------------------------------------------------------------------------------
   Stakeholders
@@ -43,6 +48,11 @@ data StakeHolder =
 -- | In the mock setup, only core nodes have stake
 newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
   deriving (Show, Eq, Serialise, NoUnexpectedThunks)
+
+-- | Ticked stake distribution
+newtype instance Ticked StakeDist = TickedStakeDist {
+      tickedStakeDistToMap :: Map CoreNodeId Rational
+    }
 
 stakeWithDefault :: Rational -> CoreNodeId -> StakeDist -> Rational
 stakeWithDefault d n = Map.findWithDefault d n . stakeDistToMap

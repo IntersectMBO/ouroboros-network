@@ -130,6 +130,7 @@ exampleBlock =
     forgeRegularBlock
       cfg
       (BlockNo 1)
+      (SlotNo 1)
       (applyChainTick CC.dummyConfig (SlotNo 1) ledgerStateAfterEBB)
       [exampleGenTx]
       (mkPBftIsLeader leaderCredentials)

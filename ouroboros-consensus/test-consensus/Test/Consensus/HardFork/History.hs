@@ -798,11 +798,11 @@ hardForkEpochInfo ArbitraryChain{..} for =
            , "<out of range>"
            , "<out of range>"
            )
-         Right view@HardForkLedgerView{..} ->
+         Right view@TickedHardForkLedgerView{..} ->
            let reconstructed = State.reconstructSummary
                                  arbitraryChainShape
-                                 hardForkLedgerViewTransition
-                                 hardForkLedgerViewPerEra
+                                 tickedHardForkLedgerViewTransition
+                                 tickedHardForkLedgerViewPerEra
            in (
              HF.snapshotEpochInfo reconstructed
            , show view
@@ -818,7 +818,8 @@ mockHardForkLedgerView :: SListI xs
                        -> Forecast (HardForkLedgerView_ (K ()) xs)
 mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
-      (InPairs.hpure $ TranslateForecast $ \_epoch _slot (K ()) -> K ())
+      (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ ->
+         TickedK TickedTrivial)
       (mockState HF.initBound pss ts ess)
   where
     mockState :: HF.Bound
@@ -832,7 +833,7 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
           , annForecastNext      = atMostHead ts
           , annForecast          = Forecast {
                 forecastAt  = tip es
-              , forecastFor = \_for -> return $ K ()
+              , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
           }
     mockState start (K ps :* pss) (AtMostCons t ts) (NonEmptyCons _ ess) =

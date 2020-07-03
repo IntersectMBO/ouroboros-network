@@ -44,6 +44,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
   , LedgerState(..)
+  , Ticked(..)
   , updateSimpleLedgerState
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
@@ -89,7 +90,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -309,12 +309,17 @@ deriving instance NoUnexpectedThunks (MockLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
 
+instance GetTip (LedgerState (SimpleBlock c ext)) where
+  getTip (SimpleLedgerState st) = castPoint $ mockTip st
+
+instance GetTip (Ticked (LedgerState (SimpleBlock c ext))) where
+  getTip = castPoint . getTip . getTickedSimpleLedgerState
+
 instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ = Ticked
-  ledgerTipPoint (SimpleLedgerState st) = castPoint $ mockTip st
+  applyChainTick _ _ = TickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
@@ -333,6 +338,13 @@ newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
   deriving stock   (Generic, Show, Eq)
   deriving newtype (Serialise, NoUnexpectedThunks)
 
+-- Ticking has no effect on the simple ledger state
+newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerState {
+      getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext)
+    }
+  deriving stock   (Generic, Show, Eq)
+  deriving newtype (NoUnexpectedThunks)
+
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
@@ -341,16 +353,17 @@ updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext))
-updateSimpleLedgerState cfg b (Ticked _ (SimpleLedgerState st)) =
+updateSimpleLedgerState cfg b (TickedSimpleLedgerState (SimpleLedgerState st)) =
     SimpleLedgerState <$> updateMockState cfg b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
-                 => a
+                 => SlotNo
+                 -> a
                  -> TickedLedgerState (SimpleBlock c ext)
                  -> Except (MockError (SimpleBlock c ext))
                            (TickedLedgerState (SimpleBlock c ext))
-updateSimpleUTxO x (Ticked slot (SimpleLedgerState st)) =
-    Ticked slot . SimpleLedgerState <$> updateMockUTxO slot x st
+updateSimpleUTxO x slot (TickedSimpleLedgerState (SimpleLedgerState st)) =
+    TickedSimpleLedgerState . SimpleLedgerState <$> updateMockUTxO x slot st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
@@ -425,7 +438,9 @@ instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result where
       QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
-  answerQuery _cfg QueryLedgerTip = castPoint . ledgerTipPoint
+  answerQuery _cfg QueryLedgerTip =
+        castPoint
+      . ledgerTipPoint (Proxy @(SimpleBlock c ext))
 
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 

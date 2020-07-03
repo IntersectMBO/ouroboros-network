@@ -39,7 +39,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -271,9 +270,10 @@ instance TxGen DualByronBlock where
          -> Gen [GenTx DualByronBlock]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-          tx <- genTx cfg (tickedState st)
+          tx <- genTx cfg st
           case runExcept $ applyTx
                              (configLedger cfg)
+                             curSlotNo
                              tx
                              st of
             Right st' -> go (tx:acc) (n - 1) st'
@@ -286,7 +286,7 @@ instance TxGen DualByronBlock where
 -- for now. Extending the scope will require integration with the restart/rekey
 -- infrastructure of the RealPBFT tests.
 genTx :: TopLevelConfig DualByronBlock
-      -> LedgerState DualByronBlock
+      -> Ticked (LedgerState DualByronBlock)
       -> Gen (GenTx DualByronBlock)
 genTx cfg st = do
     aux <- sigGen (Rules.ctxtUTXOW cfg') st'
@@ -305,10 +305,10 @@ genTx cfg st = do
     st'  :: Spec.State Spec.CHAIN
 
     cfg' = dualLedgerConfigAux (configLedger cfg)
-    st'  = byronSpecLedgerState $ dualLedgerStateAux st
+    st'  = tickedByronSpecLedgerState $ tickedDualLedgerStateAux st
 
     bridge :: ByronSpecBridge
-    bridge = dualLedgerStateBridge st
+    bridge = tickedDualLedgerStateBridge st
 
     elaborateTxId :: Spec.TxId -> Impl.TxId
     elaborateTxId tid =

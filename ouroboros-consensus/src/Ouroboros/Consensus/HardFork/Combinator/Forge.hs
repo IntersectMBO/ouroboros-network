@@ -8,6 +8,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.HardFork.Combinator.Forge (
     undistribMaintainForgeState
   ) where
@@ -19,13 +20,13 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
@@ -33,15 +34,18 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
   type ExtraForgeState (HardForkBlock xs) = PerEraExtraForgeState xs
 
-  forgeBlock cfg forgeState bno
-             Ticked { tickedSlotNo, tickedState }
-             txs isLeader =
+  forgeBlock cfg
+             forgeState
+             bno
+             sno
+             (TickedHardForkLedgerState transition ledgerState)
+             txs
+             isLeader =
       -- First establish the 'IsLeader' and the 'LedgerState' are from the
       -- same era. As we have passed the ledger view of the ticked ledger to
       -- obtain the 'IsLeader' value, it __must__ be from the same era.
-      case State.match
-             (getOneEraIsLeader isLeader)
-             (getHardForkLedgerState tickedState) of
+      -- TODO: Can we avoid this error?
+      case State.match (getOneEraIsLeader isLeader) ledgerState of
         Left _mismatch ->
           error "IsLeader from different era than the TickedLedgerState"
         Right matched  ->
@@ -56,9 +60,10 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
             `hap` (State.tip matched)
     where
       ei :: EpochInfo Identity
-      ei = State.epochInfoLedger
-             (configLedger cfg)
-             (getHardForkLedgerState tickedState)
+      ei = State.epochInfoPrecomputedTransitionInfo
+             (hardForkLedgerConfigShape (configLedger cfg))
+             transition
+             ledgerState
 
       -- | Unwraps all the layers needed for SOP and call 'forgeBlock'.
       matchedForgeBlock
@@ -66,17 +71,18 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
         => TopLevelConfig blk
         -> ForgeState blk
         -> ([] :.: GenTx) blk
-        -> Product WrapIsLeader LedgerState blk
+        -> Product WrapIsLeader (Ticked :.: LedgerState) blk
         -> I blk
       matchedForgeBlock matchedCfg
                         matchedForgeState
                         (Comp matchedTxs)
-                        (Pair matchedIsLeader matchedLedgerState) = I $
+                        (Pair matchedIsLeader (Comp matchedLedgerState)) = I $
           forgeBlock
             matchedCfg
             matchedForgeState
             bno
-            (Ticked tickedSlotNo matchedLedgerState)
+            sno
+            matchedLedgerState
             matchedTxs
             (unwrapIsLeader matchedIsLeader)
 

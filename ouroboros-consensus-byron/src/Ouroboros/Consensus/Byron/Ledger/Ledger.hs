@@ -15,9 +15,7 @@
 -- | Instances requires for consensus/ledger integration
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Ledger integration
-    LedgerState(..)
-  , Query(..)
-  , initByronLedgerState
+    initByronLedgerState
   , byronEraParams
     -- * Serialisation
   , encodeByronAnnTip
@@ -30,6 +28,10 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , decodeByronQuery
   , encodeByronResult
   , decodeByronResult
+    -- * Type family instances
+  , Ticked(..)
+  , LedgerState(..)
+  , Query(..)
     -- * Auxiliary
   , validationErrorImpossible
   ) where
@@ -65,7 +67,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Protocol.PBFT (Ticked (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -76,39 +78,9 @@ import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
-type instance LedgerCfg (LedgerState ByronBlock) = Gen.Config
-
-instance IsLedger (LedgerState ByronBlock) where
-  type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
-
-  applyChainTick cfg slotNo ByronLedgerState{..} =
-      Ticked slotNo ByronLedgerState {
-          byronDelegationHistory = byronDelegationHistory
-        , byronLedgerState       = CC.applyChainTick
-                                      cfg
-                                      (toByronSlotNo slotNo)
-                                      byronLedgerState
-        }
-
-  ledgerTipPoint (ByronLedgerState state _) =
-      case CC.cvsPreviousHash state of
-        -- In this case there are no blocks in the ledger state. The genesis
-        -- block does not occupy a slot, so its point is Origin.
-        Left _genHash -> GenesisPoint
-        Right hdrHash -> BlockPoint slot (ByronHash hdrHash)
-          where
-            slot = fromByronSlotNo (CC.cvsLastSlot state)
-
-instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
-  applyLedgerBlock = applyByronBlock validationMode
-    where
-      validationMode = CC.fromBlockValidationMode CC.BlockValidation
-
-  reapplyLedgerBlock cfg blk st =
-      validationErrorImpossible $
-        applyByronBlock validationMode cfg blk st
-    where
-      validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
+{-------------------------------------------------------------------------------
+  LedgerState
+-------------------------------------------------------------------------------}
 
 data instance LedgerState ByronBlock = ByronLedgerState {
       byronLedgerState       :: !CC.ChainValidationState
@@ -117,6 +89,8 @@ data instance LedgerState ByronBlock = ByronLedgerState {
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance UpdateLedger ByronBlock
+
+type instance LedgerCfg (LedgerState ByronBlock) = Gen.Config
 
 initByronLedgerState :: Gen.Config
                      -> Maybe CC.UTxO -- ^ Optionally override UTxO
@@ -136,6 +110,66 @@ initByronLedgerState genesis mUtxo = ByronLedgerState {
              -> CC.ChainValidationState -> CC.ChainValidationState
     override Nothing     st = st
     override (Just utxo) st = st { CC.cvsUtxo = utxo }
+
+{-------------------------------------------------------------------------------
+  GetTip
+-------------------------------------------------------------------------------}
+
+instance GetTip (LedgerState ByronBlock) where
+  getTip = castPoint . getByronTip . byronLedgerState
+
+instance GetTip (Ticked (LedgerState ByronBlock)) where
+  getTip = castPoint . getByronTip . tickedByronLedgerState
+
+getByronTip :: CC.ChainValidationState -> Point ByronBlock
+getByronTip state =
+    case CC.cvsPreviousHash state of
+      -- In this case there are no blocks in the ledger state. The genesis
+      -- block does not occupy a slot, so its point is Origin.
+      Left _genHash -> GenesisPoint
+      Right hdrHash -> BlockPoint slot (ByronHash hdrHash)
+        where
+          slot = fromByronSlotNo (CC.cvsLastSlot state)
+
+{-------------------------------------------------------------------------------
+  Ticked ledger state
+-------------------------------------------------------------------------------}
+
+-- | The ticked Byron ledger state
+--
+-- Ticking does not change the 'DelegationHistory'.
+data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
+      tickedByronLedgerState         :: !CC.ChainValidationState
+    , untickedByronDelegationHistory :: !DelegationHistory
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+instance IsLedger (LedgerState ByronBlock) where
+  type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
+
+  applyChainTick cfg slotNo ByronLedgerState{..} =
+      TickedByronLedgerState {
+          untickedByronDelegationHistory = byronDelegationHistory
+        , tickedByronLedgerState         = CC.applyChainTick
+                                             cfg
+                                             (toByronSlotNo slotNo)
+                                             byronLedgerState
+        }
+
+{-------------------------------------------------------------------------------
+  Supporting the various consensus interfaces
+-------------------------------------------------------------------------------}
+
+instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
+  applyLedgerBlock = applyByronBlock validationMode
+    where
+      validationMode = CC.fromBlockValidationMode CC.BlockValidation
+
+  reapplyLedgerBlock cfg blk st =
+      validationErrorImpossible $
+        applyByronBlock validationMode cfg blk st
+    where
+      validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
 instance QueryLedger ByronBlock where
   data Query ByronBlock :: * -> * where
@@ -165,9 +199,9 @@ getProtocolParameters =
 
 instance LedgerSupportsProtocol ByronBlock where
   protocolLedgerView _cfg =
-        toPBftLedgerView
+        toTickedPBftLedgerView
       . CC.getDelegationMap
-      . byronLedgerState
+      . tickedByronLedgerState
 
   -- Delegation state for a particular point in time
   --
@@ -222,7 +256,7 @@ instance LedgerSupportsProtocol ByronBlock where
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (NotOrigin for) ss of
-          Just sb -> return $ toPBftLedgerView sb -- Case (A)
+          Just dm -> return $ toTickedPBftLedgerView dm -- Case (A)
           Nothing -> do
             -- Case (B), (C) or (D): the delegation map in the current state
             -- applies, modulo pending delegations (which will get applied by
@@ -233,7 +267,7 @@ instance LedgerSupportsProtocol ByronBlock where
                 , outsideForecastMaxFor = maxHi
                 , outsideForecastFor    = for
                 }
-            return $ toPBftLedgerView $
+            return $ toTickedPBftLedgerView $
                        CC.previewDelegationMap (toByronSlotNo for) ls
     where
       SecurityParam k = genesisSecurityParam cfg
@@ -302,7 +336,7 @@ applyByronBlock :: CC.ValidationMode
 applyByronBlock validationMode
                 cfg
                 (ByronBlock blk _ (ByronHash blkHash))
-                (Ticked _slot ls) =
+                ls =
     case blk of
       CC.ABOBBlock    blk' -> applyABlock validationMode lcfg blk' blkHash ls
       CC.ABOBBoundary blk' -> applyABoundaryBlock        lcfg blk'         ls
@@ -313,20 +347,20 @@ applyABlock :: CC.ValidationMode
             -> Gen.Config
             -> CC.ABlock ByteString
             -> CC.HeaderHash
-            -> LedgerState (ByronBlock)
+            -> Ticked (LedgerState (ByronBlock))
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
-    state' <- CC.validateBlock cfg validationMode blk blkHash byronLedgerState
+applyABlock validationMode cfg blk blkHash TickedByronLedgerState{..} = do
+    state' <- CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
     -- If the delegation state changed, take a snapshot of the old state
     let history'
           |    CC.cvsDelegationState state'
-            == CC.cvsDelegationState byronLedgerState
-                      = byronDelegationHistory
+            == CC.cvsDelegationState tickedByronLedgerState
+                      = untickedByronDelegationHistory
           | otherwise = History.snapOld
                           (Gen.configK cfg)
                           (fromByronSlotNo $ CC.blockSlot blk)
-                          (CC.getDelegationMap byronLedgerState) -- the old state!
-                          byronDelegationHistory
+                          (CC.getDelegationMap tickedByronLedgerState) -- the old state!
+                          untickedByronDelegationHistory
     return $ ByronLedgerState state' history'
 
 -- | Apply boundary block
@@ -335,11 +369,11 @@ applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
 -- modify the delegation history.
 applyABoundaryBlock :: Gen.Config
                     -> CC.ABoundaryBlock ByteString
-                    -> LedgerState ByronBlock
+                    -> Ticked (LedgerState ByronBlock)
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABoundaryBlock cfg blk ByronLedgerState{..} = do
-    current' <- CC.validateBoundary cfg blk byronLedgerState
-    return $ ByronLedgerState current' byronDelegationHistory
+applyABoundaryBlock cfg blk TickedByronLedgerState{..} = do
+    current' <- CC.validateBoundary cfg blk tickedByronLedgerState
+    return $ ByronLedgerState current' untickedByronDelegationHistory
 
 {-------------------------------------------------------------------------------
   Serialisation

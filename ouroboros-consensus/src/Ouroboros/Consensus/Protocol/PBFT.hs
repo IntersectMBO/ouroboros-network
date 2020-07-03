@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , pbftValidateBoundary
     -- * Type instances
   , ConsensusConfig(..)
+  , Ticked(..)
     -- * Exported for tracing errors
   , PBftValidationErr(..)
   , PBftCannotLead(..)
@@ -92,7 +93,6 @@ data PBftValidateView c =
      -- We also need to know the slot number of the block
      forall signed. Signable (PBftDSIGN c) signed
                  => PBftValidateRegular
-                      SlotNo
                       (PBftFields c signed)
                       signed
                       (ContextDSIGN (PBftDSIGN c))
@@ -100,11 +100,10 @@ data PBftValidateView c =
      -- | Boundary block (EBB)
      --
      -- EBBs are not signed but do affect the consensus state.
-   | PBftValidateBoundary SlotNo HeaderHashBytes
+   | PBftValidateBoundary HeaderHashBytes
 
 -- | Convenience constructor for 'PBftValidateView' for regular blocks
-pbftValidateRegular :: ( HasHeader    hdr
-                       , SignedHeader hdr
+pbftValidateRegular :: ( SignedHeader hdr
                        , Signable (PBftDSIGN c) (Signed hdr)
                        )
                     => ContextDSIGN (PBftDSIGN c)
@@ -112,7 +111,6 @@ pbftValidateRegular :: ( HasHeader    hdr
                     -> (hdr -> PBftValidateView c)
 pbftValidateRegular contextDSIGN getFields hdr =
     PBftValidateRegular
-      (blockSlot hdr)
       (getFields hdr)
       (headerSigned hdr)
       contextDSIGN
@@ -125,7 +123,6 @@ pbftValidateBoundary :: forall hdr c. (
                      => hdr -> PBftValidateView c
 pbftValidateBoundary hdr =
     PBftValidateBoundary
-      (blockSlot hdr)
       (headerHashBytes (Proxy @hdr) (blockHash hdr))
 
 -- | Part of the header required for chain selection
@@ -170,6 +167,11 @@ data PBftLedgerView c = PBftLedgerView {
     pbftDelegates :: !(Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
   }
   deriving (Generic)
+
+data instance Ticked (PBftLedgerView c) = TickedPBftLedgerView {
+      -- | The updated delegates
+      tickedPBftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
+    }
 
 deriving instance PBftCrypto c => NoUnexpectedThunks (PBftLedgerView c)
   -- use generic instance
@@ -285,12 +287,12 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIsLeader
-    cfg@PBftConfig{pbftParams}
-    credentials
-    _cis
-    (Ticked slot@(SlotNo n) (PBftLedgerView dms))
-    (Ticked _ cds) =
+  checkIsLeader cfg@PBftConfig{pbftParams}
+                credentials
+                ()
+                slot@(SlotNo n)
+                (TickedPBftLedgerView dms)
+                (S.TickedPBftState cds) =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
@@ -309,16 +311,17 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- Nothing to do
+  tickChainDepState _ _ _ = S.TickedPBftState
 
   updateChainDepState cfg@PBftConfig{..}
                       toValidate
-                      (Ticked _ lv@(PBftLedgerView dms))
-                      (Ticked _ state) =
+                      slot
+                      (TickedPBftLedgerView dms)
+                      (S.TickedPBftState state) =
       case toValidate of
-        PBftValidateBoundary slot hash ->
+        PBftValidateBoundary hash ->
           return $! appendEBB cfg params slot hash state
-        PBftValidateRegular slot PBftFields{..} signed contextDSIGN -> do
+        PBftValidateRegular PBftFields{..} signed contextDSIGN -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
           case verifySignedDSIGN
@@ -336,7 +339,10 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
             $ throwError PBftInvalidSlot
 
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
-            Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
+            Nothing ->
+              throwError $ PBftNotGenesisDelegate
+                             (hashVerKey pbftIssuer)
+                             (PBftLedgerView dms)
             Just gk -> do
               let state' = append cfg params (slot, gk) state
               case exceedsThreshold params state' gk of

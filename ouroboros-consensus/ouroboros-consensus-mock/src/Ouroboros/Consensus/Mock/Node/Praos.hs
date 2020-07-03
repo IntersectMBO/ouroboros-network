@@ -54,7 +54,7 @@ protocolInfoPraos numCoreNodes nid params eraParams =
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = genesisSimpleLedgerState addrDist
-          , headerState = genesisHeaderState []
+          , headerState = genesisHeaderState (PraosChainDepState [])
           }
       , pInfoLeaderCreds = Just (
             nid

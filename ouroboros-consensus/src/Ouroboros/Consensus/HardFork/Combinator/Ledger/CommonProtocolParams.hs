@@ -23,4 +23,4 @@ askCurrentLedger f =
       hcollapse
     . hcmap proxySingle (K . f)
     . State.tip
-    . getHardForkLedgerState
+    . hardForkLedgerStatePerEra

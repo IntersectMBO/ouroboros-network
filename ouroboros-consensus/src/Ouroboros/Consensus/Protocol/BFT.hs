@@ -139,22 +139,19 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftConfig{..}
-                (CoreNodeId i)
-                _cis
-                (Ticked (SlotNo n) _l)
-                _cds =
+  checkIsLeader BftConfig{..} (CoreNodeId i) _ (SlotNo n) _ _ =
       if n `mod` numCoreNodes == i
       then IsLeader ()
       else NotLeader
     where
-      BftParams{..}  = bftParams
+      BftParams{..} = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes
 
   updateChainDepState BftConfig{..}
                       (BftValidateView BftFields{..} signed)
-                      (Ticked _ ())
-                      (Ticked (SlotNo n) ()) =
+                      (SlotNo n)
+                      _
+                      _ =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
              ()
@@ -164,12 +161,11 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err
     where
-      BftParams{..}  = bftParams
+      BftParams{..} = bftParams
       expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  tickChainDepState _ (Ticked slot _lv) = Ticked slot -- Nothing to do
-
+  tickChainDepState   _ _ _ _ = TickedTrivial
   rewindChainDepState _ _ _ _ = Just ()
 
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))

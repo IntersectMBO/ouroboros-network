@@ -102,17 +102,16 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP
 
-  checkIsLeader WLSConfig{..} () _ (Ticked slot _) _ =
+  checkIsLeader WLSConfig{..} () _ slot _ _ =
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing -> error $ "WithLeaderSchedule: missing slot " ++ show slot
         Just nids
             | wlsConfigNodeId `elem` nids -> IsLeader ()
             | otherwise                   -> NotLeader
 
-  tickChainDepState _ (Ticked slot _lv) = Ticked slot
-
-  updateChainDepState _ _ _ _ = return ()
-  rewindChainDepState _ _ _ _ = Just ()
+  tickChainDepState   _ _ _ _   = TickedTrivial
+  updateChainDepState _ _ _ _ _ = return ()
+  rewindChainDepState _ _ _ _   = Just ()
 
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))

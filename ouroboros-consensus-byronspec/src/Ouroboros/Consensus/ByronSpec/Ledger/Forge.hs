@@ -23,13 +23,13 @@ import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
   Forging
 -------------------------------------------------------------------------------}
 
-forgeByronSpecBlock :: SlotNo
-                    -> BlockNo
-                    -> LedgerState ByronSpecBlock
+forgeByronSpecBlock :: BlockNo
+                    -> SlotNo
+                    -> Ticked (LedgerState ByronSpecBlock)
                     -> [GenTx ByronSpecBlock]
                     -> Spec.VKey
                     -> ByronSpecBlock
-forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
+forgeByronSpecBlock curBlockNo curSlotNo (TickedByronSpecLedgerState _ st) txs vkey =
     ByronSpecBlock {
         byronSpecBlock     = block
       , byronSpecBlockNo   = curBlockNo
@@ -42,11 +42,10 @@ forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
     block :: Spec.Block
     block = Spec.mkBlock
-              (getChainStateHash byronSpecLedgerState)
+              (getChainStateHash st)
               (toByronSpecSlotNo curSlotNo)
               vkey
-              (Spec.protocolVersion $
-                getChainStateUPIState byronSpecLedgerState)
+              (Spec.protocolVersion $ getChainStateUPIState st)
               ds
               (case us of
                  []  -> Nothing

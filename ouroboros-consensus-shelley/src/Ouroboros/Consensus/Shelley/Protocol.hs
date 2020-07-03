@@ -37,6 +37,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , computeRandomnessStabilisationWindow
     -- * Type instances
   , ConsensusConfig (..)
+  , Ticked(..)
   ) where
 
 import           Data.Coerce (coerce)
@@ -366,6 +367,12 @@ instance TPraosCrypto c => HasChainIndepState (TPraos c) where
     where
       curPeriod = SL.KESPeriod $ fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
 
+-- | Ledger view at a particular slot
+newtype instance Ticked (SL.LedgerView c) = TickedPraosLedgerView {
+      -- TODO: Perhaps it would be cleaner to define this as a separate type
+      getTickedPraosLedgerView :: SL.LedgerView c
+    }
+
 instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ChainDepState (TPraos c) = TPraosState c
   type IsLeader      (TPraos c) = TPraosProof c
@@ -377,7 +384,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg@TPraosConfig{..} icn hk (Ticked slot lv) (Ticked _ cs) =
+  checkIsLeader cfg@TPraosConfig{..} icn hk slot (TickedPraosLedgerView lv) cs = do
       -- First, check whether we're in the overlay schedule
       case Map.lookup slot (SL.lvOverlaySched lv) of
         Nothing
@@ -428,7 +435,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         , tpraosIsCoreNodeSignKeyVRF
         } = icn
 
-      chainState = State.currentState cs
+      chainState = State.tickedPraosStateTicked cs
       eta0       = tickEta0 $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
@@ -444,9 +451,12 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       wallclockPeriod = SL.KESPeriod $ fromIntegral $
           unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
 
-  tickChainDepState TPraosConfig{..} (Ticked slot lv) cds = Ticked slot cds'
+  tickChainDepState TPraosConfig{..} (TickedPraosLedgerView lv) slot cds =
+      State.TickedPraosState {
+          tickedPraosStateTicked = cs'
+        , tickedPraosStateOrig   = cds
+        }
     where
-      cds' = State.append slot cs' cds
       cs' = SL.tickChainDepState
               shelleyGlobals
               lv
@@ -456,12 +466,13 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   updateChainDepState TPraosConfig{..}
                       b
-                      (Ticked _ lv)
-                      (Ticked _ cs) = do
-      newCS <- SL.updateChainDepState shelleyGlobals lv b (State.currentState cs)
+                      slot
+                      (TickedPraosLedgerView lv)
+                      cs = do
+      newCS <- SL.updateChainDepState shelleyGlobals lv b (State.tickedPraosStateTicked cs)
       return
         $ State.prune (fromIntegral k)
-        $ State.updateLast newCS cs
+        $ State.append slot newCS (State.tickedPraosStateOrig cs)
     where
       SecurityParam k = tpraosSecurityParam tpraosParams
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams

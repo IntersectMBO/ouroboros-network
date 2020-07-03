@@ -84,6 +84,7 @@ class ( NoUnexpectedThunks (ExtraForgeState blk)
     :: TopLevelConfig blk
     -> ForgeState blk
     -> BlockNo                -- ^ Current block number
+    -> SlotNo                 -- ^ Current slot number
     -> TickedLedgerState blk  -- ^ Current ledger
     -> [GenTx blk]            -- ^ Txs to add in the block
     -> IsLeader (BlockProtocol blk)

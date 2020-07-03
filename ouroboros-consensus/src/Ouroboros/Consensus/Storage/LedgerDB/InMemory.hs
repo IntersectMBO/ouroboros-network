@@ -279,6 +279,18 @@ ledgerDbDefaultParams (SecurityParam k) = LedgerDbParams {
     }
 
 {-------------------------------------------------------------------------------
+  Ticking
+-------------------------------------------------------------------------------}
+
+-- | Ticking the ledger DB just ticks the current state
+--
+-- We don't push the new state into the DB until we apply a block.
+data instance Ticked (LedgerDB l r) = TickedLedgerDB {
+      tickedLedgerDbTicked :: Ticked l
+    , tickedLedgerDbOrig   :: LedgerDB l r
+    }
+
+{-------------------------------------------------------------------------------
   Internal: checkpoints
 -------------------------------------------------------------------------------}
 
@@ -777,6 +789,12 @@ type instance LedgerCfg (LedgerDB l r) = LedgerCfg l
 
 type instance HeaderHash (LedgerDB l r) = HeaderHash l
 
+instance IsLedger l => GetTip (LedgerDB l r) where
+  getTip = castPoint . getTip . ledgerDbCurrent
+
+instance IsLedger l => GetTip (Ticked (LedgerDB l r)) where
+  getTip = castPoint . getTip . tickedLedgerDbOrig
+
 instance ( IsLedger l
            -- Required superclass constraints of 'IsLedger'
          , Show               r
@@ -785,23 +803,29 @@ instance ( IsLedger l
          ) => IsLedger (LedgerDB l r) where
   type LedgerErr (LedgerDB l r) = LedgerErr l
 
-  applyChainTick cfg slot db =
-      Ticked slot $ db { ledgerDbCurrent = l' }
-    where
-      Ticked _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
-
-  ledgerTipPoint =
-      castPoint . ledgerTipPoint . ledgerDbCurrent
+  applyChainTick cfg slot db@LedgerDB{..} = TickedLedgerDB {
+        tickedLedgerDbTicked = applyChainTick cfg slot ledgerDbCurrent
+      , tickedLedgerDbOrig   = db
+      }
 
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
-  applyLedgerBlock cfg blk (Ticked slot db) = do
-      fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
-        applyLedgerBlock (castFullBlockConfig cfg) blk $
-          Ticked slot (ledgerDbCurrent db)
-  reapplyLedgerBlock cfg blk (Ticked slot db) =
-      (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
-        reapplyLedgerBlock (castFullBlockConfig cfg) blk $
-          Ticked slot (ledgerDbCurrent db)
+  applyLedgerBlock cfg blk TickedLedgerDB{..} =
+      push <$> applyLedgerBlock
+                 (castFullBlockConfig cfg)
+                 blk
+                 tickedLedgerDbTicked
+   where
+     push :: l -> LedgerDB l (RealPoint blk)
+     push l = pushLedgerState l (blockRealPoint blk) tickedLedgerDbOrig
+
+  reapplyLedgerBlock cfg blk TickedLedgerDB{..} =
+      push $ reapplyLedgerBlock
+               (castFullBlockConfig cfg)
+               blk
+               tickedLedgerDbTicked
+   where
+     push :: l -> LedgerDB l (RealPoint blk)
+     push l = pushLedgerState l (blockRealPoint blk) tickedLedgerDbOrig
 
 {-------------------------------------------------------------------------------
   Suppor for testing

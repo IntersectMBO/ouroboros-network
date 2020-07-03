@@ -71,7 +71,6 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -102,17 +101,16 @@ instance ConsensusProtocol ProtocolB where
   type ValidateView  ProtocolB = ()
   type ValidationErr ProtocolB = Void
 
-  checkIsLeader CfgB{..} () _ (Ticked slot _) _ =
+  checkIsLeader CfgB{..} () _ slot _ _ =
       if slot `Set.member` cfgB_leadInSlots
       then IsLeader ()
       else NotLeader
 
   protocolSecurityParam = cfgB_k
 
-  tickChainDepState = \_ (Ticked slot _lv) -> Ticked slot
-
-  updateChainDepState = \_ _ _ _ -> return ()
-  rewindChainDepState = \_ _ _ _ -> Just ()
+  tickChainDepState   _ _ _ _   = TickedTrivial
+  updateChainDepState _ _ _ _ _ = return ()
+  rewindChainDepState _ _ _ _   = Just ()
 
 data BlockB = BlkB {
       blkB_header :: Header BlockB
@@ -183,10 +181,21 @@ data instance LedgerState BlockB = LgrB {
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 
+-- | Ticking has no state on the B ledger state
+newtype instance Ticked (LedgerState BlockB) = TickedLedgerStateB {
+      getTickedLedgerStateB :: LedgerState BlockB
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TickedLgrB" (Ticked (LedgerState BlockB))
+
+instance GetTip (LedgerState BlockB) where
+  getTip = castPoint . lgrB_tip
+
+instance GetTip (Ticked (LedgerState BlockB)) where
+  getTip = castPoint . getTip . getTickedLedgerStateB
+
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
-  applyChainTick _ = Ticked
-  ledgerTipPoint   = castPoint . lgrB_tip
+  applyChainTick _ _ = TickedLedgerStateB
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyLedgerBlock   = \_ b _ -> return $ LgrB (blockPoint b)
@@ -199,7 +208,7 @@ instance CommonProtocolParams BlockB where
   maxTxSize     _ = maxBound
 
 instance CanForge BlockB where
-  forgeBlock _ _ bno (Ticked sno st) _txs _ = BlkB {
+  forgeBlock _ _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
       blkB_header = HdrB {
           hdrB_fields = HeaderFields {
               headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
@@ -214,7 +223,7 @@ instance BlockSupportsProtocol BlockB where
   validateView _ _ = ()
 
 instance LedgerSupportsProtocol BlockB where
-  protocolLedgerView   _ _ = ()
+  protocolLedgerView   _ _ = TickedTrivial
   ledgerViewForecastAt _ _ = Just . trivialForecast
 
 instance HasPartialConsensusConfig ProtocolB
@@ -235,7 +244,7 @@ instance LedgerSupportsMempool BlockB where
 
   type ApplyTxErr BlockB = Void
 
-  applyTx   = \_ tx -> case tx of {}
+  applyTx   = \_ _ tx -> case tx of {}
   reapplyTx = applyTx
 
   maxTxCapacity _ = maxBound

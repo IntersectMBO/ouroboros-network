@@ -27,7 +27,7 @@ verifyHeaderSignature cfg hdr =
       PBftValidateBoundary{} ->
         -- EBB, no signature to check
         True
-      PBftValidateRegular _slot fields signed contextDSIGN ->
+      PBftValidateRegular fields signed contextDSIGN ->
         let PBftFields { pbftIssuer, pbftSignature } = fields
         in isRight $ CC.Crypto.verifySignedDSIGN
              contextDSIGN

@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , refoldLedger
     -- ** Short-hand
   , ledgerTipHash
-  , ledgerTipPoint'
+  , ledgerTipPoint
   , ledgerTipSlot
     -- * Queries
   , QueryLedger(..)
@@ -54,6 +54,7 @@ class ( IsLedger l
       , HasHeader blk
       , HasHeader (Header blk)
       ) => ApplyBlock l blk where
+
   -- | Apply a block to the ledger state.
   --
   -- This is passed the ledger state ticked with the slot of the given block,
@@ -108,14 +109,20 @@ refoldLedger = repeatedly . tickThenReapply
 -- | Wrapper around 'ledgerTipPoint' that uses a proxy to fix @blk@
 --
 -- This is occassionally useful to guide type inference
-ledgerTipPoint' :: UpdateLedger blk => Proxy blk -> LedgerState blk -> Point blk
-ledgerTipPoint' _ =  castPoint . ledgerTipPoint
+ledgerTipPoint ::
+     UpdateLedger blk
+  => Proxy blk -> LedgerState blk -> Point blk
+ledgerTipPoint _ = castPoint . getTip
 
-ledgerTipHash :: forall blk. UpdateLedger blk => LedgerState blk -> ChainHash blk
-ledgerTipHash = pointHash . (ledgerTipPoint' (Proxy @blk))
+ledgerTipHash ::
+     forall blk. UpdateLedger blk
+  => LedgerState blk -> ChainHash blk
+ledgerTipHash = pointHash . (ledgerTipPoint (Proxy @blk))
 
-ledgerTipSlot :: forall blk. UpdateLedger blk => LedgerState blk -> WithOrigin SlotNo
-ledgerTipSlot = pointSlot . (ledgerTipPoint' (Proxy @blk))
+ledgerTipSlot ::
+     forall blk. UpdateLedger blk
+  => LedgerState blk -> WithOrigin SlotNo
+ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))
 
 {-------------------------------------------------------------------------------
   Queries

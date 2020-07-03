@@ -1,9 +1,12 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Byron.Ledger.Forge (
     forgeByronBlock
   , forgeRegularBlock
@@ -33,11 +36,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
+import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
@@ -50,6 +53,7 @@ forgeByronBlock
   => TopLevelConfig ByronBlock
   -> ForgeState ByronBlock
   -> BlockNo                         -- ^ Current block number
+  -> SlotNo                          -- ^ Current slot number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
@@ -124,20 +128,18 @@ forgeRegularBlock
   :: HasCallStack
   => BlockConfig ByronBlock
   -> BlockNo                           -- ^ Current block number
+  -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg curNo tickedLedger txs isLeader =
+forgeRegularBlock cfg bno sno st@TickedByronLedgerState{..} txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)
         isLeader
         (reAnnotate $ Annotated toSign ())
   where
-    curSlot :: SlotNo
-    curSlot = tickedSlotNo tickedLedger
-
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg
 
@@ -183,19 +185,19 @@ forgeRegularBlock cfg curNo tickedLedger txs isLeader =
     proof = CC.Block.mkProof body
 
     prevHeaderHash :: CC.Block.HeaderHash
-    prevHeaderHash = case ledgerTipHash (tickedState tickedLedger) of
+    prevHeaderHash = case getTipHash st of
       GenesisHash             -> error
         "the first block on the Byron chain must be an EBB"
       BlockHash (ByronHash h) -> h
 
     epochAndSlotCount :: CC.Slot.EpochAndSlotCount
-    epochAndSlotCount = CC.Slot.fromSlotNumber epochSlots (coerce curSlot)
+    epochAndSlotCount = CC.Slot.fromSlotNumber epochSlots (coerce sno)
 
     toSign :: CC.Block.ToSign
     toSign = CC.Block.ToSign {
           CC.Block.tsHeaderHash      = prevHeaderHash
         , CC.Block.tsSlot            = epochAndSlotCount
-        , CC.Block.tsDifficulty      = coerce curNo
+        , CC.Block.tsDifficulty      = coerce bno
         , CC.Block.tsBodyProof       = proof
         , CC.Block.tsProtocolVersion = byronProtocolVersion cfg
         , CC.Block.tsSoftwareVersion = byronSoftwareVersion cfg
@@ -228,8 +230,8 @@ forgeRegularBlock cfg curNo tickedLedger txs isLeader =
         header = CC.Block.AHeader {
               CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId (byronProtocolMagic cfg))
             , CC.Block.aHeaderPrevHash        = ann prevHeaderHash
-            , CC.Block.aHeaderSlot            = ann (coerce curSlot)
-            , CC.Block.aHeaderDifficulty      = ann (coerce curNo)
+            , CC.Block.aHeaderSlot            = ann (coerce sno)
+            , CC.Block.aHeaderDifficulty      = ann (coerce bno)
             , CC.Block.headerProtocolVersion  = byronProtocolVersion cfg
             , CC.Block.headerSoftwareVersion  = byronSoftwareVersion cfg
             , CC.Block.aHeaderProof           = ann proof
