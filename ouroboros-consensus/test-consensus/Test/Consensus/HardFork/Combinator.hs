@@ -21,7 +21,6 @@
 
 module Test.Consensus.HardFork.Combinator (tests) where
 
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict hiding (shape)
@@ -73,6 +72,7 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.HardFork.Future
@@ -210,6 +210,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , nodeRestarts = noRestarts
         , txGenExtra   = ()
+        , version      = newestVersion (Proxy @TestBlock)
         }
       where
         TestConfig{..} = testConfig
@@ -392,13 +393,9 @@ versionN2C = HardForkNodeToClientEnabled $
                :* WrapNodeToClientVersion ()
                :* Nil
 
-instance TranslateNetworkProtocolVersion TestBlock where
-  supportedNodeToNodeVersions     _   = versionN2N :| []
-  supportedNodeToClientVersions   _   = versionN2C :| []
-  mostRecentSupportedNodeToNode   _   = versionN2N
-  mostRecentSupportedNodeToClient _   = versionN2C
-  nodeToNodeProtocolVersion       _ _ = NodeToNodeV_1
-  nodeToClientProtocolVersion     _ _ = NodeToClientV_2
+instance SupportedNetworkProtocolVersion TestBlock where
+  supportedNodeToNodeVersions   _ = Map.singleton maxBound versionN2N
+  supportedNodeToClientVersions _ = Map.singleton maxBound versionN2C
 
 instance SerialiseHFC '[BlockA, BlockB]
   -- Use defaults

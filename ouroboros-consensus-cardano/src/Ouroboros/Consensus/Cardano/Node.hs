@@ -17,12 +17,11 @@ module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
   , TriggerHardFork (..)
-    -- * TranslateNetworkProtocolVersion
+    -- * SupportedNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
   , pattern CardanoNodeToClientVersion1
   , pattern CardanoNodeToClientVersion2
-  , pattern CardanoNodeToClientVersion3
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -31,7 +30,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.Contravariant (contramap)
-import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict (NP (..), hd, unK)
 import           Data.Word (Word16)
 
@@ -152,7 +151,7 @@ prependTag tag payload = mconcat [
     ]
 
 {-------------------------------------------------------------------------------
-  TranslateNetworkProtocolVersion instance
+  SupportedNetworkProtocolVersion instance
 -------------------------------------------------------------------------------}
 
 -- Note: we don't support all combinations, so we don't declare them as
@@ -178,45 +177,25 @@ pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock sc
 pattern CardanoNodeToClientVersion1 =
     HardForkNodeToClientDisabled (WrapNodeToClientVersion ByronNodeToClientVersion1)
 
--- | We support Byron V2 with hard fork disabled, as it was released before
--- the hard fork
 pattern CardanoNodeToClientVersion2 :: BlockNodeToClientVersion (CardanoBlock sc)
 pattern CardanoNodeToClientVersion2 =
-    HardForkNodeToClientDisabled (WrapNodeToClientVersion ByronNodeToClientVersion2)
-
-pattern CardanoNodeToClientVersion3 :: BlockNodeToClientVersion (CardanoBlock sc)
-pattern CardanoNodeToClientVersion3 =
     HardForkNodeToClientEnabled (
-         WrapNodeToClientVersion ByronNodeToClientVersion2
+         WrapNodeToClientVersion ByronNodeToClientVersion1
       :* WrapNodeToClientVersion ShelleyNodeToClientVersion1
       :* Nil
       )
 
-instance TPraosCrypto sc => TranslateNetworkProtocolVersion (CardanoBlock sc) where
-  supportedNodeToNodeVersions _ = NE.fromList $
-      [ CardanoNodeToNodeVersion1
-      , CardanoNodeToNodeVersion2
+instance TPraosCrypto sc => SupportedNetworkProtocolVersion (CardanoBlock sc) where
+  supportedNodeToNodeVersions _ = Map.fromList $
+      [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
+      , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
       ]
 
-  supportedNodeToClientVersions _ = NE.fromList $
-      [ CardanoNodeToClientVersion1
-      , CardanoNodeToClientVersion2
-      , CardanoNodeToClientVersion3
+  supportedNodeToClientVersions _ = Map.fromList $
+      [ (NodeToClientV_1, CardanoNodeToClientVersion1)
+      , (NodeToClientV_2, CardanoNodeToClientVersion1)
+      , (NodeToClientV_3, CardanoNodeToClientVersion2)
       ]
-
-  mostRecentSupportedNodeToNode   _ = CardanoNodeToNodeVersion2
-  mostRecentSupportedNodeToClient _ = CardanoNodeToClientVersion3
-
-  nodeToNodeProtocolVersion _ = \case
-      CardanoNodeToNodeVersion1 -> NodeToNodeV_1
-      CardanoNodeToNodeVersion2 -> NodeToNodeV_2
-      v                         -> error $ "unsupported version: " <> show v
-
-  nodeToClientProtocolVersion _ = \case
-      CardanoNodeToClientVersion1 -> NodeToClientV_1
-      CardanoNodeToClientVersion2 -> NodeToClientV_2
-      CardanoNodeToClientVersion3 -> NodeToClientV_3
-      v                           -> error $ "unsupported version: " <> show v
 
 {-------------------------------------------------------------------------------
   RunNode instance

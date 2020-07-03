@@ -1,9 +1,12 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.ThreadNet.Praos (
     tests
   ) where
+
+import           Data.Proxy (Proxy (..))
 
 import           Test.QuickCheck
 
@@ -16,7 +19,8 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
-import           Ouroboros.Consensus.Mock.Node.Praos (protocolInfoPraos)
+import           Ouroboros.Consensus.Mock.Node.Praos (MockPraosBlock,
+                     protocolInfoPraos)
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 
@@ -26,6 +30,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
@@ -124,6 +129,7 @@ prop_simple_praos_convergence TestSetup
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
+      , version      = newestVersion (Proxy @MockPraosBlock)
       }
 
     params = PraosParams

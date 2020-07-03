@@ -73,7 +73,7 @@ blockFetchServer
        )
     => Tracer m (TraceBlockFetchServerEvent blk)
     -> ChainDB m blk
-    -> BlockNodeToNodeVersion blk
+    -> NodeToNodeVersion
     -> ResourceRegistry m
     -> BlockFetchServer (Serialised blk) m ()
 blockFetchServer _tracer chainDB _version registry = senderSide

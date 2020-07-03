@@ -1,5 +1,6 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.ThreadNet.LeaderSchedule (
     tests
@@ -8,8 +9,9 @@ module Test.ThreadNet.LeaderSchedule (
 import           Control.Monad (replicateM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Test.QuickCheck
+import           Data.Proxy (Proxy (..))
 
+import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
@@ -31,6 +33,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.HardFork.Future (singleEraFuture)
@@ -110,6 +113,7 @@ prop_simple_leader_schedule_convergence TestSetup
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
+      , version      = newestVersion (Proxy @MockPraosRuleBlock)
       }
 
     -- this is entirely ignored because of the 'WithLeaderSchedule' combinator

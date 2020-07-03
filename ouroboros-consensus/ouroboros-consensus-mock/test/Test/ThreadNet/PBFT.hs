@@ -1,14 +1,16 @@
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.ThreadNet.PBFT (
     tests
   ) where
 
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
-import           Test.QuickCheck
 
+import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
@@ -21,7 +23,8 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.PBFT
 import           Ouroboros.Consensus.Mock.Node ()
-import           Ouroboros.Consensus.Mock.Node.PBFT (protocolInfoMockPBFT)
+import           Ouroboros.Consensus.Mock.Node.PBFT (MockPBftBlock,
+                     protocolInfoMockPBFT)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -36,6 +39,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
@@ -128,6 +132,7 @@ prop_simple_pbft_convergence TestSetup
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
+      , version      = newestVersion (Proxy @MockPBftBlock)
       }
 
     NumCoreNodes nn = numCoreNodes

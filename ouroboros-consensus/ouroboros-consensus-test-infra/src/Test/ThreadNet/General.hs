@@ -51,6 +51,7 @@ import qualified Ouroboros.Consensus.Block.Abstract as BA
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -176,9 +177,11 @@ data TestConfigB blk = TestConfigB
   , nodeJoinPlan :: NodeJoinPlan
   , nodeRestarts :: NodeRestarts
   , txGenExtra   :: TxGenExtra blk
+  , version      :: (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   }
 
-deriving instance Show (TxGenExtra blk) => Show (TestConfigB blk)
+deriving instance (Show (TxGenExtra blk), Show (BlockNodeToNodeVersion blk))
+                => Show (TestConfigB blk)
 
 -- | Test configuration that depends on the block and the monad
 --
@@ -221,6 +224,7 @@ runTestNetwork TestConfig
   , nodeJoinPlan
   , nodeRestarts
   , txGenExtra
+  , version = (networkVersion, blockVersion)
   }
     mkTestConfigMB
   = runSimOrThrow $ do
@@ -246,6 +250,8 @@ runTestNetwork TestConfig
       , tnaRestarts     = nodeRestarts
       , tnaTopology     = nodeTopology
       , tnaTxGenExtra   = txGenExtra
+      , tnaVersion      = networkVersion
+      , tnaBlockVersion = blockVersion
       }
 
 {-------------------------------------------------------------------------------

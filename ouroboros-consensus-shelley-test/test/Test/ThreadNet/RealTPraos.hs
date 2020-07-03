@@ -18,6 +18,7 @@ import qualified Cardano.Crypto.KES.Class as KES
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 
@@ -32,6 +33,7 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES)
 
@@ -39,12 +41,16 @@ import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.TxGen.Shelley
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+import           Test.ThreadNet.Util.NodeToNodeVersion (genVersion)
+
+type Crypto = TPraosMockCrypto ShortHash
 
 data TestSetup = TestSetup
   { setupD          :: Double
     -- ^ decentralization parameter
   , setupK          :: SecurityParam
   , setupTestConfig :: TestConfig
+  , setupVersion    :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Crypto))
   }
   deriving (Show)
 
@@ -55,10 +61,13 @@ instance Arbitrary TestSetup where
 
     setupTestConfig <- arbitrary
 
+    setupVersion   <- genVersion (Proxy @(ShelleyBlock Crypto))
+
     pure TestSetup
       { setupD
       , setupK
       , setupTestConfig
+      , setupVersion
       }
 
   -- TODO shrink
@@ -74,6 +83,7 @@ prop_simple_real_tpraos_convergence TestSetup
   { setupD
   , setupK
   , setupTestConfig
+  , setupVersion
   } =
     prop_general PropGeneralArgs
       { pgaBlockProperty      = const $ property True
@@ -100,6 +110,7 @@ prop_simple_real_tpraos_convergence TestSetup
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ShelleyTxGenExtra $ mkGenEnv coreNodes
+      , version      = setupVersion
       }
 
     testOutput =
@@ -118,9 +129,9 @@ prop_simple_real_tpraos_convergence TestSetup
 
     maxKESEvolutions :: Word64
     maxKESEvolutions = fromIntegral $
-      KES.totalPeriodsKES (Proxy @(KES (TPraosMockCrypto ShortHash)))
+      KES.totalPeriodsKES (Proxy @(KES Crypto))
 
-    coreNodes :: [CoreNode (TPraosMockCrypto ShortHash)]
+    coreNodes :: [CoreNode Crypto]
     coreNodes =
         withSeed initSeed $
         replicateM (fromIntegral n) $
@@ -128,7 +139,7 @@ prop_simple_real_tpraos_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisConfig :: ShelleyGenesis (TPraosMockCrypto ShortHash)
+    genesisConfig :: ShelleyGenesis Crypto
     genesisConfig =
         mkGenesisConfig
           (SL.ProtVer 0 0)

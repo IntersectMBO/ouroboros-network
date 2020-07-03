@@ -32,6 +32,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
     -- * Versioning
   , HardForkNodeToNodeVersion(..)
   , HardForkNodeToClientVersion(..)
+  , isHardForkNodeToNodeEnabled
+  , isHardForkNodeToClientEnabled
     -- * Dealing with annotations
   , AnnDecoder(..)
     -- * Serialisation of telescopes
@@ -134,6 +136,14 @@ data HardForkNodeToNodeVersion xs where
 data HardForkNodeToClientVersion xs where
   HardForkNodeToClientDisabled :: WrapNodeToClientVersion x -> HardForkNodeToClientVersion (x ': xs)
   HardForkNodeToClientEnabled  :: NP WrapNodeToClientVersion xs -> HardForkNodeToClientVersion xs
+
+isHardForkNodeToNodeEnabled :: HardForkNodeToNodeVersion xs -> Bool
+isHardForkNodeToNodeEnabled HardForkNodeToNodeEnabled {} = True
+isHardForkNodeToNodeEnabled _                            = False
+
+isHardForkNodeToClientEnabled :: HardForkNodeToClientVersion xs -> Bool
+isHardForkNodeToClientEnabled HardForkNodeToClientEnabled {} = True
+isHardForkNodeToClientEnabled _                              = False
 
 deriving instance All (Compose Show WrapNodeToNodeVersion)   xs => Show (HardForkNodeToNodeVersion xs)
 deriving instance All (Compose Show WrapNodeToClientVersion) xs => Show (HardForkNodeToClientVersion xs)

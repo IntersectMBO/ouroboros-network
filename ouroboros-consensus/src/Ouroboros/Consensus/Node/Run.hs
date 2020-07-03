@@ -69,7 +69,7 @@ class ( LedgerSupportsProtocol           blk
       , LedgerSupportsMempool            blk
       , HasTxId                   (GenTx blk)
       , QueryLedger                      blk
-      , TranslateNetworkProtocolVersion  blk
+      , SupportedNetworkProtocolVersion  blk
       , CanForge                         blk
       , ConfigSupportsNode               blk
       , ConvertRawHash                   blk

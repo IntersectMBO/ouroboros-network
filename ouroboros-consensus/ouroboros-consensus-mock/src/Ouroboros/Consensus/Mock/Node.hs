@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Mock.Node (
   ) where
 
 import           Codec.Serialise (Serialise)
+import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Consensus.Block
@@ -31,9 +32,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
-instance TranslateNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
-  nodeToNodeProtocolVersion   _ _ = NodeToNodeV_1
-  nodeToClientProtocolVersion _ _ = NodeToClientV_2
+instance SupportedNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
+  supportedNodeToNodeVersions   _ = Map.singleton maxBound ()
+  supportedNodeToClientVersions _ = Map.singleton maxBound ()
 
 instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,

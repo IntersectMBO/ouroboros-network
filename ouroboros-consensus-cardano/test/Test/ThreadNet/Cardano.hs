@@ -35,10 +35,14 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History.Util as Util
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
+
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+                     (isHardForkNodeToNodeEnabled)
 
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
@@ -70,12 +74,15 @@ import           Test.ThreadNet.TxGen.Cardano ()
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..))
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
+import           Test.ThreadNet.Util.NodeToNodeVersion (genVersionFiltered)
 import qualified Test.ThreadNet.Util.NodeTopology as Topo
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
+
+type Crypto = TPraosMockCrypto Blake2b_256
 
 -- | When and for how long the nodes are partitioned
 --
@@ -105,6 +112,7 @@ data TestSetup = TestSetup
   , setupSlotLengthByron   :: SlotLength
   , setupSlotLengthShelley :: SlotLength
   , setupTestConfig        :: TestConfig
+  , setupVersion           :: (NodeToNodeVersion, BlockNodeToNodeVersion (CardanoBlock Crypto))
   }
   deriving (Show)
 
@@ -123,6 +131,10 @@ instance Arbitrary TestSetup where
     setupHardFork        <- frequency [(9, pure True), (1, pure False)]
     setupPartition       <- genPartition numCoreNodes numSlots setupK
 
+    setupVersion         <- genVersionFiltered
+                              isHardForkNodeToNodeEnabled
+                              (Proxy @(CardanoBlock Crypto))
+
     pure TestSetup
       { setupByronLowerBound
       , setupD
@@ -132,6 +144,7 @@ instance Arbitrary TestSetup where
       , setupSlotLengthByron
       , setupSlotLengthShelley
       , setupTestConfig
+      , setupVersion
       }
 
   -- TODO shrink
@@ -306,6 +319,7 @@ prop_simple_cardano_convergence TestSetup
   , setupSlotLengthByron
   , setupSlotLengthShelley
   , setupTestConfig
+  , setupVersion
   } =
     tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
     tabulatePartitionDuration $
@@ -351,9 +365,10 @@ prop_simple_cardano_convergence TestSetup
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ()
+      , version      = setupVersion
       }
 
-    testOutput :: TestOutput (CardanoBlock (TPraosMockCrypto Blake2b_256))
+    testOutput :: TestOutput (CardanoBlock Crypto)
     testOutput =
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
@@ -421,9 +436,9 @@ prop_simple_cardano_convergence TestSetup
 
     maxKESEvolutions :: Word64
     maxKESEvolutions = fromIntegral $
-      KES.totalPeriodsKES (Proxy @(KES (TPraosMockCrypto Blake2b_256)))
+      KES.totalPeriodsKES (Proxy @(KES Crypto))
 
-    coreNodes :: [Shelley.CoreNode (TPraosMockCrypto Blake2b_256)]
+    coreNodes :: [Shelley.CoreNode Crypto]
     coreNodes =
         withSeed initSeed $
         replicateM (fromIntegral n) $
@@ -431,7 +446,7 @@ prop_simple_cardano_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisShelley :: ShelleyGenesis (TPraosMockCrypto Blake2b_256)
+    genesisShelley :: ShelleyGenesis Crypto
     genesisShelley =
         Shelley.mkGenesisConfig
           (SL.ProtVer shelleyMajorVersion 0)

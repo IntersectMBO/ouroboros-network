@@ -675,13 +675,9 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   type BlockNodeToNodeVersion   (DegenFork b) = BlockNodeToNodeVersion   b
   type BlockNodeToClientVersion (DegenFork b) = BlockNodeToClientVersion b
 
-instance TranslateNetworkProtocolVersion b => TranslateNetworkProtocolVersion (DegenFork b) where
-  supportedNodeToNodeVersions     _ = supportedNodeToNodeVersions     (Proxy @b)
-  supportedNodeToClientVersions   _ = supportedNodeToClientVersions   (Proxy @b)
-  mostRecentSupportedNodeToNode   _ = mostRecentSupportedNodeToNode   (Proxy @b)
-  mostRecentSupportedNodeToClient _ = mostRecentSupportedNodeToClient (Proxy @b)
-  nodeToNodeProtocolVersion       _ = nodeToNodeProtocolVersion       (Proxy @b)
-  nodeToClientProtocolVersion     _ = nodeToClientProtocolVersion     (Proxy @b)
+instance SupportedNetworkProtocolVersion b => SupportedNetworkProtocolVersion (DegenFork b) where
+  supportedNodeToNodeVersions   _ = supportedNodeToNodeVersions   (Proxy @b)
+  supportedNodeToClientVersions _ = supportedNodeToClientVersions (Proxy @b)
 
 instance (NoHardForks b, RunNode b) => RunNode (DegenFork b) where
   nodeBlockFetchSize (DHdr hdr) = nodeBlockFetchSize (project hdr)
