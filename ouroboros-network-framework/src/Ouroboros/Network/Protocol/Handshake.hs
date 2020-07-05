@@ -24,7 +24,6 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 
-import           Network.Mux.Timeout
 import           Network.Mux.Trace
 import           Network.Mux.Types
 import           Network.TypedProtocol.Codec
@@ -44,40 +43,30 @@ import           Ouroboros.Network.Protocol.Handshake.Server
 handshakeProtocolNum :: MiniProtocolNum
 handshakeProtocolNum = MiniProtocolNum 0
 
--- | Timeout for the complete handshake exchange.
---
-handshakeTimeout :: DiffTime
-handshakeTimeout = 10 -- 10 seconds
-
 -- | Wrapper around initiator and responder errors experienced by tryHandshake.
 --
 data HandshakeException a =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError a
-  | HandshakeTimeout
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
 -- within `handshakeTimeout` seconds.
 --
-tryHandshake :: ( MonadAsync m
-                , MonadFork m
-                , MonadMonotonicTime m
-                , MonadTimer m
+tryHandshake :: forall m a r.
+                ( MonadAsync m
                 , MonadMask m
-                , MonadThrow (STM m)
                 )
              => m (Either a r)
              -> m (Either (HandshakeException a) r)
 tryHandshake doHandshake = do
-    mapp <- withTimeoutSerial $ \timeoutFn -> timeoutFn handshakeTimeout $ try doHandshake
+    mapp <- try doHandshake
     case mapp of
-         Nothing -> return $ Left HandshakeTimeout
-         Just (Left (err :: ProtocolLimitFailure)) ->
-             return $ Left $ HandshakeProtocolLimit err
-         Just (Right (Left err)) ->
-             return $ Left $ HandshakeProtocolError err
-         Just (Right (Right r)) -> return $ Right r
+      Left err ->
+          return $ Left $ HandshakeProtocolLimit err
+      Right (Left err) ->
+          return $ Left $ HandshakeProtocolError err
+      Right (Right r) -> return $ Right r
 
 
 --
