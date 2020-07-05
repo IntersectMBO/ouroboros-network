@@ -18,6 +18,7 @@ import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
 
 import           Control.Exception (assert)
 import           Control.Monad (forever)
@@ -190,7 +191,8 @@ exampleFixedPeerGSVs =
 
 runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
-                   Ord peerid, Serialise block, Serialise (HeaderHash block))
+                   Ord peerid, Serialise block, Serialise (HeaderHash block),
+                   Typeable block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
@@ -209,7 +211,8 @@ runFetchClient tracer registry peerid channel client =
 runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
                    Serialise block,
-                   Serialise (HeaderHash block))
+                   Serialise (HeaderHash block),
+                   Typeable block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block m a
@@ -225,7 +228,8 @@ runFetchClientAndServerAsync
                :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m, Ord peerid,
                    Serialise header, Serialise block,
-                   Serialise (HeaderHash block))
+                   Serialise (HeaderHash block),
+                   Typeable block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
