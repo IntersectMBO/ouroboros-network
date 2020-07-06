@@ -8,6 +8,8 @@
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Drivers for running 'Peer's.
 --
@@ -30,6 +32,7 @@ module Ouroboros.Network.Driver.Limits (
   ) where
 
 import Data.Maybe (fromMaybe)
+import Data.Typeable (Typeable)
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -46,7 +49,8 @@ import Network.TypedProtocol.Driver
 
 import Ouroboros.Network.Codec
 import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver.Simple (TraceSendRecv(..))
+import Ouroboros.Network.Driver.Simple (TraceSendRecv(..), DecoderFailure (..))
+import Ouroboros.Network.Util.ShowProxy
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
@@ -61,15 +65,52 @@ data ProtocolTimeLimits ps = ProtocolTimeLimits {
                             PeerHasAgency pr st -> Maybe DiffTime
      }
 
-data ProtocolLimitFailure = ExceededSizeLimit
-                          | ExceededTimeLimit
-  deriving (Eq, Show)
+data ProtocolLimitFailure where
+    ExceededSizeLimit :: forall (pr :: PeerRole) ps (st :: ps).
+                         ( Typeable ps
+                         , forall (st' :: ps). Show (ClientHasAgency st')
+                         , forall (st' :: ps). Show (ServerHasAgency st')
+                         , ShowProxy ps
+                         )
+                      => PeerHasAgency pr st
+                      -> ProtocolLimitFailure
+    ExceededTimeLimit :: forall (pr :: PeerRole) ps (st :: ps).
+                         ( Typeable ps
+                         , forall (st' :: ps). Show (ClientHasAgency st')
+                         , forall (st' :: ps). Show (ServerHasAgency st')
+                         , ShowProxy ps
+                         )
+                      => PeerHasAgency pr st
+                      -> ProtocolLimitFailure
 
-instance Exception ProtocolLimitFailure
+instance Show ProtocolLimitFailure where
+    show (ExceededSizeLimit (stok :: PeerHasAgency pr (st :: ps))) =
+      concat
+        [ "ExceededSizeLimit "
+        , showProxy (Proxy :: Proxy ps)
+        , " "
+        , show stok
+        ]
+    show (ExceededTimeLimit (stok :: PeerHasAgency pr (st :: ps))) =
+      concat
+        [ "ExceededTimeLimit "
+        , showProxy (Proxy :: Proxy ps)
+        , " "
+        , show stok
+        ]
+
+instance Exception ProtocolLimitFailure where
 
 
 driverWithLimits :: forall ps failure bytes m.
-                    (MonadThrow m, Exception failure)
+                    ( MonadThrow m
+                    , Typeable failure
+                    , Typeable ps
+                    , Show failure
+                    , ShowProxy ps
+                    , forall (st' :: ps). Show (ClientHasAgency st')
+                    , forall (st' :: ps). Show (ServerHasAgency st')
+                    )
                  => Tracer m (TraceSendRecv ps)
                  -> TimeoutFn m
                  -> Codec ps failure m bytes
@@ -107,9 +148,9 @@ driverWithLimits tracer timeoutFn
         Just (Right x@(SomeMessage msg, _trailing')) -> do
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
-        Just (Left (Just failure)) -> throwM failure
-        Just (Left Nothing)        -> throwM ExceededSizeLimit
-        Nothing                    -> throwM ExceededTimeLimit
+        Just (Left (Just failure)) -> throwM (DecoderFailure stok failure)
+        Just (Left Nothing)        -> throwM (ExceededSizeLimit stok)
+        Nothing                    -> throwM (ExceededTimeLimit stok)
 
 runDecoderWithLimit
     :: forall m bytes failure a. Monad m
@@ -161,8 +202,19 @@ runDecoderWithLimit limit size Channel{recv} =
 
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
-     (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-      MonadMonotonicTime m, MonadTimer m, Exception failure)
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadMonotonicTime m
+     , MonadTimer m
+     , Typeable ps
+     , Typeable failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     , Show failure
+     )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -185,8 +237,19 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 --
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-      MonadMonotonicTime m, MonadTimer m, Exception failure)
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadMonotonicTime m
+     , MonadTimer m
+     , Typeable ps
+     , Typeable failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     , Show failure
+     )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes

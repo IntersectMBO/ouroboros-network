@@ -15,6 +15,7 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
 
 import           Network.TypedProtocol.Core
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | The kind of the local transaction-submission protocol, and the types of
@@ -43,6 +44,10 @@ data LocalTxSubmission tx reject where
   -- | Nobody has agency. The terminal state.
   --
   StDone   :: LocalTxSubmission tx reject
+
+
+instance ShowProxy (LocalTxSubmission tx reject) where
+    showProxy _ = "LocalTxSubmission"
 
 
 -- | Isomorphic with Maybe but with a name that better describes its purpose and

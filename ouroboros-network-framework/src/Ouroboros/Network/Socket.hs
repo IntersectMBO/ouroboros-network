@@ -85,11 +85,9 @@ import           Control.Tracer
 
 import qualified Network.Mux.Compat as Mx
 import Network.Mux.DeltaQ.TraceTransformer
-import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Codec hiding (encode, decode)
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.ErrorPolicy
@@ -142,6 +140,29 @@ sockAddrFamily
 sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
+
+-- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
+-- There is no upper bound on the time we wait when waiting for a new SDU.
+-- This makes it possible for miniprotocols to use timeouts that are larger
+-- than 30s or wait forever.  `30s` for receiving an SDU corresponds to
+-- a minimum speed limit of 17kbps.
+--
+-- ( 8      -- mux header length
+-- + 0xffff -- maximum SDU payload
+-- )
+-- * 8
+-- = 524_344 -- maximum bits in an SDU
+--
+--  524_344 / 30 / 1024 = 17kbps
+--
+sduTimeout :: DiffTime
+sduTimeout = 30
+
+-- | For handshake, we put a limit of `10s` for sending or receiving a single
+-- `MuxSDU`.
+--
+sduHandshakeTimeout :: DiffTime
+sduHandshakeTimeout = 10
 
 
 -- |
@@ -209,12 +230,11 @@ connectToNode'
 connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-    let bearer = Snocket.toBearer sn muxTracer sd
     ts_start <- getMonotonicTime
  
     app_e <-
       runHandshakeClient
-        bearer
+        (Snocket.toBearer sn sduHandshakeTimeout muxTracer sd)
         connectionId
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
@@ -225,11 +245,6 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
         }
     ts_end <- getMonotonicTime
     case app_e of
-         Left HandshakeTimeout -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError ExceededTimeLimit
-                 (diffTime ts_end ts_start)
-             throwIO ExceededTimeLimit
-
          Left (HandshakeProtocolLimit err) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
@@ -240,7 +255,10 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
 
          Right app -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
+             Mx.muxStart
+               muxTracer
+               (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app)
+               (Snocket.toBearer sn sduTimeout muxTracer sd)
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -328,14 +346,12 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
     case accept of
       AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
         muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` muxTracer
-        let bearer :: MuxBearer IO
-            bearer = Snocket.toBearer sn muxTracer' sd
 
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
 
         app_e <-
           runHandshakeServer
-            bearer
+            (Snocket.toBearer sn sduHandshakeTimeout muxTracer' sd)
             connectionId
             acceptVersion
             HandshakeArguments {
@@ -346,10 +362,6 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
             }
 
         case app_e of
-             Left HandshakeTimeout -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError ExceededTimeLimit
-                 throwIO ExceededTimeLimit
-
              Left (HandshakeProtocolLimit err) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
                  throwIO err
@@ -360,7 +372,11 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
 
              Right (SomeResponderApplication app) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                 Mx.muxStart muxTracer' (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
+                 Mx.muxStart
+                   muxTracer'
+                   (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app)
+                   (Snocket.toBearer sn sduTimeout muxTracer' sd)
+
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 mkListeningSocket

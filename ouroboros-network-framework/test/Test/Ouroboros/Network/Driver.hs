@@ -35,6 +35,8 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer
 
+import Test.Ouroboros.Network.Orphans ()
+
 import Test.QuickCheck
 import Text.Show.Functions ()
 import Test.Tasty (TestTree, testGroup)
@@ -94,6 +96,12 @@ timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
 --
 
 
+data ShouldFail
+    = ShouldExceededTimeLimit
+    | ShouldExceededSizeLimit
+  deriving Eq
+
+
 -- |
 -- Run the server peer using @runPeerWithByteLimit@, which will receive requests
 -- with the given payloads.
@@ -117,9 +125,18 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
               c2 sendPeer)
 
       case res :: Either ProtocolLimitFailure ([DiffTime], ()) of
-        Right _                -> pure $ shouldFail reqPayloads == Nothing
-        Left ExceededSizeLimit -> pure $ shouldFail reqPayloads == Just ExceededSizeLimit
-        Left ExceededTimeLimit -> pure $ shouldFail reqPayloads == Just ExceededTimeLimit
+        Right _ ->
+          pure $ shouldFail reqPayloads == Nothing
+        Left ExceededSizeLimit{} ->
+          pure $ case shouldFail reqPayloads of
+            Just ShouldExceededSizeLimit -> True
+            Just ShouldExceededTimeLimit -> False
+            Nothing -> False
+        Left ExceededTimeLimit{} ->
+          pure $ case shouldFail reqPayloads of
+            Just ShouldExceededTimeLimit -> True
+            Just ShouldExceededSizeLimit -> False
+            Nothing -> False
 
     where
       sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
@@ -136,19 +153,19 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
 
       -- It is not enough to check if a testcase is expected to fail, we need to
       -- calculate which type of failure is going to happen first.
-      shouldFail ::  [(String, DiffTime)] -> Maybe ProtocolLimitFailure
+      shouldFail ::  [(String, DiffTime)] -> Maybe ShouldFail
       shouldFail [] =
           -- Check @MsgDone@ which is always sent
           let msgDone = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) MsgDone in
           if length msgDone > fromIntegral limit
-             then Just ExceededSizeLimit
+             then Just ShouldExceededSizeLimit
              else Nothing
       shouldFail ((msg, delay):cmds) =
           let msg' = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) (MsgReq msg) in
           if length msg' > fromIntegral limit 
-          then Just ExceededSizeLimit
+          then Just ShouldExceededSizeLimit
           else if delay >= serverTimeout
-          then Just ExceededTimeLimit
+          then Just ShouldExceededTimeLimit
           else shouldFail cmds
 
 data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word (String, DiffTime)

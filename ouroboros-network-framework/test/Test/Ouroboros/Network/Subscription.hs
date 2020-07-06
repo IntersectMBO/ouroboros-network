@@ -57,6 +57,8 @@ import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses(..), WorkerParams(..))
 
+import           Test.Ouroboros.Network.Orphans ()
+
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty, shuffle)

@@ -80,9 +80,11 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
     stateToLimit (ClientAgency TokPropose) = maxTransmissionUnit
     stateToLimit (ServerAgency TokConfirm) = maxTransmissionUnit
 
--- Time limits
--- We don't use a per-state timeout, instead there is an overall timeout
--- for the complete handshake protocol exchange.
+-- | Time limits.
+--
+-- We use a bearer which has `10s` timeout on sending or receiving a single
+-- `MuxSDU`.  Handshake messages must fit into a single `MuxSDU`, thus we don't
+-- set another timeout here.
 timeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where

@@ -24,6 +24,7 @@
 module Ouroboros.Network.Protocol.KeepAlive.Type where
 
 import Network.TypedProtocol.Core
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | A kind to identify our protocol, and the types of the states in the state
@@ -43,6 +44,8 @@ data KeepAlive where
     --
     StDone   :: KeepAlive
 
+instance ShowProxy KeepAlive where
+    showProxy _ = "KeepAlive"
 
 instance Protocol KeepAlive where
     -- | The messages in the keep alive protocol.

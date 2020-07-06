@@ -32,6 +32,7 @@ import           Data.Typeable (Typeable)
 import           Data.Map (Map)
 
 import           Network.TypedProtocol.Core
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- |
@@ -43,6 +44,9 @@ data Handshake vNumber vParams where
     StPropose :: Handshake vNumber vParams
     StConfirm :: Handshake vNumber vParams
     StDone    :: Handshake vNumber vParams
+
+instance ShowProxy (Handshake vNumber vParams) where
+    showProxy _ = "Handshake"
 
 -- |
 -- Reasons by which a server can refuse proposed version.

@@ -4,8 +4,10 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE FlexibleContexts #-}
 -- @UndecidableInstances@ extensions is required for defining @Show@ instance
 -- of @'TraceSendRecv'@.
@@ -21,6 +23,7 @@ module Ouroboros.Network.Driver.Simple (
   -- * Normal peers
   runPeer,
   TraceSendRecv(..),
+  DecoderFailure(..),
 
   -- * Pipelined peers
   runPipelinedPeer,
@@ -32,9 +35,13 @@ module Ouroboros.Network.Driver.Simple (
   runConnectedPeersPipelined,
   ) where
 
+import Data.Typeable (Typeable)
+
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Driver
+
+import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Codec
@@ -81,8 +88,43 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
 
+data DecoderFailure failure where
+    DecoderFailure :: forall (pr :: PeerRole) ps (st :: ps) failure.
+                      ( Typeable ps
+                      , forall (st' :: ps). Show (ClientHasAgency st')
+                      , forall (st' :: ps). Show (ServerHasAgency st')
+                      , ShowProxy ps
+                      )
+                   => PeerHasAgency pr st
+                   -> failure
+                   -> DecoderFailure failure
+
+instance Show failure
+         => Show (DecoderFailure failure) where
+    show (DecoderFailure (tok :: PeerHasAgency pr (st :: ps)) failure) =
+      concat
+        [ "DecoderFailure "
+        , showProxy (Proxy :: Proxy ps)
+        , " "
+        , show tok 
+        , " "
+        , show failure
+        ]
+
+instance ( Typeable failure
+         , Show failure
+         ) => Exception (DecoderFailure failure) where
+
+
 driverSimple :: forall ps failure bytes m.
-                (MonadThrow m, Exception failure)
+                ( MonadThrow m
+                , Typeable ps
+                , Typeable failure
+                , Show failure
+                , forall (st :: ps). Show (ClientHasAgency st)
+                , forall (st :: ps). Show (ServerHasAgency st)
+                , ShowProxy ps
+                )
              => Tracer m (TraceSendRecv ps)
              -> Codec ps failure m bytes
              -> Channel m bytes
@@ -110,7 +152,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
         Left failure ->
-          throwM failure
+          throwM (DecoderFailure stok failure)
 
 
 -- | Run a peer with the given channel via the given codec.
@@ -119,7 +161,14 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
-     (MonadThrow m, Exception failure)
+     ( MonadThrow m
+     , Typeable ps
+     , Typeable failure
+     , Show failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -140,7 +189,15 @@ runPeer tracer codec channel peer =
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadAsync m, MonadThrow m, Exception failure)
+     ( MonadAsync m
+     , MonadThrow m
+     , Typeable ps
+     , Typeable failure
+     , Show failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -180,8 +237,16 @@ runDecoderWithChannel Channel{recv} = go
 -- The first argument is expected to create two channels that are connected,
 -- for example 'createConnectedChannels'.
 --
-runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
-                      Exception failure)
+runConnectedPeers :: ( MonadSTM m
+                     , MonadAsync m
+                     , MonadCatch m
+                     , Typeable ps
+                     , Typeable failure
+                     , Show failure
+                     , forall (st' :: ps). Show (ClientHasAgency st')
+                     , forall (st' :: ps). Show (ServerHasAgency st')
+                     , ShowProxy ps
+                     )
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (PeerRole, TraceSendRecv ps)
                   -> Codec ps failure m bytes
@@ -203,8 +268,16 @@ runConnectedPeers createChannels tracer codec client server =
 -- 'Hanshake' protocol which knows how to decode different versions.
 --
 runConnectedPeersAsymmetric
-    :: (MonadSTM m, MonadAsync m, MonadCatch m,
-       Exception failure)
+    :: ( MonadSTM m
+       , MonadAsync m
+       , MonadCatch m
+       , Typeable ps
+       , Typeable failure
+       , Show failure
+       , forall (st' :: ps). Show (ClientHasAgency st')
+       , forall (st' :: ps). Show (ServerHasAgency st')
+       , ShowProxy ps
+       )
     => m (Channel m bytes, Channel m bytes)
     -> Tracer m (PeerRole, TraceSendRecv ps)
     -> Codec ps failure m bytes
@@ -223,8 +296,16 @@ runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
     tracerServer = contramap ((,) AsServer) tracer
 
 
-runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
-                               Exception failure)
+runConnectedPeersPipelined :: ( MonadSTM m
+                              , MonadAsync m
+                              , MonadCatch m
+                              , Typeable ps
+                              , Typeable failure
+                              , Show failure
+                              , forall (st' :: ps). Show (ClientHasAgency st')
+                              , forall (st' :: ps). Show (ServerHasAgency st')
+                              , ShowProxy ps
+                              )
                            => m (Channel m bytes, Channel m bytes)
                            -> Tracer m (PeerRole, TraceSendRecv ps)
                            -> Codec ps failure m bytes

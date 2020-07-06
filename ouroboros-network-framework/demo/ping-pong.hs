@@ -6,6 +6,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Main where
@@ -28,12 +29,14 @@ import Ouroboros.Network.Snocket
 import Ouroboros.Network.Mux
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 
 import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.PingPong.Type (PingPong)
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Server as PingPong
 import Network.TypedProtocol.PingPong.Codec.CBOR  as PingPong
@@ -55,6 +58,9 @@ main = do
         void serverPingPong2
 
       _          -> usage
+
+instance ShowProxy PingPong where
+    showProxy _ = "PingPong"
 
 usage :: IO ()
 usage = do

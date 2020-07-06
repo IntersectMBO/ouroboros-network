@@ -15,6 +15,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
 import           Network.TypedProtocol.Core
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | The kind of the local transaction monitoring protocol, and the types of
@@ -40,6 +41,10 @@ data LocalTxMonitor tx where
   -- | Nobody has agency. The terminal state.
   --
   StDone   :: LocalTxMonitor tx
+
+
+instance ShowProxy (ShowProxy (LocalTxMonitor tx)) where
+    showProxy _ = "LocalTxMonitor"
 
 
 instance Protocol (LocalTxMonitor tx) where

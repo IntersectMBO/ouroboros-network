@@ -183,7 +183,7 @@ data Snocket m fd addr = Snocket {
 
   , close         :: fd -> m ()
 
-  , toBearer      :: Tracer m MuxTrace -> fd -> (MuxBearer m)
+  , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> MuxBearer m
   }
 
 
@@ -247,28 +247,9 @@ socketSnocket ioManager = Snocket {
     , listen   = \s -> Socket.listen s 8
     , accept   = berkeleyAccept ioManager
     , close    = Socket.close
-    , toBearer = Mx.socketAsMuxBearer sduTimeout
+    , toBearer = Mx.socketAsMuxBearer
     }
   where
-
-    -- We place an upper limit of 30s on the time we wait on receiving an SDU.
-    -- There is no upper bound on the time we wait when waiting for a new SDU.
-    -- This makes it possible for miniprotocols to use timeouts that are larger
-    -- than 30s or wait forever.
-    --
-    -- 30s for receiving an SDU corresponds to a minimum speed limit of 17kbps.
-    --
-    -- ( 8      -- mux header length
-    -- + 0xffff -- maximum SDU payload
-    -- )
-    -- * 8
-    -- = 524_344 -- maximum bits in an SDU
-    --
-    --  524_344 / 30 / 1024 = 17kbps
-    --
-    sduTimeout :: DiffTime
-    sduTimeout = 30
-
     openSocket :: AddressFamily SockAddr -> IO Socket
     openSocket (SocketFamily family_) = do
       sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
@@ -353,7 +334,7 @@ namedPipeSnocket ioManager path = Snocket {
 
     , close    = Win32.closeHandle
 
-    , toBearer = namedPipeAsBearer
+    , toBearer = \_sduTimeout -> namedPipeAsBearer
     }
   where
     localAddress :: LocalAddress
@@ -406,7 +387,7 @@ localSnocket ioManager _ = Snocket {
     , open          = openSocket
     , openToConnect = \_addr -> openSocket LocalFamily
     , close         = Socket.close
-    , toBearer      = Mx.socketAsMuxBearer (-1) -- Negative values means no timeout.
+    , toBearer      = Mx.socketAsMuxBearer
     }
   where
     toLocalAddress :: SockAddr -> LocalAddress

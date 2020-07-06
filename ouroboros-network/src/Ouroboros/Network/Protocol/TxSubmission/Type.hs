@@ -17,6 +17,8 @@ import           Data.List.NonEmpty (NonEmpty)
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+
 -- | Transactions are typically not big, but in principle in future we could
 -- have ones over 64k large.
 --
@@ -61,6 +63,10 @@ data TxSubmission txid tx where
   -- | Nobody has agency; termination state.
   --
   StDone   :: TxSubmission txid tx
+
+
+instance ShowProxy (TxSubmission txid tx) where
+    showProxy _ = "TxSubmission"
 
 
 data StBlockingStyle where

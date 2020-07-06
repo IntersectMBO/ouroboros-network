@@ -104,7 +104,8 @@ import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
+import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.ErrorPolicy
@@ -563,8 +564,8 @@ networkErrorPolicies = ErrorPolicies
 
         -- deserialisation failure of a message from a trusted node
       , ErrorPolicy
-          $ \(_ :: CBOR.DeserialiseFailure)
-                -> Just ourBug
+         $ \(_ :: DecoderFailure CBOR.DeserialiseFailure)
+               -> Just ourBug
 
       , ErrorPolicy
           $ \(e :: MuxError)

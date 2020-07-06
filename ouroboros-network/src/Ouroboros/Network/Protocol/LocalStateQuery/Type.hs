@@ -19,6 +19,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Block (Point, StandardHash)
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | The kind of the local state query protocol, and the types of
@@ -54,6 +55,9 @@ data LocalStateQuery block (query :: Type -> Type) where
   -- | Nobody has agency. The terminal state.
   --
   StDone :: LocalStateQuery block query
+
+instance ShowProxy (LocalStateQuery block query) where
+    showProxy _ = "LocalStateQuery"
 
 instance Protocol (LocalStateQuery block query) where
 

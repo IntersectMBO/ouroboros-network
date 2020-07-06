@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Type where
 import           Data.Void (Void)
 
 import           Ouroboros.Network.Block (StandardHash, Point)
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import           Network.TypedProtocol.Core (Protocol (..))
 
 -- | Range of blocks, defined by a lower and upper point, inclusive.
@@ -25,6 +26,8 @@ data BlockFetch block where
   BFStreaming :: BlockFetch block
   BFDone      :: BlockFetch block
 
+instance ShowProxy (BlockFetch block) where
+    showProxy _ = "BlockFetch"
 
 instance Protocol (BlockFetch block) where
 
