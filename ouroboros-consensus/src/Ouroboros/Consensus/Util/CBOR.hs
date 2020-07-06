@@ -12,6 +12,8 @@ module Ouroboros.Consensus.Util.CBOR (
     -- * Higher-level incremental interface
   , Decoder(..)
   , initDecoderIO
+    -- * Decode as FlatTerm
+  , decodeAsFlatTerm
     -- * HasFS interaction
   , ReadIncrementalErr(..)
   , readIncremental
@@ -29,10 +31,13 @@ module Ouroboros.Consensus.Util.CBOR (
 
 import qualified Codec.CBOR.Decoding as CBOR.D
 import qualified Codec.CBOR.Encoding as CBOR.E
+import qualified Codec.CBOR.FlatTerm as CBOR.F
 import qualified Codec.CBOR.Read as CBOR.R
 import           Control.Exception (assert, throwIO)
 import           Control.Monad
+import           Control.Monad.Except
 import           Control.Monad.ST
+import qualified Control.Monad.ST.Lazy as ST.Lazy
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
@@ -112,6 +117,40 @@ initDecoderIO getChunk = do
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing
                   | otherwise  = Just bs
+
+{-------------------------------------------------------------------------------
+  Decode as FlatTerm
+-------------------------------------------------------------------------------}
+
+decodeAsFlatTerm ::
+     ByteString
+  -> Either CBOR.R.DeserialiseFailure CBOR.F.FlatTerm
+decodeAsFlatTerm bs0 =
+    ST.Lazy.runST (runExceptT (provideInput bs0))
+  where
+    provideInput ::
+         ByteString
+      -> ExceptT CBOR.R.DeserialiseFailure (ST.Lazy.ST s) CBOR.F.FlatTerm
+    provideInput bs
+      | BS.null bs = return []
+      | otherwise      = do
+          next <- lift $ ST.Lazy.strictToLazyST $ do
+              -- This will always be a 'Partial' here because decodeTermToken
+              -- always starts by requesting initial input. Only decoders that
+              -- fail or return a value without looking at their input can give
+              -- a different initial result.
+              CBOR.R.Partial k <- CBOR.R.deserialiseIncremental CBOR.F.decodeTermToken
+              k (Just bs)
+          collectOutput next
+
+    collectOutput ::
+         CBOR.R.IDecode s CBOR.F.TermToken
+      -> ExceptT CBOR.R.DeserialiseFailure (ST.Lazy.ST s) CBOR.F.FlatTerm
+    collectOutput (CBOR.R.Fail _ _ err) = throwError err
+    collectOutput (CBOR.R.Partial    k) = lift (ST.Lazy.strictToLazyST (k Nothing)) >>=
+                                          collectOutput
+    collectOutput (CBOR.R.Done bs' _ x) = do xs <- provideInput bs'
+                                             return (x : xs)
 
 {-------------------------------------------------------------------------------
   HasFS interaction

@@ -44,7 +44,6 @@ library
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
-                       Test.Util.Golden
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
@@ -60,6 +59,7 @@ library
                        Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
+                       Test.Util.Serialisation.Golden
                        Test.Util.Serialisation.Roundtrip
                        Test.Util.Shrink
                        Test.Util.SOP
@@ -83,7 +83,9 @@ library
                      , contra-tracer
                      , cryptonite        >=0.25  && <0.26
                      , deepseq
+                     , directory
                      , fgl
+                     , filepath
                      , generics-sop
                      , graphviz
                      , mtl               >=2.2   && <2.3
@@ -93,12 +95,14 @@ library
                      , random
                      , serialise         >=0.2   && <0.3
                      , tasty
+                     , tasty-golden
                      , tasty-hunit
                      , tasty-quickcheck
                      , text              >=1.2   && <1.3
                      , time
                      , transformers
                      , tree-diff
+                     , utf8-string
 
                      , io-sim-classes
                      , io-sim

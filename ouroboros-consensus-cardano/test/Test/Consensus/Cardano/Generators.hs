@@ -12,6 +12,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
+  , toTelescope
+  , toTelescope'
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
