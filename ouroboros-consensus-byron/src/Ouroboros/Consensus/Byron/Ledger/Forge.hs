@@ -54,10 +54,10 @@ forgeByronBlock
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeByronBlock = forgeRegularBlock
+forgeByronBlock cfg _ = forgeRegularBlock (configBlock cfg)
 
 forgeEBB
-  :: TopLevelConfig ByronBlock
+  :: BlockConfig ByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ChainHash ByronBlock            -- ^ Previous hash
@@ -65,18 +65,15 @@ forgeEBB
 forgeEBB cfg curSlot curNo prevHash =
         mkByronBlock epochSlots
       . CC.Block.ABOBBoundary
-      . CC.reAnnotateBoundary (byronProtocolMagicId byronConfig)
+      . CC.reAnnotateBoundary (byronProtocolMagicId cfg)
       $ boundaryBlock
   where
-    byronConfig :: BlockConfig ByronBlock
-    byronConfig = configBlock cfg
-
     epochSlots :: CC.Slot.EpochSlots
-    epochSlots = byronEpochSlots byronConfig
+    epochSlots = byronEpochSlots cfg
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
-      GenesisHash             -> Left  (byronGenesisHash byronConfig)
+      GenesisHash             -> Left  (byronGenesisHash cfg)
       BlockHash (ByronHash h) -> Right h
 
     boundaryBlock :: CC.Block.ABoundaryBlock ()
@@ -125,28 +122,24 @@ initBlockPayloads = BlockPayloads
 
 forgeRegularBlock
   :: HasCallStack
-  => TopLevelConfig ByronBlock
-  -> ForgeState ByronBlock
+  => BlockConfig ByronBlock
   -> BlockNo                           -- ^ Current block number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg _forgeState curNo tickedLedger txs isLeader =
+forgeRegularBlock cfg curNo tickedLedger txs isLeader =
     forge $
       forgePBftFields
-        (mkByronContextDSIGN $ configBlock cfg)
+        (mkByronContextDSIGN cfg)
         isLeader
         (reAnnotate $ Annotated toSign ())
   where
     curSlot :: SlotNo
     curSlot = tickedSlotNo tickedLedger
 
-    byronConfig :: BlockConfig ByronBlock
-    byronConfig = configBlock cfg
-
     epochSlots :: CC.Slot.EpochSlots
-    epochSlots = byronEpochSlots byronConfig
+    epochSlots = byronEpochSlots cfg
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
@@ -204,8 +197,8 @@ forgeRegularBlock cfg _forgeState curNo tickedLedger txs isLeader =
         , CC.Block.tsSlot            = epochAndSlotCount
         , CC.Block.tsDifficulty      = coerce curNo
         , CC.Block.tsBodyProof       = proof
-        , CC.Block.tsProtocolVersion = byronProtocolVersion byronConfig
-        , CC.Block.tsSoftwareVersion = byronSoftwareVersion byronConfig
+        , CC.Block.tsProtocolVersion = byronProtocolVersion cfg
+        , CC.Block.tsSoftwareVersion = byronSoftwareVersion cfg
         }
 
     headerGenesisKey :: Crypto.VerificationKey
@@ -233,12 +226,12 @@ forgeRegularBlock cfg _forgeState curNo tickedLedger txs isLeader =
 
         header :: CC.Block.Header
         header = CC.Block.AHeader {
-              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId (byronProtocolMagic byronConfig))
+              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId (byronProtocolMagic cfg))
             , CC.Block.aHeaderPrevHash        = ann prevHeaderHash
             , CC.Block.aHeaderSlot            = ann (coerce curSlot)
             , CC.Block.aHeaderDifficulty      = ann (coerce curNo)
-            , CC.Block.headerProtocolVersion  = byronProtocolVersion byronConfig
-            , CC.Block.headerSoftwareVersion  = byronSoftwareVersion byronConfig
+            , CC.Block.headerProtocolVersion  = byronProtocolVersion cfg
+            , CC.Block.headerSoftwareVersion  = byronSoftwareVersion cfg
             , CC.Block.aHeaderProof           = ann proof
             , CC.Block.headerGenesisKey       = headerGenesisKey
             , CC.Block.headerSignature        = headerSignature

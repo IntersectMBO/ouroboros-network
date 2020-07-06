@@ -224,7 +224,7 @@ instance RunNode ByronBlock where
       empty <- InitChainDB.checkEmpty chainDB
       when empty $ InitChainDB.addBlock chainDB genesisEBB
     where
-      genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
+      genesisEBB = forgeEBB (configBlock cfg) (SlotNo 0) (BlockNo 0) GenesisHash
 
   nodeCheckIntegrity     = verifyBlockIntegrity . configBlock
   nodeGetBinaryBlockInfo = byronBinaryBlockInfo

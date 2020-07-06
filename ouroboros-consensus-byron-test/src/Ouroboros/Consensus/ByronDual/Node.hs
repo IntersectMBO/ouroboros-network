@@ -213,7 +213,7 @@ instance RunNode DualByronBlock where
 
       byronEBB :: ByronBlock
       byronEBB = forgeEBB
-                   (dualTopLevelConfigMain cfg)
+                   (configBlock (dualTopLevelConfigMain cfg))
                    (SlotNo 0)
                    (BlockNo 0)
                    GenesisHash
