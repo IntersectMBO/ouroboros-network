@@ -107,7 +107,8 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
+import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version
@@ -614,8 +615,14 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- producer, as it's likely that the other side of the connection
           -- will return grabage as well.
         , ErrorPolicy
-            $ \(_ :: CBOR.DeserialiseFailure)
-                  -> Just theyBuggyOrEvil
+           $ \(_ :: DecoderFailure CBOR.DeserialiseFailure)
+                 -> Just theyBuggyOrEvil
+
+        , ErrorPolicy
+          $ \(msg :: ProtocolLimitFailure)
+                  -> case msg of
+                      ExceededSizeLimit{} -> Just theyBuggyOrEvil
+                      ExceededTimeLimit{} -> Just (SuspendConsumer shortDelay)
 
           -- the connection was unexpectedly closed, we suspend the peer for
           -- a 'shortDelay'
