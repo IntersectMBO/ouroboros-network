@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadAsyncSTM(..)
   , MonadAsync(..)
   , ExceptionInLinkedThread(..)
+  , handleNotAsync
   , isAsync
   , link
   , linkTo
@@ -44,7 +45,7 @@ module Ouroboros.Consensus.Util.IOLike (
 
 import qualified Control.Concurrent.STM as IO
 
-import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
+import           Cardano.Prelude (Natural, NoUnexpectedThunks (..), when)
 
 import           Control.Exception (AsyncException)
 import           Data.Maybe (isJust)
@@ -101,3 +102,9 @@ instance IOLike IO
 isAsync :: SomeException -> Bool
 isAsync e = isJust (fromException e :: Maybe AsyncException) ||
             isCancel e
+
+handleNotAsync :: MonadCatch m => (SomeException -> m a) -> m a -> m a
+handleNotAsync handler = handle $ \e -> do
+  when (isAsync e) $
+    throwM e
+  handler e
