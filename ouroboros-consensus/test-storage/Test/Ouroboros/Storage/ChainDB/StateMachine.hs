@@ -944,13 +944,6 @@ precondition Model {..} (At cmd) =
      -- with iterators that the model allows. So we only test a subset of the
      -- functionality, which does not include error paths.
      Stream from to           -> isValidIterator from to
-     -- Make sure we don't close (and reopen) when there are other chains
-     -- equally preferable or even more preferable (which we can't switch to
-     -- because they fork back more than @k@) than the current chain in the
-     -- ChainDB. We might pick another one than the current one when
-     -- reopening, which would bring us out of sync with the model, for which
-     -- reopening is a no-op (no chain selection). See #1533.
-     Close                    -> Not equallyOrMorePreferableFork
      Reopen                   -> Not $ Boolean (Model.isOpen dbModel)
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      --
@@ -972,18 +965,6 @@ precondition Model {..} (At cmd) =
     garbageCollectableIteratorNext :: IterRef blk m Symbolic -> Logic
     garbageCollectableIteratorNext it = Boolean $
       Model.garbageCollectableIteratorNext secParam dbModel (knownIters RE.! it)
-
-    curChain :: Chain blk
-    curChain = Model.currentChain dbModel
-
-    forks :: [Chain blk]
-    (_, forks) = map fst <$>
-      Model.validChains cfg dbModel (Model.blocks dbModel)
-
-    equallyOrMorePreferableFork :: Logic
-    equallyOrMorePreferableFork = exists forks $ \fork ->
-      Boolean (isEquallyOrMorePreferableThan cfg fork curChain) .&&
-      Chain.head curChain ./= Chain.head fork
 
     futureBlockWithSameBlockNo :: BlockNo -> Logic
     futureBlockWithSameBlockNo no =
@@ -1009,26 +990,6 @@ precondition Model {..} (At cmd) =
         to' = case to of
           StreamToExclusive pt -> StreamToInclusive pt
           StreamToInclusive pt -> StreamToInclusive pt
-
--- | Is the first given chain chain equally or more preferable than the second
--- one?
-isEquallyOrMorePreferableThan
-  :: forall blk. BlockSupportsProtocol blk
-  => TopLevelConfig blk
-  -> Chain blk
-  -> Chain blk
-  -> Bool
-isEquallyOrMorePreferableThan cfg chain1 chain2 =
-    case (Chain.head chain1, Chain.head chain2) of
-      (Nothing,   Nothing)   -> True
-      (Nothing,   Just _)    -> False
-      (Just _,    Nothing)   -> True
-      (Just blk1, Just blk2) -> LT /=
-        compareCandidates
-          (Proxy @(BlockProtocol blk))
-          (chainSelConfig (configConsensus cfg))
-          (selectView (configBlock cfg) (getHeader blk1))
-          (selectView (configBlock cfg) (getHeader blk2))
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)
            => Model   blk m r
