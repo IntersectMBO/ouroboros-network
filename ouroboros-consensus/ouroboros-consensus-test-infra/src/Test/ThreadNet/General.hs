@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Block.Abstract as BA
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Ledger.Extended (SomeExtValidationError)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -263,7 +263,7 @@ runTestNetwork TestConfig
 data BlockRejection blk = BlockRejection
   { brBlockHash :: !(HeaderHash blk)
   , brBlockSlot :: !SlotNo
-  , brReason    :: !(ExtValidationError blk)
+  , brReason    :: !(SomeExtValidationError blk)
   , brRejector  :: !NodeId
   }
   deriving (Show)

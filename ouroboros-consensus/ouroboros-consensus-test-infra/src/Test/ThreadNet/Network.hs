@@ -642,7 +642,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
-           -> Tracer m (RealPoint blk, ExtValidationError blk)
+           -> Tracer m (RealPoint blk, SomeExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
               -- ^ added block tracer
@@ -1292,7 +1292,7 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'TraceForgeEvent'
   , nodeEventsHeaderAdds  :: ev (SlotNo, RealPoint blk, BlockNo)
     -- ^ every 'TraceDownloadedHeader', excluding EBBs
-  , nodeEventsInvalids    :: ev (RealPoint blk, ExtValidationError blk)
+  , nodeEventsInvalids    :: ev (RealPoint blk, SomeExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   , nodeEventsSelects     :: ev (SlotNo, RealPoint blk, BlockNo)
     -- ^ every 'ChainDB.AddedToCurrentChain' and 'ChainDB.SwitchedToAFork'
@@ -1358,7 +1358,7 @@ data NodeOutput blk = NodeOutput
   , nodeOutputFinalLedger :: LedgerState blk
   , nodeOutputForges      :: Map SlotNo blk
   , nodeOutputHeaderAdds  :: Map SlotNo [(RealPoint blk, BlockNo)]
-  , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
+  , nodeOutputInvalids    :: Map (RealPoint blk) [SomeExtValidationError blk]
   , nodeOutputNodeDBs     :: NodeDBs MockFS
   , nodeOutputSelects     :: Map SlotNo [(RealPoint blk, BlockNo)]
   }

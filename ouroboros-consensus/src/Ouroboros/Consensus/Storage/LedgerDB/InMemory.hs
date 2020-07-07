@@ -2,6 +2,7 @@
 {-# LANGUAGE ConstraintKinds        #-}
 {-# LANGUAGE DeriveAnyClass         #-}
 {-# LANGUAGE DeriveGeneric          #-}
+{-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs                  #-}
@@ -11,8 +12,10 @@
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE StandaloneDeriving     #-}
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
@@ -33,10 +36,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbPast
      -- ** Running updates
    , Ap(..)
-   , AnnLedgerError(..)
+   , AnnLedgerPushError(..)
    , ResolveBlock
    , ResolvesBlocks(..)
-   , ThrowsLedgerError(..)
+   , SomePushLedgerError(..)
+   , SomeSwitchLedgerError(..)
    , defaultThrowLedgerErrors
    , defaultResolveBlocks
    , defaultResolveWithErrors
@@ -70,8 +74,9 @@ import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad ((>=>))
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
+import           Data.Bifunctor (first)
+import           Data.Coerce
 import           Data.Foldable (toList)
-import           Data.Functor.Identity
 import           Data.Kind (Constraint)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:|>), Empty), (|>))
@@ -89,6 +94,7 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -365,8 +371,8 @@ ledgerDbFromGenesis params = ledgerDbWithAnchor params . genesisChainSummary
 -- validation mode.
 type ResolveBlock m r b = r -> m b
 
--- | Annotated ledger errors
-data AnnLedgerError l r = AnnLedgerError {
+-- | Annotated ledger errors while pushing a block.
+data AnnLedgerPushError l r = AnnLedgerPushError {
       -- | The ledger DB just /before/ this block was applied
       annLedgerState  :: LedgerDB l r
 
@@ -374,8 +380,38 @@ data AnnLedgerError l r = AnnLedgerError {
     , annLedgerErrRef :: r
 
       -- | The ledger error itself
-    , annLedgerErr    :: LedgerErr l
+    , annLedgerErr    :: SomePushLedgerError l
     }
+
+deriving instance (Eq l, Eq r, Eq (LedgerErr l)) => Eq (AnnLedgerPushError l r)
+
+instance (Show l, Show r, Show (LedgerErr l))
+  => Show (AnnLedgerPushError l r) where
+  show annotated = unwords
+    [ "Error"
+    , show $ annLedgerErr annotated
+    , "while applying block"
+    , show $ annLedgerErrRef annotated
+    , "to ledger state"
+    , show $ annLedgerState annotated
+    ]
+
+data SomePushLedgerError l =
+    PushError (LedgerErr l)
+  | UnknownApplyError String
+  | UnknownReApplyError String
+  deriving Generic
+
+deriving instance Show (LedgerErr l) => Show (SomePushLedgerError l)
+
+deriving instance Eq (LedgerErr l) => Eq (SomePushLedgerError l)
+
+instance NoUnexpectedThunks (LedgerErr l) =>
+  NoUnexpectedThunks (SomePushLedgerError l)
+
+data SomeSwitchLedgerError l r =
+    RollbackError ExceededRollback
+  | SomePushError (AnnLedgerPushError l r)
 
 -- | Monads in which we can resolve blocks
 --
@@ -397,24 +433,18 @@ instance Monad m
       => ResolvesBlocks r b (ExceptT e (ReaderT (ResolveBlock m r b) m)) where
   resolveBlock = lift . resolveBlock
 
-class Monad m => ThrowsLedgerError l r m where
-  throwLedgerError :: LedgerDB l r -> r -> LedgerErr l -> m a
-
-defaultThrowLedgerErrors :: ExceptT (AnnLedgerError l r) m a
-                         -> m (Either (AnnLedgerError l r) a)
+defaultThrowLedgerErrors :: ExceptT e m a
+                         -> m (Either e a)
 defaultThrowLedgerErrors = runExceptT
 
 defaultResolveWithErrors :: ResolveBlock m r b
-                         -> ExceptT (AnnLedgerError l r)
+                         -> ExceptT e
                                     (ReaderT (ResolveBlock m r b) m)
                                     a
-                         -> m (Either (AnnLedgerError l r) a)
+                         -> m (Either e a)
 defaultResolveWithErrors resolve =
       defaultResolveBlocks resolve
     . defaultThrowLedgerErrors
-
-instance Monad m => ThrowsLedgerError l r (ExceptT (AnnLedgerError l r) m) where
-  throwLedgerError l r e = throwError $ AnnLedgerError l r e
 
 -- | 'Ap' is used to pass information about blocks to ledger DB updates
 --
@@ -426,12 +456,11 @@ instance Monad m => ThrowsLedgerError l r (ExceptT (AnnLedgerError l r) m) where
 --
 -- * Compute the constraint @c@ on the monad @m@ in order to run the query:
 --   a. If we are passing a block by reference, we must be able to resolve it.
---   b. If we are applying rather than reapplying, we might have ledger errors.
 data Ap :: (* -> *) -> * -> * -> * -> Constraint -> * where
   ReapplyVal :: r -> b -> Ap m l r b ()
-  ApplyVal   :: r -> b -> Ap m l r b (                       ThrowsLedgerError l r m)
+  ApplyVal   :: r -> b -> Ap m l r b ()
   ReapplyRef :: r      -> Ap m l r b (ResolvesBlocks  r b m)
-  ApplyRef   :: r      -> Ap m l r b (ResolvesBlocks  r b m, ThrowsLedgerError l r m)
+  ApplyRef   :: r      -> Ap m l r b (ResolvesBlocks  r b m)
 
   -- | 'Weaken' increases the constraint on the monad @m@.
   --
@@ -453,30 +482,44 @@ apRef (Weaken     ap)  = apRef ap
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l r b. (ApplyBlock l b, Monad m, c)
+applyBlock :: forall m c l r b.
+              (ApplyBlock l b, MonadCatch m, c)
            => FullBlockConfig l b
            -> Ap m l r b c
-           -> LedgerDB l r -> m l
+           -> LedgerDB l r -> m (Either (AnnLedgerPushError l r) l)
 applyBlock cfg ap db = case ap of
-    ReapplyVal _r b ->
-      return $
-        tickThenReapply cfg b l
-    ApplyVal r b ->
-      either (throwLedgerError db r) return $ runExcept $
-        tickThenApply cfg b l
-    ReapplyRef r  -> do
+    ReapplyVal r b -> handleReApplyError r $
+        return $ tickThenReapply cfg b l
+    ApplyVal r b -> handleApplyError r $
+        return $ runExcept $ tickThenApply cfg b l
+    ReapplyRef r  -> handleReApplyError r $ do
+        b <- resolveBlock r
+        return $ tickThenReapply cfg b l
+    ApplyRef r -> handleApplyError r $ do
       b <- resolveBlock r
-      return $
-        tickThenReapply cfg b l
-    ApplyRef r -> do
-      b <- resolveBlock r
-      either (throwLedgerError db r) return $ runExcept $
-        tickThenApply cfg b l
+      return $ runExcept $ tickThenApply cfg b l
     Weaken ap' ->
       applyBlock cfg ap' db
   where
     l :: l
     l = ledgerDbCurrent db
+
+    handleApplyError :: r -> m (Either (LedgerErr l) l) -> m (Either (AnnLedgerPushError l r) l)
+    handleApplyError r action = handleNotAsync
+      (return . Left . mkApplyErr r)
+      (fmap (first $ mkLedgerErr r) action)
+
+    handleReApplyError :: r -> m l -> m (Either (AnnLedgerPushError l r) l)
+    handleReApplyError r action = handleNotAsync
+      (return . Left . mkReApplyErr r)
+      (Right <$> action)
+
+    mkReApplyErr, mkApplyErr :: r -> SomeException -> AnnLedgerPushError l r
+    mkReApplyErr r = AnnLedgerPushError db r . UnknownReApplyError . show
+    mkApplyErr   r = AnnLedgerPushError db r . UnknownApplyError   . show
+
+    mkLedgerErr :: r -> LedgerErr l -> AnnLedgerPushError l r
+    mkLedgerErr r = AnnLedgerPushError db r . PushError
 
 -- | Short-hand for re-applying a block that we have by reference
 --
@@ -693,7 +736,7 @@ rollbackTo cfg f (LedgerDB _current blocks anchor params) =
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
+rollback :: forall b m l r. (ApplyBlock l b, ResolvesBlocks r b m)
          => FullBlockConfig l b
          -> Word64
          -> LedgerDB l r
@@ -745,41 +788,49 @@ ledgerDbPast cfg tip db
 -- but that is disallowed by all currently known Ouroboros protocols).
 --
 -- Records both the supported and the requested rollback.
-data ExceededRollback = ExceededRollback {
-      rollbackMaximum   :: Word64
-    , rollbackRequested :: Word64
-    }
+data ExceededRollback =
+    ExceededRollback
+        Word64 -- ^ roll back maximum
+        Word64 -- ^ roll back requested
+  | UnknownRollbackError String
 
-ledgerDbPush :: forall m c l r b. (ApplyBlock l b, Monad m, c)
+ledgerDbPush :: forall m c l r b. (ApplyBlock l b, MonadCatch m,
+                c)
              => FullBlockConfig l b
-             -> Ap m l r b c -> LedgerDB l r -> m (LedgerDB l r)
-ledgerDbPush cfg ap db =
-    (\current' -> pushLedgerState current' (apRef ap) db) <$>
-      applyBlock cfg ap db
+             -> Ap m l r b c -> LedgerDB l r
+             -> ExceptT (AnnLedgerPushError l r) m (LedgerDB l r)
+ledgerDbPush cfg ap db = ExceptT $
+    ( fmap (\current' -> pushLedgerState current' (apRef ap) db) <$>
+      (applyBlock cfg ap db))
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
+ledgerDbPushMany :: (ApplyBlock l b, MonadCatch m, c)
                  => FullBlockConfig l b
-                 -> [Ap m l r b c] -> LedgerDB l r -> m (LedgerDB l r)
-ledgerDbPushMany = repeatedlyM . ledgerDbPush
+                 -> [Ap m l r b c] -> LedgerDB l r
+                 -> ExceptT (AnnLedgerPushError l r) m (LedgerDB l r)
+ledgerDbPushMany cfg =
+  repeatedlyM  (\ap db ->  ledgerDbPush cfg ap db)
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l b, ResolvesBlocks r b m, c)
+ledgerDbSwitch :: forall m l r b c.
+                  (ApplyBlock l b, ResolvesBlocks r b m, c, MonadCatch m)
                => FullBlockConfig l b
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l r b c]  -- ^ New blocks to apply
                -> LedgerDB l r
-               -> m (Either ExceededRollback (LedgerDB l r))
+               -> ExceptT (SomeSwitchLedgerError l r) m (LedgerDB l r)
 ledgerDbSwitch cfg numRollbacks newBlocks db = do
-    mRolledBack <- rollback cfg numRollbacks db
+    mRolledBack <-
+      lift $ handleNotAsync (return . Left . UnknownRollbackError . show) $
+        Right <$> rollback @b cfg numRollbacks db
     case mRolledBack of
-      Nothing ->
-        return $ Left $ ExceededRollback {
-            rollbackMaximum   = ledgerDbMaxRollback db
-          , rollbackRequested = numRollbacks
-          }
-      Just db' ->
-        Right <$> ledgerDbPushMany cfg newBlocks db'
+      Left e -> throwError $ RollbackError e
+      Right Nothing ->
+        throwError $ RollbackError $
+          ExceededRollback (ledgerDbMaxRollback db) numRollbacks
+      Right (Just db') ->
+        withExceptT SomePushError $
+          ledgerDbPushMany cfg newBlocks db'
 
 {-------------------------------------------------------------------------------
   The LedgerDB itself behaves like a ledger
@@ -831,33 +882,60 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
   Suppor for testing
 -------------------------------------------------------------------------------}
 
+newtype FakeMonadCatch a = FakeMonadCatch {runFakeMonadCatch :: a}
+
+instance Functor FakeMonadCatch where
+    fmap     = coerce
+
+instance Applicative FakeMonadCatch where
+    pure     = FakeMonadCatch
+    (<*>)    = coerce
+
+instance Monad FakeMonadCatch where
+    m >>= k  = k (runFakeMonadCatch m)
+
+instance MonadMask FakeMonadCatch where
+  mask f = f id
+  uninterruptibleMask f = f id
+
+instance MonadThrow FakeMonadCatch where
+  throwM = error . show
+
+instance MonadCatch FakeMonadCatch where
+  handle _ action = action
+  catch action _  = action
+
 pureBlock :: b -> Ap m l b b ()
 pureBlock b = ReapplyVal b b
 
 triviallyResolve :: forall b a. Proxy b
-                 -> Reader (ResolveBlock Identity b b) a -> a
-triviallyResolve _ = runIdentity . defaultResolveBlocks return
+                 -> ReaderT (ResolveBlock FakeMonadCatch b b) FakeMonadCatch a -> a
+triviallyResolve _ = runFakeMonadCatch . defaultResolveBlocks return
 
-ledgerDbPush' :: ApplyBlock l b
+ledgerDbPush' :: (Show b, ApplyBlock l b)
               => FullBlockConfig l b -> b -> LedgerDB l b -> LedgerDB l b
-ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
+ledgerDbPush' cfg b = errorLeft . runFakeMonadCatch . runExceptT . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: ApplyBlock l b
+ledgerDbPushMany' :: (Show b, ApplyBlock l b)
                   => FullBlockConfig l b -> [b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
+ledgerDbPushMany' cfg bs = errorLeft . runFakeMonadCatch . runExceptT . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l b. ApplyBlock l b
                 => FullBlockConfig l b
                 -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs db =
     case triviallyResolve (Proxy @b) $
-           ledgerDbSwitch cfg n (map pureBlock bs) db of
-      Left  ExceededRollback{} -> Nothing
-      Right db'                -> Just db'
+           runExceptT $ ledgerDbSwitch cfg n (map pureBlock bs) db of
+      Left  _   -> Nothing
+      Right db' -> Just db'
 
 ledgerDbPast' :: forall l b. (ApplyBlock l b, Eq b)
               => FullBlockConfig l b -> WithOrigin b -> LedgerDB l b -> Maybe l
 ledgerDbPast' cfg tip = triviallyResolve (Proxy @b) . ledgerDbPast cfg tip
+
+errorLeft :: Show e => Either e a -> a
+errorLeft (Right a) = a
+errorLeft (Left e)  = error $ show e
 
 {-------------------------------------------------------------------------------
   Serialisation

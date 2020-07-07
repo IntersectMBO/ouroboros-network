@@ -1,14 +1,17 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE MultiWayIf           #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -72,41 +75,41 @@ data NextBlock r b = NoMoreBlocks | NextBlock (r, b)
 -- tip to bring the ledger up to date with the tip of the immutable DB.
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
-data StreamAPI m r b = StreamAPI {
+data StreamAPI m r b e = StreamAPI {
       -- | Start streaming after the specified block
       streamAfter :: forall a. HasCallStack
         => WithOrigin r
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'TipGen' if we didn't find any)
 
-        -> (Maybe (m (NextBlock r b)) -> m a)
+        -> (Maybe (m (NextBlock r b)) -> m (Either e a))
         -- Get the next block (by value)
         --
         -- Should be 'Nothing' if the snapshot we found is more recent than
         -- the tip of the immutable DB; since we only store snapshots to disk
         -- for blocks in the immutable DB, this can only happen if the
         -- immutable DB got truncated due to disk corruption.
-        -> m a
+        -> m (Either e a)
     }
 
 -- | Stream all blocks
 streamAll :: forall m r b e a. (Monad m, HasCallStack)
-          => StreamAPI m r b
+          => StreamAPI m r b e
           -> WithOrigin r         -- ^ Starting point for streaming
           -> (WithOrigin r -> e)  -- ^ Error when tip not found
           -> a                    -- ^ Starting point when tip /is/ found
-          -> ((r, b) -> a -> m a) -- ^ Update function for each block
+          -> ((r, b) -> a -> ExceptT e m a) -- ^ Update function for each block
           -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
-      Nothing      -> return $ Left (notFound tip)
+      Nothing      -> return $ Left $ notFound tip
       Just getNext -> do
-        let go :: a -> m a
-            go a = do mNext <- getNext
+        let go :: a -> ExceptT e m a
+            go a = do mNext <- lift getNext
                       case mNext of
                         NoMoreBlocks -> return a
                         NextBlock b  -> go =<< f b a
-        Right <$> go e
+        runExceptT $ go e
 
 {-------------------------------------------------------------------------------
   Initialize the DB
@@ -117,7 +120,7 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
 -- The initialization log records which snapshots from disk were considered,
 -- in which order, and why some snapshots were rejected. It is primarily useful
 -- for monitoring purposes.
-data InitLog r =
+data InitLog l r =
     -- | Defaulted to initialization from genesis
     --
     -- NOTE: Unless the blockchain is near genesis, we should see this /only/
@@ -132,8 +135,8 @@ data InitLog r =
     -- We record the reason why it was skipped.
     --
     -- NOTE: We should /only/ see this if data corrupted occurred.
-  | InitFailure DiskSnapshot (InitFailure r) (InitLog r)
-  deriving (Show, Eq, Generic)
+  | InitFailure DiskSnapshot (InitFailure l r) (InitLog l r)
+  deriving (Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
@@ -158,15 +161,15 @@ data InitLog r =
 -- with their predecessors.
 initLedgerDB :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
              => Tracer m (TraceReplayEvent r ())
-             -> Tracer m (TraceEvent r)
+             -> Tracer m (TraceEvent l r)
              -> HasFS m h
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
              -> LedgerDbParams
              -> FullBlockConfig l b
              -> m l -- ^ Genesis ledger state
-             -> StreamAPI m r b
-             -> m (InitLog r, LedgerDB l r, Word64)
+             -> StreamAPI m r b (InitFailure l r)
+             -> m (InitLog l r, LedgerDB l r, Word64)
 initLedgerDB replayTracer
              tracer
              hasFS
@@ -179,9 +182,9 @@ initLedgerDB replayTracer
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
-    tryNewestFirst :: (InitLog r -> InitLog r)
+    tryNewestFirst :: (InitLog l r -> InitLog l r)
                    -> [DiskSnapshot]
-                   -> m (InitLog r, LedgerDB l r, Word64)
+                   -> m (InitLog l r, LedgerDB l r, Word64)
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
@@ -213,7 +216,7 @@ initLedgerDB replayTracer
   Internal: initialize using the given snapshot
 -------------------------------------------------------------------------------}
 
-data InitFailure r =
+data InitFailure l r =
     -- | We failed to deserialise the snapshot
     --
     -- This can happen due to data corruption in the ledger DB.
@@ -221,7 +224,13 @@ data InitFailure r =
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
   | InitFailureTooRecent (WithOrigin r)
-  deriving (Show, Eq, Generic)
+
+  | InitFailurePush (AnnLedgerPushError l r)
+  deriving Generic
+
+deriving instance (Show l, Show r, Show (LedgerErr l)) => Show (InitFailure l r)
+
+deriving instance (Eq l, Eq r, Eq (LedgerErr l)) => Eq (InitFailure l r)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
 --
@@ -235,9 +244,9 @@ initFromSnapshot :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
                  -> (forall s. Decoder s r)
                  -> LedgerDbParams
                  -> FullBlockConfig l b
-                 -> StreamAPI m r b
+                 -> StreamAPI m r b (InitFailure l r)
                  -> DiskSnapshot
-                 -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
+                 -> ExceptT (InitFailure l r) m (WithOrigin r, LedgerDB l r, Word64)
 initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
@@ -246,21 +255,24 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     return (csTip initSS, initDB, replayed)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith :: forall m l r b. (Monad m, ApplyBlock l b, HasCallStack)
+initStartingWith :: forall m l r b. (IOLike m, ApplyBlock l b, HasCallStack)
                  => Tracer m (TraceReplayEvent r ())
                  -> FullBlockConfig l b
-                 -> StreamAPI m r b
+                 -> StreamAPI m r b (InitFailure l r)
                  -> LedgerDB l r
-                 -> ExceptT (InitFailure r) m (LedgerDB l r, Word64)
+                 -> ExceptT (InitFailure l r) m (LedgerDB l r, Word64)
 initStartingWith tracer conf streamAPI initDb = do
     streamAll streamAPI (ledgerDbTip initDb)
       InitFailureTooRecent
       (initDb, 0)
       push
   where
-    push :: (r, b) -> (LedgerDB l r, Word64) -> m (LedgerDB l r, Word64)
-    push (r, b) !(!db, !replayed) = do
-        traceWith tracer (ReplayedBlock r ())
+    push :: (r, b)
+         -> (LedgerDB l r, Word64)
+         -> ExceptT (InitFailure l r) m (LedgerDB l r, Word64)
+    push (r, b) !(!db, !replayed) = withExceptT InitFailurePush $
+      do
+        lift $ traceWith tracer (ReplayedBlock r ())
         (, replayed + 1) <$> ledgerDbPush conf (ReapplyVal r b) db
 
 {-------------------------------------------------------------------------------
@@ -280,7 +292,7 @@ initStartingWith tracer conf streamAPI initDb = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot :: forall m l r h. MonadThrow m
-             => Tracer m (TraceEvent r)
+             => Tracer m (TraceEvent l r)
              -> HasFS m h
              -> (l -> Encoding)
              -> (r -> Encoding)
@@ -299,7 +311,7 @@ takeSnapshot tracer hasFS encLedger encRef db = do
 --
 -- The deleted snapshots are returned.
 trimSnapshots :: Monad m
-              => Tracer m (TraceEvent r)
+              => Tracer m (TraceEvent l r)
               -> HasFS m h
               -> DiskPolicy
               -> m [DiskSnapshot]
@@ -376,14 +388,18 @@ snapshotFromPath = fmap DiskSnapshot . readMaybe
   Trace events
 -------------------------------------------------------------------------------}
 
-data TraceEvent r
-  = InvalidSnapshot DiskSnapshot (InitFailure r)
+data TraceEvent l r
+  = InvalidSnapshot DiskSnapshot (InitFailure l r)
     -- ^ An on disk snapshot was skipped because it was invalid.
   | TookSnapshot DiskSnapshot (WithOrigin r)
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
-  deriving (Generic, Eq, Show)
+  deriving Generic
+
+deriving instance (Show l, Show r, Show (LedgerErr l)) => Show (TraceEvent l r)
+
+deriving instance (Eq l, Eq r, Eq (LedgerErr l)) => Eq (TraceEvent l r)
 
 -- | Events traced while replaying blocks against the ledger to bring it up to
 -- date w.r.t. the tip of the ImmutableDB during initialisation. As this

@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Extended (
     ExtLedgerState(..)
   , ExtValidationError(..)
   , ExtLedgerCfg(..)
+  , SomeExtValidationError
   , extLedgerCfgToTopLevel
   , extLedgerCfgFromTopLevel
     -- * Serialisation
@@ -44,6 +45,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -62,6 +64,10 @@ data ExtValidationError blk =
     ExtValidationErrorLedger !(LedgerError blk)
   | ExtValidationErrorHeader !(HeaderError blk)
   deriving (Generic)
+
+-- This can be either `ExtValidationError` or other unknown errors we catch at
+-- monadic code.
+type SomeExtValidationError blk = SomePushLedgerError (ExtLedgerState blk)
 
 instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtValidationError blk)
 

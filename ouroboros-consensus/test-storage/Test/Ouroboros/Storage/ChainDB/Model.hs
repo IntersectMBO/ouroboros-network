@@ -109,6 +109,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
@@ -687,7 +688,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
           -> ValidatedChain
                validPrefix
                ledger
-               (invalid <> mkInvalid b (ValidationError e))
+               (invalid <> mkInvalid b (ValidationError $ PushError e))
 
         -- Valid block according to the ledger
         Right ledger'
@@ -751,7 +752,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     findInvalidBlockInTheFuture ledger = \case
       []    -> Map.empty
       b:bs' -> case runExcept (tickThenApply (extLedgerCfgFromTopLevel cfg) b ledger) of
-        Left e        -> mkInvalid b (ValidationError e)
+        Left e        -> mkInvalid b (ValidationError $ PushError e)
         Right ledger'
           | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
           -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>

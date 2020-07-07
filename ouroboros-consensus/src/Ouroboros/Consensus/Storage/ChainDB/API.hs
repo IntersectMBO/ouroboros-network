@@ -684,7 +684,7 @@ getPastLedger chainDB pt = do
 
 -- | The reason why a block is invalid.
 data InvalidBlockReason blk
-  = ValidationError !(ExtValidationError blk)
+  = ValidationError !(SomeExtValidationError blk)
     -- ^ The ledger found the block to be invalid.
   | InFutureExceedsClockSkew !(RealPoint blk)
     -- ^ The block's slot is in the future, exceeding the allowed clock skew.

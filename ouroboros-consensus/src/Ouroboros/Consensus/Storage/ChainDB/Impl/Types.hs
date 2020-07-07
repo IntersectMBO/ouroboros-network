@@ -79,7 +79,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
+                     SomeExtValidationError)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -476,7 +477,7 @@ data TraceEvent blk
   | TraceInitChainSelEvent (TraceInitChainSelEvent       blk)
   | TraceOpenEvent         (TraceOpenEvent               blk)
   | TraceIteratorEvent     (TraceIteratorEvent           blk)
-  | TraceLedgerEvent       (LgrDB.TraceEvent (RealPoint  blk))
+  | TraceLedgerEvent       (LgrDB.TraceEvent (ExtLedgerState blk) (RealPoint  blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent             blk)
   | TraceVolDBEvent        (VolDB.TraceEvent             blk)
@@ -623,7 +624,7 @@ deriving instance
 data TraceValidationEvent blk =
     -- | A point was found to be invalid.
     InvalidBlock
-      (ExtValidationError blk)
+      (SomeExtValidationError blk)
       (RealPoint blk)
 
     -- | A candidate chain was invalid.

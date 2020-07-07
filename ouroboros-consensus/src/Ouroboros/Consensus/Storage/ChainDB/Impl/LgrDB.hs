@@ -44,7 +44,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , garbageCollectPrevApplied
     -- * Re-exports
   , ExceededRollback(..)
-  , LedgerDB.AnnLedgerError(..)
+  , LedgerDB.AnnLedgerPushError(..)
   , LedgerDbParams(..)
   , DiskPolicy (..)
   , DiskSnapshot
@@ -157,7 +157,7 @@ data LgrDbArgs m blk = forall h. Eq h => LgrDbArgs {
     , lgrParams         :: LedgerDbParams
     , lgrDiskPolicy     :: DiskPolicy
     , lgrGenesis        :: m (ExtLedgerState blk)
-    , lgrTracer         :: Tracer m (TraceEvent (RealPoint blk))
+    , lgrTracer         :: Tracer m (TraceEvent (ExtLedgerState blk) (RealPoint blk))
     , lgrTraceLedger    :: Tracer m (LedgerDB blk)
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrDbArgs" (LgrDbArgs m blk)
@@ -368,7 +368,11 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
   Validation
 -------------------------------------------------------------------------------}
 
-type AnnLedgerError blk = LedgerDB.AnnLedgerError
+type AnnLedgerError blk = LedgerDB.AnnLedgerPushError
+                             (ExtLedgerState blk)
+                             (RealPoint      blk)
+
+type SwitchLedgerError blk = LedgerDB.SomeSwitchLedgerError
                              (ExtLedgerState blk)
                              (RealPoint      blk)
 
@@ -398,21 +402,19 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
     return res
   where
-    rewrap :: Either (AnnLedgerError blk) (Either ExceededRollback (LedgerDB blk))
+    rewrap :: Either (SwitchLedgerError blk) (LedgerDB blk)
            -> ValidateResult blk
-    rewrap (Left         e)  = ValidateLedgerError      e
-    rewrap (Right (Left  e)) = ValidateExceededRollBack e
-    rewrap (Right (Right l)) = ValidateSuccessful       l
+    rewrap (Left (LedgerDB.SomePushError e)) = ValidateLedgerError      e
+    rewrap (Left (LedgerDB.RollbackError e)) = ValidateExceededRollBack e
+    rewrap (Right                         l) = ValidateSuccessful       l
 
     mkAps :: forall n r l b. (
                r ~ RealPoint      blk
-             , l ~ ExtLedgerState blk
              , b ~                blk
              )
           => [Header blk]
           -> Set r
           -> [Ap n l r b ( LedgerDB.ResolvesBlocks r b n
-                         , LedgerDB.ThrowsLedgerError l r n
                          )]
     mkAps hdrs prevApplied =
       [ case ( Set.member (headerRealPoint hdr) prevApplied
@@ -442,9 +444,9 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
 -------------------------------------------------------------------------------}
 
 streamAPI
-  :: forall m blk.
+  :: forall m blk e.
      (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk)
-  => ImmDB m blk -> StreamAPI m (RealPoint blk) blk
+  => ImmDB m blk -> StreamAPI m (RealPoint blk) blk e
 streamAPI immDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack

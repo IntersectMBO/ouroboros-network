@@ -147,11 +147,15 @@ genBlocks p cfg n l = do
   where
     invalidBlock = "genBlocks: genBlock produced invalid block"
 
-type AnnLedgerError' t = AnnLedgerError (LedgerSt t) (BlockRef t)
+type AnnLedgerError' t = AnnLedgerPushError (LedgerSt t) (BlockRef t)
 type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
-type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
+type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t) (InitFailure' t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
 type Tip'            t = WithOrigin                  (BlockRef t)
+type InitFailure'    t = InitFailure (LedgerSt t)    (BlockRef t)
+
+type SomePushLedgerError'   t = SomePushLedgerError   (LedgerSt t)
+type SomeSwitchLedgerError' t = SomeSwitchLedgerError (LedgerSt t) (BlockRef t)
 
 {-------------------------------------------------------------------------------
   Simple instantiation of LUT
@@ -358,13 +362,14 @@ data MockInitLog t ss =
 deriving instance (LUT t, Show ss) => Show (MockInitLog t ss)
 deriving instance (LUT t, Eq   ss) => Eq   (MockInitLog t ss)
 
-fromInitLog :: InitLog (BlockRef t) -> MockInitLog t DiskSnapshot
+fromInitLog :: InitLog (LedgerSt t) (BlockRef t) -> MockInitLog t DiskSnapshot
 fromInitLog  InitFromGenesis          = MockFromGenesis
 fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
 fromInitLog (InitFailure ss err log') =
     case err of
       InitFailureRead _err     -> MockReadFailure ss     (fromInitLog log')
       InitFailureTooRecent tip -> MockTooRecent   ss tip (fromInitLog log')
+      InitFailurePush _        -> error "unexpected push error"
 
 mockInitLog :: forall t. LUT t => Mock t -> MockInitLog t MockSnap
 mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
@@ -651,14 +656,14 @@ runDB standalone@DB{..} cmd =
         atomically $ modifyTVar dbBlocks $
           uncurry Map.insert (refValPair p b)
         upd (push b) $ \db ->
-          fmap (first annLedgerErr') $
+          fmap (first (ignoreUnknownErrors . annLedgerErr')) $
             defaultThrowLedgerErrors $
               ledgerDbPush dbLedgerCfg (ApplyVal (blockRef p b) b) db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map (refValPair p) bs)
         upd (switch n bs) $ \db ->
-          fmap (bimap annLedgerErr' ignoreExceedRollback) $
+          fmap (first $ ignoreExceedRollback) $
             defaultResolveWithErrors dbResolve $
               ledgerDbSwitch dbLedgerCfg n (map (\b -> ApplyVal (blockRef p b) b) bs) db
     go hasFS Snap = do
@@ -701,15 +706,20 @@ runDB standalone@DB{..} cmd =
     switch 0 bs = (reverse (map (blockRef p) bs) ++)
     switch n bs = switch 0 bs . drop (fromIntegral n)
 
-    annLedgerErr' :: AnnLedgerError' t -> LedgerErr t
+    annLedgerErr' :: AnnLedgerError' t -> SomePushLedgerError' t
     annLedgerErr' = annLedgerErr
 
     -- We don't currently test the case where the LedgerDB cannot support
     -- the full rollback range. See also
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
-    ignoreExceedRollback :: Either ExceededRollback a -> a
-    ignoreExceedRollback (Left  _) = error "unexpected ExceededRollback"
-    ignoreExceedRollback (Right a) = a
+    ignoreExceedRollback :: SomeSwitchLedgerError' t -> LedgerErr t
+    ignoreExceedRollback (RollbackError  _) = error "unexpected ExceededRollback"
+    ignoreExceedRollback (SomePushError a) = ignoreUnknownErrors $ annLedgerErr a
+
+    ignoreUnknownErrors :: SomePushLedgerError' t -> LedgerErr t
+    ignoreUnknownErrors (UnknownApplyError str)   = error str
+    ignoreUnknownErrors (UnknownReApplyError str) = error str
+    ignoreUnknownErrors (PushError err)           = err
 
     upd :: ([BlockRef t] -> [BlockRef t])
         -> (LedgerDB' t -> m (Either (LedgerErr t) (LedgerDB' t)))

@@ -919,7 +919,7 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
         -- to the immutable tip.
         error "found candidate requiring rolling back past the immutable tip"
 
-      LgrDB.ValidateLedgerError (LgrDB.AnnLedgerError ledger' pt e) -> do
+      LgrDB.ValidateLedgerError (LgrDB.AnnLedgerPushError ledger' pt e) -> do
         let lastValid = LgrDB.currentPoint ledger'
             chainDiff' = Diff.truncate (castPoint lastValid) chainDiff
         trace (InvalidBlock e pt)
@@ -941,7 +941,8 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
     newBlocks = AF.toOldestFirst suffix
 
     -- | Record the invalid block in 'cdbInvalid' and change its fingerprint.
-    addInvalidBlock :: ExtValidationError blk -> RealPoint blk -> m ()
+    addInvalidBlock :: SomeExtValidationError blk
+                    -> RealPoint blk -> m ()
     addInvalidBlock e (RealPoint slot hash) = atomically $
       modifyTVar varInvalid $ \(WithFingerprint invalid fp) ->
         WithFingerprint
