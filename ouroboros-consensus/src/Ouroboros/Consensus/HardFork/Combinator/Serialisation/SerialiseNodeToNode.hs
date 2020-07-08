@@ -54,7 +54,7 @@ dispatchEncoder :: forall f xs. (
                 -> NS f xs -> Encoding
 dispatchEncoder ccfg version ns =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version, ns) of
           (c0 :* _, HardForkNodeToNodeDisabled v0, Z x0) ->
             encodeNodeToNode c0 (unwrapNodeToNodeVersion v0) x0
@@ -81,7 +81,7 @@ dispatchDecoder :: forall f xs. (
                 -> forall s. Decoder s (NS f xs)
 dispatchDecoder ccfg version =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToNodeDisabled v0) ->
             Z <$> decodeNodeToNode c0 (unwrapNodeToNodeVersion v0)

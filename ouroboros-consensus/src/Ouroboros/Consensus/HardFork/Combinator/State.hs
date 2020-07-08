@@ -67,7 +67,7 @@ recover :: forall g f xs. CanHardFork xs
         => Telescope (Past g) f xs -> HardForkState_ g f xs
 recover =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
           HardForkState
         . Telescope.bihmap
             (\(Pair _ past) -> past)

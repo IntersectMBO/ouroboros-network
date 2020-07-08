@@ -157,13 +157,13 @@ fn_5 f = Fn $ \x0 ->
 -------------------------------------------------------------------------------}
 
 data ProofNonEmpty :: [*] -> * where
-  ProofNonEmpty :: Proxy x -> ProofNonEmpty (x ': xs)
+  ProofNonEmpty :: Proxy x -> Proxy xs -> ProofNonEmpty (x ': xs)
 
 class IsNonEmpty xs where
   isNonEmpty :: proxy xs -> ProofNonEmpty xs
 
 instance IsNonEmpty (x ': xs) where
-  isNonEmpty _ = ProofNonEmpty (Proxy @x)
+  isNonEmpty _ = ProofNonEmpty (Proxy @x) (Proxy @xs)
 
 {-------------------------------------------------------------------------------
   NP with optional values

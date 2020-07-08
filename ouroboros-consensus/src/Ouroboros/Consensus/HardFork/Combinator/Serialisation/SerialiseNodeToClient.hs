@@ -53,7 +53,7 @@ dispatchEncoder :: forall f xs. (
                 -> NS f xs -> Encoding
 dispatchEncoder ccfg version ns =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version, ns) of
           (c0 :* _, HardForkNodeToClientDisabled v0, Z x0) ->
             encodeNodeToClient c0 (unwrapNodeToClientVersion v0) x0
@@ -80,7 +80,7 @@ dispatchDecoder :: forall f xs. (
                 -> forall s. Decoder s (NS f xs)
 dispatchDecoder ccfg version =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToClientDisabled v0) ->
             Z <$> decodeNodeToClient c0 (unwrapNodeToClientVersion v0)
@@ -172,7 +172,7 @@ instance SerialiseHFC xs
           ]
 
   decodeNodeToClient ccfg version = case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ -> do
+      ProofNonEmpty {} -> do
         size <- Dec.decodeListLen
         case size of
           1 -> injQueryIfCurrent <$> dispatchDecoder ccfg version
@@ -196,7 +196,7 @@ instance SerialiseHFC xs
       => SerialiseResult (HardForkBlock xs) (Query (HardForkBlock xs)) where
   encodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty _ ->
+        ProofNonEmpty {} ->
           encodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
@@ -212,7 +212,7 @@ instance SerialiseHFC xs
 
   decodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty _ ->
+        ProofNonEmpty {} ->
           decodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
