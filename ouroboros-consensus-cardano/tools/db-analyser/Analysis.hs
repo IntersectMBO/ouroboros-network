@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Analysis (HasAnalysis (..)) where
+module Analysis (HasAnalysis (..), mkTopLevelConfig) where
 
 import           Control.Monad.Except
 import qualified Data.Aeson as Aeson
@@ -30,7 +30,7 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Tx as SL
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config hiding (mkTopLevelConfig)
 import           Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
@@ -59,9 +59,15 @@ class GetPrevHash blk => HasAnalysis blk where
     blockHeaderSize  :: blk -> SizeInBytes
     blockTxSizes     :: blk -> [SizeInBytes]
     knownEBBs        :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
-    mkTopLevelConfig :: [FilePath] -- Genesis file or files.
+    protocolInfo     :: [FilePath] -- Genesis file or files.
                      -> Bool       -- is it mainnet?
-                     -> IO (TopLevelConfig blk)
+                     -> IO (ProtocolInfo IO blk)
+
+mkTopLevelConfig :: forall blk. HasAnalysis blk
+                 => [FilePath] -- Genesis file or files.
+                 -> Bool       -- is it mainnet?
+                 -> IO (TopLevelConfig blk)
+mkTopLevelConfig fps onMainNet = pInfoConfig <$> protocolInfo @blk fps onMainNet
 
 {-------------------------------------------------------------------------------
   ByronBlock instance
@@ -73,10 +79,10 @@ instance HasAnalysis ByronBlock where
       aBlockOrBoundary blockBoundaryHeaderSize blockHeaderSizeByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
-    mkTopLevelConfig [configFile] onMainNet = do
+    protocolInfo [configFile] onMainNet = do
       genesisConfig <- openGenesisByron configFile onMainNet
-      return $ mkByronTopLevelConfig genesisConfig
-    mkTopLevelConfig ls _onMainNet =
+      return $ mkByronProtocolInfo genesisConfig
+    protocolInfo ls _onMainNet =
       error $
         "a single genesis file is needed for pure Byron. Given " ++ show ls
 
@@ -132,11 +138,9 @@ openGenesisByron configFile onMainNet = do
         (Genesis.unGenesisHash genesisHash))
     return genesisConfig
 
-mkByronTopLevelConfig :: Genesis.Config -> TopLevelConfig ByronBlock
-mkByronTopLevelConfig genesisConfig = pInfoConfig protocolInfo
-  where
-    protocolInfo :: ProtocolInfo IO ByronBlock
-    protocolInfo = protocolInfoByron
+mkByronProtocolInfo :: Genesis.Config -> ProtocolInfo IO ByronBlock
+mkByronProtocolInfo genesisConfig =
+    protocolInfoByron
       genesisConfig
       Nothing
       (Update.ProtocolVersion 1 0 0)
@@ -156,20 +160,18 @@ instance TPraosCrypto c => HasAnalysis (ShelleyBlock c) where
       SL.Block _ (SL.TxSeq txs) ->
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
     knownEBBs = const Map.empty
-    mkTopLevelConfig [configFile] _onMainNet = do
+    protocolInfo [configFile] _onMainNet = do
       genesis  <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' configFile
-      return $ mkShelleyTopLevelConfig genesis
-    mkTopLevelConfig ls _onMainNet =
+      return $ mkShelleyProtocolInfo genesis
+    protocolInfo ls _onMainNet =
       error $
         "A single genesis file is needed for pure Shelley. Given " ++ show ls
 
-mkShelleyTopLevelConfig :: forall c. TPraosCrypto c
-                        => ShelleyGenesis c
-                        -> TopLevelConfig (ShelleyBlock c)
-mkShelleyTopLevelConfig genesis = pInfoConfig protocolInfo
-  where
-    protocolInfo :: ProtocolInfo IO (ShelleyBlock c)
-    protocolInfo = protocolInfoShelley
+mkShelleyProtocolInfo :: forall c. TPraosCrypto c
+                      => ShelleyGenesis c
+                      -> ProtocolInfo IO (ShelleyBlock c)
+mkShelleyProtocolInfo genesis =
+    protocolInfoShelley
       genesis
       NeutralNonce -- TODO
       2000
@@ -195,22 +197,20 @@ instance TPraosCrypto c => HasAnalysis (CardanoBlock c) where
     Cardano.BlockShelley sh -> blockTxSizes sh
   knownEBBs _ = Map.mapKeys castHeaderHash . Map.map castChainHash $
     knownEBBs (Proxy @ByronBlock)
-  mkTopLevelConfig [byronGenesis, shelleyGenesis] onMainNet = do
+  protocolInfo [byronGenesis, shelleyGenesis] onMainNet = do
     byronConfig <- openGenesisByron byronGenesis onMainNet
     shelleyConfig <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' shelleyGenesis
-    return $ mkCardanoTopLevelConfig byronConfig shelleyConfig
-  mkTopLevelConfig ls _onMainNet =
+    return $ mkCardanoProtocolInfo byronConfig shelleyConfig
+  protocolInfo ls _onMainNet =
     error $
       "Two genesis files are needed for Cardano. Given " ++ show ls
 
-mkCardanoTopLevelConfig :: forall c. TPraosCrypto c
-                        => Genesis.Config
-                        -> ShelleyGenesis c
-                        -> TopLevelConfig (CardanoBlock c)
-mkCardanoTopLevelConfig byronConfig shelleyConfig = pInfoConfig protocolInfo
-  where
-    protocolInfo :: ProtocolInfo IO (CardanoBlock c)
-    protocolInfo = protocolInfoCardano
+mkCardanoProtocolInfo :: forall c. TPraosCrypto c
+                      => Genesis.Config
+                      -> ShelleyGenesis c
+                      -> ProtocolInfo IO (CardanoBlock c)
+mkCardanoProtocolInfo byronConfig shelleyConfig =
+    protocolInfoCardano
       byronConfig
       Nothing
       (Update.ProtocolVersion 1 0 0)
