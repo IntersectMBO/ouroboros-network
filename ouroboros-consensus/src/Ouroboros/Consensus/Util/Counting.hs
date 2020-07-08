@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -9,6 +10,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 -- | Type-level counting
@@ -39,6 +41,7 @@ module Ouroboros.Consensus.Util.Counting (
   , nonEmptyHead
   , nonEmptyLast
   , nonEmptyInit
+  , nonEmptyFromList
   ) where
 
 import qualified Data.Foldable as Foldable
@@ -61,6 +64,9 @@ data AtMost :: [*] -> * -> * where
 data NonEmpty :: [*] -> * -> * where
   NonEmptyOne  :: !a -> NonEmpty (x ': xs) a
   NonEmptyCons :: !a -> !(NonEmpty xs a) -> NonEmpty (x ': xs) a
+
+deriving instance Eq a => Eq (AtMost   xs a)
+deriving instance Eq a => Eq (NonEmpty xs a)
 
 deriving instance Show a => Show (AtMost   xs a)
 deriving instance Show a => Show (NonEmpty xs a)
@@ -199,3 +205,15 @@ nonEmptyInit (NonEmptyCons x xs) =
     case nonEmptyInit xs of
       (Nothing  , final) -> (Just (NonEmptyOne  x)     , final)
       (Just xs' , final) -> (Just (NonEmptyCons x xs') , final)
+
+-- | Build a 'NonEmpty' from a list. Returns 'Nothing' when the list is empty
+-- or when it's longer than @xs@.
+nonEmptyFromList :: forall xs a. SListI xs => [a] -> Maybe (NonEmpty xs a)
+nonEmptyFromList = go (sList @xs)
+  where
+    go :: forall xs'. SList xs' -> [a] -> Maybe (NonEmpty xs' a)
+    go s ys = case (s, ys) of
+        (SCons, [y])   -> Just $ NonEmptyOne y
+        (SCons, y:ys') -> NonEmptyCons y <$> go sList ys'
+        (SCons, [])    -> Nothing
+        (SNil,  _)     -> Nothing

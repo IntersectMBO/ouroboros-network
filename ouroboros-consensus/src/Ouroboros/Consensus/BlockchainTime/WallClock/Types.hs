@@ -142,3 +142,7 @@ instance Serialise RelativeTime where
     where
       fromPico :: Pico -> NominalDiffTime
       fromPico = realToFrac
+
+instance Serialise SlotLength where
+  encode = encode . slotLengthToMillisec
+  decode = slotLengthFromMillisec <$> decode

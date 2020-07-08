@@ -1,12 +1,20 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE KindSignatures  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.History.Qry (
     Qry(..)
   , runQuery
   , runQueryThrow
   , runQueryPure
+    -- * Interpreter
+  , Interpreter -- opaque
+  , mkInterpreter
+  , interpretQuery
     -- * Specific queries
   , wallclockToSlot
   , slotToWallclock
@@ -16,11 +24,13 @@ module Ouroboros.Consensus.HardFork.History.Qry (
   , epochToSlot
   ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
 import           Data.Foldable (asum, toList)
+import           Data.SOP.Strict (SListI)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Stack
@@ -264,6 +274,32 @@ runQueryThrow q = either throwM return . runQuery q
 
 runQueryPure :: HasCallStack => Qry a -> Summary xs -> a
 runQueryPure q = either throw id . runQuery q
+
+{-------------------------------------------------------------------------------
+  Interpreter
+-------------------------------------------------------------------------------}
+
+-- | Can be sent across the LocalStateQuery protocol to interpret queries in
+-- the wallet.
+--
+-- The 'Summary' should be considered internal.
+newtype Interpreter xs = Interpreter (Summary xs)
+  deriving (Eq)
+
+deriving instance SListI xs => Serialise (Interpreter xs)
+
+instance Show (Interpreter xs) where
+  show _ = "<Interpreter>"
+
+mkInterpreter :: Summary xs -> Interpreter xs
+mkInterpreter = Interpreter
+
+interpretQuery ::
+     HasCallStack
+  => Interpreter xs
+  -> Qry a
+  -> Either PastHorizonException a
+interpretQuery (Interpreter summary) qry = runQuery qry summary
 
 {-------------------------------------------------------------------------------
   Specific queries

@@ -3,15 +3,18 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.History.Summary (
     -- * Bounds
@@ -42,7 +45,9 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , summaryInit
   ) where
 
-import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (TokenType (TypeNull), decodeNull,
+                     peekTokenType)
+import           Codec.CBOR.Encoding (encodeListLen, encodeNull)
 import           Codec.Serialise
 import           Control.Exception (Exception)
 import           Control.Monad.Except
@@ -50,7 +55,7 @@ import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Proxy
 import           Data.SOP.Dict (Dict (..))
-import           Data.SOP.Strict (K (..), NP (..))
+import           Data.SOP.Strict (K (..), NP (..), SListI, lengthSList)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -193,7 +198,7 @@ data EraEnd =
 
 -- We have at most one summary for each era, and at least one
 newtype Summary xs = Summary (NonEmpty xs EraSummary)
-  deriving (Show)
+  deriving (Eq, Show)
 
 -- WHNF is sufficient, because the counting types are all strict
 deriving via UseIsNormalFormNamed "Summary" (Summary xs)
@@ -502,3 +507,38 @@ instance Serialise Bound where
       boundSlot  <- decode
       boundEpoch <- decode
       return Bound{..}
+
+instance Serialise EraEnd where
+  encode EraUnbounded   = encodeNull
+  encode (EraEnd bound) = encode bound
+
+  decode = peekTokenType >>= \case
+      TypeNull -> do
+        decodeNull
+        return EraUnbounded
+      _ -> EraEnd <$> decode
+
+instance Serialise EraSummary where
+  encode EraSummary{..} = mconcat [
+        encodeListLen 3
+      , encode eraStart
+      , encode eraEnd
+      , encode eraParams
+      ]
+
+  decode = do
+      enforceSize "EraSummary" 3
+      eraStart  <- decode
+      eraEnd    <- decode
+      eraParams <- decode
+      return EraSummary{..}
+
+instance SListI xs => Serialise (Summary xs) where
+  encode (Summary eraSummaries) = encode (toList eraSummaries)
+  decode = do
+      eraSummaries <- decode
+      case Summary <$> nonEmptyFromList eraSummaries of
+        Just summary -> return summary
+        Nothing      -> fail $
+          "Summary: expected between 1 and " <> show (lengthSList (Proxy @xs)) <>
+          " eras but got " <> show (length eraSummaries)
