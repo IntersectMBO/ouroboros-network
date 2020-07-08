@@ -101,6 +101,7 @@ library
                        Ouroboros.Network.Protocol.KeepAlive.Client
                        Ouroboros.Network.Protocol.KeepAlive.Server
                        Ouroboros.Network.Protocol.KeepAlive.Codec
+                       Ouroboros.Network.TipSample.TipFragment
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
@@ -147,6 +148,7 @@ library
                        mtl,
                        network           >=3.1 && <3.2,
                        psqueues          >=0.2.3 && <0.3,
+                       quiet,
                        serialise         >=0.2 && <0.3,
                        random,
                        stm               >=2.4 && <2.6,
