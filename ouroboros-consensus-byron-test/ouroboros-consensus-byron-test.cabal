@@ -106,6 +106,7 @@ test-suite test
                      , byron-spec-chain
                      , byron-spec-ledger
                      , small-steps
+                     , small-steps-test
 
                      , ouroboros-network
                      , ouroboros-consensus

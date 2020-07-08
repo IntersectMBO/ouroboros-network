@@ -294,16 +294,15 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
-      return $
-        if n `mod` numCoreNodes == i
-          then case Bimap.lookupR dlgKeyHash dms of
-            Nothing -> CannotLead $ PBftCannotLeadInvalidDelegation dlgKeyHash
-            Just gk -> do
-              let state' = append cfg params (slot, gk) cds
-              case exceedsThreshold params state' gk of
-                Nothing -> IsLeader credentials
-                Just numForged  -> CannotLead $ PBftCannotLeadThresholdExceeded numForged
-          else NotLeader
+      if n `mod` numCoreNodes == i
+        then case Bimap.lookupR dlgKeyHash dms of
+          Nothing -> CannotLead $ PBftCannotLeadInvalidDelegation dlgKeyHash
+          Just gk -> do
+            let state' = append cfg params (slot, gk) cds
+            case exceedsThreshold params state' gk of
+              Nothing -> IsLeader credentials
+              Just numForged  -> CannotLead $ PBftCannotLeadThresholdExceeded numForged
+        else NotLeader
     where
       params = pbftWindowParams cfg
       dlgKeyHash = hashVerKey . dlgCertDlgVerKey $ pbftDlgCert

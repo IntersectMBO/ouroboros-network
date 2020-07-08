@@ -85,6 +85,7 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -109,7 +110,6 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.ThreadNet.TxGen
-import           Test.ThreadNet.Util.BlockProduction
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
@@ -764,7 +764,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               Nothing    -> error "runThreadNetwork: cannot produce blocks"
               Just creds -> creds
 
-      blockProduction <- blockProductionIOLike pInfoConfig canBeLeader maintainForgeState varRNG $
+      blockProduction <- customForgeBlockProduction pInfoConfig canBeLeader maintainForgeState $
          \forgeState currentBno tickedLdgSt txs prf -> do
             let currentSlot  = tickedSlotNo tickedLdgSt
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot

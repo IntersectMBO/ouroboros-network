@@ -56,7 +56,7 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     type ValidateView  (ModChainSel p s) = ValidateView    p
 
     checkIsLeader cfg canBeLeader ledgerView chainDepState chainIndepState =
-      castLeaderCheck <$>
+      castLeaderCheck $
         checkIsLeader
           (mcsConfigP cfg)
           canBeLeader

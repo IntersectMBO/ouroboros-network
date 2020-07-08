@@ -16,9 +16,6 @@ module Ouroboros.Consensus.Util.Orphans () where
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.STM (readTVarIO)
-import           Control.Monad.Identity
-import           Control.Monad.Trans
-import           Crypto.Random
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
@@ -61,13 +58,6 @@ instance (Condense block, HasHeader block, Condense (HeaderHash block))
     => Condense (AnchoredFragment block) where
     condense (AF.Empty pt) = "EmptyAnchor " <> condense (AF.anchorToPoint pt)
     condense (cs AF.:> b)  = condense cs <> " :> " <> condense b
-
-{-------------------------------------------------------------------------------
-  MonadRandom
--------------------------------------------------------------------------------}
-
-instance MonadRandom m => MonadRandom (IdentityT m) where
-     getRandomBytes = lift . getRandomBytes
 
 {-------------------------------------------------------------------------------
   Serialise

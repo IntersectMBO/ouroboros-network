@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Protocol.Abstract (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
-import           Crypto.Random (MonadRandom (..))
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 
@@ -233,13 +232,13 @@ class ( Show (ChainDepState   p)
   chainSelConfig _ = ()
 
   -- | Check if a node is the leader
-  checkIsLeader :: (MonadRandom m, HasCallStack)
+  checkIsLeader :: HasCallStack
                 => ConsensusConfig       p
                 -> CanBeLeader           p
                 -> ChainIndepState       p
                 -> Ticked (LedgerView    p)
                 -> Ticked (ChainDepState p)
-                -> m (LeaderCheck        p)
+                -> LeaderCheck           p
 
   -- | Tick the 'ChainDepState'
   tickChainDepState :: ConsensusConfig p
