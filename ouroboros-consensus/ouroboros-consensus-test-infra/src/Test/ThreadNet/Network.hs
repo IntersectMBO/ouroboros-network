@@ -121,7 +121,7 @@ import           Test.Util.HardFork.Future (Future)
 import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.OracularClock (OracularClock (..))
 import qualified Test.Util.HardFork.OracularClock as OracularClock
-import           Test.Util.Random
+import           Test.Util.Random (runGen)
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer
@@ -639,7 +639,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     forkTxProducer registry clock cfg varRNG getExtLedger mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- simMonadRandom varRNG $
+        txs    <- runGen varRNG $
                     testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 

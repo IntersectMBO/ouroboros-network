@@ -21,7 +21,10 @@ module Test.Util.Random (
   , ChaChaT -- opaque
   , runChaChaT
   , simMonadRandom
+    -- * Connecting ChaChaDRG to Gen
+  , runGen
     -- * Convenience re-exports
+  , module Test.QuickCheck.Gen
   , MonadRandom (..)
   , MonadTrans(..)
   , ChaChaDRG
@@ -30,12 +33,14 @@ module Test.Util.Random (
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Reader
 import           Control.Monad.Trans (MonadTrans (..))
-import           Crypto.Number.Generate (generateBetween)
+import           Crypto.Number.Generate (generateBetween, generateMax)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
                      drgNewTest, randomBytesGenerate, withDRG)
 import           Data.List (genericLength)
 import           Data.Tuple (swap)
 import           Data.Word (Word64)
+import           Test.QuickCheck.Gen
+import           Test.QuickCheck.Random (mkQCGen)
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
@@ -101,3 +106,15 @@ runChaChaT ma prng = do
 
 simMonadRandom :: StrictTVar m ChaChaDRG -> ChaChaT m a -> m a
 simMonadRandom varPRNG (ChaChaT ma) = runReaderT ma varPRNG
+
+{-------------------------------------------------------------------------------
+  Running QuickCheck.Gen via ChaChaDRG
+-------------------------------------------------------------------------------}
+
+runGen :: MonadSTM m => StrictTVar m ChaChaDRG -> Gen a -> m a
+runGen varRNG g = do
+    smSeed <- simMonadRandom varRNG $ do
+      fromIntegral <$> generateMax (fromIntegral (maxBound :: Word64))
+    let qcSeed = mkQCGen smSeed
+        qcSize = 30 :: Int   -- the traditional initial QC size
+    return $ unGen g qcSeed qcSize

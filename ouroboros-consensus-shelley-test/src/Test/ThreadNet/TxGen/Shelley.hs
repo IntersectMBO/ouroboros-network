@@ -10,12 +10,9 @@ module Test.ThreadNet.TxGen.Shelley (
     ShelleyTxGenExtra(..)
   , genTx
   , mkGenEnv
-  , quickCheckAdapter
   ) where
 
 import           Control.Monad.Except (runExcept)
-import           Crypto.Number.Generate (generateBetween, generateMax)
-import           Crypto.Random (MonadRandom)
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Crypto.Hash (HashAlgorithm)
@@ -32,7 +29,6 @@ import qualified Shelley.Spec.Ledger.Tx as SL
 import           Ouroboros.Consensus.Shelley.Ledger
 
 import           Test.QuickCheck.Gen (Gen (..), suchThat)
-import           Test.QuickCheck.Random (mkQCGen)
 
 import           Test.ThreadNet.TxGen (TxGen (..))
 
@@ -45,6 +41,8 @@ import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.Infra.Shelley
 
+import           Test.Util.Random
+
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.
     stgeGenEnv :: Gen.GenEnv h
@@ -56,17 +54,16 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 
   -- TODO #1823
   testGenTxs _numCoreNodes curSlotNo cfg (ShelleyTxGenExtra genEnv) lst = do
-      n <- generateBetween 0 20
+      n <- choose (0, 20)
       go [] n $ applyChainTick (configLedger cfg) curSlotNo lst
     where
-      go :: MonadRandom m
-         => [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
+      go :: [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
          -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
-         -> m [GenTx (ShelleyBlock (TPraosMockCrypto h))]
+         -> Gen [GenTx (ShelleyBlock (TPraosMockCrypto h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-        tx <- quickCheckAdapter $ genTx cfg st genEnv
+        tx <- genTx cfg st genEnv
         case runExcept $ applyTx (configLedger cfg) tx st of
           -- We don't mind generating invalid transactions
           Left  _   -> go (tx:acc) (n - 1) st
@@ -144,13 +141,3 @@ mkGenEnv coreNodes = Gen.GenEnv keySpace constants
             ksStakePools
           } =
             Gen.Presets.keySpace constants
-
-{-------------------------------------------------------------------------------
-  QuickCheck to MonadRandom adapter
--------------------------------------------------------------------------------}
-
--- | Run the generator by producing a random seed
-quickCheckAdapter :: MonadRandom m => Gen a -> m a
-quickCheckAdapter (MkGen g) = do
-    seed <- fromIntegral <$> generateMax (fromIntegral (maxBound :: Int))
-    return $ g (mkQCGen seed) 30
