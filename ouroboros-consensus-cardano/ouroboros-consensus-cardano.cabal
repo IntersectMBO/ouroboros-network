@@ -74,6 +74,8 @@ test-suite test
   main-is:             Main.hs
   other-modules:
                        Test.Consensus.Cardano.Generators
+                       Test.Consensus.Cardano.Golden
+                       Test.Consensus.Cardano.Examples
                        Test.Consensus.Cardano.Serialisation
                        Test.ThreadNet.Cardano
                        Test.ThreadNet.TxGen.Cardano
@@ -90,6 +92,7 @@ test-suite test
                      , cardano-prelude
                      , cborg             >=0.2.2 && <0.3
                      , containers
+                     , filepath
                      , mtl
                      , QuickCheck
                      , tasty

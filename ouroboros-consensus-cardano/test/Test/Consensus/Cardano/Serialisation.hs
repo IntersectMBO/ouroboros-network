@@ -35,7 +35,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation
+import           Test.Util.Serialisation.Roundtrip
 
 import           Test.Consensus.Shelley.MockCrypto hiding (Block)
 

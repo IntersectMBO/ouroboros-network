@@ -12,6 +12,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
+  , toTelescope
+  , toTelescope'
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
@@ -45,7 +47,7 @@ import           Ouroboros.Consensus.Cardano.CanHardFork ()
 import           Ouroboros.Consensus.Cardano.Node ()
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation (WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
 
 import           Test.Consensus.Byron.Generators
 

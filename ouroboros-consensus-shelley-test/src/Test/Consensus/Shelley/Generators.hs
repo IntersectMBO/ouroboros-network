@@ -39,7 +39,8 @@ import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
+                     WithVersion (..))
 
 import           Test.Consensus.Shelley.MockCrypto
 import           Test.Shelley.Spec.Ledger.SerializationProperties ()

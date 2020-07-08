@@ -1090,7 +1090,7 @@ prop_simple_real_pbft_convergence TestSetup
 
 byronForgeEbbEnv :: ForgeEbbEnv ByronBlock
 byronForgeEbbEnv = ForgeEbbEnv
-    { forgeEBB = Byron.forgeEBB
+    { forgeEBB = Byron.forgeEBB . configBlock
     }
 
 -- | Whether to produce EBBs in the tests or not

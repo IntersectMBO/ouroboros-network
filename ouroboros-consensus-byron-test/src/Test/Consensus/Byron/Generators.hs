@@ -61,7 +61,8 @@ import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.Slotting.Arbitrary ()
-import           Test.Util.Serialisation (SomeResult (..), WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
+                     WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Generators

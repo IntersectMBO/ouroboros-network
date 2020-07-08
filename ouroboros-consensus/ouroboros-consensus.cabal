@@ -381,7 +381,7 @@ test-suite test-consensus
                        Test.Util.QuickCheck
                        Test.Util.Random
                        Test.Util.Range
-                       Test.Util.Roundtrip
+                       Test.Util.Serialisation.Roundtrip
                        Test.Util.Shrink
                        Test.Util.SOP
                        Test.Util.Slots
