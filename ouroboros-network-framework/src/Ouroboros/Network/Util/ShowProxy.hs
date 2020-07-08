@@ -18,3 +18,5 @@ class ShowProxy p where
 
     default showProxy :: Typeable p => Proxy p -> String
     showProxy p = showsTypeRep (typeRep p) ""
+
+instance ShowProxy Int where

@@ -200,6 +200,8 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
                        Ouroboros.Network.Protocol.TipSample.Direct
+                       Ouroboros.Network.Protocol.TipSample.Examples
+                       Ouroboros.Network.Protocol.TipSample.Test
                        Ouroboros.Network.Protocol.TxSubmission.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Test

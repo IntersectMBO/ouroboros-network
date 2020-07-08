@@ -18,6 +18,7 @@ import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
 import qualified Ouroboros.Network.Protocol.TxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
+import qualified Ouroboros.Network.Protocol.TipSample.Test (tests)
 import qualified Ouroboros.Network.PeerSelection.Test (tests)
 import qualified Test.Socket (tests)
 
@@ -42,6 +43,7 @@ tests =
   , Ouroboros.Network.Protocol.TxSubmission.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
   , Ouroboros.Network.Protocol.KeepAlive.Test.tests
+  , Ouroboros.Network.Protocol.TipSample.Test.tests
 
     -- network logic
   , Test.Version.tests
