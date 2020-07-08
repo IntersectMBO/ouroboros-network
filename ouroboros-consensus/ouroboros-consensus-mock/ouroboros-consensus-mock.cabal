@@ -52,7 +52,6 @@ library
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
-                     , cryptonite        >=0.25  && <0.26
                      , deepseq
                      , hashable
                      , mtl               >=2.2   && <2.3
@@ -96,7 +95,6 @@ test-suite test
                      , cardano-slotting
                      , cborg
                      , containers
-                     , cryptonite
                      , QuickCheck
                      , serialise
                      , tasty

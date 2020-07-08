@@ -32,6 +32,7 @@ library
                        Test.ThreadNet.Util.NodeRestarts
                        Test.ThreadNet.Util.NodeToNodeVersion
                        Test.ThreadNet.Util.NodeTopology
+                       Test.ThreadNet.Util.Seed
 
                        Test.Util.Blob
                        Test.Util.BoolProps
@@ -55,7 +56,6 @@ library
                        Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
-                       Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Serialisation.Golden
@@ -80,7 +80,6 @@ library
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , contra-tracer
-                     , cryptonite        >=0.25  && <0.26
                      , deepseq
                      , directory
                      , fgl

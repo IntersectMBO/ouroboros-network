@@ -18,6 +18,7 @@ module Test.ThreadNet.RealPBFT (
   ) where
 
 import           Control.Monad (join)
+import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
@@ -75,10 +76,10 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
 import qualified Test.Util.Stream as Stream
 
@@ -160,7 +161,7 @@ tests = testGroup "RealPBFT" $
             { setupEBBs       = ProduceEBBs
             , setupK          = SecurityParam 10
             , setupTestConfig = TestConfig
-              { initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+              { initSeed     = Seed 0
               , nodeTopology = meshNodeTopology ncn
               , numCoreNodes = ncn
               , numSlots     = NumSlots 24
@@ -186,7 +187,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 2
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
             , setupNodeRestarts = noRestarts
@@ -205,7 +206,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 4
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
             , setupNodeRestarts = noRestarts
@@ -227,7 +228,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 7
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
@@ -250,7 +251,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 58
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
             , setupNodeRestarts = noRestarts
@@ -273,7 +274,7 @@ tests = testGroup "RealPBFT" $
               -- Still fails if I increase numSlots.
               , numSlots     = NumSlots 54
               , nodeTopology = meshNodeTopology ncn5
-              , initSeed     = Seed {getSeed = (15062108706768000853,6202101653126031470,15211681930891010376,1718914402782239589,12639712845887620121)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0, SlotNo {unSlotNo = 0})
@@ -337,7 +338,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 2
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed (4690259409304062007,9560140637825988311,3774468764133159390,14745090572658815456,7199590241247856333)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
@@ -358,7 +359,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn4
               , numSlots     = NumSlots 72
               , nodeTopology = meshNodeTopology ncn4
-              , initSeed     = Seed (17364222041321661634,8266509462575908621,10410472349244348261,9332246846568887555,6178891282750652496)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn4
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo 59,Map.fromList [(CoreNodeId 3,NodeRekey)])])
@@ -383,7 +384,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn3
               , numSlots     = NumSlots 84
               , nodeTopology = meshNodeTopology ncn3
-              , initSeed     = Seed {getSeed = (15151717355257504044,5938503171282920606,17557892055617026469,2625071732074633531,737988411488637670)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 1}),(CoreNodeId 1,SlotNo {unSlotNo = 1}),(CoreNodeId 2,SlotNo {unSlotNo = 58})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 58},Map.fromList [(CoreNodeId 2,NodeRekey)])])
@@ -439,7 +440,7 @@ tests = testGroup "RealPBFT" $
               , numSlots     = NumSlots 96
               , nodeTopology =    --   1 <-> 0 <-> 2
                 NodeTopology $ Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0])]
-              , initSeed     = Seed {getSeed = (6137414258840919713,13743611065535662953,11200456599001708481,15059765168210441725,7592004320108020587)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 0),(CoreNodeId 2,SlotNo 83)]
             , setupNodeRestarts = NodeRestarts $ Map.fromList [(SlotNo 83,Map.fromList [(CoreNodeId 2,NodeRekey)])]
@@ -482,7 +483,7 @@ tests = testGroup "RealPBFT" $
               , numSlots     = NumSlots 50
               , nodeTopology = -- 3 <-> {0,1,2} <-> 4
                 NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0, CoreNodeId 1]),(CoreNodeId 3,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2]),(CoreNodeId 4,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2])])
-              , initSeed     = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 0}),(CoreNodeId 3,SlotNo {unSlotNo = 37}),(CoreNodeId 4,SlotNo {unSlotNo = 37})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 37},Map.fromList [(CoreNodeId 4,NodeRekey)])])
@@ -508,7 +509,7 @@ tests = testGroup "RealPBFT" $
           { numCoreNodes = ncn
           , numSlots     = NumSlots 41
           , nodeTopology = meshNodeTopology ncn
-          , initSeed     = Seed (368401128646137767,7989071211759985580,4921478144180472393,11759221144888418607,7602439127562955319)
+          , initSeed     = Seed 0
           }
         , setupNodeJoinPlan = trivialNodeJoinPlan ncn
         , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
@@ -525,7 +526,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 10
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
             , setupNodeRestarts = noRestarts
@@ -544,7 +545,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 1
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (560784040296064078,562654861307142039,14390345921802859256,6074698800134646104,12960749422959162150)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = noRestarts
@@ -569,7 +570,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 2
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (17661772013144211573,3458753765485439359,3510665480596920798,18073896085829422849,10200170902568172302)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = noRestarts
@@ -590,7 +591,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 5
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (7536539674426109099,5947274896735415773,14396421290275890646,8359457880945605675,13921484090802881569)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 2) , (CoreNodeId 1, SlotNo 3) , (CoreNodeId 2, SlotNo 4) , (CoreNodeId 3, SlotNo 4) ]
             , setupNodeRestarts = noRestarts
@@ -607,7 +608,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 12
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (2578884099630273185,16934506387441904343,18333130054045336554,17133864958166263786,3231825379390681058)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 0) , (CoreNodeId 1, SlotNo 0) , (CoreNodeId 2, SlotNo 10) , (CoreNodeId 3, SlotNo 10) , (CoreNodeId 4, SlotNo 10) ]
             , setupNodeRestarts = noRestarts
@@ -625,7 +626,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 17
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (306806859316465898,5351335255935493133,6240542044036351784,5824248410373935607,16492982022780410836)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [(CoreNodeId 0, SlotNo 0)
@@ -649,7 +650,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = ncn
               , numSlots     = NumSlots 21
               , nodeTopology = meshNodeTopology ncn
-              , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0,SlotNo {unSlotNo = 0})
@@ -695,7 +696,7 @@ tests = testGroup "RealPBFT" $
                 , (CoreNodeId 3, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2])
                 , (CoreNodeId 4, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2, CoreNodeId 3])
               ]
-              , initSeed = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
+              , initSeed = Seed 0
             }
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0, SlotNo 0)
@@ -728,7 +729,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = NumCoreNodes 3
               , numSlots     = NumSlots 81
               , nodeTopology = meshNodeTopology (NumCoreNodes 3)
-              , initSeed     = Seed {getSeed = (7952153859682074489,1209195599086387203,1003230838846108849,16300282375150619951,13414350229958775450)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 2}),(CoreNodeId 1,SlotNo {unSlotNo = 6}),(CoreNodeId 2,SlotNo {unSlotNo = 9})])
             , setupNodeRestarts = noRestarts
@@ -746,7 +747,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = NumCoreNodes 2
               , numSlots     = NumSlots 39
               , nodeTopology = meshNodeTopology (NumCoreNodes 2)
-              , initSeed     = Seed {getSeed = (11093776200493502340,9766052265905454052,355252349267827465,10040961818992481753,11110970950178961567)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 33})])
             , setupNodeRestarts = noRestarts
@@ -780,7 +781,7 @@ tests = testGroup "RealPBFT" $
               { numCoreNodes = NumCoreNodes 3
               , numSlots     = NumSlots 21
               , nodeTopology = meshNodeTopology (NumCoreNodes 3)
-              , initSeed     = Seed {getSeed = (7933264215983541521,2681014020787292578,6408681784379385004,8771173040756324558,17527213245124735813)}
+              , initSeed     = Seed 0
               }
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 20})])
             , setupNodeRestarts = noRestarts
@@ -982,12 +983,12 @@ prop_simple_real_pbft_convergence TestSetup
                         Genesis.gdHeavyDelegation $
                         Genesis.configGenesisData genesisConfig
                       genKeyDSIGNRandom = do
-                        seed <- mkSeedFromBytes <$> getRandomBytes 32
-                        pure $ Crypto.genKeyDSIGN seed
+                        Crypto.genKeyDSIGN . mkSeedFromBytes . BS.pack
+                          <$> vectorOf 32 arbitrary
                   in
                   Stream.nubOrdBy prj acc0 $
-                  withSeed initSeed $   -- seems fine to reuse seed for this
-                  sequence $ let ms = genKeyDSIGNRandom Stream.:< ms in ms
+                    runGen initSeed $   -- seems fine to reuse seed for this
+                      sequence $ let ms = genKeyDSIGNRandom Stream.:< ms in ms
               }
             }
 

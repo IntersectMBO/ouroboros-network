@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Random (Seed (..))
 import           Test.Util.Time
 
 minNumCoreNodes :: Word64
@@ -122,19 +121,6 @@ instance Arbitrary ClockSkew where
       skew0, skew1 :: ClockSkew
       skew0 = InFuture.clockSkewInSeconds 0
       skew1 = InFuture.clockSkewInSeconds 1
-
-{-------------------------------------------------------------------------------
-  Crypto
--------------------------------------------------------------------------------}
-
-instance Arbitrary Seed where
-
-    arbitrary = do  (\w1 w2 w3 w4 w5 -> Seed (w1, w2, w3, w4, w5))
-                <$> gen <*> gen <*> gen <*> gen <*> gen
-      where
-        gen = arbitraryBoundedIntegral
-
-    shrink = const []
 
 {-------------------------------------------------------------------------------
   SmallDiffTime

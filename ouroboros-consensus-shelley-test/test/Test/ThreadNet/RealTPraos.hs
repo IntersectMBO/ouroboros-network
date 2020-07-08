@@ -27,7 +27,6 @@ import           Test.ThreadNet.Infra.Shelley
 
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Random
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
@@ -42,6 +41,7 @@ import           Test.ThreadNet.TxGen.Shelley
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (genVersion)
+import           Test.ThreadNet.Util.Seed (runGen)
 
 type Crypto = TPraosMockCrypto ShortHash
 
@@ -132,10 +132,9 @@ prop_simple_real_tpraos_convergence TestSetup
       KES.totalPeriodsKES (Proxy @(KES Crypto))
 
     coreNodes :: [CoreNode Crypto]
-    coreNodes =
-        withSeed initSeed $
+    coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
-        genCoreNode initialKESPeriod
+          genCoreNode initialKESPeriod
       where
         NumCoreNodes n = numCoreNodes
 

@@ -42,7 +42,6 @@ import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
-import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
@@ -113,6 +112,7 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -121,7 +121,6 @@ import           Test.Util.HardFork.Future (Future)
 import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.OracularClock (OracularClock (..))
 import qualified Test.Util.HardFork.OracularClock as OracularClock
-import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer
@@ -199,7 +198,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaMessageDelay :: CalcMessageDelay blk
-  , tnaRNG          :: ChaChaDRG
+  , tnaSeed         :: Seed
   , tnaMkRekeyM     :: Maybe (m (RekeyM m blk))
   , tnaRestarts     :: NodeRestarts
   , tnaTopology     :: NodeTopology
@@ -285,7 +284,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
   , tnaNumCoreNodes   = numCoreNodes
   , tnaNumSlots       = numSlots
   , tnaMessageDelay   = calcMessageDelay
-  , tnaRNG            = initRNG
+  , tnaSeed           = seed
   , tnaMkRekeyM       = mbMkRekeyM
   , tnaRestarts       = nodeRestarts
   , tnaTopology       = nodeTopology
@@ -319,8 +318,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
     -- edge denotes a bundle of mini protocols with client threads on the tail
     -- node and server threads on the head node. These mini protocols begin as
     -- soon as both nodes have joined the network, according to @nodeJoinPlan@.
-
-    varRNG <- uncheckedNewTVarM initRNG
 
     -- allocate the status variable for each vertex
     vertexStatusVars <- fmap Map.fromList $ do
@@ -381,7 +378,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
             ]
       forkVertex
         mbRekeyM
-        varRNG
         clock
         joinSlot
         sharedRegistry
@@ -427,7 +423,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
     forkVertex
       :: Maybe (RekeyM m blk)
-      -> StrictTVar m ChaChaDRG
       -> OracularClock m
       -> SlotNo
       -> ResourceRegistry m
@@ -439,7 +434,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> m ()
     forkVertex
       mbRekeyM
-      varRNG
       clock
       joinSlot
       sharedRegistry
@@ -487,7 +481,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -- Protocols, like the ChainSync Client)
             (kernel, app) <- forkNode
               coreNodeId
-              varRNG
               clock
               joinSlot
               nodeRegistry
@@ -631,15 +624,17 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    => ResourceRegistry m
                    -> OracularClock m
                    -> TopLevelConfig blk
-                   -> StrictTVar m ChaChaDRG
+                   -> Seed
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer registry clock cfg varRNG getExtLedger mempool =
+    forkTxProducer registry clock cfg nodeSeed getExtLedger mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- simMonadRandom varRNG $
+        -- Combine the node's seed with the current slot number, to make sure
+        -- we generate different transactions in each slot.
+        let txs = runGen (nodeSeed `combineWith` unSlotNo curSlotNo) $
                     testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
@@ -721,7 +716,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
     forkNode
       :: HasCallStack
       => CoreNodeId
-      -> StrictTVar m ChaChaDRG
       -> OracularClock m
       -> SlotNo
       -> ResourceRegistry m
@@ -732,7 +726,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> m ( NodeKernel m NodeId Void blk
            , LimitedApp m NodeId      blk
            )
-    forkNode coreNodeId varRNG clock joinSlot registry pInfo nodeInfo txs0 = do
+    forkNode coreNodeId clock joinSlot registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -952,9 +946,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
         registry
         clock
         pInfoConfig
+        -- Combine with the CoreNodeId, otherwise each node would generate the
+        -- same transactions.
+        (seed `combineWith` unCoreNodeId coreNodeId)
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        varRNG
         (ChainDB.getCurrentLedger chainDB)
         mempool
 

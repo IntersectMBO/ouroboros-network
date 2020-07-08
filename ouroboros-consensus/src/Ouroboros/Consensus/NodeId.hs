@@ -33,7 +33,9 @@ instance Condense NodeId where
   condense (RelayId            i ) = "r" ++ show i
 
 -- | Core node ID
-newtype CoreNodeId = CoreNodeId Word64
+newtype CoreNodeId = CoreNodeId {
+      unCoreNodeId :: Word64
+    }
   deriving stock   (Show, Eq, Ord)
   deriving newtype (Condense, Serialise, NoUnexpectedThunks)
 

@@ -76,10 +76,10 @@ import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (genVersionFiltered)
 import qualified Test.ThreadNet.Util.NodeTopology as Topo
+import           Test.ThreadNet.Util.Seed (runGen)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Random
 import           Test.Util.Slots (NumSlots (..))
 
 type Crypto = TPraosMockCrypto Blake2b_256
@@ -439,10 +439,9 @@ prop_simple_cardano_convergence TestSetup
       KES.totalPeriodsKES (Proxy @(KES Crypto))
 
     coreNodes :: [Shelley.CoreNode Crypto]
-    coreNodes =
-        withSeed initSeed $
+    coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
-        Shelley.genCoreNode initialKESPeriod
+          Shelley.genCoreNode initialKESPeriod
       where
         NumCoreNodes n = numCoreNodes
 
