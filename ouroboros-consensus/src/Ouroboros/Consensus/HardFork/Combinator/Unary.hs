@@ -535,7 +535,8 @@ projQuery qry k =
     getHardForkQuery
       qry
       (\Refl -> k Refl . aux)
-      (\Refl _ eraIndex -> absurd $ emptyEraIndex eraIndex)
+      (\Refl prfNonEmpty _ _ -> case prfNonEmpty of {})
+      (\Refl prfNonEmpty _   -> case prfNonEmpty of {})
   where
     aux :: QueryIfCurrent '[b] result -> Query b result
     aux (QZ q) = q

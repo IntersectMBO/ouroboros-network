@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -182,7 +183,7 @@ instance CanHardFork xs => UpdateLedger (HardForkBlock xs)
   HasHardForkHistory
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => HasHardForkHistory (HardForkBlock xs) where
+instance All SingleEraBlock xs => HasHardForkHistory (HardForkBlock xs) where
   type HardForkIndices (HardForkBlock xs) = xs
 
   hardForkSummary cfg = State.reconstructSummaryLedger cfg

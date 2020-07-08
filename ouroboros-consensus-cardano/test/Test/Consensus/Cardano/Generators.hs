@@ -19,19 +19,22 @@ module Test.Consensus.Cardano.Generators (
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Data.Coerce
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (NP (..), NS (..))
+import           Data.SOP.Strict (NP (..), NS (..), SListI, lengthSList)
 
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (RelativeTime (..))
-import           Ouroboros.Consensus.HardFork.History (Bound (..))
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
+                     nonEmptyFromList)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
@@ -67,14 +70,14 @@ instance HashAlgorithm h => Arbitrary (CardanoBlock (TPraosMockCrypto h)) where
 instance HashAlgorithm h => Arbitrary (CardanoHeader (TPraosMockCrypto h)) where
   arbitrary = getHeader <$> arbitrary
 
--- TODO if we try to use arbitrary instances for `SlotNo` and `EpochNo` here, we
+-- TODO if we try to use arbitrary instances for 'SlotNo' and 'EpochNo' here, we
 -- hit a conflict, since they exist both in byron generators and shelley
 -- generators.
-instance Arbitrary Bound where
+instance Arbitrary History.Bound where
   arbitrary =
-    Bound <$> (RelativeTime <$> arbitrary)
-          <*> (SlotNo <$> arbitrary)
-          <*> (EpochNo <$> arbitrary)
+      History.Bound <$> (RelativeTime <$> arbitrary)
+                    <*> (SlotNo       <$> arbitrary)
+                    <*> (EpochNo      <$> arbitrary)
 
 arbitraryHardForkState
   :: forall f sc a.
@@ -292,33 +295,90 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h 
       ]
 
 instance Arbitrary (Some QueryAnytime) where
-  arbitrary = return $ Some EraStart
+  arbitrary = return $ Some GetEraStart
+
+instance Arbitrary (Some (QueryHardFork (CardanoEras sc))) where
+  arbitrary = return $ Some GetInterpreter
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeBlock Query (CardanoBlock sc))) where
   arbitrary = frequency
-      [ (9, arbitraryNodeToClient injByron injShelley)
+      [ (1, arbitraryNodeToClient injByron injShelley)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> (injAnytimeByron <$> arbitrary))
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (injAnytimeShelley <$> arbitrary))
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> (injHardFork <$> arbitrary))
       ]
     where
       injByron          (SomeBlock query) = SomeBlock (QueryIfCurrentByron   query)
       injShelley        (SomeBlock query) = SomeBlock (QueryIfCurrentShelley query)
+      injAnytimeByron   (Some      query) = SomeBlock (QueryAnytimeByron     query)
       injAnytimeShelley (Some      query) = SomeBlock (QueryAnytimeShelley   query)
+      injHardFork       (Some      query) = SomeBlock (QueryHardFork         query)
+
+instance Arbitrary History.EraEnd where
+  arbitrary = oneof
+      [ History.EraEnd <$> arbitrary
+      , return History.EraUnbounded
+      ]
+
+instance Arbitrary History.SafeBeforeEpoch where
+  arbitrary = oneof
+      [ return History.NoLowerBound
+      , History.LowerBound . EpochNo <$> arbitrary
+      , return History.UnsafeUnbounded
+      ]
+
+instance Arbitrary History.SafeZone where
+  arbitrary = History.SafeZone
+      <$> arbitrary
+      <*> arbitrary
+
+instance Arbitrary History.EraParams where
+  arbitrary = History.EraParams
+      <$> (EpochSize <$> arbitrary)
+      <*> arbitrary
+      <*> arbitrary
+
+instance Arbitrary History.EraSummary where
+  arbitrary = History.EraSummary
+      <$> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+
+instance (Arbitrary a, SListI xs) => Arbitrary (NonEmpty xs a) where
+  arbitrary = do
+      let nbXs = lengthSList (Proxy @xs)
+      len <- choose (1, nbXs)
+      xs  <- vectorOf len arbitrary
+      return $ fromMaybe (error "nonEmptyFromList failed") $ nonEmptyFromList xs
+
+instance Arbitrary (History.Interpreter (CardanoEras sc)) where
+  arbitrary = History.mkInterpreter . History.Summary <$> arbitrary
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
                                 (SomeResult (CardanoBlock sc))) where
   arbitrary = frequency
-      [ (8, arbitraryNodeToClient injByron injShelley)
-      , (2, WithVersion
+      [ (1, arbitraryNodeToClient injByron injShelley)
+      , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryIfCurrentResultEraMismatch)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
-              <*> genQueryAnytimeResult)
+              <*> genQueryAnytimeResultByron)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryAnytimeResultShelley)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryHardForkResult)
       ]
     where
       injByron   (SomeResult q r) = SomeResult (QueryIfCurrentByron   q) (QueryResultSuccess r)
@@ -339,9 +399,17 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
               <$> arbitrary <*> arbitrary
           ]
 
-      genQueryAnytimeResult :: Gen (SomeResult (CardanoBlock sc))
-      genQueryAnytimeResult =
-          SomeResult (QueryAnytimeShelley EraStart) <$> arbitrary
+      genQueryAnytimeResultByron :: Gen (SomeResult (CardanoBlock sc))
+      genQueryAnytimeResultByron =
+          SomeResult (QueryAnytimeByron GetEraStart) <$> arbitrary
+
+      genQueryAnytimeResultShelley :: Gen (SomeResult (CardanoBlock sc))
+      genQueryAnytimeResultShelley =
+          SomeResult (QueryAnytimeShelley GetEraStart) <$> arbitrary
+
+      genQueryHardForkResult :: Gen (SomeResult (CardanoBlock sc))
+      genQueryHardForkResult =
+          SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
 
 instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       => Arbitrary (MismatchEraInfo (CardanoEras sc)) where

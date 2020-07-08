@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Util.SOP (
     -- * Type-level non-empty lists
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
+  , checkIsNonEmpty
     -- * NP with optional values
   , OptNP(..)
   , fromOptNP
@@ -164,6 +165,11 @@ class IsNonEmpty xs where
 
 instance IsNonEmpty (x ': xs) where
   isNonEmpty _ = ProofNonEmpty (Proxy @x) (Proxy @xs)
+
+checkIsNonEmpty :: forall xs. SListI xs => Proxy xs -> Maybe (ProofNonEmpty xs)
+checkIsNonEmpty _ = case sList @xs of
+    SNil  -> Nothing
+    SCons -> Just $ ProofNonEmpty Proxy Proxy
 
 {-------------------------------------------------------------------------------
   NP with optional values

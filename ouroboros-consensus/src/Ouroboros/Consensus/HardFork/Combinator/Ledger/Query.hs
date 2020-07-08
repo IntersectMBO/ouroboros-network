@@ -22,10 +22,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query (
   , QueryIfCurrent(..)
   , HardForkQueryResult
   , QueryAnytime(..)
+  , QueryHardFork(..)
   , getHardForkQuery
   , hardForkQueryInfo
   , encodeQueryAnytimeResult
   , decodeQueryAnytimeResult
+  , encodeQueryHardForkResult
+  , decodeQueryHardForkResult
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -40,6 +43,7 @@ import           Data.Type.Equality
 
 import           Cardano.Binary (enforceSize)
 
+import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
                      Shape (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -60,6 +64,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
 
 instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
   showResult (QueryAnytime   qry _) result = showResult qry result
+  showResult (QueryHardFork  qry)   result = showResult qry result
   showResult (QueryIfCurrent qry)  mResult =
       case mResult of
         Left  err    -> show err
@@ -76,16 +81,26 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
 
     -- | Answer a query about an era from /any/ era.
     --
-    -- NOTE: this is restricted to eras other than the first era so that the
+    -- NOTE: we don't allow this when there is only a single era, so that the
     -- HFC applied to a single era is still isomorphic to the single era.
     QueryAnytime ::
-         QueryAnytime result
-      -> EraIndex xs
+         IsNonEmpty xs
+      => QueryAnytime result
+      -> EraIndex (x ': xs)
+      -> Query (HardForkBlock (x ': xs)) result
+
+    -- | Answer a query about the hard fork combinator
+    --
+    -- NOTE: we don't allow this when there is only a single era, so that the
+    -- HFC applied to a single era is still isomorphic to the single era.
+    QueryHardFork ::
+         IsNonEmpty xs
+      => QueryHardFork (x ': xs) result
       -> Query (HardForkBlock (x ': xs)) result
 
   answerQuery hardForkConfig@HardForkLedgerConfig{..}
               query
-              (HardForkLedgerState hardForkState) =
+              st@(HardForkLedgerState hardForkState) =
       case query of
         QueryIfCurrent queryIfCurrent ->
           interpretQueryIfCurrent
@@ -97,22 +112,31 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
           interpretQueryAnytime
             hardForkConfig
             queryAnytime
-            (EraIndex (S era))
+            (EraIndex era)
             hardForkState
+        QueryHardFork queryHardFork ->
+          interpretQueryHardFork
+            hardForkConfig
+            queryHardFork
+            st
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger hardForkConfig hardForkState
 
+  eqQuery (QueryIfCurrent qry) (QueryIfCurrent qry') =
+      apply Refl <$> eqQueryIfCurrent qry qry'
+  eqQuery (QueryIfCurrent {}) _ =
+      Nothing
   eqQuery (QueryAnytime qry era) (QueryAnytime qry' era')
     | era == era'
     = eqQueryAnytime qry qry'
     | otherwise
     = Nothing
-  eqQuery (QueryIfCurrent qry) (QueryIfCurrent qry') =
-      apply Refl <$> eqQueryIfCurrent qry qry'
-  eqQuery (QueryIfCurrent {}) (QueryAnytime {}) =
+  eqQuery (QueryAnytime {}) _ =
       Nothing
-  eqQuery (QueryAnytime {}) (QueryIfCurrent {}) =
+  eqQuery (QueryHardFork qry) (QueryHardFork qry') =
+      eqQueryHardFork qry qry'
+  eqQuery (QueryHardFork {}) _ =
       Nothing
 
 deriving instance All SingleEraBlock xs => Show (Query (HardForkBlock xs) result)
@@ -124,12 +148,20 @@ getHardForkQuery :: Query (HardForkBlock xs) result
                        -> r)
                  -> (forall x' xs'.
                           xs :~: x' ': xs'
+                       -> ProofNonEmpty xs'
                        -> QueryAnytime result
-                       -> EraIndex xs'
+                       -> EraIndex xs
+                       -> r)
+                 -> (forall x' xs'.
+                          xs :~: x' ': xs'
+                       -> ProofNonEmpty xs'
+                       -> QueryHardFork xs result
                        -> r)
                  -> r
-getHardForkQuery (QueryIfCurrent qry) k1 _   = k1 Refl qry
-getHardForkQuery (QueryAnytime qry era) _ k2 = k2 Refl qry era
+getHardForkQuery q k1 k2 k3 = case q of
+    QueryIfCurrent qry   -> k1 Refl qry
+    QueryAnytime qry era -> k2 Refl (isNonEmpty Proxy) qry era
+    QueryHardFork qry    -> k3 Refl (isNonEmpty Proxy) qry
 
 {-------------------------------------------------------------------------------
   Current era queries
@@ -182,18 +214,18 @@ interpretQueryIfCurrent ei = go
 -------------------------------------------------------------------------------}
 
 data QueryAnytime result where
-  EraStart :: QueryAnytime (Maybe Bound)
+  GetEraStart :: QueryAnytime (Maybe Bound)
 
 deriving instance Show (QueryAnytime result)
 
 instance ShowQuery QueryAnytime where
-  showResult EraStart = show
+  showResult GetEraStart = show
 
 eqQueryAnytime ::
      QueryAnytime result
   -> QueryAnytime result'
   -> Maybe (result :~: result')
-eqQueryAnytime EraStart EraStart = Just Refl
+eqQueryAnytime GetEraStart GetEraStart = Just Refl
 
 interpretQueryAnytime ::
      forall result xs. All SingleEraBlock xs
@@ -222,9 +254,9 @@ answerQueryAnytime HardForkLedgerConfig{..} =
        -> QueryAnytime result
        -> Situated h LedgerState xs'
        -> result
-    go Nil       _             _        ctxt = case ctxt of {}
-    go (c :* cs) (K ps :* pss) EraStart ctxt = case ctxt of
-      SituatedShift ctxt'   -> go cs pss EraStart ctxt'
+    go Nil       _             _           ctxt = case ctxt of {}
+    go (c :* cs) (K ps :* pss) GetEraStart ctxt = case ctxt of
+      SituatedShift ctxt'   -> go cs pss GetEraStart ctxt'
       SituatedFuture _ _    -> Nothing
       SituatedPast past _   -> Just $ pastStart past
       SituatedCurrent cur _ -> Just $ currentStart cur
@@ -237,11 +269,39 @@ answerQueryAnytime HardForkLedgerConfig{..} =
           (currentState cur)
 
 {-------------------------------------------------------------------------------
+  Hard fork queries
+-------------------------------------------------------------------------------}
+
+data QueryHardFork xs result where
+  GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
+
+deriving instance Show (QueryHardFork xs result)
+
+instance ShowQuery (QueryHardFork xs) where
+  showResult GetInterpreter = show
+
+eqQueryHardFork ::
+     QueryHardFork xs result
+  -> QueryHardFork xs result'
+  -> Maybe (result :~: result')
+eqQueryHardFork GetInterpreter GetInterpreter = Just Refl
+
+interpretQueryHardFork ::
+     All SingleEraBlock xs
+  => HardForkLedgerConfig xs
+  -> QueryHardFork xs result
+  -> LedgerState (HardForkBlock xs)
+  -> result
+interpretQueryHardFork cfg query st =
+    case query of
+      GetInterpreter -> History.mkInterpreter $ hardForkSummary cfg st
+
+{-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
 instance Serialise (Some QueryAnytime) where
-  encode (Some EraStart) = mconcat [
+  encode (Some GetEraStart) = mconcat [
         Enc.encodeListLen 1
       , Enc.encodeWord8 0
       ]
@@ -250,14 +310,37 @@ instance Serialise (Some QueryAnytime) where
     enforceSize "QueryAnytime" 1
     tag <- Dec.decodeWord8
     case tag of
-      0 -> return $ Some EraStart
+      0 -> return $ Some GetEraStart
       _ -> fail $ "QueryAnytime: invalid tag " ++ show tag
 
 encodeQueryAnytimeResult :: QueryAnytime result -> result -> Encoding
-encodeQueryAnytimeResult EraStart = encode
+encodeQueryAnytimeResult GetEraStart = encode
 
 decodeQueryAnytimeResult :: QueryAnytime result -> forall s. Decoder s result
-decodeQueryAnytimeResult EraStart = decode
+decodeQueryAnytimeResult GetEraStart = decode
+
+encodeQueryHardForkResult ::
+     SListI xs
+  => QueryHardFork xs result -> result -> Encoding
+encodeQueryHardForkResult GetInterpreter = encode
+
+decodeQueryHardForkResult ::
+     SListI xs
+  => QueryHardFork xs result -> forall s. Decoder s result
+decodeQueryHardForkResult GetInterpreter = decode
+
+instance Serialise (Some (QueryHardFork xs)) where
+  encode (Some GetInterpreter) = mconcat [
+        Enc.encodeListLen 1
+      , Enc.encodeWord8 0
+      ]
+
+  decode = do
+    enforceSize "QueryHardFork" 1
+    tag <- Dec.decodeWord8
+    case tag of
+      0 -> return $ Some GetInterpreter
+      _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 {-------------------------------------------------------------------------------
   Auxiliary
