@@ -44,7 +44,13 @@ module Ouroboros.Consensus.Cardano.Block (
   , OneEraTipInfo (TipInfoByron, TipInfoShelley)
     -- * Query
   , CardanoQuery
-  , Query (QueryIfCurrentByron, QueryIfCurrentShelley, QueryAnytimeShelley)
+  , Query (
+        QueryIfCurrentByron
+      , QueryIfCurrentShelley
+      , QueryAnytimeByron
+      , QueryAnytimeShelley
+      , QueryHardFork
+     )
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
     -- * CodecConfig
@@ -296,8 +302,8 @@ pattern TipInfoShelley ti = OneEraTipInfo (S (Z (WrapTipInfo ti)))
 -- | The 'Query' of Cardano chain.
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
--- constructors 'QueryIfCurrentByron', 'QueryIfCurerntShelley', and
--- 'QueryAnytimeShelley'.
+-- constructors 'QueryIfCurrentByron', 'QueryIfCurrentShelley',
+-- 'QueryAnytimeByron', 'QueryAnytimeShelley', and 'QueryHardFork'.
 type CardanoQuery sc = Query (CardanoBlock sc)
 
 -- | Byron-specific query that can only be answered when the ledger in the
@@ -314,6 +320,19 @@ pattern QueryIfCurrentShelley
   -> CardanoQuery sc (CardanoQueryResult sc result)
 pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 
+-- | Query about the Byron era that can be answered anytime, i.e.,
+-- independent from where the tip of the ledger is.
+--
+-- For example, to ask for the start of the Byron era (whether the tip of
+-- the ledger is in the Byron or Shelley era), use:
+--
+-- > QueryAnytimeByron EraStart
+--
+pattern QueryAnytimeByron
+  :: QueryAnytime result
+  -> CardanoQuery sc result
+pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (Z (K ())))
+
 -- | Query about the Shelley era that can be answered anytime, i.e.,
 -- independent from where the tip of the ledger is.
 --
@@ -325,11 +344,13 @@ pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 pattern QueryAnytimeShelley
   :: QueryAnytime result
   -> CardanoQuery sc result
-pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (Z (K ())))
+pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (S (Z (K ()))))
 
 {-# COMPLETE QueryIfCurrentByron
            , QueryIfCurrentShelley
-           , QueryAnytimeShelley #-}
+           , QueryAnytimeByron
+           , QueryAnytimeShelley
+           , QueryHardFork #-}
 
 -- | The result of a 'CardanoQuery'
 --

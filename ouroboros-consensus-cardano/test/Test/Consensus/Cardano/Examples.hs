@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
@@ -147,18 +148,33 @@ injExamplesShelley Golden.Examples {..} = Golden.Examples {
 byronEraParams :: History.EraParams
 byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.dummyConfig
 
+shelleyEraParams :: History.EraParams
+shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+
 transitionEpoch :: EpochNo
 transitionEpoch = 10
+
+byronStartBound :: History.Bound
+byronStartBound = History.initBound
 
 byronEndBound :: History.Bound
 byronEndBound =
     History.mkUpperBound
       byronEraParams
-      History.initBound
+      byronStartBound
       transitionEpoch
 
 shelleyStartBound :: History.Bound
 shelleyStartBound = byronEndBound
+
+summary :: History.Summary (CardanoEras Crypto)
+summary =
+    State.reconstructSummary
+      (History.Shape (exactlyTwo byronEraParams shelleyEraParams))
+      (State.TransitionKnown transitionEpoch)
+      (getHardForkLedgerState (ledgerStateByron byronLedger))
+  where
+    (_, byronLedger) = head $ Golden.exampleLedgerState Byron.examples
 
 eraInfoByron :: SingleEraInfo ByronBlock
 eraInfoByron = singleEraInfo (Proxy @ByronBlock)
@@ -321,12 +337,16 @@ multiEraExamples = mempty {
         , ("WrongEraShelley", exampleApplyTxErrWrongEraShelley)
         ]
     , Golden.exampleQuery = labelled [
-          ("AnytimeShelley", exampleQueryAnytimeShelley)
+          ("AnytimeByron",   exampleQueryAnytimeByron)
+        , ("AnytimeShelley", exampleQueryAnytimeShelley)
+        , ("HardFork",       exampleQueryHardFork)
         ]
     , Golden.exampleResult = labelled [
           ("EraMismatchByron",   exampleResultEraMismatchByron)
         , ("EraMismatchShelley", exampleResultEraMismatchShelley)
+        , ("AnytimeByron",       exampleResultAnytimeByron)
         , ("AnytimeShelley",     exampleResultAnytimeShelley)
+        , ("HardFork",           exampleResultHardFork)
         ]
     , Golden.exampleLedgerState = labelled [
           ("WithSnapshot", exampleLedgerStateWithSnapshot)
@@ -367,9 +387,17 @@ exampleQueryEraMismatchShelley :: SomeBlock Query (CardanoBlock Crypto)
 exampleQueryEraMismatchShelley =
     SomeBlock (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
+exampleQueryAnytimeByron :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryAnytimeByron =
+    SomeBlock (QueryAnytimeByron GetEraStart)
+
 exampleQueryAnytimeShelley :: SomeBlock Query (CardanoBlock Crypto)
 exampleQueryAnytimeShelley =
-    SomeBlock (QueryAnytimeShelley EraStart)
+    SomeBlock (QueryAnytimeShelley GetEraStart)
+
+exampleQueryHardFork :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryHardFork =
+    SomeBlock (QueryHardFork GetInterpreter)
 
 exampleResultEraMismatchByron :: SomeResult (CardanoBlock Crypto)
 exampleResultEraMismatchByron =
@@ -383,9 +411,17 @@ exampleResultEraMismatchShelley =
       (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
       (Left exampleEraMismatchShelley)
 
+exampleResultAnytimeByron :: SomeResult (CardanoBlock Crypto)
+exampleResultAnytimeByron =
+    SomeResult (QueryAnytimeByron GetEraStart) (Just byronStartBound)
+
 exampleResultAnytimeShelley :: SomeResult (CardanoBlock Crypto)
 exampleResultAnytimeShelley =
-    SomeResult (QueryAnytimeShelley EraStart) (Just shelleyStartBound)
+    SomeResult (QueryAnytimeShelley GetEraStart) (Just shelleyStartBound)
+
+exampleResultHardFork :: SomeResult (CardanoBlock Crypto)
+exampleResultHardFork =
+    SomeResult (QueryHardFork GetInterpreter) (History.mkInterpreter summary)
 
 exampleLedgerStateWithSnapshot :: LedgerState (CardanoBlock Crypto)
 exampleLedgerStateWithSnapshot =

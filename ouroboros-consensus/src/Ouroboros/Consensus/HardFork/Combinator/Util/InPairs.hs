@@ -60,7 +60,7 @@ hcpure :: forall proxy c xs f. (All c xs, IsNonEmpty xs)
        -> (forall x y. (c x, c y) => f x y) -> InPairs f xs
 hcpure _ f =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ -> go sList
+      ProofNonEmpty {} -> go sList
   where
     go :: (c x, All c xs') => SList xs' -> InPairs f (x ': xs')
     go SNil  = PNil

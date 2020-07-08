@@ -206,11 +206,11 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
 instance CanHardFork xs => BasicEnvelopeValidation (HardForkBlock xs) where
   expectedFirstBlockNo _ =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty p -> expectedFirstBlockNo p
+        ProofNonEmpty p _ -> expectedFirstBlockNo p
 
   minimumPossibleSlotNo _ =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty p -> minimumPossibleSlotNo p
+        ProofNonEmpty p _ -> minimumPossibleSlotNo p
 
   -- TODO: If the block is from a different era as the current tip, we just
   -- expect @succ b@. This may not be sufficient: if we ever transition /to/

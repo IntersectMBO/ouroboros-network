@@ -202,7 +202,7 @@ getSameValue
   -> a
 getSameValue values =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         assertWithMsg allEqualCheck (unK (hd values))
   where
     allEqualCheck :: Either String ()

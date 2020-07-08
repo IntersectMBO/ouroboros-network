@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -36,6 +37,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.SOP (checkIsNonEmpty)
 
 instance SerialiseHFC xs => SerialiseNodeToClientConstraints (HardForkBlock xs)
 
@@ -53,7 +55,7 @@ dispatchEncoder :: forall f xs. (
                 -> NS f xs -> Encoding
 dispatchEncoder ccfg version ns =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version, ns) of
           (c0 :* _, HardForkNodeToClientDisabled v0, Z x0) ->
             encodeNodeToClient c0 (unwrapNodeToClientVersion v0) x0
@@ -80,7 +82,7 @@ dispatchDecoder :: forall f xs. (
                 -> forall s. Decoder s (NS f xs)
 dispatchDecoder ccfg version =
     case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
+      ProofNonEmpty {} ->
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToClientDisabled v0) ->
             Z <$> decodeNodeToClient c0 (unwrapNodeToClientVersion v0)
@@ -162,25 +164,45 @@ instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (SomeBlock Query (HardForkBlock xs)) where
   encodeNodeToClient ccfg version (SomeBlock q) = case q of
       QueryIfCurrent qry -> mconcat [
-            Enc.encodeListLen 1
+            Enc.encodeListLen 2
+          , Enc.encodeWord8 0
           , dispatchEncoder ccfg version (distribQueryIfCurrent (Some qry))
           ]
       QueryAnytime qry eraIndex -> mconcat [
-            Enc.encodeListLen 2
+            Enc.encodeListLen 3
+          , Enc.encodeWord8 1
           , Serialise.encode (Some qry)
           , Serialise.encode eraIndex
           ]
+      QueryHardFork qry -> mconcat [
+            Enc.encodeListLen 2
+          , Enc.encodeWord8 2
+          , Serialise.encode (Some qry)
+          ]
 
   decodeNodeToClient ccfg version = case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ -> do
+      ProofNonEmpty (_ :: Proxy x') (p :: Proxy xs') -> do
         size <- Dec.decodeListLen
-        case size of
-          1 -> injQueryIfCurrent <$> dispatchDecoder ccfg version
-          2 -> do
-            Some qry <- Serialise.decode
-            eraIndex <- Serialise.decode
-            return $ SomeBlock (QueryAnytime qry eraIndex)
-          _ -> fail $ "HardForkQuery: invalid listLen" <> show size
+        tag  <- Dec.decodeWord8
+        case (size, tag) of
+          (2, 0) -> injQueryIfCurrent <$> dispatchDecoder ccfg version
+
+          (3, 1) -> do
+            Some (qry :: QueryAnytime result) <- Serialise.decode
+            eraIndex :: EraIndex (x' ': xs')  <- Serialise.decode
+            case checkIsNonEmpty p of
+              Nothing -> fail $ "QueryAnytime requires multiple era"
+              Just (ProofNonEmpty {}) ->
+                return $ SomeBlock (QueryAnytime qry eraIndex)
+
+          (2, 2) -> do
+            Some (qry :: QueryHardFork xs result) <- Serialise.decode
+            case checkIsNonEmpty p of
+              Nothing -> fail $ "QueryHardFork requires multiple era"
+              Just (ProofNonEmpty {}) ->
+                return $ SomeBlock (QueryHardFork qry)
+
+          _ -> fail $ "HardForkQuery: invalid size and tag" <> show (size, tag)
     where
       injQueryIfCurrent :: NS (SomeBlock Query) xs
                         -> SomeBlock Query (HardForkBlock xs)
@@ -196,7 +218,7 @@ instance SerialiseHFC xs
       => SerialiseResult (HardForkBlock xs) (Query (HardForkBlock xs)) where
   encodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty _ ->
+        ProofNonEmpty {} ->
           encodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
@@ -209,10 +231,11 @@ instance SerialiseHFC xs
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
   encodeResult _ _ (QueryAnytime qry _) = encodeQueryAnytimeResult qry
+  encodeResult _ _ (QueryHardFork qry)  = encodeQueryHardForkResult qry
 
   decodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
-        ProofNonEmpty _ ->
+        ProofNonEmpty {} ->
           decodeEitherMismatch version $
             case (ccfgs, version, qry) of
               (c0 :* _, HardForkNodeToClientDisabled v0, QZ qry') ->
@@ -225,6 +248,7 @@ instance SerialiseHFC xs
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
   decodeResult _ _ (QueryAnytime qry _) = decodeQueryAnytimeResult qry
+  decodeResult _ _ (QueryHardFork qry)  = decodeQueryHardForkResult qry
 
 encodeQueryIfCurrentResult ::
      All SerialiseConstraintsHFC xs

@@ -1,6 +1,9 @@
 {-# LANGUAGE DeriveAnyClass     #-}
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE TypeOperators      #-}
 
 module Ouroboros.Consensus.HardFork.History.EraParams (
@@ -15,9 +18,13 @@ module Ouroboros.Consensus.HardFork.History.EraParams (
   , maxMaybeEpoch
   ) where
 
+import           Codec.CBOR.Decoding (decodeListLen, decodeWord8)
+import           Codec.CBOR.Encoding (encodeListLen, encodeWord8)
+import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
@@ -218,3 +225,49 @@ maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> Maybe EpochNo
 maxMaybeEpoch NoLowerBound    e = Just $ e
 maxMaybeEpoch (LowerBound e') e = Just $ max e' e
 maxMaybeEpoch UnsafeUnbounded _ = Nothing
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance Serialise SafeBeforeEpoch where
+  encode = \case
+      NoLowerBound    -> encodeListLen 1 <> encodeWord8 0
+      LowerBound e    -> encodeListLen 2 <> encodeWord8 1 <> encode e
+      UnsafeUnbounded -> encodeListLen 1 <> encodeWord8 2
+  decode = do
+      size <- decodeListLen
+      tag  <- decodeWord8
+      case (size, tag) of
+        (1, 0) -> return NoLowerBound
+        (2, 1) -> LowerBound <$> decode
+        (1, 2) -> return UnsafeUnbounded
+        _      -> fail $ "SafeBeforeEpoch: invalid size and tag " <> show (size, tag)
+
+instance Serialise SafeZone where
+  encode SafeZone{..} = mconcat [
+        encodeListLen 2
+      , encode safeFromTip
+      , encode safeBeforeEpoch
+      ]
+
+  decode = do
+      enforceSize "SafeZone" 2
+      safeFromTip     <- decode
+      safeBeforeEpoch <- decode
+      return SafeZone{..}
+
+instance Serialise EraParams where
+  encode EraParams{..} = mconcat [
+        encodeListLen 3
+      , encode (unEpochSize eraEpochSize)
+      , encode eraSlotLength
+      , encode eraSafeZone
+      ]
+
+  decode = do
+      enforceSize "EraParams" 3
+      eraEpochSize  <- EpochSize <$> decode
+      eraSlotLength <- decode
+      eraSafeZone   <- decode
+      return EraParams{..}
