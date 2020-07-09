@@ -103,9 +103,9 @@ instance ConsensusProtocol ProtocolB where
   type ValidationErr ProtocolB = Void
 
   checkIsLeader CfgB{..} () _ (Ticked slot _) _ =
-      return $ if slot `Set.member` cfgB_leadInSlots
-                 then IsLeader ()
-                 else NotLeader
+      if slot `Set.member` cfgB_leadInSlots
+      then IsLeader ()
+      else NotLeader
 
   protocolSecurityParam = cfgB_k
 

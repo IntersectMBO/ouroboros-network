@@ -40,13 +40,10 @@ import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
-import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Random (Seed (..))
-import           Test.Util.Slots (NumSlots (..))
 
 data TestSetup = TestSetup
   { setupK            :: SecurityParam
@@ -69,28 +66,7 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "PBFT" $
-    [ testProperty "Issue 1505: removeTxs must not use fast path" $
-      -- See (the comments of) Issue 1505.
-      let ncn5 = NumCoreNodes 5
-          k    = SecurityParam 5
-      in
-      prop_simple_pbft_convergence TestSetup
-        { setupK = k
-        , setupTestConfig = TestConfig
-          { initSeed     = Seed (9550173506264790139,4734409083700350196,9697926137031612922,16476814117921936461,9569412668768792610)
-          , nodeTopology = meshNodeTopology ncn5
-          , numCoreNodes = ncn5
-          , numSlots     = NumSlots 100
-          }
-        , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList
-          [ (CoreNodeId 0, SlotNo 0)   -- 0 only leads this slot
-          , (CoreNodeId 1, SlotNo 6)   -- 1 only leads this slot
-          , (CoreNodeId 2, SlotNo 22)  -- 2 only leads this slot
-          , (CoreNodeId 3, SlotNo 24)
-          , (CoreNodeId 4, SlotNo 99)  -- irrelevant, beyond affecting pbftThreshold via numCoreNodes
-          ]
-        }
-    , testProperty "simple convergence" $ \setup ->
+    [ testProperty "simple convergence" $ \setup ->
         prop_simple_pbft_convergence setup
     ]
 

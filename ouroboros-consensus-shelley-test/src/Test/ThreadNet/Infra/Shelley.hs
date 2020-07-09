@@ -18,11 +18,14 @@ module Test.ThreadNet.Infra.Shelley (
   , tpraosSlotLength
   ) where
 
+import qualified Data.ByteString as BS
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
+
+import           Test.QuickCheck
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
@@ -30,6 +33,7 @@ import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
+import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
                      genKeyVRF)
 
@@ -40,7 +44,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Random
 import           Test.Util.Time (dawnOfTime)
 
 import qualified Shelley.Spec.Ledger.Address as SL
@@ -109,15 +112,15 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
     mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k) k
 
 genCoreNode
-  :: (MonadRandom m, TPraosCrypto c)
+  :: TPraosCrypto c
   => SL.KESPeriod
-  -> m (CoreNode c)
+  -> Gen (CoreNode c)
 genCoreNode startKESPeriod = do
-    genKey <- withMRSeed 8 genKeyDSIGN
-    delKey <- withMRSeed 8 genKeyDSIGN
-    stkKey <- withMRSeed 8 genKeyDSIGN
-    vrfKey <- withMRSeed 8 genKeyVRF
-    kesKey <- withMRSeed 8 genKeyKES
+    genKey <- genKeyDSIGN <$> genSeed 8
+    delKey <- genKeyDSIGN <$> genSeed 8
+    stkKey <- genKeyDSIGN <$> genSeed 8
+    vrfKey <- genKeyVRF   <$> genSeed 8
+    kesKey <- genKeyKES   <$> genSeed 8
     let kesPub = deriveVerKeyKES kesKey
         sigma = signedDSIGN
           ()
@@ -139,9 +142,10 @@ genCoreNode startKESPeriod = do
       }
   where
     certificateIssueNumber = 0
-    withMRSeed sz go = do
-      seed <- mkSeedFromBytes <$> getRandomBytes sz
-      pure $ go seed
+
+    genSeed :: Int -> Gen Cardano.Crypto.Seed
+    genSeed nbBytes =
+      mkSeedFromBytes . BS.pack <$> vectorOf nbBytes arbitrary
 
 mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =

@@ -26,7 +26,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
 import           Codec.Serialise (Serialise)
 import           Control.Exception (assert)
 import           Control.Monad.Except
-import           Crypto.Random (MonadRandom)
 import           Data.Functor.Product
 import           Data.SOP.Strict
 import           GHC.Generics (Generic)
@@ -177,13 +176,13 @@ type HardForkCannotLead xs = OneEraCannotLead xs
 -- /cannot/ be a leader).
 type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
 
-check :: forall m xs. (MonadRandom m, CanHardFork xs, HasCallStack)
+check :: forall xs. (CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
       -> ChainIndepState (HardForkProtocol xs)
       -> Ticked (HardForkLedgerView xs)
       -> Ticked (ChainDepState (HardForkProtocol xs))
-      -> m (LeaderCheck (HardForkProtocol xs))
+      -> LeaderCheck (HardForkProtocol xs)
 check HardForkConsensusConfig{..}
       canBeLeader
       chainIndepState
@@ -203,7 +202,7 @@ check HardForkConsensusConfig{..}
                             mismatch
         in error $ "check: unexpected mismatch: " ++ show mismatch'
       Right aligned ->
-        (fmap distrib . hsequence') $
+        distrib $
             hcpure proxySingle (fn_4 checkOne)
           `hap`
             cfgs
@@ -222,14 +221,14 @@ check HardForkConsensusConfig{..}
              -> (Maybe :.: WrapCanBeLeader)              blk
              -> WrapChainIndepState                      blk
              -> Product WrapChainDepState WrapLedgerView blk
-             -> (m :.: WrapLeaderCheck)                  blk
+             -> WrapLeaderCheck                          blk
     checkOne cfg'
              (Comp mCanBeLeader)
              chainIndepState'
-             (Pair chainDepState' ledgerView') = Comp . fmap WrapLeaderCheck $
+             (Pair chainDepState' ledgerView') = WrapLeaderCheck $
          case mCanBeLeader of
            Nothing ->
-             return NotLeader
+             NotLeader
            Just canBeLeader' ->
              checkIsLeader
                (completeConsensusConfig' ei cfg')

@@ -10,17 +10,10 @@ module Test.ThreadNet.DualPBFT (
   ) where
 
 import           Control.Monad.Except
-import           Crypto.Number.Generate as Cryptonite
-import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import qualified Data.Map as Map
 import           Data.Proxy
 import qualified Data.Set as Set
-import           Data.Word
-import qualified Hedgehog
-import qualified Hedgehog.Internal.Gen as HH
-import qualified Hedgehog.Internal.Tree as HH
-import qualified Hedgehog.Range as HH
 import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
@@ -267,28 +260,24 @@ realPBftParams ByronSpecGenesis{..} =
 
 instance TxGen DualByronBlock where
   testGenTxs _numCoreNodes curSlotNo cfg () = \st -> do
-      n <- generateBetween 0 20
+      n <- choose (0, 20)
       go [] n $ applyChainTick (configLedger cfg) curSlotNo st
     where
       -- Attempt to produce @n@ transactions
       -- Stops when the transaction generator cannot produce more txs
-      go :: MonadRandom m
-         => [GenTx DualByronBlock]     -- Accumulator
+      go :: [GenTx DualByronBlock]     -- Accumulator
          -> Integer                    -- Number of txs to still produce
          -> TickedLedgerState DualByronBlock
-         -> m [GenTx DualByronBlock]
+         -> Gen [GenTx DualByronBlock]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-          mTx <- hedgehogAdapter $ genTx cfg (tickedState st)
-          case mTx of
-            Nothing -> return (reverse acc)
-            Just tx ->
-              case runExcept $ applyTx
-                                 (configLedger cfg)
-                                 tx
-                                 st of
-                Right st' -> go (tx:acc) (n - 1) st'
-                Left _    -> error "testGenTxs: unexpected invalid tx"
+          tx <- genTx cfg (tickedState st)
+          case runExcept $ applyTx
+                             (configLedger cfg)
+                             tx
+                             st of
+            Right st' -> go (tx:acc) (n - 1) st'
+            Left _    -> error "testGenTxs: unexpected invalid tx"
 
 -- | Generate transaction
 --
@@ -298,20 +287,19 @@ instance TxGen DualByronBlock where
 -- infrastructure of the RealPBFT tests.
 genTx :: TopLevelConfig DualByronBlock
       -> LedgerState DualByronBlock
-      -> Hedgehog.Gen (GenTx DualByronBlock)
-genTx cfg st = HH.choice [
-      do aux <- sigGen (Rules.ctxtUTXOW cfg') st'
-         let main :: Impl.ATxAux ByteString
-             main = Spec.Test.elaborateTxBS
-                      elaborateTxId
-                      aux
+      -> Gen (GenTx DualByronBlock)
+genTx cfg st = do
+    aux <- sigGen (Rules.ctxtUTXOW cfg') st'
+    let main :: Impl.ATxAux ByteString
+        main = Spec.Test.elaborateTxBS
+                 elaborateTxId
+                 aux
 
-         return $ DualGenTx {
-             dualGenTxMain   = ByronTx (byronIdTx main) main
-           , dualGenTxAux    = ByronSpecGenTx $ ByronSpecGenTxTx aux
-           , dualGenTxBridge = specToImplTx aux main
-           }
-    ]
+    return $ DualGenTx {
+        dualGenTxMain   = ByronTx (byronIdTx main) main
+      , dualGenTxAux    = ByronSpecGenTx $ ByronSpecGenTxTx aux
+      , dualGenTxBridge = specToImplTx aux main
+      }
   where
     cfg' :: ByronSpecGenesis
     st'  :: Spec.State Spec.CHAIN
@@ -331,36 +319,8 @@ genTx cfg st = HH.choice [
 sigGen :: forall sts. (Spec.QC.HasTrace sts)
        => Rules.RuleContext sts
        -> Spec.State Spec.CHAIN
-       -> Hedgehog.Gen (Spec.Signal sts)
-sigGen Rules.RuleContext{..} st =
+       -> Gen (Spec.Signal sts)
+sigGen Rules.RuleContext{..} st = hedgehog $
+    -- Convert Hedgehog generator to QuickCheck one
+    -- Unfortunately, this does mean we lose any shrinking.
     Spec.QC.sigGen @sts (getRuleEnv st) (getRuleState st)
-
-{-------------------------------------------------------------------------------
-  Hedgehog to MonadRandom adapter
--------------------------------------------------------------------------------}
-
--- | Run the generator by producing a random seed
---
--- If the generator fails to produce a value, try again with a different seed;
--- if this fails too often, return 'Nothing'.
-hedgehogAdapter :: forall m a. MonadRandom m => Hedgehog.Gen a -> m (Maybe a)
-hedgehogAdapter gen =
-    go 2 -- We only try twice right now, as the tests are already very slow
-  where
-    go :: Int -> m (Maybe a)
-    go 0 = return Nothing
-    go n = do
-      seed <- genSeed
-      case HH.evalGen (HH.Size 30) seed gen of
-        Nothing -> go (n - 1)
-        Just ta -> return $ Just (HH.treeValue ta)
-
-    genSeed :: m Hedgehog.Seed
-    genSeed = do
-      a <- fromInteger <$> Cryptonite.generateBetween mn mx
-      b <- fromInteger <$> Cryptonite.generateBetween mn mx
-      return $ Hedgehog.Seed a (if even b then succ b else b)
-
-    mn, mx :: Integer
-    mn = toInteger (minBound :: Word64)
-    mx = toInteger (maxBound :: Word64)

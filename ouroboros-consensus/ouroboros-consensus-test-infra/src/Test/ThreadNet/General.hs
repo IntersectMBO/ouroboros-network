@@ -71,6 +71,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -78,7 +79,6 @@ import           Test.Util.HardFork.Future (Future)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
-import           Test.Util.Random
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
 import           Test.Util.Slots (NumSlots (..))
@@ -245,7 +245,7 @@ runTestNetwork TestConfig
       , tnaNodeInfo     = nodeInfo
       , tnaNumCoreNodes = numCoreNodes
       , tnaNumSlots     = numSlots
-      , tnaRNG          = seedToChaCha initSeed
+      , tnaSeed         = initSeed
       , tnaMkRekeyM     = mkRekeyM
       , tnaRestarts     = nodeRestarts
       , tnaTopology     = nodeTopology

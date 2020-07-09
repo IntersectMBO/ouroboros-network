@@ -256,19 +256,20 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type CanBeLeader   (Praos c) = CoreNodeId
   type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid _cis (Ticked slot _u) (Ticked _ cds) = do
-      rho <- evalCertified () rho' praosSignKeyVRF
-      y   <- evalCertified () y'   praosSignKeyVRF
-      return $ if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
-          then IsLeader PraosProof {
-                   praosProofRho  = rho
-                 , praosProofY    = y
-                 , praosLeader    = nid
-                 , praosProofSlot = slot
-                 }
-          else NotLeader
+  checkIsLeader cfg@PraosConfig{..} nid _cis (Ticked slot _u) (Ticked _ cds) =
+      if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
+      then IsLeader PraosProof {
+               praosProofRho  = rho
+             , praosProofY    = y
+             , praosLeader    = nid
+             , praosProofSlot = slot
+             }
+      else NotLeader
     where
       (rho', y', t) = rhoYT cfg cds slot nid
+
+      rho = evalCertified () rho' praosSignKeyVRF
+      y   = evalCertified () y'   praosSignKeyVRF
 
   -- Unlike the real Praos (which must switch nonce at the right time), there
   -- is nothing to do for the mock Praos implementation in 'tickChainDepState'

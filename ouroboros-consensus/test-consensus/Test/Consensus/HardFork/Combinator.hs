@@ -74,9 +74,9 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.HardFork.Future
-import           Test.Util.Random (Seed (..))
 import           Test.Util.Slots (NumSlots (..))
 
 import           Test.Consensus.HardFork.Combinator.A

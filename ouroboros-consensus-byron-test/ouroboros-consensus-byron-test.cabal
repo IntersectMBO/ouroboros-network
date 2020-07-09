@@ -43,7 +43,6 @@ library
                      , cardano-ledger-test
                      , cardano-prelude
                      , containers        >=0.5   && <0.7
-                     , cryptonite        >=0.25  && <0.26
                      , hedgehog-quickcheck
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
@@ -92,9 +91,7 @@ test-suite test
                      , cardano-slotting
                      , cborg
                      , containers
-                     , cryptonite
                      , filepath
-                     , hedgehog
                      , hedgehog-quickcheck
                      , mtl
                      , QuickCheck
@@ -106,6 +103,7 @@ test-suite test
                      , byron-spec-chain
                      , byron-spec-ledger
                      , small-steps
+                     , small-steps-test
 
                      , ouroboros-network
                      , ouroboros-consensus

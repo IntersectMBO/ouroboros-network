@@ -6,13 +6,13 @@ module Test.ThreadNet.TxGen
 
 import           Data.Kind (Type)
 
+import           Test.QuickCheck (Gen)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-
-import           Test.Util.Random
 
 {-------------------------------------------------------------------------------
   TxGen class
@@ -31,10 +31,9 @@ class TxGen blk where
   --
   -- Note: this function returns a list so that an empty list can be returned
   -- in case we are unable to generate transactions for a @blk@.
-  testGenTxs :: MonadRandom m
-             => NumCoreNodes
+  testGenTxs :: NumCoreNodes
              -> SlotNo
              -> TopLevelConfig blk
              -> TxGenExtra blk
              -> LedgerState blk
-             -> m [GenTx blk]
+             -> Gen [GenTx blk]

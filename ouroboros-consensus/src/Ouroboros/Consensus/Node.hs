@@ -428,7 +428,7 @@ mkNodeArgs
 mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
     blockProduction <-
       case mIsLeader of
-        Just (proof, mfs) -> Just <$> blockProductionIO cfg proof mfs
+        Just (proof, mfs) -> Just <$> defaultBlockProduction cfg proof mfs
         Nothing           -> return Nothing
     return NodeArgs
       { tracers

@@ -76,12 +76,14 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((...:), (..:))
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
+import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
@@ -196,46 +198,52 @@ instance TPraosCrypto c
   --    - 'updateChainDepState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
-  applyLedgerBlock cfg
-                   blk
-                   Ticked {
-                       tickedState = ShelleyLedgerState {
-                           history
-                         , shelleyState = oldShelleyState
-                         }
-                     } = do
+  applyLedgerBlock =
+      applyHelper $
+        -- Apply the BBODY transition using the ticked state
+        withExcept BBodyError ..: SL.applyBlockTransition
 
-      -- Apply the BBODY transition using the ticked state
-      newShelleyState <- withExcept BBodyError $
-        SL.applyBlockTransition globals oldShelleyState (shelleyBlockRaw blk)
+  reapplyLedgerBlock = runIdentity ...:
+      applyHelper $
+        -- Reapply the BBODY transition using the ticked state
+        Identity ..: SL.reapplyBlockTransition
 
-      let history'
-            -- TODO how expensive is this check?
-            | SL.currentLedgerView oldShelleyState ==
-              SL.currentLedgerView newShelleyState
-            = history
-            | otherwise
-            = History.snapOld
-                (SL.securityParameter globals)
-                (blockSlot blk)
-                (SL.currentLedgerView oldShelleyState)
-                history
+applyHelper ::
+     (Crypto c, Monad m)
+  => (SL.Globals -> SL.ShelleyState c -> SL.Block c -> m (SL.ShelleyState c))
+  -> FullBlockConfig (LedgerState (ShelleyBlock c)) (ShelleyBlock c)
+  -> ShelleyBlock c
+  -> Ticked (LedgerState (ShelleyBlock c))
+  -> m (LedgerState (ShelleyBlock c))
+applyHelper f cfg blk
+            Ticked {
+                tickedState = ShelleyLedgerState {
+                    history
+                  , shelleyState = oldShelleyState
+                  }
+              } = do
 
-      return ShelleyLedgerState {
-          ledgerTip    = blockPoint blk
-        , history      = history'
-        , shelleyState = newShelleyState
-        }
-    where
-      globals = shelleyLedgerGlobals (blockConfigLedger cfg)
+    newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
 
-  -- TODO actual reapplication:
-  -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1303
-  reapplyLedgerBlock cfg blk ledgerState =
-    case runExcept (applyLedgerBlock cfg blk ledgerState) of
-      Right ledgerState' -> ledgerState'
-      Left  err          -> error $
-        "Reapplication of Shelley ledger block failed: " <> show err
+    let history'
+          -- TODO how expensive is this check?
+          | SL.currentLedgerView oldShelleyState ==
+            SL.currentLedgerView newShelleyState
+          = history
+          | otherwise
+          = History.snapOld
+              (SL.securityParameter globals)
+              (blockSlot blk)
+              (SL.currentLedgerView oldShelleyState)
+              history
+
+    return ShelleyLedgerState {
+        ledgerTip    = blockPoint blk
+      , history      = history'
+      , shelleyState = newShelleyState
+      }
+  where
+    globals = shelleyLedgerGlobals (blockConfigLedger cfg)
 
 data instance LedgerState (ShelleyBlock c) = ShelleyLedgerState {
       ledgerTip    :: !(Point (ShelleyBlock c))

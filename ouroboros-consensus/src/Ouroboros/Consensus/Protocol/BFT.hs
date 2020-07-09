@@ -143,10 +143,10 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
                 (CoreNodeId i)
                 _cis
                 (Ticked (SlotNo n) _l)
-                _cds = do
-      return $ if n `mod` numCoreNodes == i
-                 then IsLeader ()
-                 else NotLeader
+                _cds =
+      if n `mod` numCoreNodes == i
+      then IsLeader ()
+      else NotLeader
     where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes

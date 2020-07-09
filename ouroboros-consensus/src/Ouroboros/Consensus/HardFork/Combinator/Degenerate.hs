@@ -226,7 +226,7 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
                 chainIndepState
                 tickedLedgerView
                 tickedChainDepState =
-    castLeaderCheck <$>
+    castLeaderCheck $
       checkIsLeader
         cfg
         canBeLeader

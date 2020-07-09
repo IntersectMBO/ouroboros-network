@@ -6,13 +6,13 @@
 module Ouroboros.Consensus.Node.BlockProduction (
     BlockProduction(..)
   , getLeaderProof
-  , blockProductionIO
+  , defaultBlockProduction
+  , customForgeBlockProduction
     -- * Get leader proof
   , defaultGetLeaderProof
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
-import           Crypto.Random (MonadRandom)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Block
@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((....:))
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Stateful wrapper around block production
@@ -58,12 +59,42 @@ getLeaderProof :: HasCallStack
                -> m (LeaderCheck        (BlockProtocol blk))
 getLeaderProof = getLeaderProof_
 
-blockProductionIO :: forall blk. (BlockSupportsProtocol blk, CanForge blk)
-                  => TopLevelConfig blk
-                  -> CanBeLeader (BlockProtocol blk)
-                  -> MaintainForgeState IO blk
-                  -> IO (BlockProduction IO blk)
-blockProductionIO cfg canBeLeader mfs = do
+defaultBlockProduction ::
+     forall m blk.
+     ( BlockSupportsProtocol blk
+     , CanForge blk
+     , IOLike m
+     )
+  => TopLevelConfig blk
+  -> CanBeLeader (BlockProtocol blk)
+  -> MaintainForgeState m blk
+  -> m (BlockProduction m blk)
+defaultBlockProduction cfg canBeLeader mfs =
+    customForgeBlockProduction cfg canBeLeader mfs forge
+  where
+    forge = return ....: forgeBlock cfg
+
+-- | Variant of 'defaultBlockProduction' that allows overriding the function
+-- to forge a block.
+--
+-- This is used in the ThreadNet tests to create EBBs JIT.
+customForgeBlockProduction ::
+     forall m blk.
+     ( BlockSupportsProtocol blk
+     , NoUnexpectedThunks (ExtraForgeState blk)
+     , IOLike m
+     )
+  => TopLevelConfig blk
+  -> CanBeLeader (BlockProtocol blk)
+  -> MaintainForgeState m blk
+  -> (   ForgeState blk
+      -> BlockNo
+      -> TickedLedgerState blk
+      -> [GenTx blk]
+      -> IsLeader (BlockProtocol blk)
+      -> m blk)
+  -> m (BlockProduction m blk)
+customForgeBlockProduction cfg canBeLeader mfs forge = do
     varForgeState <- newMVar (initForgeState mfs)
     return $ BlockProduction {
         getLeaderProof_ =
@@ -74,7 +105,12 @@ blockProductionIO cfg canBeLeader mfs = do
             varForgeState
       , produceBlock = \bno ledgerState txs proof -> do
           forgeState <- readMVar varForgeState
-          return $ forgeBlock cfg forgeState bno ledgerState txs proof
+          forge
+            forgeState
+            bno
+            ledgerState
+            txs
+            proof
       }
 
 {-------------------------------------------------------------------------------
@@ -84,7 +120,6 @@ blockProductionIO cfg canBeLeader mfs = do
 defaultGetLeaderProof ::
      ( MonadSTM m
      , MonadCatch m
-     , MonadRandom m
      , ConsensusProtocol (BlockProtocol blk)
      , HasCallStack
      )
@@ -106,9 +141,9 @@ defaultGetLeaderProof cfg proof mfs varForgeState tracer lgrSt chainDepSt = do
           forgeState
       return (forgeState', forgeState')
     traceWith tracer forgeState'
-    checkIsLeader
-      (configConsensus cfg)
-      proof
-      (chainIndepState forgeState')
-      lgrSt
-      chainDepSt
+    return $ checkIsLeader
+               (configConsensus cfg)
+               proof
+               (chainIndepState forgeState')
+               lgrSt
+               chainDepSt

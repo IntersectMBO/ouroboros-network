@@ -377,11 +377,9 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg@TPraosConfig{..} icn hk (Ticked slot lv) (Ticked _ cs) = do
-      rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
-      y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
+  checkIsLeader cfg@TPraosConfig{..} icn hk (Ticked slot lv) (Ticked _ cs) =
       -- First, check whether we're in the overlay schedule
-      return $ case Map.lookup slot (SL.lvOverlaySched lv) of
+      case Map.lookup slot (SL.lvOverlaySched lv) of
         Nothing
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
           -> case checkKesPeriod wallclockPeriod hk of
@@ -435,6 +433,9 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
+
+      rho = VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
+      y   = VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
 
       tickEta0 (STS.TicknState _ x) = x
 
