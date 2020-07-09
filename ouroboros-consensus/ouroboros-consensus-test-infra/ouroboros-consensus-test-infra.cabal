@@ -54,6 +54,7 @@ library
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.ToExpr
+                       Test.Util.Paths
                        Test.Util.QSM
                        Test.Util.QuickCheck
                        Test.Util.Range
@@ -83,6 +84,7 @@ library
                      , deepseq
                      , directory
                      , fgl
+                     , file-embed
                      , filepath
                      , generics-sop
                      , graphviz
@@ -96,6 +98,7 @@ library
                      , tasty-golden
                      , tasty-hunit
                      , tasty-quickcheck
+                     , template-haskell
                      , text              >=1.2   && <1.3
                      , time
                      , transformers
