@@ -129,6 +129,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , maxTxCapacityOverride   :: MaxTxCapacityOverride
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
+    , blockFetchConfiguration :: BlockFetchConfiguration
     }
 
 initNodeKernel
@@ -142,7 +143,7 @@ initNodeKernel
     -> m (NodeKernel m remotePeer localPeer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
                              , blockProduction, chainDB, initChainDB
-                             , miniProtocolParameters } = do
+                             , blockFetchConfiguration } = do
 
     initChainDB cfg (InitChainDB.fromFull chainDB)
 
@@ -171,14 +172,6 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
-      }
-
-  where
-    blockFetchConfiguration :: BlockFetchConfiguration
-    blockFetchConfiguration = BlockFetchConfiguration
-      { bfcMaxConcurrencyBulkSync = 1 -- Set to 1 for now, see #1526
-      , bfcMaxConcurrencyDeadline = 1
-      , bfcMaxRequestsInflight    = blockFetchPipeliningMax miniProtocolParameters
       }
 
 {-------------------------------------------------------------------------------

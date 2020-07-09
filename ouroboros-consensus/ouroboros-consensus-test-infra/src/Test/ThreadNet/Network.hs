@@ -55,6 +55,7 @@ import           Data.Void (Void)
 import           GHC.Stack
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -896,6 +897,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   chainSyncPipeliningLowMark  = 2,
                   blockFetchPipeliningMax     = 10,
                   txSubmissionMaxUnacked      = 1000 -- TODO ?
+                }
+            , blockFetchConfiguration = BlockFetchConfiguration {
+                  bfcMaxConcurrencyBulkSync = 1
+                , bfcMaxConcurrencyDeadline = 2
+                , bfcMaxRequestsInflight    = 10
                 }
             }
 

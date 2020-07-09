@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Node
   , openChainDB
   , mkChainDbArgs
   , mkNodeArgs
+  , nodeArgsEnforceInvariants
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
@@ -41,6 +42,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.Random (randomRIO)
 
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
@@ -205,7 +207,7 @@ run runargs@RunNodeArgs{..} =
                       (pure $ BackoffDelay 60) -- see 'BackoffDelay'
                       (ledgerState <$>
                          ChainDB.getCurrentLedger chainDB)
-      nodeArgs   <- rnCustomiseNodeArgs <$>
+      nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
                       mkNodeArgs
                         registry
                         cfg
@@ -442,4 +444,35 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters
+      , blockFetchConfiguration = defaultBlockFetchConfiguration
       }
+  where
+    defaultBlockFetchConfiguration :: BlockFetchConfiguration
+    defaultBlockFetchConfiguration = BlockFetchConfiguration
+      { bfcMaxConcurrencyBulkSync = 1
+      , bfcMaxConcurrencyDeadline = 2
+      , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
+      }
+
+-- | We allow the user running the node to customise the 'NodeArgs' through
+-- 'rnCustomiseNodeArgs', but there are some limits to some values. This
+-- function makes sure we don't exceed those limits and that the values are
+-- consistent.
+nodeArgsEnforceInvariants
+  :: NodeArgs m RemoteConnectionId LocalConnectionId blk
+  -> NodeArgs m RemoteConnectionId LocalConnectionId blk
+nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
+    { miniProtocolParameters = miniProtocolParameters
+        -- If 'blockFetchPipeliningMax' exceeds the configured default, it
+        -- would be a protocol violation.
+        { blockFetchPipeliningMax =
+            min (blockFetchPipeliningMax miniProtocolParameters)
+                (blockFetchPipeliningMax defaultMiniProtocolParameters)
+        }
+    , blockFetchConfiguration = blockFetchConfiguration
+        -- 'bfcMaxRequestsInflight' must be <= 'blockFetchPipeliningMax'
+        { bfcMaxRequestsInflight =
+            min (bfcMaxRequestsInflight blockFetchConfiguration)
+                (blockFetchPipeliningMax miniProtocolParameters)
+        }
+    }
