@@ -86,10 +86,8 @@ executable db-converter
   build-depends:       base
                      , bytestring
                      , cardano-binary
-                     , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-slotting
-                     , contra-tracer
                      , directory
                      , mtl
                      , optparse-applicative
@@ -98,8 +96,6 @@ executable db-converter
                      , path-io
                      , resourcet
                      , streaming
-                     , text
-                     , time
 
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
