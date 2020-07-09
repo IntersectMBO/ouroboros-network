@@ -289,7 +289,11 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- See STS DELEG for details
         newDState :: SL.DState c
         newDState = (SL._dstate oldDPState) {
-          SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+          SL._stkCreds = SL.StakeCreds
+                        . Map.map (const $ SlotNo 0)
+                        . Map.mapKeys SL.KeyHashObj
+                        $ sgsStake
+        , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
         }
 
         -- We consider pools as having been registered in slot 0
