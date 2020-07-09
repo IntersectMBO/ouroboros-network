@@ -52,6 +52,7 @@ import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
@@ -292,7 +293,16 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- See STS DELEG for details
         newDState :: SL.DState c
         newDState = (SL._dstate oldDPState) {
-          SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+          SL._stkCreds = SL.StakeCreds
+                        . Map.map (const $ SlotNo 0)
+                        . Map.mapKeys SL.KeyHashObj
+                        $ sgsStake
+        , SL._rewards = Map.mapKeys ( SL.mkRwdAcnt (SL.sgNetworkId genesis)
+                                    . SL.KeyHashObj
+                                    )
+                      . Map.map (const $ SL.Coin 0)
+                      $ sgsStake
+        , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
         }
 
         -- We consider pools as having been registered in slot 0
