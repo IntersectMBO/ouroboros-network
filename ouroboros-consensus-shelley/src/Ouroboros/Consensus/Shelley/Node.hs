@@ -253,6 +253,10 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     --
     -- This function embodies a little more logic than ideal. We might want to
     -- move it into `cardano-ledger-specs.`
+    --
+    -- HERE BE DRAGONS! This function is intended to help in testing. It should
+    -- not be called with anything other than 'emptyGenesisStaking' in
+    -- production.
     registerGenesisStaking :: SL.ChainState c -> SL.ChainState c
     registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
         { SL.chainNes = newChainNes }
@@ -274,8 +278,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         newEpochState = oldEpochState
           { SL.esLState = newLedgerState
           , SL.esSnapshots = (SL.esSnapshots oldEpochState)
-            { SL._pstakeMark = initSnapShot
-            }
+            { SL._pstakeMark = initSnapShot }
           }
         newLedgerState = oldLedgerState
           { SL._delegationState = newDPState }
