@@ -272,7 +272,11 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
           , SL.nesPd = newPoolDistr
           }
         newEpochState = oldEpochState
-          { SL.esLState = newLedgerState }
+          { SL.esLState = newLedgerState
+          , SL.esSnapshots = (SL.esSnapshots oldEpochState)
+            { SL._pstakeMark = initSnapShot
+            }
+          }
         newLedgerState = oldLedgerState
           { SL._delegationState = newDPState }
         newDPState = oldDPState
