@@ -102,6 +102,7 @@ library
                        Ouroboros.Network.Protocol.KeepAlive.Server
                        Ouroboros.Network.Protocol.KeepAlive.Codec
                        Ouroboros.Network.TipSample.Client
+                       Ouroboros.Network.TipSample.Server
                        Ouroboros.Network.TipSample.TipFragment
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
