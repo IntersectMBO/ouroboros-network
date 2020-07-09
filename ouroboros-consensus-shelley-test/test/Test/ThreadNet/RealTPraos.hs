@@ -56,7 +56,7 @@ data TestSetup = TestSetup
 
 instance Arbitrary TestSetup where
   arbitrary = do
-    setupD <- (/10)         <$> choose   (1, 10)
+    setupD <- (/10)         <$> choose   (0, 10)
     setupK <- SecurityParam <$> elements [5, 10]
 
     setupTestConfig <- arbitrary
