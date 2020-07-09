@@ -74,7 +74,8 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
-    [ testProperty "simple convergence" $ withMaxSuccess 20 $ \setup ->
+    [ adjustOption (\(QuickCheckTests n) -> QuickCheckTests $ n `div` 5) $
+      testProperty "simple convergence" $ \setup ->
         prop_simple_real_tpraos_convergence setup
     ]
 
