@@ -196,6 +196,9 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 data WithVersion v a = WithVersion v a
   deriving (Eq, Show)
 
+instance Arbitrary a => Arbitrary (WithVersion () a) where
+  arbitrary = WithVersion () <$> arbitrary
+
 -- | Similar to @Arbitrary'@, but with an 'Arbitrary' instasnce for
 -- @('WithVersion' v a)@.
 type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)

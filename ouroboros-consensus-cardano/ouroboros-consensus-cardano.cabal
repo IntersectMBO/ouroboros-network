@@ -72,6 +72,7 @@ test-suite test
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:
+                       Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Generators
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Examples
@@ -93,6 +94,7 @@ test-suite test
                      , containers
                      , mtl
                      , QuickCheck
+                     , sop-core
                      , tasty
                      , tasty-quickcheck
                      , time

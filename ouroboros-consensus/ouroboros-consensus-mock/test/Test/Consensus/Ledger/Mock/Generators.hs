@@ -87,10 +87,6 @@ instance (HashAlgorithm (SimpleHash c), Arbitrary ext, Serialise ext)
 instance Arbitrary SimpleBody where
   arbitrary = SimpleBody <$> listOf arbitrary
 
--- SimpleBlock uses trivial node-to-node and node-to-client versions
-instance Arbitrary a => Arbitrary (WithVersion () a) where
-  arbitrary = WithVersion () <$> arbitrary
-
 instance Arbitrary (SomeBlock (NestedCtxt Header) (SimpleBlock c ext)) where
   arbitrary = return $ SomeBlock indexIsTrivial
 
