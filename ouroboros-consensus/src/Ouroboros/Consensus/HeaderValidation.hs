@@ -483,7 +483,6 @@ validateHeader cfg ledgerView hdr st = do
         (configConsensus cfg)
         (validateView (configBlock cfg) hdr)
         (blockSlot hdr)
-        ledgerView
         (tickedHeaderStateConsensus st)
     return $
       headerStatePush

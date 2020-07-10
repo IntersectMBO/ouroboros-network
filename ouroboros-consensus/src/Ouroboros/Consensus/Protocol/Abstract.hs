@@ -237,11 +237,15 @@ class ( Show (ChainDepState   p)
                 -> CanBeLeader           p
                 -> ChainIndepState       p
                 -> SlotNo
-                -> Ticked (LedgerView    p)
                 -> Ticked (ChainDepState p)
                 -> LeaderCheck           p
 
   -- | Tick the 'ChainDepState'
+  --
+  -- We pass the ticked 'LedgerView' to 'tickChainDepState'. Functions that
+  -- /take/ a ticked 'ChainDepState' are not separately passed a ticked ledger
+  -- view; protocols that require it, can include it in their ticked
+  -- 'ChainDepState' type.
   tickChainDepState :: ConsensusConfig p
                     -> Ticked (LedgerView p)
                     -> SlotNo
@@ -253,7 +257,6 @@ class ( Show (ChainDepState   p)
                       => ConsensusConfig       p
                       -> ValidateView          p
                       -> SlotNo
-                      -> Ticked (LedgerView    p)
                       -> Ticked (ChainDepState p)
                       -> Except (ValidationErr p) (ChainDepState p)
 

@@ -44,7 +44,9 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
       -- First establish the 'IsLeader' and the 'LedgerState' are from the
       -- same era. As we have passed the ledger view of the ticked ledger to
       -- obtain the 'IsLeader' value, it __must__ be from the same era.
-      -- TODO: Can we avoid this error?
+      -- Unfortunately, we cannot avoid this 'error' call: the 'IsLeader'
+      -- evidence could conceivably include the ledger /view/, but not the
+      -- ledger /state/.
       case State.match (getOneEraIsLeader isLeader) ledgerState of
         Left _mismatch ->
           error "IsLeader from different era than the TickedLedgerState"

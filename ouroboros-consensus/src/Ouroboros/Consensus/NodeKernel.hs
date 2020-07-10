@@ -361,7 +361,6 @@ forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
             getLeaderProof blockProduction
               (forgeStateTracer tracers)
               currentSlot
-              (tickedLedgerView ticked)
               (tickedHeaderStateConsensus $ tickedHeaderState ticked)
           case mIsLeader of
             IsLeader   p -> return p

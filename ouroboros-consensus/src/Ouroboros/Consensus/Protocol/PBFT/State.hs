@@ -189,11 +189,6 @@ data PBftState c = PBftState {
     }
   deriving (Generic)
 
--- Ticking has no effect on the PBFtState
-newtype instance Ticked (PBftState c) = TickedPBftState {
-      getTickedPBftState :: PBftState c
-    }
-
 {-------------------------------------------------------------------------------
   Invariant
 -------------------------------------------------------------------------------}

@@ -101,16 +101,16 @@ instance ConsensusProtocol ProtocolB where
   type ValidateView  ProtocolB = ()
   type ValidationErr ProtocolB = Void
 
-  checkIsLeader CfgB{..} () _ slot _ _ =
+  checkIsLeader CfgB{..} () _ slot _ =
       if slot `Set.member` cfgB_leadInSlots
       then IsLeader ()
       else NotLeader
 
   protocolSecurityParam = cfgB_k
 
-  tickChainDepState   _ _ _ _   = TickedTrivial
-  updateChainDepState _ _ _ _ _ = return ()
-  rewindChainDepState _ _ _ _   = Just ()
+  tickChainDepState   _ _ _ _ = TickedTrivial
+  updateChainDepState _ _ _ _ = return ()
+  rewindChainDepState _ _ _ _ = Just ()
 
 data BlockB = BlkB {
       blkB_header :: Header BlockB

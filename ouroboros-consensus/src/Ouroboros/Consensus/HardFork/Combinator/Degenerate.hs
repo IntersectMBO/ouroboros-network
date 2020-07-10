@@ -229,7 +229,6 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
                 canBeLeader
                 chainIndepState
                 slot
-                tickedLedgerView
                 (TDCSt tickedChainDepState) =
     castLeaderCheck $
       checkIsLeader
@@ -237,23 +236,13 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
         canBeLeader
         chainIndepState
         slot
-        tickedLedgerView
         tickedChainDepState
 
   tickChainDepState (DConCfg cfg) view slot (DCSt st) =
       TDCSt $ tickChainDepState cfg view slot st
 
-  updateChainDepState (DConCfg cfg)
-                      valView
-                      slot
-                      tickedLedgerView
-                      (TDCSt chainDepState) =
-      DCSt <$> updateChainDepState
-                 cfg
-                 valView
-                 slot
-                 tickedLedgerView
-                 chainDepState
+  updateChainDepState (DConCfg cfg) valView slot (TDCSt chainDepState) =
+      DCSt <$> updateChainDepState cfg valView slot chainDepState
 
   rewindChainDepState _ secParam pt (DCSt chainDepState) =
       DCSt <$>
