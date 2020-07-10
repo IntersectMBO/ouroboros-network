@@ -161,13 +161,13 @@ prependTag tag payload = mconcat [
 -- versions have been released before the hard fork
 pattern CardanoNodeToNodeVersion1 :: BlockNodeToNodeVersion (CardanoBlock sc)
 pattern CardanoNodeToNodeVersion1 =
-    HardForkNodeToNodeDisabled (WrapNodeToNodeVersion ByronNodeToNodeVersion1)
+    HardForkNodeToNodeDisabled ByronNodeToNodeVersion1
 
 pattern CardanoNodeToNodeVersion2 :: BlockNodeToNodeVersion (CardanoBlock sc)
 pattern CardanoNodeToNodeVersion2 =
     HardForkNodeToNodeEnabled (
-         WrapNodeToNodeVersion ByronNodeToNodeVersion2
-      :* WrapNodeToNodeVersion ShelleyNodeToNodeVersion1
+         EraNodeToNodeEnabled ByronNodeToNodeVersion2
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* Nil
       )
 
@@ -175,13 +175,13 @@ pattern CardanoNodeToNodeVersion2 =
 -- the hard fork
 pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock sc)
 pattern CardanoNodeToClientVersion1 =
-    HardForkNodeToClientDisabled (WrapNodeToClientVersion ByronNodeToClientVersion1)
+    HardForkNodeToClientDisabled ByronNodeToClientVersion1
 
 pattern CardanoNodeToClientVersion2 :: BlockNodeToClientVersion (CardanoBlock sc)
 pattern CardanoNodeToClientVersion2 =
     HardForkNodeToClientEnabled (
-         WrapNodeToClientVersion ByronNodeToClientVersion1
-      :* WrapNodeToClientVersion ShelleyNodeToClientVersion1
+         EraNodeToClientEnabled ByronNodeToClientVersion1
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion1
       :* Nil
       )
 

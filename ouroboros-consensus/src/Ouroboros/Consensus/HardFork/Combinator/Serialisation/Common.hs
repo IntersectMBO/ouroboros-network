@@ -22,8 +22,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
     SerialiseHFC(..)
   , SerialiseConstraintsHFC
   , pSHFC
-  , FutureEraException(..)
+  , HardForkEncoderException(..)
   , futureEraException
+  , disabledEraException
     -- * Distinguish first era from the rest
   , FirstEra
   , LaterEra
@@ -32,6 +33,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
     -- * Versioning
   , HardForkNodeToNodeVersion(..)
   , HardForkNodeToClientVersion(..)
+  , EraNodeToNodeVersion(..)
+  , EraNodeToClientVersion(..)
   , isHardForkNodeToNodeEnabled
   , isHardForkNodeToClientEnabled
     -- * Dealing with annotations
@@ -130,12 +133,62 @@ notFirstEra = hcmap proxySingle aux
 -------------------------------------------------------------------------------}
 
 data HardForkNodeToNodeVersion xs where
-  HardForkNodeToNodeDisabled :: WrapNodeToNodeVersion x -> HardForkNodeToNodeVersion (x ': xs)
-  HardForkNodeToNodeEnabled  :: NP WrapNodeToNodeVersion xs -> HardForkNodeToNodeVersion xs
+  -- | Disable the HFC
+  --
+  -- This means that only the first era (@x@) is supported, and moreover, is
+  -- compatible with serialisation used if the HFC would not be present at all.
+  HardForkNodeToNodeDisabled ::
+       BlockNodeToNodeVersion x
+    -> HardForkNodeToNodeVersion (x ': xs)
+
+  -- | Enable the HFC
+  --
+  -- Each era can be enabled or disabled individually by passing
+  -- 'EraNodeToNodeDisabled' as its configuration, but serialised values will
+  -- always include tags inserted by the HFC to distinguish one era from
+  -- another.
+  HardForkNodeToNodeEnabled ::
+       NP EraNodeToNodeVersion xs
+    -> HardForkNodeToNodeVersion xs
 
 data HardForkNodeToClientVersion xs where
-  HardForkNodeToClientDisabled :: WrapNodeToClientVersion x -> HardForkNodeToClientVersion (x ': xs)
-  HardForkNodeToClientEnabled  :: NP WrapNodeToClientVersion xs -> HardForkNodeToClientVersion xs
+  -- | Disable the HFC
+  --
+  -- See 'HardForkNodeToNodeDisabled'
+  HardForkNodeToClientDisabled ::
+       BlockNodeToClientVersion x
+    -> HardForkNodeToClientVersion (x ': xs)
+
+  -- | Enable the HFC
+  --
+  -- See 'HardForkNodeToNodeEnabled'
+  HardForkNodeToClientEnabled ::
+       NP EraNodeToClientVersion xs
+    -> HardForkNodeToClientVersion xs
+
+data EraNodeToNodeVersion blk =
+    EraNodeToNodeEnabled !(BlockNodeToNodeVersion blk)
+  | EraNodeToNodeDisabled
+
+data EraNodeToClientVersion blk =
+    EraNodeToClientEnabled !(BlockNodeToClientVersion blk)
+  | EraNodeToClientDisabled
+
+deriving instance Show (BlockNodeToNodeVersion   blk) => Show (EraNodeToNodeVersion   blk)
+deriving instance Show (BlockNodeToClientVersion blk) => Show (EraNodeToClientVersion blk)
+
+deriving instance Eq (BlockNodeToNodeVersion   blk) => Eq (EraNodeToNodeVersion   blk)
+deriving instance Eq (BlockNodeToClientVersion blk) => Eq (EraNodeToClientVersion blk)
+
+deriving instance SerialiseHFC xs => Show (HardForkNodeToNodeVersion xs)
+deriving instance SerialiseHFC xs => Show (HardForkNodeToClientVersion xs)
+
+deriving instance SerialiseHFC xs => Eq (HardForkNodeToNodeVersion xs)
+deriving instance SerialiseHFC xs => Eq (HardForkNodeToClientVersion xs)
+
+instance SerialiseHFC xs => HasNetworkProtocolVersion (HardForkBlock xs) where
+  type BlockNodeToNodeVersion   (HardForkBlock xs) = HardForkNodeToNodeVersion   xs
+  type BlockNodeToClientVersion (HardForkBlock xs) = HardForkNodeToClientVersion xs
 
 isHardForkNodeToNodeEnabled :: HardForkNodeToNodeVersion xs -> Bool
 isHardForkNodeToNodeEnabled HardForkNodeToNodeEnabled {} = True
@@ -144,16 +197,6 @@ isHardForkNodeToNodeEnabled _                            = False
 isHardForkNodeToClientEnabled :: HardForkNodeToClientVersion xs -> Bool
 isHardForkNodeToClientEnabled HardForkNodeToClientEnabled {} = True
 isHardForkNodeToClientEnabled _                              = False
-
-deriving instance All (Compose Show WrapNodeToNodeVersion)   xs => Show (HardForkNodeToNodeVersion xs)
-deriving instance All (Compose Show WrapNodeToClientVersion) xs => Show (HardForkNodeToClientVersion xs)
-
-deriving instance All (Compose Eq WrapNodeToNodeVersion)   xs => Eq (HardForkNodeToNodeVersion xs)
-deriving instance All (Compose Eq WrapNodeToClientVersion) xs => Eq (HardForkNodeToClientVersion xs)
-
-instance SerialiseHFC xs => HasNetworkProtocolVersion (HardForkBlock xs) where
-  type BlockNodeToNodeVersion   (HardForkBlock xs) = HardForkNodeToNodeVersion   xs
-  type BlockNodeToClientVersion (HardForkBlock xs) = HardForkNodeToClientVersion xs
 
 {-------------------------------------------------------------------------------
   Conditions required by the HFC to support serialisation
@@ -197,10 +240,10 @@ pSHFC = Proxy
 class ( CanHardFork xs
       , All SerialiseConstraintsHFC xs
         -- Required for HasNetworkProtocolVersion
-      , All (Compose Show WrapNodeToNodeVersion)   xs
-      , All (Compose Eq   WrapNodeToNodeVersion)   xs
-      , All (Compose Show WrapNodeToClientVersion) xs
-      , All (Compose Eq   WrapNodeToClientVersion) xs
+      , All (Compose Show EraNodeToNodeVersion)   xs
+      , All (Compose Eq   EraNodeToNodeVersion)   xs
+      , All (Compose Show EraNodeToClientVersion) xs
+      , All (Compose Eq   EraNodeToClientVersion) xs
         -- Required for 'encodeNestedCtxt'/'decodeNestedCtxt'
       , All (EncodeDiskDepIx (NestedCtxt Header)) xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
@@ -274,17 +317,28 @@ class ( CanHardFork xs
   Exceptions
 -------------------------------------------------------------------------------}
 
--- | Thrown in the node-to-node and node-to-client encoders when the HFC
--- is disabled but we see something from an era that is not the first
-data FutureEraException where
-  -- | We record from which era we saw something
-  FutureEraException :: SingleEraInfo blk -> FutureEraException
+-- | Exception thrown in the HFC encoders
+data HardForkEncoderException where
+  -- | HFC disabled, but we saw a value from an era other than the first
+  HardForkEncoderFutureEra :: SingleEraInfo blk -> HardForkEncoderException
 
-deriving instance Show FutureEraException
-instance Exception FutureEraException
+  -- | HFC enabled, but we saw a value from a disabled era
+  HardForkEncoderDisabledEra :: SingleEraInfo blk -> HardForkEncoderException
 
-futureEraException :: SListI xs => NS SingleEraInfo xs -> FutureEraException
-futureEraException = hcollapse . hmap (K . FutureEraException)
+deriving instance Show HardForkEncoderException
+instance Exception HardForkEncoderException
+
+futureEraException ::
+     SListI xs
+  => NS SingleEraInfo xs
+  -> HardForkEncoderException
+futureEraException = hcollapse . hmap (K . HardForkEncoderFutureEra)
+
+disabledEraException ::
+     forall blk. SingleEraBlock blk
+  => Proxy blk
+  -> HardForkEncoderException
+disabledEraException = HardForkEncoderDisabledEra . singleEraInfo
 
 {-------------------------------------------------------------------------------
   Dealing with annotations

@@ -164,7 +164,7 @@ arbitraryNodeToNode injByron injShelley = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
           WithVersion
-            (HardForkNodeToNodeDisabled (WrapNodeToNodeVersion versionByron))
+            (HardForkNodeToNodeDisabled versionByron)
             (injByron b))
         <$> arbitrary
     -- Byron + HardFork enabled.
@@ -173,8 +173,8 @@ arbitraryNodeToNode injByron injShelley = oneof
     , (\(WithVersion versionByron b) versionShelley ->
           WithVersion
             (HardForkNodeToNodeEnabled (
-                 WrapNodeToNodeVersion versionByron
-              :* WrapNodeToNodeVersion versionShelley
+                 EraNodeToNodeEnabled versionByron
+              :* EraNodeToNodeEnabled versionShelley
               :* Nil))
             (injByron b))
         <$> arbitrary <*> arbitrary
@@ -182,8 +182,8 @@ arbitraryNodeToNode injByron injShelley = oneof
     , (\versionByron (WithVersion versionShelley s) ->
           WithVersion
             (HardForkNodeToNodeEnabled (
-                 WrapNodeToNodeVersion versionByron
-              :* WrapNodeToNodeVersion versionShelley
+                 EraNodeToNodeEnabled versionByron
+              :* EraNodeToNodeEnabled versionShelley
               :* Nil))
             (injShelley s))
         <$> arbitrary <*> arbitrary
@@ -251,15 +251,15 @@ arbitraryNodeToClient injByron injShelley = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
           WithVersion
-            (HardForkNodeToClientDisabled (WrapNodeToClientVersion versionByron))
+            (HardForkNodeToClientDisabled versionByron)
             (injByron b))
         <$> arbitrary
     -- Byron + HardFork enabled.
     , (\(WithVersion versionByron b) versionShelley ->
           WithVersion
             (HardForkNodeToClientEnabled (
-                 WrapNodeToClientVersion versionByron
-              :* WrapNodeToClientVersion versionShelley
+                 EraNodeToClientEnabled versionByron
+              :* EraNodeToClientEnabled versionShelley
               :* Nil))
             (injByron b))
         <$> arbitrary <*> arbitrary
@@ -267,8 +267,8 @@ arbitraryNodeToClient injByron injShelley = oneof
     , (\versionByron (WithVersion versionShelley s) ->
           WithVersion
             (HardForkNodeToClientEnabled (
-                 WrapNodeToClientVersion versionByron
-              :* WrapNodeToClientVersion versionShelley
+                 EraNodeToClientEnabled versionByron
+              :* EraNodeToClientEnabled versionShelley
               :* Nil))
             (injShelley s))
         <$> arbitrary <*> arbitrary
