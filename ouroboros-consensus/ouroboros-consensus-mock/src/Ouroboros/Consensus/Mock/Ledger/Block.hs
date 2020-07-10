@@ -113,29 +113,29 @@ data SimpleBlock' c ext ext' = SimpleBlock {
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
 
+data instance Header (SimpleBlock' c ext ext') = SimpleHeader {
+      -- | The header hash
+      --
+      -- This is the hash of the header itself. This is a bit unpleasant,
+      -- because it makes the hash look self-referential (when computing the
+      -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
+      -- is that we can give a 'HasHeader' instance that does not require
+      -- a (static) 'Serialise' instance.
+      simpleHeaderHash :: HeaderHash (SimpleBlock' c ext ext')
+
+      -- | Fields required for the 'HasHeader' instance
+    , simpleHeaderStd  :: SimpleStdHeader c ext
+
+      -- | Header extension
+      --
+      -- This extension will be required when using 'SimpleBlock' for specific
+      -- consensus protocols.
+    , simpleHeaderExt  :: ext'
+    }
+  deriving (Generic, Show, Eq, NoUnexpectedThunks)
+
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => GetHeader (SimpleBlock' c ext ext') where
-  data Header (SimpleBlock' c ext ext') = SimpleHeader {
-        -- | The header hash
-        --
-        -- This is the hash of the header itself. This is a bit unpleasant,
-        -- because it makes the hash look self-referential (when computing the
-        -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
-        -- is that we can give a 'HasHeader' instance that does not require
-        -- a (static) 'Serialise' instance.
-        simpleHeaderHash :: HeaderHash (SimpleBlock' c ext ext')
-
-        -- | Fields required for the 'HasHeader' instance
-      , simpleHeaderStd  :: SimpleStdHeader c ext
-
-        -- | Header extension
-        --
-        -- This extension will be required when using 'SimpleBlock' for specific
-        -- consensus protocols.
-      , simpleHeaderExt  :: ext'
-      }
-    deriving (Generic, Show, Eq, NoUnexpectedThunks)
-
   getHeader = simpleHeader
 
   blockMatchesHeader = matchesSimpleHeader

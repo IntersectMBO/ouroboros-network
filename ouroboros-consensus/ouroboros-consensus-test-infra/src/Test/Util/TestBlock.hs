@@ -177,10 +177,11 @@ data TestBlock = TestBlock {
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
 
+newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
+  deriving stock   (Eq, Show)
+  deriving newtype (NoUnexpectedThunks, Serialise)
+
 instance GetHeader TestBlock where
-  newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
-    deriving stock   (Eq, Show)
-    deriving newtype (NoUnexpectedThunks, Serialise)
   getHeader = TestHeader
   blockMatchesHeader (TestHeader blk') blk = blk == blk'
   headerIsEBB = const Nothing

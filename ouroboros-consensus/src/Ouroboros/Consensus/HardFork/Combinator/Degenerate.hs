@@ -107,12 +107,12 @@ newtype DegenFork b = DBlk {
   Data family instances
 -------------------------------------------------------------------------------}
 
-instance NoHardForks b => GetHeader (DegenFork b) where
-  newtype Header (DegenFork b) = DHdr {
-        unDHdr :: Header (HardForkBlock '[b])
-      }
-    deriving (Show, NoUnexpectedThunks)
+newtype instance Header (DegenFork b) = DHdr {
+      unDHdr :: Header (HardForkBlock '[b])
+    }
+  deriving (Show, NoUnexpectedThunks)
 
+instance NoHardForks b => GetHeader (DegenFork b) where
   getHeader (DBlk b) = DHdr (getHeader b)
 
   blockMatchesHeader (DHdr hdr) (DBlk blk) =

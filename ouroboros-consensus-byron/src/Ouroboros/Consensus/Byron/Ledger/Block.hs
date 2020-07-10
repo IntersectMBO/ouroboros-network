@@ -121,24 +121,24 @@ annotateByronBlock es = mkByronBlock es . CC.ABOBBlock . CC.reAnnotateBlock es
   Header
 -------------------------------------------------------------------------------}
 
+-- | Byron header
+--
+-- See 'ByronBlock' for comments on why we cache certain values.
+data instance Header ByronBlock = ByronHeader {
+      byronHeaderRaw    :: !(CC.ABlockOrBoundaryHdr ByteString)
+    , byronHeaderSlotNo :: !SlotNo
+    , byronHeaderHash   :: !ByronHash
+
+      -- | Hint about the block size
+      --
+      -- This is used only for the block fetch client. When this value is
+      -- wrong, block fetch might make suboptimal decisions, but it shouldn't
+      -- /break/ anything
+    , byronHeaderBlockSizeHint :: !SizeInBytes
+    }
+  deriving (Eq, Show, Generic)
+
 instance GetHeader ByronBlock where
-  -- | Byron header
-  --
-  -- See 'ByronBlock' for comments on why we cache certain values.
-  data Header ByronBlock = ByronHeader {
-        byronHeaderRaw    :: !(CC.ABlockOrBoundaryHdr ByteString)
-      , byronHeaderSlotNo :: !SlotNo
-      , byronHeaderHash   :: !ByronHash
-
-        -- | Hint about the block size
-        --
-        -- This is used only for the block fetch client. When this value is
-        -- wrong, block fetch might make suboptimal decisions, but it shouldn't
-        -- /break/ anything
-      , byronHeaderBlockSizeHint :: !SizeInBytes
-      }
-    deriving (Eq, Show, Generic)
-
   getHeader ByronBlock{..} = ByronHeader {
         byronHeaderRaw           = CC.abobHdrFromBlock byronBlockRaw
       , byronHeaderSlotNo        = byronBlockSlotNo

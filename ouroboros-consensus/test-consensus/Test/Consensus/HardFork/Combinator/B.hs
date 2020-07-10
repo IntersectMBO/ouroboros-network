@@ -125,15 +125,15 @@ binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialise blkB_header)
     }
 
-instance GetHeader BlockB where
-  data Header BlockB = HdrB {
-        hdrB_fields :: HeaderFields BlockB
-      , hdrB_prev   :: ChainHash BlockB
-      }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (Serialise)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
+data instance Header BlockB = HdrB {
+      hdrB_fields :: HeaderFields BlockB
+    , hdrB_prev   :: ChainHash BlockB
+    }
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
 
+instance GetHeader BlockB where
   getHeader          = blkB_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
   headerIsEBB        = const Nothing
