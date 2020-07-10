@@ -83,7 +83,6 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -115,17 +114,16 @@ instance ConsensusProtocol ProtocolA where
   type ValidateView  ProtocolA = ()
   type ValidationErr ProtocolA = Void
 
-  checkIsLeader CfgA{..} () _ (Ticked slot _) _ =
+  checkIsLeader CfgA{..} () _ slot _ _ =
       if slot `Set.member` cfgA_leadInSlots
       then IsLeader ()
       else NotLeader
 
   protocolSecurityParam = cfgA_k
 
-  tickChainDepState = \_ (Ticked slot _lv) -> Ticked slot
-
-  updateChainDepState = \_ _ _ _ -> return ()
-  rewindChainDepState = \_ _ _ _ -> Just ()
+  tickChainDepState   _ _ _ _   = TickedTrivial
+  updateChainDepState _ _ _ _ _ = return ()
+  rewindChainDepState _ _ _ _   = Just ()
 
 data BlockA = BlkA {
       blkA_header :: Header BlockA
@@ -205,6 +203,12 @@ data instance LedgerState BlockA = LgrA {
   deriving (Show, Eq, Generic, Serialise)
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrA" (LedgerState BlockA)
 
+-- | Ticking has no state on the A ledger state
+newtype instance Ticked (LedgerState BlockA) = TickedLedgerStateA {
+      getTickedLedgerStateA :: LedgerState BlockA
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TickedLgrA" (Ticked (LedgerState BlockA))
+
 data PartialLedgerConfigA = LCfgA {
       lcfgA_k           :: SecurityParam
     , lcfgA_systemStart :: SystemStart
@@ -215,18 +219,26 @@ data PartialLedgerConfigA = LCfgA {
 type instance LedgerCfg (LedgerState BlockA) =
     (EpochInfo Identity, PartialLedgerConfigA)
 
+instance GetTip (LedgerState BlockA) where
+  getTip = castPoint . lgrA_tip
+
+instance GetTip (Ticked (LedgerState BlockA)) where
+  getTip = castPoint . getTip . getTickedLedgerStateA
+
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
-  applyChainTick _ = Ticked
-  ledgerTipPoint   = castPoint . lgrA_tip
+  applyChainTick _ _ = TickedLedgerStateA
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
-      . repeatedlyM (applyTx (blockConfigLedger cfg)) (blkA_body blk)
+      . repeatedlyM (applyTx
+                       (blockConfigLedger cfg)
+                       (blockSlot blk))
+                    (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
-      setTip (Ticked _ st) = st { lgrA_tip = blockPoint blk }
+      setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
 
   reapplyLedgerBlock cfg blk st =
       case runExcept $ applyLedgerBlock cfg blk st of
@@ -240,7 +252,7 @@ instance CommonProtocolParams BlockA where
   maxTxSize     _ = maxBound
 
 instance CanForge BlockA where
-  forgeBlock tlc _ bno (Ticked sno st) _txs _ = BlkA {
+  forgeBlock tlc _ bno sno (TickedLedgerStateA st) _txs _ = BlkA {
         blkA_header = HdrA {
             hdrA_fields = HeaderFields {
                 headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
@@ -259,7 +271,7 @@ instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()
 
 instance LedgerSupportsProtocol BlockA where
-  protocolLedgerView   _ _ = ()
+  protocolLedgerView   _ _ = TickedTrivial
   ledgerViewForecastAt _ _ = Just . trivialForecast
 
 instance HasPartialConsensusConfig ProtocolA
@@ -292,10 +304,10 @@ instance LedgerSupportsMempool BlockA where
 
   type ApplyTxErr BlockA = Void
 
-  applyTx _ (TxA _ tx) (Ticked sno st) =
+  applyTx _ sno (TxA _ tx) (TickedLedgerStateA st) =
       case tx of
         InitiateAtoB -> do
-          return $ Ticked sno $ st { lgrA_transition = Just sno }
+          return $ TickedLedgerStateA $ st { lgrA_transition = Just sno }
 
   reapplyTx = applyTx
 

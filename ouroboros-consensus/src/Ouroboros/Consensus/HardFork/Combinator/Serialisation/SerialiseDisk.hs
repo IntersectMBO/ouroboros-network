@@ -143,7 +143,7 @@ instance SerialiseHFC xs
       => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) )where
   encodeDisk cfg =
         encodeTelescope (hcmap pSHFC (fn . (K .: encodeDisk)) cfgs)
-      . getHardForkLedgerState
+      . hardForkLedgerStatePerEra
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 

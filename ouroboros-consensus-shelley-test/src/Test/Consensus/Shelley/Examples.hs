@@ -47,7 +47,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Time
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -255,10 +254,10 @@ exampleLedgerState :: LedgerState (Block ShortHash)
 exampleLedgerState = reapplyLedgerBlock
     cfg
     (mkShelleyBlock newBlock :: Block ShortHash)
-    (Ticked 0 ShelleyLedgerState {
-        ledgerTip    = GenesisPoint
-      , history      = History.empty
-      , shelleyState = STS.chainNes startState
+    (TickedShelleyLedgerState {
+        untickedLedgerTip  = GenesisPoint
+      , untickedHistory    = History.empty
+      , tickedShelleyState = STS.chainNes startState
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A (Proxy @ShortHash)

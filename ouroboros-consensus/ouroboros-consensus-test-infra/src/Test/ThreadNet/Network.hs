@@ -93,7 +93,6 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -760,8 +759,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               Just creds -> creds
 
       blockProduction <- customForgeBlockProduction pInfoConfig canBeLeader maintainForgeState $
-         \forgeState currentBno tickedLdgSt txs prf -> do
-            let currentSlot  = tickedSlotNo tickedLdgSt
+         \forgeState currentBno currentSlot tickedLdgSt txs prf -> do
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
             -- EBBs are only ever possible in the first era
@@ -772,7 +770,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   where
                     EpochNo   x = currentEpoch
                     EpochSize y = epochSize0
-            let p = ledgerTipPoint' (Proxy @blk) $ tickedState tickedLdgSt
+
+            let p :: Point blk
+                p = castPoint $ getTip tickedLdgSt
 
             let needEBB = inFirstEra && NotOrigin ebbSlot > pointSlot p
             case mbForgeEbbEnv <* guard needEBB of
@@ -783,6 +783,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                       pInfoConfig
                       forgeState
                       currentBno
+                      currentSlot
                       tickedLdgSt
                       txs
                       prf
@@ -818,6 +819,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                               pInfoConfig
                               forgeState
                               currentBno
+                              currentSlot
                               tickedLdgSt'
                               txs
                               prf
@@ -942,7 +944,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         registry
         -- a fingerprint for the ledger
         ( GenesisPoint
-        ,     (ledgerTipPoint' (Proxy @blk) . ledgerState)
+        ,     (ledgerTipPoint (Proxy @blk) . ledgerState)
           <$> ChainDB.getCurrentLedger chainDB
         )
         mempool

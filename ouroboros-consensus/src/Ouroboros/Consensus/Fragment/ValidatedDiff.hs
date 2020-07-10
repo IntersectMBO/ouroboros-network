@@ -59,7 +59,7 @@ new chainDiff ledger =
   where
     chainDiffTip, ledgerTip :: Point b
     chainDiffTip = Diff.getTip chainDiff
-    ledgerTip    = castPoint $ ledgerTipPoint ledger
+    ledgerTip    = castPoint $ getTip ledger
     precondition
       | chainDiffTip == ledgerTip
       = return ()

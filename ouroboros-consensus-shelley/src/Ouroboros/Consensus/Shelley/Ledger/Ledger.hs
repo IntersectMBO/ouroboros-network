@@ -20,6 +20,7 @@
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     ShelleyLedgerError (..)
   , LedgerState (..)
+  , Ticked(..)
   , QueryLedger (..)
   , Query (..)
   , NonMyopicMemberRewards (..)
@@ -75,7 +76,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((...:), (..:))
 import           Ouroboros.Consensus.Util.Versioned
 
@@ -100,7 +100,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
 {-------------------------------------------------------------------------------
-  Ledger
+  Ledger errors
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerError c
@@ -109,6 +109,10 @@ data ShelleyLedgerError c
   deriving (Eq, Generic, Show)
 
 instance Crypto c => NoUnexpectedThunks (ShelleyLedgerError c)
+
+{-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig c = ShelleyLedgerConfig {
       shelleyLedgerGenesis   :: !(SL.ShelleyGenesis c)
@@ -173,18 +177,55 @@ mkShelleyLedgerConfig genesis epochInfo maxMajorPV = ShelleyLedgerConfig {
 
 type instance LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
 
+{-------------------------------------------------------------------------------
+  LedgerState
+-------------------------------------------------------------------------------}
+
+data instance LedgerState (ShelleyBlock c) = ShelleyLedgerState {
+      ledgerTip    :: !(Point (ShelleyBlock c))
+    , history      :: !(History.LedgerViewHistory c)
+    , shelleyState :: !(SL.ShelleyState c)
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+instance TPraosCrypto c => UpdateLedger (ShelleyBlock c)
+
+{-------------------------------------------------------------------------------
+  GetTip
+-------------------------------------------------------------------------------}
+
+instance GetTip (LedgerState (ShelleyBlock c)) where
+  getTip = castPoint . ledgerTip
+
+instance GetTip (Ticked (LedgerState (ShelleyBlock c))) where
+  getTip = castPoint . untickedLedgerTip
+
+{-------------------------------------------------------------------------------
+  Ticking
+-------------------------------------------------------------------------------}
+
+-- | Ticking only affects the state itself
+data instance Ticked (LedgerState (ShelleyBlock c)) = TickedShelleyLedgerState {
+      untickedLedgerTip  :: !(Point (ShelleyBlock c))
+    , untickedHistory    :: !(History.LedgerViewHistory c)
+    , tickedShelleyState :: !(SL.ShelleyState c)
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
 instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
   type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
 
-  applyChainTick
-    cfg
-    slotNo
-    (ShelleyLedgerState pt history bhState) =
-      Ticked slotNo
-        . ShelleyLedgerState pt history
-        $ SL.applyTickTransition (shelleyLedgerGlobals cfg) bhState slotNo
-
-  ledgerTipPoint = castPoint . ledgerTip
+  applyChainTick cfg
+                 slotNo
+                 (ShelleyLedgerState pt history bhState) =
+      TickedShelleyLedgerState {
+          untickedLedgerTip  = pt
+        , untickedHistory    = history
+        , tickedShelleyState = SL.applyTickTransition
+                                 (shelleyLedgerGlobals cfg)
+                                 bhState
+                                 slotNo
+        }
 
 instance TPraosCrypto c
       => ApplyBlock (LedgerState (ShelleyBlock c)) (ShelleyBlock c) where
@@ -216,11 +257,9 @@ applyHelper ::
   -> Ticked (LedgerState (ShelleyBlock c))
   -> m (LedgerState (ShelleyBlock c))
 applyHelper f cfg blk
-            Ticked {
-                tickedState = ShelleyLedgerState {
-                    history
-                  , shelleyState = oldShelleyState
-                  }
+            TickedShelleyLedgerState {
+                tickedShelleyState = oldShelleyState
+              , untickedHistory    = history
               } = do
 
     newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
@@ -245,23 +284,16 @@ applyHelper f cfg blk
   where
     globals = shelleyLedgerGlobals (blockConfigLedger cfg)
 
-data instance LedgerState (ShelleyBlock c) = ShelleyLedgerState {
-      ledgerTip    :: !(Point (ShelleyBlock c))
-    , history      :: !(History.LedgerViewHistory c)
-    , shelleyState :: !(SL.ShelleyState c)
-    }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
-
-instance TPraosCrypto c => UpdateLedger (ShelleyBlock c)
-
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
-  protocolLedgerView _cfg = SL.currentLedgerView . shelleyState
+  protocolLedgerView _cfg = TickedPraosLedgerView
+                          . SL.currentLedgerView
+                          . tickedShelleyState
 
   ledgerViewForecastAt cfg ledgerState at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (NotOrigin for) history of
-          Just lv -> return lv
+          Just lv -> return (TickedPraosLedgerView lv)
           Nothing -> do
             when (for >= maxHi) $
               throwError $ OutsideForecastRange {
@@ -274,7 +306,7 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
             -- ledger state ('shelleyState'), not from the intersection point
             -- ('at'). Those bounds could /exceed/ the 'maxHi' we have computed,
             -- but should never be /less/.
-            return $ either (error "futureLedgerView failed") id $
+            return $ either (error "futureLedgerView failed") TickedPraosLedgerView $
                        SL.futureLedgerView globals shelleyState for
     where
       ShelleyLedgerState {history , shelleyState} = ledgerState
@@ -472,7 +504,7 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
   type OtherHeaderEnvelopeError (ShelleyBlock c) =
     STS.PredicateFailure (STS.CHAIN c)
 
-  additionalEnvelopeChecks cfg (Ticked _ ledgerView) hdr =
+  additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
       SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
     where
       pparams = SL.lvProtParams ledgerView

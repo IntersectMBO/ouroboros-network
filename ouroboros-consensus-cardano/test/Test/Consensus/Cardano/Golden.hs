@@ -1,8 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Golden (tests) where
-
-import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
@@ -11,14 +10,13 @@ import           Ouroboros.Consensus.Cardano.Node
 
 import           Test.Tasty
 
+import           Test.Util.Paths
 import           Test.Util.Serialisation.Golden
 
 import           Test.Consensus.Cardano.Examples
 
 tests :: TestTree
-tests = goldenTest_all codecConfig goldenDir examples
-  where
-    goldenDir = "ouroboros-consensus-cardano" </> "test" </> "golden"
+tests = goldenTest_all codecConfig $(getGoldenDir) examples
 
 instance ToGoldenDirectory (HardForkNodeToNodeVersion (CardanoEras sc)) where
   toGoldenDirectory v = case v of

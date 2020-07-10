@@ -52,6 +52,7 @@ import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
@@ -253,6 +254,10 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     --
     -- This function embodies a little more logic than ideal. We might want to
     -- move it into `cardano-ledger-specs.`
+    --
+    -- HERE BE DRAGONS! This function is intended to help in testing. It should
+    -- not be called with anything other than 'emptyGenesisStaking' in
+    -- production.
     registerGenesisStaking :: SL.ChainState c -> SL.ChainState c
     registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
         { SL.chainNes = newChainNes }
@@ -272,7 +277,10 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
           , SL.nesPd = newPoolDistr
           }
         newEpochState = oldEpochState
-          { SL.esLState = newLedgerState }
+          { SL.esLState = newLedgerState
+          , SL.esSnapshots = (SL.esSnapshots oldEpochState)
+            { SL._pstakeMark = initSnapShot }
+          }
         newLedgerState = oldLedgerState
           { SL._delegationState = newDPState }
         newDPState = oldDPState
@@ -285,7 +293,16 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- See STS DELEG for details
         newDState :: SL.DState c
         newDState = (SL._dstate oldDPState) {
-          SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+          SL._stkCreds = SL.StakeCreds
+                        . Map.map (const $ SlotNo 0)
+                        . Map.mapKeys SL.KeyHashObj
+                        $ sgsStake
+        , SL._rewards = Map.mapKeys ( SL.mkRwdAcnt (SL.sgNetworkId genesis)
+                                    . SL.KeyHashObj
+                                    )
+                      . Map.map (const $ SL.Coin 0)
+                      $ sgsStake
+        , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
         }
 
         -- We consider pools as having been registered in slot 0

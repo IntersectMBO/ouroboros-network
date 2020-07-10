@@ -64,7 +64,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike
@@ -729,9 +728,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               Left OutsideForecastRange{} -> -- Case (1)
                 retry
               Right lv ->
-                -- Forecasting is equivalent to ticking
-                -- ('lemma_ledgerViewForecastAt_applyChainTick' )
-                return (Ticked (realPointSlot hdrPoint) lv)
+                return lv
       where
         hdrPoint = headerRealPoint hdr
 

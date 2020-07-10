@@ -73,8 +73,6 @@ instance CanHardFork xs => GetHeader (HardForkBlock xs) where
   HasHeader
 -------------------------------------------------------------------------------}
 
-type instance HeaderHash (HardForkBlock xs) = OneEraHash xs
-
 instance CanHardFork xs => StandardHash (HardForkBlock xs)
 
 instance CanHardFork xs => Measured BlockMeasure (HardForkBlock xs) where

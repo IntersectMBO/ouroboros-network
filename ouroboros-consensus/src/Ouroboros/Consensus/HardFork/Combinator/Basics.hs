@@ -69,9 +69,10 @@ newtype HardForkBlock xs = HardForkBlock {
   deriving (Show)
 
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
+type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 
 newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
-      getHardForkLedgerState :: HardForkState LedgerState xs
+      hardForkLedgerStatePerEra :: HardForkState LedgerState xs
     }
 
 deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))

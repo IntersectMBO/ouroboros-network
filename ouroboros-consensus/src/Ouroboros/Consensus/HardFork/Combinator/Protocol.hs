@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,7 +11,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 
-{-# OPTIONS_GHC -Wno-orphans -fno-show-valid-hole-fits #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     -- * Re-exports to keep 'Protocol.State' an internal module
@@ -24,7 +25,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Data.Functor.Product
 import           Data.SOP.Strict
@@ -35,7 +35,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (pairSnd, (.:))
 import           Ouroboros.Consensus.Util.SOP
@@ -49,9 +48,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
                      (HardForkSelectView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                     (HardForkLedgerView, HardForkLedgerView_ (..))
+                     (HardForkLedgerView, HardForkLedgerView_ (..),
+                     Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
-                     Translate (..))
+                     HardForkState_, Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
@@ -128,31 +128,47 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
   Ticking the chain dependent state
 -------------------------------------------------------------------------------}
 
+newtype instance Ticked (HardForkChainDepState xs) =
+    TickedHardForkChainDepState {
+        tickedHardForkChainDepStatePerEra ::
+             HardForkState_ WrapChainDepState (Ticked :.: WrapChainDepState) xs
+      }
+
 tick :: CanHardFork xs
      => ConsensusConfig (HardForkProtocol xs)
      -> Ticked (HardForkLedgerView xs)
+     -> SlotNo
      -> HardForkChainDepState xs
      -> Ticked (HardForkChainDepState xs)
-tick cfg@HardForkConsensusConfig{..} (Ticked slot ledgerView) =
-      Ticked slot
-    . State.align
-        (translateConsensus ei cfg)
-        (hcmap proxySingle (fn_2 . tickOne) cfgs)
-        (hardForkLedgerViewPerEra ledgerView)
+tick cfg@HardForkConsensusConfig{..}
+     (TickedHardForkLedgerView transition ledgerView)
+     slot
+     chainDepState = TickedHardForkChainDepState {
+       tickedHardForkChainDepStatePerEra =
+         State.align
+           (translateConsensus ei cfg)
+           (hcmap proxySingle (fn_2 . tickOne) cfgs)
+           ledgerView
+           chainDepState
+    }
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
-    ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+    ei   = State.epochInfoPrecomputedTransitionInfo
+             hardForkConsensusConfigShape
+             transition
+             ledgerView
 
-    tickOne :: SingleEraBlock             blk
-            => WrapPartialConsensusConfig blk
-            -> WrapLedgerView             blk
-            -> WrapChainDepState          blk
-            -> WrapChainDepState          blk
-    tickOne cfg' ledgerView' chainDepState' =
-        WrapChainDepState . tickedState $
+    tickOne :: SingleEraBlock                 blk
+            => WrapPartialConsensusConfig     blk
+            -> (Ticked :.: WrapLedgerView)    blk
+            -> WrapChainDepState              blk
+            -> (Ticked :.: WrapChainDepState) blk
+    tickOne cfg' (Comp ledgerView') chainDepState' = Comp $
+        WrapTickedChainDepState $
           tickChainDepState
             (completeConsensusConfig' ei cfg')
-            (Ticked slot (unwrapLedgerView ledgerView'))
+            (unwrapTickedLedgerView ledgerView')
+            slot
             (unwrapChainDepState chainDepState')
 
 {-------------------------------------------------------------------------------
@@ -180,17 +196,20 @@ check :: forall xs. (CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
       -> ChainIndepState (HardForkProtocol xs)
+      -> SlotNo
       -> Ticked (HardForkLedgerView xs)
       -> Ticked (ChainDepState (HardForkProtocol xs))
       -> LeaderCheck (HardForkProtocol xs)
 check HardForkConsensusConfig{..}
       canBeLeader
-      chainIndepState
-      (Ticked slot ledgerView)
-      (Ticked slot' chainDepState) = assert (slot == slot') $
+      (PerEraChainIndepState chainIndepState)
+      slot
+      (TickedHardForkLedgerView transition ledgerView)
+      (TickedHardForkChainDepState chainDepState) =
+    -- TODO: Could we refactor this to get rid of this error?
     case Match.matchNS
            (State.tip chainDepState)
-           (State.tip (hardForkLedgerViewPerEra ledgerView)) of
+           (State.tip ledgerView) of
       Left mismatch ->
         -- This shouldn't happen: 'checkIsLeader' aligned the two telescopes
         let mismatch' :: MismatchEraInfo xs
@@ -207,35 +226,41 @@ check HardForkConsensusConfig{..}
           `hap`
             cfgs
           `hap`
-            (fromOptNP canBeLeader)
+            fromOptNP canBeLeader
           `hap`
-            (getPerEraChainIndepState chainIndepState)
+            chainIndepState
           `hap`
             aligned
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
-    ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+    ei   = State.epochInfoPrecomputedTransitionInfo
+             hardForkConsensusConfigShape
+             transition
+             ledgerView
 
-    checkOne :: SingleEraBlock                           blk
-             => WrapPartialConsensusConfig               blk
-             -> (Maybe :.: WrapCanBeLeader)              blk
-             -> WrapChainIndepState                      blk
-             -> Product WrapChainDepState WrapLedgerView blk
+    checkOne :: SingleEraBlock                      blk
+             => WrapPartialConsensusConfig          blk
+             -> (Maybe :.: WrapCanBeLeader)         blk
+             -> WrapChainIndepState                 blk
+             -> Product (Ticked :.: WrapChainDepState)
+                        (Ticked :.: WrapLedgerView) blk
              -> WrapLeaderCheck                          blk
     checkOne cfg'
              (Comp mCanBeLeader)
              chainIndepState'
-             (Pair chainDepState' ledgerView') = WrapLeaderCheck $
-         case mCanBeLeader of
-           Nothing ->
-             NotLeader
-           Just canBeLeader' ->
-             checkIsLeader
-               (completeConsensusConfig' ei cfg')
-               (unwrapCanBeLeader canBeLeader')
-               (unwrapChainIndepState chainIndepState')
-               (Ticked slot (unwrapLedgerView ledgerView'))
-               (Ticked slot (unwrapChainDepState chainDepState'))
+             (Pair (Comp chainDepState') (Comp ledgerView'))
+           = WrapLeaderCheck $
+        case mCanBeLeader of
+          Nothing ->
+            NotLeader
+          Just canBeLeader' ->
+            checkIsLeader
+              (completeConsensusConfig' ei cfg')
+              (unwrapCanBeLeader canBeLeader')
+              (unwrapChainIndepState chainIndepState')
+              slot
+              (unwrapTickedLedgerView ledgerView')
+              (unwrapTickedChainDepState chainDepState')
 
     distrib :: NS WrapLeaderCheck xs -> LeaderCheck (HardForkProtocol xs)
     distrib = hcollapse . hzipWith3 inj injections injections
@@ -284,14 +309,16 @@ rewind k p =
 update :: forall xs. (CanHardFork xs, HasCallStack)
        => ConsensusConfig (HardForkProtocol xs)
        -> OneEraValidateView xs
+       -> SlotNo
        -> Ticked (HardForkLedgerView xs)
        -> Ticked (HardForkChainDepState xs)
        -> Except (HardForkValidationErr xs) (HardForkChainDepState xs)
 update HardForkConsensusConfig{..}
        (OneEraValidateView view)
-       (Ticked slot ledgerView)
-       (Ticked slot' chainDepState) = assert (slot == slot') $
-    case State.match view (hardForkLedgerViewPerEra ledgerView) of
+       slot
+       (TickedHardForkLedgerView transition ledgerView)
+       (TickedHardForkChainDepState chainDepState) =
+    case State.match view ledgerView of
       Left mismatch ->
         throwError $ HardForkValidationErrWrongEra . MismatchEraInfo $
           Match.bihcmap
@@ -323,7 +350,10 @@ update HardForkConsensusConfig{..}
          $ chainDepState
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
-    ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
+    ei   = State.epochInfoPrecomputedTransitionInfo
+             hardForkConsensusConfigShape
+             transition
+             ledgerView
 
     errInjections :: NP (Injection WrapValidationErr xs) xs
     errInjections = injections
@@ -333,29 +363,32 @@ updateEra :: forall xs blk. SingleEraBlock blk
           -> SlotNo
           -> WrapPartialConsensusConfig blk
           -> Injection WrapValidationErr xs blk
-          -> Product (Product WrapValidateView WrapLedgerView) WrapChainDepState blk
+          -> Product (Product WrapValidateView
+                              (Ticked :.: WrapLedgerView))
+                     (Ticked :.: WrapChainDepState) blk
           -> (Except (HardForkValidationErr xs) :.: WrapChainDepState) blk
 updateEra ei slot cfg injectErr
-          (Pair (Pair (WrapValidateView view) ledgerView)
-                (WrapChainDepState chainDepState)) = Comp $
+          (Pair (Pair view (Comp ledgerView))
+                (Comp chainDepState)) = Comp $
     withExcept (injectValidationErr injectErr) $
       fmap WrapChainDepState $
         updateChainDepState
           (completeConsensusConfig' ei cfg)
-          view
-          (Ticked slot (unwrapLedgerView ledgerView))
-          (Ticked slot chainDepState)
+          (unwrapValidateView view)
+          slot
+          (unwrapTickedLedgerView ledgerView)
+          (unwrapTickedChainDepState chainDepState)
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
 ledgerViewInfo :: forall blk. SingleEraBlock blk
-                => WrapLedgerView blk -> LedgerEraInfo blk
+               => (Ticked :.: WrapLedgerView) blk -> LedgerEraInfo blk
 ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 chainDepStateInfo :: forall blk. SingleEraBlock blk
-                  => WrapChainDepState blk -> SingleEraInfo blk
+                  => (Ticked :.: WrapChainDepState) blk -> SingleEraInfo blk
 chainDepStateInfo _ = singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs

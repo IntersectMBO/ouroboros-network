@@ -10,8 +10,6 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -Werror=missing-fields #-}
-
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
@@ -362,8 +360,9 @@ forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
           mIsLeader <- lift $
             getLeaderProof blockProduction
               (forgeStateTracer tracers)
-              (protocolLedgerView (configLedger cfg) . ledgerState <$> ticked)
-              (headerStateConsensus . headerState <$> ticked)
+              currentSlot
+              (tickedLedgerView ticked)
+              (tickedHeaderStateConsensus $ tickedHeaderState ticked)
           case mIsLeader of
             IsLeader   p -> return p
             CannotLead e -> do trace $ TraceNodeCannotLead currentSlot e
@@ -384,21 +383,24 @@ forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
         mempoolSnapshot <- lift $ atomically $
                              getSnapshotFor
                                mempool
-                               (ForgeInKnownSlot (ledgerState <$> ticked))
+                               (ForgeInKnownSlot
+                                  currentSlot
+                                  (tickedLedgerState ticked))
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (computeMaxTxCapacity (ledgerState <$> ticked))
+                              (computeMaxTxCapacity (tickedLedgerState ticked))
 
         -- Actually produce the block
         newBlock <- lift $
           produceBlock blockProduction
             bcBlockNo
-            (ledgerState <$> ticked)
+            currentSlot
+            (tickedLedgerState ticked)
             txs
             proof
         trace $ TraceForgedBlock
                   currentSlot
-                  (ledgerTipPoint' (Proxy @blk) (ledgerState unticked))
+                  (ledgerTipPoint (Proxy @blk) (ledgerState unticked))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
 

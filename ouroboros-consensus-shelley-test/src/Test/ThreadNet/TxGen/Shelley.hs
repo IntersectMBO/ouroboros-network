@@ -17,10 +17,10 @@ import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Crypto.Hash (HashAlgorithm)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
 
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
@@ -60,8 +60,8 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
          -> Gen [GenTx (ShelleyBlock (TPraosMockCrypto h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-        tx <- genTx cfg st genEnv
-        case runExcept $ applyTx (configLedger cfg) tx st of
+        tx <- genTx cfg curSlotNo st genEnv
+        case runExcept $ applyTx (configLedger cfg) curSlotNo tx st of
           -- We don't mind generating invalid transactions
           Left  _   -> go (tx:acc) (n - 1) st
           Right st' -> go (tx:acc) (n - 1) st'
@@ -69,10 +69,11 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 genTx
   :: forall h. HashAlgorithm h
   => TopLevelConfig (ShelleyBlock (TPraosMockCrypto h))
+  -> SlotNo
   -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
   -> Gen.GenEnv h
   -> Gen (GenTx (ShelleyBlock (TPraosMockCrypto h)))
-genTx _cfg Ticked { tickedSlotNo, tickedState } genEnv =
+genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
@@ -86,14 +87,13 @@ genTx _cfg Ticked { tickedSlotNo, tickedState } genEnv =
     -- that point.
     isSimpleTx (SL._body -> txb) =
       (Seq.null $ SL._certs txb)
-    ShelleyLedgerState { shelleyState } = tickedState
 
     epochState :: CSL.EpochState h
-    epochState = SL.nesEs shelleyState
+    epochState = SL.nesEs tickedShelleyState
 
     ledgerEnv :: STS.LedgerEnv
     ledgerEnv = STS.LedgerEnv {
-        ledgerSlotNo   = tickedSlotNo
+        ledgerSlotNo   = slotNo
       , ledgerIx       = 0 -- TODO Ix
       , ledgerPp       = SL.esPp epochState
       , ledgerAccount  = SL.esAccountState epochState

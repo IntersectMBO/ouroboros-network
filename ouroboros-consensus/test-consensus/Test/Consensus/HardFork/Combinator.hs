@@ -424,7 +424,9 @@ ledgerState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ LgrA{..} -> LgrB {
     }
 
 chainDepState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapChainDepState) BlockA BlockB
-chainDepState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ -> WrapChainDepState ()
+chainDepState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ ->
+    WrapChainDepState ()
 
 ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (TranslateForecast WrapLedgerView) BlockA BlockB
-ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateForecast $ \_ _ _ -> WrapLedgerView ()
+ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateForecast $ \_ _ _ ->
+    WrapTickedLedgerView TickedTrivial

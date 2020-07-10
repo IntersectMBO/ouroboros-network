@@ -84,7 +84,6 @@ test-suite test
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers
-                     , filepath
                      , QuickCheck
                      , time
                      , tasty

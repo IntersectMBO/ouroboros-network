@@ -47,7 +47,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -215,11 +214,12 @@ forgeDualByronBlock
   => TopLevelConfig DualByronBlock
   -> ForgeState DualByronBlock
   -> BlockNo                            -- ^ Current block number
+  -> SlotNo                             -- ^ Current slot number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg forgeState curBlockNo tickedLedger txs isLeader =
+forgeDualByronBlock cfg forgeState curBlockNo curSlotNo tickedLedger txs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -233,27 +233,22 @@ forgeDualByronBlock cfg forgeState curBlockNo tickedLedger txs isLeader =
       , dualBlockBridge = mconcat $ map dualGenTxBridge txs
       }
   where
-    curSlotNo = tickedSlotNo tickedLedger
-
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
              (castForgeState forgeState)
              curBlockNo
-             (Ticked {
-                  tickedSlotNo = curSlotNo
-                , tickedState  = dualLedgerStateMain $
-                                   tickedState tickedLedger
-                })
+             curSlotNo
+             (tickedDualLedgerStateMain tickedLedger)
              (map dualGenTxMain txs)
              isLeader
 
     aux :: ByronSpecBlock
     aux = forgeByronSpecBlock
-            curSlotNo
             curBlockNo
-            (dualLedgerStateAux $ tickedState tickedLedger)
+            curSlotNo
+            (tickedDualLedgerStateAux tickedLedger)
             (map dualGenTxAux txs)
             (bridgeToSpecKey
-               (dualLedgerStateBridge $ tickedState tickedLedger)
+               (tickedDualLedgerStateBridge tickedLedger)
                (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))

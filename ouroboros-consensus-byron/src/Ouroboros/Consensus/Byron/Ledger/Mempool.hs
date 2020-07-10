@@ -64,9 +64,9 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -110,8 +110,8 @@ instance LedgerSupportsMempool ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  maxTxCapacity (Ticked _ st) =
-    CC.getMaxBlockSize (byronLedgerState st) - byronBlockEncodingOverhead
+  maxTxCapacity st =
+    CC.getMaxBlockSize (tickedByronLedgerState st) - byronBlockEncodingOverhead
 
   txInBlockSize =
       fromIntegral
@@ -213,17 +213,18 @@ instance Show (GenTxId ByronBlock) where
 
 applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
+                -> SlotNo
                 -> GenTx ByronBlock
                 -> TickedLedgerState ByronBlock
                 -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
-applyByronGenTx validationMode cfg genTx (Ticked slot st) =
-    (\state -> Ticked slot $ st {byronLedgerState = state}) <$>
+applyByronGenTx validationMode cfg slot genTx st =
+    (\state -> st {tickedByronLedgerState = state}) <$>
       CC.applyMempoolPayload
         validationMode
         cfg
         (toByronSlotNo slot)
         (toMempoolPayload genTx)
-        (byronLedgerState st)
+        (tickedByronLedgerState st)
 
 {-------------------------------------------------------------------------------
   Serialisation

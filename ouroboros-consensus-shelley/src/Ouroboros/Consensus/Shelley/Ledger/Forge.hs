@@ -22,7 +22,6 @@ import qualified Data.Sequence.Strict as Seq
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ticked
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -49,17 +48,17 @@ forgeShelleyBlock
   => TopLevelConfig (ShelleyBlock c)
   -> ForgeState (ShelleyBlock c)
   -> BlockNo                             -- ^ Current block number
+  -> SlotNo                              -- ^ Current slot number
   -> TickedLedgerState (ShelleyBlock c)  -- ^ Current ledger
   -> [GenTx (ShelleyBlock c)]            -- ^ Txs to add in the block
   -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
   -> ShelleyBlock c
-forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader =
+forgeShelleyBlock cfg forgeState curNo curSlot tickedLedger txs isLeader =
     assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) blk
   where
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
 
-    curSlot      = tickedSlotNo tickedLedger
     hotKey       = chainIndepState forgeState
     tpraosFields = forgeTPraosFields hotKey isLeader mkBhBody
     blk          = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
@@ -71,8 +70,7 @@ forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader =
     prevHash =
         toShelleyPrevHash
       . castHash
-      . ledgerTipHash
-      . tickedState
+      . getTipHash
       $ tickedLedger
 
     mkBhBody toSign = SL.BHBody {

@@ -633,7 +633,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
         (tipPoint, (tipEpoch, tipSlotInEpoch)) =
           case pointToWithOriginRealPoint
-                 (ledgerTipPoint' (Proxy @blk) ledger) of
+                 (ledgerTipPoint (Proxy @blk) ledger) of
             Origin        -> error "cannot have switched to an empty chain"
             NotOrigin tip ->
               let query = History.slotToEpoch' (realPointSlot tip)

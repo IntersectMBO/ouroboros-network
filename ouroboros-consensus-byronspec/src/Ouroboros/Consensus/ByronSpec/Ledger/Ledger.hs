@@ -11,10 +11,9 @@
 module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
     ByronSpecLedgerError(..)
   , initByronSpecLedgerState
-  , updateByronSpecLedgerStateKeepTip
-  , updateByronSpecLedgerStateNewTip
     -- * Type family instances
   , LedgerState(..)
+  , Ticked(..)
   ) where
 
 import           Codec.Serialise
@@ -40,53 +39,9 @@ import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
 
-newtype ByronSpecLedgerError = ByronSpecLedgerError {
-      unByronSpecLedgerError :: [[Spec.PredicateFailure Spec.CHAIN]]
-    }
-  deriving (Show, Eq)
-  deriving NoUnexpectedThunks via AllowThunk ByronSpecLedgerError
-
-type instance LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
-
-instance IsLedger (LedgerState ByronSpecBlock) where
-  type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
-
-  applyChainTick cfg slot state = Ticked slot $
-      updateByronSpecLedgerStateKeepTip state $
-        Rules.applyChainTick
-          cfg
-          (toByronSpecSlotNo       slot)
-          (byronSpecLedgerState    state)
-
-  ledgerTipPoint state =
-      case byronSpecLedgerTip state of
-        Nothing   -> GenesisPoint
-        Just slot -> BlockPoint
-                       slot
-                       (getChainStateHash (byronSpecLedgerState state))
-
-instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  applyLedgerBlock cfg block (Ticked slot state) =
-    withExcept ByronSpecLedgerError $
-      updateByronSpecLedgerStateNewTip slot <$>
-        -- Note that the CHAIN rule also applies the chain tick. So even
-        -- though the ledger we received has already been ticked with
-        -- 'applyChainTick', we do it again as part of CHAIN. This is safe, as
-        -- it is idempotent. If we wanted to avoid the repeated tick, we would
-        -- have to call the subtransitions of CHAIN (except for ticking).
-        Rules.liftCHAIN
-          (blockConfigLedger cfg)
-          (byronSpecBlock          block)
-          (byronSpecLedgerState    state)
-
-  reapplyLedgerBlock cfg block =
-      -- The spec doesn't have a "reapply" mode
-      dontExpectError . applyLedgerBlock cfg block
-    where
-      dontExpectError :: Except a b -> b
-      dontExpectError mb = case runExcept mb of
-        Left  _ -> error "reapplyLedgerBlock: unexpected error"
-        Right b -> b
+{-------------------------------------------------------------------------------
+  State
+-------------------------------------------------------------------------------}
 
 data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
       -- | Tip of the ledger (most recently applied block, if any)
@@ -101,7 +56,93 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
   deriving anyclass (Serialise)
   deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
 
+newtype ByronSpecLedgerError = ByronSpecLedgerError {
+      unByronSpecLedgerError :: [[Spec.PredicateFailure Spec.CHAIN]]
+    }
+  deriving (Show, Eq)
+  deriving NoUnexpectedThunks via AllowThunk ByronSpecLedgerError
+
+type instance LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
+
 instance UpdateLedger ByronSpecBlock
+
+initByronSpecLedgerState :: ByronSpecGenesis -> LedgerState ByronSpecBlock
+initByronSpecLedgerState cfg = ByronSpecLedgerState {
+      byronSpecLedgerTip   = Nothing
+    , byronSpecLedgerState = Rules.initStateCHAIN cfg
+    }
+
+{-------------------------------------------------------------------------------
+  GetTip
+-------------------------------------------------------------------------------}
+
+instance GetTip (LedgerState ByronSpecBlock) where
+  getTip (ByronSpecLedgerState tip state) = castPoint $
+      getByronSpecTip tip state
+
+instance GetTip (Ticked (LedgerState ByronSpecBlock)) where
+  getTip (TickedByronSpecLedgerState tip state) = castPoint $
+      getByronSpecTip tip state
+
+getByronSpecTip :: Maybe SlotNo -> Spec.State Spec.CHAIN -> Point ByronSpecBlock
+getByronSpecTip Nothing     _     = GenesisPoint
+getByronSpecTip (Just slot) state = BlockPoint
+                                      slot
+                                      (getChainStateHash state)
+
+{-------------------------------------------------------------------------------
+  Ticking
+-------------------------------------------------------------------------------}
+
+data instance Ticked (LedgerState ByronSpecBlock) = TickedByronSpecLedgerState {
+      untickedByronSpecLedgerTip :: Maybe SlotNo
+    , tickedByronSpecLedgerState :: Spec.State Spec.CHAIN
+    }
+  deriving stock (Show, Eq)
+  deriving NoUnexpectedThunks via AllowThunk (Ticked (LedgerState ByronSpecBlock))
+
+instance IsLedger (LedgerState ByronSpecBlock) where
+  type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
+
+  applyChainTick cfg slot (ByronSpecLedgerState tip state) =
+      TickedByronSpecLedgerState {
+          untickedByronSpecLedgerTip = tip
+        , tickedByronSpecLedgerState = Rules.applyChainTick
+                                         cfg
+                                         (toByronSpecSlotNo slot)
+                                         state
+        }
+
+{-------------------------------------------------------------------------------
+  Applying blocks
+-------------------------------------------------------------------------------}
+
+instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
+  applyLedgerBlock cfg block (TickedByronSpecLedgerState _tip state) =
+    withExcept ByronSpecLedgerError $
+      ByronSpecLedgerState (Just (blockSlot block)) <$>
+        -- Note that the CHAIN rule also applies the chain tick. So even
+        -- though the ledger we received has already been ticked with
+        -- 'applyChainTick', we do it again as part of CHAIN. This is safe, as
+        -- it is idempotent. If we wanted to avoid the repeated tick, we would
+        -- have to call the subtransitions of CHAIN (except for ticking).
+        Rules.liftCHAIN
+          (blockConfigLedger cfg)
+          (byronSpecBlock block)
+          state
+
+  reapplyLedgerBlock cfg block =
+      -- The spec doesn't have a "reapply" mode
+      dontExpectError . applyLedgerBlock cfg block
+    where
+      dontExpectError :: Except a b -> b
+      dontExpectError mb = case runExcept mb of
+        Left  _ -> error "reapplyLedgerBlock: unexpected error"
+        Right b -> b
+
+{-------------------------------------------------------------------------------
+  CommonProtocolParams
+-------------------------------------------------------------------------------}
 
 instance CommonProtocolParams ByronSpecBlock where
   maxHeaderSize = fromIntegral . Spec._maxHdrSz . getPParams
@@ -112,29 +153,3 @@ getPParams =
       Spec.protocolParameters
     . getChainStateUPIState
     . byronSpecLedgerState
-
-{-------------------------------------------------------------------------------
-  Working with the ledger state
--------------------------------------------------------------------------------}
-
-initByronSpecLedgerState :: ByronSpecGenesis -> LedgerState ByronSpecBlock
-initByronSpecLedgerState cfg = ByronSpecLedgerState {
-      byronSpecLedgerTip   = Nothing
-    , byronSpecLedgerState = Rules.initStateCHAIN cfg
-    }
-
-updateByronSpecLedgerStateKeepTip :: LedgerState ByronSpecBlock
-                                  -> Spec.State Spec.CHAIN
-                                  -> LedgerState ByronSpecBlock
-updateByronSpecLedgerStateKeepTip st ledger = ByronSpecLedgerState {
-      byronSpecLedgerTip   = byronSpecLedgerTip st
-    , byronSpecLedgerState = ledger
-    }
-
-updateByronSpecLedgerStateNewTip :: SlotNo
-                                 -> Spec.State Spec.CHAIN
-                                 -> LedgerState ByronSpecBlock
-updateByronSpecLedgerStateNewTip newTipSlot ledger = ByronSpecLedgerState {
-      byronSpecLedgerTip   = Just newTipSlot
-    , byronSpecLedgerState = ledger
-    }

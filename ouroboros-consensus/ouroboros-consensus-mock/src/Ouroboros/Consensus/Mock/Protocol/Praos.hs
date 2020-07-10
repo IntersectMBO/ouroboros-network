@@ -1,20 +1,20 @@
-{-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE KindSignatures            #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE UndecidableInstances      #-}
-{-# LANGUAGE UndecidableSuperClasses   #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 -- | Proof of concept implementation of Praos
 module Ouroboros.Consensus.Mock.Protocol.Praos (
@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosFields(..)
   , PraosExtraFields(..)
   , PraosParams(..)
+  , PraosChainDepState(..)
   , HotKey(..)
   , forgePraosFields
   , evolveKey
@@ -35,9 +36,12 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
     -- * Type instances
   , ConsensusConfig(..)
   , BlockInfo(..)
+  , Ticked(..)
   ) where
 
-import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Codec.CBOR.Decoding (decodeListLenOf)
+import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
@@ -69,7 +73,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -210,8 +213,8 @@ data BlockInfo c = BlockInfo
     }
   deriving (Generic)
 
-deriving instance PraosCrypto c => Show (BlockInfo c)
-deriving instance PraosCrypto c => Eq   (BlockInfo c)
+deriving instance PraosCrypto c => Show               (BlockInfo c)
+deriving instance PraosCrypto c => Eq                 (BlockInfo c)
 deriving instance PraosCrypto c => NoUnexpectedThunks (BlockInfo c)
 
 {-------------------------------------------------------------------------------
@@ -245,18 +248,34 @@ instance PraosCrypto c => HasChainIndepState (Praos c) where
   type ChainIndepState (Praos c) = HotKey c
   updateChainIndepState _ () = evolveKey
 
+newtype PraosChainDepState c = PraosChainDepState {
+      praosHistory :: [BlockInfo c]
+    }
+  deriving stock   (Eq, Show)
+  deriving newtype (NoUnexpectedThunks, Serialise)
+
+-- | Ticking the Praos chain dep state has no effect
+--
+-- For the real Praos implementation, ticking is crucial, as it determines the
+-- point where the "nonce under construction" is swapped out for the "active"
+-- nonce. However, for the mock implementation, we keep the full history, and
+-- choose the right nonce from that; this means that ticking has no effect.
+newtype instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
+      getTickedPraosChainDepState :: PraosChainDepState c
+    }
+
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
   type LedgerView    (Praos c) = StakeDist
-  type IsLeader      (Praos c) = PraosProof c
+  type IsLeader      (Praos c) = PraosProof           c
   type ValidationErr (Praos c) = PraosValidationError c
   type ValidateView  (Praos c) = PraosValidateView    c
-  type ChainDepState (Praos c) = [BlockInfo c]
+  type ChainDepState (Praos c) = PraosChainDepState   c
   type CanBeLeader   (Praos c) = CoreNodeId
   type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid _cis (Ticked slot _u) (Ticked _ cds) =
+  checkIsLeader cfg@PraosConfig{..} nid _cis slot _u (TickedPraosChainDepState cds) = do
       if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
       then IsLeader PraosProof {
                praosProofRho  = rho
@@ -266,25 +285,23 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
              }
       else NotLeader
     where
-      (rho', y', t) = rhoYT cfg cds slot nid
+      (rho', y', t) = rhoYT cfg (praosHistory cds) slot nid
 
       rho = evalCertified () rho' praosSignKeyVRF
       y   = evalCertified () y'   praosSignKeyVRF
 
-  -- Unlike the real Praos (which must switch nonce at the right time), there
-  -- is nothing to do for the mock Praos implementation in 'tickChainDepState'
-  -- since we have the /full/ history, and pick the right nonce from that.
-  tickChainDepState _ (Ticked slot _lv) = Ticked slot
+  tickChainDepState _ _ _ = TickedPraosChainDepState
 
   updateChainDepState cfg@PraosConfig{..}
                       (PraosValidateView PraosFields{..} toSign)
-                      (Ticked _ sd)
-                      (Ticked slot cs) = do
+                      slot
+                      (TickedStakeDist sd)
+                      (TickedPraosChainDepState cds) = do
     let PraosExtraFields{..} = praosExtraFields
         nid                  = praosCreator
 
     -- check that the new block advances time
-    case cs of
+    case praosHistory cds of
         (c : _)
             | biSlot c >= slot -> throwError $ PraosInvalidSlot slot (biSlot c)
         _                      -> return ()
@@ -308,7 +325,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
                                   (fromIntegral $ unSlotNo slot)
                                   (getSig praosSignature)
 
-    let (rho', y', t) = rhoYT cfg cs slot nid
+    let (rho', y', t) = rhoYT cfg (praosHistory cds) slot nid
 
     -- verify rho proof
     unless (verifyCertified () vkVRF rho' praosRho) $
@@ -334,25 +351,24 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
     let !bi = BlockInfo
             { biSlot  = slot
             , biRho   = praosRho
-            , biStake = sd
+            , biStake = StakeDist sd
             }
 
-    return $ bi : cs
+    return $ PraosChainDepState $ bi : praosHistory cds
 
   -- Rewind the chain state
   --
-  -- At the moment, this implementation of Praos keeps the full history of the
-  -- chain state since the dawn of time (#248). For this reason rewinding is
-  -- very simple, and we can't get to a point where we can't roll back more
-  -- (unless the slot number never occurred, but that would be a bug in the
-  -- caller). Once we limit the history we keep, this function will become
-  -- more complicated.
+  -- The mock implementation of Praos keeps the full history of the chain state
+  -- since the dawn of time (#248). For this reason rewinding is very simple,
+  -- and we can't get to a point where we can't roll back more (unless the slot
+  -- number never occurred, but that would be a bug in the caller).
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindChainDepState _proxy _k rewindTo =
+  rewindChainDepState _proxy _k rewindTo (PraosChainDepState cds) =
       -- This may drop us back to the empty list if we go back to genesis
-      Just . dropWhile (\bi -> NotOrigin (biSlot bi) > pointSlot rewindTo)
+      Just . PraosChainDepState $
+        dropWhile (\bi -> NotOrigin (biSlot bi) > pointSlot rewindTo) cds
 
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).
@@ -477,3 +493,21 @@ instance PraosCrypto PraosMockCrypto where
 
 instance PraosCrypto c => Condense (PraosFields c toSign) where
    condense PraosFields{..} = condense praosSignature
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance PraosCrypto c => Serialise (BlockInfo c) where
+  encode BlockInfo {..} = mconcat
+    [ encodeListLen 3
+    , encode biSlot
+    , toCBOR biRho
+    , encode biStake
+    ]
+  decode = do
+    decodeListLenOf 3
+    biSlot  <- decode
+    biRho   <- fromCBOR
+    biStake <- decode
+    return BlockInfo {..}

@@ -106,7 +106,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -574,15 +573,19 @@ data TestBlockError =
 
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 
+instance GetTip (LedgerState TestBlock) where
+  getTip = castPoint . lastAppliedPoint
+
+instance GetTip (Ticked (LedgerState TestBlock)) where
+  getTip = castPoint . getTip . getTickedTestLedger
+
 instance IsLedger (LedgerState TestBlock) where
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
-  applyChainTick _ = Ticked
-
-  ledgerTipPoint = castPoint . lastAppliedPoint
+  applyChainTick _ _ = TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock cfg tb@TestBlock{..} (Ticked _ TestLedger{..})
+  applyLedgerBlock cfg tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash ccfg tb /= lastAppliedHash
     = throwError $ InvalidHash lastAppliedHash (blockPrevHash ccfg tb)
     | not $ tbIsValid testBody
@@ -603,6 +606,11 @@ data instance LedgerState TestBlock =
       }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise, NoUnexpectedThunks)
+
+-- Ticking has no effect on the test ledger state
+newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
+      getTickedTestLedger :: LedgerState TestBlock
+    }
 
 instance UpdateLedger TestBlock
 
@@ -658,7 +666,7 @@ instance ValidateEnvelope TestBlock where
         $ cfg
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolLedgerView   _ _ = ()
+  protocolLedgerView   _ _ = TickedTrivial
   ledgerViewForecastAt _ _ = Just . trivialForecast
 
 instance HasHardForkHistory TestBlock where

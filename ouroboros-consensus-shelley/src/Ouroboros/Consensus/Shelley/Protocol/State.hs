@@ -3,9 +3,12 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
+
 -- | Consensus state for Transitional Praos
 module Ouroboros.Consensus.Shelley.Protocol.State (
     TPraosState -- opaque
+  , Ticked(..)
   , currentState
   , empty
   , lastSlot
@@ -13,7 +16,6 @@ module Ouroboros.Consensus.Shelley.Protocol.State (
   , rewind
   , prune
   , size
-  , updateLast
   ) where
 
 import qualified Codec.CBOR.Encoding as CBOR
@@ -27,6 +29,7 @@ import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Versioned
 
@@ -59,6 +62,14 @@ data TPraosState c = TPraosState {
   deriving (Generic, Show, Eq)
 
 instance Crypto c => NoUnexpectedThunks (TPraosState c)
+
+-- | Ticked ChainDep state
+--
+-- We add the ticked state to the history only when applying a header.
+data instance Ticked (TPraosState c) = TickedPraosState {
+      tickedPraosStateTicked :: SL.ChainDepState c
+    , tickedPraosStateOrig   :: TPraosState c
+    }
 
 checkInvariants :: TPraosState c -> Either String ()
 checkInvariants TPraosState { anchor, historicalStates }
@@ -104,18 +115,6 @@ append
 append slot prtclState st = st {
       historicalStates = Map.insert (NotOrigin slot) prtclState (historicalStates st)
     }
-
--- | Update the last entry in the history.
---
---   This function is used to 'tick' the chain state. We expect it to be removed
---   when we update the Ticked family.
-updateLast
-  :: SL.ChainDepState c
-  -> TPraosState c
-  -> TPraosState c
-updateLast prtclState st = st {
-    historicalStates = Map.insert (lastSlot st) prtclState (historicalStates st)
-  }
 
 -- | Prune the state to a given maximum size
 prune

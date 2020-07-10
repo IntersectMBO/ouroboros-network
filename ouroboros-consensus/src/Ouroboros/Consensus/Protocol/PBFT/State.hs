@@ -6,9 +6,11 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | PBFT chain state
@@ -16,6 +18,7 @@
 -- Intended for qualified import.
 module Ouroboros.Consensus.Protocol.PBFT.State (
     PBftState(..)
+  , Ticked(..)
   , WindowSize(..)
     -- * Construction
   , empty
@@ -62,6 +65,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Versioned
 
@@ -184,6 +188,11 @@ data PBftState c = PBftState {
     , ebbs       :: !MaybeEbbInfo
     }
   deriving (Generic)
+
+-- Ticking has no effect on the PBFtState
+newtype instance Ticked (PBftState c) = TickedPBftState {
+      getTickedPBftState :: PBftState c
+    }
 
 {-------------------------------------------------------------------------------
   Invariant
@@ -588,13 +597,14 @@ encodePBftState st@PBftState{..} =
   where
     (anchor, signers, ebbs') = toList st
 
-decodePBftState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+decodePBftState :: forall c. (PBftCrypto c, Serialise (PBftVerKeyHash c))
                 => SecurityParam
                 -> WindowSize
-                -> Decoder s (PBftState c)
+                -> forall s. Decoder s (PBftState c)
 decodePBftState k n = decodeVersion
     [(serializationFormatVersion0, Decode decodePBftState0)]
   where
+    decodePBftState0 :: forall s. Decoder s (PBftState c)
     decodePBftState0 = do
       enforceSize "PBftState" 3
       anchor  <- withOriginFromMaybe <$> decode

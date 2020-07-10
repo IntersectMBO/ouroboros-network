@@ -1,4 +1,5 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.State.Types (
     -- * Main types
@@ -18,8 +19,11 @@ import           Prelude hiding (sequence)
 import           Data.Word
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound)
+import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
@@ -121,8 +125,8 @@ newtype TranslateForecast f x y = TranslateForecast {
       translateForecastWith ::
            EpochNo  -- 'EpochNo' of the transition
         -> SlotNo   -- 'SlotNo' we're constructing a forecast for
-        -> f x
-        -> f y
+        -> Ticked (f x)
+        -> Ticked (f y)
     }
 
 -- | Knowledge in a particular era of the transition to the next era
@@ -143,4 +147,4 @@ data TransitionInfo =
     --   we cannot look past the safe zone of this era and hence, by definition,
     --   the transition to the /next/ era cannot happen.
   | TransitionImpossible
-  deriving (Show)
+  deriving (Show, Generic, NoUnexpectedThunks)

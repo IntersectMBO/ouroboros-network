@@ -26,6 +26,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , TxId(..)
   , CodecConfig(..)
   , NestedCtxt_(..)
+  , Ticked(..)
     -- * Newtype wrappers
   , DegenForkChainDepState(..)
   , DegenForkHeaderHash(..)
@@ -64,7 +65,6 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -204,6 +204,10 @@ instance SingleEraBlock b => HasChainIndepState (DegenForkProtocol b) where
   -- Operations on the chain independent state
   updateChainIndepState _ = updateChainIndepState (Proxy @(HardForkProtocol '[b]))
 
+newtype instance Ticked (DegenForkChainDepState b) = TDCSt {
+      unTDCSt :: Ticked (ChainDepState (HardForkProtocol '[b]))
+    }
+
 instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
   -- The reason for introducing a separate 'DegenForkProtocol' instead of:
   --
@@ -224,28 +228,32 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
   checkIsLeader (DConCfg cfg)
                 canBeLeader
                 chainIndepState
+                slot
                 tickedLedgerView
-                tickedChainDepState =
+                (TDCSt tickedChainDepState) =
     castLeaderCheck $
       checkIsLeader
         cfg
         canBeLeader
         chainIndepState
+        slot
         tickedLedgerView
-        (unDCSt <$> tickedChainDepState)
+        tickedChainDepState
 
-  tickChainDepState (DConCfg cfg) view (DCSt st) =
-      DCSt <$> tickChainDepState cfg view st
+  tickChainDepState (DConCfg cfg) view slot (DCSt st) =
+      TDCSt $ tickChainDepState cfg view slot st
 
   updateChainDepState (DConCfg cfg)
-                      tickedLedgerView
                       valView
-                      (Ticked slot (DCSt chainDepState)) =
+                      slot
+                      tickedLedgerView
+                      (TDCSt chainDepState) =
       DCSt <$> updateChainDepState
                  cfg
-                 tickedLedgerView
                  valView
-                 (Ticked slot chainDepState)
+                 slot
+                 tickedLedgerView
+                 chainDepState
 
   rewindChainDepState _ secParam pt (DCSt chainDepState) =
       DCSt <$>
@@ -267,20 +275,27 @@ instance SingleEraBlock b => ConsensusProtocol (DegenForkProtocol b) where
 
 type instance LedgerCfg (LedgerState (DegenFork b)) = LedgerCfg (LedgerState (HardForkBlock '[b]))
 
+instance SingleEraBlock b => GetTip (LedgerState (DegenFork b)) where
+  getTip = castPoint . getTip . unDLgr
+
+instance SingleEraBlock b => GetTip (Ticked (LedgerState (DegenFork b))) where
+  getTip = castPoint . getTip . unTDLgr
+
 instance SingleEraBlock b => IsLedger (LedgerState (DegenFork b)) where
   type LedgerErr (LedgerState (DegenFork b)) = LedgerErr (LedgerState (HardForkBlock '[b]))
 
-  applyChainTick cfg slot (DLgr lgr) = DLgr <$> applyChainTick cfg slot lgr
+  applyChainTick cfg slot (DLgr lgr) = TDLgr $ applyChainTick cfg slot lgr
 
-  ledgerTipPoint (DLgr l) =
-    (castPoint :: Point (LedgerState (HardForkBlock '[b])) -> Point (LedgerState (DegenFork b))) $
-    ledgerTipPoint l
+newtype instance Ticked (LedgerState (DegenFork b)) = TDLgr {
+      unTDLgr :: Ticked (LedgerState (HardForkBlock '[b]))
+    }
+  deriving (NoUnexpectedThunks)
 
 instance NoHardForks b => ApplyBlock (LedgerState (DegenFork b)) (DegenFork b) where
-  applyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr <$> applyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
-  reapplyLedgerBlock cfg (DBlk b) (Ticked slot (DLgr lgr)) =
-    DLgr $ reapplyLedgerBlock (castFullBlockConfig cfg) b (Ticked slot lgr)
+  applyLedgerBlock cfg (DBlk b) (TDLgr lgr) =
+    DLgr <$> applyLedgerBlock (castFullBlockConfig cfg) b lgr
+  reapplyLedgerBlock cfg (DBlk b) (TDLgr lgr) =
+    DLgr $ reapplyLedgerBlock (castFullBlockConfig cfg) b lgr
 
 instance NoHardForks b => UpdateLedger (DegenFork b)
 
@@ -305,19 +320,15 @@ instance NoHardForks b => ValidateEnvelope (DegenFork b) where
   type OtherHeaderEnvelopeError (DegenFork b) = OtherHeaderEnvelopeError (HardForkBlock '[b])
 
   additionalEnvelopeChecks cfg view (DHdr hdr) =
-      withExcept (inject' (Proxy @(WrapEnvelopeErr b))) $
-        additionalEnvelopeChecks
-          (projCfg cfg)
-          (project' (Proxy @(WrapLedgerView b)) <$> view)
-          (project hdr)
+      additionalEnvelopeChecks (castTopLevelConfig cfg) view hdr
 
 instance NoHardForks b => BlockSupportsProtocol (DegenFork b) where
   validateView (DBCfg cfg) (DHdr hdr) = validateView cfg hdr
   selectView   (DBCfg cfg) (DHdr hdr) = selectView   cfg hdr
 
 instance NoHardForks b => LedgerSupportsProtocol (DegenFork b) where
-  protocolLedgerView   cfg (DLgr lgr) = protocolLedgerView   cfg lgr
-  ledgerViewForecastAt cfg (DLgr lgr) = ledgerViewForecastAt cfg lgr
+  protocolLedgerView   cfg (TDLgr lgr) = protocolLedgerView   cfg lgr
+  ledgerViewForecastAt cfg (DLgr  lgr) = ledgerViewForecastAt cfg lgr
 
 newtype DegenForkApplyTxErr b = DApplyTxErr {
       unDApplyTxErr :: ApplyTxErr (HardForkBlock '[b])
@@ -332,17 +343,13 @@ instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
 
   type ApplyTxErr (DegenFork b) = DegenForkApplyTxErr b
 
-  txInvariant = txInvariant . unDTx
+  txInvariant   = txInvariant   . unDTx
+  maxTxCapacity = maxTxCapacity . unTDLgr
 
-  applyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
-    withExcept DApplyTxErr $
-      fmap DLgr <$> applyTx cfg tx (Ticked slot lgr)
-  reapplyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
-    withExcept DApplyTxErr $
-      fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
-
-  maxTxCapacity (Ticked slot (DLgr lgr)) =
-    maxTxCapacity (Ticked slot (project lgr))
+  applyTx cfg slot (DTx tx) (TDLgr lgr) =
+    withExcept DApplyTxErr $ TDLgr <$> applyTx cfg slot tx lgr
+  reapplyTx cfg slot (DTx tx) (TDLgr lgr) =
+    withExcept DApplyTxErr $ TDLgr <$> reapplyTx cfg slot tx lgr
 
   txInBlockSize (DTx tx) = txInBlockSize (project tx)
 
@@ -373,15 +380,15 @@ instance NoHardForks b => CommonProtocolParams (DegenFork b) where
 instance NoHardForks b => CanForge (DegenFork b) where
   type ExtraForgeState (DegenFork b) = ExtraForgeState (HardForkBlock '[b])
 
-  forgeBlock cfg forgeState block (Ticked slot (DLgr lgr)) txs proof =
-      DBlk . inject' (Proxy @(I b)) $
-        forgeBlock
-          (projCfg cfg)
-          (project (castForgeState forgeState))
-          block
-          (Ticked slot (project lgr))
-          (map (project . unDTx) txs)
-          (project' (Proxy @(WrapIsLeader b)) proof)
+  forgeBlock cfg forgeState bno sno (TDLgr lgr) txs proof = DBlk $
+      forgeBlock
+        (castTopLevelConfig cfg)
+        (castForgeState forgeState)
+        bno
+        sno
+        lgr
+        (map unDTx txs)
+        proof
 
 instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk

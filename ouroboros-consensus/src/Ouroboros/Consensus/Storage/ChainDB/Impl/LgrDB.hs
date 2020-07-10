@@ -12,6 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 -- | Thin wrapper around the LedgerDB
@@ -330,9 +331,9 @@ getPastState LgrDB{..} p = do
 setCurrent :: IOLike m => LgrDB m blk -> LedgerDB blk -> STM m ()
 setCurrent LgrDB{..} = writeTVar $! varDB
 
-currentPoint :: UpdateLedger blk => LedgerDB blk -> Point blk
+currentPoint :: forall blk. UpdateLedger blk => LedgerDB blk -> Point blk
 currentPoint = castPoint
-             . ledgerTipPoint
+             . ledgerTipPoint (Proxy @blk)
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 

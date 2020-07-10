@@ -236,6 +236,7 @@ class ( Show (ChainDepState   p)
                 => ConsensusConfig       p
                 -> CanBeLeader           p
                 -> ChainIndepState       p
+                -> SlotNo
                 -> Ticked (LedgerView    p)
                 -> Ticked (ChainDepState p)
                 -> LeaderCheck           p
@@ -243,6 +244,7 @@ class ( Show (ChainDepState   p)
   -- | Tick the 'ChainDepState'
   tickChainDepState :: ConsensusConfig p
                     -> Ticked (LedgerView p)
+                    -> SlotNo
                     -> ChainDepState p
                     -> Ticked (ChainDepState p)
 
@@ -250,6 +252,7 @@ class ( Show (ChainDepState   p)
   updateChainDepState :: HasCallStack
                       => ConsensusConfig       p
                       -> ValidateView          p
+                      -> SlotNo
                       -> Ticked (LedgerView    p)
                       -> Ticked (ChainDepState p)
                       -> Except (ValidationErr p) (ChainDepState p)

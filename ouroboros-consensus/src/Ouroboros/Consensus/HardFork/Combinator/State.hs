@@ -1,11 +1,14 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Intended for qualified import
 --
@@ -13,13 +16,15 @@
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 module Ouroboros.Consensus.HardFork.Combinator.State (
     module X
+    -- * Support for defining instances
+  , getTip
     -- * Serialisation support
   , recover
     -- * EpochInfo
   , mostRecentTransitionInfo
   , reconstructSummaryLedger
   , epochInfoLedger
-  , epochInfoLedgerView
+  , epochInfoPrecomputedTransitionInfo
     -- * Ledger specific functionality
   , extendToSlot
   ) where
@@ -29,18 +34,18 @@ import           Prelude hiding (sequence)
 import           Control.Monad (guard)
 import           Data.Functor.Identity
 import           Data.Functor.Product
+import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
 
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
 import           Ouroboros.Consensus.Util ((.:))
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
                      Requiring (..))
@@ -52,6 +57,24 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 import           Ouroboros.Consensus.HardFork.Combinator.State.Infra as X
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances as X ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
+
+{-------------------------------------------------------------------------------
+  GetTip
+-------------------------------------------------------------------------------}
+
+getTip :: forall g f xs. CanHardFork xs
+       => (forall blk. SingleEraBlock blk => f blk -> Point blk)
+       -> HardForkState_ g f xs -> Point (HardForkBlock xs)
+getTip getLedgerTip =
+      hcollapse
+    . hcmap proxySingle (K . injPoint . getLedgerTip)
+    . tip
+  where
+    injPoint :: forall blk. SingleEraBlock blk
+             => Point blk -> Point (HardForkBlock xs)
+    injPoint GenesisPoint     = GenesisPoint
+    injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
+                                  toRawHash (Proxy @blk) h
 
 {-------------------------------------------------------------------------------
   Recovery
@@ -133,20 +156,15 @@ epochInfoLedger cfg st =
     History.snapshotEpochInfo $
       reconstructSummaryLedger cfg st
 
--- | Construct 'EpochInfo' from a ledger view
---
--- The same comments apply as for 'epochInfoLedger', except more so: the range
--- of the 'EpochInfo' is determined by the ledger that the view was derived
--- from; when the view is a forecast, that range does not extend (obviously).
-epochInfoLedgerView :: History.Shape xs
-                    -> HardForkLedgerView_ f xs
-                    -> EpochInfo Identity
-epochInfoLedgerView shape HardForkLedgerView{..} =
+-- | Construct 'EpochInfo' given precomputed 'TransitionInfo'
+epochInfoPrecomputedTransitionInfo ::
+     History.Shape xs
+  -> TransitionInfo
+  -> HardForkState_ g f xs
+  -> EpochInfo Identity
+epochInfoPrecomputedTransitionInfo shape transition st =
     History.snapshotEpochInfo $
-      reconstructSummary
-        shape
-        hardForkLedgerViewTransition
-        hardForkLedgerViewPerEra
+      reconstructSummary shape transition st
 
 {-------------------------------------------------------------------------------
   Extending

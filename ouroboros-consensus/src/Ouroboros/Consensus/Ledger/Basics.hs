@@ -6,8 +6,12 @@
 -- Normally this is imported from "Ouroboros.Consensus.Ledger.Abstract". We
 -- pull this out to avoid circular module dependencies.
 module Ouroboros.Consensus.Ledger.Basics (
+    -- * GetTip
+    GetTip(..)
+  , getTipHash
+  , getTipSlot
     -- * Definition of a ledger independent of a choice of block
-    LedgerCfg
+  , LedgerCfg
   , IsLedger(..)
     -- * Link block to its ledger
   , LedgerState
@@ -20,6 +24,24 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
+
+{-------------------------------------------------------------------------------
+  Tip
+-------------------------------------------------------------------------------}
+
+class GetTip l where
+  -- | Point of the most recently applied block
+  --
+  -- Should be 'genesisPoint' when no blocks have been applied yet
+  getTip :: l -> Point l
+
+type instance HeaderHash (Ticked l) = HeaderHash l
+
+getTipHash :: GetTip l => l -> ChainHash l
+getTipHash = pointHash . getTip
+
+getTipSlot :: GetTip l => l -> WithOrigin SlotNo
+getTipSlot = pointSlot . getTip
 
 {-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
@@ -38,6 +60,11 @@ class ( -- Requirements on the ledger state itself
       , Show               (LedgerErr l)
       , Eq                 (LedgerErr l)
       , NoUnexpectedThunks (LedgerErr l)
+        -- Get the tip
+        --
+        -- See comment for 'applyChainTick' about the tip of the ticked ledger.
+      , GetTip l
+      , GetTip (Ticked l)
       ) => IsLedger l where
   -- | Errors that can arise when updating the ledger
   --
@@ -70,14 +97,9 @@ class ( -- Requirements on the ledger state itself
   -- state, which should still refer to the most recent applied /block/. In
   -- other words, we should have
   --
-  -- >    ledgerTipPoint (tickedLedgerState (applyChainTick cfg slot st)
+  -- >    ledgerTipPoint (applyChainTick cfg slot st)
   -- > == ledgerTipPoint st
   applyChainTick :: LedgerCfg l -> SlotNo -> l -> Ticked l
-
-  -- | Point of the most recently applied block
-  --
-  -- Should be 'genesisPoint' when no blocks have been applied yet
-  ledgerTipPoint :: l -> Point l
 
 {-------------------------------------------------------------------------------
   Link block to its ledger

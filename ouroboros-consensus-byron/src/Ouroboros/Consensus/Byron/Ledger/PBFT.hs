@@ -8,6 +8,7 @@
 -- | Instances required to support PBFT
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
     toPBftLedgerView
+  , toTickedPBftLedgerView
   , fromPBftLedgerView
   , encodeByronChainDepState
   , decodeByronChainDepState
@@ -67,7 +68,6 @@ instance BlockSupportsProtocol ByronBlock where
                 }
 
           in PBftValidateRegular
-               (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
                (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
@@ -78,6 +78,9 @@ instance BlockSupportsProtocol ByronBlock where
 
 toPBftLedgerView :: Delegation.Map -> PBftLedgerView PBftByronCrypto
 toPBftLedgerView = PBftLedgerView . Delegation.unMap
+
+toTickedPBftLedgerView :: Delegation.Map -> Ticked (PBftLedgerView PBftByronCrypto)
+toTickedPBftLedgerView = TickedPBftLedgerView . Delegation.unMap
 
 fromPBftLedgerView :: PBftLedgerView PBftByronCrypto -> Delegation.Map
 fromPBftLedgerView = Delegation.Map . pbftDelegates

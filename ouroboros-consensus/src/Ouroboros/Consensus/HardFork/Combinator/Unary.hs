@@ -155,10 +155,6 @@ instance Isomorphic ((->) a) where
   project f = coerce (project @I) . f
   inject  f = coerce (inject  @I) . f
 
-instance (Functor f, Isomorphic g) => Isomorphic (f :.: g) where
-  project (Comp fg) = Comp (project <$> fg)
-  inject  (Comp fg) = Comp (inject  <$> fg)
-
 {-------------------------------------------------------------------------------
   Simple instances
 -------------------------------------------------------------------------------}
@@ -350,6 +346,21 @@ instance Isomorphic HeaderState where
       , headerStateTips      = inject <$> headerStateTips
       , headerStateAnchor    = inject <$> headerStateAnchor
       }
+
+instance Isomorphic (Ticked :.: LedgerState) where
+  project =
+        State.currentState
+      . Telescope.fromTZ
+      . getHardForkState
+      . tickedHardForkLedgerStatePerEra
+      . unComp
+
+  inject =
+        Comp
+      . TickedHardForkLedgerState TransitionImpossible
+      . HardForkState
+      . Telescope.TZ
+      . State.Current History.initBound
 
 instance Isomorphic ExtLedgerState where
   project ExtLedgerState{..} = ExtLedgerState {
