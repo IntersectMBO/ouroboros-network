@@ -56,7 +56,7 @@ data TestSetup = TestSetup
 
 instance Arbitrary TestSetup where
   arbitrary = do
-    setupD <- (/10)         <$> choose   (0, 10)
+    setupD <- (/10)         <$> choose   (1, 10)
     setupK <- SecurityParam <$> elements [5, 10]
 
     setupTestConfig <- arbitrary
@@ -74,8 +74,7 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
-    [ adjustOption (\(QuickCheckTests n) -> QuickCheckTests $ n `div` 5) $
-      testProperty "simple convergence" $ \setup ->
+    [ testProperty "simple convergence" $ withMaxSuccess 20 $ \setup ->
         prop_simple_real_tpraos_convergence setup
     ]
 
