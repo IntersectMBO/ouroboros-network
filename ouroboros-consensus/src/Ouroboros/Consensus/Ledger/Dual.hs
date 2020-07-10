@@ -483,11 +483,11 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   Querying the ledger
 -------------------------------------------------------------------------------}
 
+data instance Query (DualBlock m a) result
+  deriving (Show)
+
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
-  data Query (DualBlock m a) result
-    deriving (Show)
-
   answerQuery _ = \case {}
   eqQuery       = \case {}
 

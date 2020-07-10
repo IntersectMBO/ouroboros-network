@@ -349,10 +349,10 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-instance QueryLedger TestBlock where
-  data Query TestBlock result where
-    QueryLedgerTip :: Query TestBlock (Point TestBlock)
+data instance Query TestBlock result where
+  QueryLedgerTip :: Query TestBlock (Point TestBlock)
 
+instance QueryLedger TestBlock where
   answerQuery _cfg QueryLedgerTip (TestLedger { lastAppliedPoint }) =
     lastAppliedPoint
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl

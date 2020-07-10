@@ -353,12 +353,12 @@ instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
 instance SingleEraBlock b => ShowQuery (Query (DegenFork b)) where
   showResult (DQry qry) = showResult qry
 
-instance NoHardForks b => QueryLedger (DegenFork b) where
-  newtype Query (DegenFork b) result = DQry {
-        unDQry :: Query (HardForkBlock '[b]) result
-      }
-    deriving (Show)
+newtype instance Query (DegenFork b) result = DQry {
+      unDQry :: Query (HardForkBlock '[b]) result
+    }
+  deriving (Show)
 
+instance NoHardForks b => QueryLedger (DegenFork b) where
   answerQuery cfg (DQry qry) (DLgr lgr) = answerQuery cfg qry lgr
   eqQuery (DQry qry1) (DQry qry2) = eqQuery qry1 qry2
 

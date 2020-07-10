@@ -72,32 +72,32 @@ instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
 
 type HardForkQueryResult xs = Either (MismatchEraInfo xs)
 
+data instance Query (HardForkBlock xs) :: * -> * where
+  -- | Answer a query about an era if it is the current one.
+  QueryIfCurrent ::
+       QueryIfCurrent xs result
+    -> Query (HardForkBlock xs) (HardForkQueryResult xs result)
+
+  -- | Answer a query about an era from /any/ era.
+  --
+  -- NOTE: we don't allow this when there is only a single era, so that the
+  -- HFC applied to a single era is still isomorphic to the single era.
+  QueryAnytime ::
+       IsNonEmpty xs
+    => QueryAnytime result
+    -> EraIndex (x ': xs)
+    -> Query (HardForkBlock (x ': xs)) result
+
+  -- | Answer a query about the hard fork combinator
+  --
+  -- NOTE: we don't allow this when there is only a single era, so that the
+  -- HFC applied to a single era is still isomorphic to the single era.
+  QueryHardFork ::
+       IsNonEmpty xs
+    => QueryHardFork (x ': xs) result
+    -> Query (HardForkBlock (x ': xs)) result
+
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
-  data Query (HardForkBlock xs) :: * -> * where
-    -- | Answer a query about an era if it is the current one.
-    QueryIfCurrent ::
-         QueryIfCurrent xs result
-      -> Query (HardForkBlock xs) (HardForkQueryResult xs result)
-
-    -- | Answer a query about an era from /any/ era.
-    --
-    -- NOTE: we don't allow this when there is only a single era, so that the
-    -- HFC applied to a single era is still isomorphic to the single era.
-    QueryAnytime ::
-         IsNonEmpty xs
-      => QueryAnytime result
-      -> EraIndex (x ': xs)
-      -> Query (HardForkBlock (x ': xs)) result
-
-    -- | Answer a query about the hard fork combinator
-    --
-    -- NOTE: we don't allow this when there is only a single era, so that the
-    -- HFC applied to a single era is still isomorphic to the single era.
-    QueryHardFork ::
-         IsNonEmpty xs
-      => QueryHardFork (x ': xs) result
-      -> Query (HardForkBlock (x ': xs)) result
-
   answerQuery hardForkConfig@HardForkLedgerConfig{..}
               query
               st@(HardForkLedgerState hardForkState) =

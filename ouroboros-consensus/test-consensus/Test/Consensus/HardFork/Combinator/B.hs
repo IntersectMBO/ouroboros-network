@@ -260,10 +260,10 @@ instance HasTxId (GenTx BlockB) where
 instance ShowQuery (Query BlockB) where
   showResult qry = case qry of {}
 
-instance QueryLedger BlockB where
-  data Query BlockB result
-    deriving (Show)
+data instance Query BlockB result
+  deriving (Show)
 
+instance QueryLedger BlockB where
   answerQuery _ qry = case qry of {}
   eqQuery qry _qry' = case qry of {}
 
