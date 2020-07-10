@@ -309,15 +309,19 @@ type CardanoQuery sc = Query (CardanoBlock sc)
 -- | Byron-specific query that can only be answered when the ledger in the
 -- Byron era.
 pattern QueryIfCurrentByron
-  :: Query ByronBlock result
-  -> CardanoQuery sc (CardanoQueryResult sc result)
+  :: ()
+  => CardanoQueryResult sc result ~ a
+  => Query ByronBlock result
+  -> CardanoQuery sc a
 pattern QueryIfCurrentByron q = QueryIfCurrent (QZ q)
 
 -- | Shelley-specific query that can only be answered when the ledger in the
 -- Shelley era.
 pattern QueryIfCurrentShelley
-  :: Query (ShelleyBlock sc) result
-  -> CardanoQuery sc (CardanoQueryResult sc result)
+  :: ()
+  => CardanoQueryResult sc result ~ a
+  => Query (ShelleyBlock sc) result
+  -> CardanoQuery sc a
 pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 
 -- | Query about the Byron era that can be answered anytime, i.e.,
