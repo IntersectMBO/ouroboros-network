@@ -139,7 +139,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftConfig{..} (CoreNodeId i) _ (SlotNo n) _ _ =
+  checkIsLeader BftConfig{..} (CoreNodeId i) _ (SlotNo n) _ =
       if n `mod` numCoreNodes == i
       then IsLeader ()
       else NotLeader
@@ -150,7 +150,6 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
   updateChainDepState BftConfig{..}
                       (BftValidateView BftFields{..} signed)
                       (SlotNo n)
-                      _
                       _ =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN

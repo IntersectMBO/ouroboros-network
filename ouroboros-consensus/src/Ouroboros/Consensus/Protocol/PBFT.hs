@@ -271,6 +271,12 @@ instance PBftCrypto c => ChainSelection (PBft c) where
 instance HasChainIndepState (PBft c)
   -- Use defaults
 
+-- Ticking has no effect on the PBFtState, but we do need the ticked ledger view
+data instance Ticked (PBftState c) = TickedPBftState {
+      tickedPBftLedgerView :: Ticked (LedgerView (PBft c))
+    , getTickedPBftState   :: PBftState c
+    }
+
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
@@ -291,8 +297,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
                 credentials
                 ()
                 slot@(SlotNo n)
-                (TickedPBftLedgerView dms)
-                (S.TickedPBftState cds) =
+                (TickedPBftState (TickedPBftLedgerView dms) cds) =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
@@ -311,13 +316,12 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  tickChainDepState _ _ _ = S.TickedPBftState
+  tickChainDepState _ lv _ = TickedPBftState lv
 
   updateChainDepState cfg@PBftConfig{..}
                       toValidate
                       slot
-                      (TickedPBftLedgerView dms)
-                      (S.TickedPBftState state) =
+                      (TickedPBftState (TickedPBftLedgerView dms) state) =
       case toValidate of
         PBftValidateBoundary hash ->
           return $! appendEBB cfg params slot hash state

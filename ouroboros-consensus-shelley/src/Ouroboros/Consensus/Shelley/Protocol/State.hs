@@ -63,14 +63,6 @@ data TPraosState c = TPraosState {
 
 instance Crypto c => NoUnexpectedThunks (TPraosState c)
 
--- | Ticked ChainDep state
---
--- We add the ticked state to the history only when applying a header.
-data instance Ticked (TPraosState c) = TickedPraosState {
-      tickedPraosStateTicked :: SL.ChainDepState c
-    , tickedPraosStateOrig   :: TPraosState c
-    }
-
 checkInvariants :: TPraosState c -> Either String ()
 checkInvariants TPraosState { anchor, historicalStates }
     -- Don't use 'Map.findMin', as its partial, giving a worse error message.

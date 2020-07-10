@@ -55,12 +55,11 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     type ValidationErr (ModChainSel p s) = ValidationErr   p
     type ValidateView  (ModChainSel p s) = ValidateView    p
 
-    checkIsLeader cfg canBeLeader ledgerView slot chainDepState chainIndepState =
+    checkIsLeader cfg canBeLeader slot chainDepState chainIndepState =
       castLeaderCheck $
         checkIsLeader
           (mcsConfigP cfg)
           canBeLeader
-          ledgerView
           slot
           chainDepState
           chainIndepState

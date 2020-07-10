@@ -260,8 +260,11 @@ newtype PraosChainDepState c = PraosChainDepState {
 -- point where the "nonce under construction" is swapped out for the "active"
 -- nonce. However, for the mock implementation, we keep the full history, and
 -- choose the right nonce from that; this means that ticking has no effect.
-newtype instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
-      getTickedPraosChainDepState :: PraosChainDepState c
+--
+-- We do however need access to the ticked stake distribution.
+data instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
+      tickedPraosLedgerView      :: Ticked (LedgerView (Praos c))
+    , untickedPraosChainDepState :: PraosChainDepState c
     }
 
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
@@ -275,7 +278,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type CanBeLeader   (Praos c) = CoreNodeId
   type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid _cis slot _u (TickedPraosChainDepState cds) = do
+  checkIsLeader cfg@PraosConfig{..} nid _cis slot (TickedPraosChainDepState _u  cds) = do
       if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
       then IsLeader PraosProof {
                praosProofRho  = rho
@@ -290,13 +293,12 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
       rho = evalCertified () rho' praosSignKeyVRF
       y   = evalCertified () y'   praosSignKeyVRF
 
-  tickChainDepState _ _ _ = TickedPraosChainDepState
+  tickChainDepState _ lv _ = TickedPraosChainDepState lv
 
   updateChainDepState cfg@PraosConfig{..}
                       (PraosValidateView PraosFields{..} toSign)
                       slot
-                      (TickedStakeDist sd)
-                      (TickedPraosChainDepState cds) = do
+                      (TickedPraosChainDepState (TickedStakeDist sd) cds) = do
     let PraosExtraFields{..} = praosExtraFields
         nid                  = praosCreator
 
