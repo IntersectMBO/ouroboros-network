@@ -102,13 +102,13 @@ mkShelleyBlock raw = ShelleyBlock {
     , shelleyBlockHeaderHash = ShelleyHash (SL.bhHash (SL.bheader raw))
     }
 
-instance Crypto c => GetHeader (ShelleyBlock c) where
-  data Header (ShelleyBlock c) = ShelleyHeader {
-        shelleyHeaderRaw  :: !(SL.BHeader c)
-      , shelleyHeaderHash :: !(ShelleyHash c)
-      }
-    deriving (Eq, Generic, Show, NoUnexpectedThunks)
+data instance Header (ShelleyBlock c) = ShelleyHeader {
+      shelleyHeaderRaw  :: !(SL.BHeader c)
+    , shelleyHeaderHash :: !(ShelleyHash c)
+    }
+  deriving (Eq, Generic, Show, NoUnexpectedThunks)
 
+instance Crypto c => GetHeader (ShelleyBlock c) where
   getHeader (ShelleyBlock rawBlk hdrHash) = ShelleyHeader {
       shelleyHeaderRaw  = SL.bheader rawBlk
     , shelleyHeaderHash = hdrHash

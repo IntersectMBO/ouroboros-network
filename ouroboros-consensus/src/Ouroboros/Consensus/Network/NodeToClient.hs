@@ -242,7 +242,7 @@ identityCodecs :: (Monad m, QueryLedger blk)
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
-    , cStateQueryCodec   = codecLocalStateQueryId eqQuery
+    , cStateQueryCodec   = codecLocalStateQueryId sameDepIndex
     }
 
 {-------------------------------------------------------------------------------

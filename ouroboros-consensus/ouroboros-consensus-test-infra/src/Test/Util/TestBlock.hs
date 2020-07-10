@@ -177,10 +177,11 @@ data TestBlock = TestBlock {
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
 
+newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
+  deriving stock   (Eq, Show)
+  deriving newtype (NoUnexpectedThunks, Serialise)
+
 instance GetHeader TestBlock where
-  newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
-    deriving stock   (Eq, Show)
-    deriving newtype (NoUnexpectedThunks, Serialise)
   getHeader = TestHeader
   blockMatchesHeader (TestHeader blk') blk = blk == blk'
   headerIsEBB = const Nothing
@@ -348,13 +349,15 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-instance QueryLedger TestBlock where
-  data Query TestBlock result where
-    QueryLedgerTip :: Query TestBlock (Point TestBlock)
+data instance Query TestBlock result where
+  QueryLedgerTip :: Query TestBlock (Point TestBlock)
 
+instance QueryLedger TestBlock where
   answerQuery _cfg QueryLedgerTip (TestLedger { lastAppliedPoint }) =
     lastAppliedPoint
-  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+
+instance SameDepIndex (Query TestBlock) where
+  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
 deriving instance Eq (Query TestBlock result)
 deriving instance Show (Query TestBlock result)

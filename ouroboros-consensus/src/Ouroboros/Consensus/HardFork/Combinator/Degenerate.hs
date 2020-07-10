@@ -107,12 +107,12 @@ newtype DegenFork b = DBlk {
   Data family instances
 -------------------------------------------------------------------------------}
 
-instance NoHardForks b => GetHeader (DegenFork b) where
-  newtype Header (DegenFork b) = DHdr {
-        unDHdr :: Header (HardForkBlock '[b])
-      }
-    deriving (Show, NoUnexpectedThunks)
+newtype instance Header (DegenFork b) = DHdr {
+      unDHdr :: Header (HardForkBlock '[b])
+    }
+  deriving (Show, NoUnexpectedThunks)
 
+instance NoHardForks b => GetHeader (DegenFork b) where
   getHeader (DBlk b) = DHdr (getHeader b)
 
   blockMatchesHeader (DHdr hdr) (DBlk blk) =
@@ -324,14 +324,14 @@ newtype DegenForkApplyTxErr b = DApplyTxErr {
     }
   deriving (Show)
 
+newtype instance GenTx (DegenFork b) = DTx {
+      unDTx :: GenTx (HardForkBlock '[b])
+    }
+  deriving (Show, NoUnexpectedThunks)
+
+type instance ApplyTxErr (DegenFork b) = DegenForkApplyTxErr b
+
 instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
-  newtype GenTx (DegenFork b) = DTx {
-        unDTx :: GenTx (HardForkBlock '[b])
-      }
-    deriving (Show, NoUnexpectedThunks)
-
-  type ApplyTxErr (DegenFork b) = DegenForkApplyTxErr b
-
   txInvariant   = txInvariant   . unDTx
   maxTxCapacity = maxTxCapacity . unTDLgr
 
@@ -342,25 +342,27 @@ instance NoHardForks b => LedgerSupportsMempool (DegenFork b) where
 
   txInBlockSize (DTx tx) = txInBlockSize (project tx)
 
-instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
-  newtype TxId (GenTx (DegenFork b)) = DTxId {
-        unDTxId :: TxId (GenTx (HardForkBlock '[b]))
-      }
-    deriving (Show, Eq, Ord, NoUnexpectedThunks)
+newtype instance TxId (GenTx (DegenFork b)) = DTxId {
+      unDTxId :: TxId (GenTx (HardForkBlock '[b]))
+    }
+  deriving (Show, Eq, Ord, NoUnexpectedThunks)
 
+instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
   txId (DTx tx) = DTxId (txId tx)
 
 instance SingleEraBlock b => ShowQuery (Query (DegenFork b)) where
   showResult (DQry qry) = showResult qry
 
-instance NoHardForks b => QueryLedger (DegenFork b) where
-  newtype Query (DegenFork b) result = DQry {
-        unDQry :: Query (HardForkBlock '[b]) result
-      }
-    deriving (Show)
+newtype instance Query (DegenFork b) result = DQry {
+      unDQry :: Query (HardForkBlock '[b]) result
+    }
+  deriving (Show)
 
+instance NoHardForks b => QueryLedger (DegenFork b) where
   answerQuery cfg (DQry qry) (DLgr lgr) = answerQuery cfg qry lgr
-  eqQuery (DQry qry1) (DQry qry2) = eqQuery qry1 qry2
+
+instance NoHardForks b => SameDepIndex (Query (DegenFork b)) where
+  sameDepIndex (DQry qry1) (DQry qry2) = sameDepIndex qry1 qry2
 
 instance NoHardForks b => CommonProtocolParams (DegenFork b) where
   maxHeaderSize (DLgr lgr) = maxHeaderSize (project lgr)

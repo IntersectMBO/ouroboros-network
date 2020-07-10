@@ -165,48 +165,67 @@ instance SerialiseHFC xs
 
 instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (SomeBlock Query (HardForkBlock xs)) where
-  encodeNodeToClient ccfg version (SomeBlock q) = case q of
-      QueryIfCurrent qry -> mconcat [
+  encodeNodeToClient ccfg version (SomeBlock q) = case version of
+      HardForkNodeToClientDisabled v0 -> case q of
+        QueryIfCurrent qry ->
+          case distribQueryIfCurrent (Some qry) of
+            Z qry0  -> encodeNodeToClient (hd ccfgs) v0 qry0
+            S later -> throw $ futureEraException (notFirstEra later)
+        QueryAnytime {} ->
+          throw HardForkEncoderUnsupportedQuery
+        QueryHardFork {} ->
+          throw HardForkEncoderUnsupportedQuery
+
+      HardForkNodeToClientEnabled _ -> case q of
+        QueryIfCurrent qry -> mconcat [
             Enc.encodeListLen 2
           , Enc.encodeWord8 0
           , dispatchEncoder ccfg version (distribQueryIfCurrent (Some qry))
           ]
-      QueryAnytime qry eraIndex -> mconcat [
+        QueryAnytime qry eraIndex -> mconcat [
             Enc.encodeListLen 3
           , Enc.encodeWord8 1
           , Serialise.encode (Some qry)
           , Serialise.encode eraIndex
           ]
-      QueryHardFork qry -> mconcat [
+        QueryHardFork qry -> mconcat [
             Enc.encodeListLen 2
           , Enc.encodeWord8 2
           , Serialise.encode (Some qry)
           ]
-
-  decodeNodeToClient ccfg version = case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty (_ :: Proxy x') (p :: Proxy xs') -> do
-        size <- Dec.decodeListLen
-        tag  <- Dec.decodeWord8
-        case (size, tag) of
-          (2, 0) -> injQueryIfCurrent <$> dispatchDecoder ccfg version
-
-          (3, 1) -> do
-            Some (qry :: QueryAnytime result) <- Serialise.decode
-            eraIndex :: EraIndex (x' ': xs')  <- Serialise.decode
-            case checkIsNonEmpty p of
-              Nothing -> fail $ "QueryAnytime requires multiple era"
-              Just (ProofNonEmpty {}) ->
-                return $ SomeBlock (QueryAnytime qry eraIndex)
-
-          (2, 2) -> do
-            Some (qry :: QueryHardFork xs result) <- Serialise.decode
-            case checkIsNonEmpty p of
-              Nothing -> fail $ "QueryHardFork requires multiple era"
-              Just (ProofNonEmpty {}) ->
-                return $ SomeBlock (QueryHardFork qry)
-
-          _ -> fail $ "HardForkQuery: invalid size and tag" <> show (size, tag)
     where
+      ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
+
+  decodeNodeToClient ccfg version = case version of
+      HardForkNodeToClientDisabled v0 ->
+        injQueryIfCurrent . Z <$>
+          decodeNodeToClient (hd ccfgs) v0
+      HardForkNodeToClientEnabled _ -> case isNonEmpty (Proxy @xs) of
+        ProofNonEmpty (_ :: Proxy x') (p :: Proxy xs') -> do
+          size <- Dec.decodeListLen
+          tag  <- Dec.decodeWord8
+          case (size, tag) of
+            (2, 0) -> injQueryIfCurrent <$> dispatchDecoder ccfg version
+
+            (3, 1) -> do
+              Some (qry :: QueryAnytime result) <- Serialise.decode
+              eraIndex :: EraIndex (x' ': xs')  <- Serialise.decode
+              case checkIsNonEmpty p of
+                Nothing -> fail $ "QueryAnytime requires multiple era"
+                Just (ProofNonEmpty {}) ->
+                  return $ SomeBlock (QueryAnytime qry eraIndex)
+
+            (2, 2) -> do
+              Some (qry :: QueryHardFork xs result) <- Serialise.decode
+              case checkIsNonEmpty p of
+                Nothing -> fail $ "QueryHardFork requires multiple era"
+                Just (ProofNonEmpty {}) ->
+                  return $ SomeBlock (QueryHardFork qry)
+
+            _ -> fail $ "HardForkQuery: invalid size and tag" <> show (size, tag)
+    where
+      ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
+
       injQueryIfCurrent :: NS (SomeBlock Query) xs
                         -> SomeBlock Query (HardForkBlock xs)
       injQueryIfCurrent ns =

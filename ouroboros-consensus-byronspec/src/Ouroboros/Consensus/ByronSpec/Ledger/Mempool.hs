@@ -24,16 +24,16 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
 import           Ouroboros.Consensus.ByronSpec.Ledger.Ledger
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 
+newtype instance GenTx ByronSpecBlock = ByronSpecGenTx {
+      unByronSpecGenTx :: ByronSpecGenTx
+    }
+  deriving stock (Show, Generic)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via AllowThunk (GenTx ByronSpecBlock)
+
+type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
+
 instance LedgerSupportsMempool ByronSpecBlock where
-  newtype GenTx ByronSpecBlock = ByronSpecGenTx {
-        unByronSpecGenTx :: ByronSpecGenTx
-      }
-    deriving stock (Show, Generic)
-    deriving anyclass (Serialise)
-    deriving NoUnexpectedThunks via AllowThunk (GenTx ByronSpecBlock)
-
-  type ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
-
   applyTx cfg _slot tx (TickedByronSpecLedgerState tip st) =
       TickedByronSpecLedgerState tip <$>
         GenTx.apply cfg (unByronSpecGenTx tx) st

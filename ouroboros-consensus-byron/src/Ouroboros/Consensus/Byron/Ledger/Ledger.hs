@@ -171,14 +171,15 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
-instance QueryLedger ByronBlock where
-  data Query ByronBlock :: * -> * where
-    GetUpdateInterfaceState :: Query ByronBlock UPI.State
+data instance Query ByronBlock :: * -> * where
+  GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
+instance QueryLedger ByronBlock where
   answerQuery _cfg GetUpdateInterfaceState ledgerState =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
-  eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
+instance SameDepIndex (Query ByronBlock) where
+  sameDepIndex GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
 
 deriving instance Eq (Query ByronBlock result)
 deriving instance Show (Query ByronBlock result)

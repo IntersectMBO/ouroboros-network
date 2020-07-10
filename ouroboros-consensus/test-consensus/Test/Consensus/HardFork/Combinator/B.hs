@@ -125,15 +125,15 @@ binaryBlockInfoB BlkB{..} = BinaryBlockInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialise blkB_header)
     }
 
-instance GetHeader BlockB where
-  data Header BlockB = HdrB {
-        hdrB_fields :: HeaderFields BlockB
-      , hdrB_prev   :: ChainHash BlockB
-      }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (Serialise)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
+data instance Header BlockB = HdrB {
+      hdrB_fields :: HeaderFields BlockB
+    , hdrB_prev   :: ChainHash BlockB
+    }
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
 
+instance GetHeader BlockB where
   getHeader          = blkB_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
   headerIsEBB        = const Nothing
@@ -238,34 +238,36 @@ instance HasPartialLedgerConfig BlockB
 safeZoneB :: SecurityParam -> History.SafeZone
 safeZoneB (SecurityParam k) = History.noLowerBoundSafeZone k
 
+data instance GenTx BlockB
+  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+
+type instance ApplyTxErr BlockB = Void
+
 instance LedgerSupportsMempool BlockB where
-  data GenTx BlockB
-    deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
-
-  type ApplyTxErr BlockB = Void
-
   applyTx   = \_ _ tx -> case tx of {}
   reapplyTx = applyTx
 
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
 
-instance HasTxId (GenTx BlockB) where
-  data TxId (GenTx BlockB)
-    deriving stock    (Show, Eq, Ord, Generic)
-    deriving anyclass (NoUnexpectedThunks, Serialise)
+data instance TxId (GenTx BlockB)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
 
+instance HasTxId (GenTx BlockB) where
   txId tx = case tx of {}
 
 instance ShowQuery (Query BlockB) where
   showResult qry = case qry of {}
 
-instance QueryLedger BlockB where
-  data Query BlockB result
-    deriving (Show)
+data instance Query BlockB result
+  deriving (Show)
 
+instance QueryLedger BlockB where
   answerQuery _ qry = case qry of {}
-  eqQuery qry _qry' = case qry of {}
+
+instance SameDepIndex (Query BlockB) where
+  sameDepIndex qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockB where
   toRawHash   _ = id

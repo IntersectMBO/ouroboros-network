@@ -48,14 +48,14 @@ data ByronSpecBlock = ByronSpecBlock {
   GetHeader
 -------------------------------------------------------------------------------}
 
-instance GetHeader ByronSpecBlock where
-  data Header ByronSpecBlock = ByronSpecHeader {
-        byronSpecHeader     :: Spec.BlockHeader
-      , byronSpecHeaderNo   :: BlockNo
-      , byronSpecHeaderHash :: Spec.Hash
-      }
-    deriving (Show, Eq, Generic, Serialise)
+data instance Header ByronSpecBlock = ByronSpecHeader {
+      byronSpecHeader     :: Spec.BlockHeader
+    , byronSpecHeaderNo   :: BlockNo
+    , byronSpecHeaderHash :: Spec.Hash
+    }
+  deriving (Show, Eq, Generic, Serialise)
 
+instance GetHeader ByronSpecBlock where
   getHeader ByronSpecBlock{..} = ByronSpecHeader {
         byronSpecHeader     = Spec._bHeader byronSpecBlock
       , byronSpecHeaderNo   = byronSpecBlockNo

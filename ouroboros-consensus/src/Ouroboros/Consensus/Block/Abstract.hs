@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Block.Abstract (
   , GetPrevHash(..)
   , blockPrevHash
     -- * Working with headers
+  , Header
   , GetHeader(..)
   , getBlockHeaderFields
   , headerHash
@@ -120,8 +121,9 @@ blockPrevHash cfg = castHash . headerPrevHash cfg . getHeader
   Link block to its header
 -------------------------------------------------------------------------------}
 
+data family Header blk :: *
+
 class HasHeader (Header blk) => GetHeader blk where
-  data family Header blk :: *
   getHeader          :: blk -> Header blk
   -- | Check whether the header is the header of the block.
   --

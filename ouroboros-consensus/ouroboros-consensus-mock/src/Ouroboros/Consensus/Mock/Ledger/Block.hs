@@ -113,29 +113,29 @@ data SimpleBlock' c ext ext' = SimpleBlock {
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
 
+data instance Header (SimpleBlock' c ext ext') = SimpleHeader {
+      -- | The header hash
+      --
+      -- This is the hash of the header itself. This is a bit unpleasant,
+      -- because it makes the hash look self-referential (when computing the
+      -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
+      -- is that we can give a 'HasHeader' instance that does not require
+      -- a (static) 'Serialise' instance.
+      simpleHeaderHash :: HeaderHash (SimpleBlock' c ext ext')
+
+      -- | Fields required for the 'HasHeader' instance
+    , simpleHeaderStd  :: SimpleStdHeader c ext
+
+      -- | Header extension
+      --
+      -- This extension will be required when using 'SimpleBlock' for specific
+      -- consensus protocols.
+    , simpleHeaderExt  :: ext'
+    }
+  deriving (Generic, Show, Eq, NoUnexpectedThunks)
+
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => GetHeader (SimpleBlock' c ext ext') where
-  data Header (SimpleBlock' c ext ext') = SimpleHeader {
-        -- | The header hash
-        --
-        -- This is the hash of the header itself. This is a bit unpleasant,
-        -- because it makes the hash look self-referential (when computing the
-        -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
-        -- is that we can give a 'HasHeader' instance that does not require
-        -- a (static) 'Serialise' instance.
-        simpleHeaderHash :: HeaderHash (SimpleBlock' c ext ext')
-
-        -- | Fields required for the 'HasHeader' instance
-      , simpleHeaderStd  :: SimpleStdHeader c ext
-
-        -- | Header extension
-        --
-        -- This extension will be required when using 'SimpleBlock' for specific
-        -- consensus protocols.
-      , simpleHeaderExt  :: ext'
-      }
-    deriving (Generic, Show, Eq, NoUnexpectedThunks)
-
   getHeader = simpleHeader
 
   blockMatchesHeader = matchesSimpleHeader
@@ -377,16 +377,17 @@ instance MockProtocolSpecific c ext => CommonProtocolParams (SimpleBlock c ext) 
   Support for the mempool
 -------------------------------------------------------------------------------}
 
+data instance GenTx (SimpleBlock c ext) = SimpleGenTx {
+      simpleGenTx   :: !Mock.Tx
+    , simpleGenTxId :: !Mock.TxId
+    }
+  deriving stock    (Generic, Eq, Ord)
+  deriving anyclass (Serialise)
+
+type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
+
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
-  data GenTx (SimpleBlock c ext) = SimpleGenTx
-    { simpleGenTx   :: !Mock.Tx
-    , simpleGenTxId :: !Mock.TxId
-    } deriving stock    (Generic, Eq, Ord)
-      deriving anyclass (Serialise)
-
-  type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
-
   applyTx   = const updateSimpleUTxO
   reapplyTx = const updateSimpleUTxO
 
@@ -395,12 +396,13 @@ instance MockProtocolSpecific c ext
   maxTxCapacity = const 1000000000
   txInBlockSize = txSize
 
-instance HasTxId (GenTx (SimpleBlock c ext)) where
-  newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
-    { unSimpleGenTxId :: Mock.TxId
-    } deriving stock   (Generic)
-      deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
+newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
+      unSimpleGenTxId :: Mock.TxId
+    }
+  deriving stock   (Generic)
+  deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
 
+instance HasTxId (GenTx (SimpleBlock c ext)) where
   txId = SimpleGenTxId . simpleGenTxId
 
 instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
@@ -434,15 +436,16 @@ txSize = fromIntegral . Lazy.length . serialise
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
-  data Query (SimpleBlock c ext) result where
-      QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
+data instance Query (SimpleBlock c ext) result where
+    QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
+instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   answerQuery _cfg QueryLedgerTip =
         castPoint
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
 
-  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+instance SameDepIndex (Query (SimpleBlock c ext)) where
+  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
 deriving instance Show (Query (SimpleBlock c ext) result)
 

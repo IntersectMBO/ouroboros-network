@@ -1,7 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
 module Ouroboros.Consensus.Ledger.SupportsMempool (
-    LedgerSupportsMempool (..)
+    GenTx
+  , ApplyTxErr
+  , LedgerSupportsMempool (..)
+  , TxId
   , HasTxId (..)
   , GenTxId
   , HasTxs (..)
@@ -16,26 +19,27 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
+-- | Generalized transaction
+--
+-- The mempool (and, accordingly, blocks) consist of "generalized
+-- transactions"; this could be "proper" transactions (transferring funds) but
+-- also other kinds of things such as update proposals, delegations, etc.
+data family GenTx blk :: *
+
+-- | Updating the ledger with a single transaction may result in a different
+-- error type as when updating it with a block
+type family ApplyTxErr blk :: *
+
 class ( UpdateLedger blk
       , NoUnexpectedThunks (GenTx blk)
       , NoUnexpectedThunks (Ticked (LedgerState blk))
       , Show (GenTx blk)
       , Show (ApplyTxErr blk)
       ) => LedgerSupportsMempool blk where
-  -- | Generalized transaction
-  --
-  -- The mempool (and, accordingly, blocks) consist of "generalized
-  -- transactions"; this could be "proper" transactions (transferring funds) but
-  -- also other kinds of things such as update proposals, delegations, etc.
-  data family GenTx blk :: *
 
   -- | Check whether the internal invariants of the transaction hold.
   txInvariant :: GenTx blk -> Bool
   txInvariant = const True
-
-  -- | Updating the ledger with a single transaction may result in a different
-  -- error type as when updating it with a block
-  type family ApplyTxErr blk :: *
 
   -- | Apply transaction we have not previously seen before
   applyTx :: LedgerConfig blk
@@ -84,6 +88,9 @@ class ( UpdateLedger blk
   -- annotation.
   txInBlockSize :: GenTx blk -> Word32
 
+-- | A generalized transaction, 'GenTx', identifier.
+data family TxId tx :: *
+
 -- | Transactions with an identifier
 --
 -- The mempool will use these to locate transactions, so two different
@@ -92,8 +99,6 @@ class ( Show               (TxId tx)
       , Ord                (TxId tx)
       , NoUnexpectedThunks (TxId tx)
       ) => HasTxId tx where
-  -- | A generalized transaction, 'GenTx', identifier.
-  data family TxId tx :: *
 
   -- | Return the 'TxId' of a 'GenTx'.
   --

@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , ledgerTipPoint
   , ledgerTipSlot
     -- * Queries
+  , Query
   , QueryLedger(..)
   , ShowQuery(..)
     -- * Re-exports
@@ -33,7 +34,6 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Control.Monad.Except
 import           Data.Maybe (isJust)
 import           Data.Proxy
-import           Data.Type.Equality ((:~:))
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -44,6 +44,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
+import           Ouroboros.Consensus.Util.DepPair
 
 {-------------------------------------------------------------------------------
   Apply block to ledger state
@@ -128,23 +129,19 @@ ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))
   Queries
 -------------------------------------------------------------------------------}
 
+-- | Different queries supported by the ledger, indexed by the result type.
+data family Query blk :: * -> *
+
 -- | Query the ledger state.
 --
 -- Used by the LocalStateQuery protocol to allow clients to query the ledger
 -- state.
-class ShowQuery (Query blk) => QueryLedger blk where
-
-  -- | Different queries supported by the ledger, indexed by the result type.
-  data family Query blk :: * -> *
+class (ShowQuery (Query blk), SameDepIndex (Query blk)) => QueryLedger blk where
 
   -- | Answer the given query about the ledger state.
   answerQuery :: LedgerConfig blk -> Query blk result -> LedgerState blk -> result
 
-  -- | Generalisation of value-level equality of two queries.
-  eqQuery :: Query blk result1 -> Query blk result2
-          -> Maybe (result1 :~: result2)
-
-instance QueryLedger blk => Eq (SomeBlock Query blk) where
-  SomeBlock qry == SomeBlock qry' = isJust (eqQuery qry qry')
+instance SameDepIndex (Query blk) => Eq (SomeBlock Query blk) where
+  SomeBlock qry == SomeBlock qry' = isJust (sameDepIndex qry qry')
 
 deriving instance (forall result. Show (Query blk result)) => Show (SomeBlock Query blk)

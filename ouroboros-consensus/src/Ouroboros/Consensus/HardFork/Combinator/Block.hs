@@ -44,12 +44,12 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
   GetHeader
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => GetHeader (HardForkBlock xs) where
-  newtype Header (HardForkBlock xs) = HardForkHeader {
-        getHardForkHeader :: OneEraHeader xs
-      }
-    deriving (Show, NoUnexpectedThunks)
+newtype instance Header (HardForkBlock xs) = HardForkHeader {
+      getHardForkHeader :: OneEraHeader xs
+    }
+  deriving (Show, NoUnexpectedThunks)
 
+instance CanHardFork xs => GetHeader (HardForkBlock xs) where
   getHeader = HardForkHeader . oneEraBlockHeader . getHardForkBlock
 
   blockMatchesHeader = \hdr blk ->

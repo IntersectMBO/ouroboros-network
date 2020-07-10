@@ -325,6 +325,9 @@ data HardForkEncoderException where
   -- | HFC enabled, but we saw a value from a disabled era
   HardForkEncoderDisabledEra :: SingleEraInfo blk -> HardForkEncoderException
 
+  -- | HFC disabled, but we saw a query that is only supported by the HFC
+  HardForkEncoderUnsupportedQuery :: HardForkEncoderException
+
 deriving instance Show HardForkEncoderException
 instance Exception HardForkEncoderException
 

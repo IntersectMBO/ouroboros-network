@@ -188,9 +188,10 @@ data TestBody = TestBody {
   deriving stock    (Eq, Show, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise, Hashable)
 
+newtype instance Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
+  deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
+
 instance GetHeader TestBlock where
-  newtype Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
-    deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
   getHeader = TestHeader' . testHeader
 
   blockMatchesHeader (TestHeader' hdr) blk =

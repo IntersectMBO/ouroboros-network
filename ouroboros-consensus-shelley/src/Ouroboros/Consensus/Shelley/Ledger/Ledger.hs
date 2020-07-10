@@ -348,55 +348,54 @@ instance Crypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
 
+data instance Query (ShelleyBlock c) :: Type -> Type where
+  GetLedgerTip :: Query (ShelleyBlock c) (Point (ShelleyBlock c))
+  GetEpochNo :: Query (ShelleyBlock c) EpochNo
+  -- | Calculate the Non-Myopic Pool Member Rewards for a set of
+  -- credentials. See 'SL.getNonMyopicMemberRewards'
+  GetNonMyopicMemberRewards
+    :: Set (Either SL.Coin (SL.Credential 'SL.Staking c))
+    -> Query (ShelleyBlock c) (NonMyopicMemberRewards c)
+  GetCurrentPParams
+    :: Query (ShelleyBlock c) SL.PParams
+  GetProposedPParamsUpdates
+    :: Query (ShelleyBlock c) (SL.ProposedPPUpdates c)
+  GetStakeDistribution
+    :: Query (ShelleyBlock c) (SL.PoolDistr c)
+  GetFilteredUTxO
+    :: Set (SL.Addr c)
+    -> Query (ShelleyBlock c) (SL.UTxO c)
+  GetUTxO
+    :: Query (ShelleyBlock c) (SL.UTxO c)
+
+  -- | Only for debugging purposes, we don't guarantee binary compatibility.
+  -- Moreover, it is huge.
+  GetCurrentEpochState
+    :: Query (ShelleyBlock c) (SL.EpochState c)
+
+  -- | Wrap the result of the query using CBOR-in-CBOR.
+  --
+  -- For example, when a client is running a different version than the
+  -- server and it sends a 'GetCurrentEpochState' query, the client's
+  -- decoder might fail to deserialise the epoch state as it might have
+  -- changed between the two different versions. The client will then
+  -- disconnect.
+  --
+  -- By using CBOR-in-CBOR, the client always successfully decodes the outer
+  -- CBOR layer (so no disconnect) and can then manually try to decode the
+  -- inner result. When the client's decoder is able to decode the inner
+  -- result, it has access to the deserialised epoch state. When it fails to
+  -- decode it, the client can fall back to pretty printing the actual CBOR,
+  -- which is better than no output at all.
+  GetCBOR
+    :: Query (ShelleyBlock c) result
+    -> Query (ShelleyBlock c) (Serialised result)
+
+  GetFilteredDelegationsAndRewardAccounts
+    :: Set (SL.Credential 'SL.Staking c)
+    -> Query (ShelleyBlock c) (Delegations c, SL.RewardAccounts c)
+
 instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
-  data Query (ShelleyBlock c) :: Type -> Type where
-    GetLedgerTip :: Query (ShelleyBlock c) (Point (ShelleyBlock c))
-    GetEpochNo :: Query (ShelleyBlock c) EpochNo
-    -- | Calculate the Non-Myopic Pool Member Rewards for a set of
-    -- credentials. See 'SL.getNonMyopicMemberRewards'
-    GetNonMyopicMemberRewards
-      :: Set (Either SL.Coin (SL.Credential 'SL.Staking c))
-      -> Query (ShelleyBlock c) (NonMyopicMemberRewards c)
-    GetCurrentPParams
-      :: Query (ShelleyBlock c) SL.PParams
-    GetProposedPParamsUpdates
-      :: Query (ShelleyBlock c) (SL.ProposedPPUpdates c)
-    GetStakeDistribution
-      :: Query (ShelleyBlock c) (SL.PoolDistr c)
-    GetFilteredUTxO
-      :: Set (SL.Addr c)
-      -> Query (ShelleyBlock c) (SL.UTxO c)
-    GetUTxO
-      :: Query (ShelleyBlock c) (SL.UTxO c)
-
-    -- | Only for debugging purposes, we don't guarantee binary compatibility.
-    -- Moreover, it is huge.
-    GetCurrentEpochState
-      :: Query (ShelleyBlock c) (SL.EpochState c)
-
-    -- | Wrap the result of the query using CBOR-in-CBOR.
-    --
-    -- For example, when a client is running a different version than the
-    -- server and it sends a 'GetCurrentEpochState' query, the client's
-    -- decoder might fail to deserialise the epoch state as it might have
-    -- changed between the two different versions. The client will then
-    -- disconnect.
-    --
-    -- By using CBOR-in-CBOR, the client always successfully decodes the outer
-    -- CBOR layer (so no disconnect) and can then manually try to decode the
-    -- inner result. When the client's decoder is able to decode the inner
-    -- result, it has access to the deserialised epoch state. When it fails to
-    -- decode it, the client can fall back to pretty printing the actual CBOR,
-    -- which is better than no output at all.
-    GetCBOR
-      :: Query (ShelleyBlock c) result
-      -> Query (ShelleyBlock c) (Serialised result)
-
-    GetFilteredDelegationsAndRewardAccounts
-      :: Set (SL.Credential 'SL.Staking c)
-      -> Query (ShelleyBlock c) (Delegations c, SL.RewardAccounts c)
-
-
   answerQuery cfg query st = case query of
       GetLedgerTip -> ledgerTip st
       GetEpochNo -> SL.nesEL $ shelleyState st
@@ -418,59 +417,60 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     where
       globals = shelleyLedgerGlobals cfg
 
-  eqQuery GetLedgerTip GetLedgerTip
+instance SameDepIndex (Query (ShelleyBlock c)) where
+  sameDepIndex GetLedgerTip GetLedgerTip
     = Just Refl
-  eqQuery GetLedgerTip _
+  sameDepIndex GetLedgerTip _
     = Nothing
-  eqQuery GetEpochNo GetEpochNo
+  sameDepIndex GetEpochNo GetEpochNo
     = Just Refl
-  eqQuery GetEpochNo _
+  sameDepIndex GetEpochNo _
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
+  sameDepIndex (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards _) _
+  sameDepIndex (GetNonMyopicMemberRewards _) _
     = Nothing
-  eqQuery GetCurrentPParams GetCurrentPParams
+  sameDepIndex GetCurrentPParams GetCurrentPParams
     = Just Refl
-  eqQuery GetCurrentPParams _
+  sameDepIndex GetCurrentPParams _
     = Nothing
-  eqQuery GetProposedPParamsUpdates GetProposedPParamsUpdates
+  sameDepIndex GetProposedPParamsUpdates GetProposedPParamsUpdates
     = Just Refl
-  eqQuery GetProposedPParamsUpdates _
+  sameDepIndex GetProposedPParamsUpdates _
     = Nothing
-  eqQuery GetStakeDistribution GetStakeDistribution
+  sameDepIndex GetStakeDistribution GetStakeDistribution
     = Just Refl
-  eqQuery GetStakeDistribution _
+  sameDepIndex GetStakeDistribution _
     = Nothing
-  eqQuery (GetFilteredUTxO addrs) (GetFilteredUTxO addrs')
+  sameDepIndex (GetFilteredUTxO addrs) (GetFilteredUTxO addrs')
     | addrs == addrs'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetFilteredUTxO _) _
+  sameDepIndex (GetFilteredUTxO _) _
     = Nothing
-  eqQuery GetUTxO GetUTxO
+  sameDepIndex GetUTxO GetUTxO
     = Just Refl
-  eqQuery GetUTxO _
+  sameDepIndex GetUTxO _
     = Nothing
-  eqQuery GetCurrentEpochState GetCurrentEpochState
+  sameDepIndex GetCurrentEpochState GetCurrentEpochState
     = Just Refl
-  eqQuery GetCurrentEpochState _
+  sameDepIndex GetCurrentEpochState _
     = Nothing
-  eqQuery (GetCBOR q) (GetCBOR q')
-    = apply Refl <$> eqQuery q q'
-  eqQuery (GetCBOR _) _
+  sameDepIndex (GetCBOR q) (GetCBOR q')
+    = apply Refl <$> sameDepIndex q q'
+  sameDepIndex (GetCBOR _) _
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts creds)
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts creds)
           (GetFilteredDelegationsAndRewardAccounts creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts _) _
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts _) _
     = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock c) result)

@@ -146,15 +146,15 @@ binaryBlockInfoA BlkA{..} = BinaryBlockInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialise blkA_header)
     }
 
-instance GetHeader BlockA where
-  data Header BlockA = HdrA {
-        hdrA_fields :: HeaderFields BlockA
-      , hdrA_prev   :: ChainHash BlockA
-      }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (Serialise)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrA" (Header BlockA)
+data instance Header BlockA = HdrA {
+      hdrA_fields :: HeaderFields BlockA
+    , hdrA_prev   :: ChainHash BlockA
+    }
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrA" (Header BlockA)
 
+instance GetHeader BlockA where
   getHeader          = blkA_header
   blockMatchesHeader = \_ _ -> True -- We are not interested in integrity here
   headerIsEBB        = const Nothing
@@ -294,16 +294,16 @@ safeFromTipA (SecurityParam k) = k
 stabilityWindowA :: SecurityParam -> Word64
 stabilityWindowA (SecurityParam k) = k
 
+data instance GenTx BlockA = TxA {
+       txA_id      :: TxId (GenTx BlockA)
+     , txA_payload :: TxPayloadA
+     }
+  deriving (Show, Eq, Generic, Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
+
+type instance ApplyTxErr BlockA = Void
+
 instance LedgerSupportsMempool BlockA where
-  data GenTx BlockA = TxA {
-         txA_id      :: TxId (GenTx BlockA)
-       , txA_payload :: TxPayloadA
-       }
-    deriving (Show, Eq, Generic, Serialise)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
-
-  type ApplyTxErr BlockA = Void
-
   applyTx _ sno (TxA _ tx) (TickedLedgerStateA st) =
       case tx of
         InitiateAtoB -> do
@@ -314,22 +314,24 @@ instance LedgerSupportsMempool BlockA where
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
 
-instance HasTxId (GenTx BlockA) where
-  newtype TxId (GenTx BlockA) = TxIdA Int
-    deriving stock   (Show, Eq, Ord, Generic)
-    deriving newtype (NoUnexpectedThunks, Serialise)
+newtype instance TxId (GenTx BlockA) = TxIdA Int
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (NoUnexpectedThunks, Serialise)
 
+instance HasTxId (GenTx BlockA) where
   txId = txA_id
 
 instance ShowQuery (Query BlockA) where
   showResult qry = case qry of {}
 
-instance QueryLedger BlockA where
-  data Query BlockA result
-    deriving (Show)
+data instance Query BlockA result
+  deriving (Show)
 
+instance QueryLedger BlockA where
   answerQuery _ qry = case qry of {}
-  eqQuery qry _qry' = case qry of {}
+
+instance SameDepIndex (Query BlockA) where
+  sameDepIndex qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockA where
   toRawHash   _ = id

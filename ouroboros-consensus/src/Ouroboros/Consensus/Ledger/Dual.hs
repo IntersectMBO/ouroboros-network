@@ -132,10 +132,10 @@ instance ConvertRawHash m => ConvertRawHash (DualBlock m a) where
   Header
 -------------------------------------------------------------------------------}
 
-instance Bridge m a => GetHeader (DualBlock m a) where
-  newtype Header (DualBlock m a) = DualHeader { dualHeaderMain :: Header m }
-    deriving NoUnexpectedThunks via AllowThunk (Header (DualBlock m a))
+newtype instance Header (DualBlock m a) = DualHeader { dualHeaderMain :: Header m }
+  deriving NoUnexpectedThunks via AllowThunk (Header (DualBlock m a))
 
+instance Bridge m a => GetHeader (DualBlock m a) where
   getHeader = DualHeader . getHeader . dualBlockMain
 
   blockMatchesHeader hdr =
@@ -483,13 +483,15 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   Querying the ledger
 -------------------------------------------------------------------------------}
 
+data instance Query (DualBlock m a) result
+  deriving (Show)
+
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
-  data Query (DualBlock m a) result
-    deriving (Show)
-
   answerQuery _ = \case {}
-  eqQuery       = \case {}
+
+instance SameDepIndex (Query (DualBlock m a)) where
+  sameDepIndex = \case {}
 
 instance ShowQuery (Query (DualBlock m a)) where
   showResult = \case {}
@@ -508,16 +510,16 @@ data DualGenTxErr m a = DualGenTxErr {
     , dualGenTxErrAux  :: ApplyTxErr a
     }
 
+data instance GenTx (DualBlock m a) = DualGenTx {
+      dualGenTxMain   :: GenTx m
+    , dualGenTxAux    :: GenTx a
+    , dualGenTxBridge :: BridgeTx m a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
+
+type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
+
 instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
-  data GenTx (DualBlock m a) = DualGenTx {
-        dualGenTxMain   :: GenTx m
-      , dualGenTxAux    :: GenTx a
-      , dualGenTxBridge :: BridgeTx m a
-      }
-    deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
-
-  type ApplyTxErr (DualBlock m a) = DualGenTxErr m a
-
   applyTx DualLedgerConfig{..}
           slot
           tx@DualGenTx{..}
@@ -573,13 +575,13 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   maxTxCapacity = maxTxCapacity . tickedDualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
-instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
-  -- We don't need a pair of IDs, as long as we can unique ID the transaction
-  newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {
-        dualGenTxIdMain :: GenTxId m
-      }
-    deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
+-- We don't need a pair of IDs, as long as we can unique ID the transaction
+newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
+      dualGenTxIdMain :: GenTxId m
+    }
+  deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
+instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   txId = DualGenTxId . txId . dualGenTxMain
 
 deriving instance Bridge m a => Show (GenTx (DualBlock m a))
