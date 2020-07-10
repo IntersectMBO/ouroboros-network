@@ -294,16 +294,16 @@ safeFromTipA (SecurityParam k) = k
 stabilityWindowA :: SecurityParam -> Word64
 stabilityWindowA (SecurityParam k) = k
 
+data instance GenTx BlockA = TxA {
+       txA_id      :: TxId (GenTx BlockA)
+     , txA_payload :: TxPayloadA
+     }
+  deriving (Show, Eq, Generic, Serialise)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
+
+type instance ApplyTxErr BlockA = Void
+
 instance LedgerSupportsMempool BlockA where
-  data GenTx BlockA = TxA {
-         txA_id      :: TxId (GenTx BlockA)
-       , txA_payload :: TxPayloadA
-       }
-    deriving (Show, Eq, Generic, Serialise)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
-
-  type ApplyTxErr BlockA = Void
-
   applyTx _ sno (TxA _ tx) (TickedLedgerStateA st) =
       case tx of
         InitiateAtoB -> do
@@ -314,11 +314,11 @@ instance LedgerSupportsMempool BlockA where
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
 
-instance HasTxId (GenTx BlockA) where
-  newtype TxId (GenTx BlockA) = TxIdA Int
-    deriving stock   (Show, Eq, Ord, Generic)
-    deriving newtype (NoUnexpectedThunks, Serialise)
+newtype instance TxId (GenTx BlockA) = TxIdA Int
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (NoUnexpectedThunks, Serialise)
 
+instance HasTxId (GenTx BlockA) where
   txId = txA_id
 
 instance ShowQuery (Query BlockA) where

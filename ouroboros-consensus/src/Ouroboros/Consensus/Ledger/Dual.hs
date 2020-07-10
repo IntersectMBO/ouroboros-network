@@ -508,16 +508,16 @@ data DualGenTxErr m a = DualGenTxErr {
     , dualGenTxErrAux  :: ApplyTxErr a
     }
 
+data instance GenTx (DualBlock m a) = DualGenTx {
+      dualGenTxMain   :: GenTx m
+    , dualGenTxAux    :: GenTx a
+    , dualGenTxBridge :: BridgeTx m a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
+
+type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
+
 instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
-  data GenTx (DualBlock m a) = DualGenTx {
-        dualGenTxMain   :: GenTx m
-      , dualGenTxAux    :: GenTx a
-      , dualGenTxBridge :: BridgeTx m a
-      }
-    deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
-
-  type ApplyTxErr (DualBlock m a) = DualGenTxErr m a
-
   applyTx DualLedgerConfig{..}
           slot
           tx@DualGenTx{..}
@@ -573,13 +573,13 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   maxTxCapacity = maxTxCapacity . tickedDualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
-instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
-  -- We don't need a pair of IDs, as long as we can unique ID the transaction
-  newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {
-        dualGenTxIdMain :: GenTxId m
-      }
-    deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
+-- We don't need a pair of IDs, as long as we can unique ID the transaction
+newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
+      dualGenTxIdMain :: GenTxId m
+    }
+  deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
+instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   txId = DualGenTxId . txId . dualGenTxMain
 
 deriving instance Bridge m a => Show (GenTx (DualBlock m a))

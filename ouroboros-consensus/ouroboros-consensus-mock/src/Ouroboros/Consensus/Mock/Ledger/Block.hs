@@ -377,16 +377,17 @@ instance MockProtocolSpecific c ext => CommonProtocolParams (SimpleBlock c ext) 
   Support for the mempool
 -------------------------------------------------------------------------------}
 
+data instance GenTx (SimpleBlock c ext) = SimpleGenTx {
+      simpleGenTx   :: !Mock.Tx
+    , simpleGenTxId :: !Mock.TxId
+    }
+  deriving stock    (Generic, Eq, Ord)
+  deriving anyclass (Serialise)
+
+type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
+
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
-  data GenTx (SimpleBlock c ext) = SimpleGenTx
-    { simpleGenTx   :: !Mock.Tx
-    , simpleGenTxId :: !Mock.TxId
-    } deriving stock    (Generic, Eq, Ord)
-      deriving anyclass (Serialise)
-
-  type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
-
   applyTx   = const updateSimpleUTxO
   reapplyTx = const updateSimpleUTxO
 
@@ -395,12 +396,13 @@ instance MockProtocolSpecific c ext
   maxTxCapacity = const 1000000000
   txInBlockSize = txSize
 
-instance HasTxId (GenTx (SimpleBlock c ext)) where
-  newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
-    { unSimpleGenTxId :: Mock.TxId
-    } deriving stock   (Generic)
-      deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
+newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
+      unSimpleGenTxId :: Mock.TxId
+    }
+  deriving stock   (Generic)
+  deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
 
+instance HasTxId (GenTx (SimpleBlock c ext)) where
   txId = SimpleGenTxId . simpleGenTxId
 
 instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where

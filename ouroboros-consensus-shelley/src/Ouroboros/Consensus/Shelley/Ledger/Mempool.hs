@@ -49,14 +49,13 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 type ShelleyTxId c = SL.TxId c
 
+data instance GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
+  deriving stock    (Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
+
+type instance ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
+
 instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
-
-  data GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
-    deriving stock    (Eq, Generic)
-    deriving anyclass (NoUnexpectedThunks)
-
-  type ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
-
   txInvariant = const True
 
   applyTx = applyShelleyTx
@@ -76,12 +75,11 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
 mkShelleyTx :: Crypto c => SL.Tx c -> GenTx (ShelleyBlock c)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 
+newtype instance TxId (GenTx (ShelleyBlock c)) = ShelleyTxId (ShelleyTxId c)
+  deriving newtype (Eq, Ord, FromCBOR, ToCBOR)
+  deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock c)))
+
 instance Crypto c => HasTxId (GenTx (ShelleyBlock c)) where
-
-  newtype TxId (GenTx (ShelleyBlock c)) = ShelleyTxId (ShelleyTxId c)
-    deriving newtype (Eq, Ord, FromCBOR, ToCBOR)
-    deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock c)))
-
   txId (ShelleyTx i _) = ShelleyTxId i
 
 instance Crypto c => HasTxs (ShelleyBlock c) where

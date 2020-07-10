@@ -67,14 +67,14 @@ deriving stock instance CanHardFork xs => Show (HardForkApplyTxErr xs)
 
 deriving stock instance CanHardFork xs => Eq (HardForkApplyTxErr xs)
 
+newtype instance GenTx (HardForkBlock xs) = HardForkGenTx {
+      getHardForkGenTx :: OneEraGenTx xs
+    }
+  deriving (Eq, Show, NoUnexpectedThunks)
+
+type instance ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
+
 instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
-  newtype GenTx (HardForkBlock xs) = HardForkGenTx {
-        getHardForkGenTx :: OneEraGenTx xs
-      }
-    deriving (Eq, Show, NoUnexpectedThunks)
-
-  type ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
-
   applyTx   = applyHelper applyTx
   reapplyTx = applyHelper reapplyTx
 
@@ -152,12 +152,12 @@ applyHelper apply
       withExcept (injectApplyTxErr injectErr) $
         apply (completeLedgerConfig' ei cfg) slot tx st
 
-instance CanHardFork xs => HasTxId (GenTx (HardForkBlock xs)) where
-  newtype TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
-        getHardForkGenTxId :: OneEraGenTxId xs
-      }
-    deriving (Show, Eq, Ord, NoUnexpectedThunks)
+newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
+      getHardForkGenTxId :: OneEraGenTxId xs
+    }
+  deriving (Show, Eq, Ord, NoUnexpectedThunks)
 
+instance CanHardFork xs => HasTxId (GenTx (HardForkBlock xs)) where
   txId = HardForkGenTxId . OneEraGenTxId
        . hcmap proxySingle (WrapGenTxId . txId)
        . getOneEraGenTx . getHardForkGenTx

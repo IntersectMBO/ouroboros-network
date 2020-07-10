@@ -238,23 +238,23 @@ instance HasPartialLedgerConfig BlockB
 safeZoneB :: SecurityParam -> History.SafeZone
 safeZoneB (SecurityParam k) = History.noLowerBoundSafeZone k
 
+data instance GenTx BlockB
+  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+
+type instance ApplyTxErr BlockB = Void
+
 instance LedgerSupportsMempool BlockB where
-  data GenTx BlockB
-    deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
-
-  type ApplyTxErr BlockB = Void
-
   applyTx   = \_ _ tx -> case tx of {}
   reapplyTx = applyTx
 
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
 
-instance HasTxId (GenTx BlockB) where
-  data TxId (GenTx BlockB)
-    deriving stock    (Show, Eq, Ord, Generic)
-    deriving anyclass (NoUnexpectedThunks, Serialise)
+data instance TxId (GenTx BlockB)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
 
+instance HasTxId (GenTx BlockB) where
   txId tx = case tx of {}
 
 instance ShowQuery (Query BlockB) where

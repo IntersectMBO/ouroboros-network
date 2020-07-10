@@ -80,27 +80,27 @@ import           Ouroboros.Consensus.Byron.Ledger.Serialisation
   Transactions
 -------------------------------------------------------------------------------}
 
-instance LedgerSupportsMempool ByronBlock where
-  -- | Generalized transactions in Byron
-  --
-  -- This is effectively the same as 'CC.AMempoolPayload' but we cache the
-  -- transaction ID (a hash).
-  data GenTx ByronBlock
-    = ByronTx             !Utxo.TxId                !(Utxo.ATxAux             ByteString)
-    | ByronDlg            !Delegation.CertificateId !(Delegation.ACertificate ByteString)
-    | ByronUpdateProposal !Update.UpId              !(Update.AProposal        ByteString)
-    | ByronUpdateVote     !Update.VoteId            !(Update.AVote            ByteString)
-    deriving (Eq, Generic)
-    deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
+-- | Generalized transactions in Byron
+--
+-- This is effectively the same as 'CC.AMempoolPayload' but we cache the
+-- transaction ID (a hash).
+data instance GenTx ByronBlock
+  = ByronTx             !Utxo.TxId                !(Utxo.ATxAux             ByteString)
+  | ByronDlg            !Delegation.CertificateId !(Delegation.ACertificate ByteString)
+  | ByronUpdateProposal !Update.UpId              !(Update.AProposal        ByteString)
+  | ByronUpdateVote     !Update.VoteId            !(Update.AVote            ByteString)
+  deriving (Eq, Generic)
+  deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
 
+type instance ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
+
+instance LedgerSupportsMempool ByronBlock where
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.
   txInvariant tx =
       CC.mempoolPayloadRecoverBytes tx' == CC.mempoolPayloadReencode tx'
     where
       tx' = toMempoolPayload tx
-
-  type ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
 
   applyTx = applyByronGenTx validationMode
     where
@@ -119,15 +119,15 @@ instance LedgerSupportsMempool ByronBlock where
     . CC.mempoolPayloadRecoverBytes
     . toMempoolPayload
 
-instance HasTxId (GenTx ByronBlock) where
-  data TxId (GenTx ByronBlock)
-    = ByronTxId             !Utxo.TxId
-    | ByronDlgId            !Delegation.CertificateId
-    | ByronUpdateProposalId !Update.UpId
-    | ByronUpdateVoteId     !Update.VoteId
-    deriving (Eq, Ord)
-    deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
+data instance TxId (GenTx ByronBlock)
+  = ByronTxId             !Utxo.TxId
+  | ByronDlgId            !Delegation.CertificateId
+  | ByronUpdateProposalId !Update.UpId
+  | ByronUpdateVoteId     !Update.VoteId
+  deriving (Eq, Ord)
+  deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
 
+instance HasTxId (GenTx ByronBlock) where
   txId (ByronTx             i _) = ByronTxId             i
   txId (ByronDlg            i _) = ByronDlgId            i
   txId (ByronUpdateProposal i _) = ByronUpdateProposalId i
