@@ -489,7 +489,9 @@ data instance Query (DualBlock m a) result
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
   answerQuery _ = \case {}
-  eqQuery       = \case {}
+
+instance SameDepIndex (Query (DualBlock m a)) where
+  sameDepIndex = \case {}
 
 instance ShowQuery (Query (DualBlock m a)) where
   showResult = \case {}

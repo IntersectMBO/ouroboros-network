@@ -360,7 +360,9 @@ newtype instance Query (DegenFork b) result = DQry {
 
 instance NoHardForks b => QueryLedger (DegenFork b) where
   answerQuery cfg (DQry qry) (DLgr lgr) = answerQuery cfg qry lgr
-  eqQuery (DQry qry1) (DQry qry2) = eqQuery qry1 qry2
+
+instance NoHardForks b => SameDepIndex (Query (DegenFork b)) where
+  sameDepIndex (DQry qry1) (DQry qry2) = sameDepIndex qry1 qry2
 
 instance NoHardForks b => CommonProtocolParams (DegenFork b) where
   maxHeaderSize (DLgr lgr) = maxHeaderSize (project lgr)

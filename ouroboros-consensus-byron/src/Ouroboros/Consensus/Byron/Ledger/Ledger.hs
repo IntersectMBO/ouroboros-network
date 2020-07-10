@@ -178,7 +178,8 @@ instance QueryLedger ByronBlock where
   answerQuery _cfg GetUpdateInterfaceState ledgerState =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
-  eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
+instance SameDepIndex (Query ByronBlock) where
+  sameDepIndex GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
 
 deriving instance Eq (Query ByronBlock result)
 deriving instance Show (Query ByronBlock result)

@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Util.DepPair
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -123,20 +124,21 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger hardForkConfig hardForkState
 
-  eqQuery (QueryIfCurrent qry) (QueryIfCurrent qry') =
-      apply Refl <$> eqQueryIfCurrent qry qry'
-  eqQuery (QueryIfCurrent {}) _ =
+instance All SingleEraBlock xs => SameDepIndex (Query (HardForkBlock xs)) where
+  sameDepIndex (QueryIfCurrent qry) (QueryIfCurrent qry') =
+      apply Refl <$> sameDepIndex qry qry'
+  sameDepIndex (QueryIfCurrent {}) _ =
       Nothing
-  eqQuery (QueryAnytime qry era) (QueryAnytime qry' era')
+  sameDepIndex (QueryAnytime qry era) (QueryAnytime qry' era')
     | era == era'
-    = eqQueryAnytime qry qry'
+    = sameDepIndex qry qry'
     | otherwise
     = Nothing
-  eqQuery (QueryAnytime {}) _ =
+  sameDepIndex (QueryAnytime {}) _ =
       Nothing
-  eqQuery (QueryHardFork qry) (QueryHardFork qry') =
-      eqQueryHardFork qry qry'
-  eqQuery (QueryHardFork {}) _ =
+  sameDepIndex (QueryHardFork qry) (QueryHardFork qry') =
+      sameDepIndex qry qry'
+  sameDepIndex (QueryHardFork {}) _ =
       Nothing
 
 deriving instance All SingleEraBlock xs => Show (Query (HardForkBlock xs) result)
@@ -177,14 +179,10 @@ instance All SingleEraBlock xs => ShowQuery (QueryIfCurrent xs) where
   showResult (QZ qry) = showResult qry
   showResult (QS qry) = showResult qry
 
-eqQueryIfCurrent ::
-     All SingleEraBlock xs
-  => QueryIfCurrent xs result
-  -> QueryIfCurrent xs result'
-  -> Maybe (result :~: result')
-eqQueryIfCurrent (QZ qry) (QZ qry') = eqQuery qry qry'
-eqQueryIfCurrent (QS qry) (QS qry') = eqQueryIfCurrent qry qry'
-eqQueryIfCurrent _        _         = Nothing
+instance All SingleEraBlock xs => SameDepIndex (QueryIfCurrent xs) where
+  sameDepIndex (QZ qry) (QZ qry') = sameDepIndex qry qry'
+  sameDepIndex (QS qry) (QS qry') = sameDepIndex qry qry'
+  sameDepIndex _        _         = Nothing
 
 interpretQueryIfCurrent ::
      forall result xs. All SingleEraBlock xs
@@ -221,11 +219,8 @@ deriving instance Show (QueryAnytime result)
 instance ShowQuery QueryAnytime where
   showResult GetEraStart = show
 
-eqQueryAnytime ::
-     QueryAnytime result
-  -> QueryAnytime result'
-  -> Maybe (result :~: result')
-eqQueryAnytime GetEraStart GetEraStart = Just Refl
+instance SameDepIndex QueryAnytime where
+  sameDepIndex GetEraStart GetEraStart = Just Refl
 
 interpretQueryAnytime ::
      forall result xs. All SingleEraBlock xs
@@ -280,11 +275,8 @@ deriving instance Show (QueryHardFork xs result)
 instance ShowQuery (QueryHardFork xs) where
   showResult GetInterpreter = show
 
-eqQueryHardFork ::
-     QueryHardFork xs result
-  -> QueryHardFork xs result'
-  -> Maybe (result :~: result')
-eqQueryHardFork GetInterpreter GetInterpreter = Just Refl
+instance SameDepIndex (QueryHardFork xs) where
+  sameDepIndex GetInterpreter GetInterpreter = Just Refl
 
 interpretQueryHardFork ::
      All SingleEraBlock xs

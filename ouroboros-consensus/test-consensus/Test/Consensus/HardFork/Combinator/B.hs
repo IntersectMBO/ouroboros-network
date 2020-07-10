@@ -265,7 +265,9 @@ data instance Query BlockB result
 
 instance QueryLedger BlockB where
   answerQuery _ qry = case qry of {}
-  eqQuery qry _qry' = case qry of {}
+
+instance SameDepIndex (Query BlockB) where
+  sameDepIndex qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockB where
   toRawHash   _ = id

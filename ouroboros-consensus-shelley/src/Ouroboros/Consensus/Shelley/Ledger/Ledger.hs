@@ -417,59 +417,60 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     where
       globals = shelleyLedgerGlobals cfg
 
-  eqQuery GetLedgerTip GetLedgerTip
+instance SameDepIndex (Query (ShelleyBlock c)) where
+  sameDepIndex GetLedgerTip GetLedgerTip
     = Just Refl
-  eqQuery GetLedgerTip _
+  sameDepIndex GetLedgerTip _
     = Nothing
-  eqQuery GetEpochNo GetEpochNo
+  sameDepIndex GetEpochNo GetEpochNo
     = Just Refl
-  eqQuery GetEpochNo _
+  sameDepIndex GetEpochNo _
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
+  sameDepIndex (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards _) _
+  sameDepIndex (GetNonMyopicMemberRewards _) _
     = Nothing
-  eqQuery GetCurrentPParams GetCurrentPParams
+  sameDepIndex GetCurrentPParams GetCurrentPParams
     = Just Refl
-  eqQuery GetCurrentPParams _
+  sameDepIndex GetCurrentPParams _
     = Nothing
-  eqQuery GetProposedPParamsUpdates GetProposedPParamsUpdates
+  sameDepIndex GetProposedPParamsUpdates GetProposedPParamsUpdates
     = Just Refl
-  eqQuery GetProposedPParamsUpdates _
+  sameDepIndex GetProposedPParamsUpdates _
     = Nothing
-  eqQuery GetStakeDistribution GetStakeDistribution
+  sameDepIndex GetStakeDistribution GetStakeDistribution
     = Just Refl
-  eqQuery GetStakeDistribution _
+  sameDepIndex GetStakeDistribution _
     = Nothing
-  eqQuery (GetFilteredUTxO addrs) (GetFilteredUTxO addrs')
+  sameDepIndex (GetFilteredUTxO addrs) (GetFilteredUTxO addrs')
     | addrs == addrs'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetFilteredUTxO _) _
+  sameDepIndex (GetFilteredUTxO _) _
     = Nothing
-  eqQuery GetUTxO GetUTxO
+  sameDepIndex GetUTxO GetUTxO
     = Just Refl
-  eqQuery GetUTxO _
+  sameDepIndex GetUTxO _
     = Nothing
-  eqQuery GetCurrentEpochState GetCurrentEpochState
+  sameDepIndex GetCurrentEpochState GetCurrentEpochState
     = Just Refl
-  eqQuery GetCurrentEpochState _
+  sameDepIndex GetCurrentEpochState _
     = Nothing
-  eqQuery (GetCBOR q) (GetCBOR q')
-    = apply Refl <$> eqQuery q q'
-  eqQuery (GetCBOR _) _
+  sameDepIndex (GetCBOR q) (GetCBOR q')
+    = apply Refl <$> sameDepIndex q q'
+  sameDepIndex (GetCBOR _) _
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts creds)
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts creds)
           (GetFilteredDelegationsAndRewardAccounts creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts _) _
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts _) _
     = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock c) result)

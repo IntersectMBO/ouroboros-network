@@ -444,7 +444,8 @@ instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
         castPoint
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
 
-  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+instance SameDepIndex (Query (SimpleBlock c ext)) where
+  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
 deriving instance Show (Query (SimpleBlock c ext) result)
 

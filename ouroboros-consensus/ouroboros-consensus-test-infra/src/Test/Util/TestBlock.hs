@@ -355,7 +355,9 @@ data instance Query TestBlock result where
 instance QueryLedger TestBlock where
   answerQuery _cfg QueryLedgerTip (TestLedger { lastAppliedPoint }) =
     lastAppliedPoint
-  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+
+instance SameDepIndex (Query TestBlock) where
+  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
 deriving instance Eq (Query TestBlock result)
 deriving instance Show (Query TestBlock result)
