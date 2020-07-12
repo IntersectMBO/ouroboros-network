@@ -6,14 +6,12 @@ module Test.ThreadNet.RealTPraos (tests) where
 import           Control.Monad (replicateM)
 import           Data.List ((!!))
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word64)
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Hash (ShortHash)
-import qualified Cardano.Crypto.KES.Class as KES
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -112,6 +110,7 @@ prop_simple_real_tpraos_convergence TestSetup
     TestConfig
       { initSeed
       , numCoreNodes
+      , numSlots
       } = setupTestConfig
 
     testConfigB = TestConfigB
@@ -138,10 +137,6 @@ prop_simple_real_tpraos_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    maxKESEvolutions :: Word64
-    maxKESEvolutions = fromIntegral $
-      KES.totalPeriodsKES (Proxy @(KES Crypto))
-
     coreNodes :: [CoreNode Crypto]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
@@ -156,7 +151,7 @@ prop_simple_real_tpraos_convergence TestSetup
           setupK
           setupD
           tpraosSlotLength
-          maxKESEvolutions
+          (mkKesConfig (Proxy @(KES Crypto)) numSlots)
           coreNodes
 
     epochSize :: EpochSize

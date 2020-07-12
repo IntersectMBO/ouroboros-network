@@ -13,9 +13,11 @@ module Test.ThreadNet.Infra.Shelley (
     CoreNode(..)
   , CoreNodeKeyInfo(..)
   , DecentralizationParam(..)
+  , KesConfig(..)
   , coreNodeKeys
   , genCoreNode
   , mkGenesisConfig
+  , mkKesConfig
   , mkLeaderCredentials
   , mkProtocolRealTPraos
   , tpraosSlotLength
@@ -35,8 +37,8 @@ import           Test.QuickCheck
 import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
-import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
-                     genKeyKES)
+import           Cardano.Crypto.KES.Class (KESAlgorithm, SignKeyKES,
+                     deriveVerKeyKES, genKeyKES, totalPeriodsKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
@@ -49,6 +51,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
 import qualified Shelley.Spec.Ledger.Address as SL
@@ -192,6 +195,38 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
       }
 
 {-------------------------------------------------------------------------------
+  KES configuration
+-------------------------------------------------------------------------------}
+
+-- | Currently @'maxEvolutions' * 'slotsPerEvolution'@ is the max number of
+-- slots the test can run without needing new ocerts.
+--
+-- TODO This limitation may be lifted by PR #2107, see
+-- <https://github.com/input-output-hk/ouroboros-network/issues/2107>.
+data KesConfig = KesConfig
+  { maxEvolutions     :: Word64
+  , slotsPerEvolution :: Word64
+  }
+
+-- | A 'KesConfig' that will not require more evolutions than this test's
+-- crypto @c@ allows
+mkKesConfig
+  :: forall proxy c. KESAlgorithm c
+  => proxy c -> NumSlots -> KesConfig
+mkKesConfig prx (NumSlots t) = KesConfig
+    { maxEvolutions
+    , slotsPerEvolution = divCeiling t maxEvolutions
+    }
+  where
+    maxEvolutions = fromIntegral $ totalPeriodsKES prx
+
+    -- | Like 'div', but rounds-up.
+    divCeiling :: Integral a => a -> a -> a
+    divCeiling n d = q + min 1 r
+      where
+        (q, r) = quotRem n d
+
+{-------------------------------------------------------------------------------
   TPraos node configuration
 -------------------------------------------------------------------------------}
 
@@ -204,10 +239,10 @@ mkGenesisConfig
   -> SecurityParam
   -> DecentralizationParam
   -> SlotLength
-  -> Word64  -- ^ Max KES evolutions
+  -> KesConfig
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
+mkGenesisConfig pVer k d slotLength kesCfg coreNodes =
     ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
@@ -216,14 +251,8 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgActiveSlotsCoeff      = recip recipF
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
-      -- TODO maxKESEvolutions * sgSlotsPerKESPeriod = max number of slots the
-      -- test can run without needing new ocerts. The maximum number of slots
-      -- the tests run now is 200 and the mock KES supports 10 evolutions, so
-      -- 10 * 20 == 200 is enough.
-      -- We can relax this in:
-      -- <https://github.com/input-output-hk/ouroboros-network/issues/2107>
-    , sgSlotsPerKESPeriod     = 20
-    , sgMaxKESEvolutions      = maxKESEvolutions
+    , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
+    , sgMaxKESEvolutions      = maxEvolutions     kesCfg
     , sgSlotLength            = getSlotLength slotLength
     , sgUpdateQuorum          = quorum
     , sgMaxLovelaceSupply     = maxLovelaceSupply

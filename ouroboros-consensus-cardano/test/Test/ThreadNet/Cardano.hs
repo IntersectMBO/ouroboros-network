@@ -27,7 +27,6 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot (EpochNo, EpochSize (..), SlotNo (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
-import qualified Cardano.Crypto.KES.Class as KES
 
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
@@ -347,6 +346,7 @@ prop_simple_cardano_convergence TestSetup
     TestConfig
       { initSeed
       , numCoreNodes
+      , numSlots
       } = setupTestConfig
 
     testConfigB = TestConfigB
@@ -435,10 +435,6 @@ prop_simple_cardano_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    maxKESEvolutions :: Word64
-    maxKESEvolutions = fromIntegral $
-      KES.totalPeriodsKES (Proxy @(KES Crypto))
-
     coreNodes :: [Shelley.CoreNode Crypto]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
@@ -453,7 +449,7 @@ prop_simple_cardano_convergence TestSetup
           setupK
           setupD
           setupSlotLengthShelley
-          maxKESEvolutions
+          (Shelley.mkKesConfig (Proxy @(KES Crypto)) numSlots)
           coreNodes
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
@@ -520,7 +516,6 @@ prop_simple_cardano_convergence TestSetup
             -- most 1 in a billion.
       }
       where
-        TestConfig{numSlots}        = setupTestConfig
         NumSlots t                  = numSlots
         TestOutput{testOutputNodes} = testOutput
 
