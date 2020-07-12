@@ -175,7 +175,6 @@ executable db-validator
                      , mtl
                      , optparse-applicative
                      , optparse-generic
-                     , path < 0.7
                      , shelley-spec-ledger
                      , text
                      , time

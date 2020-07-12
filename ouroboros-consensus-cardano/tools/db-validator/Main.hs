@@ -24,8 +24,6 @@ import qualified Data.Text as Text
 import           Data.Time (UTCTime)
 import qualified Options.Applicative as Options
 import           Options.Generic
-import           Path
-import           System.Directory (canonicalizePath)
 import qualified System.FilePath as FilePath ((</>))
 
 import           Control.Tracer (contramap, debugTracer, nullTracer)
@@ -132,13 +130,12 @@ readDBMarker dbPath = do
 validate :: forall blk. (HasProtocolInfo blk, Node.RunNode blk, Show (Header blk))
          => Args Unwrapped -> Proxy blk ->  IO ()
 validate Args {..} _ = do
-    dbDir' <- parseAbsDir =<< canonicalizePath dbDir
     protocolInfo <- mkProtocolInfo @blk configFile genesisHash requiresNetworkMagic
-    validateChainDb dbDir' protocolInfo onlyImmDB verbose
+    validateChainDb dbDir protocolInfo onlyImmDB verbose
 
 validateChainDb
   :: (Node.RunNode blk, Show (Header blk))
-  => Path Abs Dir -- ^ DB directory
+  => FilePath -- ^ DB directory
   -> ProtocolInfo IO blk
   -> Bool -- Immutable DB only?
   -> Bool -- Verbose
@@ -167,7 +164,7 @@ validateChainDb dbDir protocolInfo onlyImmDB verbose =
 
     mkChainDbArgs registry btime =
       let args = Node.mkChainDbArgs tracer registry btime
-                   (toFilePath dbDir) cfg initLedger chunkInfo
+                   dbDir cfg initLedger chunkInfo
       in args {
           ChainDB.cdbImmValidation = ImmDB.ValidateAllChunks
         }
