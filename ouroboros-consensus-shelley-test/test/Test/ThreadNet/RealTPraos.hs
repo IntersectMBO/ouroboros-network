@@ -119,7 +119,10 @@ prop_simple_real_tpraos_convergence TestSetup
       , messageDelay = noCalcMessageDelay
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
-      , txGenExtra   = ShelleyTxGenExtra $ mkGenEnv coreNodes
+      , txGenExtra   = ShelleyTxGenExtra
+          { stgeGenEnv  = mkGenEnv coreNodes
+          , stgeStartAt = SlotNo 0
+          }
       , version      = setupVersion
       }
 

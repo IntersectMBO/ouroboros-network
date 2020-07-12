@@ -43,24 +43,33 @@ import           Test.ThreadNet.Infra.Shelley
 
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.
-    stgeGenEnv :: Gen.GenEnv (TPraosMockCrypto h)
+    stgeGenEnv  :: Gen.GenEnv (TPraosMockCrypto h)
+    -- | Generate no transactions before this slot.
+  , stgeStartAt :: SlotNo
   }
 
 instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 
   type TxGenExtra (ShelleyBlock (TPraosMockCrypto h)) = ShelleyTxGenExtra h
 
-  testGenTxs _numCoreNodes curSlotNo cfg (ShelleyTxGenExtra genEnv) lst = do
+  testGenTxs _numCoreNodes curSlotNo cfg extra lst
+      | stgeStartAt > curSlotNo = pure []
+      | otherwise               = do
       n <- choose (0, 20)
       go [] n $ applyChainTick (configLedger cfg) curSlotNo lst
     where
+      ShelleyTxGenExtra
+        { stgeGenEnv
+        , stgeStartAt
+        } = extra
+
       go :: [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
          -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
          -> Gen [GenTx (ShelleyBlock (TPraosMockCrypto h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-        tx <- genTx cfg curSlotNo st genEnv
+        tx <- genTx cfg curSlotNo st stgeGenEnv
         case runExcept $ applyTx (configLedger cfg) curSlotNo tx st of
           -- We don't mind generating invalid transactions
           Left  _   -> go (tx:acc) (n - 1) st
