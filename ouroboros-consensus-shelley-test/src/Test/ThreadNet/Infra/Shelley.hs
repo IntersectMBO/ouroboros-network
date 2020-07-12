@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingVia              #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
@@ -10,10 +12,11 @@
 module Test.ThreadNet.Infra.Shelley (
     CoreNode(..)
   , CoreNodeKeyInfo(..)
-  , genCoreNode
-  , mkLeaderCredentials
-  , mkGenesisConfig
+  , DecentralizationParam(..)
   , coreNodeKeys
+  , genCoreNode
+  , mkGenesisConfig
+  , mkLeaderCredentials
   , mkProtocolRealTPraos
   , tpraosSlotLength
   ) where
@@ -24,6 +27,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Test.QuickCheck
 
@@ -64,8 +69,36 @@ import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 
+{-------------------------------------------------------------------------------
+  The decentralization parameter
+-------------------------------------------------------------------------------}
+
+-- | A suitable value for the @d@ protocol parameter
+--
+-- In the range @0@ to @1@, inclusive. Beware the misnomer: @0@ means fully
+-- decentralized, and @1@ means fully centralized.
+newtype DecentralizationParam =
+    DecentralizationParam {decentralizationParamToRational :: Rational }
+  deriving (Eq, Generic, Ord)
+  deriving (Show) via (Quiet DecentralizationParam)
+
+-- | A fraction with denominator @10@ and numerator @0@ to @10@ inclusive
+instance Arbitrary DecentralizationParam where
+  arbitrary = do
+      let d = 10
+      n <- choose (0, d)
+      pure $ DecentralizationParam $ fromInteger n / fromInteger d
+
+{-------------------------------------------------------------------------------
+  Important constants
+-------------------------------------------------------------------------------}
+
 tpraosSlotLength :: SlotLength
 tpraosSlotLength = slotLengthFromSec 2
+
+{-------------------------------------------------------------------------------
+  CoreNode secrets/etc
+-------------------------------------------------------------------------------}
 
 data CoreNode c = CoreNode {
       cnGenesisKey  :: !(SignKeyDSIGN (SL.DSIGN c))
@@ -158,6 +191,10 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         }
       }
 
+{-------------------------------------------------------------------------------
+  TPraos node configuration
+-------------------------------------------------------------------------------}
+
 -- | Note: a KES algorithm supports a particular max number of KES evolutions,
 -- but we can configure a potentially lower maximum for the ledger, that's why
 -- we take it as an argument.
@@ -165,7 +202,7 @@ mkGenesisConfig
   :: forall c. TPraosCrypto c
   => ProtVer  -- ^ Initial protocol version
   -> SecurityParam
-  -> Double  -- ^ Decentralisation param
+  -> DecentralizationParam
   -> SlotLength
   -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
@@ -176,7 +213,7 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = recip recipF   -- ie f
+    , sgActiveSlotsCoeff      = recip recipF
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
       -- TODO maxKESEvolutions * sgSlotsPerKESPeriod = max number of slots the
@@ -219,9 +256,7 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     pparams :: SL.PParams
     pparams = SL.emptyPParams
       { SL._d               =
-            SL.truncateUnitInterval
-          . realToFrac
-          $ d
+          SL.unitIntervalFromRational $ decentralizationParamToRational d
       , SL._maxBBSize       = 10000 -- TODO
       , SL._maxBHSize       = 1000 -- TODO
       , SL._protocolVersion = pVer

@@ -103,8 +103,7 @@ partitionExclusiveUpperBound (Partition s (NumSlots d)) = Util.addSlots d s
 data TestSetup = TestSetup
   { setupByronLowerBound   :: Bool
     -- ^ whether to use the @HardFork.LowerBound@ optimization
-  , setupD                 :: Double
-    -- ^ decentralization parameter
+  , setupD                 :: Shelley.DecentralizationParam
   , setupHardFork          :: Bool
     -- ^ whether the proposal should trigger a hard fork or not
   , setupK                 :: SecurityParam
@@ -118,7 +117,9 @@ data TestSetup = TestSetup
 
 instance Arbitrary TestSetup where
   arbitrary = do
-    setupD <- (/10)         <$> choose (1, 10)
+    setupD <- arbitrary
+                -- TODO Issue 2388 prevents `d=0` in this test.
+                `suchThat` ((/= 0) . Shelley.decentralizationParamToRational)
     setupK <- SecurityParam <$> choose (2, 6)
 
     setupSlotLengthByron   <- arbitrary

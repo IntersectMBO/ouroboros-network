@@ -39,6 +39,7 @@ library
                      , generic-random
                      , hedgehog-quickcheck
                      , iproute
+                     , quiet             >=0.2   && <0.3
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
                      , time

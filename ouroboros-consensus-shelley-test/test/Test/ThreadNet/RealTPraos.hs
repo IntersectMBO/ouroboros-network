@@ -47,8 +47,7 @@ import           Test.ThreadNet.Util.Seed (runGen)
 type Crypto = TPraosMockCrypto ShortHash
 
 data TestSetup = TestSetup
-  { setupD          :: Double
-    -- ^ decentralization parameter
+  { setupD          :: DecentralizationParam
   , setupK          :: SecurityParam
   , setupTestConfig :: TestConfig
   , setupVersion    :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Crypto))
@@ -57,7 +56,7 @@ data TestSetup = TestSetup
 
 instance Arbitrary TestSetup where
   arbitrary = do
-    setupD <- (/10)         <$> choose   (0, 10)
+    setupD <- arbitrary
     setupK <- SecurityParam <$> elements [5, 10]
 
     setupTestConfig <- arbitrary
