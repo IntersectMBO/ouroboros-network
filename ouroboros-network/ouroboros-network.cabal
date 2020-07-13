@@ -104,6 +104,7 @@ library
                        Ouroboros.Network.TipSample.Client
                        Ouroboros.Network.TipSample.Server
                        Ouroboros.Network.TipSample.TipFragment
+                       Ouroboros.Network.TipSample.TipRegistry
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
