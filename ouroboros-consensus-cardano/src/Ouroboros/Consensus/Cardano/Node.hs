@@ -342,10 +342,13 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialConsensusConfigShelley = tpraosParams
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock sc)
-    partialLedgerConfigShelley = ShelleyPartialLedgerConfig {
-        shelleyPartialLedgerGenesis = genesisShelley
-      , shelleyPartialMaxMajorPV    = maxMajorPV
-      }
+    partialLedgerConfigShelley = ShelleyPartialLedgerConfig $
+        Shelley.mkShelleyLedgerConfig
+          genesisShelley
+          -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
+          -- in the partial ledger config with the correct one.
+          History.dummyEpochInfo
+          maxMajorPV
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
