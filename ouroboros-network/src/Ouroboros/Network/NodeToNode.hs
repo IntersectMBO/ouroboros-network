@@ -160,7 +160,12 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 
     -- | tx-submission mini-protocol
     --
-    txSubmissionProtocol :: RunMiniProtocol appType bytes m a b
+    txSubmissionProtocol :: RunMiniProtocol appType bytes m a b,
+
+    -- | keep-alive mini-protocol
+    --
+    keepAliveProtocol :: RunMiniProtocol appType bytes m a b
+
   }
 
 
@@ -228,7 +233,8 @@ nodeToNodeProtocols MiniProtocolParameters {
       NodeToNodeProtocols {
           chainSyncProtocol,
           blockFetchProtocol,
-          txSubmissionProtocol
+          txSubmissionProtocol,
+          keepAliveProtocol
         } ->
         [
           MiniProtocol {
@@ -245,6 +251,11 @@ nodeToNodeProtocols MiniProtocolParameters {
             miniProtocolNum    = MiniProtocolNum 4,
             miniProtocolLimits = txSubmissionProtocolLimits,
             miniProtocolRun    = txSubmissionProtocol
+          }
+        , MiniProtocol {
+            miniProtocolNum    = MiniProtocolNum 8,
+            miniProtocolLimits = keepAliveProtocolLimits,
+            miniProtocolRun    = keepAliveProtocol
           }
         ]
   where
@@ -353,6 +364,12 @@ nodeToNodeProtocols MiniProtocolParameters {
           --
           maximumIngressQueue = addSafetyMargin $
               fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
+        }
+
+    keepAliveProtocolLimits =
+      MiniProtocolLimits {
+          -- One small outstanding message.
+          maximumIngressQueue = addSafetyMargin 1280
         }
 
 
