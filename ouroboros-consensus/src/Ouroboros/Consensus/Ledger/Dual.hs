@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.Condense
@@ -640,6 +641,24 @@ instance EncodeDiskDep (NestedCtxt Header) m
       encodeDiskDep
         (dualCodecConfigMain ccfg)
         (mapNestedCtxt ctxtDualMain ctxt)
+
+{-------------------------------------------------------------------------------
+  Inspection
+-------------------------------------------------------------------------------}
+
+-- | 'InspectLedger' just refers to the main block
+--
+-- 'InspectLedger' is intended to check the ledger state against the node's
+-- configuration, and hence takes a full 'TopLevelConfig'. However, we cannot
+-- construct that for the auxiliary block, since we have no protocol config
+-- for it. We therefore just use the main block.
+instance InspectLedger m => InspectLedger (DualBlock m a) where
+  type LedgerWarning (DualBlock m a) = LedgerWarning m
+
+  inspectLedger cfg st =
+      inspectLedger
+        (dualTopLevelConfigMain cfg)
+        (dualLedgerStateMain    st)
 
 {-------------------------------------------------------------------------------
   Auxiliary

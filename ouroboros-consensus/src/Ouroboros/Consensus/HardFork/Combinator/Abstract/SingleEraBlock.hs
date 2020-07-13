@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
@@ -42,6 +43,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
 
 -- | Blocks from which we can assemble a hard fork
 class ( LedgerSupportsProtocol blk
+      , InspectLedger blk
       , LedgerSupportsMempool blk
       , HasTxId (GenTx blk)
       , QueryLedger blk

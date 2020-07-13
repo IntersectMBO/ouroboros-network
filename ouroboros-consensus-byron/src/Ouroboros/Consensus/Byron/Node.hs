@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -20,6 +21,7 @@ module Ouroboros.Consensus.Byron.Node (
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
+import           Data.Void
 
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
@@ -36,6 +38,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -178,6 +181,14 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
     , byronProtocolVersion = pVer
     , byronSoftwareVersion = sVer
     }
+
+{-------------------------------------------------------------------------------
+  Inspection
+-------------------------------------------------------------------------------}
+
+instance InspectLedger ByronBlock where
+  type LedgerWarning ByronBlock = Void
+  inspectLedger _ _ = []
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance

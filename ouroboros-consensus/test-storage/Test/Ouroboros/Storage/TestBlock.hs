@@ -76,6 +76,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
+import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -98,6 +99,7 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -673,6 +675,10 @@ instance LedgerSupportsProtocol TestBlock where
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
+
+instance InspectLedger TestBlock where
+  type LedgerWarning TestBlock = Void
+  inspectLedger _ _ = []
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

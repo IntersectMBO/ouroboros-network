@@ -75,6 +75,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -364,6 +365,10 @@ instance HasNestedContent Header BlockA where
 
 instance ReconstructNestedCtxt Header BlockA
   -- Use defaults
+
+instance InspectLedger BlockA where
+  type LedgerWarning BlockA = Void
+  inspectLedger _ _ = []
 
 instance SingleEraBlock BlockA where
   singleEraInfo _ = SingleEraInfo "A"

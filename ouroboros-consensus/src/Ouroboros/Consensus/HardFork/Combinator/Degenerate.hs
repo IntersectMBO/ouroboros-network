@@ -57,6 +57,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -318,6 +319,10 @@ instance NoHardForks b => BlockSupportsProtocol (DegenFork b) where
 instance NoHardForks b => LedgerSupportsProtocol (DegenFork b) where
   protocolLedgerView   cfg (TDLgr lgr) = protocolLedgerView   cfg lgr
   ledgerViewForecastAt cfg (DLgr  lgr) = ledgerViewForecastAt cfg lgr
+
+instance NoHardForks b => InspectLedger (DegenFork b) where
+  type LedgerWarning (DegenFork b) = LedgerWarning (HardForkBlock '[b])
+  inspectLedger cfg = inspectLedger (castTopLevelConfig cfg) . unDLgr
 
 newtype DegenForkApplyTxErr b = DApplyTxErr {
       unDApplyTxErr :: ApplyTxErr (HardForkBlock '[b])

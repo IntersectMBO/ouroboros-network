@@ -30,6 +30,7 @@ import           Control.Monad.Reader (runReader)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Void
 
 import           Cardano.Prelude (Natural)
 
@@ -42,6 +43,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
@@ -340,6 +342,13 @@ protocolClientInfoShelley =
       pClientInfoCodecConfig = ShelleyCodecConfig
     }
 
+{-------------------------------------------------------------------------------
+  Inspection
+-------------------------------------------------------------------------------}
+
+instance InspectLedger (ShelleyBlock c) where
+  type LedgerWarning (ShelleyBlock c) = Void
+  inspectLedger _ _ = []
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance

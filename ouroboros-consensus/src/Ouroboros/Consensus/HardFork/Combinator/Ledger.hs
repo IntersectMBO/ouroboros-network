@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams)
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -65,6 +66,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
   Errors
@@ -501,6 +503,85 @@ shiftView past TickedHardForkLedgerView{..} = TickedHardForkLedgerView {
         . getHardForkState
         $ tickedHardForkLedgerViewPerEra
     }
+
+{-------------------------------------------------------------------------------
+  Inspection
+-------------------------------------------------------------------------------}
+
+data HardForkLedgerWarning xs =
+    HardForkLedgerWarningInEra (OneEraLedgerWarning xs)
+
+    -- | The transition to the next era does not match the 'EraParams'
+    --
+    -- The 'EraParams' can specify a lower bound on when the transition to the
+    -- next era will happen. If the actual transition, when confirmed, is
+    -- /before/ this lower bound, the node is misconfigured and will likely
+    -- not work correctly. This should be taken care of as soon as possible
+    -- (before the transition happens).
+  | HardForkLedgerWarningUnexpectedTransition EraParams EpochNo
+
+deriving instance CanHardFork xs => Show (HardForkLedgerWarning xs)
+deriving instance CanHardFork xs => Eq   (HardForkLedgerWarning xs)
+
+instance CanHardFork xs => InspectLedger (HardForkBlock xs) where
+  type LedgerWarning (HardForkBlock xs) = HardForkLedgerWarning xs
+
+  inspectLedger cfg (HardForkLedgerState st) = concat [
+        -- Inspect the underlying ledger
+          hcollapse
+        . hczipWith3 proxySingle inspectOne cfgs injections
+        $ State.tip st
+
+        -- Hard fork specific warnings
+      ,   hcollapse
+        . hczipWith3 proxySingle additionalChecks pcfgs shape
+        $ Telescope.tip (getHardForkState st)
+      ]
+    where
+      HardForkLedgerConfig{..} = configLedger cfg
+
+      pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+      shape = History.getShape hardForkLedgerConfigShape
+      cfgs  = distribTopLevelConfig ei cfg
+      ei    = State.epochInfoLedger (configLedger cfg) st
+
+inspectOne :: forall blk xs. SingleEraBlock blk
+           => TopLevelConfig blk
+           -> Injection WrapLedgerWarning xs blk
+           -> LedgerState blk
+           -> K [HardForkLedgerWarning xs] blk
+inspectOne cfg inj st = K $ map aux $ inspectLedger cfg st
+  where
+    aux :: LedgerWarning blk -> HardForkLedgerWarning xs
+    aux = HardForkLedgerWarningInEra
+        . OneEraLedgerWarning
+        . unK
+        . apFn inj
+        . WrapLedgerWarning
+
+additionalChecks :: SingleEraBlock blk
+                 => WrapPartialLedgerConfig blk
+                 -> K EraParams blk
+                 -> Current LedgerState blk
+                 -> K [HardForkLedgerWarning xs] blk
+additionalChecks (WrapPartialLedgerConfig pcfg) (K eraParams) Current{..} = K $
+    concat [
+        [ HardForkLedgerWarningUnexpectedTransition eraParams transition
+        | Just transition <- [singleEraTransition
+                                pcfg
+                                eraParams
+                                currentStart
+                                currentState]
+        , not $ validLowerBound
+                  (History.safeBeforeEpoch (History.eraSafeZone eraParams))
+                  transition
+        ]
+      ]
+  where
+    validLowerBound :: History.SafeBeforeEpoch -> EpochNo -> Bool
+    validLowerBound History.NoLowerBound    _  = True
+    validLowerBound History.UnsafeUnbounded _  = False
+    validLowerBound (History.LowerBound e)  e' = e' >= e
 
 {-------------------------------------------------------------------------------
   Auxiliary
