@@ -17,6 +17,7 @@ import           Control.Tracer (nullTracer)
 import qualified Codec.CBOR.Read  as CBOR
 import           Data.Functor.Identity (Identity (..))
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Proofs
@@ -164,4 +165,4 @@ prop_byteLimits (AnyMessageAndAgency agency msg) =
      <= sizeLimitForState agency  
   where
     Codec { encode } = (codecKeepAlive :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
-    ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive
+    ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)

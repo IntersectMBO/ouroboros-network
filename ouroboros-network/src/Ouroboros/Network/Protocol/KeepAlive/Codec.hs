@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.Protocol.KeepAlive.Codec
   ( codecKeepAlive
+  , codecKeepAliveId
   , byteLimitsKeepAlive
   , timeLimitsKeepAlive
   ) where
@@ -16,7 +17,6 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime (DiffTime)
 
 import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BSL
 
 import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord)
 import qualified Codec.CBOR.Read     as CBOR
@@ -60,16 +60,13 @@ codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
            fail ("codecKeepAlive.StServer: unexpected key: " ++ show key)
 
 
-byteLimitsKeepAlive :: ProtocolSizeLimits KeepAlive ByteString
-byteLimitsKeepAlive = ProtocolSizeLimits {
-      sizeLimitForState,
-      dataSize = fromIntegral . BSL.length
-    }
+byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes
+byteLimitsKeepAlive = ProtocolSizeLimits sizeLimitForState
   where
     sizeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
                       -> Word
-    sizeLimitForState (ClientAgency TokClient) = 1
-    sizeLimitForState (ServerAgency TokServer) = 1
+    sizeLimitForState (ClientAgency TokClient) = smallByteLimit
+    sizeLimitForState (ServerAgency TokServer) = smallByteLimit
 
 
 timeLimitsKeepAlive :: ProtocolTimeLimits KeepAlive
@@ -79,3 +76,31 @@ timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
                       -> Maybe DiffTime
     timeLimitForState (ClientAgency TokClient) = waitForever
     timeLimitForState (ServerAgency TokServer) = shortWait
+
+
+codecKeepAliveId
+  :: forall m.
+     ( Monad   m
+     )
+  => Codec KeepAlive CodecFailure m (AnyMessage KeepAlive)
+codecKeepAliveId = Codec encodeMsg decodeMsg
+   where
+     encodeMsg :: forall (pr :: PeerRole) st st'.
+                  PeerHasAgency pr st
+               -> Message KeepAlive st st'
+               -> AnyMessage KeepAlive
+     encodeMsg _ = AnyMessage
+
+     decodeMsg :: forall (pr :: PeerRole) (st :: KeepAlive).
+                  PeerHasAgency pr st
+               -> m (DecodeStep (AnyMessage KeepAlive)
+                          CodecFailure m (SomeMessage st))
+     decodeMsg stok = return $ DecodePartial $ \bytes -> return $
+       case (stok, bytes) of
+         (ClientAgency TokClient, Just (AnyMessage msg@(MsgKeepAlive)))
+             -> DecodeDone (SomeMessage msg) Nothing
+         (ServerAgency TokServer, Just (AnyMessage msg@(MsgKeepAliveResponse)))
+             -> DecodeDone (SomeMessage msg) Nothing
+         (ClientAgency TokClient, Just (AnyMessage msg@(MsgDone)))
+             -> DecodeDone (SomeMessage msg) Nothing
+         (_, _) -> DecodeFail (CodecFailure "codecKeepAliveId: no matching message")
