@@ -36,7 +36,7 @@ import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hash as Hash
 import qualified Cardano.Crypto.Hashing as Hashing
-import           Cardano.Prelude (Natural, NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound (..),
@@ -70,7 +70,6 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
@@ -275,20 +274,28 @@ instance TPraosCrypto sc => HasPartialConsensusConfig (TPraos sc) where
   -- 'ChainSelConfig' is ()
   partialChainSelConfig _ _ = ()
 
-data ShelleyPartialLedgerConfig sc = ShelleyPartialLedgerConfig {
-      shelleyPartialLedgerGenesis :: !(SL.ShelleyGenesis sc)
-    , shelleyPartialMaxMajorPV    :: !Natural
+newtype ShelleyPartialLedgerConfig sc = ShelleyPartialLedgerConfig {
+      -- | We cache the non-partial ledger config containing a dummy
+      -- 'EpochInfo' that needs to be replaced with the correct one.
+      --
+      -- We do this to avoid recomputing the ledger config each time
+      -- 'completeLedgerConfig' is called, as 'mkShelleyLedgerConfig' does
+      -- some rather expensive computations that shouldn't be repeated too
+      -- often (e.g., 'sgActiveSlotCoeff').
+      getShelleyPartialLedgerConfig :: ShelleyLedgerConfig sc
     }
   deriving (Generic, NoUnexpectedThunks)
 
 instance TPraosCrypto sc => HasPartialLedgerConfig (ShelleyBlock sc) where
   type PartialLedgerConfig (ShelleyBlock sc) = ShelleyPartialLedgerConfig sc
 
-  completeLedgerConfig _ epochInfo ShelleyPartialLedgerConfig {..} =
-      mkShelleyLedgerConfig
-        shelleyPartialLedgerGenesis
-        epochInfo
-        shelleyPartialMaxMajorPV
+  -- Replace the dummy 'EpochInfo' with the real one
+  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg) =
+      cfg {
+          shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
+              SL.epochInfo = epochInfo
+            }
+        }
 
 {-------------------------------------------------------------------------------
   CanHardFork

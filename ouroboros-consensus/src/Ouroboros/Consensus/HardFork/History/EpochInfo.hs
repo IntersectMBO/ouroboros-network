@@ -6,6 +6,7 @@
 module Ouroboros.Consensus.HardFork.History.EpochInfo (
     summaryToEpochInfo
   , snapshotEpochInfo
+  , dummyEpochInfo
   ) where
 
 import           Data.Functor.Identity
@@ -53,3 +54,13 @@ snapshotEpochInfo summary = EpochInfo {
   where
     runQueryPure' :: HasCallStack => Qry a -> Identity a
     runQueryPure' = Identity . flip runQueryPure summary
+
+-- | A dummy 'EpochInfo' that always throws an 'error'.
+--
+-- To be used as a placeholder before a summary is available.
+dummyEpochInfo :: EpochInfo Identity
+dummyEpochInfo = EpochInfo {
+      epochInfoSize_  = \_ -> error "dummyEpochInfo used"
+    , epochInfoFirst_ = \_ -> error "dummyEpochInfo used"
+    , epochInfoEpoch_ = \_ -> error "dummyEpochInfo used"
+    }
