@@ -11,8 +11,10 @@ packages:
   - ./ouroboros-consensus/ouroboros-consensus-test-infra
   - ./ouroboros-consensus/ouroboros-consensus-mock
   - ./ouroboros-consensus-byron
+  - ./ouroboros-consensus-byron-test
   - ./ouroboros-consensus-byronspec
   - ./ouroboros-consensus-shelley
+  - ./ouroboros-consensus-shelley-test
   - ./ouroboros-consensus-cardano
   - ./io-sim
   - ./io-sim-classes
@@ -59,6 +61,7 @@ extra-deps:
       - byron/crypto
       - byron/crypto/test
       - semantics/executable-spec
+      - semantics/small-steps-test
       - shelley/chain-and-ledger/dependencies/non-integer
       - shelley/chain-and-ledger/executable-spec
       - shelley/chain-and-ledger/executable-spec/test
@@ -84,13 +87,16 @@ extra-deps:
   - graphviz-2999.20.0.3
   - hedgehog-quickcheck-0.1.1
   - markov-chain-usage-model-0.0.0  # Needed for `quickcheck-state-machine`
-  - splitmix-0.0.2
-  - tasty-hedgehog-1.0.0.2
-  - Unique-0.4.7.6
-  - statistics-linreg-0.3
   - network-3.1.0.1
-  - quiet-0.2
   - quickcheck-state-machine-0.7.0
+  - quiet-0.2
+  - sop-core-0.5.0.1
+  - split-0.2.3.4
+  - splitmix-0.0.2
+  - statistics-linreg-0.3
+  - tasty-hedgehog-1.0.0.2
+  - text-1.2.4.0
+  - Unique-0.4.7.6
 
   # Windows only
   - Win32-2.6.2.0
