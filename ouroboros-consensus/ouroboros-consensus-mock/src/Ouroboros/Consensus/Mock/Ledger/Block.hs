@@ -70,6 +70,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.Typeable
+import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -85,6 +86,7 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
@@ -452,6 +454,14 @@ deriving instance Show (Query (SimpleBlock c ext) result)
 instance (SimpleCrypto c, Typeable ext)
       => ShowQuery (Query (SimpleBlock c ext)) where
   showResult QueryLedgerTip = show
+
+{-------------------------------------------------------------------------------
+  Inspection
+-------------------------------------------------------------------------------}
+
+instance InspectLedger (SimpleBlock c ext) where
+  type LedgerWarning (SimpleBlock c ext) = Void
+  inspectLedger _ _ = []
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

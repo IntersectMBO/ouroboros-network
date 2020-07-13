@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -256,6 +257,7 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g, h) = do
 type TestConstraints blk =
   ( ConsensusProtocol  (BlockProtocol blk)
   , LedgerSupportsProtocol            blk
+  , InspectLedger                     blk
   , Eq (ChainDepState  (BlockProtocol blk))
   , Eq (LedgerState                   blk)
   , Eq                                blk

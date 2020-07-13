@@ -78,6 +78,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -484,11 +485,13 @@ deriving instance
   ( HasHeader blk
   , Eq (Header blk)
   , LedgerSupportsProtocol blk
+  , InspectLedger blk
   ) => Eq (TraceEvent blk)
 deriving instance
   ( HasHeader blk
   , Show (Header blk)
   , LedgerSupportsProtocol blk
+  , InspectLedger blk
   ) => Show (TraceEvent blk)
 
 data TraceOpenEvent blk =
@@ -580,6 +583,7 @@ data TraceAddBlockEvent blk =
     -- fragment) and we have successfully used it to extend our (new) current
     -- chain (second fragment).
   | AddedToCurrentChain
+      [LedgerWarning blk]
       (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
@@ -588,6 +592,7 @@ data TraceAddBlockEvent blk =
     -- (second fragment), as it is preferable to our (previous) current chain
     -- (first fragment).
   | SwitchedToAFork
+      [LedgerWarning blk]
       (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
@@ -602,14 +607,16 @@ data TraceAddBlockEvent blk =
   deriving (Generic)
 
 deriving instance
-  ( HasHeader              blk
-  , Eq (Header             blk)
+  ( HasHeader blk
+  , Eq (Header blk)
   , LedgerSupportsProtocol blk
+  , InspectLedger blk
   ) => Eq (TraceAddBlockEvent blk)
 deriving instance
-  ( HasHeader              blk
-  , Show (Header           blk)
+  ( HasHeader blk
+  , Show (Header blk)
   , LedgerSupportsProtocol blk
+  , InspectLedger blk
   ) => Show (TraceAddBlockEvent blk)
 
 data TraceValidationEvent blk =

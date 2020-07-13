@@ -44,6 +44,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
@@ -75,6 +76,7 @@ withDB
   :: forall m blk a.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
@@ -88,6 +90,7 @@ openDB
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
@@ -100,6 +103,7 @@ openDBInternal
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk

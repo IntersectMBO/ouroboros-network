@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
@@ -232,6 +233,7 @@ addBlockSync
      ( IOLike m
      , GetPrevHash blk
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
      , HasCallStack
@@ -346,6 +348,7 @@ olderThanK hdr isEBB immBlockNo
 chainSelectionForFutureBlocks
   :: ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
      , HasCallStack
@@ -404,6 +407,7 @@ chainSelectionForBlock
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
      , HasCallStack
@@ -654,7 +658,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
       :: HasCallStack
       => ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)
          -- ^ Chain and ledger to switch to
-      -> (    NewTipInfo blk
+      -> (    [LedgerWarning blk]
+           -> NewTipInfo blk
            -> AnchoredFragment (Header blk)
            -> AnchoredFragment (Header blk)
            -> TraceAddBlockEvent blk
@@ -663,7 +668,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
     switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
-        (curChain, newChain) <- atomically $ do
+        (curChain, newChain, warnings) <- atomically $ do
           curChain <- readTVar cdbChain
           case Diff.apply curChain chainDiff of
             -- Impossible, as described in the docstring
@@ -672,6 +677,10 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
             Just newChain -> do
               writeTVar cdbChain newChain
               LgrDB.setCurrent cdbLgrDB newLedger
+
+              -- Inspect the new ledger for potential problems
+              let warnings = inspectLedger cdbTopLevelConfig $
+                               ledgerState (LgrDB.ledgerDbCurrent newLedger)
 
               -- Update the readers
               --
@@ -682,9 +691,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               forM_ readerHandles $ \readerHandle ->
                 rhSwitchFork readerHandle ipoint newChain
 
-              return (curChain, newChain)
+              return (curChain, newChain, warnings)
 
-        trace $ mkTraceEvent (mkNewTipInfo newLedger) curChain newChain
+        trace $ mkTraceEvent warnings (mkNewTipInfo newLedger) curChain newChain
         traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain

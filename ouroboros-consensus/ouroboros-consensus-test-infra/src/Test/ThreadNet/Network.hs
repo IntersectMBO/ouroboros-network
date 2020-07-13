@@ -93,6 +93,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -700,15 +701,23 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedToCurrentChain p _old new)
-              -> traceWith selTracer (ChainDB.newTipPoint p, prj new)
+              (ChainDB.AddedToCurrentChain warnings p _old new)
+              -> assertWithMsg (noWarnings warnings) $
+                   traceWith selTracer (ChainDB.newTipPoint p, prj new)
           ChainDB.TraceAddBlockEvent
-              (ChainDB.SwitchedToAFork p _old new)
-              -> traceWith selTracer (ChainDB.newTipPoint p, prj new)
+              (ChainDB.SwitchedToAFork warnings p _old new)
+              -> assertWithMsg (noWarnings warnings) $
+                   traceWith selTracer (ChainDB.newTipPoint p, prj new)
 
           _   -> pure ()
 
-    -- | Augment a tracer message with the node which produces it.
+    -- We don't expect any ledger warnings
+    -- (that would indicate node misconfiguration in the tests)
+    noWarnings :: Show a => [a] -> Either String ()
+    noWarnings [] = Right ()
+    noWarnings ws = Left $ "Unexpected warnings: " ++ show ws
+
+    -- Augment a tracer message with the node which produces it.
     _decorateId :: CoreNodeId -> Tracer m String -> Tracer m String
     _decorateId (CoreNodeId cid) = contramap $ \s ->
         show cid <> " | " <> s

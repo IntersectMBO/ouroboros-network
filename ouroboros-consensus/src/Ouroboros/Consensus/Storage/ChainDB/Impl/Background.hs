@@ -57,6 +57,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
@@ -87,6 +88,7 @@ launchBgTasks
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
@@ -525,6 +527,7 @@ dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 addBlockRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
+     , InspectLedger blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
      , HasCallStack
