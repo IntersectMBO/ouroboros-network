@@ -26,6 +26,7 @@ import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley
 
 import           Test.Util.HardFork.Future (singleEraFuture)
+import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
@@ -72,9 +73,19 @@ instance Arbitrary TestSetup where
 
   -- TODO shrink
 
+-- | Run relatively fewer tests
+--
+-- These tests are slow, so we settle for running fewer of them in this test
+-- suite since it is invoked frequently (eg CI for each push).
+fifthTestCount :: QuickCheckTests -> QuickCheckTests
+fifthTestCount (QuickCheckTests n) = QuickCheckTests $
+    if 0 == n then 0 else
+    max 1 $ n `div` 5
+
 tests :: TestTree
 tests = testGroup "RealTPraos"
-    [ adjustOption (\(QuickCheckTests n) -> QuickCheckTests $ n `div` 5) $
+    [ askIohkNightlyEnabled $ \enabled ->
+      (if enabled then id else adjustOption fifthTestCount) $
       testProperty "simple convergence" $ \setup ->
         prop_simple_real_tpraos_convergence setup
     ]
