@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
@@ -63,7 +64,6 @@ import           Ouroboros.Consensus.Mock.Protocol.Praos as X
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node as X
-import           Ouroboros.Consensus.Byron.Protocol (PBftByronCrypto)
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
@@ -71,6 +71,7 @@ import           Ouroboros.Consensus.Shelley.Protocol (TPraos,
                      TPraosStandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.ByronHFC
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.Node
 
@@ -87,7 +88,7 @@ type ProtocolMockBFT        = Bft BftMockCrypto
 type ProtocolMockPraos      = Praos PraosMockCrypto
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft PBftMockCrypto
-type ProtocolRealPBFT       = PBft PBftByronCrypto
+type ProtocolRealPBFT       = HardForkProtocol '[ByronBlock]
 type ProtocolRealTPraos     = TPraos TPraosStandardCrypto
 type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraosStandardCrypto]
 
@@ -136,7 +137,7 @@ data Protocol (m :: * -> *) blk p where
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
-    -> Protocol m ByronBlock ProtocolRealPBFT
+    -> Protocol m ByronBlockHFC ProtocolRealPBFT
 
   -- | Run TPraos against the real Shelley ledger
   ProtocolRealTPraos
@@ -215,7 +216,7 @@ protocolInfo (ProtocolMockPBFT paramsPBft paramsEra nid) =
     protocolInfoMockPBFT paramsPBft paramsEra nid
 
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
-    protocolInfoByron gc mthr prv swv mplc
+    inject $ protocolInfoByron gc mthr prv swv mplc
 
 protocolInfo (ProtocolRealTPraos genesis initialNonce protVer maxMajorPV mbLeaderCredentials) =
     protocolInfoShelley genesis initialNonce maxMajorPV protVer mbLeaderCredentials
@@ -258,7 +259,7 @@ data ProtocolClient blk p where
     :: EpochSlots
     -> SecurityParam
     -> ProtocolClient
-         ByronBlock
+         ByronBlockHFC
          ProtocolRealPBFT
 
   ProtocolClientRealTPraos
@@ -288,7 +289,7 @@ runProtocolClient ProtocolClientCardano{}    = Dict
 -- | Data required by clients of a node running the specified protocol.
 protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
 protocolClientInfo (ProtocolClientRealPBFT epochSlots secParam) =
-    protocolClientInfoByron epochSlots secParam
+    inject $ protocolClientInfoByron epochSlots secParam
 
 protocolClientInfo ProtocolClientRealTPraos =
     protocolClientInfoShelley
