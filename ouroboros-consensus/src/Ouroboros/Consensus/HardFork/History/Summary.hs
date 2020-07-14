@@ -221,11 +221,15 @@ instance Exception PastHorizonException
 -------------------------------------------------------------------------------}
 
 -- | 'Summary' for a ledger that never forks
-neverForksSummary :: EraParams -> Summary '[x]
-neverForksSummary params = Summary $ NonEmptyOne $ EraSummary {
+neverForksSummary :: EpochSize -> SlotLength -> Summary '[x]
+neverForksSummary epochSize slotLen = Summary $ NonEmptyOne $ EraSummary {
       eraStart  = initBound
     , eraEnd    = EraUnbounded
-    , eraParams = params
+    , eraParams = EraParams {
+          eraEpochSize  = epochSize
+        , eraSlotLength = slotLen
+        , eraSafeZone   = UnsafeIndefiniteSafeZone
+        }
     }
 
 {-------------------------------------------------------------------------------
@@ -345,31 +349,36 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
         NonEmptyOne (EraSummary lo hi params)
       where
         hi :: EraEnd
-        hi = mkEraEnd params lo
-           . maxMaybeEpoch (safeBeforeEpoch eraSafeZone)
-           . slotToEpochBound params lo
-           . addSlots (safeFromTip eraSafeZone)
-             -- If the tip is already in this era, safe zone applies from the
-             -- ledger tip (CASE (i) from 'EraParams' Haddock). If the ledger
-             -- tip is in the /previous/ era, but the transition to /this/ era
-             -- is already known, the safe zone applies from the start of this
-             -- era (CASE (iii) from 'EraParams' Haddock).
-             --
-             -- NOTE: The upper bound is /exclusive/:
-             --
-             -- o Suppose the ledger tip is at slot 10, and 'safeFromTip' is 2.
-             --   Then we should be able to make accurate predictions for slots
-             --   10 (of course), as well as (the safe zone) slots 11 and 12.
-             --   Since the upper bound is /exclusive/, this means that the
-             --   upper bound becomes 13. (Case i)
-             -- o If the ledger tip is in the previous era (case iii), and the
-             --   start of this era is slot 100, then we should be able to
-             --   give accurate predictions for the first two slots in this era
-             --   (100 and 101), and the upper bound becomes 102.
-             --
-             -- This explains the use of the extra addition ('next') for
-             -- case (i) but not for case (iii).
-           $ max (next ledgerTip) (boundSlot lo)
+        hi = case eraSafeZone of
+               UnsafeIndefiniteSafeZone ->
+                   EraUnbounded
+               StandardSafeZone safeFromTip safeBefore ->
+                   EraEnd
+                 . mkUpperBound params lo
+                 . maxSafeBeforeEpoch safeBefore
+                 . slotToEpochBound params lo
+                 . addSlots safeFromTip
+                   -- If the tip is already in this era, safe zone applies from the
+                   -- ledger tip (CASE (i) from 'EraParams' Haddock). If the ledger
+                   -- tip is in the /previous/ era, but the transition to /this/ era
+                   -- is already known, the safe zone applies from the start of this
+                   -- era (CASE (iii) from 'EraParams' Haddock).
+                   --
+                   -- NOTE: The upper bound is /exclusive/:
+                   --
+                   -- o Suppose the ledger tip is at slot 10, and 'safeFromTip' is 2.
+                   --   Then we should be able to make accurate predictions for slots
+                   --   10 (of course), as well as (the safe zone) slots 11 and 12.
+                   --   Since the upper bound is /exclusive/, this means that the
+                   --   upper bound becomes 13. (Case i)
+                   -- o If the ledger tip is in the previous era (case iii), and the
+                   --   start of this era is slot 100, then we should be able to
+                   --   give accurate predictions for the first two slots in this era
+                   --   (100 and 101), and the upper bound becomes 102.
+                   --
+                   -- This explains the use of the extra addition ('next') for
+                   -- case (i) but not for case (iii).
+                 $ max (next ledgerTip) (boundSlot lo)
 
     -- Upper bound is exclusive, so we count from the /next/ ledger tip
     next :: WithOrigin SlotNo -> SlotNo
@@ -398,11 +407,11 @@ invariantShape = \(Shape shape) ->
     go lowerBound (K curParams :* shape') = do
         nextLowerBound <-
           case safeBeforeEpoch (eraSafeZone curParams) of
-            NoLowerBound ->
+            Nothing ->
               return $ addEpochs 1 lowerBound
-            UnsafeUnbounded ->
+            Just NoLowerBound ->
               return $ addEpochs 1 lowerBound
-            LowerBound e -> do
+            Just (LowerBound e) -> do
               unless (e > lowerBound) $
                 throwError $ mconcat [
                     "Invalid safeBeforeEpoch in "
@@ -456,9 +465,9 @@ invariantSummary = \(Summary summary) ->
               throwError "Empty era"
 
             case safeBeforeEpoch (eraSafeZone curParams) of
-              NoLowerBound    -> return ()
-              UnsafeUnbounded -> return ()
-              LowerBound e    ->
+              Nothing             -> return ()
+              Just NoLowerBound   -> return ()
+              Just (LowerBound e) ->
                 unless (boundEpoch curEnd >= e) $
                   throwError $ mconcat [
                       "Invalid upper epoch bound "

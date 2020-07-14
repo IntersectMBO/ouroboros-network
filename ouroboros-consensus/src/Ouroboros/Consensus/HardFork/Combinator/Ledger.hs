@@ -578,10 +578,10 @@ additionalChecks (WrapPartialLedgerConfig pcfg) (K eraParams) Current{..} = K $
         ]
       ]
   where
-    validLowerBound :: History.SafeBeforeEpoch -> EpochNo -> Bool
-    validLowerBound History.NoLowerBound    _  = True
-    validLowerBound History.UnsafeUnbounded _  = False
-    validLowerBound (History.LowerBound e)  e' = e' >= e
+    validLowerBound :: Maybe History.SafeBeforeEpoch -> EpochNo -> Bool
+    validLowerBound Nothing                       _  = False
+    validLowerBound (Just History.NoLowerBound  ) _  = True
+    validLowerBound (Just (History.LowerBound e)) e' = e' >= e
 
 {-------------------------------------------------------------------------------
   Auxiliary

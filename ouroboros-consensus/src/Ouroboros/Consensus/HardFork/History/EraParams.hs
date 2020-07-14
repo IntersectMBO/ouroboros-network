@@ -15,7 +15,8 @@ module Ouroboros.Consensus.HardFork.History.EraParams (
     -- * Defaults
   , defaultEraParams
     -- * Queries
-  , maxMaybeEpoch
+  , safeBeforeEpoch
+  , maxSafeBeforeEpoch
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLen, decodeWord8)
@@ -157,42 +158,16 @@ defaultEraParams (SecurityParam k) slotLength = EraParams {
     }
 
 -- | Zone in which it is guaranteed that no hard fork can take place
-data SafeZone = SafeZone {
-      -- | Number of slots from the tip of the ledger
-      --
-      -- This should be (at least) the number of slots in which we are
-      -- guaranteed to have @k@ blocks.
-      safeFromTip     :: !Word64
-
-      -- | Optionally, an 'EpochNo' before which no hard fork can take place
-    , safeBeforeEpoch :: !SafeBeforeEpoch
-    }
-  deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
-
--- | The safe zone with given 'safeFromTip' and 'NoLowerBound'
-noLowerBoundSafeZone :: Word64 -> SafeZone
-noLowerBoundSafeZone n = SafeZone n NoLowerBound
-
--- | Lower bound on when a transition can take place
-data SafeBeforeEpoch =
-    -- | No such lower bound is known
-    NoLowerBound
-
-    -- | 'EpochNo' before which a transition is guaranteed not to take place
+data SafeZone =
+    -- | Standard safe zone
     --
-    -- Often such a value is available, since a new era is planned only after
-    -- the current era has already been running for a while. For example, at
-    -- the time of writing, we know the Byron to Shelley transition cannot
-    -- happen before epoch 180, since we are currently already in epoch 179.
+    -- We record
     --
-    -- Moreover, for epoch transitions that have /already/ taken place, the
-    -- exact 'EpochNo' of the transition can be used.
-    --
-    -- Providing this value is strictly an optimization; for example, it will
-    -- reduce the frequency with which 'summaryToEpochInfo' must update its
-    -- summary of the hard fork history.
-  | LowerBound !EpochNo
+    -- * Number of slots from the tip of the ledger.
+    --   This should be (at least) the number of slots in which we are
+    --   guaranteed to have @k@ blocks.
+    -- * Optionally, an 'EpochNo' before which no hard fork can take place.
+    StandardSafeZone !Word64 !SafeBeforeEpoch
 
     -- | Pretend the transition to the next era will not take place.
     --
@@ -213,7 +188,33 @@ data SafeBeforeEpoch =
     --
     -- This constructor can be regarded as an " extreme " version of
     -- 'LowerBound', and can be used for similar reasons.
-  | UnsafeUnbounded
+  | UnsafeIndefiniteSafeZone
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
+
+-- | The safe zone with given 'safeFromTip' and 'NoLowerBound'
+noLowerBoundSafeZone :: Word64 -> SafeZone
+noLowerBoundSafeZone n = StandardSafeZone n NoLowerBound
+
+-- | Lower bound on when a transition can take place
+data SafeBeforeEpoch =
+    -- | No such lower bound is known
+    NoLowerBound
+
+    -- | 'EpochNo' before which a transition is guaranteed not to take place
+    --
+    -- Often such a value is available, since a new era is planned only after
+    -- the current era has already been running for a while. For example, at
+    -- the time of writing, we know the Byron to Shelley transition cannot
+    -- happen before epoch 180, since we are currently already in epoch 179.
+    --
+    -- Moreover, for epoch transitions that have /already/ taken place, the
+    -- exact 'EpochNo' of the transition can be used.
+    --
+    -- Providing this value is strictly an optimization; for example, it will
+    -- reduce the frequency with which 'summaryToEpochInfo' must update its
+    -- summary of the hard fork history.
+  | LowerBound !EpochNo
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
@@ -221,10 +222,14 @@ data SafeBeforeEpoch =
   Queries
 -------------------------------------------------------------------------------}
 
-maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> Maybe EpochNo
-maxMaybeEpoch NoLowerBound    e = Just $ e
-maxMaybeEpoch (LowerBound e') e = Just $ max e' e
-maxMaybeEpoch UnsafeUnbounded _ = Nothing
+-- | Returns 'Nothing' if the era is unbounded.
+safeBeforeEpoch :: SafeZone -> Maybe SafeBeforeEpoch
+safeBeforeEpoch (StandardSafeZone _ bound) = Just bound
+safeBeforeEpoch UnsafeIndefiniteSafeZone   = Nothing
+
+maxSafeBeforeEpoch :: SafeBeforeEpoch -> EpochNo -> EpochNo
+maxSafeBeforeEpoch NoLowerBound    e = e
+maxSafeBeforeEpoch (LowerBound e') e = max e' e
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -234,28 +239,33 @@ instance Serialise SafeBeforeEpoch where
   encode = \case
       NoLowerBound    -> encodeListLen 1 <> encodeWord8 0
       LowerBound e    -> encodeListLen 2 <> encodeWord8 1 <> encode e
-      UnsafeUnbounded -> encodeListLen 1 <> encodeWord8 2
   decode = do
       size <- decodeListLen
       tag  <- decodeWord8
       case (size, tag) of
         (1, 0) -> return NoLowerBound
         (2, 1) -> LowerBound <$> decode
-        (1, 2) -> return UnsafeUnbounded
         _      -> fail $ "SafeBeforeEpoch: invalid size and tag " <> show (size, tag)
 
 instance Serialise SafeZone where
-  encode SafeZone{..} = mconcat [
-        encodeListLen 2
-      , encode safeFromTip
-      , encode safeBeforeEpoch
-      ]
-
+  encode = \case
+      StandardSafeZone safeFromTip safeBefore -> mconcat [
+          encodeListLen 3
+        , encodeWord8 0
+        , encode safeFromTip
+        , encode safeBefore
+        ]
+      UnsafeIndefiniteSafeZone -> mconcat [
+          encodeListLen 1
+        , encodeWord8 1
+        ]
   decode = do
-      enforceSize "SafeZone" 2
-      safeFromTip     <- decode
-      safeBeforeEpoch <- decode
-      return SafeZone{..}
+    size <- decodeListLen
+    tag  <- decodeWord8
+    case (size, tag) of
+      (3, 0) -> StandardSafeZone <$> decode <*> decode
+      (1, 1) -> return UnsafeIndefiniteSafeZone
+      _      -> fail $ "SafeZone: invalid size and tag " <> show (size, tag)
 
 instance Serialise EraParams where
   encode EraParams{..} = mconcat [

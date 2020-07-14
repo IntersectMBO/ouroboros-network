@@ -129,8 +129,9 @@ shelleyEraParams :: SL.ShelleyGenesis c -> HardFork.EraParams
 shelleyEraParams genesis = HardFork.EraParams {
       eraEpochSize  = SL.sgEpochLength genesis
     , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
-    , eraSafeZone   = HardFork.SafeZone stabilityWindow
-                                        HardFork.NoLowerBound
+    , eraSafeZone   = HardFork.StandardSafeZone
+                        stabilityWindow
+                        HardFork.NoLowerBound
     }
   where
     stabilityWindow =

@@ -40,7 +40,7 @@ import           Data.SOP.Strict hiding (shape)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
-                     EraParams (..), EraSummary (..))
+                     EraParams (..), EraSummary (..), SafeZone (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Util.Counting
 
@@ -300,10 +300,15 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
     -- All arguments must be referring to or in the same era.
     applySafeZone :: EraParams -> Bound -> SlotNo -> EraEnd
     applySafeZone params@EraParams{..} start =
-          History.mkEraEnd params start
-        . History.maxMaybeEpoch (History.safeBeforeEpoch eraSafeZone)
-        . History.slotToEpochBound params start
-        . History.addSlots (History.safeFromTip eraSafeZone)
+        case eraSafeZone of
+          UnsafeIndefiniteSafeZone ->
+              const EraUnbounded
+          StandardSafeZone safeFromTip safeBefore ->
+              EraEnd
+            . History.mkUpperBound params start
+            . History.maxSafeBeforeEpoch safeBefore
+            . History.slotToEpochBound params start
+            . History.addSlots safeFromTip
 
     next :: WithOrigin SlotNo -> SlotNo
     next Origin        = SlotNo 0

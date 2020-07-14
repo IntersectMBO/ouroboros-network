@@ -290,10 +290,7 @@ byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
 byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
       eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
     , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
-    , eraSafeZone   = HardFork.SafeZone {
-          safeFromTip     = 2 * k
-        , safeBeforeEpoch = safeBeforeEpoch
-        }
+    , eraSafeZone   = HardFork.StandardSafeZone (2 * k) safeBeforeEpoch
     }
   where
     SecurityParam k = genesisSecurityParam genesis
@@ -301,7 +298,7 @@ byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[ByronBlock]
   hardForkSummary =
-      neverForksHardForkSummary (byronEraParams HardFork.UnsafeUnbounded)
+      neverForksHardForkSummary (byronEraParams HardFork.NoLowerBound)
 
 {-------------------------------------------------------------------------------
   Auxiliary
