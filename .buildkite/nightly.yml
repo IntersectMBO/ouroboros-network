@@ -1,4 +1,11 @@
 steps:
+
+  - label:   'slow ThreadNet tests'
+    command: '.buildkite/slow-ThreadNet-tests.sh'
+    agents:
+      queue:  benchmark     # so this runs alone on a dedicated "machine"
+      system: x86_64-linux
+
   - label:   'validate mainnet'
     command: '.buildkite/validate-mainnet.sh'
     agents:

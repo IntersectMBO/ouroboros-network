@@ -49,6 +49,11 @@ let
     # build job.
     nightly-checks = {
       inherit validate-mainnet;
+      gnuparallel = pkgs.parallel;
+      glibcLocales = pkgs.glibcLocales;
+
+      Cardano    = haskellPackages.ouroboros-consensus-cardano.components.tests.test;
+      RealTPraos = haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
     shell = import ./shell.nix {

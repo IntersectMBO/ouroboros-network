@@ -83,7 +83,7 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 5
 
 tests :: TestTree
-tests = testGroup "RealTPraos"
+tests = testGroup "RealTPraos ThreadNet"
     [ askIohkNightlyEnabled $ \enabled ->
       (if enabled then id else adjustOption fifthTestCount) $
       testProperty "simple convergence" $ \setup ->
