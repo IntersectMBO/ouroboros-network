@@ -37,6 +37,7 @@ import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Map.Strict (Map)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
@@ -48,6 +49,7 @@ import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
@@ -61,6 +63,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type
@@ -130,6 +133,14 @@ data Handlers m peer blk = Handlers {
         -> peer
         -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
 
+    , hKeepAliveClient
+        :: NodeToNodeVersion
+        -> ScheduledStop m
+        -> peer
+        -> StrictTVar m (Map peer PeerGSV)
+        -> KeepAliveInterval
+        -> KeepAliveClient m ()
+
     , hKeepAliveServer
         :: NodeToNodeVersion
         -> peer
@@ -139,11 +150,13 @@ data Handlers m peer blk = Handlers {
 mkHandlers
   :: forall m blk remotePeer localPeer.
      ( IOLike m
+     , MonadTimer m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
      , ReconstructNestedCtxt Header blk
+     , Ord remotePeer
      )
   => NodeArgs   m remotePeer localPeer blk
   -> NodeKernel m remotePeer localPeer blk
@@ -184,6 +197,7 @@ mkHandlers
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             version
+      , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers)
       , hKeepAliveServer = \_version _peer -> keepAliveServer
       }
 
@@ -510,10 +524,25 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       -> remotePeer
       -> Channel m bKA
       -> m ((), Maybe bKA)
-    aKeepAliveClient _version _them _channel = do
+    aKeepAliveClient version them channel = do
       labelThisThread "KeepAliveClient"
-      -- TODO implement the client
-      forever (threadDelay 1000) >> return ((), Nothing)
+      let kacApp = case version of
+                     -- Version 1 doesn't support keep alive protocol but Blockfetch
+                     -- still requires a PeerGSV per peer.
+                     NodeToNodeV_1 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
+                     NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
+                     _             -> \dqCtx -> do
+                       runPeerWithLimits
+                         nullTracer
+                         cKeepAliveCodec
+                         (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
+                         timeLimitsKeepAlive
+                         channel
+                         $ keepAliveClientPeer
+                         $ hKeepAliveClient version (neverStop (Proxy :: Proxy m)) them dqCtx
+                             (KeepAliveInterval 10)
+
+      bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
 
     aKeepAliveServer
       :: NodeToNodeVersion
@@ -565,6 +594,7 @@ initiator miniProtocolParameters version Apps {..} =
           keepAliveProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version them)))
         })
+      version
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-node protocols.
@@ -587,5 +617,5 @@ responder miniProtocolParameters version Apps {..} =
             (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them))),
           keepAliveProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
-
         })
+      version

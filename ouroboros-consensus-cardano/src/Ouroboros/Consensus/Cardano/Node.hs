@@ -198,6 +198,7 @@ instance TPraosCrypto sc => SupportedNetworkProtocolVersion (CardanoBlock sc) wh
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
       , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
+      , (NodeToNodeV_3, CardanoNodeToNodeVersion2)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
