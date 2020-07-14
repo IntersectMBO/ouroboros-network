@@ -221,13 +221,14 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 nodeToNodeProtocols
   :: MiniProtocolParameters
   -> (ConnectionId addr -> STM m RunOrStop -> NodeToNodeProtocols appType bytes m a b)
+  -> NodeToNodeVersion
   -> OuroborosApplication appType addr bytes m a b
 nodeToNodeProtocols MiniProtocolParameters {
                         chainSyncPipeliningHighMark,
                         blockFetchPipeliningMax,
                         txSubmissionMaxUnacked
                       }
-                    protocols =
+                    protocols _version =
   OuroborosApplication $ \connectionId shouldStopSTM ->
     case protocols connectionId shouldStopSTM of
       NodeToNodeProtocols {
@@ -236,35 +237,40 @@ nodeToNodeProtocols MiniProtocolParameters {
           txSubmissionProtocol,
           keepAliveProtocol
         } ->
-        [
-          MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 2,
-            miniProtocolLimits = chainSyncProtocolLimits,
-            miniProtocolRun    = chainSyncProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 3,
-            miniProtocolLimits = blockFetchProtocolLimits,
-            miniProtocolRun    = blockFetchProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 4,
-            miniProtocolLimits = txSubmissionProtocolLimits,
-            miniProtocolRun    = txSubmissionProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 8,
-            miniProtocolLimits = keepAliveProtocolLimits,
-            miniProtocolRun    = keepAliveProtocol
-          }
+        [ chainSyncMiniProtocol chainSyncProtocol
+        , blockFetchMiniProtocol blockFetchProtocol
+        , txSubmissionMiniProtocol txSubmissionProtocol
+        , keepAliveMiniProtocol keepAliveProtocol
         ]
-  where
+   where
+    chainSyncMiniProtocol chainSyncProtocol = MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2
+      , miniProtocolLimits = chainSyncProtocolLimits
+      , miniProtocolRun    = chainSyncProtocol
+      }
+    blockFetchMiniProtocol blockFetchProtocol = MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3
+      , miniProtocolLimits = blockFetchProtocolLimits
+      , miniProtocolRun    = blockFetchProtocol
+      }
+    txSubmissionMiniProtocol txSubmissionProtocol = MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 4
+      , miniProtocolLimits = txSubmissionProtocolLimits
+      , miniProtocolRun    = txSubmissionProtocol
+      }
+    keepAliveMiniProtocol keepAliveProtocol = MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 8
+      , miniProtocolLimits = keepAliveProtocolLimits
+      , miniProtocolRun    = keepAliveProtocol
+      }
+
     addSafetyMargin :: Int -> Int
     addSafetyMargin x = x + x `div` 10
 
     chainSyncProtocolLimits
       , blockFetchProtocolLimits
-      , txSubmissionProtocolLimits :: MiniProtocolLimits
+      , txSubmissionProtocolLimits
+      , keepAliveProtocolLimits :: MiniProtocolLimits
 
     chainSyncProtocolLimits =
       MiniProtocolLimits {
