@@ -1,5 +1,6 @@
 { pkgs
 , byron-db-converter
+, db-validator
 , onlyImmDB ? true
 }:
 
@@ -18,7 +19,7 @@ let
   mainnet-converted = pkgs.runCommand "convert-mainnet"
     { buildInputs = [byron-db-converter ]; }
     ''
-    ${byron-db-converter}/bin/db-converter convert \
+    ${byron-db-converter}/bin/db-converter \
       --epochDir ${cardano-mainnet-mirror}/epochs \
       --dbDir $out \
       --epochSlots 21600
@@ -30,7 +31,7 @@ in
     mkdir $out
     cp -r ${mainnet-converted}/* $out
     chmod -R u+rw,g+rw,a+x $out/*
-    ${byron-db-converter}/bin/db-converter validate \
+    ${db-validator}/bin/db-validator \
       --configFile ${cardano-mainnet-config} \
       --genesisHash 5f20df933584822601f9e3f8c024eb5eb252fe8cefb24d1317dc3d432e940ebb \
       --dbDir $out \
