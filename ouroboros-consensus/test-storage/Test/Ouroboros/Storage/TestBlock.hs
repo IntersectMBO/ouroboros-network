@@ -724,8 +724,9 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
     eraParams = HardFork.EraParams {
         eraEpochSize  = EpochSize numRegularBlocks
       , eraSlotLength = slotLength
-      , eraSafeZone   =
-          HardFork.SafeZone (maxRollbacks k * 2) HardFork.NoLowerBound
+      , eraSafeZone   = HardFork.StandardSafeZone
+                          (maxRollbacks k * 2)
+                          HardFork.NoLowerBound
       }
 
 {-------------------------------------------------------------------------------

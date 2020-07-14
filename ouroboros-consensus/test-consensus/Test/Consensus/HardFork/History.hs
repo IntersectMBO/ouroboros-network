@@ -651,20 +651,21 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
         -- Lower bound on the start of the next era
         mNextLo :: Maybe EpochNo
         mNextLo =
-            HF.maxMaybeEpoch
-              (HF.safeBeforeEpoch (HF.eraSafeZone eraParams))
-              (if eventTimeEpochSlot afterSafeZone == 0
-                 then eventTimeEpochNo afterSafeZone
-                 else eventTimeEpochNo afterSafeZone + 1)
-          where
-            -- The 'EventTime' of the first event after the safe zone
-            -- (The @+ 1@ here is required because the first step is to skip
-            -- over the 'Confirm' itself)
-            afterSafeZone :: EventTime
-            afterSafeZone = nTimes
-                              (stepEventTime eraParams)
-                              (HF.safeFromTip (HF.eraSafeZone eraParams) + 1)
-                              timeEvent
+            case HF.eraSafeZone eraParams of
+              HF.UnsafeIndefiniteSafeZone                -> Nothing
+              HF.StandardSafeZone safeFromTip safeBefore -> Just $
+                -- The 'EventTime' of the first event after the safe zone
+                -- (The @+ 1@ here is required because the first step is to skip
+                -- over the 'Confirm' itself)
+                let afterSafeZone :: EventTime
+                    afterSafeZone = nTimes
+                                      (stepEventTime eraParams)
+                                      (safeFromTip + 1)
+                                      timeEvent
+                in HF.maxSafeBeforeEpoch safeBefore $
+                     if eventTimeEpochSlot afterSafeZone == 0
+                       then eventTimeEpochNo afterSafeZone
+                       else eventTimeEpochNo afterSafeZone + 1
 
         pickStartOfNextEra :: EpochNo -> Gen EpochNo
         pickStartOfNextEra lo = (\d -> HF.addEpochs d lo) <$> choose (0, 10)
@@ -734,13 +735,14 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
        -> HF.SafeZone -- Remaining safe zone
        -> [Event]     -- Remaining events to be processed
        -> ([Event], [Event])
-    go acc _               []     = (reverse acc, [])
-    go acc HF.SafeZone{..} (e:es)
+    go acc _ [] =
+        (reverse acc, [])
+    go acc (HF.StandardSafeZone safeFromTip safeBefore) (e:es)
         -- Interpret the 'SafeZone' parameters
-      | eventTimeEpochNo (eventTime e) `before` safeBeforeEpoch =
-          go (e:acc) (HF.SafeZone (pred' safeFromTip) safeBeforeEpoch) es
+      | eventTimeEpochNo (eventTime e) `before` safeBefore =
+          go (e:acc) (HF.StandardSafeZone (pred' safeFromTip) safeBefore) es
       | safeFromTip > 0 =
-          go (e:acc) (HF.SafeZone (pred  safeFromTip) safeBeforeEpoch) es
+          go (e:acc) (HF.StandardSafeZone (pred  safeFromTip) safeBefore) es
       | otherwise =
           let (sameEpoch, rest) = span inLastEpoch (e:es)
           in (reverse acc ++ sameEpoch, rest)
@@ -752,10 +754,11 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
 
         inLastEpoch :: Event -> Bool
         inLastEpoch e' = eventTimeEpochNo (eventTime e') == lastEpoch
+    go acc HF.UnsafeIndefiniteSafeZone (e:es) =
+        go (e:acc) HF.UnsafeIndefiniteSafeZone es
 
     before :: EpochNo -> HF.SafeBeforeEpoch -> Bool
     before _ HF.NoLowerBound    = False
-    before _ HF.UnsafeUnbounded = True
     before e (HF.LowerBound e') = e < e'
 
     -- Example. Suppose

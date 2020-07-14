@@ -140,22 +140,25 @@ genEraParams startOfEra = do
     return HF.EraParams{..}
   where
     genSafeZone :: Gen HF.SafeZone
-    genSafeZone = do
-        safeFromTip     <- choose (1, 10)
-        safeBeforeEpoch <- genSafeBeforeEpoch
-        return HF.SafeZone{..}
+    genSafeZone = oneof [
+          do safeFromTip <- choose (1, 10)
+             safeBefore  <- genSafeBeforeEpoch
+             return $ HF.StandardSafeZone safeFromTip safeBefore
+        , return HF.UnsafeIndefiniteSafeZone
+        ]
 
     genSafeBeforeEpoch :: Gen HF.SafeBeforeEpoch
     genSafeBeforeEpoch = oneof [
           return HF.NoLowerBound
         , (\n -> HF.LowerBound (HF.addEpochs n startOfEra)) <$> choose (1, 5)
-        , return HF.UnsafeUnbounded
         ]
 
 -- | Generate 'EpochNo' for the start of the next era
 genStartOfNextEra :: EpochNo ->  HF.EraParams -> Gen (Maybe EpochNo)
 genStartOfNextEra startOfEra HF.EraParams{..} =
     case HF.safeBeforeEpoch eraSafeZone of
-       HF.LowerBound e    -> (\n -> Just $ HF.addEpochs n e         ) <$> choose (0, 10)
-       HF.NoLowerBound    -> (\n -> Just $ HF.addEpochs n startOfEra) <$> choose (1, 10)
-       HF.UnsafeUnbounded -> return Nothing
+      Nothing     -> return Nothing
+      Just mBound -> Just <$>
+        case mBound of
+          HF.LowerBound e -> (\n -> HF.addEpochs n e         ) <$> choose (0, 10)
+          HF.NoLowerBound -> (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)

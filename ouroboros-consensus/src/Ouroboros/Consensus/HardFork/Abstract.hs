@@ -1,5 +1,6 @@
-{-# LANGUAGE DataKinds    #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies    #-}
 
 module Ouroboros.Consensus.HardFork.Abstract (
     HasHardForkHistory(..)
@@ -63,4 +64,6 @@ neverForksHardForkSummary :: (LedgerConfig blk -> HardFork.EraParams)
                           -> LedgerState blk
                           -> HardFork.Summary '[blk]
 neverForksHardForkSummary getParams cfg _st =
-    HardFork.neverForksSummary (getParams cfg)
+    HardFork.neverForksSummary eraEpochSize eraSlotLength
+  where
+    HardFork.EraParams{..} = getParams cfg
