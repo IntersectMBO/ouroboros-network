@@ -183,8 +183,8 @@ fetchDecisionsForStateSnapshot
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
-    assert (Map.keysSet fetchStatePeerStates
-         == Map.keysSet fetchStatePeerGSVs) $
+    assert (                 Map.keysSet fetchStatePeerStates
+            `Set.isSubsetOf` Map.keysSet fetchStatePeerGSVs) $
 
     fetchDecisions
       fetchDecisionPolicy
