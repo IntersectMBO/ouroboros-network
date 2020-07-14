@@ -37,6 +37,7 @@ import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (sortOn)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Ord (Down (..))
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq)
@@ -80,8 +81,9 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.IOLike hiding (fork)
+import           Ouroboros.Consensus.Util.IOLike hiding (fork, invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
@@ -141,6 +143,7 @@ data Cmd blk it rdr
   | GetGCedBlockComponent (RealPoint blk)
     -- ^ Only for blocks that may have been garbage collected.
   | GetMaxSlotNo
+  | GetIsValid            (RealPoint blk)
   | Stream                (StreamFrom blk) (StreamTo blk)
   | IteratorNext          it
   | IteratorNextGCed      it
@@ -204,6 +207,7 @@ data Success blk it rdr
   | MbHeader            (Maybe (Header blk))
   | Point               (Point blk)
   | BlockNo             BlockNo
+  | IsValid             IsValidResult
   | UnknownRange        (UnknownRange blk)
   | Iter                it
   | IterResult          (IteratorResult blk (AllComponents blk))
@@ -345,6 +349,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       GetTipPoint              -> Point               <$> atomically getTipPoint
       GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
       GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
+      GetIsValid pt            -> isValidResult       <$> ($ pt) <$> atomically getIsValid
       GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
       Stream from to           -> iter                =<< stream registry allComponents from to
       IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
@@ -361,6 +366,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
   where
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
+    isValidResult = IsValid . IsValidResult True
     iterResultGCed = IterResultGCed . IteratorResultGCed True
     iter = either (return . UnknownRange) (fmap Iter . giveWithEq . traverseIterator runAllComponentsM)
     reader = fmap Rdr . giveWithEq . traverseReader runAllComponentsM
@@ -468,6 +474,41 @@ instance (Eq blk, Eq (Header blk), StandardHash blk)
         (IteratorExhausted,    IteratorExhausted)    -> True
         _                                            -> False
 
+-- | The model knows about all valid blocks whereas the real implementation
+-- only knows about blocks that have been validated in the VolatileDB if they
+-- were part of a chain selected by chain selection.
+--
+-- 'Nothing' means the validity of the block is unknown.
+--
+-- When the real implementation returned 'Nothing', we ignore the result of
+-- the model. If the model returned 'Nothing', the real implementation must
+-- too. In the 'Just' case, the result of the implementation and the model
+-- must match.
+data IsValidResult = IsValidResult
+  { real    :: Bool
+    -- ^ 'True':  result of calling 'getIsValid' on the real implementation
+    -- ^ 'False': result of calling 'getIsValid' on the model implementation
+  , isValid :: Maybe Bool
+  } deriving (Show)
+
+instance Eq IsValidResult where
+  IsValidResult real1 isValid1 == IsValidResult real2 isValid2 =
+      case (real1, real2) of
+        (False, False) -> isValid1 == isValid2
+        (True,  False) -> realMatchesModel isValid1 isValid2
+        (False, True)  -> realMatchesModel isValid2 isValid1
+        (True,  True)  -> eqIfJust
+    where
+      eqIfJust = case (isValid1, isValid2) of
+        (Just x1, Just x2) -> x1 == x2
+        _                  -> True
+
+      realMatchesModel real model = case (real, model) of
+        (Just x1, Just x2) -> x1 == x2
+        (Nothing, Nothing) -> True
+        (Nothing, Just _)  -> True
+        (Just _,  Nothing) -> False
+
 {-------------------------------------------------------------------------------
   Max clock skew
 -------------------------------------------------------------------------------}
@@ -523,6 +564,7 @@ runPure cfg = \case
     GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.getMaxSlotNo
+    GetIsValid pt            -> ok  isValidResult       $ query   (Model.isValid cfg pt)
     Stream from to           -> err iter                $ updateE (Model.stream k ccfg from to)
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext @Identity it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext @Identity it allComponents)
@@ -545,7 +587,8 @@ runPure cfg = \case
 
     iter = either UnknownRange Iter
     mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock False
-    iterResultGCed      = IterResultGCed . IteratorResultGCed False
+    iterResultGCed = IterResultGCed . IteratorResultGCed False
+    isValidResult = IsValid . IsValidResult False
 
     query   f m = (f m, m)
 
@@ -748,6 +791,7 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipPoint)
     , (10, genGetBlockComponent)
     , (if empty then 1 else 10, return GetMaxSlotNo)
+    , (if empty then 1 else 10, genGetIsValid)
     , (if empty then 1 else 10, genGetPastLedger)
 
     -- Iterators
@@ -799,7 +843,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genRealPoint :: Gen (RealPoint blk)
     genRealPoint = frequency
-      [ (2, genRandomPoint)
+      [ (1, genRandomPoint)
       , (if empty then 0 else 7, elements pointsInDB)
       ]
 
@@ -808,6 +852,15 @@ generator genBlock m@Model {..} = At <$> frequency
       [ (1, return GenesisPoint)
       , (9, realPointToPoint <$> genRealPoint)
       ]
+
+    genGetIsValid :: Gen (Cmd blk it rdr)
+    genGetIsValid =
+      GetIsValid <$> genRealPoint `suchThat` \(RealPoint _ hash) ->
+        -- Ignore blocks from the future, since the real implementation might
+        -- have validated them before detecting they're from the future,
+        -- whereas the model won't include them in the output of
+        -- 'Model.getIsValid' (which uses 'Model.validChains').
+        Map.notMember hash (Model.futureBlocks dbModel)
 
     genGetBlockComponent :: Gen (Cmd blk it rdr)
     genGetBlockComponent = do
@@ -958,6 +1011,13 @@ precondition Model {..} (At cmd) =
                                  blockSlot blk .> s .&&
                                  Not (futureBlockWithSameBlockNo (blockNo blk))
      WipeVolDB                -> Boolean $ Model.isOpen dbModel
+     -- We don't allow 'GetIsValid' for blocks from the future, since the real
+     -- implementation might have validated them before detecting they're from
+     -- the future, whereas the model won't include them in the output of
+     -- 'Model.getIsValid' (which uses 'Model.validChains').
+     GetIsValid pt            -> Boolean $
+                                   Map.notMember (realPointHash pt)
+                                                 (Model.futureBlocks dbModel)
      _                        -> Top
   where
     garbageCollectable :: RealPoint blk -> Logic
@@ -1000,6 +1060,25 @@ transition :: (TestConstraints blk, Show1 r, Eq1 r)
            -> Model   blk m r
 transition model cmd = eventAfter . lockstep model cmd
 
+invariant ::
+     forall m blk. TestConstraints blk
+  => TopLevelConfig blk
+  -> Model blk m Concrete
+  -> Logic
+invariant cfg Model {..} =
+    forall ptsOnCurChain (Boolean . fromMaybe False . isValid)
+  where
+    -- | The blocks occurring on the current volatile chain fragment
+    ptsOnCurChain :: [RealPoint blk]
+    ptsOnCurChain =
+          map blockRealPoint
+        . AF.toOldestFirst
+        . Model.volatileChain (configSecurityParam cfg) id
+        $ dbModel
+
+    isValid :: RealPoint blk -> Maybe Bool
+    isValid = Model.getIsValid cfg dbModel
+
 postcondition :: TestConstraints blk
               => Model   blk m Concrete
               -> At Cmd  blk m Concrete
@@ -1039,7 +1118,7 @@ sm env genBlock cfg initLedger maxClockSkew = StateMachine
   , shrinker      = shrinker
   , semantics     = semantics env
   , mock          = mock
-  , invariant     = Nothing
+  , invariant     = Just $ invariant cfg
   , cleanup       = noCleanup
   }
 
@@ -1168,7 +1247,62 @@ deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
 deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
 
--- TODO labelling
+data Tag =
+    TagGetIsValidJust
+  | TagGetIsValidNothing
+  deriving (Show, Eq)
+
+-- | Predicate on events
+type EventPred m = C.Predicate (Event Blk m Symbolic) Tag
+
+-- | Convenience combinator for creating classifiers for successful commands
+successful :: (    Event Blk m Symbolic
+                -> Success Blk IteratorId ReaderId
+                -> Either Tag (EventPred m)
+              )
+           -> EventPred m
+successful f = C.predicate $ \ev -> case eventMockResp ev of
+    Resp (Left  _ ) -> Right $ successful f
+    Resp (Right ok) -> f ev ok
+
+-- | Tag commands
+--
+-- Tagging works on symbolic events, so that we can tag without doing real IO.
+tag :: forall m. [Event Blk m Symbolic] -> [Tag]
+tag = C.classify [
+      tagGetIsValidJust
+    , tagGetIsValidNothing
+    ]
+  where
+    tagGetIsValidJust :: EventPred m
+    tagGetIsValidJust = successful $ \ev r -> case r of
+      IsValid (IsValidResult { isValid = Just _ }) | GetIsValid {} <- unAt $ eventCmd ev ->
+        Left TagGetIsValidJust
+      _ -> Right tagGetIsValidJust
+
+    tagGetIsValidNothing :: EventPred m
+    tagGetIsValidNothing = successful $ \ev r -> case r of
+      IsValid (IsValidResult { isValid = Nothing }) | GetIsValid {} <- unAt $ eventCmd ev ->
+        Left TagGetIsValidNothing
+      _ -> Right tagGetIsValidNothing
+
+-- | Step the model using a 'QSM.Command' (i.e., a command associated with
+-- an explicit set of variables)
+execCmd :: Model Blk m Symbolic
+        -> QSM.Command (At Cmd Blk m) (At Resp Blk m)
+        -> Event Blk m Symbolic
+execCmd model (QSM.Command cmdErr resp _vars) = lockstep model cmdErr resp
+
+-- | 'execCmds' is just the repeated form of 'execCmd'
+execCmds :: forall m.
+            Model Blk m Symbolic
+         -> QSM.Commands (At Cmd Blk m) (At Resp Blk m) -> [Event Blk m Symbolic]
+execCmds model = \(QSM.Commands cs) -> go model cs
+  where
+    go :: Model Blk m Symbolic -> [QSM.Command (At Cmd Blk m) (At Resp Blk m)]
+       -> [Event Blk m Symbolic]
+    go _ []       = []
+    go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
 
 {-------------------------------------------------------------------------------
   Generator for TestBlock
@@ -1315,8 +1449,12 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
     forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $ \cmds ->
       QC.monadicIO $ do
         (hist, prop) <- QC.run $ test cmds
-        -- TODO label tags
-        prettyCommands (smUnused maxClockSkew chunkInfo) hist prop
+        prettyCommands (smUnused maxClockSkew chunkInfo) hist
+          $ tabulate
+              "Tags"
+              (map show $
+                tag (execCmds (QSM.initModel (smUnused maxClockSkew chunkInfo)) cmds))
+          $ prop
   where
     testCfg = mkTestCfg chunkInfo
 

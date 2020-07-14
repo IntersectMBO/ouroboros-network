@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,6 +13,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
   , getTipPoint
   , getBlockComponent
   , getIsFetched
+  , getIsValid
   , getIsInvalidBlock
   , getMaxSlotNo
     -- * Low-level queries
@@ -22,6 +24,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
 
 import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import           Data.Typeable
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -33,7 +36,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (WithFingerprint)
+import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDB, ChainDbFailure (..), InvalidBlockReason)
@@ -161,6 +164,22 @@ getIsInvalidBlock
   -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 getIsInvalidBlock CDB{..} =
   fmap (fmap (fmap invalidBlockReason) . flip Map.lookup) <$> readTVar cdbInvalid
+
+getIsValid
+  :: forall m blk. (IOLike m, HasHeader blk)
+  => ChainDbEnv m blk
+  -> STM m (RealPoint blk -> Maybe Bool)
+getIsValid CDB{..} = do
+    prevApplied <- LgrDB.getPrevApplied cdbLgrDB
+    invalid     <- forgetFingerprint <$> readTVar cdbInvalid
+    return $ \pt@(RealPoint _ hash) ->
+      -- Blocks from the future that were valid according to the ledger but
+      -- that exceeded the max clock skew will be in 'prevApplied' *and*
+      -- 'invalid'. So we first check 'invalid' before 'prevApplied'. See
+      -- #2413.
+      if | Map.member hash invalid   -> Just False
+         | Set.member pt prevApplied -> Just True
+         | otherwise                 -> Nothing
 
 getMaxSlotNo
   :: forall m blk. (IOLike m, HasHeader (Header blk))
