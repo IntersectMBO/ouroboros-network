@@ -159,3 +159,37 @@ executable db-analyser
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
+
+executable db-validator
+  hs-source-dirs:      tools/db-validator
+  main-is:             Main.hs
+  build-depends:       aeson
+                     , base
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , contra-tracer
+                     , directory
+                     , filepath
+                     , mtl
+                     , optparse-applicative
+                     , optparse-generic
+                     , shelley-spec-ledger
+                     , text
+                     , time
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-byron
+                     , ouroboros-consensus-cardano
+                     , ouroboros-consensus-shelley
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
