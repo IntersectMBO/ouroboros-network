@@ -19,7 +19,8 @@ import           Control.Monad.Trans.Resource (runResourceT)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
 import           Data.List (sort)
-import           Data.Word (Word64)
+import qualified Data.Text as T
+import           Data.Word (Word32, Word64)
 import           Options.Generic
 import           Path
 import           Path.IO (createDirIfMissing, listDir)
@@ -30,15 +31,18 @@ import qualified System.IO as IO
 import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Epoch.File as CC
 import           Cardano.Chain.Slotting (EpochSlots (..))
+import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 data Args w = Args
-    { epochDir   :: w ::: FilePath <?> "Path to the directory containing old epoch files"
-    , dbDir      :: w ::: FilePath <?> "Path to the new database directory"
-    , epochSlots :: w ::: Word64   <?> "Slots per epoch"
+    { epochDir        :: w ::: FilePath     <?> "Path to the directory containing old epoch files"
+    , dbDir           :: w ::: FilePath     <?> "Path to the new database directory"
+    , epochSlots      :: w ::: Word64       <?> "Slots per epoch"
+    , protocolMagicId :: w ::: Maybe Word32 <?> "Magic Id of the network"
     }
   deriving (Generic)
 
@@ -48,22 +52,31 @@ deriving instance Show (Args Unwrapped)
 
 main :: IO ()
 main = do
-    Args {epochDir, dbDir, epochSlots} <- unwrapRecord "Byron DB converter"
+    Args {epochDir, dbDir, epochSlots, protocolMagicId} <- unwrapRecord "Byron DB converter"
     dbDir' <- parseAbsDir =<< canonicalizePath dbDir
     (_, files) <- listDir =<< parseAbsDir =<< canonicalizePath epochDir
     let epochFiles = filter (\f -> fileExtension f == ".epoch") files
     putStrLn $ "Writing to " ++ show dbDir
     for_ (sort epochFiles) $ \f -> do
       putStrLn $ "Converting file " ++ show f
-      convertChunkFile (EpochSlots epochSlots) f dbDir'
+      convertChunkFile (EpochSlots epochSlots) f dbDir' (mkProtocolMagicId protocolMagicId)
+
+-- | If 'ProtocolMagicId' is not specified, we assume by default it's mainnet.
+mkProtocolMagicId :: Maybe Word32 -> ProtocolMagicId
+mkProtocolMagicId Nothing  = ProtocolMagicId 764824073
+mkProtocolMagicId (Just w) = ProtocolMagicId w
 
 convertChunkFile
   :: EpochSlots
   -> Path Abs File -- ^ Input
   -> Path Abs Dir -- ^ Ouput directory
+  -> ProtocolMagicId
   -> IO (Either CC.ParseError ())
-convertChunkFile es inFile outDir = do
+convertChunkFile es inFile outDir magicId = do
     createDirIfMissing True dbDir
+    dbMarkerFile' <- parseRelFile $ T.unpack dbMarkerFile
+    BS.writeFile (toFilePath $ outDir </> dbMarkerFile') $
+      dbMarkerContents magicId
     -- Old filename format is XXXXX.epoch, new is XXXXX.chunk
     outFileName <- parseRelFile (toFilePath (filename inFile))
     outFile <- (dbDir </> outFileName) -<.> "chunk"
