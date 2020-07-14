@@ -50,7 +50,7 @@ data TPraosStandardCrypto
 
 instance Crypto TPraosStandardCrypto where
   type DSIGN    TPraosStandardCrypto = Ed25519DSIGN
-  type KES      TPraosStandardCrypto = Sum7KES Ed25519DSIGN Blake2b_256
+  type KES      TPraosStandardCrypto = Sum6KES Ed25519DSIGN Blake2b_256
   type VRF      TPraosStandardCrypto = PraosVRF
   type HASH     TPraosStandardCrypto = Blake2b_256
   type ADDRHASH TPraosStandardCrypto = Blake2b_224
