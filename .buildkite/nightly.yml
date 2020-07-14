@@ -1,6 +1,5 @@
 steps:
-  - label: 'nightly tests'
-    command:
-      - ".buildkite/nightly-tests.sh"
+  - label:   'validate mainnet'
+    command: '.buildkite/validate-mainnet.sh'
     agents:
       system: x86_64-linux
