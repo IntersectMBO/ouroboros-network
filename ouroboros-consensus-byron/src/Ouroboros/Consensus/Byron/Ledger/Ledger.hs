@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Ledger integration
     initByronLedgerState
   , byronEraParams
+  , byronEraParamsNeverHardForks
     -- * Serialisation
   , encodeByronAnnTip
   , decodeByronAnnTip
@@ -286,6 +287,7 @@ instance LedgerSupportsProtocol ByronBlock where
                 Origin      -> SlotNo $ 2 * k
                 NotOrigin s -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
+-- | To be used for a Byron-to-X (where X is typically Shelley) chain.
 byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
 byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
       eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
@@ -295,10 +297,17 @@ byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
   where
     SecurityParam k = genesisSecurityParam genesis
 
+-- | Separate variant of 'byronEraParams' to be used for a Byron-only chain.
+byronEraParamsNeverHardForks :: Gen.Config -> HardFork.EraParams
+byronEraParamsNeverHardForks genesis = HardFork.EraParams {
+      eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
+    , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
+    , eraSafeZone   = HardFork.UnsafeIndefiniteSafeZone
+    }
+
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[ByronBlock]
-  hardForkSummary =
-      neverForksHardForkSummary (byronEraParams HardFork.NoLowerBound)
+  hardForkSummary = neverForksHardForkSummary byronEraParamsNeverHardForks
 
 {-------------------------------------------------------------------------------
   Auxiliary

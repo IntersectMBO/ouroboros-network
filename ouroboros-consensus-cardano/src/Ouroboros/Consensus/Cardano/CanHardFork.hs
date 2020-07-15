@@ -211,6 +211,7 @@ byronTransition ByronPartialLedgerConfig{..}
 instance SingleEraBlock ByronBlock where
   singleEraTransition pcfg eraParams eraStart ledgerState =
       case triggerHardFork pcfg of
+        TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
         TriggerHardForkAtVersion shelleyMajorVersion ->
             byronTransition
@@ -235,6 +236,8 @@ data TriggerHardFork =
     -- | For testing only, trigger the transition at a specific hard-coded
     -- epoch, irrespective of the ledger state.
   | TriggerHardForkAtEpoch !EpochNo
+    -- | Never trigger a hard fork
+  | TriggerHardForkNever
   deriving (Generic, NoUnexpectedThunks)
 
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger

@@ -533,31 +533,21 @@ defaultEncodeAnnTip :: TipInfo blk ~ HeaderHash blk
                     => (HeaderHash blk -> Encoding)
                     -> (AnnTip     blk -> Encoding)
 defaultEncodeAnnTip encodeHash AnnTip{..} = mconcat [
-      encodeListLen 4
+      encodeListLen 3
     , encode     annTipSlotNo
     , encodeHash annTipInfo
     , encode     annTipBlockNo
-      -- TODO: Useless field. Remove when OK to break binary compatibility.
-    , encodeInfo ()
     ]
-  where
-    encodeInfo :: () -> Encoding
-    encodeInfo = encode
 
 defaultDecodeAnnTip :: TipInfo blk ~ HeaderHash blk
                     => (forall s. Decoder s (HeaderHash blk))
                     -> (forall s. Decoder s (AnnTip     blk))
 defaultDecodeAnnTip decodeHash = do
-    enforceSize "AnnTip" 4
+    enforceSize "AnnTip" 3
     annTipSlotNo  <- decode
     annTipInfo    <- decodeHash
     annTipBlockNo <- decode
-      -- TODO: Useless field. Remove when OK to break binary compatibility.
-    ()            <- decodeInfo
     return AnnTip{..}
-  where
-    decodeInfo :: forall s. Decoder s ()
-    decodeInfo = decode
 
 encodeAnnTipIsEBB :: TipInfo blk ~ TipInfoIsEBB blk
                   => (HeaderHash blk -> Encoding)
