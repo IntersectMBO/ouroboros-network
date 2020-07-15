@@ -323,7 +323,7 @@ data TPraosChainSelectView c = TPraosChainSelectView {
   , csvSlotNo      :: SlotNo
   , csvSelfIssued  :: SelfIssued
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
-  , csvIssueNo     :: Natural
+  , csvIssueNo     :: Word64
   , csvLeaderVRF   :: VRF.OutputVRF (SL.VRF c)
   } deriving (Show, Eq)
 
