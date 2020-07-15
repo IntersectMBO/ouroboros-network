@@ -207,6 +207,25 @@ data ChainDB m blk = ChainDB {
       -- non-deterministic.
     , getIsFetched       :: STM m (Point blk -> Bool)
 
+      -- | Return a function that tells whether a block is known to be valid
+      -- or invalid.
+      --
+      -- The function will return:
+      --
+      -- * @Just True@: for blocks in the volatile DB that have been validated
+      --   and were found to be valid. All blocks in the current chain
+      --   fragment (i.e., 'getCurrentChain') are valid.
+      --
+      -- * @Just False@: for blocks in the volatile DB that have been
+      --   validated and were found to be invalid.
+      --
+      -- * @Nothing@: for blocks not or no longer in the volatile DB, whether
+      --   they are valid or not, including blocks in the immutable DB. Also
+      --   for blocks in the volatile DB that haven't been validated (yet),
+      --   e.g., because they are disconnected from the current chain or they
+      --   are part of a shorter fork.
+    , getIsValid         :: STM m (RealPoint blk -> Maybe Bool)
+
       -- | Get the highest slot number stored in the ChainDB.
       --
       -- Note that the corresponding block doesn't have to be part of the

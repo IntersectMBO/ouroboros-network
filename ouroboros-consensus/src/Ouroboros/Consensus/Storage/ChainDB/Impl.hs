@@ -190,6 +190,7 @@ openDBInternal args launchBgTasks = do
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
           , getBlockComponent  = getEnv2    h Query.getBlockComponent
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
+          , getIsValid         = getEnvSTM  h Query.getIsValid
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , stream             = Iterator.stream  h
           , newReader          = Reader.newReader h

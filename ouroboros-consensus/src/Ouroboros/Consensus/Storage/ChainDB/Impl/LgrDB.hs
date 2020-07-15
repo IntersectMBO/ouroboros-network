@@ -40,7 +40,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Validation
   , validate
   , ValidateResult(..)
-    -- * Garbage collect points of previously applied blocks
+    -- * Previously applied blocks
+  , getPrevApplied
   , garbageCollectPrevApplied
     -- * Re-exports
   , ExceededRollback(..)
@@ -114,6 +115,8 @@ data LgrDB m blk = LgrDB {
     , varPrevApplied :: !(StrictTVar m (Set (RealPoint blk)))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
+      --
+      -- INVARIANT: all points on the current chain fragment are in this set.
       --
       -- The VolatileDB might contain invalid blocks, these will not be in
       -- this set.
@@ -472,8 +475,11 @@ streamAPI immDB = StreamAPI streamAfter
       ImmDB.IteratorResult mblk -> (\blk -> NextBlock (blockRealPoint blk, blk)) <$> mblk
 
 {-------------------------------------------------------------------------------
-  Garbage collect points of previously applied blocks
+  Previously applied blocks
 -------------------------------------------------------------------------------}
+
+getPrevApplied :: IOLike m => LgrDB m blk -> STM m (Set (RealPoint blk))
+getPrevApplied LgrDB{..} = readTVar varPrevApplied
 
 -- | Remove all points with a slot older than the given slot from the set of
 -- previously applied points.

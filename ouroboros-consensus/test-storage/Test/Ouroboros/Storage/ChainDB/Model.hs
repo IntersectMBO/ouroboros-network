@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE MultiWayIf           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -47,6 +48,8 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , isOpen
   , invalid
   , getPastLedger
+  , getIsValid
+  , isValid
     -- * Iterators
   , stream
   , iteratorNext
@@ -92,6 +95,8 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Proxy
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -172,7 +177,7 @@ blocks m = volDbBlocks m <> immDbBlocks m
 
 futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 futureBlocks m =
-    Map.filter ((currentSlot m >) . blockSlot) (volDbBlocks m)
+    Map.filter ((currentSlot m <) . blockSlot) (volDbBlocks m)
 
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
@@ -340,6 +345,30 @@ getPastLedger cfg p m@Model{..} =
            . Chain.toNewestFirst
            . currentChain
            $ m
+
+getIsValid :: forall blk. LedgerSupportsProtocol blk
+           => TopLevelConfig blk
+           -> Model blk
+           -> (RealPoint blk -> Maybe Bool)
+getIsValid cfg m = \pt@(RealPoint _ hash) -> if
+    | Set.member pt validPoints   -> Just True
+    | Map.member hash (invalid m) -> Just False
+    | otherwise                   -> Nothing
+  where
+    validPoints :: Set (RealPoint blk)
+    validPoints =
+          foldMap (Set.fromList . map blockRealPoint . Chain.toOldestFirst . fst)
+        . snd
+        . validChains cfg m
+        . blocks
+        $ m
+
+isValid :: forall blk. LedgerSupportsProtocol blk
+        => TopLevelConfig blk
+        -> RealPoint blk
+        -> Model blk
+        -> Maybe Bool
+isValid = flip . getIsValid
 
 {-------------------------------------------------------------------------------
   Construction

@@ -5,8 +5,8 @@
 --
 -- Intended for qualified import.
 --
--- > import qualified Ouroboros.Consensus.Util.Classify as C
-module Ouroboros.Consensus.Util.Classify (
+-- > import qualified Test.Util.Classify as C
+module Test.Util.Classify (
     Predicate(..)
   , predicate
   , maximum

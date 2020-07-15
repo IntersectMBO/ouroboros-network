@@ -62,7 +62,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -84,6 +83,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser (ChunkFileError,
                      chunkFileParser)
 
 import           Test.Util.ChunkInfo
+import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)

@@ -43,7 +43,6 @@ import           Ouroboros.Network.Block (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
@@ -65,6 +64,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Slotting.Arbitrary ()
