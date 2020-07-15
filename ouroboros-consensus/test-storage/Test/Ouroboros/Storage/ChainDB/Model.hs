@@ -172,7 +172,7 @@ blocks m = volDbBlocks m <> immDbBlocks m
 
 futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 futureBlocks m =
-    Map.filter ((currentSlot m >) . blockSlot) (volDbBlocks m)
+    Map.filter ((currentSlot m <) . blockSlot) (volDbBlocks m)
 
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
