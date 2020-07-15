@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -22,7 +23,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , inject'
     -- * Dependent types
   , projQuery
+  , projQuery'
+  , ProjHardForkQuery(..)
   , injQuery
+  , projQueryResult
+  , injQueryResult
   , projNestedCtxt
   , injNestedCtxt
     -- * Convenience exports
@@ -553,12 +558,28 @@ projQuery qry k =
     aux (QZ q) = q
     aux (QS q) = case q of {}
 
+projQuery' :: Query (HardForkBlock '[b]) result
+           -> ProjHardForkQuery b result
+projQuery' qry = projQuery qry $ \Refl -> ProjHardForkQuery
+
+data ProjHardForkQuery b :: * -> * where
+  ProjHardForkQuery ::
+       Query b result'
+    -> ProjHardForkQuery b (HardForkQueryResult '[b] result')
+
 -- | Inject 'Query'
 --
 -- Not an instance of 'Isomorphic' because the types change.
 injQuery :: Query b result
          -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
 injQuery = QueryIfCurrent . QZ
+
+projQueryResult :: HardForkQueryResult '[b] result -> result
+projQueryResult (Left  err)    = absurd $ mismatchOneEra err
+projQueryResult (Right result) = result
+
+injQueryResult :: result -> HardForkQueryResult '[b] result
+injQueryResult = Right
 
 projNestedCtxt :: NestedCtxt f (HardForkBlock '[blk]) a -> NestedCtxt f blk a
 projNestedCtxt = NestedCtxt . aux . flipNestedCtxt
