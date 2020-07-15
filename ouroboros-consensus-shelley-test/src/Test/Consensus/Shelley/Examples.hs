@@ -32,6 +32,7 @@ import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Word (Word64)
 
+import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Prelude (Natural)
@@ -121,7 +122,7 @@ codecConfig :: CodecConfig (Block ShortHash)
 codecConfig = ShelleyCodecConfig
 
 mkDummyHash :: forall c a. Crypto c => Proxy c -> Int -> SL.Hash c a
-mkDummyHash _ = coerce . SL.hash @(SL.HASH c)
+mkDummyHash _ = coerce . SL.hashWithSerialiser @(SL.HASH c) toCBOR
 
 mkScriptHash :: Int -> SL.ScriptHash (TPraosMockCrypto ShortHash)
 mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(TPraosMockCrypto ShortHash))
@@ -187,7 +188,7 @@ examples = Golden.Examples {
 
     stakeDistribution :: SL.PoolDistr (TPraosMockCrypto ShortHash)
     stakeDistribution = SL.PoolDistr $ Map.singleton
-        (SL.KeyHash $ SL.hash 4)
+        (SL.KeyHash $ SL.hashWithSerialiser toCBOR 4)
         (1, hashKeyVRF $ VerKeyFakeVRF 0)
 
 exampleBlock :: Block ShortHash

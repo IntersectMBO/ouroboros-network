@@ -121,6 +121,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.SignableRepresentation ()
 
 {-------------------------------------------------------------------------------
   TestBlock

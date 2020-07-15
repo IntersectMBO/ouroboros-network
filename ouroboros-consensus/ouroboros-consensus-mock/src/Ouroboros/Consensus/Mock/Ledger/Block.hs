@@ -92,7 +92,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util (hashFromBytesE, (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -188,7 +188,7 @@ matchesSimpleHeader :: SimpleCrypto c
                     -> SimpleBlock'  c ext ext''
                     -> Bool
 matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
-    simpleBodyHash == Hash.hash simpleBody
+    simpleBodyHash == Hash.hashWithSerialiser toCBOR simpleBody
   where
     SimpleStdHeader{..} = simpleHeaderStd
 
@@ -229,8 +229,8 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => StandardHash (SimpleBlock' c ext ext')
 
 instance SimpleCrypto c => ConvertRawHash (SimpleBlock' c ext ext') where
-  toRawHash   _ = Hash.getHash
-  fromRawHash _ = Hash.UnsafeHash
+  toRawHash   _ = Hash.hashToBytes
+  fromRawHash _ = hashFromBytesE
   hashSize    _ = fromIntegral $ Hash.sizeHash (Proxy @(SimpleHash c))
 
 {-------------------------------------------------------------------------------
@@ -428,7 +428,7 @@ instance Condense (GenTxId (SimpleBlock p c)) where
 mkSimpleGenTx :: Mock.Tx -> GenTx (SimpleBlock c ext)
 mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
-    , simpleGenTxId = Hash.hash tx
+    , simpleGenTxId = Hash.hashWithSerialiser toCBOR tx
     }
 
 txSize :: GenTx (SimpleBlock c ext) -> Word32

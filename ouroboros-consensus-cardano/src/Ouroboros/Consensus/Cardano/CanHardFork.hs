@@ -34,7 +34,6 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Endorsement as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
 import qualified Cardano.Chain.UTxO as CC
-import qualified Cardano.Crypto.Hash as Hash
 import qualified Cardano.Crypto.Hashing as Hashing
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -64,6 +63,8 @@ import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis (..))
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
+
+import           Ouroboros.Consensus.Util (hashFromBytesE)
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
@@ -333,7 +334,7 @@ translatePointByronToShelley = \case
     GenesisPoint   -> GenesisPoint
     BlockPoint s h -> BlockPoint s (translateHeaderHashByronToShelley h)
 
-translateUTxOByronToShelley :: forall sc. CC.UTxO -> SL.UTxO sc
+translateUTxOByronToShelley :: forall sc. Crypto sc => CC.UTxO -> SL.UTxO sc
 translateUTxOByronToShelley (CC.UTxO utxoByron) =
     SL.UTxO $ Map.fromList
       [ (txInShelley, txOutShelley)
@@ -354,7 +355,8 @@ translateUTxOByronToShelley (CC.UTxO utxoByron) =
     -- bytes. We don't care about the type that is hashed, which will differ
     -- going from Byron to Shelley, we just use the hashes as IDs.
     translateTxId :: CC.TxId -> SL.TxId sc
-    translateTxId = SL.TxId . Hash.UnsafeHash . Hashing.hashToBytes
+    translateTxId =
+      SL.TxId . hashFromBytesE . Hashing.hashToBytes
 
     translateAmount :: CC.Lovelace -> SL.Coin
     translateAmount = SL.Coin . CC.lovelaceToInteger

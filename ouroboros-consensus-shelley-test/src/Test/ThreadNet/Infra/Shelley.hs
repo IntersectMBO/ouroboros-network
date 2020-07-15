@@ -27,6 +27,7 @@ import           Data.Word (Word64)
 
 import           Test.QuickCheck
 
+import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
@@ -124,7 +125,7 @@ genCoreNode startKESPeriod = do
     let kesPub = deriveVerKeyKES kesKey
         sigma = signedDSIGN
           ()
-          (kesPub, certificateIssueNumber, startKESPeriod)
+          (SL.OCertSignable kesPub certificateIssueNumber startKESPeriod)
           delKey
     let ocert = SL.OCert {
             ocertVkHot     = kesPub
@@ -268,14 +269,15 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
       where
         coreNodeToPoolMapping :: Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c)
           = Map.fromList
-            [ ( SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnStakingKey
+            [ ( SL.KeyHash $ SL.hashWithSerialiser toCBOR
+                  $ deriveVerKeyDSIGN cnStakingKey
               , SL.PoolParams
                 { SL._poolPubKey = poolHash
                 , SL._poolVrf = vrfHash
                   -- Each core node pledges its full stake to the pool.
                 , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
                 , SL._poolCost = SL.Coin 1
-                , SL._poolMargin = SL.UnsafeUnitInterval 0
+                , SL._poolMargin = SL.truncateUnitInterval 0
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
                 , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey

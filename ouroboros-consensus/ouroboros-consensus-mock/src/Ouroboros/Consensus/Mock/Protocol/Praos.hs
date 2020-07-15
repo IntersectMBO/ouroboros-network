@@ -39,7 +39,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , Ticked(..)
   ) where
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serializeEncoding')
 import           Codec.CBOR.Decoding (decodeListLenOf)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
@@ -56,12 +56,14 @@ import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
+import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), hashToBytes,
+                     hashWithSerialiser)
 import           Cardano.Crypto.Hash.MD5 (MD5)
 import           Cardano.Crypto.Hash.SHA256 (SHA256)
 import           Cardano.Crypto.KES.Class
 import           Cardano.Crypto.KES.Mock
 import           Cardano.Crypto.KES.Simple
+import           Cardano.Crypto.Util
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
@@ -412,7 +414,9 @@ infosEta l xs e =
         n    = div (2 * praosSlotsPerEpoch) 3
         to   = SlotNo $ unSlotNo from + n
         rhos = reverse [biRho b | b <- infosSlice from to xs]
-    in  fromHash $ hash @(PraosHash c) (eta', e, rhos)
+    in  bytesToNatural
+          . hashToBytes
+          $ hashWithSerialiser @(PraosHash c) toCBOR (eta', e, rhos)
   where
     PraosParams{..} = praosParams l
 
@@ -513,3 +517,6 @@ instance PraosCrypto c => Serialise (BlockInfo c) where
     biRho   <- fromCBOR
     biStake <- decode
     return BlockInfo {..}
+
+instance SignableRepresentation (Natural, SlotNo, VRFType) where
+  getSignableRepresentation = serializeEncoding' . toCBOR

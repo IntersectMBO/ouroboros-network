@@ -10,11 +10,12 @@ module Ouroboros.Consensus.Mock.Ledger.Forge (
   , forgeSimple
   ) where
 
+import           Cardano.Binary (toCBOR)
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
-import           Cardano.Crypto.Hash (hash)
+import           Cardano.Crypto.Hash (hashWithSerialiser)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -61,7 +62,7 @@ forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock curSlot tickedLedger t
           simplePrev      = castHash $ getTipHash tickedLedger
         , simpleSlotNo    = curSlot
         , simpleBlockNo   = curBlock
-        , simpleBodyHash  = hash body
+        , simpleBodyHash  = hashWithSerialiser toCBOR body
         , simpleBlockSize = bodySize
         }
 

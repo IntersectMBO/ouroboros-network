@@ -4,6 +4,7 @@
 module Test.ThreadNet.Util.HasCreator.Mock () where
 
 import           Cardano.Crypto.DSIGN
+import           Data.Word (Word64)
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
@@ -46,3 +47,7 @@ instance HasCreator (SimplePraosRuleBlock c) where
     getCreator = simplePraosRuleExt
                . simpleHeaderExt
                . simpleHeader
+
+-- | Get the id of the signer from a signature. Used for testing.
+verKeyIdFromSigned :: SignedDSIGN MockDSIGN a -> Word64
+verKeyIdFromSigned (SignedDSIGN (SigMockDSIGN _ i)) = i
