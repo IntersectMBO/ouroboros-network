@@ -62,6 +62,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as HFC
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import           Ouroboros.Consensus.HardFork.History (EraParams (..),
                      noLowerBoundSafeZone)
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -380,6 +381,7 @@ instance CanHardFork '[BlockA, BlockB] where
       , translateChainDepState = PCons chainDepState_AtoB PNil
       , translateLedgerView    = PCons ledgerView_AtoB    PNil
       }
+  hardForkChainSel = Tails.mk2 CompareBlockNo
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
 versionN2N = HardForkNodeToNodeEnabled $

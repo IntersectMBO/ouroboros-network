@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
-                     (HardForkSelectView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkLedgerView, HardForkLedgerView_ (..),
                      Ticked (..))
@@ -58,6 +57,32 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+
+{-------------------------------------------------------------------------------
+  ChainSelection
+-------------------------------------------------------------------------------}
+
+type HardForkSelectView xs = WithBlockNo OneEraSelectView xs
+
+mkHardForkSelectView ::
+     BlockNo
+  -> NS WrapSelectView xs
+  -> HardForkSelectView xs
+mkHardForkSelectView bno view = WithBlockNo bno (OneEraSelectView view)
+
+-- | Chain selection across eras
+instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
+  type ChainSelConfig (HardForkProtocol xs) = PerEraChainSelConfig xs
+  type SelectView     (HardForkProtocol xs) = HardForkSelectView   xs
+
+  -- We leave 'preferCandidate' at the default
+
+  compareCandidates _ (PerEraChainSelConfig cfgs) l r =
+       acrossEraSelection
+         cfgs
+         hardForkChainSel
+         (mapWithBlockNo getOneEraSelectView l)
+         (mapWithBlockNo getOneEraSelectView r)
 
 {-------------------------------------------------------------------------------
   ConsensusProtocol
@@ -116,8 +141,7 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
       cfgs = getPerEraBlockConfig hardForkBlockConfigPerEra
 
   selectView HardForkBlockConfig{..} hdr =
-        HardForkSelectView (blockNo hdr)
-      . OneEraSelectView
+        mkHardForkSelectView (blockNo hdr)
       . hczipWith proxySingle (WrapSelectView .: selectView) cfgs
       . getOneEraHeader
       $ getHardForkHeader hdr

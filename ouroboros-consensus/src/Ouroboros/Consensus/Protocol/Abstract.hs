@@ -41,7 +41,9 @@ data family ConsensusConfig p :: *
 -- | Chain selection
 class ( NoUnexpectedThunks (ChainSelConfig p)
         -- For the benefit of tests
-      , Show (SelectView p)
+      , Show (SelectView     p)
+      , Show (ChainSelConfig p)
+      , Eq   (ChainSelConfig p)
       ) => ChainSelection p where
   -- | Configuration required for chain selection
   type family ChainSelConfig p :: *
