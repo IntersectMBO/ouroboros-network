@@ -152,7 +152,6 @@ library
                        Ouroboros.Consensus.Util.Assert
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
-                       Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.DepPair
@@ -495,6 +494,7 @@ test-suite test-storage
 
                        Test.Util.Blob
                        Test.Util.ChunkInfo
+                       Test.Util.Classify
                        Test.Util.FS.Sim.Error
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS

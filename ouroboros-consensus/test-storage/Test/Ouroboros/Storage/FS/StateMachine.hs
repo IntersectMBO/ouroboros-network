@@ -65,9 +65,9 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO
 import qualified Ouroboros.Consensus.Storage.IO as F
 
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
