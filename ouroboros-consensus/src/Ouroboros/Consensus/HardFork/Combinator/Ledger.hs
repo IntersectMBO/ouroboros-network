@@ -19,6 +19,7 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
     HardForkLedgerError(..)
+  , HardForkLedgerWarning(..)
   , HardForkEnvelopeErr(..)
     -- * Type family instances
   , Ticked(..)
