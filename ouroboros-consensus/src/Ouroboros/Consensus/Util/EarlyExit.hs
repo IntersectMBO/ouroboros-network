@@ -37,7 +37,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.IOLike (IOLike,
+import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
                      MonadMonotonicTime (..), MonadSTMTxExtended (..),
                      StrictMVar, StrictTVar)
 
@@ -235,4 +235,5 @@ instance ( IOLike m
            -- @MonadCatch (STM m)@ intsead of @MonadThrow (STM m)@.
            -- <https://github.com/input-output-hk/ouroboros-network/issues/1461>
          , MonadCatch (STM m)
-         ) => IOLike (WithEarlyExit m)
+         ) => IOLike (WithEarlyExit m) where
+  forgetSignKeyKES = lift . forgetSignKeyKES
