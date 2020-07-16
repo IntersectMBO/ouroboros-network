@@ -197,8 +197,6 @@ instance ConfigSupportsNode ByronBlock where
     . Genesis.gdProtocolMagicId
     . extractGenesisData
 
-  getProtocolMagicId = byronProtocolMagicId
-
 extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 

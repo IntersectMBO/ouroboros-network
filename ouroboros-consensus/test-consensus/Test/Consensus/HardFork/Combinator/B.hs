@@ -42,7 +42,6 @@ import qualified Data.Set as Set
 import           Data.Void
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Test.Util.Time (dawnOfTime)
@@ -141,9 +140,8 @@ data instance CodecConfig BlockB = CCfgB
   deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockB where
-  getSystemStart     _ = SystemStart dawnOfTime
-  getNetworkMagic    _ = NetworkMagic 0
-  getProtocolMagicId _ = ProtocolMagicId 0
+  getSystemStart  _ = SystemStart dawnOfTime
+  getNetworkMagic _ = NetworkMagic 0
 
 instance StandardHash BlockB
 

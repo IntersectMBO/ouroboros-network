@@ -13,7 +13,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
 
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -44,7 +43,6 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
       shelleyProtocolVersion :: !SL.ProtVer
     , shelleySystemStart     :: !SystemStart
     , shelleyNetworkMagic    :: !NetworkMagic
-    , shelleyProtocolMagicId :: !ProtocolMagicId
       -- | When chain selection is comparing two fragments, it will prefer the
       -- fragment with a tip signed by this key (provided that the 'BlockNo's
       -- and 'SlotNo's of the two tips are equal). For nodes that can produce
@@ -65,7 +63,6 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKey = ShelleyConfig {
       shelleyProtocolVersion = protVer
     , shelleySystemStart     = SystemStart     $ SL.sgSystemStart  genesis
     , shelleyNetworkMagic    = NetworkMagic    $ SL.sgNetworkMagic genesis
-    , shelleyProtocolMagicId = ProtocolMagicId $ SL.sgNetworkMagic genesis
     , shelleyBlockIssuerVKey = blockIssuerVKey
     }
 
