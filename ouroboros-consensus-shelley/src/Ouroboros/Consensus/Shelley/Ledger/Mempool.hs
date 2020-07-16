@@ -23,6 +23,7 @@ import           Control.Monad.Except (Except)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
@@ -34,6 +35,7 @@ import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -53,7 +55,12 @@ data instance GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
   deriving stock    (Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
+instance Typeable c => ShowProxy (GenTx (ShelleyBlock c)) where
+
 type instance ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
+
+-- orphaned instance
+instance Typeable c => ShowProxy (SL.ApplyTxError c) where
 
 instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   txInvariant = const True
@@ -78,6 +85,8 @@ mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 newtype instance TxId (GenTx (ShelleyBlock c)) = ShelleyTxId (ShelleyTxId c)
   deriving newtype (Eq, Ord, FromCBOR, ToCBOR)
   deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock c)))
+
+instance Typeable c => ShowProxy (TxId (GenTx (ShelleyBlock c))) where
 
 instance Crypto c => HasTxId (GenTx (ShelleyBlock c)) where
   txId (ShelleyTx i _) = ShelleyTxId i
