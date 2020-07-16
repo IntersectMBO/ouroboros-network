@@ -33,7 +33,6 @@ import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Word (Word64)
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
@@ -101,7 +100,6 @@ testShelleyGenesis = SL.ShelleyGenesis {
       sgSystemStart       = UTCTime (fromGregorian 2020 5 14) 0
     , sgNetworkMagic      = 0
     , sgNetworkId         = SL.Testnet
-    , sgProtocolMagicId   = ProtocolMagicId 0
       -- Chosen to match SL.activeSlotCoeff
     , sgActiveSlotsCoeff  = 0.9
     , sgSecurityParam     = SL.securityParameter SL.testGlobals

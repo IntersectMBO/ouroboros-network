@@ -28,7 +28,6 @@ import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
@@ -177,7 +176,6 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = recip recipF   -- ie f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
