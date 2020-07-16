@@ -8,10 +8,6 @@ module Ouroboros.Consensus.Cardano (
     -- * The block type of the Cardano block chain
     CardanoBlock
     -- * Supported protocols
-  , ProtocolMockBFT
-  , ProtocolMockPraos
-  , ProtocolLeaderSchedule
-  , ProtocolMockPBFT
   , ProtocolByron
   , ProtocolShelley
   , ProtocolCardano
@@ -40,27 +36,15 @@ import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract as X
-import           Ouroboros.Consensus.Protocol.BFT as X
-import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Unary
-
-import           Ouroboros.Consensus.Mock.Ledger
-import           Ouroboros.Consensus.Mock.Node ()
-import           Ouroboros.Consensus.Mock.Node.BFT as X
-import           Ouroboros.Consensus.Mock.Node.PBFT as X
-import           Ouroboros.Consensus.Mock.Node.Praos as X
-import           Ouroboros.Consensus.Mock.Node.PraosRule as X
-import           Ouroboros.Consensus.Mock.Protocol.Praos as X
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node as X
@@ -84,10 +68,6 @@ import           Ouroboros.Consensus.Cardano.ShelleyHFC
   breaking any assumptions made in @cardano-node@.
 -------------------------------------------------------------------------------}
 
-type ProtocolMockBFT        = Bft BftMockCrypto
-type ProtocolMockPraos      = Praos PraosMockCrypto
-type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
-type ProtocolMockPBFT       = PBft PBftMockCrypto
 type ProtocolByron          = HardForkProtocol '[ByronBlock]
 type ProtocolShelley        = HardForkProtocol '[ShelleyBlock TPraosStandardCrypto]
 type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraosStandardCrypto]
@@ -98,38 +78,6 @@ type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraos
 
 -- | Consensus protocol to use
 data Protocol (m :: * -> *) blk p where
-  -- | Run BFT against the mock ledger
-  ProtocolMockBFT
-    :: NumCoreNodes
-    -> CoreNodeId
-    -> SecurityParam
-    -> HardFork.EraParams
-    -> Protocol m MockBftBlock ProtocolMockBFT
-
-  -- | Run Praos against the mock ledger
-  ProtocolMockPraos
-    :: NumCoreNodes
-    -> CoreNodeId
-    -> PraosParams
-    -> HardFork.EraParams
-    -> Protocol m MockPraosBlock ProtocolMockPraos
-
-  -- | Run Praos against the mock ledger but with an explicit leader schedule
-  ProtocolLeaderSchedule
-    :: NumCoreNodes
-    -> CoreNodeId
-    -> PraosParams
-    -> HardFork.EraParams
-    -> LeaderSchedule
-    -> Protocol m MockPraosRuleBlock ProtocolLeaderSchedule
-
-  -- | Run PBFT against the mock ledger
-  ProtocolMockPBFT
-    :: PBftParams
-    -> HardFork.EraParams
-    -> CoreNodeId
-    -> Protocol m MockPBftBlock ProtocolMockPBFT
-
   -- | Run PBFT against the real Byron ledger
   ProtocolByron
     :: Genesis.Config
@@ -188,13 +136,9 @@ data Protocol (m :: * -> *) blk p where
     -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
-verifyProtocol ProtocolMockBFT{}        = Refl
-verifyProtocol ProtocolMockPraos{}      = Refl
-verifyProtocol ProtocolLeaderSchedule{} = Refl
-verifyProtocol ProtocolMockPBFT{}       = Refl
-verifyProtocol ProtocolByron{}          = Refl
-verifyProtocol ProtocolShelley{}        = Refl
-verifyProtocol ProtocolCardano{}        = Refl
+verifyProtocol ProtocolByron{}   = Refl
+verifyProtocol ProtocolShelley{} = Refl
+verifyProtocol ProtocolCardano{} = Refl
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -203,18 +147,6 @@ verifyProtocol ProtocolCardano{}        = Refl
 -- | Data required to run the selected protocol
 protocolInfo :: forall m blk p. IOLike m
              => Protocol m blk p -> ProtocolInfo m blk
-protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
-    protocolInfoBft nodes nid k paramsEra
-
-protocolInfo (ProtocolMockPraos nodes nid paramsPraos paramsEra) =
-    protocolInfoPraos nodes nid paramsPraos paramsEra
-
-protocolInfo (ProtocolLeaderSchedule nodes nid paramsPraos paramsEra schedule) =
-    protocolInfoPraosRule nodes nid paramsPraos paramsEra schedule
-
-protocolInfo (ProtocolMockPBFT paramsPBft paramsEra nid) =
-    protocolInfoMockPBFT paramsPBft paramsEra nid
-
 protocolInfo (ProtocolByron gc mthr prv swv mplc) =
     inject $ protocolInfoByron gc mthr prv swv mplc
 
@@ -235,13 +167,9 @@ protocolInfo (ProtocolCardano
 -------------------------------------------------------------------------------}
 
 runProtocol :: Protocol m blk p -> Dict (RunNode blk)
-runProtocol ProtocolMockBFT{}        = Dict
-runProtocol ProtocolMockPraos{}      = Dict
-runProtocol ProtocolLeaderSchedule{} = Dict
-runProtocol ProtocolMockPBFT{}       = Dict
-runProtocol ProtocolByron{}          = Dict
-runProtocol ProtocolShelley{}        = Dict
-runProtocol ProtocolCardano{}        = Dict
+runProtocol ProtocolByron{}   = Dict
+runProtocol ProtocolShelley{} = Dict
+runProtocol ProtocolCardano{} = Dict
 
 {-------------------------------------------------------------------------------
   Client support for the protocols: what you need as a client of the node
@@ -253,8 +181,6 @@ runProtocol ProtocolCardano{}        = Dict
 -- requirements than to run a node.
 --
 data ProtocolClient blk p where
-  --TODO: the mock protocols
-
   ProtocolClientByron
     :: EpochSlots
     -> SecurityParam
