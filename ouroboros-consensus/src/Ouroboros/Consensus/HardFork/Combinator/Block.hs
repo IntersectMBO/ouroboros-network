@@ -25,9 +25,11 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
 import           Data.SOP.Strict
+import           Data.Typeable (Typeable)
 import           Data.Word
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -48,6 +50,8 @@ newtype instance Header (HardForkBlock xs) = HardForkHeader {
       getHardForkHeader :: OneEraHeader xs
     }
   deriving (Show, NoUnexpectedThunks)
+
+instance Typeable xs => ShowProxy (Header (HardForkBlock xs)) where
 
 instance CanHardFork xs => GetHeader (HardForkBlock xs) where
   getHeader = HardForkHeader . oneEraBlockHeader . getHardForkBlock

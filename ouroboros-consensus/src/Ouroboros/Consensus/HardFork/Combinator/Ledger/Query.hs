@@ -40,8 +40,10 @@ import           Data.Bifunctor
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Type.Equality
+import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (enforceSize)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
@@ -62,6 +64,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..))
+
+instance Typeable xs => ShowProxy (Query (HardForkBlock xs)) where
 
 instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
   showResult (QueryAnytime   qry _) result = showResult qry result

@@ -70,6 +70,7 @@ import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -378,6 +379,10 @@ mkApps
      , Ord remotePeer
      , Exception e
      , LedgerSupportsProtocol blk
+     , ShowProxy blk
+     , ShowProxy (Header blk)
+     , ShowProxy (TxId (GenTx blk))
+     , ShowProxy (GenTx blk)
      )
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e

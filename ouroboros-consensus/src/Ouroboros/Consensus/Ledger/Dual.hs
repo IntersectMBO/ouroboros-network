@@ -83,6 +83,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
@@ -118,6 +119,9 @@ data DualBlock m a = DualBlock {
 deriving instance (Show m, Show a, Show (BridgeBlock m a)) => Show (DualBlock m a)
 deriving instance (Eq   m, Eq   a, Eq   (BridgeBlock m a)) => Eq   (DualBlock m a)
 
+instance (Typeable m, Typeable a)
+    => ShowProxy (DualBlock m a) where
+
 instance Condense m => Condense (DualBlock m a) where
   condense = condense . dualBlockMain
 
@@ -148,6 +152,9 @@ instance Bridge m a => GetHeader (DualBlock m a) where
 type DualHeader m a = Header (DualBlock m a)
 
 deriving instance Show (Header m) => Show (DualHeader m a)
+
+instance (Typeable m, Typeable a)
+    => ShowProxy (DualHeader m a) where
 
 {-------------------------------------------------------------------------------
   Config
@@ -487,6 +494,9 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
 data instance Query (DualBlock m a) result
   deriving (Show)
 
+instance (Typeable m, Typeable a)
+    => ShowProxy (Query (DualBlock m a)) where
+
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
   answerQuery _ = \case {}
@@ -511,12 +521,18 @@ data DualGenTxErr m a = DualGenTxErr {
     , dualGenTxErrAux  :: ApplyTxErr a
     }
 
+instance (Typeable m, Typeable a)
+    => ShowProxy (DualGenTxErr m a) where
+
 data instance GenTx (DualBlock m a) = DualGenTx {
       dualGenTxMain   :: GenTx m
     , dualGenTxAux    :: GenTx a
     , dualGenTxBridge :: BridgeTx m a
     }
   deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
+
+instance (Typeable m, Typeable a)
+    => ShowProxy (GenTx (DualBlock m a)) where
 
 type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 
@@ -581,6 +597,9 @@ newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
       dualGenTxIdMain :: GenTxId m
     }
   deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
+
+instance (Typeable m, Typeable a)
+    => ShowProxy (TxId (GenTx (DualBlock m a))) where
 
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   txId = DualGenTxId . txId . dualGenTxMain

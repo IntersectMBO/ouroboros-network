@@ -21,6 +21,7 @@ import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -83,6 +84,12 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseNodeToClientConstraints blk
       , Typeable                         blk
       , Typeable                         (ApplyTxErr blk)
+      , ShowProxy                        blk
+      , ShowProxy                        (ApplyTxErr blk)
+      , ShowProxy                        (GenTx blk)
+      , ShowProxy                        (Header blk)
+      , ShowProxy                        (Query blk)
+      , ShowProxy                        (TxId (GenTx blk))
       ) => RunNode blk where
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
 

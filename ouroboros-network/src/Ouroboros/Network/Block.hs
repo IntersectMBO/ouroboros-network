@@ -507,6 +507,9 @@ newtype Serialised a = Serialised
 instance Show (Serialised a) where
   show (Serialised bytes) = BSC.unpack (B16.encode bytes)
 
+instance ShowProxy a => ShowProxy (Serialised a) where
+    showProxy _ = "Serialised " ++ showProxy (Proxy :: Proxy a)
+
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
 

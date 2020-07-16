@@ -73,6 +73,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -217,6 +218,8 @@ newtype SerialisedHeader blk = SerialisedHeaderFromDepPair {
     }
 
 deriving instance HasNestedContent Header blk => Show (SerialisedHeader blk)
+instance ShowProxy blk => ShowProxy (SerialisedHeader blk) where
+    showProxy _ = "SerialisedHeader " ++ showProxy (Proxy :: Proxy blk)
 
 -- | Only needed for the 'ChainSyncServer'
 type instance HeaderHash (SerialisedHeader blk) = HeaderHash blk
