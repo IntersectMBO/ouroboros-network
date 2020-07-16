@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Shelley.Protocol.HotKey (
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto.KES.Class
+import           Cardano.Crypto.KES.Class hiding (forgetSignKeyKES)
 import qualified Cardano.Crypto.KES.Class as Relative (Period)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -147,12 +147,17 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 evolveKey ::
      forall m c. (TPraosCrypto c, IOLike m)
   => StrictMVar m (KESState c) -> Absolute.KESPeriod -> m KESInfo
-evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
-    kesState' <- case toEvolution (kesStateInfo kesState) targetPeriod of
-      -- The absolute target period is outside the bounds
-      Nothing              -> return kesState
-      Just targetEvolution -> go targetEvolution kesState
-    return (kesState', kesStateInfo kesState')
+evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState ->
+    -- We mask the evolution process because if we got interrupted after
+    -- calling 'forgetSignKeyKES', which destructively updates the current
+    -- signing key, we would leave an erased key in the state, which might
+    -- cause a segfault when used afterwards.
+    uninterruptibleMask_ $ do
+      kesState' <- case toEvolution (kesStateInfo kesState) targetPeriod of
+        -- The absolute target period is outside the bounds
+        Nothing              -> return kesState
+        Just targetEvolution -> go targetEvolution kesState
+      return (kesState', kesStateInfo kesState')
   where
     go :: KESEvolution -> KESState c -> m (KESState c)
     go targetEvolution kesState@KESState { kesStateInfo, kesStateKey = key }
@@ -165,8 +170,8 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
           -- This cannot happen
           Nothing    -> error "Could not update KES key"
           Just !key' -> do
-            -- Any stateful code (for instance, running finalizers to clear
-            -- the memory associated with the old key) would happen here.
+            -- Clear the memory associated with the old key
+            forgetSignKeyKES key
             let kesState' = KESState {
                     kesStateInfo = kesStateInfo {
                         kesEvolution = curEvolution + 1
