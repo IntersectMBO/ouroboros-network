@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
 
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto (ProtocolMagicId)
+import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -63,9 +63,9 @@ mkShelleyBlockConfig ::
   -> BlockConfig (ShelleyBlock c)
 mkShelleyBlockConfig protVer genesis blockIssuerVKey = ShelleyConfig {
       shelleyProtocolVersion = protVer
-    , shelleySystemStart     = SystemStart  $ SL.sgSystemStart     genesis
-    , shelleyNetworkMagic    = NetworkMagic $ SL.sgNetworkMagic    genesis
-    , shelleyProtocolMagicId =                SL.sgProtocolMagicId genesis
+    , shelleySystemStart     = SystemStart     $ SL.sgSystemStart  genesis
+    , shelleyNetworkMagic    = NetworkMagic    $ SL.sgNetworkMagic genesis
+    , shelleyProtocolMagicId = ProtocolMagicId $ SL.sgNetworkMagic genesis
     , shelleyBlockIssuerVKey = blockIssuerVKey
     }
 
