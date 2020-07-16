@@ -69,6 +69,7 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT (Ticked (..))
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -187,6 +188,8 @@ deriving instance Show (Query ByronBlock result)
 
 instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
+
+instance ShowProxy (Query ByronBlock) where
 
 instance CommonProtocolParams ByronBlock where
   maxHeaderSize = fromIntegral . Update.ppMaxHeaderSize . getProtocolParameters
