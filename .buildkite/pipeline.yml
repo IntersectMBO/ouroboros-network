@@ -1,18 +1,4 @@
 steps:
-
-  - label: 'stack rebuild'
-    env:
-      STACK_ROOT: "/build/ouroroboros-network.stack"
-    command:
-      - "rm -rf /build/ouroroboros-network"
-      - "cp -R . /build/ouroroboros-network"
-      - "cd /build/ouroroboros-network"
-      - "nix-build scripts/buildkite -o stack-rebuild"
-      - "./stack-rebuild"
-    branches: master
-    agents:
-      system: x86_64-linux
-
   - label: 'stack-cabal-sync'
     command: 'nix-shell ./nix -A iohkNix.stack-cabal-sync-shell --run scripts/buildkite/stack-cabal-sync.sh'
     agents:
