@@ -685,16 +685,13 @@ testInitExtLedger = ExtLedgerState {
 mkTestConfig :: SecurityParam -> ChunkSize -> TopLevelConfig TestBlock
 mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
     TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = McsConsensusConfig () $ BftConfig {
-                bftParams  = BftParams {
-                                 bftSecurityParam = k
-                               , bftNumNodes      = numCoreNodes
-                               }
-              , bftSignKey = SignKeyMockDSIGN 0
-              , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-              }
-          , protocolConfigIndep  = ()
+        topLevelConfigProtocol = McsConsensusConfig () $ BftConfig {
+            bftParams  = BftParams {
+                             bftSecurityParam = k
+                           , bftNumNodes      = numCoreNodes
+                           }
+          , bftSignKey = SignKeyMockDSIGN 0
+          , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigLedger = eraParams

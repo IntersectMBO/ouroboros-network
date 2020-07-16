@@ -53,7 +53,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.SOP
+import           Ouroboros.Consensus.Util.SOP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
@@ -173,15 +173,15 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
     args :: PropGeneralArgs TestBlock
     args = PropGeneralArgs {
-          pgaBlockProperty      = const $ property True
-        , pgaCountTxs           = fromIntegral . length . extractTxs
-        , pgaExpectedCannotLead = noExpectedCannotLeads
-        , pgaFirstBlockNo       = BlockNo 0
-        , pgaFixedMaxForkLength = Nothing
-        , pgaFixedSchedule      = Just leaderSchedule
-        , pgaSecurityParam      = k
-        , pgaTestConfig         = testConfig
-        , pgaTestConfigB        = testConfigB
+          pgaBlockProperty       = const $ property True
+        , pgaCountTxs            = fromIntegral . length . extractTxs
+        , pgaExpectedCannotForge = noExpectedCannotForges
+        , pgaFirstBlockNo        = BlockNo 0
+        , pgaFixedMaxForkLength  = Nothing
+        , pgaFixedSchedule       = Just leaderSchedule
+        , pgaSecurityParam       = k
+        , pgaTestConfig          = testConfig
+        , pgaTestConfigB         = testConfigB
         }
 
     testConfig :: TestConfig
@@ -240,12 +240,11 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
             }
-        , pInfoLeaderCreds = Just (
-                OptCons (WrapCanBeLeader ())
-              $ OptCons (WrapCanBeLeader ())
+        , pInfoBlockForging = Just $ return
+              $ hardForkBlockForging
+              $ OptCons blockForgingA
+              $ OptCons blockForgingB
               $ OptNil
-            , defaultMaintainForgeState
-            )
         }
 
     initLedgerState :: LedgerState BlockA
@@ -259,18 +258,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
     topLevelConfig :: CoreNodeId -> TopLevelConfig TestBlock
     topLevelConfig nid = TopLevelConfig {
-          topLevelConfigProtocol = FullProtocolConfig {
-              protocolConfigConsensus = HardForkConsensusConfig {
-                  hardForkConsensusConfigK      = k
-                , hardForkConsensusConfigShape  = shape
-                , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
-                       (WrapPartialConsensusConfig $ consensusConfigA nid)
-                    :* (WrapPartialConsensusConfig $ consensusConfigB nid)
-                    :* Nil
-                }
-            , protocolConfigIndep = PerEraChainIndepStateConfig $
-                   (WrapChainIndepStateConfig ())
-                :* (WrapChainIndepStateConfig ())
+          topLevelConfigProtocol = HardForkConsensusConfig {
+              hardForkConsensusConfigK      = k
+            , hardForkConsensusConfigShape  = shape
+            , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+                   (WrapPartialConsensusConfig $ consensusConfigA nid)
+                :* (WrapPartialConsensusConfig $ consensusConfigB nid)
                 :* Nil
             }
         , topLevelConfigBlock = FullBlockConfig {

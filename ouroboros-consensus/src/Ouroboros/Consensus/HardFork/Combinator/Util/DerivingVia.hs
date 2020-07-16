@@ -10,6 +10,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia (
     LiftNS(..)
   , LiftNP(..)
+  , LiftOptNP(..)
   , LiftTelescope(..)
   , LiftMismatch(..)
   , LiftNamedNS(..)
@@ -26,6 +27,8 @@ import           Data.Typeable
 import           GHC.TypeLits
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+
+import           Ouroboros.Consensus.Util.SOP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
@@ -101,6 +104,34 @@ instance (All SingleEraBlock xs, forall x. SingleEraBlock x => Ord (f x))
 instance (All SingleEraBlock xs, forall x. SingleEraBlock x => Show (f x))
       => Show (LiftNP f xs) where
   show (LiftNP x) =
+      case liftEras (Proxy @xs) (Proxy @Show) (Proxy @f) of { Dict ->
+          show x
+        }
+
+{-------------------------------------------------------------------------------
+  LiftOptNP
+-------------------------------------------------------------------------------}
+
+newtype LiftOptNP allowedEmpty f xs = LiftOptNP (OptNP allowedEmpty f xs)
+
+instance (All SingleEraBlock xs, forall x. SingleEraBlock x => Eq (f x))
+      => Eq (LiftOptNP allowedEmpty f xs) where
+  LiftOptNP x == LiftOptNP y =
+      case liftEras (Proxy @xs) (Proxy @Eq) (Proxy @f) of { Dict ->
+          x == y
+        }
+
+instance (All SingleEraBlock xs, forall x. SingleEraBlock x => Ord (f x))
+      => Ord (LiftOptNP allowedEmpty f xs) where
+  LiftOptNP x `compare` LiftOptNP y =
+      case liftEras (Proxy @xs) (Proxy @Eq)  (Proxy @f) of { Dict ->
+      case liftEras (Proxy @xs) (Proxy @Ord) (Proxy @f) of { Dict ->
+          x `compare` y
+        }}
+
+instance (All SingleEraBlock xs, forall x. SingleEraBlock x => Show (f x))
+      => Show (LiftOptNP allowedEmpty f xs) where
+  show (LiftOptNP x) =
       case liftEras (Proxy @xs) (Proxy @Show) (Proxy @f) of { Dict ->
           show x
         }

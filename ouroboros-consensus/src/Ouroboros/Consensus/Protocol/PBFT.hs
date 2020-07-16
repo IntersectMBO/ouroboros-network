@@ -19,8 +19,10 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftLedgerView(..)
   , PBftFields(..)
   , PBftParams(..)
+  , PBftCanBeLeader(..)
   , PBftIsLeader(..)
   , pbftWindowSize
+  , pbftWindowExceedsThreshold
     -- * Forging
   , forgePBftFields
     -- * Classes
@@ -29,12 +31,14 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftValidateView(..)
   , pbftValidateRegular
   , pbftValidateBoundary
+    -- * CannotForge
+  , PBftCannotForge(..)
+  , pbftCheckCanForge
     -- * Type instances
   , ConsensusConfig(..)
   , Ticked(..)
     -- * Exported for tracing errors
   , PBftValidationErr(..)
-  , PBftCannotLead(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -147,16 +151,16 @@ forgePBftFields :: forall c toSign. (
                 -> toSign
                 -> PBftFields c toSign
 forgePBftFields contextDSIGN PBftIsLeader{..} toSign =
-    Exn.assert (issuer == deriveVerKeyDSIGN pbftSignKey) $ PBftFields {
+    Exn.assert (issuer == deriveVerKeyDSIGN pbftIsLeaderSignKey) $ PBftFields {
         pbftIssuer    = issuer
       , pbftGenKey    = genKey
       , pbftSignature = signature
       }
   where
-    issuer    = dlgCertDlgVerKey pbftDlgCert
-    genKey    = dlgCertGenVerKey pbftDlgCert
+    issuer    = dlgCertDlgVerKey pbftIsLeaderDlgCert
+    genKey    = dlgCertGenVerKey pbftIsLeaderDlgCert
     ctxtDSIGN = contextDSIGN genKey
-    signature = signedDSIGN ctxtDSIGN toSign pbftSignKey
+    signature = signedDSIGN ctxtDSIGN toSign pbftIsLeaderSignKey
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
@@ -218,31 +222,23 @@ data PBftParams = PBftParams {
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.
 --
+data PBftCanBeLeader c = PBftCanBeLeader {
+      pbftCanBeLeaderCoreNodeId :: !CoreNodeId
+    , pbftCanBeLeaderSignKey    :: !(SignKeyDSIGN (PBftDSIGN c))
+    , pbftCanBeLeaderDlgCert    :: !(PBftDelegationCert c)
+    }
+  deriving (Generic)
+
+instance PBftCrypto c => NoUnexpectedThunks (PBftCanBeLeader c)
+
+-- | Information required to produce a block.
 data PBftIsLeader c = PBftIsLeader {
-      pbftCoreNodeId :: !CoreNodeId
-    , pbftSignKey    :: !(SignKeyDSIGN (PBftDSIGN c))
-    , pbftDlgCert    :: !(PBftDelegationCert c)
+      pbftIsLeaderSignKey :: !(SignKeyDSIGN (PBftDSIGN c))
+    , pbftIsLeaderDlgCert :: !(PBftDelegationCert c)
     }
   deriving (Generic)
 
 instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
-
--- | Expresses that, whilst we believe ourselves to be a leader for this slot,
--- we are nonetheless unable to forge a block.
-data PBftCannotLead c =
-    -- | We cannot forge a block because we are not the current delegate of the
-    -- genesis key we have a delegation certificate from.
-    PBftCannotLeadInvalidDelegation !(PBftVerKeyHash c)
-    -- | We cannot lead because delegates of the genesis key we have a
-    -- delegation from have already forged the maximum number of blocks in this
-    -- signing window.
-  | PBftCannotLeadThresholdExceeded !Word64
-  deriving Generic
-
-deriving instance PBftCrypto c => Show (PBftCannotLead c)
-
-instance PBftCrypto c => NoUnexpectedThunks (PBftCannotLead c)
- -- use generic instance
 
 -- | (Static) node configuration
 data instance ConsensusConfig (PBft c) = PBftConfig {
@@ -268,9 +264,6 @@ instance PBftCrypto c => ChainSelection (PBft c) where
        score IsEBB    = 1
        score IsNotEBB = 0
 
-instance HasChainIndepState (PBft c)
-  -- Use defaults
-
 -- Ticking has no effect on the PBFtState, but we do need the ticked ledger view
 data instance Ticked (PBftState c) = TickedPBftState {
       tickedPBftLedgerView :: Ticked (LedgerView (PBft c))
@@ -285,36 +278,30 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView    (PBft c) = PBftLedgerView c
-  type IsLeader      (PBft c) = PBftIsLeader   c
-  type ChainDepState (PBft c) = PBftState      c
-  type CanBeLeader   (PBft c) = PBftIsLeader   c
-  type CannotLead    (PBft c) = PBftCannotLead c
+  type LedgerView    (PBft c) = PBftLedgerView  c
+  type IsLeader      (PBft c) = PBftIsLeader    c
+  type ChainDepState (PBft c) = PBftState       c
+  type CanBeLeader   (PBft c) = PBftCanBeLeader c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIsLeader cfg@PBftConfig{pbftParams}
-                credentials
-                ()
-                slot@(SlotNo n)
-                (TickedPBftState (TickedPBftLedgerView dms) cds) =
+  checkIsLeader PBftConfig{pbftParams}
+                PBftCanBeLeader{..}
+                (SlotNo n)
+                _tickedChainDepState =
       -- We are the slot leader based on our node index, and the current
       -- slot number. Our node index depends which genesis key has delegated
       -- to us, see 'genesisKeyCoreNodeId'.
-      if n `mod` numCoreNodes == i
-        then case Bimap.lookupR dlgKeyHash dms of
-          Nothing -> CannotLead $ PBftCannotLeadInvalidDelegation dlgKeyHash
-          Just gk -> do
-            let state' = append cfg params (slot, gk) cds
-            case exceedsThreshold params state' gk of
-              Nothing -> IsLeader credentials
-              Just numForged  -> CannotLead $ PBftCannotLeadThresholdExceeded numForged
-        else NotLeader
+      if n `mod` numCoreNodes == i then
+        Just PBftIsLeader {
+            pbftIsLeaderSignKey = pbftCanBeLeaderSignKey
+          , pbftIsLeaderDlgCert = pbftCanBeLeaderDlgCert
+          }
+      else
+        Nothing
     where
-      params = pbftWindowParams cfg
-      dlgKeyHash = hashVerKey . dlgCertDlgVerKey $ pbftDlgCert
-      PBftIsLeader{pbftCoreNodeId = CoreNodeId i, pbftDlgCert} = credentials
       PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
+      CoreNodeId i = pbftCanBeLeaderCoreNodeId
 
   tickChainDepState _ lv _ = TickedPBftState lv
 
@@ -349,7 +336,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
                              (PBftLedgerView dms)
             Just gk -> do
               let state' = append cfg params (slot, gk) state
-              case exceedsThreshold params state' gk of
+              case pbftWindowExceedsThreshold params state' gk of
                 Nothing -> return $! state'
                 Just n  -> throwError $ PBftExceededSignThreshold gk n
     where
@@ -389,10 +376,11 @@ pbftWindowSize (SecurityParam k) = S.WindowSize k
 -- | Does the number of blocks signed by this key exceed the threshold?
 --
 -- Returns @Just@ the number of blocks signed if exceeded.
-exceedsThreshold :: PBftCrypto c
-                 => PBftWindowParams
-                 -> PBftState c -> PBftVerKeyHash c -> Maybe Word64
-exceedsThreshold PBftWindowParams{..} st gk =
+pbftWindowExceedsThreshold ::
+     PBftCrypto c
+  => PBftWindowParams
+  -> PBftState c -> PBftVerKeyHash c -> Maybe Word64
+pbftWindowExceedsThreshold PBftWindowParams{..} st gk =
     if numSigned > threshold
       then Just numSigned
       else Nothing
@@ -444,6 +432,48 @@ data PBftValidationErr c
 
 deriving instance PBftCrypto c => Show (PBftValidationErr c)
 deriving instance PBftCrypto c => Eq   (PBftValidationErr c)
+
+{-------------------------------------------------------------------------------
+  CannotForge
+-------------------------------------------------------------------------------}
+
+-- | Expresses that, whilst we believe ourselves to be a leader for this slot,
+-- we are nonetheless unable to forge a block.
+data PBftCannotForge c =
+    -- | We cannot forge a block because we are not the current delegate of the
+    -- genesis key we have a delegation certificate from.
+    PBftCannotForgeInvalidDelegation !(PBftVerKeyHash c)
+    -- | We cannot lead because delegates of the genesis key we have a
+    -- delegation from have already forged the maximum number of blocks in this
+    -- signing window.
+  | PBftCannotForgeThresholdExceeded !Word64
+  deriving (Generic)
+
+deriving instance PBftCrypto c => Show (PBftCannotForge c)
+
+instance PBftCrypto c => NoUnexpectedThunks (PBftCannotForge c)
+ -- use generic instance
+
+pbftCheckCanForge ::
+     forall c. PBftCrypto c
+  => ConsensusConfig (PBft c)
+  -> PBftCanBeLeader c
+  -> SlotNo
+  -> Ticked (PBftState c)
+  -> Maybe (PBftCannotForge c)
+pbftCheckCanForge cfg PBftCanBeLeader{..} slot tickedChainDepState =
+    case Bimap.lookupR dlgKeyHash dms of
+      Nothing -> Just $ PBftCannotForgeInvalidDelegation dlgKeyHash
+      Just gk ->
+        PBftCannotForgeThresholdExceeded <$>
+          pbftWindowExceedsThreshold params (append cfg params (slot, gk) cds) gk
+  where
+    params = pbftWindowParams cfg
+
+    dlgKeyHash :: PBftVerKeyHash c
+    dlgKeyHash = hashVerKey . dlgCertDlgVerKey $ pbftCanBeLeaderDlgCert
+
+    TickedPBftState (TickedPBftLedgerView dms) cds = tickedChainDepState
 
 {-------------------------------------------------------------------------------
   Condense

@@ -74,7 +74,6 @@ class ( LedgerSupportsProtocol           blk
       , HasTxId                   (GenTx blk)
       , QueryLedger                      blk
       , SupportedNetworkProtocolVersion  blk
-      , CanForge                         blk
       , ConfigSupportsNode               blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
@@ -82,14 +81,16 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
+      , Show                (CannotForge blk)
+      , Show             (ForgeStateInfo blk)
       , Typeable                         blk
-      , Typeable                         (ApplyTxErr blk)
+      , Typeable             (ApplyTxErr blk)
       , ShowProxy                        blk
-      , ShowProxy                        (ApplyTxErr blk)
-      , ShowProxy                        (GenTx blk)
-      , ShowProxy                        (Header blk)
-      , ShowProxy                        (Query blk)
-      , ShowProxy                        (TxId (GenTx blk))
+      , ShowProxy            (ApplyTxErr blk)
+      , ShowProxy                 (GenTx blk)
+      , ShowProxy                (Header blk)
+      , ShowProxy                 (Query blk)
+      , ShowProxy           (TxId (GenTx blk))
       ) => RunNode blk where
   -- | An upper bound the size in bytes of the block corresponding to the
   -- header. This can be an overestimate, but not an underestimate.

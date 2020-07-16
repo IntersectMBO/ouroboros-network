@@ -36,6 +36,8 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadDelay(..)
     -- *** MonadEventlog
   , MonadEventlog(..)
+    -- *** MonadEvaluate
+  , MonadEvaluate(..)
     -- *** Cardano prelude
   , NoUnexpectedThunks(..)
   ) where
@@ -83,6 +85,7 @@ class ( MonadAsync              m
       , MonadCatch              m
       , MonadMask               m
       , MonadMonotonicTime      m
+      , MonadEvaluate           m
       , MonadThrow         (STM m)
       , MonadSTMTxExtended (STM m)
       , forall a. NoUnexpectedThunks (m a)

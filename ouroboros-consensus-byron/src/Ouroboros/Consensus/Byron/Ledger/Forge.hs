@@ -45,20 +45,16 @@ import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
 
-instance CanForge ByronBlock where
-  forgeBlock = forgeByronBlock
-
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
-  -> ForgeState ByronBlock
   -> BlockNo                         -- ^ Current block number
   -> SlotNo                          -- ^ Current slot number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeByronBlock cfg _ = forgeRegularBlock (configBlock cfg)
+forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
 
 forgeEBB
   :: BlockConfig ByronBlock
@@ -203,11 +199,11 @@ forgeRegularBlock cfg bno sno st@TickedByronLedgerState{..} txs isLeader =
         , CC.Block.tsSoftwareVersion = byronSoftwareVersion cfg
         }
 
-    headerGenesisKey :: Crypto.VerificationKey
-    VerKeyByronDSIGN headerGenesisKey = dlgCertGenVerKey $ pbftDlgCert isLeader
-
     dlgCertificate :: CC.Delegation.Certificate
-    dlgCertificate = pbftDlgCert isLeader
+    dlgCertificate = pbftIsLeaderDlgCert isLeader
+
+    headerGenesisKey :: Crypto.VerificationKey
+    VerKeyByronDSIGN headerGenesisKey = dlgCertGenVerKey dlgCertificate
 
     forge :: PBftFields PBftByronCrypto (Annotated CC.Block.ToSign ByteString)
           -> ByronBlock

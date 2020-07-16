@@ -39,31 +39,16 @@ instance ChainSelection s => ChainSelection (ModChainSel p s) where
   preferCandidate   _ = preferCandidate   (Proxy @s)
   compareCandidates _ = compareCandidates (Proxy @s)
 
-instance HasChainIndepState p => HasChainIndepState (ModChainSel p s) where
-  type ChainIndepStateConfig (ModChainSel p s) = ChainIndepStateConfig p
-  type ChainIndepState       (ModChainSel p s) = ChainIndepState       p
-
-  updateChainIndepState _proxy = updateChainIndepState (Proxy @p)
-
 instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
       => ConsensusProtocol (ModChainSel p s) where
-    type ChainDepState (ModChainSel p s) = ChainDepState   p
-    type IsLeader      (ModChainSel p s) = IsLeader        p
-    type CanBeLeader   (ModChainSel p s) = CanBeLeader     p
-    type CannotLead    (ModChainSel p s) = CannotLead      p
-    type LedgerView    (ModChainSel p s) = LedgerView      p
-    type ValidationErr (ModChainSel p s) = ValidationErr   p
-    type ValidateView  (ModChainSel p s) = ValidateView    p
+    type ChainDepState (ModChainSel p s) = ChainDepState p
+    type IsLeader      (ModChainSel p s) = IsLeader      p
+    type CanBeLeader   (ModChainSel p s) = CanBeLeader   p
+    type LedgerView    (ModChainSel p s) = LedgerView    p
+    type ValidationErr (ModChainSel p s) = ValidationErr p
+    type ValidateView  (ModChainSel p s) = ValidateView  p
 
-    checkIsLeader cfg canBeLeader slot chainDepState chainIndepState =
-      castLeaderCheck $
-        checkIsLeader
-          (mcsConfigP cfg)
-          canBeLeader
-          slot
-          chainDepState
-          chainIndepState
-
+    checkIsLeader         = checkIsLeader         . mcsConfigP
     tickChainDepState     = tickChainDepState     . mcsConfigP
     updateChainDepState   = updateChainDepState   . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP

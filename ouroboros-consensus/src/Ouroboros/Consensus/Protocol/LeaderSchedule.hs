@@ -20,7 +20,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
-import           Data.Void
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -80,9 +79,6 @@ instance ChainSelection p => ChainSelection (WithLeaderSchedule p) where
   preferCandidate   _ = preferCandidate   (Proxy @p)
   compareCandidates _ = compareCandidates (Proxy @p)
 
-instance HasChainIndepState p => HasChainIndepState (WithLeaderSchedule p) where
-  -- Don't forward to @p@, but use the defaults
-
 data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
   { wlsConfigSchedule :: !LeaderSchedule
   , wlsConfigP        :: !(ConsensusConfig p)
@@ -97,17 +93,16 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type IsLeader      (WithLeaderSchedule p) = ()
   type ValidateView  (WithLeaderSchedule p) = ()
   type CanBeLeader   (WithLeaderSchedule p) = ()
-  type CannotLead    (WithLeaderSchedule p) = Void
 
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP
 
-  checkIsLeader WLSConfig{..} () _ slot _ =
+  checkIsLeader WLSConfig{..} () slot _ =
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing -> error $ "WithLeaderSchedule: missing slot " ++ show slot
         Just nids
-            | wlsConfigNodeId `elem` nids -> IsLeader ()
-            | otherwise                   -> NotLeader
+            | wlsConfigNodeId `elem` nids -> Just ()
+            | otherwise                   -> Nothing
 
   tickChainDepState   _ _ _ _ = TickedTrivial
   updateChainDepState _ _ _ _ = return ()

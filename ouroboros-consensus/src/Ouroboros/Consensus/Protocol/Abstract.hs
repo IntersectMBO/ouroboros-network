@@ -6,11 +6,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
   , ChainSelection(..)
-  , HasChainIndepState(..)
   , ConsensusConfig
-    -- * LeaderCheck
-  , LeaderCheck(..)
-  , castLeaderCheck
     -- * Convenience re-exports
   , SecurityParam(..)
   ) where
@@ -25,7 +21,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util.IOLike
 
 -- | Static configuration required to run the consensus protocol
 --
@@ -104,55 +99,13 @@ class ( NoUnexpectedThunks (ChainSelConfig p)
                             -> Ordering
   compareCandidates _ _ = compare
 
--- | Chain independent state
-class ( Show (ChainIndepState p)
-      , NoUnexpectedThunks (ChainIndepState p)
-      , NoUnexpectedThunks (ChainIndepStateConfig p)
-      ) => HasChainIndepState p where
-
-  -- | Configuration required for dealing with chain independent state.
-  type family ChainIndepStateConfig p :: *
-  type ChainIndepStateConfig p = ()
-
-  -- | Blockchain independent state.
-  --
-  -- For example, it can store a key that needs to be evolved over time.
-  type family ChainIndepState p :: *
-  type ChainIndepState p = ()
-
-  -- | Update the chain independent state for the current wallclock 'SlotNo'.
-  --
-  -- NOTE: Although this only happens (just before) we do the 'checkIsLeader'
-  -- check, we do not pass a 'LedgerView'. From a philosophical point of view,
-  -- passing a 'LedgerView' does not make much sense, since we are updating
-  -- the chain /independent/ state. From a pragmatic, and perhaps more
-  -- important, point of view, passing a 'LedgerView' here would make the hard
-  -- fork combinator impossible: the HFC needs to update the 'ChainIndepState'
-  -- for all eras, but we’d only have a 'LedgerView' for a single era.
-  updateChainIndepState :: IOLike m
-                        => proxy p
-                        -> ChainIndepStateConfig p
-                        -> SlotNo
-                        -> ChainIndepState p
-                        -> m (ChainIndepState p)
-  default updateChainIndepState ::
-       (ChainIndepState p ~ (), Monad m)
-    => proxy p
-    -> ChainIndepStateConfig p
-    -> SlotNo
-    -> ChainIndepState p
-    -> m (ChainIndepState p)
-  updateChainIndepState _ _ _ = return
-
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
 class ( Show (ChainDepState   p)
-      , Show (ChainIndepState p)
       , Show (ValidationErr   p)
       , Show (LedgerView      p)
-      , Show (CannotLead      p)
       , Eq   (ChainDepState   p)
       , Eq   (ValidationErr   p)
       , NoUnexpectedThunks (ConsensusConfig p)
@@ -160,7 +113,6 @@ class ( Show (ChainDepState   p)
       , NoUnexpectedThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
       , ChainSelection p
-      , HasChainIndepState p
       ) => ConsensusProtocol p where
   -- | Protocol-specific state
   --
@@ -173,12 +125,6 @@ class ( Show (ChainDepState   p)
 
   -- | Evidence that we /can/ be a leader
   type family CanBeLeader p :: *
-
-  -- | Information about why we /cannot/ lead, although we are a leader
-  --
-  -- This should happen only rarely. An example might be that our hot key
-  -- does not (yet/anymore) match the delegation state.
-  type family CannotLead p :: *
 
   -- | Projection of the ledger state the Ouroboros protocol needs access to
   --
@@ -237,10 +183,9 @@ class ( Show (ChainDepState   p)
   checkIsLeader :: HasCallStack
                 => ConsensusConfig       p
                 -> CanBeLeader           p
-                -> ChainIndepState       p
                 -> SlotNo
                 -> Ticked (ChainDepState p)
-                -> LeaderCheck           p
+                -> Maybe (IsLeader       p)
 
   -- | Tick the 'ChainDepState'
   --
@@ -295,25 +240,3 @@ class ( Show (ChainDepState   p)
                       -> SecurityParam
                       -> Point hdr      -- ^ Point to rewind to
                       -> ChainDepState p -> Maybe (ChainDepState p)
-
-{-------------------------------------------------------------------------------
-  Result of 'checkIsLeader'
--------------------------------------------------------------------------------}
-
-data LeaderCheck p =
-    -- | We are not a leader in this slot
-    NotLeader
-
-    -- | We are a leader in this slot
-  | IsLeader (IsLeader p)
-
-    -- | We are a leader in this slot, but we cannot lead.
-  | CannotLead (CannotLead p)
-
-castLeaderCheck :: ( IsLeader   p ~ IsLeader   p'
-                   , CannotLead p ~ CannotLead p'
-                   )
-                => LeaderCheck p -> LeaderCheck p'
-castLeaderCheck NotLeader      = NotLeader
-castLeaderCheck (IsLeader   p) = IsLeader   p
-castLeaderCheck (CannotLead e) = CannotLead e

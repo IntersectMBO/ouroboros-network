@@ -383,15 +383,12 @@ testInitExtLedger = ExtLedgerState {
 -- | Trivial test configuration with a single core node
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
-      topLevelConfigProtocol = FullProtocolConfig {
-          protocolConfigConsensus = BftConfig {
-              bftParams  = BftParams { bftSecurityParam = k
-                                     , bftNumNodes      = numCoreNodes
-                                     }
-            , bftSignKey = SignKeyMockDSIGN 0
-            , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-            }
-        , protocolConfigIndep = ()
+      topLevelConfigProtocol = BftConfig {
+          bftParams  = BftParams { bftSecurityParam = k
+                                 , bftNumNodes      = numCoreNodes
+                                 }
+        , bftSignKey = SignKeyMockDSIGN 0
+        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , topLevelConfigBlock = FullBlockConfig {
           blockConfigLedger = eraParams

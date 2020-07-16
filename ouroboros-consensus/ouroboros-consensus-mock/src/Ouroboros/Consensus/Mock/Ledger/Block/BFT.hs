@@ -16,11 +16,13 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SimpleBftHeader
   , SimpleBftExt(..)
   , SignedSimpleBft(..)
+  , forgeBftExt
   ) where
 
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
@@ -112,34 +114,28 @@ instance ( SimpleCrypto c
   Forging
 -------------------------------------------------------------------------------}
 
+type instance CannotForge (SimpleBftBlock c c') = Void
+
+type instance ForgeStateInfo (SimpleBftBlock c c') = ()
+
 forgeBftExt :: forall c c'.
                ( SimpleCrypto c
                , BftCrypto c'
                , Signable (BftDSIGN c') (SignedSimpleBft c c')
                )
-            => TopLevelConfig (SimpleBftBlock c c')
-            -> SimpleBlock' c (SimpleBftExt c c') ()
-            -> SimpleBftBlock c c'
-forgeBftExt cfg SimpleBlock{..} = SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
-  where
-    SimpleHeader{..} = simpleHeader
-    ext :: SimpleBftExt c c'
-    ext = SimpleBftExt $
-      forgeBftFields (configConsensus cfg) $
-        SignedSimpleBft {
-            signedSimpleBft = simpleHeaderStd
-          }
-
-instance ( SimpleCrypto c
-         , BftCrypto c'
-         , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         )
-     => CanForge (SimpleBftBlock c c') where
-  forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
-      forgeBftExt cfg
+            => ForgeExt c (SimpleBftExt c c')
+forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} ->
+    let SimpleHeader{..} = simpleHeader
+        ext :: SimpleBftExt c c'
+        ext = SimpleBftExt $
+          forgeBftFields (configConsensus cfg) $
+            SignedSimpleBft {
+                signedSimpleBft = simpleHeaderStd
+              }
+    in SimpleBlock {
+         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+       , simpleBody   = simpleBody
+       }
 
 {-------------------------------------------------------------------------------
   Serialisation

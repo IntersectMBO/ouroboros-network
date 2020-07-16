@@ -52,15 +52,14 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
 
 -- Re-export types required to initialize 'ProtocolInfo'
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
-                     (PerEraBlockConfig (..), PerEraChainIndepState (..),
-                     PerEraChainIndepStateConfig (..),
-                     PerEraConsensusConfig (..), PerEraExtraForgeState (..))
+                     (PerEraBlockConfig (..), PerEraConsensusConfig (..))
 
 -- Defines the various translation types required for concrete HFC instances
 import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
 
--- Instance for 'CanForge'
-import           Ouroboros.Consensus.HardFork.Combinator.Forge as X ()
+-- Combinator for 'BlockForging'
+import           Ouroboros.Consensus.HardFork.Combinator.Forging as X
+                     (HardForkForgeStateInfo, hardForkBlockForging)
 
 -- Instance for 'ConfigSupportsNode'
 import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()

@@ -14,13 +14,12 @@ module Test.ThreadNet.RealPBFT (
   , noEBBs
   , realPBftParams
   , genTestSetup
-  , expectedCannotLead
+  , expectedCannotForge
   ) where
 
 import           Control.Monad (join)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
-import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy (Proxy (..))
@@ -63,6 +62,7 @@ import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
                      ByronNodeToNodeVersion (..))
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Test.ThreadNet.General
@@ -143,11 +143,6 @@ tests = testGroup "RealPBFT" $
     [ testProperty "trivial join plan is considered deterministic"
         $ \TestSetup{setupK = k, setupTestConfig = TestConfig{numCoreNodes}} ->
           prop_deterministicPlan $ realPBftParams k numCoreNodes
-    , localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
-      testProperty "check setup"
-        $ \numCoreNodes ->
-          forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
-          prop_setup_coreNodeId numCoreNodes coreNodeId
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
       -- as of merging PR #773, this test case fails without the commit that
       -- introduces the InvalidRollForward exception
@@ -458,7 +453,7 @@ tests = testGroup "RealPBFT" $
           -- but it forges its block in S+1 before the dlg cert tx arrives.
           --
           -- The expected failure is an unexpected block rejection (cf
-          -- 'pgaExpectedCannotLead') (PBftNotGenesisDelegate) in Slot 49.
+          -- 'pgaExpectedCannotForge') (PBftNotGenesisDelegate) in Slot 49.
           -- It disappears with the mesh topology, which usually means subtle
           -- timings are involved, unfortunately.
           --
@@ -804,48 +799,22 @@ prop_deterministicPlan params numSlots numCoreNodes =
   where
     njp = trivialNodeJoinPlan numCoreNodes
 
-prop_setup_coreNodeId ::
-     NumCoreNodes
-  -> CoreNodeId
-  -> Property
-prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pInfoLeaderCreds protInfo of
-      Just (isLeader, _) ->
-          coreNodeId === pbftCoreNodeId isLeader
-      Nothing ->
-          counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
-          property False
-  where
-    protInfo :: ProtocolInfo Identity ByronBlock
-    protInfo = mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
-
-    params :: PBftParams
-    params = realPBftParams dummyK numCoreNodes
-
-    -- not really used
-    dummyK       = SecurityParam 10
-    dummySlotLen = slotLengthFromSec 20
-
-    genesisConfig  :: Genesis.Config
-    genesisSecrets :: Genesis.GeneratedSecrets
-    (genesisConfig, genesisSecrets) = generateGenesisConfig dummySlotLen params
-
-expectedCannotLead
+expectedCannotForge
   :: SecurityParam
   -> NumCoreNodes
   -> NodeRestarts
   -> SlotNo
   -> NodeId
-  -> WrapCannotLead ByronBlock
+  -> WrapCannotForge ByronBlock
   -> Bool
-expectedCannotLead
+expectedCannotForge
   k numCoreNodes (NodeRestarts nrs)
-  s (CoreId (CoreNodeId i)) (WrapCannotLead cl)
+  s (CoreId (CoreNodeId i)) (WrapCannotForge cl)
   = case cl of
-    PBftCannotLeadThresholdExceeded{} ->
+    PBftCannotForgeThresholdExceeded{} ->
         -- TODO validate this against Ref implementation?
         True
-    PBftCannotLeadInvalidDelegation {} ->
+    PBftCannotForgeInvalidDelegation {} ->
         -- only if it rekeyed within before a restarts latest possible
         -- maturation
         not $ null $
@@ -856,7 +825,7 @@ expectedCannotLead
         , (CoreNodeId i', NodeRekey) <- Map.toList nrs'
         , i' == i
         ]
-expectedCannotLead _ _ _ _ _ _ = False
+expectedCannotForge _ _ _ _ _ _ = False
 
 -- | If we rekey in slot rekeySlot, it is in general possible that the leader
 -- of rekeySlot will include our delegation transaction in its new block.
@@ -910,19 +879,19 @@ prop_simple_real_pbft_convergence TestSetup
           | (nid, ch) <- finalChains
           ]) $
     prop_general PropGeneralArgs
-      { pgaBlockProperty      = const $ property True
-      , pgaCountTxs           = Byron.countByronGenTxs
-      , pgaExpectedCannotLead = expectedCannotLead k numCoreNodes nodeRestarts
-      , pgaFirstBlockNo       = 1
-      , pgaFixedMaxForkLength =
+      { pgaBlockProperty       = const $ property True
+      , pgaCountTxs            = Byron.countByronGenTxs
+      , pgaExpectedCannotForge = expectedCannotForge k numCoreNodes nodeRestarts
+      , pgaFirstBlockNo        = 1
+      , pgaFixedMaxForkLength  =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule      =
+      , pgaFixedSchedule       =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam      = k
-      , pgaTestConfig         = testConfig
-      , pgaTestConfigB        = testConfigB
+      , pgaSecurityParam       = k
+      , pgaTestConfig          = testConfig
+      , pgaTestConfigB         = testConfigB
       }
       testOutput .&&.
     prop_pvu .&&.
@@ -1315,24 +1284,25 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: Genesis.Config
+  :: Monad m
+  => Genesis.Config
   -> Genesis.GeneratedSecrets
+  -> CoreNodeId
   -> ProtocolInfo m ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)
-mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pInfoLeaderCreds pInfo of
-    Nothing              -> Nothing
-    Just (isLeader, mfs) ->
-      let PBftIsLeader{pbftCoreNodeId} = isLeader
-          genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK bcfg isLeader (coerce eno) newSK
-          pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
+mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
+  case pInfoBlockForging pInfo of
+    Nothing -> Nothing
+    Just _  ->
+      let genSK = genesisSecretFor genesisConfig genesisSecrets cid
+          creds' = updSignKey genSK bcfg cid (coerce eno) newSK
+          blockForging' = byronBlockForging creds'
+          pInfo' = pInfo { pInfoBlockForging = Just (return blockForging') }
 
-          PBftIsLeader{pbftDlgCert} = isLeader'
       in Just TestNodeInitialization
-        { tniCrucialTxs = [dlgTx pbftDlgCert]
+        { tniCrucialTxs = [dlgTx (blcDlgCert creds')]
         , tniProtocolInfo = pInfo'
         }
   where
@@ -1361,19 +1331,22 @@ genesisSecretFor genesisConfig genesisSecrets cid =
         genesisKeyCoreNodeId genesisConfig
       . Crypto.VerKeyByronDSIGN . Crypto.toVerification
 
--- | Overwrite the 'PBftIsLeader''s operational key and delegation certificate
+-- | Create new 'ByronLeaderCredentials' by generating a new delegation
+-- certificate for the given new operational key.
 --
 updSignKey
   :: Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> BlockConfig ByronBlock
-  -> PBftIsLeader PBftByronCrypto
+  -> CoreNodeId
   -> EpochNumber
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> PBftIsLeader PBftByronCrypto
-updSignKey genSK extCfg isLeader eno newSK = isLeader
-    { pbftDlgCert = newCert
-    , pbftSignKey = newSK
-    }
+  -> ByronLeaderCredentials
+updSignKey genSK extCfg cid eno newSK =
+    ByronLeaderCredentials {
+        blcSignKey    = sk'
+      , blcDlgCert    = newCert
+      , blcCoreNodeId = cid
+      }
   where
     newCert =
         Delegation.signCertificate
@@ -1381,9 +1354,9 @@ updSignKey genSK extCfg isLeader eno newSK = isLeader
             (Crypto.toVerification sk')
             eno
             (Crypto.noPassSafeSigner gsk')
-      where
-        Crypto.SignKeyByronDSIGN gsk' = genSK
-        Crypto.SignKeyByronDSIGN sk'  = newSK
+
+    Crypto.SignKeyByronDSIGN gsk' = genSK
+    Crypto.SignKeyByronDSIGN sk'  = newSK
 
 -- | Map a delegation certificate to a delegation transaction
 --

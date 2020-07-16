@@ -64,7 +64,6 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -74,7 +73,6 @@ import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -211,7 +209,7 @@ run runargs@RunNodeArgs{..} =
                       mkNodeArgs
                         registry
                         cfg
-                        leaderCreds
+                        blockForging
                         rnTraceConsensus
                         btime
                         chainDB
@@ -238,9 +236,9 @@ run runargs@RunNodeArgs{..} =
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
-      { pInfoConfig      = cfg
-      , pInfoInitLedger  = initLedger
-      , pInfoLeaderCreds = leaderCreds
+      { pInfoConfig       = cfg
+      , pInfoInitLedger   = initLedger
+      , pInfoBlockForging = blockForging
       } = rnProtocolInfo
 
     codecConfig :: CodecConfig blk
@@ -421,23 +419,20 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> Maybe (CanBeLeader (BlockProtocol blk), MaintainForgeState IO blk)
+  -> Maybe (IO (BlockForging IO blk))
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
-    blockProduction <-
-      case mIsLeader of
-        Just (proof, mfs) -> Just <$> defaultBlockProduction cfg proof mfs
-        Nothing           -> return Nothing
+mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
+    mBlockForging <- sequence mInitBlockForging
     return NodeArgs
       { tracers
       , registry
       , cfg
       , btime
       , chainDB
-      , blockProduction
+      , blockForging            = mBlockForging
       , initChainDB             = nodeInitChainDB
       , blockFetchSize          = nodeBlockFetchSize
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
