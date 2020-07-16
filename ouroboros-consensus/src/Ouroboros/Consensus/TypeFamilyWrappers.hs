@@ -126,11 +126,13 @@ deriving instance Trivial (ExtraForgeState blk) => Trivial (WrapExtraForgeState 
 -------------------------------------------------------------------------------}
 
 deriving instance Eq (ChainDepState  (BlockProtocol blk)) => Eq (WrapChainDepState  blk)
+deriving instance Eq (ChainSelConfig (BlockProtocol blk)) => Eq (WrapChainSelConfig blk)
 deriving instance Eq (ValidationErr  (BlockProtocol blk)) => Eq (WrapValidationErr  blk)
 
 deriving instance Show (CannotLead      (BlockProtocol blk)) => Show (WrapCannotLead      blk)
 deriving instance Show (ChainDepState   (BlockProtocol blk)) => Show (WrapChainDepState   blk)
 deriving instance Show (ChainIndepState (BlockProtocol blk)) => Show (WrapChainIndepState blk)
+deriving instance Show (ChainSelConfig  (BlockProtocol blk)) => Show (WrapChainSelConfig  blk)
 deriving instance Show (LedgerView      (BlockProtocol blk)) => Show (WrapLedgerView      blk)
 deriving instance Show (SelectView      (BlockProtocol blk)) => Show (WrapSelectView      blk)
 deriving instance Show (ValidationErr   (BlockProtocol blk)) => Show (WrapValidationErr   blk)
