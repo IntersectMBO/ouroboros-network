@@ -72,9 +72,9 @@ calculatePeerFetchInFlightLimits PeerGSV {
         --seconds = realToFrac
       --FIXME: s is now a function of bytes, not unit seconds / octet
 
-    lim = case quantile 0.99 digest of
+    lim = case quantile 0.90 digest of
                Nothing -> 0.500
-               Just p99 -> p99 + d
+               Just p90 -> p90 + d
 
     d = 1e-1 -- 100 milliseconds
     -- But note that the minimum here is based on the assumption that we can
