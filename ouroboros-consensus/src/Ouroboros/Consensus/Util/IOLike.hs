@@ -2,7 +2,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 
 module Ouroboros.Consensus.Util.IOLike (
-    IOLike
+    IOLike(..)
     -- * Re-exports
     -- *** MonadThrow
   , MonadThrow(..)
@@ -44,6 +44,8 @@ module Ouroboros.Consensus.Util.IOLike (
 
 import qualified Control.Concurrent.STM as IO
 
+import           Cardano.Crypto.KES (KESAlgorithm, SignKeyKES)
+import qualified Cardano.Crypto.KES as KES
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadAsync
@@ -92,5 +94,10 @@ class ( MonadAsync              m
       , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)
       , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar m a)
       ) => IOLike m where
+  -- | Securely forget a KES signing key.
+  --
+  -- No-op for the IOSim, but 'KES.forgetSignKeyKES' for IO.
+  forgetSignKeyKES :: KESAlgorithm v => SignKeyKES v -> m ()
 
-instance IOLike IO
+instance IOLike IO where
+  forgetSignKeyKES = KES.forgetSignKeyKES
