@@ -43,6 +43,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
+import           Ouroboros.Network.Util.ShowProxy
 
 import qualified Network.Mux.Compat        as Mx (muxStart)
 import qualified Network.Mux.Bearer.Queues as Mx
@@ -94,6 +95,7 @@ demo :: forall m block.
         , Serialise block
         , Eq block
         , Show block
+        , ShowProxy block
         , Eq (Async m ()) )
      => Chain block -> [ChainUpdate block block] -> DiffTime -> m Property
 demo chain0 updates delay = do

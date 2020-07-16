@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -102,6 +103,7 @@ import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), block,
                      fromWithOrigin, origin, withOriginToMaybe)
 import qualified Ouroboros.Network.Point as Point (Block (..))
+import           Ouroboros.Network.Util.ShowProxy
 
 genesisPoint :: Point block
 genesisPoint = Point origin
@@ -231,6 +233,9 @@ deriving newtype instance StandardHash block => Ord  (Point block)
 deriving newtype instance StandardHash block => Show (Point block)
 deriving newtype instance StandardHash block => NoUnexpectedThunks (Point block)
 
+instance ShowProxy block => ShowProxy (Point block) where
+    showProxy _ = "Point " ++ showProxy (Proxy :: Proxy block)
+
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin
 
@@ -271,6 +276,8 @@ data Tip b =
 deriving instance StandardHash b => Eq                 (Tip b)
 deriving instance StandardHash b => Show               (Tip b)
 deriving instance StandardHash b => NoUnexpectedThunks (Tip b)
+instance ShowProxy b => ShowProxy (Tip b) where
+    showProxy _ = "Tip " ++ showProxy (Proxy :: Proxy b)
 
 -- | The equivalent of 'castPoint' for 'Tip'
 castTip :: (HeaderHash a ~ HeaderHash b) => Tip a -> Tip b

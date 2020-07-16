@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE EmptyCase          #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE PolyKinds          #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | The type of the local transaction monitoring protocol.
 --
@@ -15,7 +16,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
 import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Ouroboros.Network.Util.ShowProxy
 
 
 -- | The kind of the local transaction monitoring protocol, and the types of
@@ -43,8 +44,8 @@ data LocalTxMonitor tx where
   StDone   :: LocalTxMonitor tx
 
 
-instance ShowProxy (ShowProxy (LocalTxMonitor tx)) where
-    showProxy _ = "LocalTxMonitor"
+instance ShowProxy tx => ShowProxy (ShowProxy (LocalTxMonitor tx)) where
+    showProxy _ = "LocalTxMonitor " ++ showProxy (Proxy :: Proxy tx)
 
 
 instance Protocol (LocalTxMonitor tx) where

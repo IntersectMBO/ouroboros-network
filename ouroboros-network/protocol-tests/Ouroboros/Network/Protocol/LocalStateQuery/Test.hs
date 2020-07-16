@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -28,6 +29,7 @@ import           Network.TypedProtocol.Proofs
 import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.MockChain.Chain (Point)
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
@@ -77,6 +79,7 @@ data Query result where
   QueryPoint :: Query (Point Block)
 
 deriving instance Show (Query result)
+instance ShowProxy Query where
 
 -- | Information to test an example server and client.
 data Setup = Setup
@@ -168,7 +171,10 @@ prop_connect input =
 
 -- | Run a local state query client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: ( MonadAsync m
+                , MonadCatch m
+                , MonadST m
+                )
              => m (Channel m ByteString, Channel m ByteString)
              -> Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
              -> m Property

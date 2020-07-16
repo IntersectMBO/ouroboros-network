@@ -48,6 +48,7 @@ import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Util.ShowProxy
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
 
@@ -192,7 +193,7 @@ exampleFixedPeerGSVs =
 runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Serialise block, Serialise (HeaderHash block),
-                   Typeable block)
+                   Typeable block, ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
@@ -212,7 +213,8 @@ runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
                    Serialise block,
                    Serialise (HeaderHash block),
-                   Typeable block)
+                   Typeable block,
+                   ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block m a
@@ -229,7 +231,8 @@ runFetchClientAndServerAsync
                    MonadST m, MonadTime m, MonadTimer m, Ord peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block),
-                   Typeable block)
+                   Typeable block,
+                   ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m

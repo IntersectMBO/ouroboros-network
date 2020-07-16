@@ -50,6 +50,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import           Ouroboros.Network.Util.ShowProxy
 
 activeTracer :: Show a => Tracer IO a
 activeTracer = nullTracer
@@ -94,7 +95,13 @@ demoProtocols chainSync =
 -- over a pipe with full message serialisation, framing etc.
 --
 demo :: forall block .
-        (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block, Show block )
+        ( Chain.HasHeader block
+        , Serialise (Chain.HeaderHash block)
+        , Serialise block
+        , Eq block
+        , Show block
+        , ShowProxy block
+        )
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
 -- instrumentation of pipes is system dependet; on Windows we use NamedPipes

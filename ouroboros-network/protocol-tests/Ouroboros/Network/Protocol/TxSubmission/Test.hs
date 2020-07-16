@@ -39,6 +39,7 @@ import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple
                    (runConnectedPeersPipelined)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Codec
@@ -82,11 +83,17 @@ tests =
 newtype Tx = Tx TxId
   deriving (Eq, Show, Arbitrary, Serialise)
 
+instance ShowProxy Tx where
+    showProxy _ = "Tx"
+
 txId :: Tx -> TxId
 txId (Tx txid) = txid
 
 newtype TxId = TxId Int
   deriving (Eq, Ord, Show, Arbitrary, Serialise)
+
+instance ShowProxy TxId where
+    showProxy _ = "TxId"
 
 type TestServer m = TxSubmissionServerPipelined TxId Tx m [Tx]
 type TestClient m = TxSubmissionClient          TxId Tx m ()

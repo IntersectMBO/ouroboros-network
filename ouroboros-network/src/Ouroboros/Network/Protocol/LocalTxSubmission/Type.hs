@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE EmptyCase          #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE PolyKinds          #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | The type of the local transaction submission protocol.
 --
@@ -15,7 +16,7 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
 
 import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Ouroboros.Network.Util.ShowProxy
 
 
 -- | The kind of the local transaction-submission protocol, and the types of
@@ -46,8 +47,16 @@ data LocalTxSubmission tx reject where
   StDone   :: LocalTxSubmission tx reject
 
 
-instance ShowProxy (LocalTxSubmission tx reject) where
-    showProxy _ = "LocalTxSubmission"
+instance ( ShowProxy tx
+         , ShowProxy reject
+         ) => ShowProxy (LocalTxSubmission tx reject) where
+    showProxy _ = concat
+      [ "LocalTxSubmission ("
+      , showProxy (Proxy :: Proxy tx)
+      , ") ("
+      , showProxy (Proxy :: Proxy reject)
+      , ")"
+      ]
 
 
 -- | Isomorphic with Maybe but with a name that better describes its purpose and

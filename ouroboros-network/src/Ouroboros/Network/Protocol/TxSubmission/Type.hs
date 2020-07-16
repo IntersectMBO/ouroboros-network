@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE EmptyCase          #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE PolyKinds          #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | The type of the transaction submission protocol.
 --
@@ -17,7 +18,7 @@ import           Data.List.NonEmpty (NonEmpty)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Ouroboros.Network.Util.ShowProxy
 
 -- | Transactions are typically not big, but in principle in future we could
 -- have ones over 64k large.
@@ -65,8 +66,15 @@ data TxSubmission txid tx where
   StDone   :: TxSubmission txid tx
 
 
-instance ShowProxy (TxSubmission txid tx) where
-    showProxy _ = "TxSubmission"
+instance ( ShowProxy txid
+         , ShowProxy tx
+         ) => ShowProxy (TxSubmission txid tx) where
+    showProxy _ = concat
+      [ "TxSubmission "
+      , showProxy (Proxy :: Proxy txid)
+      , " "
+      , showProxy (Proxy :: Proxy tx)
+      ]
 
 
 data StBlockingStyle where

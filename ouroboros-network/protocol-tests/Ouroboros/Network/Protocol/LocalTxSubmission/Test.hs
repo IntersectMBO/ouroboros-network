@@ -33,6 +33,7 @@ import           Network.TypedProtocol.Proofs
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
@@ -76,8 +77,12 @@ tests =
 newtype Tx = Tx Int
   deriving (Eq, Show, Arbitrary, CoArbitrary, Serialise)
 
+instance ShowProxy Tx where
+
 newtype Reject = Reject Int
   deriving (Eq, Show, Arbitrary, Serialise)
+
+instance ShowProxy Reject where
 
 
 --

@@ -39,6 +39,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Util.ShowProxy
 
 -- TODO Should this be impored here
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
@@ -272,11 +273,12 @@ forkRelayKernel upstream cpsVar = do
 relayNode :: forall m block.
              ( MonadSTM m
              , MonadFork m
+             , MonadTimer m
              , MonadThrow m
              , MonadSay m
              , HasFullHeader block
              , Show block
-             , MonadTimer m
+             , ShowProxy block
              )
           => NodeId
           -> Chain block
