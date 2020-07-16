@@ -50,7 +50,6 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-praos
-                     , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
