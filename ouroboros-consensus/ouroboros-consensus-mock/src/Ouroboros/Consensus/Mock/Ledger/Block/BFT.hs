@@ -18,12 +18,14 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SignedSimpleBft(..)
   ) where
 
-import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise (Serialise (..), serialise)
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
+import           Cardano.Crypto.Util
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
@@ -152,6 +154,9 @@ instance BftCrypto c' => Serialise (SimpleBftExt c c') where
       return $ SimpleBftExt BftFields{..}
 
 instance SimpleCrypto c => Serialise (SignedSimpleBft c c')
+instance SimpleCrypto c => SignableRepresentation (SignedSimpleBft c c') where
+  getSignableRepresentation = BSL.toStrict . serialise
+
 instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimpleBft c c') where
   toCBOR = encode
 

@@ -323,7 +323,7 @@ data TPraosChainSelectView c = TPraosChainSelectView {
   , csvSlotNo      :: SlotNo
   , csvSelfIssued  :: SelfIssued
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
-  , csvIssueNo     :: Natural
+  , csvIssueNo     :: Word64
   , csvLeaderVRF   :: VRF.OutputVRF (SL.VRF c)
   } deriving (Show, Eq)
 
@@ -446,15 +446,13 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
       chainState = tickedPraosStateTicked cs
       lv         = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
-      eta0       = tickEta0 $ SL.csTickn chainState
+      eta0       = STS.ticknStateEpochNonce $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
 
       rho = VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
       y   = VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
-
-      tickEta0 (STS.TicknState _ x) = x
 
       -- The current wallclock KES period
       wallclockPeriod :: SL.KESPeriod

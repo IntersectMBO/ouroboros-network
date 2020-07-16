@@ -37,6 +37,8 @@ module Ouroboros.Consensus.Util (
   , safeMaximum
   , safeMaximumBy
   , safeMaximumOn
+    -- * Hashes
+  , hashFromBytesE
     -- * Bytestrings
   , byteStringChunks
   , lazyByteStringChunks
@@ -61,6 +63,7 @@ module Ouroboros.Consensus.Util (
   , Trivial(..)
   ) where
 
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (asum, toList)
@@ -69,6 +72,7 @@ import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.Kind
 import           Data.List (foldl', maximumBy)
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.SOP.Strict
@@ -189,6 +193,20 @@ safeMaximumBy cmp ls  = Just $ maximumBy cmp ls
 
 safeMaximumOn :: Ord b => (a -> b) -> [a] -> Maybe a
 safeMaximumOn f = safeMaximumBy (compare `on` f)
+
+{-------------------------------------------------------------------------------
+  Hashes
+-------------------------------------------------------------------------------}
+
+-- | Calls 'hashFromBytes' and throws an error if the input is of the wrong length.
+hashFromBytesE
+  :: forall h a. (HashAlgorithm h, HasCallStack)
+  => Strict.ByteString
+  -> Hash h a
+hashFromBytesE bs = fromMaybe
+  (error $ "hashFromBytes called with ByteString of the wrong length: "
+           <> show bs)
+  $ hashFromBytes bs
 
 {-------------------------------------------------------------------------------
   Bytestrings

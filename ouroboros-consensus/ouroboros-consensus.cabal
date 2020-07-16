@@ -376,6 +376,7 @@ test-suite test-consensus
                        Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
@@ -505,6 +506,7 @@ test-suite test-storage
                        Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.ToExpr
                        Test.Util.QuickCheck
                        Test.Util.Range

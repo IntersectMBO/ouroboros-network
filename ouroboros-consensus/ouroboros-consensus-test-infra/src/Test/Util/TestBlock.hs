@@ -99,6 +99,7 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Test.Util.Orphans.SignableRepresentation ()
 import           Test.Util.Orphans.ToExpr ()
 
 {-------------------------------------------------------------------------------

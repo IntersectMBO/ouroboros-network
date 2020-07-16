@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.State (
   , genesisMockState
   ) where
 
+import           Cardano.Binary (toCBOR)
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Set (Set)
@@ -110,6 +111,6 @@ updateMockUTxO1 now tx (MockState u c t) = case hasExpired of
 genesisMockState :: AddrDist -> MockState blk
 genesisMockState addrDist = MockState {
       mockUtxo      = genesisUtxo addrDist
-    , mockConfirmed = Set.singleton (hash (genesisTx addrDist))
+    , mockConfirmed = Set.singleton (hashWithSerialiser toCBOR (genesisTx addrDist))
     , mockTip       = GenesisPoint
     }

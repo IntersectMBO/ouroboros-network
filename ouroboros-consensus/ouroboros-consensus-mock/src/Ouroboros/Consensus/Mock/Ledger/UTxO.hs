@@ -132,10 +132,10 @@ txOuts = Map.unions . map each . getMockTxs
         Map.fromList $ zipWith aux [0..] outs
       where
         aux :: Ix -> TxOut -> (TxIn, TxOut)
-        aux ix out = ((hash tx, ix), out)
+        aux ix out = ((hashWithSerialiser toCBOR tx, ix), out)
 
 confirmed :: HasMockTxs a => a -> Set TxId
-confirmed = Set.fromList . map hash . getMockTxs
+confirmed = Set.fromList . map (hashWithSerialiser toCBOR) . getMockTxs
 
 updateUtxo :: HasMockTxs a => a -> Utxo -> Except UtxoError Utxo
 updateUtxo = repeatedlyM each . getMockTxs

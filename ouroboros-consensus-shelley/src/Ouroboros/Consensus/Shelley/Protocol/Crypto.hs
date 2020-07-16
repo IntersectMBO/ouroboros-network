@@ -10,7 +10,6 @@ module Ouroboros.Consensus.Shelley.Protocol.Crypto (
   ) where
 
 import           Data.Typeable (Typeable)
-import           Numeric.Natural
 
 import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
@@ -27,7 +26,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense)
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import           Shelley.Spec.Ledger.BlockChain (BHBody)
 import           Shelley.Spec.Ledger.Crypto (Crypto (..))
-import           Shelley.Spec.Ledger.OCert (KESPeriod)
+import           Shelley.Spec.Ledger.OCert (OCertSignable)
 import           Shelley.Spec.Ledger.TxData (TxBody)
 
 class ( Crypto c
@@ -35,7 +34,7 @@ class ( Crypto c
       , Condense (SigKES (KES c))
       , DSIGN.Signable
           (DSIGN c)
-          (VerKeyKES (KES c), Natural, KESPeriod)
+          (OCertSignable c)
       , DSIGN.Signable
           (DSIGN c)
           (Hash (HASH c) (TxBody c))

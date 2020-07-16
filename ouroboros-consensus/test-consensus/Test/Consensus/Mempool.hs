@@ -344,7 +344,8 @@ ppTestSetup TestSetup { testInitialTxs
     [show testMempoolCapOverride]
 
 ppTestTxWithHash :: TestTx -> String
-ppTestTxWithHash x = condense (hash (simpleGenTx x) :: Hash MD5 Tx, x)
+ppTestTxWithHash x = condense
+  (hashWithSerialiser toCBOR (simpleGenTx x) :: Hash MD5 Tx, x)
 
 -- | Given some transactions, calculate the sum of their sizes in bytes.
 txSizesInBytes :: [TestTx] -> TxSizeInBytes

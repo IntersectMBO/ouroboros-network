@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util (hashFromBytesE)
 
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.BFT
@@ -157,5 +158,5 @@ instance Arbitrary (BftFields BftMockCrypto toSign) where
 
 instance HashAlgorithm h => Arbitrary (Hash h a) where
   arbitrary =
-      UnsafeHash . Strict.pack <$>
+      hashFromBytesE . Strict.pack <$>
         replicateM (fromIntegral (sizeHash (Proxy @h))) arbitrary

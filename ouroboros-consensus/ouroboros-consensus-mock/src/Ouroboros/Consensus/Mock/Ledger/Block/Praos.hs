@@ -24,8 +24,9 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
 import           Cardano.Crypto.KES
+import           Cardano.Crypto.Util
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
@@ -197,6 +198,10 @@ instance (SimpleCrypto c, PraosCrypto c')
         encode                 signedSimplePraos
       , encodePraosExtraFields signedPraosFields
       ]
+
+instance (SimpleCrypto c, PraosCrypto c')
+    => SignableRepresentation (SignedSimplePraos c c') where
+  getSignableRepresentation = serialize'
 
 encodePraosExtraFields :: PraosCrypto c' => PraosExtraFields c' -> CBOR.Encoding
 encodePraosExtraFields PraosExtraFields{..} = mconcat [
