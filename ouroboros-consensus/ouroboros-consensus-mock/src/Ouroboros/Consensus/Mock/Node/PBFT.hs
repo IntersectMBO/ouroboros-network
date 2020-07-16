@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.PBFT (
@@ -20,6 +22,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
+import           Ouroboros.Consensus.Util ((.....:))
 
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
@@ -31,11 +34,8 @@ protocolInfoMockPBFT :: Monad m
 protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PBftConfig {
-                    pbftParams = params
-                  }
-              , protocolConfigIndep = ()
+            topLevelConfigProtocol = PBftConfig {
+                pbftParams = params
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = SimpleLedgerConfig ledgerView eraParams
@@ -45,18 +45,15 @@ protocolInfoMockPBFT params eraParams nid =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoLeaderCreds = Just (
-            canBeLeader
-          , defaultMaintainForgeState
-          )
+      , pInfoBlockForging = Just (return (pbftBlockForging canBeLeader))
       }
   where
-    canBeLeader :: PBftIsLeader PBftMockCrypto
-    canBeLeader = PBftIsLeader {
-          pbftCoreNodeId = nid
-        , pbftSignKey    = signKey nid
+    canBeLeader :: PBftCanBeLeader PBftMockCrypto
+    canBeLeader = PBftCanBeLeader {
+          pbftCanBeLeaderCoreNodeId = nid
+        , pbftCanBeLeaderSignKey    = signKey nid
           -- For Mock PBFT, we use our key as the genesis key.
-        , pbftDlgCert    = (verKey nid, verKey nid)
+        , pbftCanBeLeaderDlgCert    = (verKey nid, verKey nid)
         }
 
     ledgerView :: PBftLedgerView PBftMockCrypto
@@ -73,3 +70,29 @@ protocolInfoMockPBFT params eraParams nid =
 
     addrDist :: AddrDist
     addrDist = mkAddrDist (pbftNumNodes params)
+
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+pbftBlockForging ::
+     ( SimpleCrypto c
+     , PBftCrypto c'
+     , Signable (PBftDSIGN c') (SignedSimplePBft c c')
+     , ContextDSIGN (PBftDSIGN c') ~ ()
+     , Monad m
+     )
+  => PBftCanBeLeader c'
+  -> BlockForging m (SimplePBftBlock c c')
+pbftBlockForging canBeLeader = BlockForging {
+      canBeLeader
+    , updateForgeState = \_ -> return ()
+    , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
+                           return $
+                             pbftCheckCanForge
+                               (configConsensus cfg)
+                               canBeLeader
+                               slot
+                               tickedPBftState
+    , forgeBlock       = return .....: forgeSimple forgePBftExt
+    }

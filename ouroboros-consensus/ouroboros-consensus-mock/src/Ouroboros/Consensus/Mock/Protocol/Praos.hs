@@ -50,7 +50,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
-import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
@@ -119,7 +118,9 @@ praosValidateView getFields hdr =
   Forging
 -------------------------------------------------------------------------------}
 
-newtype HotKey c = HotKey (SignKeyKES (PraosKES c))
+newtype HotKey c = HotKey {
+      getHotKey :: SignKeyKES (PraosKES c)
+    }
   deriving (Generic)
 
 deriving instance PraosCrypto c => Show (HotKey c)
@@ -128,12 +129,10 @@ deriving instance PraosCrypto c => Show (HotKey c)
 instance PraosCrypto c => NoUnexpectedThunks (HotKey c) where
   showTypeOf _ = show $ typeRep (Proxy @(HotKey c))
 
-evolveKey :: (Monad m, PraosCrypto c)
-          => SlotNo -> HotKey c -> m (HotKey c)
-evolveKey slotNo (HotKey oldKey) = do
-    let newKey = fromMaybe (error "evolveKey: updateKES failed") $
-                 updateKES () oldKey kesPeriod
-    return $ HotKey newKey
+evolveKey :: PraosCrypto c => SlotNo -> HotKey c -> HotKey c
+evolveKey slotNo (HotKey oldKey) =
+    HotKey $ fromMaybe (error "evolveKey: updateKES failed") $
+               updateKES () oldKey kesPeriod
   where
    kesPeriod :: Period
    kesPeriod = fromIntegral $ unSlotNo slotNo
@@ -141,12 +140,11 @@ evolveKey slotNo (HotKey oldKey) = do
 forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
-                 => ConsensusConfig (Praos c)
+                 => PraosProof c
                  -> HotKey c
-                 -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> PraosFields c toSign
-forgePraosFields PraosConfig{..} (HotKey key) PraosProof{..} mkToSign =
+forgePraosFields PraosProof{..} (HotKey key) mkToSign =
     PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields
@@ -246,10 +244,6 @@ data instance ConsensusConfig (Praos c) = PraosConfig
 instance PraosCrypto c => ChainSelection (Praos c) where
   -- Use defaults
 
-instance PraosCrypto c => HasChainIndepState (Praos c) where
-  type ChainIndepState (Praos c) = HotKey c
-  updateChainIndepState _ () = evolveKey
-
 newtype PraosChainDepState c = PraosChainDepState {
       praosHistory :: [BlockInfo c]
     }
@@ -278,17 +272,16 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type ValidateView  (Praos c) = PraosValidateView    c
   type ChainDepState (Praos c) = PraosChainDepState   c
   type CanBeLeader   (Praos c) = CoreNodeId
-  type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid _cis slot (TickedPraosChainDepState _u  cds) = do
+  checkIsLeader cfg@PraosConfig{..} nid slot (TickedPraosChainDepState _u  cds) =
       if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
-      then IsLeader PraosProof {
+      then Just PraosProof {
                praosProofRho  = rho
              , praosProofY    = y
              , praosLeader    = nid
              , praosProofSlot = slot
              }
-      else NotLeader
+      else Nothing
     where
       (rho', y', t) = rhoYT cfg (praosHistory cds) slot nid
 

@@ -52,7 +52,6 @@ class ( LedgerSupportsProtocol blk
       , LedgerSupportsMempool blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
-      , CanForge blk
       , HasPartialConsensusConfig (BlockProtocol blk)
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
@@ -63,6 +62,8 @@ class ( LedgerSupportsProtocol blk
       , Eq   (ApplyTxErr blk)
       , Show blk
       , Show (Header blk)
+      , Show (CannotForge blk)
+      , Show (ForgeStateInfo blk)
       ) => SingleEraBlock blk where
 
   -- | Era transition

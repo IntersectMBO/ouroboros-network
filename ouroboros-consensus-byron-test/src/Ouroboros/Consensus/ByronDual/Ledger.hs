@@ -204,22 +204,16 @@ bridgeTransactionIds = Spec.Test.transactionIds
   Block forging
 -------------------------------------------------------------------------------}
 
-instance CanForge DualByronBlock where
-  type ExtraForgeState DualByronBlock = ExtraForgeState ByronBlock
-
-  forgeBlock = forgeDualByronBlock
-
 forgeDualByronBlock
   :: HasCallStack
   => TopLevelConfig DualByronBlock
-  -> ForgeState DualByronBlock
   -> BlockNo                            -- ^ Current block number
   -> SlotNo                             -- ^ Current slot number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg forgeState curBlockNo curSlotNo tickedLedger txs isLeader =
+forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger txs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -236,7 +230,6 @@ forgeDualByronBlock cfg forgeState curBlockNo curSlotNo tickedLedger txs isLeade
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
-             (castForgeState forgeState)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
@@ -251,4 +244,4 @@ forgeDualByronBlock cfg forgeState curBlockNo curSlotNo tickedLedger txs isLeade
             (map dualGenTxAux txs)
             (bridgeToSpecKey
                (tickedDualLedgerStateBridge tickedLedger)
-               (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))
+               (hashVerKey . deriveVerKeyDSIGN . pbftIsLeaderSignKey $ isLeader))

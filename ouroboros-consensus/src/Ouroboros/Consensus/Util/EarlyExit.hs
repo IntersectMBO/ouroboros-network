@@ -215,6 +215,9 @@ instance MonadMonotonicTime m => MonadMonotonicTime (WithEarlyExit m) where
 instance MonadDelay m => MonadDelay (WithEarlyExit m) where
   threadDelay = lift . threadDelay
 
+instance (MonadEvaluate m, MonadCatch m) => MonadEvaluate (WithEarlyExit m) where
+  evaluate  = lift . evaluate
+
 instance MonadEventlog m => MonadEventlog (WithEarlyExit m) where
   traceEventM  = lift . traceEventM
   traceMarkerM = lift . traceMarkerM

@@ -22,6 +22,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
   , HardForkLedgerView_(..)
   , HardForkLedgerView
+    -- * Type family instances
+  , Ticked(..)
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -95,7 +97,6 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   type ValidationErr (HardForkProtocol xs) = HardForkValidationErr xs
   type LedgerView    (HardForkProtocol xs) = HardForkLedgerView    xs
   type CanBeLeader   (HardForkProtocol xs) = HardForkCanBeLeader   xs
-  type CannotLead    (HardForkProtocol xs) = HardForkCannotLead    xs
   type IsLeader      (HardForkProtocol xs) = HardForkIsLeader      xs
   type ValidateView  (HardForkProtocol xs) = OneEraValidateView    xs
 
@@ -209,9 +210,6 @@ tick cfg@HardForkConsensusConfig{..}
 -- | We are a leader if we have a proof from one of the eras
 type HardForkIsLeader xs = OneEraIsLeader xs
 
--- | If we fail to lead, it's because one of the eras tried but failed
-type HardForkCannotLead xs = OneEraCannotLead xs
-
 -- | CanBeLeader instance for 'HardForkProtocol'
 --
 -- We allow an optional 'CanBeLeader' proof /per era/, to make it possible to
@@ -223,63 +221,49 @@ type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
 check :: forall xs. (CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
-      -> ChainIndepState (HardForkProtocol xs)
       -> SlotNo
       -> Ticked (ChainDepState (HardForkProtocol xs))
-      -> LeaderCheck (HardForkProtocol xs)
+      -> Maybe (HardForkIsLeader xs)
 check HardForkConsensusConfig{..}
       canBeLeader
-      (PerEraChainIndepState chainIndepState)
       slot
       (TickedHardForkChainDepState chainDepState ei) =
     distrib $
-        hcpure proxySingle (fn_4 checkOne)
-      `hap`
-        cfgs
-      `hap`
-        fromOptNP canBeLeader
-      `hap`
-        chainIndepState
-      `hap`
-        State.tip chainDepState
+        hczipWith3
+          proxySingle
+          checkOne
+          cfgs
+          (fromOptNP canBeLeader)
+          (State.tip chainDepState)
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
     checkOne :: SingleEraBlock                 blk
              => WrapPartialConsensusConfig     blk
              -> (Maybe :.: WrapCanBeLeader)    blk
-             -> WrapChainIndepState            blk
              -> (Ticked :.: WrapChainDepState) blk
-             -> WrapLeaderCheck                blk
+             -> (Maybe :.: WrapIsLeader)       blk
     checkOne cfg'
              (Comp mCanBeLeader)
-             chainIndepState'
-             (Comp chainDepState') = WrapLeaderCheck $
+             (Comp chainDepState') = Comp $
         case mCanBeLeader of
-          Nothing ->
-            NotLeader
-          Just canBeLeader' ->
+          Nothing           -> Nothing
+          Just canBeLeader' -> WrapIsLeader <$>
             checkIsLeader
               (completeConsensusConfig' ei cfg')
               (unwrapCanBeLeader canBeLeader')
-              (unwrapChainIndepState chainIndepState')
               slot
               (unwrapTickedChainDepState chainDepState')
 
-    distrib :: NS WrapLeaderCheck xs -> LeaderCheck (HardForkProtocol xs)
-    distrib = hcollapse . hzipWith3 inj injections injections
-
-    inj :: Injection WrapIsLeader   xs blk
-        -> Injection WrapCannotLead xs blk
-        -> WrapLeaderCheck blk
-        -> K (LeaderCheck (HardForkProtocol xs)) blk
-    inj injIsLeader injCannotLead (WrapLeaderCheck leaderCheck) = K $
-        case leaderCheck of
-          NotLeader    -> NotLeader
-          IsLeader   p -> IsLeader $ OneEraIsLeader . unK $
-                            apFn injIsLeader (WrapIsLeader p)
-          CannotLead e -> CannotLead $ OneEraCannotLead . unK $
-                            apFn injCannotLead (WrapCannotLead e)
+    distrib :: NS (Maybe :.: WrapIsLeader) xs
+            -> Maybe (HardForkIsLeader xs)
+    distrib = hcollapse . hzipWith inj injections
+      where
+        inj :: Injection WrapIsLeader xs blk
+            -> (Maybe :.: WrapIsLeader) blk
+            -> K (Maybe (HardForkIsLeader xs)) blk
+        inj injIsLeader (Comp mIsLeader) = K $
+            OneEraIsLeader . unK . apFn injIsLeader <$> mIsLeader
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward

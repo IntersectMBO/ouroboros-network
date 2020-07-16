@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE EmptyCase            #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -7,7 +8,9 @@
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -181,6 +184,16 @@ data OptNP (allowedEmpty :: Bool) (f :: k -> *) (xs :: [k]) where
   OptCons :: !(f x) -> !(OptNP 'True f xs) -> OptNP allowedEmpty f (x ': xs)
   OptSkip :: !(OptNP allowedEmpty f xs) -> OptNP allowedEmpty f (x ': xs)
 
+type instance AllN    (OptNP allowedEmpty) c = All c
+type instance SListIN (OptNP allowedEmpty)   = SListI
+type instance Prod    (OptNP allowedEmpty)   = NP
+
+deriving instance All (Show `Compose` f) xs => Show (OptNP allowedEmpty f xs)
+deriving instance All (Eq   `Compose` f) xs => Eq   (OptNP allowedEmpty f xs)
+deriving instance ( All (Eq   `Compose` f) xs
+                  , All (Ord  `Compose` f) xs
+                  ) => Ord (OptNP allowedEmpty f xs)
+
 fromOptNP :: OptNP allowedEmpty f xs -> NP (Maybe :.: f) xs
 fromOptNP = go
   where
@@ -199,3 +212,33 @@ fromSingletonOptNP = go
     go :: OptNP 'False f '[x] -> f x
     go (OptCons x _) = x
     go (OptSkip xs)  = case xs of {}
+
+ap_OptNP :: NP (f -.-> g) xs
+         -> OptNP allowedEmpty f xs
+         -> OptNP allowedEmpty g xs
+ap_OptNP = go
+  where
+    go :: NP (f -.-> g) xs -> OptNP allowedEmpty f xs -> OptNP allowedEmpty g xs
+    go (f :* fs) (OptCons x xs) = OptCons (apFn f x) (go fs xs)
+    go (_ :* fs) (OptSkip   xs) = OptSkip            (go fs xs)
+    go Nil       OptNil         = OptNil
+
+ctraverse'_OptNP ::
+     forall c proxy allowedEmpty xs f f' g. (All c xs, Applicative g)
+  => proxy c
+  -> (forall a. c a => f a -> g (f' a))
+  -> OptNP allowedEmpty f xs  -> g (OptNP allowedEmpty f' xs)
+ctraverse'_OptNP _ f = go
+  where
+    go :: All c ys => OptNP allowedEmpty' f ys -> g (OptNP allowedEmpty' f' ys)
+    go (OptCons x xs) = OptCons <$> f x <*> go xs
+    go (OptSkip   xs) = OptSkip <$>         go xs
+    go OptNil         = pure OptNil
+
+instance HAp (OptNP allowedEmpty) where
+  hap = ap_OptNP
+
+instance HSequence (OptNP allowedEmpty) where
+  hctraverse' = ctraverse'_OptNP
+  htraverse'  = hctraverse' (Proxy @Top)
+  hsequence'  = htraverse' unComp

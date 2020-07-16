@@ -75,19 +75,19 @@ prop_convergence setup = withMaxSuccess 10 $
     (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_general PropGeneralArgs
-      { pgaBlockProperty      = const $ property True
-      , pgaCountTxs           = countByronGenTxs . dualBlockMain
-      , pgaExpectedCannotLead = setupExpectedCannotLead setup
-      , pgaFirstBlockNo       = 1
-      , pgaFixedMaxForkLength =
+      { pgaBlockProperty       = const $ property True
+      , pgaCountTxs            = countByronGenTxs . dualBlockMain
+      , pgaExpectedCannotForge = setupExpectedCannotForge setup
+      , pgaFirstBlockNo        = 1
+      , pgaFixedMaxForkLength  =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule      =
+      , pgaFixedSchedule       =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam      = setupK
-      , pgaTestConfig         = setupTestConfig
-      , pgaTestConfigB        = setupTestConfigB setup
+      , pgaSecurityParam       = setupK
+      , pgaTestConfig          = setupTestConfig
+      , pgaTestConfigB         = setupTestConfigB setup
       }
       (setupTestOutput setup)
   where
@@ -164,17 +164,18 @@ setupTestOutput setup@SetupDualPBft{..} =
     testConfig  = RealPBFT.setupTestConfig setupRealPBft
     testConfigB = setupTestConfigB setup
 
-setupExpectedCannotLead :: SetupDualPBft
-                        -> SlotNo
-                        -> NodeId
-                        -> WrapCannotLead DualByronBlock
-                        -> Bool
-setupExpectedCannotLead SetupDualPBft{..} s nid (WrapCannotLead cl) =
-    RealPBFT.expectedCannotLead
+setupExpectedCannotForge ::
+     SetupDualPBft
+  -> SlotNo
+  -> NodeId
+  -> WrapCannotForge DualByronBlock
+  -> Bool
+setupExpectedCannotForge SetupDualPBft{..} s nid (WrapCannotForge cl) =
+    RealPBFT.expectedCannotForge
       setupK
       numCoreNodes
       setupNodeRestarts
-      s nid (WrapCannotLead cl)
+      s nid (WrapCannotForge cl)
   where
     RealPBFT.TestSetup{..} = setupRealPBft
     TestConfig{..}         = setupTestConfig
