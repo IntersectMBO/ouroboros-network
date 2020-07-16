@@ -96,6 +96,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -178,9 +179,13 @@ data TestBlock = TestBlock {
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
 
+instance ShowProxy TestBlock where
+
 newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
   deriving stock   (Eq, Show)
   deriving newtype (NoUnexpectedThunks, Serialise)
+
+instance ShowProxy (Header TestBlock) where
 
 instance GetHeader TestBlock where
   getHeader = TestHeader
