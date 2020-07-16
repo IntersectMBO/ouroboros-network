@@ -86,7 +86,7 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance
   ( SimpleCrypto c

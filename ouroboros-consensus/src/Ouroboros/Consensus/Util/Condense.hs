@@ -21,13 +21,11 @@ import qualified Data.Set as Set
 import           Data.Text (Text, unpack)
 import           Data.Void
 import           Data.Word
-import           Formatting (build, sformat)
 import           Numeric.Natural
 import           Text.Printf (printf)
 
 import           Control.Monad.Class.MonadTime (Time (..))
 
-import           Cardano.Crypto (VerificationKey)
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
                      SigDSIGN, pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
                      pattern SigMockDSIGN, SignedDSIGN (..), VerKeyDSIGN)
@@ -165,13 +163,6 @@ instance Condense (HeaderHash b) => Condense (ChainHash b) where
 instance Condense a => Condense (WithOrigin a) where
   condense Origin = "origin"
   condense (At a) = condense a
-
-{-------------------------------------------------------------------------------
-  Orphans for cardano-crypto-wrapper
--------------------------------------------------------------------------------}
-
-instance Condense VerificationKey where
-  condense = unpack . sformat build
 
 {-------------------------------------------------------------------------------
   Orphans for cardano-crypto-classes

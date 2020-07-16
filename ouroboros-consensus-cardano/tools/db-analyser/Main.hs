@@ -21,10 +21,9 @@ import           System.FilePath ((</>))
 
 import           Cardano.Slotting.Slot
 
-import           Cardano.Crypto.ProtocolMagic
-
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
                      genesisPoint)
+import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -59,20 +58,20 @@ main = do
       Just Cardano -> analyse cmdLine (Proxy @(CardanoBlock TPraosStandardCrypto))
       Nothing -> do
         -- check the dbmarker of the db if the block type is not specified.
-        protocolMagicId <- readDBMarker clImmDB
-        case unProtocolMagicId protocolMagicId of
+        networkMagic <- readDBMarker clImmDB
+        case unNetworkMagic networkMagic of
           764824073  -> analyse cmdLine (Proxy @ByronBlock)
           1097911063 -> analyse cmdLine (Proxy @ByronBlock)
           42         -> analyse cmdLine (Proxy @(ShelleyBlock TPraosStandardCrypto))
-          _          -> error $ "unsupported protocolMagicId: " ++ show protocolMagicId
+          _          -> error $ "unsupported networkMagic: " ++ show networkMagic
 
-readDBMarker :: FilePath -> IO ProtocolMagicId
+readDBMarker :: FilePath -> IO NetworkMagic
 readDBMarker dbPath = do
     bs <- BS.readFile markerPath
-    protocolMagicId <- runExceptT $ dbMarkerParse markerPath bs
+    networkMagic <- runExceptT $ dbMarkerParse markerPath bs
     return $ fromRight
-      (error "failed to parse protocolMagicId from db Marker file")
-      protocolMagicId
+      (error "failed to parse networkMagic from db Marker file")
+      networkMagic
   where
     markerPath = dbPath </> Text.unpack dbMarkerFile
 

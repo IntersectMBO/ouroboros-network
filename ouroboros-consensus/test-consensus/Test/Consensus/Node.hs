@@ -16,7 +16,7 @@ import           System.IO.Temp (withTempDirectory)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Cardano.Crypto (ProtocolMagicId (..))
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
@@ -39,12 +39,12 @@ import           Test.Util.QuickCheck (ge)
 tests :: TestTree
 tests = testGroup "Node"
     [ testGroup "checkDbMarker"
-      [ testCase "match"        test_checkProtocolMagicId_match
-      , testCase "mismatch"     test_checkProtocolMagicId_mismatch
-      , testCase "empty folder" test_checkProtocolMagicId_empty_folder
-      , testCase "missing"      test_checkProtocolMagicId_missing
-      , testCase "corrupt"      test_checkProtocolMagicId_corrupt
-      , testCase "empty"        test_checkProtocolMagicId_empty
+      [ testCase "match"        test_checkNetworkMagic_match
+      , testCase "mismatch"     test_checkNetworkMagic_mismatch
+      , testCase "empty folder" test_checkNetworkMagic_empty_folder
+      , testCase "missing"      test_checkNetworkMagic_missing
+      , testCase "corrupt"      test_checkNetworkMagic_corrupt
+      , testCase "empty"        test_checkNetworkMagic_empty
       ]
     , testGroup "lockDb"
       [ testProperty "reacquire a released lock"   prop_reacquire_lock
@@ -57,8 +57,8 @@ tests = testGroup "Node"
   checkDbMarker
 -------------------------------------------------------------------------------}
 
-expectedProtocolMagicId :: ProtocolMagicId
-expectedProtocolMagicId = ProtocolMagicId 1910
+expectedNetworkMagic :: NetworkMagic
+expectedNetworkMagic = NetworkMagic 1910
 
 mountPoint :: MountPoint
 mountPoint = MountPoint "root"
@@ -71,21 +71,21 @@ runCheck :: Files -> (Either DbMarkerError (), Files)
 runCheck files = runSimOrThrow $ do
     fmap (second Mock.mockFiles) $
       runSimFS Mock.empty { Mock.mockFiles = files } $ \hasFS ->
-        checkDbMarker hasFS mountPoint expectedProtocolMagicId
+        checkDbMarker hasFS mountPoint expectedNetworkMagic
 
-test_checkProtocolMagicId_match :: Assertion
-test_checkProtocolMagicId_match = res @?= Right ()
+test_checkNetworkMagic_match :: Assertion
+test_checkNetworkMagic_match = res @?= Right ()
   where
     fs = Folder $ Map.fromList
-      [ (dbMarkerFile, File $ dbMarkerContents expectedProtocolMagicId)
+      [ (dbMarkerFile, File $ dbMarkerContents expectedNetworkMagic)
       , ("immutable",  Folder mempty)
       , ("ledger",     Folder mempty)
       , ("volatile",   Folder mempty)
       ]
     (res, _) = runCheck fs
 
-test_checkProtocolMagicId_mismatch :: Assertion
-test_checkProtocolMagicId_mismatch = res @?= Left e
+test_checkNetworkMagic_mismatch :: Assertion
+test_checkNetworkMagic_mismatch = res @?= Left e
   where
     fs = Folder $ Map.fromList
       [ (dbMarkerFile, File $ dbMarkerContents actual)
@@ -94,24 +94,24 @@ test_checkProtocolMagicId_mismatch = res @?= Left e
       , ("volatile",   Folder mempty)
       ]
     (res, _) = runCheck fs
-    actual = ProtocolMagicId 10
-    e = ProtocolMagicIdMismatch
+    actual = NetworkMagic 10
+    e = NetworkMagicMismatch
       fullPath
       actual
-      expectedProtocolMagicId
+      expectedNetworkMagic
 
-test_checkProtocolMagicId_empty_folder :: Assertion
-test_checkProtocolMagicId_empty_folder = do
+test_checkNetworkMagic_empty_folder :: Assertion
+test_checkNetworkMagic_empty_folder = do
     res @?= Right ()
     fs' @?= expectedFs'
   where
     fs = Folder mempty
     (res, fs') = runCheck fs
     expectedFs' = Folder $ Map.fromList
-      [ (dbMarkerFile, File $ dbMarkerContents expectedProtocolMagicId) ]
+      [ (dbMarkerFile, File $ dbMarkerContents expectedNetworkMagic) ]
 
-test_checkProtocolMagicId_missing :: Assertion
-test_checkProtocolMagicId_missing = res @?= Left e
+test_checkNetworkMagic_missing :: Assertion
+test_checkNetworkMagic_missing = res @?= Left e
   where
     fs = Folder $ Map.fromList
       [ ("passwords.txt", File "qwerty\n123456\n")
@@ -119,8 +119,8 @@ test_checkProtocolMagicId_missing = res @?= Left e
     (res, _) = runCheck fs
     e = NoDbMarkerAndNotEmpty fullPath
 
-test_checkProtocolMagicId_corrupt :: Assertion
-test_checkProtocolMagicId_corrupt = res @?= Left e
+test_checkNetworkMagic_corrupt :: Assertion
+test_checkNetworkMagic_corrupt = res @?= Left e
   where
     fs = Folder $ Map.fromList
       [ (dbMarkerFile, File "garbage")
@@ -131,8 +131,8 @@ test_checkProtocolMagicId_corrupt = res @?= Left e
     (res, _) = runCheck fs
     e = CorruptDbMarker fullPath
 
-test_checkProtocolMagicId_empty :: Assertion
-test_checkProtocolMagicId_empty = res @?= Left e
+test_checkNetworkMagic_empty :: Assertion
+test_checkNetworkMagic_empty = res @?= Left e
   where
     fs = Folder $ Map.fromList
       [ (dbMarkerFile, File "")
