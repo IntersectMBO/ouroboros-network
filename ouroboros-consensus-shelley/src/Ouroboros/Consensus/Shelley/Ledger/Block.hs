@@ -50,7 +50,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-import           Ouroboros.Consensus.Util (hashFromBytesE)
+import           Ouroboros.Consensus.Util (hashFromBytesShortE)
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -76,11 +76,9 @@ instance Condense (ShelleyHash c) where
   condense = show . unShelleyHash
 
 instance Crypto c => ConvertRawHash (ShelleyBlock c) where
-  toRawHash   _ = Crypto.hashToBytes . SL.unHashHeader . unShelleyHash
-  fromRawHash _ = ShelleyHash
-                . SL.HashHeader
-                . hashFromBytesE
-  hashSize    _ = fromIntegral $ Crypto.sizeHash (Proxy @(HASH c))
+  toShortRawHash   _ = Crypto.hashToBytesShort . SL.unHashHeader . unShelleyHash
+  fromShortRawHash _ = ShelleyHash . SL.HashHeader . hashFromBytesShortE
+  hashSize         _ = fromIntegral $ Crypto.sizeHash (Proxy @(HASH c))
 
 {-------------------------------------------------------------------------------
   Shelley blocks and headers

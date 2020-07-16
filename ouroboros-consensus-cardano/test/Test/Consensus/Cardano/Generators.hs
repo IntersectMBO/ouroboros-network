@@ -135,8 +135,8 @@ instance Arbitrary (ChainDepState (BlockProtocol blk))
 -- require all hashes to have the same length.
 instance Crypto sc => Arbitrary (OneEraHash (CardanoEras sc)) where
   arbitrary = OneEraHash <$> oneof
-    [ toRawHash (Proxy @ByronBlock) <$> arbitrary
-    , toRawHash (Proxy @(ShelleyBlock sc)) <$> arbitrary
+    [ toShortRawHash (Proxy @ByronBlock) <$> arbitrary
+    , toShortRawHash (Proxy @(ShelleyBlock sc)) <$> arbitrary
     ]
 
 instance HashAlgorithm h => Arbitrary (AnnTip (CardanoBlock (TPraosMockCrypto h))) where

@@ -158,9 +158,9 @@ type instance ApplyTxErr ByronToCardano = ApplyTxErr ByronBlock
 instance HasNetworkProtocolVersion ByronToCardano
 
 instance ConvertRawHash ByronToCardano where
-  toRawHash   _ = toRawHash   pb
-  fromRawHash _ = fromRawHash pb
-  hashSize    _ = hashSize    pb
+  toShortRawHash   _ = toShortRawHash   pb
+  fromShortRawHash _ = fromShortRawHash pb
+  hashSize         _ = hashSize         pb
 
 data instance CodecConfig ByronToCardano = CodecConfigB2C (CodecConfig ByronBlock)
 
@@ -438,9 +438,9 @@ type instance ApplyTxErr CardanoToByron = ApplyTxErr ByronBlock
 instance HasNetworkProtocolVersion CardanoToByron
 
 instance ConvertRawHash CardanoToByron where
-  toRawHash   _ = toRawHash   pb
-  fromRawHash _ = fromRawHash pb
-  hashSize    _ = hashSize    pb
+  toShortRawHash   _ = toShortRawHash   pb
+  fromShortRawHash _ = fromShortRawHash pb
+  hashSize         _ = hashSize         pb
 
 data instance CodecConfig CardanoToByron = CodecConfigC2B (CodecConfig ByronBlock)
 

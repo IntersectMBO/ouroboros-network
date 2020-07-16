@@ -29,10 +29,10 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16.Lazy as Base16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as Char8
+import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
@@ -421,13 +421,13 @@ roundtrip_ConvertRawHash
   :: (StandardHash blk, ConvertRawHash blk)
   => Proxy blk -> HeaderHash blk -> Property
 roundtrip_ConvertRawHash p h =
-    h === fromRawHash p (toRawHash p h)
+    h === fromShortRawHash p (toShortRawHash p h)
 
 prop_hashSize
   :: ConvertRawHash blk
   => Proxy blk -> HeaderHash blk -> Property
 prop_hashSize p h =
-    hashSize p === fromIntegral (Strict.length (toRawHash p h))
+    hashSize p === fromIntegral (Short.length (toShortRawHash p h))
 
 {-------------------------------------------------------------------------------
   Serialised helpers

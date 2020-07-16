@@ -218,10 +218,10 @@ serialisedHeaderShelley =
     . serialisedHeaderToPair
 
 headerHashByron :: HeaderHash ByronBlock -> HeaderHash (CardanoBlock Crypto)
-headerHashByron = OneEraHash . toRawHash (Proxy @ByronBlock)
+headerHashByron = OneEraHash . toShortRawHash (Proxy @ByronBlock)
 
 headerHashShelley :: HeaderHash (ShelleyBlock Crypto) -> HeaderHash (CardanoBlock Crypto)
-headerHashShelley = OneEraHash . toRawHash (Proxy @(ShelleyBlock Crypto))
+headerHashShelley = OneEraHash . toShortRawHash (Proxy @(ShelleyBlock Crypto))
 
 someQueryByron ::
      SomeBlock Query ByronBlock

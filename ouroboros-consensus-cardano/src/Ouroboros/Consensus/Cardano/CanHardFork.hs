@@ -323,8 +323,8 @@ translateHeaderHashByronToShelley
   => HeaderHash ByronBlock
   -> HeaderHash (ShelleyBlock sc)
 translateHeaderHashByronToShelley =
-      fromRawHash (Proxy @(ShelleyBlock sc))
-    . toRawHash   (Proxy @ByronBlock)
+      fromShortRawHash (Proxy @(ShelleyBlock sc))
+    . toShortRawHash   (Proxy @ByronBlock)
 
 translatePointByronToShelley
   :: Crypto sc

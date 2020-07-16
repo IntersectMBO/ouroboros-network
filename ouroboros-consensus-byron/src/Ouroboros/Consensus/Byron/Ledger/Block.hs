@@ -75,10 +75,10 @@ mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash
 
 instance ConvertRawHash ByronBlock where
-  toRawHash   _ = CC.hashToBytes . unByronHash
-  fromRawHash _ = ByronHash . CC.unsafeHashFromBytes
-  hashSize    _ = fromIntegral $ Crypto.hashDigestSize
-                                   (error "proxy" :: Crypto.Blake2b_256)
+  toShortRawHash   _ = CC.abstractHashToShort . unByronHash
+  fromShortRawHash _ = ByronHash . CC.unsafeAbstractHashFromShort
+  hashSize         _ = fromIntegral $ Crypto.hashDigestSize
+                                        (error "proxy" :: Crypto.Blake2b_256)
 
 {-------------------------------------------------------------------------------
   Block
