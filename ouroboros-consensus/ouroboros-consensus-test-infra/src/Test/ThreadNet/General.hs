@@ -23,8 +23,8 @@ module Test.ThreadNet.General (
   , truncateNodeJoinPlan
   , truncateNodeRestarts
   , truncateNodeTopology
-    -- * Expected CannotLead
-  , noExpectedCannotLeads
+    -- * Expected CannotForge
+  , noExpectedCannotForges
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
@@ -269,19 +269,19 @@ data BlockRejection blk = BlockRejection
   deriving (Show)
 
 data PropGeneralArgs blk = PropGeneralArgs
-  { pgaBlockProperty      :: blk -> Property
+  { pgaBlockProperty       :: blk -> Property
     -- ^ test if the block is as expected
     --
     -- For example, it may fail if the block includes transactions that should
     -- have expired before/when the block was forged.
     --
-  , pgaCountTxs           :: blk -> Word64
+  , pgaCountTxs            :: blk -> Word64
     -- ^ the number of transactions in the block
     --
-  , pgaExpectedCannotLead :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
-    -- ^ whether this 'CannotLead' was expected
+  , pgaExpectedCannotForge :: SlotNo -> NodeId -> WrapCannotForge blk -> Bool
+    -- ^ whether this 'CannotForge' was expected
     --
-  , pgaFirstBlockNo       :: BlockNo
+  , pgaFirstBlockNo        :: BlockNo
     -- ^ the block number of the first proper block on the chain
     --
     -- At time of writing this comment... For example, this is 1 for Byron
@@ -290,26 +290,26 @@ data PropGeneralArgs blk = PropGeneralArgs
     -- block is block number 0, and so the first proper block is number 1. For
     -- the mock tests, the first proper block is block number 0.
     --
-  , pgaFixedMaxForkLength :: Maybe NumBlocks
+  , pgaFixedMaxForkLength  :: Maybe NumBlocks
     -- ^ the maximum length of a unique suffix among the final chains
     --
     -- If not provided, it will be crudely estimated. For example, this
     -- estimation is known to be incorrect for PBFT; it does not anticipate
     -- 'Ouroboros.Consensus.Protocol.PBFT.PBftExceededSignThreshold'.
     --
-  , pgaFixedSchedule      :: Maybe LeaderSchedule
+  , pgaFixedSchedule       :: Maybe LeaderSchedule
     -- ^ the leader schedule of the nodes
     --
     -- If not provided, it will be recovered from the nodes' 'Tracer' data.
     --
-  , pgaSecurityParam      :: SecurityParam
-  , pgaTestConfig         :: TestConfig
-  , pgaTestConfigB        :: TestConfigB blk
+  , pgaSecurityParam       :: SecurityParam
+  , pgaTestConfig          :: TestConfig
+  , pgaTestConfigB         :: TestConfigB blk
   }
 
--- | Expect no 'CannotLead's
-noExpectedCannotLeads :: SlotNo -> NodeId -> WrapCannotLead blk -> Bool
-noExpectedCannotLeads _ _ _ = False
+-- | Expect no 'CannotForge's
+noExpectedCannotForges :: SlotNo -> NodeId -> WrapCannotForge blk -> Bool
+noExpectedCannotForges _ _ _ = False
 
 -- | The properties always required
 --
@@ -327,7 +327,7 @@ noExpectedCannotLeads _ _ _ = False
 --
 -- * The nodes' chains grow without unexpected delays.
 --
--- * No nodes are unduly unable to lead (see 'pgaExpectedCannotLead').
+-- * No nodes are unduly unable to lead (see 'pgaExpectedCannotForge').
 
 -- * No blocks are rejected as invalid.
 --
@@ -474,7 +474,7 @@ prop_general_internal syncity pga testOutput =
     tabulate "average #txs/block" [show (range averageNumTxs)] $
     tabulate "updates" [unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeUpdates))] $
     prop_no_BlockRejections .&&.
-    prop_no_unexpected_CannotLeads .&&.
+    prop_no_unexpected_CannotForges .&&.
     prop_no_invalid_blocks .&&.
     propSync
       ( prop_all_common_prefix maxForkLength (Map.elems nodeChains) .&&.
@@ -495,13 +495,13 @@ prop_general_internal syncity pga testOutput =
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
     PropGeneralArgs
-      { pgaBlockProperty      = prop_valid_block
-      , pgaCountTxs           = countTxs
-      , pgaExpectedCannotLead = expectedCannotLead
-      , pgaFirstBlockNo       = firstBlockNo
-      , pgaFixedMaxForkLength = mbMaxForkLength
-      , pgaFixedSchedule      = mbSchedule
-      , pgaSecurityParam      = k
+      { pgaBlockProperty       = prop_valid_block
+      , pgaCountTxs            = countTxs
+      , pgaExpectedCannotForge = expectedCannotForge
+      , pgaFirstBlockNo        = firstBlockNo
+      , pgaFixedMaxForkLength  = mbMaxForkLength
+      , pgaFixedSchedule       = mbSchedule
+      , pgaSecurityParam       = k
       , pgaTestConfig
       , pgaTestConfigB
       } = pga
@@ -538,21 +538,21 @@ prop_general_internal syncity pga testOutput =
             , err                   <- errs
             ]
 
-    prop_no_unexpected_CannotLeads =
+    prop_no_unexpected_CannotForges =
         counterexample msg $
         Map.null cls
       where
-        msg = "There were unexpected CannotLeads: " <> show cls
+        msg = "There were unexpected CannotForges: " <> show cls
         cls =
             Map.unionsWith (++) $
             [ Map.filter (not . null) $
               Map.mapWithKey (\s -> filter (not . ok s nid)) $
-              nodeOutputCannotLeads
+              nodeOutputCannotForges
             | (nid, no) <- Map.toList testOutputNodes
-            , let NodeOutput{nodeOutputCannotLeads} = no
+            , let NodeOutput{nodeOutputCannotForges} = no
             ]
         ok s nid cl =
-            expectedCannotLead s nid (WrapCannotLead cl)
+            expectedCannotForge s nid (WrapCannotForge cl)
 
     schedule = case mbSchedule of
         Nothing    -> actualLeaderSchedule

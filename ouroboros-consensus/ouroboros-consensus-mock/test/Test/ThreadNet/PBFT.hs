@@ -79,19 +79,19 @@ prop_simple_pbft_convergence TestSetup
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
     prop_general PropGeneralArgs
-      { pgaBlockProperty      = prop_validSimpleBlock
-      , pgaCountTxs           = countSimpleGenTxs
-      , pgaExpectedCannotLead = expectedCannotLead numCoreNodes
-      , pgaFirstBlockNo       = 0
-      , pgaFixedMaxForkLength =
+      { pgaBlockProperty       = prop_validSimpleBlock
+      , pgaCountTxs            = countSimpleGenTxs
+      , pgaExpectedCannotForge = expectedCannotForge numCoreNodes
+      , pgaFirstBlockNo        = 0
+      , pgaFixedMaxForkLength  =
           Just $ NumBlocks $ case refResult of
             Ref.Forked{} -> 1
             _            -> 0
-      , pgaFixedSchedule      =
+      , pgaFixedSchedule       =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam      = k
-      , pgaTestConfig         = testConfig
-      , pgaTestConfigB        = testConfigB
+      , pgaSecurityParam       = k
+      , pgaTestConfig          = testConfig
+      , pgaTestConfigB         = testConfigB
       }
       testOutput
   where
@@ -165,11 +165,12 @@ prop_simple_pbft_convergence TestSetup
 type Blk = SimpleBlock SimpleMockCrypto
              (SimplePBftExt SimpleMockCrypto PBftMockCrypto)
 
-expectedCannotLead :: NumCoreNodes
-                   -> SlotNo
-                   -> NodeId
-                   -> WrapCannotLead Blk
-                   -> Bool
-expectedCannotLead _ _ _ = \case
-    WrapCannotLead PBftCannotLeadThresholdExceeded{} -> True
-    _                                                -> False
+expectedCannotForge ::
+     NumCoreNodes
+  -> SlotNo
+  -> NodeId
+  -> WrapCannotForge Blk
+  -> Bool
+expectedCannotForge _ _ _ = \case
+    WrapCannotForge PBftCannotForgeThresholdExceeded{} -> True
+    _                                                  -> False

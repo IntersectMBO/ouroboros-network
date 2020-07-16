@@ -304,6 +304,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadFork
            , MonadAsync
            , MonadST
+           , MonadEvaluate
            )
 
 deriving via AllowThunk (OverrideDelay s a)

@@ -35,7 +35,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , I(..)
   ) where
 
-import           Data.Bifunctor
 import           Data.Coerce
 import           Data.Proxy
 import           Data.SOP.Strict
@@ -64,7 +63,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
-import           Ouroboros.Consensus.HardFork.Combinator.Forge ()
+import           Ouroboros.Consensus.HardFork.Combinator.Forging ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
@@ -196,21 +195,17 @@ instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
+instance Isomorphic WrapCannotForge where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
 instance Isomorphic WrapChainDepState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
-instance Isomorphic WrapChainIndepState where
-  project = defaultProjectNP
-  inject  = defaultInjectNP
-
-instance Isomorphic WrapChainIndepStateConfig where
-  project = defaultProjectNP
-  inject  = defaultInjectNP
-
-instance Isomorphic WrapExtraForgeState where
-  project = defaultProjectNP
-  inject  = defaultInjectNP
+instance Isomorphic WrapForgeStateInfo where
+  project = fromSingletonOptNP . getPerEraForgeStateInfo . unwrapForgeStateInfo
+  inject  = WrapForgeStateInfo . PerEraForgeStateInfo . singletonOptNP
 
 instance Isomorphic WrapTipInfo where
   project = defaultProjectNS
@@ -261,18 +256,12 @@ instance Isomorphic TopLevelConfig where
   project tlc =
       mkTopLevelConfig
         (auxConsensus $ configConsensus tlc)
-        (auxIndep     $ configIndep     tlc)
         (auxLedger    $ configLedger    tlc)
         (project      $ configBlock     tlc)
         (project      $ configCodec     tlc)
     where
       ei :: EpochInfo Identity
-      ei = fixedSizeEpochInfo
-         . History.eraEpochSize
-         . unK . hd
-         . History.getShape
-         . hardForkLedgerConfigShape
-         $ configLedger tlc
+      ei = noHardForksEpochInfo $ project tlc
 
       auxLedger :: LedgerConfig (HardForkBlock '[blk]) -> LedgerConfig blk
       auxLedger =
@@ -291,16 +280,11 @@ instance Isomorphic TopLevelConfig where
           . getPerEraConsensusConfig
           . hardForkConsensusConfigPerEra
 
-      auxIndep :: ChainIndepStateConfig (BlockProtocol (HardForkBlock '[blk]))
-               -> ChainIndepStateConfig (BlockProtocol blk)
-      auxIndep = project' (Proxy @(WrapChainIndepStateConfig blk))
-
   inject :: forall blk. NoHardForks blk
          => TopLevelConfig blk -> TopLevelConfig (HardForkBlock '[blk])
   inject tlc =
       mkTopLevelConfig
         (auxConsensus $ configConsensus tlc)
-        (auxIndep     $ configIndep     tlc)
         (auxLedger    $ configLedger    tlc)
         (inject       $ configBlock     tlc)
         (inject       $ configCodec     tlc)
@@ -326,10 +310,6 @@ instance Isomorphic TopLevelConfig where
                  WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @blk) cfg)
               :* Nil
           }
-
-      auxIndep :: ChainIndepStateConfig (BlockProtocol blk)
-               -> ChainIndepStateConfig (BlockProtocol (HardForkBlock '[blk]))
-      auxIndep = inject' (Proxy @(WrapChainIndepStateConfig blk))
 
 {-------------------------------------------------------------------------------
   Various kinds of records
@@ -378,50 +358,6 @@ instance Isomorphic ExtLedgerState where
       , headerState = inject headerState
       }
 
-instance Isomorphic ForgeState where
-  project :: forall blk. NoHardForks blk
-          => ForgeState (HardForkBlock '[blk]) -> ForgeState blk
-  project ForgeState{..} = ForgeState {
-        chainIndepState = project' (Proxy @(WrapChainIndepState blk)) chainIndepState
-      , extraForgeState = project' (Proxy @(WrapExtraForgeState blk)) extraForgeState
-      }
-
-  inject :: forall blk. NoHardForks blk
-         => ForgeState blk -> ForgeState (HardForkBlock '[blk])
-  inject ForgeState{..} = ForgeState {
-        chainIndepState = inject' (Proxy @(WrapChainIndepState blk)) chainIndepState
-      , extraForgeState = inject' (Proxy @(WrapExtraForgeState blk)) extraForgeState
-      }
-
-instance Functor m => Isomorphic (MaintainForgeState m) where
-  project :: forall blk. NoHardForks blk
-          => MaintainForgeState m (HardForkBlock '[blk])
-          -> MaintainForgeState m blk
-  project mfs = MaintainForgeState {
-        initForgeState   = project $ initForgeState mfs
-      , updateForgeState = \cfg slotNo ->
-            fmap project
-          . updateForgeState
-              mfs
-              (inject' (Proxy @(WrapChainIndepStateConfig blk)) cfg)
-              slotNo
-          . inject
-      }
-
-  inject :: forall blk. NoHardForks blk
-         => MaintainForgeState m blk
-         -> MaintainForgeState m (HardForkBlock '[blk])
-  inject mfs = MaintainForgeState {
-        initForgeState   = inject $ initForgeState mfs
-      , updateForgeState = \cfg slotNo ->
-            fmap inject
-          . updateForgeState
-              mfs
-              (project' (Proxy @(WrapChainIndepStateConfig blk)) cfg)
-              slotNo
-          . project
-      }
-
 instance Isomorphic AnnTip where
   project :: forall blk. NoHardForks blk => AnnTip (HardForkBlock '[blk]) -> AnnTip blk
   project (AnnTip s b nfo) = AnnTip s b (project' (Proxy @(WrapTipInfo blk)) nfo)
@@ -452,23 +388,97 @@ instance Isomorphic ProtocolClientInfo where
         pClientInfoCodecConfig = inject pClientInfoCodecConfig
       }
 
+instance Functor m => Isomorphic (BlockForging m) where
+  project :: forall blk. NoHardForks blk
+          => BlockForging m (HardForkBlock '[blk]) -> BlockForging m blk
+  project BlockForging {..} = BlockForging {
+        canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+      , updateForgeState = \sno ->
+                               project' (Proxy @(WrapForgeStateInfo blk)) <$>
+                                 updateForgeState sno
+      , checkCanForge    = \cfg sno tickedChainDepSt isLeader ->
+                               fmap (project' (Proxy @(WrapCannotForge blk))) <$>
+                                 checkCanForge
+                                   (inject cfg)
+                                   sno
+                                   (injTickedChainDepSt
+                                     (noHardForksEpochInfo cfg)
+                                     tickedChainDepSt)
+                                   (inject' (Proxy @(WrapIsLeader blk)) isLeader)
+
+      , forgeBlock       = \cfg bno sno tickedLgrSt txs isLeader ->
+                               project' (Proxy @(I blk)) <$>
+                                 forgeBlock
+                                   (inject cfg)
+                                   bno
+                                   sno
+                                   (unComp (inject (Comp tickedLgrSt)))
+                                   (inject <$> txs)
+                                   (inject' (Proxy @(WrapIsLeader blk)) isLeader)
+      }
+    where
+      injTickedChainDepSt ::
+           EpochInfo Identity
+        -> Ticked (ChainDepState (BlockProtocol blk))
+        -> Ticked (ChainDepState (HardForkProtocol '[blk]))
+      injTickedChainDepSt ei =
+            (`TickedHardForkChainDepState` ei)
+          . HardForkState
+          . Telescope.TZ
+          . State.Current History.initBound
+          . Comp
+          . WrapTickedChainDepState
+
+  inject :: forall blk. NoHardForks blk
+         => BlockForging m blk -> BlockForging m (HardForkBlock '[blk])
+  inject BlockForging {..} = BlockForging {
+        canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+      , updateForgeState = \sno ->
+                               inject' (Proxy @(WrapForgeStateInfo blk)) <$>
+                                 updateForgeState sno
+      , checkCanForge    = \cfg sno tickedChainDepSt isLeader ->
+                               fmap (inject' (Proxy @(WrapCannotForge blk))) <$>
+                                 checkCanForge
+                                   (project cfg)
+                                   sno
+                                   (projTickedChainDepSt tickedChainDepSt)
+                                   (project' (Proxy @(WrapIsLeader blk)) isLeader)
+
+      , forgeBlock       = \cfg bno sno tickedLgrSt txs isLeader ->
+                               inject' (Proxy @(I blk)) <$>
+                                 forgeBlock
+                                   (project cfg)
+                                   bno
+                                   sno
+                                   (unComp (project (Comp tickedLgrSt)))
+                                   (project <$> txs)
+                                   (project' (Proxy @(WrapIsLeader blk)) isLeader)
+      }
+    where
+      projTickedChainDepSt ::
+           Ticked (ChainDepState (HardForkProtocol '[blk]))
+        -> Ticked (ChainDepState (BlockProtocol blk))
+      projTickedChainDepSt =
+            unwrapTickedChainDepState
+          . unComp
+          . State.fromTZ
+          . tickedHardForkChainDepStatePerEra
+
 instance Functor m => Isomorphic (ProtocolInfo m) where
   project :: forall blk. NoHardForks blk
           => ProtocolInfo m (HardForkBlock '[blk]) -> ProtocolInfo m blk
   project ProtocolInfo {..} = ProtocolInfo {
-        pInfoConfig      = project pInfoConfig
-      , pInfoInitLedger  = project pInfoInitLedger
-      , pInfoLeaderCreds = bimap (project' (Proxy @(WrapCanBeLeader blk))) project <$>
-                             pInfoLeaderCreds
+        pInfoConfig       = project pInfoConfig
+      , pInfoInitLedger   = project pInfoInitLedger
+      , pInfoBlockForging = fmap project <$> pInfoBlockForging
       }
 
   inject :: forall blk. NoHardForks blk
          => ProtocolInfo m blk -> ProtocolInfo m (HardForkBlock '[blk])
   inject ProtocolInfo {..} = ProtocolInfo {
-        pInfoConfig      = inject pInfoConfig
-      , pInfoInitLedger  = inject pInfoInitLedger
-      , pInfoLeaderCreds = bimap (inject' (Proxy @(WrapCanBeLeader blk))) inject <$>
-                             pInfoLeaderCreds
+        pInfoConfig       = inject pInfoConfig
+      , pInfoInitLedger   = inject pInfoInitLedger
+      , pInfoBlockForging = fmap inject <$> pInfoBlockForging
       }
 
 {-------------------------------------------------------------------------------

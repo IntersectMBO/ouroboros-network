@@ -32,7 +32,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Void
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.DSIGN
@@ -125,9 +124,6 @@ data instance ConsensusConfig (Bft c) = BftConfig {
 instance ChainSelection (Bft c)
   -- Use defaults
 
-instance HasChainIndepState (Bft c)
-  -- Use defaults
-
 instance BftCrypto c => ConsensusProtocol (Bft c) where
   type ValidationErr (Bft c) = BftValidationErr
   type ValidateView  (Bft c) = BftValidateView c
@@ -135,14 +131,13 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
   type IsLeader      (Bft c) = ()
   type ChainDepState (Bft c) = ()
   type CanBeLeader   (Bft c) = CoreNodeId
-  type CannotLead    (Bft c) = Void
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftConfig{..} (CoreNodeId i) _ (SlotNo n) _ =
+  checkIsLeader BftConfig{..} (CoreNodeId i) (SlotNo n) _ =
       if n `mod` numCoreNodes == i
-      then IsLeader ()
-      else NotLeader
+      then Just ()
+      else Nothing
     where
       BftParams{..} = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes

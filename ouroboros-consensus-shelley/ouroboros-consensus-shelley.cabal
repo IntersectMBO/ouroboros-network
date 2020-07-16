@@ -41,7 +41,7 @@ library
                        Ouroboros.Consensus.Shelley.Protocol
                        Ouroboros.Consensus.Shelley.Protocol.State
                        Ouroboros.Consensus.Shelley.Protocol.Crypto
-                       Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
+                       Ouroboros.Consensus.Shelley.Protocol.HotKey
                        Ouroboros.Consensus.Shelley.Protocol.Util
 
   build-depends:       base              >=4.9   && <4.13

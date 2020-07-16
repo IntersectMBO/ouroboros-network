@@ -84,7 +84,7 @@ data Protocol (m :: * -> *) blk p where
     -> Maybe PBftSignatureThreshold
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
-    -> Maybe PBftLeaderCredentials
+    -> Maybe ByronLeaderCredentials
     -> Protocol m ByronBlockHFC ProtocolByron
 
   -- | Run TPraos against the real Shelley ledger
@@ -108,7 +108,7 @@ data Protocol (m :: * -> *) blk p where
     -> Maybe PBftSignatureThreshold
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
-    -> Maybe PBftLeaderCredentials
+    -> Maybe ByronLeaderCredentials
        -- Shelley
     -> ShelleyGenesis TPraosStandardCrypto
     -> Nonce

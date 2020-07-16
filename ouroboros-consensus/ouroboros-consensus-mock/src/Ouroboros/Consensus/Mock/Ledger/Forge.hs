@@ -27,10 +27,13 @@ import           Ouroboros.Consensus.Protocol.Abstract
 --
 -- This is used in 'forgeSimple', which takes care of the generic part of the
 -- mock block.
-data ForgeExt c ext = ForgeExt {
-      forgeExt :: TopLevelConfig          (SimpleBlock c ext)
-               -> ForgeState              (SimpleBlock c ext)
-               -> IsLeader (BlockProtocol (SimpleBlock c ext))
+--
+-- Note: this is a newtype and not a type class to allow for things in the
+-- closure. For example, if Praos had to use a stateful KES key, it could
+-- refer to it in its closure.
+newtype ForgeExt c ext = ForgeExt {
+      forgeExt :: TopLevelConfig                (SimpleBlock c ext)
+               -> IsLeader       (BlockProtocol (SimpleBlock c ext))
                -> SimpleBlock' c ext ()
                -> SimpleBlock c ext
     }
@@ -41,15 +44,14 @@ forgeSimple :: forall c ext.
                )
             => ForgeExt c ext
             -> TopLevelConfig (SimpleBlock c ext)
-            -> ForgeState (SimpleBlock c ext)
             -> BlockNo                               -- ^ Current block number
             -> SlotNo                                -- ^ Current slot number
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> SimpleBlock c ext
-forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock curSlot tickedLedger txs proof =
-    forgeExt cfg forgeState proof $ SimpleBlock {
+forgeSimple ForgeExt { forgeExt } cfg curBlock curSlot tickedLedger txs proof =
+    forgeExt cfg proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
       }

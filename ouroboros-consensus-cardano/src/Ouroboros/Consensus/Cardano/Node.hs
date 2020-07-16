@@ -57,8 +57,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.SOP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Forge
-                     (undistribMaintainForgeState)
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -243,9 +241,7 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
         Shelley.verifyBlockIntegrity tpraosSlotsPerKESPeriod shelleyBlock
     where
       TopLevelConfig {
-          topLevelConfigProtocol = FullProtocolConfig {
-              protocolConfigConsensus = CardanoConsensusConfig _ shelleyPartialConsensusCfg
-            }
+          topLevelConfigProtocol = CardanoConsensusConfig _ shelleyPartialConsensusCfg
         , topLevelConfigBlock = FullBlockConfig {
               blockConfigBlock = CardanoBlockConfig byronBlockCfg _
             }
@@ -264,7 +260,7 @@ protocolInfoCardano
   -> Maybe PBftSignatureThreshold
   -> Update.ProtocolVersion
   -> Update.SoftwareVersion
-  -> Maybe PBftLeaderCredentials
+  -> Maybe ByronLeaderCredentials
      -- Shelley
   -> ShelleyGenesis sc
   -> Nonce
@@ -282,23 +278,21 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     mbLowerBound triggerHardFork =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
-        pInfoConfig      = cfg
-      , pInfoInitLedger  = ExtLedgerState {
+        pInfoConfig = cfg
+      , pInfoInitLedger = ExtLedgerState {
             ledgerState = HardForkLedgerState $
                             initHardForkState initLedgerStateByron
           , headerState = genesisHeaderState $
                             initHardForkState
                               (WrapChainDepState initChainDepStateByron)
           }
-      , pInfoLeaderCreds = creds
+      , pInfoBlockForging = blockForging
       }
   where
     -- Byron
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = consensusConfigByron
-              }
+            topLevelConfigProtocol = consensusConfigByron
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = ledgerConfigByron
               , blockConfigBlock  = blockConfigByron
@@ -368,21 +362,14 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     cfg :: TopLevelConfig (CardanoBlock sc)
     cfg = TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = HardForkConsensusConfig {
-                hardForkConsensusConfigK      = k
-              , hardForkConsensusConfigShape  = shape
-              , hardForkConsensusConfigPerEra = PerEraConsensusConfig
-                  (  WrapPartialConsensusConfig partialConsensusConfigByron
-                  :* WrapPartialConsensusConfig partialConsensusConfigShelley
-                  :* Nil
-                  )
-              }
-          , protocolConfigIndep = PerEraChainIndepStateConfig
-                  (  WrapChainIndepStateConfig ()
-                  :* WrapChainIndepStateConfig tpraosParams
-                  :* Nil
-                  )
+        topLevelConfigProtocol = HardForkConsensusConfig {
+            hardForkConsensusConfigK      = k
+          , hardForkConsensusConfigShape  = shape
+          , hardForkConsensusConfigPerEra = PerEraConsensusConfig
+              (  WrapPartialConsensusConfig partialConsensusConfigByron
+              :* WrapPartialConsensusConfig partialConsensusConfigShelley
+              :* Nil
+              )
           }
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigLedger = HardForkLedgerConfig {
@@ -405,39 +392,32 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
           }
       }
 
-    creds :: Maybe
-               ( HardForkCanBeLeader  (CardanoEras sc)
-               , MaintainForgeState m (CardanoBlock sc)
-               )
-    creds = case (mbCredsByron, mbCredsShelley) of
+    blockForging :: Maybe (m (BlockForging m (CardanoBlock sc)))
+    blockForging = case (mbCredsByron, mbCredsShelley) of
         (Nothing, Nothing) -> Nothing
 
-        (Just credsByron, Just credsShelley) -> Just (
-              OptCons (WrapCanBeLeader (mkPBftIsLeader credsByron))
-            $ OptCons (WrapCanBeLeader (tpraosLeaderCredentialsIsCoreNode credsShelley))
+        (Just credsByron, Just credsShelley) -> Just $ do
+          blockForgingShelley <- shelleyBlockForging tpraosParams credsShelley
+          return
+            $ hardForkBlockForging
+            $ OptCons (byronBlockForging credsByron)
+            $ OptCons blockForgingShelley
             $ OptNil
-          , undistribMaintainForgeState $
-                 defaultMaintainForgeState
-              :* (shelleyMaintainForgeState partialConsensusConfigShelley credsShelley)
-              :* Nil
-          )
 
-        (Nothing, Just credsShelley) -> Just (
-              OptSkip
-            $ OptCons (WrapCanBeLeader (tpraosLeaderCredentialsIsCoreNode credsShelley))
+        (Nothing, Just credsShelley) -> Just $ do
+          blockForgingShelley <- shelleyBlockForging tpraosParams credsShelley
+          return
+            $ hardForkBlockForging
+            $ OptSkip
+            $ OptCons blockForgingShelley
             $ OptNil
-          , undistribMaintainForgeState $
-                 defaultMaintainForgeState
-              :* (shelleyMaintainForgeState partialConsensusConfigShelley credsShelley)
-              :* Nil
-          )
 
-        -- TODO 'ForgeState' is an 'NP' while 'CanBeLeader' is an 'OptNP', so
-        -- even when we have no Shelley credentials, we'd still need to
-        -- maintain a Shelley 'ForgeState', for which we'd need the key stored
-        -- in the credentials.
-        (Just _, Nothing) ->
-          error "can't be a Byron core node without being a Shelley core node"
+        (Just credsByron, Nothing) -> Just $
+          return
+            $ hardForkBlockForging
+            $ OptCons (byronBlockForging credsByron)
+            $ OptSkip
+            $ OptNil
 
 protocolClientInfoCardano
   :: forall sc.
@@ -466,9 +446,7 @@ projByronTopLevelConfig
 projByronTopLevelConfig cfg = byronCfg
   where
     TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = CardanoConsensusConfig byronConsensusCfg _
-          }
+        topLevelConfigProtocol = CardanoConsensusConfig byronConsensusCfg _
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigBlock  = CardanoBlockConfig  byronBlockCfg  _
           , blockConfigLedger = CardanoLedgerConfig byronLedgerCfg _
@@ -478,10 +456,7 @@ projByronTopLevelConfig cfg = byronCfg
 
     byronCfg :: TopLevelConfig ByronBlock
     byronCfg = TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = byronConsensusCfg
-          , protocolConfigIndep     = ()
-          }
+        topLevelConfigProtocol = byronConsensusCfg
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigBlock  = byronBlockCfg
           , blockConfigLedger = byronLedgerConfig byronLedgerCfg
