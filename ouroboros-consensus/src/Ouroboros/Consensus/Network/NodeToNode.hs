@@ -527,7 +527,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                         -- Version 1 doesn't support keep alive protocol but Blockfetch
                         -- still requires a PeerGSV per peer.
                         NodeToNodeV_1 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
-                        NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
+                        --NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
                         _             -> \dqCtx -> do
                           runPeerWithLimits
                             nullTracer
