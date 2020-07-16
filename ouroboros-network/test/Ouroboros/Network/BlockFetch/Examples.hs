@@ -18,6 +18,7 @@ import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.TDigest (TDigest, tdigest)
 import           Data.Typeable (Typeable)
 
 import           Control.Exception (assert)
@@ -179,11 +180,12 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
 --
 exampleFixedPeerGSVs :: PeerGSV
 exampleFixedPeerGSVs =
-    PeerGSV{sampleTime, outboundGSV, inboundGSV}
+    PeerGSV{sampleTime, outboundGSV, inboundGSV, digest}
   where
     inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
     outboundGSV = inboundGSV
     sampleTime  = Time 0
+    digest      = tdigest [10e-3] :: TDigest 5
 
 
 --

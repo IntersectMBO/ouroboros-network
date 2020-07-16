@@ -17,6 +17,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
   ) where
 
 import           Data.Fixed as Fixed (Pico)
+import           Data.TDigest
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.DeltaQ
@@ -30,8 +31,9 @@ data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
 
 calculatePeerFetchInFlightLimits :: PeerGSV -> PeerFetchInFlightLimits
 calculatePeerFetchInFlightLimits PeerGSV {
-                                   outboundGSV = GSV g_out _s_out _v_out,
-                                   inboundGSV  = GSV g_in   s_in  _v_in
+                                   outboundGSV = GSV _g_out _s_out _v_out,
+                                   inboundGSV  = GSV _g_in   s_in  _v_in,
+                                   digest
                                  } =
     PeerFetchInFlightLimits {
       inFlightBytesLowWatermark,
@@ -63,11 +65,16 @@ calculatePeerFetchInFlightLimits PeerGSV {
     -- more). Lets say our maximum schedule delay is @d@ seconds.
     --
     inFlightBytesLowWatermark =
-        ceiling (seconds (g_out + g_in + d) / seconds (s_in 1))
+        ceiling (lim / (realToFrac $ s_in 1))
+        --ceiling (seconds (g_out + g_in + d) / seconds (s_in 1))
       where
-        seconds :: DiffTime -> Fixed.Pico
-        seconds = realToFrac
+        --seconds :: DiffTime -> Fixed.Pico
+        --seconds = realToFrac
       --FIXME: s is now a function of bytes, not unit seconds / octet
+
+    lim = case quantile 0.99 digest of
+               Nothing -> 0.500
+               Just p99 -> p99 + d
 
     d = 1e-1 -- 100 milliseconds
     -- But note that the minimum here is based on the assumption that we can
@@ -92,7 +99,23 @@ estimateResponseDeadlineProbability :: PeerGSV
                                     -> SizeInBytes
                                     -> DiffTime
                                     -> Double
-estimateResponseDeadlineProbability PeerGSV{outboundGSV, inboundGSV}
+estimateResponseDeadlineProbability
+  PeerGSV{ digest
+         , inboundGSV  = GSV _g_in s_in _v_in}
+  bytesInFlight bytesRequested deadline =
+    cdf deadline' digest
+  where
+    deadline' = max 0 ((realToFrac deadline) - txTime) :: Double
+    txTime = fromIntegral (reqSize + respSize) / (realToFrac $ s_in 1)
+    reqSize  = 100 -- TODO not exact, but it's small
+    respSize = bytesInFlight + bytesRequested
+
+_estimateResponseDeadlineProbability :: PeerGSV
+                                    -> SizeInBytes
+                                    -> SizeInBytes
+                                    -> DiffTime
+                                    -> Double
+_estimateResponseDeadlineProbability PeerGSV{outboundGSV, inboundGSV}
                                     bytesInFlight bytesRequested deadline =
     deltaqProbabilityMassBeforeDeadline deadline $
         gsvTrailingEdgeArrive outboundGSV reqSize
@@ -114,7 +137,22 @@ estimateExpectedResponseDuration :: PeerGSV
                                  -> SizeInBytes -- ^ Request size
                                  -> SizeInBytes -- ^ Expected response size
                                  -> DiffTime
-estimateExpectedResponseDuration PeerGSV{outboundGSV, inboundGSV}
+estimateExpectedResponseDuration 
+  PeerGSV{ digest
+         , inboundGSV  = GSV _g_in s_in _v_in}
+  bytesInFlight bytesRequested =
+    realToFrac $ txTime + (maybe 0 id $ median digest)
+  where
+    txTime = fromIntegral (reqSize + respSize) / (realToFrac $ s_in 1)
+     
+    reqSize  = 100 -- TODO not exact, but it's small
+    respSize = bytesInFlight + bytesRequested
+
+_estimateExpectedResponseDuration :: PeerGSV
+                                 -> SizeInBytes -- ^ Request size
+                                 -> SizeInBytes -- ^ Expected response size
+                                 -> DiffTime
+_estimateExpectedResponseDuration PeerGSV{outboundGSV, inboundGSV}
                            bytesInFlight bytesRequested =
     deltaqQ50thPercentile $
         gsvTrailingEdgeArrive outboundGSV reqSize

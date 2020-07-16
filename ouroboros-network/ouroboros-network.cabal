@@ -146,6 +146,7 @@ library
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
+                       tdigest,
                        time              >=1.6 && <1.10,
 
                        cardano-binary,
@@ -272,6 +273,7 @@ test-suite test-network
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
+                       tdigest,
                        text,
                        time,
 

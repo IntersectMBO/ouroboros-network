@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -39,6 +40,7 @@ module Ouroboros.Network.DeltaQ (
 import           Control.Monad.Class.MonadTime (Time (..), diffTime)
 import           Data.Semigroup ((<>))
 import           Data.Time.Clock (DiffTime)
+import           Data.TDigest
 import           Data.Word (Word32)
 
 
@@ -244,7 +246,8 @@ gsvTrailingEdgeArrive (GSV g s v) bytes =
 data PeerGSV = PeerGSV {
                  sampleTime  :: !Time,
                  outboundGSV :: !GSV,
-                 inboundGSV  :: !GSV
+                 inboundGSV  :: !GSV,
+                 digest      :: !(TDigest 5)
                }
                deriving Show
 
@@ -283,6 +286,7 @@ instance Semigroup PeerGSV where
              in PeerGSV { sampleTime  = sampleTime b
                         , outboundGSV = updateG (outboundGSV a) (outboundGSV b)
                         , inboundGSV  = updateG (inboundGSV  a) (inboundGSV  b)
+                        , digest      = digest a <> digest b
                         }
 
 -- | This is an example derived operation using the other 'GSV' and 'DeltaQ'
@@ -317,21 +321,23 @@ gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
 
 
 defaultGSV :: PeerGSV
-defaultGSV = PeerGSV {sampleTime, outboundGSV, inboundGSV }
+defaultGSV = PeerGSV {sampleTime, outboundGSV, inboundGSV , digest}
   where
     default_g = 500e-3 -- Old hardcoded default value. Only available value when running without KeepAlive.
     default_s = 2e-6 -- 4Mbps.
     inboundGSV  = ballisticGSV default_g default_s (degenerateDistribution 0)
     outboundGSV = inboundGSV
     sampleTime  = Time 0
+    --digest      = tdigest [500e-3] :: TDigest 5
+    digest      = mempty
 
 fromSample :: Time -> Time -> SizeInBytes -> PeerGSV
 fromSample t@(Time start) (Time end) _size =
-    PeerGSV  {sampleTime, outboundGSV, inboundGSV }
+    PeerGSV  {sampleTime, outboundGSV, inboundGSV, digest}
   where
     g =  (end - start) / 2
 
     sampleTime = t
     inboundGSV = ballisticGSV g 2e-6 (degenerateDistribution 0)
     outboundGSV  = inboundGSV
-
+    digest = tdigest [realToFrac (end - start)] :: TDigest 5
