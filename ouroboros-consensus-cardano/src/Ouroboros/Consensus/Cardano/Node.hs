@@ -282,7 +282,7 @@ protocolInfoCardano
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
                     mbLowerBound triggerHardFork =
-    assertWithMsg (checkMaxKESEvolutions genesisShelley) $
+    assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig      = cfg
       , pInfoInitLedger  = ExtLedgerState {
