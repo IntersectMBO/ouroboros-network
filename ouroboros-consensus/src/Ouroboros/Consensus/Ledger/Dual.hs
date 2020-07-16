@@ -166,9 +166,8 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
-  getSystemStart     = getSystemStart     . dualBlockConfigMain
-  getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
-  getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
+  getSystemStart  = getSystemStart  . dualBlockConfigMain
+  getNetworkMagic = getNetworkMagic . dualBlockConfigMain
 
 {-------------------------------------------------------------------------------
   Splitting the config
