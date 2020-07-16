@@ -92,7 +92,8 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
-import           Ouroboros.Consensus.Util (hashFromBytesShortE, (.:))
+import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
+                     (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -115,6 +116,9 @@ data SimpleBlock' c ext ext' = SimpleBlock {
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
 
+instance (Typeable c, Typeable ext, Typeable ext')
+    => ShowProxy (SimpleBlock' c ext ext') where
+
 data instance Header (SimpleBlock' c ext ext') = SimpleHeader {
       -- | The header hash
       --
@@ -135,6 +139,9 @@ data instance Header (SimpleBlock' c ext ext') = SimpleHeader {
     , simpleHeaderExt  :: ext'
     }
   deriving (Generic, Show, Eq, NoUnexpectedThunks)
+
+instance (Typeable c, Typeable ext, Typeable ext')
+    => ShowProxy (Header (SimpleBlock' c ext ext')) where
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => GetHeader (SimpleBlock' c ext ext') where
@@ -386,6 +393,9 @@ data instance GenTx (SimpleBlock c ext) = SimpleGenTx {
   deriving stock    (Generic, Eq, Ord)
   deriving anyclass (Serialise)
 
+instance (Typeable c, Typeable ext)
+    => ShowProxy (GenTx (SimpleBlock c ext)) where
+
 type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
@@ -403,6 +413,9 @@ newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
     }
   deriving stock   (Generic)
   deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
+
+instance (Typeable c, Typeable ext)
+    => ShowProxy (TxId (GenTx (SimpleBlock c ext))) where
 
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   txId = SimpleGenTxId . simpleGenTxId
@@ -450,6 +463,9 @@ instance SameDepIndex (Query (SimpleBlock c ext)) where
   sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
 deriving instance Show (Query (SimpleBlock c ext) result)
+
+instance (Typeable c, Typeable ext)
+    => ShowProxy (Query (SimpleBlock c ext)) where
 
 instance (SimpleCrypto c, Typeable ext)
       => ShowQuery (Query (SimpleBlock c ext)) where
