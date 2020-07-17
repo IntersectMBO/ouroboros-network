@@ -62,13 +62,9 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
-import qualified Data.ByteString.Short as Short
 import           Data.SOP.BasicFunctors
-import           Data.Word
-import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
@@ -77,6 +73,8 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.Common (PrefixLen (..),
+                     addPrefixLen, takePrefix)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
@@ -315,22 +313,6 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
     -> SizeInBytes      -- ^ Block size
     -> SomeBlock (NestedCtxt f) blk
   reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
-
--- | Number of bytes from the start of a block needed to reconstruct the
--- nested context.
---
--- See 'reconstructPrefixLen'.
-newtype PrefixLen = PrefixLen {
-      getPrefixLen :: Word8
-    }
-  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
-
-addPrefixLen :: Word8 -> PrefixLen -> PrefixLen
-addPrefixLen m (PrefixLen n) = PrefixLen (m + n)
-
-takePrefix :: PrefixLen -> Lazy.ByteString -> ShortByteString
-takePrefix (PrefixLen n) =
-    Short.toShort . Lazy.toStrict . Lazy.take (fromIntegral n)
 
 {-------------------------------------------------------------------------------
   Forwarding instances
