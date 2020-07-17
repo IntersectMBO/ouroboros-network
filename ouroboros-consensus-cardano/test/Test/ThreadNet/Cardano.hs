@@ -304,7 +304,7 @@ genPartition (NumCoreNodes n) (NumSlots t) (SecurityParam k) = do
     pure $ Partition (SlotNo firstSlotIn) (NumSlots d)
 
 tests :: TestTree
-tests = testGroup "Cardano" $
+tests = testGroup "Cardano ThreadNet" $
     [ testProperty "simple convergence" $ \setup ->
           prop_simple_cardano_convergence setup
     ]

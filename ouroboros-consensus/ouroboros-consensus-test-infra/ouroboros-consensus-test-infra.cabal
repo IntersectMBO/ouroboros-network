@@ -50,6 +50,7 @@ library
                        Test.Util.InvertedMap
                        Test.Util.LogicalClock
                        Test.Util.MockChain
+                       Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
