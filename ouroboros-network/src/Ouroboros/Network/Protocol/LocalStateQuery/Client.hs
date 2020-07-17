@@ -81,7 +81,7 @@ data ClientStAcquired block query m a where
                    -> ClientStAcquiring block query m a
                    -> ClientStAcquired  block query m a
 
-  SendMsgRelease   :: ClientStIdle      block query m a
+  SendMsgRelease   :: m (ClientStIdle   block query m a)
                    -> ClientStAcquired  block query m a
 
 -- | In the 'StQuerying' protocol state, the client does not have agency.
@@ -140,7 +140,7 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       SendMsgRelease stIdle ->
         Yield (ClientAgency TokAcquired)
               MsgRelease
-              (handleStIdle stIdle)
+              (Effect (handleStIdle <$> stIdle))
 
     handleStQuerying
       :: query result
