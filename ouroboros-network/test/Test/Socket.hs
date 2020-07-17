@@ -44,6 +44,7 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (acceptableVersion, simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 
@@ -95,8 +96,13 @@ prop_socket_demo (TestBlockChainAndUpdates chain updates) =
 
 
 demo :: forall block .
-        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block)
-        , Serialise block, Eq block, Show block )
+        ( Chain.HasHeader block
+        , Serialise (Chain.HeaderHash block)
+        , Serialise block
+        , Eq block
+        , Show block
+        , ShowProxy block
+        )
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = withIOManager $ \iocp -> do
     producerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")

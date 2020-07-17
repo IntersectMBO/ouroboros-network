@@ -86,17 +86,19 @@ data ProtocolLimitFailure where
 instance Show ProtocolLimitFailure where
     show (ExceededSizeLimit (stok :: PeerHasAgency pr (st :: ps))) =
       concat
-        [ "ExceededSizeLimit "
+        [ "ExceededSizeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , " "
+        , ") ("
         , show stok
+        , ")"
         ]
     show (ExceededTimeLimit (stok :: PeerHasAgency pr (st :: ps))) =
       concat
-        [ "ExceededTimeLimit "
+        [ "ExceededTimeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , " "
+        , ") ("
         , show stok
+        , ")"
         ]
 
 instance Exception ProtocolLimitFailure where

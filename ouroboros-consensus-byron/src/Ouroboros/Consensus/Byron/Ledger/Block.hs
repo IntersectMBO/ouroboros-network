@@ -56,6 +56,7 @@ import qualified Cardano.Crypto.Hashing as CC
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Ouroboros.Consensus.Byron.EBBs as EBBs
@@ -100,6 +101,8 @@ data ByronBlock = ByronBlock {
 
 instance Condense ByronBlock where
   condense = condense . byronBlockRaw
+
+instance ShowProxy ByronBlock where
 
 mkByronBlock :: CC.EpochSlots -> CC.ABlockOrBoundary ByteString -> ByronBlock
 mkByronBlock epochSlots blk = ByronBlock {
@@ -166,6 +169,8 @@ instance GetHeader ByronBlock where
 
 instance Condense (Header ByronBlock) where
   condense = CC.aBlockOrBoundaryHdr condense condense . byronHeaderRaw
+
+instance ShowProxy (Header ByronBlock) where
 
 instance NoUnexpectedThunks (Header ByronBlock) where
   showTypeOf _ = show $ typeRep (Proxy @(Header ByronBlock))

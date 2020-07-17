@@ -103,12 +103,13 @@ instance Show failure
          => Show (DecoderFailure failure) where
     show (DecoderFailure (tok :: PeerHasAgency pr (st :: ps)) failure) =
       concat
-        [ "DecoderFailure "
+        [ "DecoderFailure ("
         , showProxy (Proxy :: Proxy ps)
-        , " "
+        , ") "
         , show tok 
-        , " "
+        , ") ("
         , show failure
+        , ")"
         ]
 
 instance ( Typeable failure

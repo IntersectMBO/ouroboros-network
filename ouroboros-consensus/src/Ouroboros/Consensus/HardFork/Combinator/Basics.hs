@@ -37,10 +37,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
 
 import           Data.Functor.Identity
 import           Data.SOP.Strict
+import           Data.Typeable
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.EpochInfo
+
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
@@ -67,6 +70,8 @@ newtype HardForkBlock xs = HardForkBlock {
       getHardForkBlock :: OneEraBlock xs
     }
   deriving (Show)
+
+instance Typeable xs => ShowProxy (HardForkBlock xs) where
 
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs

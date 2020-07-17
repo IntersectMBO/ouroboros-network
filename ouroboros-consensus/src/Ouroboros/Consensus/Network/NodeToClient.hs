@@ -58,6 +58,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -317,6 +318,10 @@ mkApps
      , Exception e
      , Typeable blk
      , Typeable (ApplyTxErr blk)
+     , ShowProxy blk
+     , ShowProxy (ApplyTxErr blk)
+     , ShowProxy (Query blk)
+     , ShowProxy (GenTx blk)
      )
   => Tracers m peer blk e
   -> Codecs blk e m bCS bTX bSQ

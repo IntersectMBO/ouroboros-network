@@ -56,6 +56,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Type.Equality ((:~:) (Refl), apply)
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
@@ -76,7 +77,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((...:), (..:))
+import           Ouroboros.Consensus.Util (ShowProxy (..), (...:), (..:))
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
@@ -395,6 +396,8 @@ data instance Query (ShelleyBlock c) :: Type -> Type where
   GetFilteredDelegationsAndRewardAccounts
     :: Set (SL.Credential 'SL.Staking c)
     -> Query (ShelleyBlock c) (Delegations c, SL.RewardAccounts c)
+
+instance Typeable c => ShowProxy (Query (ShelleyBlock c)) where
 
 instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
   answerQuery cfg query st = case query of

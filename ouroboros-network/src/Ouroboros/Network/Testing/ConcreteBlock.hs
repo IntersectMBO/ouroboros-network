@@ -70,6 +70,7 @@ import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as C
+import           Ouroboros.Network.Util.ShowProxy
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
@@ -85,6 +86,8 @@ data Block = Block {
        blockBody   :: BlockBody
      }
    deriving (Show, Eq, Generic)
+
+instance ShowProxy Block where
 
 newtype BlockBody = BlockBody String
   deriving (Show, Eq, Ord, IsString, Generic)
@@ -103,6 +106,8 @@ data BlockHeader = BlockHeader {
        headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
      }
    deriving (Show, Eq, Generic)
+
+instance ShowProxy BlockHeader where
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --

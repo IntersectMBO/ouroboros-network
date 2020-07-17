@@ -67,6 +67,7 @@ import qualified Cardano.Chain.ValidationMode as CC
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -92,7 +93,12 @@ data instance GenTx ByronBlock
   deriving (Eq, Generic)
   deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
 
+instance ShowProxy (GenTx ByronBlock) where
+
 type instance ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
+
+-- orphaned instance
+instance ShowProxy CC.ApplyMempoolPayloadErr where
 
 instance LedgerSupportsMempool ByronBlock where
   -- Check that the annotation is the canonical encoding. This is currently
@@ -126,6 +132,8 @@ data instance TxId (GenTx ByronBlock)
   | ByronUpdateVoteId     !Update.VoteId
   deriving (Eq, Ord)
   deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
+
+instance ShowProxy (TxId (GenTx ByronBlock)) where
 
 instance HasTxId (GenTx ByronBlock) where
   txId (ByronTx             i _) = ByronTxId             i

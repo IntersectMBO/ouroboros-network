@@ -21,6 +21,7 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
@@ -29,7 +30,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
-import           Ouroboros.Consensus.Util (repeatedlyM)
+import           Ouroboros.Consensus.Util (ShowProxy (..), repeatedlyM)
 
 {-------------------------------------------------------------------------------
   State of the mock ledger
@@ -55,6 +56,8 @@ data MockError blk =
 deriving instance StandardHash blk => Show (MockError blk)
 deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
+
+instance Typeable blk => ShowProxy (MockError blk) where
 
 updateMockState :: (GetPrevHash blk, HasMockTxs blk)
                 => CodecConfig blk

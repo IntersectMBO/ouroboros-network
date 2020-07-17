@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Util (
   , Empty
   , Some(..)
   , SomePair(..)
+  , ShowProxy(..)
   , mustBeRight
     -- * Folding variations
   , foldlM'
@@ -82,6 +83,8 @@ import           Data.SOP.Strict
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
+
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 {-------------------------------------------------------------------------------
   Type-level utility

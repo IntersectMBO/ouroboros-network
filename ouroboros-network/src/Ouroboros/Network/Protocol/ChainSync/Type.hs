@@ -1,9 +1,10 @@
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | The type of the chain synchronisation protocol.
 --
@@ -13,7 +14,7 @@
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Ouroboros.Network.Block (Point, StandardHash)
-import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Ouroboros.Network.Util.ShowProxy
 
 import Network.TypedProtocol.Core
 
@@ -42,8 +43,14 @@ data ChainSync header tip where
   StDone      :: ChainSync header tip
 
 
-instance ShowProxy (ChainSync header tip) where
-    showProxy _ = "ChainSync"
+instance (ShowProxy header, ShowProxy tip) => ShowProxy (ChainSync header tip) where
+    showProxy _ = concat
+      [ "ChainSync ("
+      , showProxy (Proxy :: Proxy header)
+      , ") ("
+      , showProxy (Proxy :: Proxy tip)
+      , ")"
+      ]
 
 -- | Sub-cases of the 'StNext' state. This is needed since the server can
 -- either send one reply back, or two.
