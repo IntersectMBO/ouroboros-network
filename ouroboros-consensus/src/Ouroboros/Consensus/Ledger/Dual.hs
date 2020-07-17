@@ -55,7 +55,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , decodeDualGenTxErr
   , encodeDualLedgerState
   , decodeDualLedgerState
-  , dualBinaryBlockInfo
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -662,6 +661,23 @@ instance EncodeDiskDep (NestedCtxt Header) m
         (mapNestedCtxt ctxtDualMain ctxt)
 
 {-------------------------------------------------------------------------------
+  HasBinaryBlockInfo
+-------------------------------------------------------------------------------}
+
+-- | The binary info just refers to the main block
+--
+-- This is sufficient, because we never need just the header of the auxiliary.
+instance HasBinaryBlockInfo m => HasBinaryBlockInfo (DualBlock m a) where
+  getBinaryBlockInfo DualBlock{..} =
+      BinaryBlockInfo {
+          headerSize   = headerSize   mainBinaryBlockInfo
+        , headerOffset = headerOffset mainBinaryBlockInfo + 1
+        }
+    where
+      mainBinaryBlockInfo :: BinaryBlockInfo
+      mainBinaryBlockInfo = getBinaryBlockInfo dualBlockMain
+
+{-------------------------------------------------------------------------------
   Inspection
 -------------------------------------------------------------------------------}
 
@@ -836,17 +852,3 @@ decodeDualLedgerState decodeMain = do
       <$> decodeMain
       <*> decode
       <*> decode
-
--- | The binary info just refers to the main block
---
--- This is sufficient, because we never need just the header of the auxiliary.
-dualBinaryBlockInfo :: (m -> BinaryBlockInfo)
-                    -> DualBlock m a -> BinaryBlockInfo
-dualBinaryBlockInfo mainGetBinaryBlockInfo DualBlock{..} =
-    BinaryBlockInfo {
-        headerSize   = headerSize   mainBinaryBlockInfo
-      , headerOffset = headerOffset mainBinaryBlockInfo + 1
-      }
-  where
-    mainBinaryBlockInfo :: BinaryBlockInfo
-    mainBinaryBlockInfo = mainGetBinaryBlockInfo dualBlockMain

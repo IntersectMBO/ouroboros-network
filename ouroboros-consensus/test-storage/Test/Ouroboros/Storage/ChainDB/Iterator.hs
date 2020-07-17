@@ -14,7 +14,6 @@ import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
@@ -37,6 +36,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (IteratorKey (..), TraceIteratorEvent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Common
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
@@ -389,7 +390,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB getBinaryBlockInfo TestBlockCodecConfig
+        return $ mkVolDB volDB TestBlockCodecConfig
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -421,16 +422,6 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           Just epoch -> ImmDB.appendEBB immDB
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
-        return $ mkImmDB immDB getBinaryBlockInfo TestBlockCodecConfig chunkInfo
+        return $ mkImmDB immDB TestBlockCodecConfig chunkInfo
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
-
-getBinaryBlockInfo :: TestBlock -> BinaryBlockInfo
-getBinaryBlockInfo blk = BinaryBlockInfo {
-      -- The serialised @Header TestBlock@ is the same as the serialised
-      -- @TestBlock@
-      headerOffset = 0
-    , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString enc)
-    }
-  where
-    enc = encode blk

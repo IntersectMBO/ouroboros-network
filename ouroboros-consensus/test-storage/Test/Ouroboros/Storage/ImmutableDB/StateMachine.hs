@@ -65,6 +65,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath,
@@ -224,8 +226,8 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
       GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
       GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
       GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
-      AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b)
-      AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b)
+      AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b)
+      AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b)
       Stream              s e    -> iter            =<< stream                 db registry allComponents s e
       StreamAll                  -> IterResults     <$> streamAll              db
       IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
@@ -318,8 +320,8 @@ runPure = \case
     GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
     GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
     GetBlockOrEBBComponent s h -> ok MbAllComponents $ queryE   (getBlockOrEBBComponentModel allComponents s h)
-    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b))
-    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (testBlockToBuilder b) (testBlockBinaryBlockInfo b))
+    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b))
+    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b))
     Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
     StreamAll                  -> ok IterResults     $ query    (streamAllModel allComponents)
     IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
@@ -1265,7 +1267,6 @@ test cacheConfig chunkInfo cmds = do
                    TestBlockCodecConfig
                    hasFS
                    (const <$> decode)
-                   testBlockBinaryBlockInfo
                    testBlockIsValid
     withRegistry $ \registry -> do
       let args = ImmutableDbArgs

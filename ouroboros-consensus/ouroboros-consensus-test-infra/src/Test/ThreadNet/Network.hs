@@ -675,7 +675,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbGenesis              = return initLedger
         , cdbCheckInFuture        = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
                                       (OracularClock.finiteSystemTime clock)
-        , cdbGetBinaryBlockInfo   = nodeGetBinaryBlockInfo
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer               = instrumentationTracer <> nullDebugTracer

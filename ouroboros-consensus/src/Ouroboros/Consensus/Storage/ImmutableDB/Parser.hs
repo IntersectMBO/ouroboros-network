@@ -34,6 +34,8 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.CRC
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (HasBinaryBlockInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
@@ -67,18 +69,18 @@ chunkFileParser
        IOLike m
      , GetPrevHash blk
      , hash ~ HeaderHash blk
+     , HasBinaryBlockInfo blk
      )
   => CodecConfig blk
   -> HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> BinaryBlockInfo)
   -> (blk -> Bool)        -- ^ Check integrity of the block. 'False' = corrupt.
   -> ChunkFileParser
        (ChunkFileError hash)
        m
        (BlockSummary hash)
        hash
-chunkFileParser cfg hasFS decodeBlock getBinaryBlockInfo isNotCorrupt =
+chunkFileParser cfg hasFS decodeBlock isNotCorrupt =
     ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k

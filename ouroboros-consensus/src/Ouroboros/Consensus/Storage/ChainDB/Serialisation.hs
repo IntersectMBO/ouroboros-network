@@ -49,6 +49,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
   , PrefixLen (..)
   , addPrefixLen
   , takePrefix
+    -- * Binary block info
+  , HasBinaryBlockInfo (..)
+  , BinaryBlockInfo (..)
     -- * Re-exported for convenience
   , SizeInBytes
     -- * Exported for the benefit of tests
@@ -73,8 +76,8 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Storage.Common (PrefixLen (..),
-                     addPrefixLen, takePrefix)
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
+                     PrefixLen (..), addPrefixLen, takePrefix)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
@@ -313,6 +316,15 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
     -> SizeInBytes      -- ^ Block size
     -> SomeBlock (NestedCtxt f) blk
   reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
+
+{-------------------------------------------------------------------------------
+  Binary block info
+-------------------------------------------------------------------------------}
+
+class HasBinaryBlockInfo blk where
+  -- | Return information about the serialised block, i.e., how to extract the
+  -- bytes corresponding to the header from the serialised block.
+  getBinaryBlockInfo :: blk -> BinaryBlockInfo
 
 {-------------------------------------------------------------------------------
   Forwarding instances

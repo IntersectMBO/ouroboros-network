@@ -113,9 +113,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 -- The intention is that all interaction with the VolatileDB goes through this
 -- module.
 data VolDB m blk = VolDB {
-      volDB              :: !(VolatileDB (HeaderHash blk) m)
-    , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
-    , codecConfig        :: !(CodecConfig blk)
+      volDB       :: !(VolatileDB (HeaderHash blk) m)
+    , codecConfig :: !(CodecConfig blk)
     }
   deriving (Generic)
 
@@ -127,6 +126,7 @@ class ( EncodeDisk blk blk
       , DecodeDisk blk (Lazy.ByteString -> blk)
       , DecodeDiskDep (NestedCtxt Header) blk
       , ReconstructNestedCtxt Header blk
+      , HasBinaryBlockInfo blk
       ) => VolDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the VolDB wrapper.
@@ -138,13 +138,12 @@ type TraceEvent blk =
 -------------------------------------------------------------------------------}
 
 data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
-      volHasFS              :: HasFS m h
-    , volCheckIntegrity     :: blk -> Bool
-    , volBlocksPerFile      :: BlocksPerFile
-    , volGetBinaryBlockInfo :: blk -> BinaryBlockInfo
-    , volCodecConfig        :: CodecConfig blk
-    , volValidation         :: VolDB.BlockValidationPolicy
-    , volTracer             :: Tracer m (TraceEvent blk)
+      volHasFS          :: HasFS m h
+    , volCheckIntegrity :: blk -> Bool
+    , volBlocksPerFile  :: BlocksPerFile
+    , volCodecConfig    :: CodecConfig blk
+    , volValidation     :: VolDB.BlockValidationPolicy
+    , volTracer         :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -153,7 +152,6 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 --
 -- * 'volCheckIntegrity'
 -- * 'volBlocksPerFile'
--- * 'volGetBinaryBlockInfo'
 -- * 'volCodecConfig'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
@@ -163,7 +161,6 @@ defaultArgs fp = VolDbArgs {
       -- Fields without a default
     , volCheckIntegrity     = error "no default for volCheckIntegrity"
     , volBlocksPerFile      = error "no default for volBlocksPerFile"
-    , volGetBinaryBlockInfo = error "no default for volGetBinaryBlockInfo"
     , volCodecConfig        = error "no default for volCodecConfig"
     , volValidation         = error "no default for volValidation"
     }
@@ -177,7 +174,6 @@ openDB args@VolDbArgs{..} = do
     volDB <- VolDB.openDB volatileDbArgs
     return VolDB
       { volDB              = volDB
-      , getBinaryBlockInfo = volGetBinaryBlockInfo
       , codecConfig        = volCodecConfig
       }
   where
@@ -191,10 +187,9 @@ openDB args@VolDbArgs{..} = do
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
-        -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
         -> VolDB m blk
-mkVolDB volDB getBinaryBlockInfo codecConfig = VolDB {..}
+mkVolDB volDB codecConfig = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -766,7 +761,6 @@ blockFileParser VolDbArgs{..} =
     blockFileParser'
       volCodecConfig
       volHasFS
-      volGetBinaryBlockInfo
       decodeNestedCtxtAndBlock
       volCheckIntegrity
       volValidation
@@ -786,10 +780,9 @@ blockFileParser VolDbArgs{..} =
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
 blockFileParser'
-  :: forall m blk h. (IOLike m, GetPrevHash blk)
+  :: forall m blk h. (IOLike m, GetPrevHash blk, HasBinaryBlockInfo blk)
   => CodecConfig blk
   -> HasFS m h
-  -> (blk -> BinaryBlockInfo)
   -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
   -> (blk -> Bool)
   -> VolDB.BlockValidationPolicy
@@ -799,7 +792,6 @@ blockFileParser'
        (HeaderHash blk)
 blockFileParser' cfg
                  hasFS
-                 getBinaryBlockInfo
                  decodeNestedCtxtAndBlock
                  isNotCorrupt
                  validationPolicy =

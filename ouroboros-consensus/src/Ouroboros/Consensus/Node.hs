@@ -404,7 +404,6 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     { ChainDB.cdbBlocksPerFile      = mkBlocksPerFile 1000
     , ChainDB.cdbChunkInfo          = chunkInfo
     , ChainDB.cdbGenesis            = return initLedger
-    , ChainDB.cdbGetBinaryBlockInfo = nodeGetBinaryBlockInfo
     , ChainDB.cdbDiskPolicy         = defaultDiskPolicy k
     , ChainDB.cdbCheckIntegrity     = nodeCheckIntegrity cfg
     , ChainDB.cdbParamsLgrDB        = ledgerDbDefaultParams k

@@ -370,4 +370,3 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
       TPraosParams { tpraosSlotsPerKESPeriod } =
         tpraosParams $ configConsensus cfg
 
-  nodeGetBinaryBlockInfo   = shelleyBinaryBlockInfo

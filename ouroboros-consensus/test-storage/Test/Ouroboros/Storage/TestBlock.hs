@@ -42,7 +42,6 @@ module Test.Ouroboros.Storage.TestBlock (
     -- ** Serialisation
   , testHashInfo
   , testBlockToBuilder
-  , testBlockBinaryBlockInfo
   , testBlockFromLazyByteString
   , testBlockToLazyByteString
     -- * Ledger
@@ -281,12 +280,6 @@ testBlockIsValid (TestBlock hdr body) =
 
 testBlockToBuilder :: TestBlock -> Builder
 testBlockToBuilder = CBOR.toBuilder . encode
-
-testBlockBinaryBlockInfo :: TestBlock -> BinaryBlockInfo
-testBlockBinaryBlockInfo tb = BinaryBlockInfo
-    { headerOffset = testBlockHeaderOffset
-    , headerSize   = testBlockHeaderSize tb
-    }
 
 testBlockHeaderOffset :: Word16
 testBlockHeaderOffset = 2 -- For the 'encodeListLen'
@@ -750,6 +743,12 @@ instance HasNestedContent f TestBlock
 {-------------------------------------------------------------------------------
   Test infrastructure: serialisation
 -------------------------------------------------------------------------------}
+
+instance HasBinaryBlockInfo TestBlock where
+  getBinaryBlockInfo tb = BinaryBlockInfo
+      { headerOffset = testBlockHeaderOffset
+      , headerSize   = testBlockHeaderSize tb
+      }
 
 instance ImmDbSerialiseConstraints TestBlock
 instance LgrDbSerialiseConstraints TestBlock

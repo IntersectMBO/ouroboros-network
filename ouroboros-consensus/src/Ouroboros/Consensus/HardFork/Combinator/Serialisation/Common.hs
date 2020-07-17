@@ -247,6 +247,8 @@ class ( CanHardFork xs
         -- Required for 'encodeNestedCtxt'/'decodeNestedCtxt'
       , All (EncodeDiskDepIx (NestedCtxt Header)) xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
+        -- Required for 'getHfcBinaryBlockInfo'
+      , All HasBinaryBlockInfo xs
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
@@ -312,6 +314,23 @@ class ( CanHardFork xs
           SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
       injSomeBlock (S x) = case injSomeBlock x of
           SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
+
+  -- | Used as the implementation of 'getBinaryBlockInfo' for
+  -- 'HardForkBlock'.
+  getHfcBinaryBlockInfo :: HardForkBlock xs -> BinaryBlockInfo
+  getHfcBinaryBlockInfo (HardForkBlock (OneEraBlock bs)) =
+      hcollapse $ hcmap (Proxy @HasBinaryBlockInfo) aux bs
+    where
+      -- The header is unchanged, but the whole block is offset by 2 bytes
+      -- (list length and tag)
+      aux :: HasBinaryBlockInfo blk => I blk -> K BinaryBlockInfo blk
+      aux (I blk) = K $ BinaryBlockInfo {
+            headerOffset = headerOffset underlyingBlockInfo + 2
+          , headerSize   = headerSize   underlyingBlockInfo
+          }
+        where
+          underlyingBlockInfo :: BinaryBlockInfo
+          underlyingBlockInfo = getBinaryBlockInfo blk
 
 {-------------------------------------------------------------------------------
   Exceptions

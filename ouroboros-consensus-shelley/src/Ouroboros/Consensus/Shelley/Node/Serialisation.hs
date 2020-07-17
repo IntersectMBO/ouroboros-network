@@ -28,6 +28,9 @@ import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
 
+instance Crypto c => HasBinaryBlockInfo (ShelleyBlock c) where
+  getBinaryBlockInfo = shelleyBinaryBlockInfo
+
 instance Crypto c => ImmDbSerialiseConstraints (ShelleyBlock c)
 instance Crypto c => LgrDbSerialiseConstraints (ShelleyBlock c)
 instance Crypto c => VolDbSerialiseConstraints (ShelleyBlock c)

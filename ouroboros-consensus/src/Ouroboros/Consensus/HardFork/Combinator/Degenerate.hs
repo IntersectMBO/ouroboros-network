@@ -73,7 +73,6 @@ instance ( RunNode b
 
   nodeImmDbChunkInfo cfg                 = nodeImmDbChunkInfo (project cfg)
   nodeCheckIntegrity cfg (DegenBlock  b) = nodeCheckIntegrity (project cfg) b
-  nodeGetBinaryBlockInfo (DegenBlock  b) = nodeGetBinaryBlockInfo           b
   nodeBlockFetchSize     (DegenHeader h) = nodeBlockFetchSize               h
 
   nodeInitChainDB cfg = nodeInitChainDB (project cfg) . contramap DegenBlock

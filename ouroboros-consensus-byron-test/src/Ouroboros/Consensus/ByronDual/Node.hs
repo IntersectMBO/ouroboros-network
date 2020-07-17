@@ -229,5 +229,3 @@ instance RunNode DualByronBlock where
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
   nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
-
-  nodeGetBinaryBlockInfo = dualBinaryBlockInfo nodeGetBinaryBlockInfo

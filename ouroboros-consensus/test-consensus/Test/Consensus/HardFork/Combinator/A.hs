@@ -20,7 +20,6 @@
 module Test.Consensus.HardFork.Combinator.A (
     ProtocolA
   , BlockA(..)
-  , binaryBlockInfoA
   , safeFromTipA
   , stabilityWindowA
     -- * Additional types
@@ -83,7 +82,6 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -133,19 +131,6 @@ data BlockA = BlkA {
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlkA" BlockA
-
--- Standard cborg generic serialisation is:
---
--- > [number of fields in the product]
--- >   [tag of the constructor]
--- >   field1
--- >   ..
--- >   fieldN
-binaryBlockInfoA :: BlockA -> BinaryBlockInfo
-binaryBlockInfoA BlkA{..} = BinaryBlockInfo {
-      headerOffset = 2
-    , headerSize   = fromIntegral $ Lazy.length (serialise blkA_header)
-    }
 
 data instance Header BlockA = HdrA {
       hdrA_fields :: HeaderFields BlockA
@@ -443,6 +428,20 @@ instance Condense (TxId (GenTx BlockA)) where condense = show
 {-------------------------------------------------------------------------------
   Top-level serialisation constraints
 -------------------------------------------------------------------------------}
+
+instance HasBinaryBlockInfo BlockA where
+  -- Standard cborg generic serialisation is:
+  --
+  -- > [number of fields in the product]
+  -- >   [tag of the constructor]
+  -- >   field1
+  -- >   ..
+  -- >   fieldN
+  getBinaryBlockInfo BlkA{..} = BinaryBlockInfo {
+        headerOffset = 2
+      , headerSize   = fromIntegral $ Lazy.length (serialise blkA_header)
+      }
+
 
 instance SerialiseConstraintsHFC          BlockA
 instance ImmDbSerialiseConstraints        BlockA

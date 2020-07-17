@@ -113,10 +113,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
-      immDB              :: !(ImmutableDB (HeaderHash blk) m)
-    , getBinaryBlockInfo :: !(blk -> BinaryBlockInfo)
-    , codecConfig        :: !(CodecConfig blk)
-    , chunkInfo          :: !ChunkInfo
+      immDB       :: !(ImmutableDB (HeaderHash blk) m)
+    , codecConfig :: !(CodecConfig blk)
+    , chunkInfo   :: !ChunkInfo
     }
   deriving (Generic)
 
@@ -128,6 +127,7 @@ class ( EncodeDisk blk blk
       , DecodeDisk blk (Lazy.ByteString -> blk)
       , DecodeDiskDep (NestedCtxt Header) blk
       , ReconstructNestedCtxt Header blk
+      , HasBinaryBlockInfo blk
       ) => ImmDbSerialiseConstraints blk
 
 -- | Short-hand for events traced by the ImmDB wrapper.
@@ -142,22 +142,20 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
-      immGetBinaryBlockInfo :: blk -> BinaryBlockInfo
-    , immCodecConfig        :: CodecConfig blk
-    , immChunkInfo          :: ChunkInfo
-    , immValidation         :: ImmDB.ValidationPolicy
-    , immCheckIntegrity     :: blk -> Bool
-    , immHasFS              :: HasFS m h
-    , immTracer             :: Tracer m (TraceEvent blk)
-    , immCacheConfig        :: Index.CacheConfig
-    , immRegistry           :: ResourceRegistry m
+      immCodecConfig    :: CodecConfig blk
+    , immChunkInfo      :: ChunkInfo
+    , immValidation     :: ImmDB.ValidationPolicy
+    , immCheckIntegrity :: blk -> Bool
+    , immHasFS          :: HasFS m h
+    , immTracer         :: Tracer m (TraceEvent blk)
+    , immCacheConfig    :: Index.CacheConfig
+    , immRegistry       :: ResourceRegistry m
     }
 
 -- | Default arguments when using the 'IO' monad
 --
 -- The following fields must still be defined:
 --
--- * 'immGetBinaryBlockInfo'
 -- * 'immCodecConfig'
 -- * 'immChunkInfo'
 -- * 'immValidation'
@@ -169,7 +167,6 @@ defaultArgs fp = ImmDbArgs{
     , immCacheConfig        = cacheConfig
     , immTracer             = nullTracer
       -- Fields without a default
-    , immGetBinaryBlockInfo = error "no default for immGetBinaryBlockInfo"
     , immCodecConfig        = error "no default for immCodecConfig"
     , immChunkInfo          = error "no default for immChunkInfo"
     , immValidation         = error "no default for immValidation"
@@ -231,7 +228,6 @@ openDB ImmDbArgs {..} = do
     (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
       { immDB              = immDB
-      , getBinaryBlockInfo = immGetBinaryBlockInfo
       , codecConfig        = immCodecConfig
       , chunkInfo          = immChunkInfo
       }
@@ -251,16 +247,14 @@ openDB ImmDbArgs {..} = do
                immCodecConfig
                immHasFS
                (decodeDisk immCodecConfig)
-               immGetBinaryBlockInfo
                immCheckIntegrity
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
-        -> (blk -> BinaryBlockInfo)
         -> CodecConfig blk
         -> ChunkInfo
         -> ImmDB m blk
-mkImmDB immDB getBinaryBlockInfo codecConfig chunkInfo = ImmDB {..}
+mkImmDB immDB codecConfig chunkInfo = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks

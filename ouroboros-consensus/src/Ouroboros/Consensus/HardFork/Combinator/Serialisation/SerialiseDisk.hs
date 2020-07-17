@@ -1,15 +1,10 @@
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeOperators         #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk (
-      binaryBlockInfo
-    ) where
+module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk () where
 
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
@@ -22,11 +17,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.Storage.ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
@@ -42,26 +34,12 @@ instance SerialiseHFC xs => ReconstructNestedCtxt Header (HardForkBlock xs) wher
   reconstructPrefixLen  = reconstructHfcPrefixLen
   reconstructNestedCtxt = reconstructHfcNestedCtxt
 
--- | 'BinaryBlockInfo' compatible with the HFC defaults
---
--- This function should not be used when non-uniform encoding is used for
--- blocks.
-binaryBlockInfo :: NP (I -.-> K BinaryBlockInfo) xs
-                -> HardForkBlock xs -> BinaryBlockInfo
-binaryBlockInfo fs (HardForkBlock (OneEraBlock bs)) =
-    npToSListI fs $
-      hcollapse $ hzipWith aux fs bs
-  where
-    -- The header is unchanged, but the whole block is offset by 2 bytes
-    -- (list length and tag)
-    aux :: (I -.-> K BinaryBlockInfo) blk -> I blk -> K BinaryBlockInfo blk
-    aux (Fn f) blk = K $ BinaryBlockInfo {
-          headerOffset = headerOffset underlyingBlockInfo + 2
-        , headerSize   = headerSize   underlyingBlockInfo
-        }
-      where
-        underlyingBlockInfo :: BinaryBlockInfo
-        underlyingBlockInfo = unK $ f blk
+{-------------------------------------------------------------------------------
+  'HasBinaryBlockInfo'
+-------------------------------------------------------------------------------}
+
+instance SerialiseHFC xs => HasBinaryBlockInfo (HardForkBlock xs) where
+  getBinaryBlockInfo = getHfcBinaryBlockInfo
 
 {-------------------------------------------------------------------------------
   Blocks/headers
