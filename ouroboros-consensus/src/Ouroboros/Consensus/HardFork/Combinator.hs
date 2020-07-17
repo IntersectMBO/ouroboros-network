@@ -82,6 +82,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Match as X
 import           Ouroboros.Consensus.HardFork.Combinator.State as X
                      (HardForkState, HardForkState_ (..), initHardForkState)
 
+-- Definition of 'InjectTx' (required to define tx injections)
+import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X
+                     (InjectTx (..), cannotInjectTx)
+
 -- Omitted from this export:
 --
 -- * "Ouroboros.Consensus.HardFork.Combinator.State"

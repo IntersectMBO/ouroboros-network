@@ -40,9 +40,11 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Info
+import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 data HardForkApplyTxErr xs =
@@ -109,7 +111,7 @@ applyHelper apply
             slot
             (HardForkGenTx (OneEraGenTx hardForkTx))
             (TickedHardForkLedgerState transition hardForkState) =
-    case State.match hardForkTx hardForkState of
+    case matchTx injectTxs hardForkTx hardForkState of
       Left mismatch ->
         throwError $ HardForkApplyTxErrWrongEra . MismatchEraInfo $
           Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
@@ -133,24 +135,28 @@ applyHelper apply
         fmap (TickedHardForkLedgerState transition) $ hsequence' $
           hczipWith3 proxySingle applyCurrent cfgs errInjections matched
   where
-    cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-    ei   = State.epochInfoPrecomputedTransitionInfo
-             hardForkLedgerConfigShape
-             transition
-             hardForkState
+    pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+    cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
+    ei    = State.epochInfoPrecomputedTransitionInfo
+              hardForkLedgerConfigShape
+              transition
+              hardForkState
+
+    injectTxs :: InPairs InjectTx xs
+    injectTxs = InPairs.requiringBoth cfgs hardForkInjectTxs
 
     errInjections :: NP (Injection WrapApplyTxErr xs) xs
     errInjections = injections
 
     applyCurrent
       :: forall blk. SingleEraBlock blk
-      => WrapPartialLedgerConfig                                       blk
+      => WrapLedgerConfig                                              blk
       -> Injection WrapApplyTxErr xs                                   blk
       -> Product GenTx (Ticked :.: LedgerState)                        blk
       -> (Except (HardForkApplyTxErr xs) :.: (Ticked :.: LedgerState)) blk
     applyCurrent cfg injectErr (Pair tx (Comp st)) = Comp $ fmap Comp $
       withExcept (injectApplyTxErr injectErr) $
-        apply (completeLedgerConfig' ei cfg) slot tx st
+        apply (unwrapLedgerConfig cfg) slot tx st
 
 newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
       getHardForkGenTxId :: OneEraGenTxId xs

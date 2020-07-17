@@ -15,6 +15,11 @@
 module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
     -- * InPairs
     InPairs(..)
+    -- * Convenience constructors
+  , mk1
+  , mk2
+  , mk3
+    -- * SOP-like operators
   , hmap
   , hcmap
   , hpure
@@ -22,6 +27,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
     -- * Requiring
   , Requiring(..)
   , RequiringBoth(..)
+  , ignoring
+  , ignoringBoth
   , requiring
   , requiringBoth
   ) where
@@ -38,6 +45,23 @@ import           Ouroboros.Consensus.Util.SOP
 data InPairs (f :: k -> k -> *) (xs :: [k]) where
   PNil  :: InPairs f '[x]
   PCons :: f x y -> InPairs f (y ': zs) -> InPairs f (x ': y ': zs)
+
+{-------------------------------------------------------------------------------
+  Convenience constructors
+-------------------------------------------------------------------------------}
+
+mk1 :: InPairs f '[x]
+mk1 = PNil
+
+mk2 :: f x y -> InPairs f '[x, y]
+mk2 xy = PCons xy mk1
+
+mk3 :: f x y -> f y z -> InPairs f '[x, y, z]
+mk3 xy yz = PCons xy (mk2 yz)
+
+{-------------------------------------------------------------------------------
+  SOP-like operators
+-------------------------------------------------------------------------------}
 
 hmap :: SListI xs => (forall x y. f x y -> g x y) -> InPairs f xs -> InPairs g xs
 hmap = hcmap (Proxy @Top)
@@ -77,6 +101,12 @@ data Requiring h f x y = Require {
 data RequiringBoth h f x y = RequireBoth {
       provideBoth :: h x -> h y -> f x y
     }
+
+ignoring :: f x y -> Requiring h f x y
+ignoring fxy = Require $ \_ -> fxy
+
+ignoringBoth :: f x y -> RequiringBoth h f x y
+ignoringBoth fxy = RequireBoth $ \_ _ -> fxy
 
 requiring :: SListI xs => NP h xs -> InPairs (Requiring h f) xs -> InPairs f xs
 requiring np =

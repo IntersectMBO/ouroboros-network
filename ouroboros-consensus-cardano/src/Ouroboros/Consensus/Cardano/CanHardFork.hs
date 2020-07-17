@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), RequiringBoth (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -312,7 +313,8 @@ instance TPraosCrypto c => CanHardFork (CardanoEras c) where
     , translateChainDepState = PCons translateChainDepStateByronToShelleyWrapper PNil
     , translateLedgerView    = PCons translateLedgerViewByronToShelleyWrapper    PNil
     }
-  hardForkChainSel = Tails.mk2 CompareBlockNo
+  hardForkChainSel  = Tails.mk2 CompareBlockNo
+  hardForkInjectTxs = InPairs.mk2 $ InPairs.ignoringBoth cannotInjectTx
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley

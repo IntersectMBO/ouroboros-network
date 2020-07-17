@@ -62,6 +62,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as HFC
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import           Ouroboros.Consensus.HardFork.History (EraParams (..),
                      noLowerBoundSafeZone)
@@ -381,7 +382,8 @@ instance CanHardFork '[BlockA, BlockB] where
       , translateChainDepState = PCons chainDepState_AtoB PNil
       , translateLedgerView    = PCons ledgerView_AtoB    PNil
       }
-  hardForkChainSel = Tails.mk2 CompareBlockNo
+  hardForkChainSel  = Tails.mk2 CompareBlockNo
+  hardForkInjectTxs = InPairs.mk2 injectTx_AtoB
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
 versionN2N = HardForkNodeToNodeEnabled $
@@ -420,15 +422,38 @@ instance RunNode TestBlock where
   Translation
 -------------------------------------------------------------------------------}
 
-ledgerState_AtoB :: RequiringBoth WrapLedgerConfig (Translate LedgerState) BlockA BlockB
-ledgerState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ LgrA{..} -> LgrB {
+ledgerState_AtoB ::
+     RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       BlockA
+       BlockB
+ledgerState_AtoB = InPairs.ignoringBoth $ Translate $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 
-chainDepState_AtoB :: RequiringBoth WrapConsensusConfig (Translate WrapChainDepState) BlockA BlockB
-chainDepState_AtoB = RequireBoth $ \_ _ -> Translate $ \_ _ ->
+chainDepState_AtoB ::
+     RequiringBoth
+       WrapConsensusConfig
+       (Translate WrapChainDepState)
+       BlockA
+       BlockB
+chainDepState_AtoB = InPairs.ignoringBoth $ Translate $ \_ _ ->
     WrapChainDepState ()
 
-ledgerView_AtoB :: RequiringBoth WrapLedgerConfig (TranslateForecast WrapLedgerView) BlockA BlockB
-ledgerView_AtoB = RequireBoth $ \_ _ -> TranslateForecast $ \_ _ _ ->
+ledgerView_AtoB ::
+      RequiringBoth
+        WrapLedgerConfig
+        (TranslateForecast WrapLedgerView)
+        BlockA
+        BlockB
+ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ ->
     WrapTickedLedgerView TickedTrivial
+
+injectTx_AtoB ::
+     RequiringBoth
+       WrapLedgerConfig
+       InjectTx
+       BlockA
+       BlockB
+injectTx_AtoB = InPairs.ignoringBoth $ cannotInjectTx
