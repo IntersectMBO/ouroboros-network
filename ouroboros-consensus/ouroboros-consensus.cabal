@@ -67,6 +67,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
                        Ouroboros.Consensus.HardFork.Combinator.Forge
                        Ouroboros.Consensus.HardFork.Combinator.Info
+                       Ouroboros.Consensus.HardFork.Combinator.InjectTxs
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
