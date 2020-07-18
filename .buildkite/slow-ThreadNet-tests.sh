@@ -13,15 +13,6 @@ set -euo pipefail
 #
 # INVARIANT: No whitespace in any word.
 #
-# At time of writing, 100 (nightly) Cardano tests take approximately 60 seconds
-# and 100 (nightly) RealTPraos tests take approximately 700s on the BuildKite
-# instance reserved for benchmarking. So, for example, a 1000 RealTPraos tests
-# should take a single core about two hours and 5000 Cardano tests should take
-# about fifty minutes.
-#
-# See
-# https://buildkite.com/input-output-hk/ouroboros-network-nightly/builds/144#0f2d1638-9751-4397-82e8-21ec5f457f1c
-#
 # We only test in multiples of 100 because otherwise it risks skewing the
 # QuickCheck generator distribution (note that QuickCheck sets `maxSize stdArgs
 # = 100`).
@@ -33,10 +24,10 @@ set -euo pipefail
 # overhead and also more reliable percentages in their QuickCheck statistics.
 rows=(
     # From the slowest individual invocation ...
-    '1 RealTPraos 1000'
-    '1 Cardano    5000'
-    '5 RealTPraos 100'
-    '5 Cardano    500'
+    '1 Cardano    5000'  # ~45 minutes per invocation
+    '2 RealTPraos 200'   # ~30 minutes per invocation (but high variance)
+    '4 RealTPraos 100'   # ~15 minutes per invocation (but high variance)
+    '5 Cardano    500'   # ~5 minutes per invocation
     # ... to fastest individual invocation
     #
     # And the number of invocations is non-decreasing.

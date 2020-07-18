@@ -16,10 +16,13 @@ module Test.ThreadNet.Infra.Shelley (
   , KesConfig(..)
   , coreNodeKeys
   , genCoreNode
+  , incrementMinorProtVer
+  , mkEpochSize
   , mkGenesisConfig
   , mkKesConfig
   , mkLeaderCredentials
   , mkProtocolRealTPraos
+  , mkSetDecentralizationParamTxs
   , tpraosSlotLength
   ) where
 
@@ -37,6 +40,7 @@ import           Test.QuickCheck
 import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
+import           Cardano.Crypto.Hash.Class (hashWithSerialiser)
 import           Cardano.Crypto.KES.Class (KESAlgorithm, SignKeyKES,
                      deriveVerKeyKES, genKeyKES, totalPeriodsKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -59,12 +63,15 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
 
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..), ShelleyBlock,
+                     mkShelleyTx)
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
@@ -98,6 +105,13 @@ instance Arbitrary DecentralizationParam where
 
 tpraosSlotLength :: SlotLength
 tpraosSlotLength = slotLengthFromSec 2
+
+-- | The reciprocal of the active slots coefficient
+--
+-- To simplify related calculations throughout the test suite, we require this
+-- to be a natural number.
+recipActiveSlotsCoeff :: Num a => a
+recipActiveSlotsCoeff = 2   -- so f = 0.5
 
 {-------------------------------------------------------------------------------
   CoreNode secrets/etc
@@ -230,6 +244,9 @@ mkKesConfig prx (NumSlots t) = KesConfig
   TPraos node configuration
 -------------------------------------------------------------------------------}
 
+mkEpochSize :: SecurityParam -> EpochSize
+mkEpochSize (SecurityParam k) = EpochSize $ 10 * k * recipActiveSlotsCoeff
+
 -- | Note: a KES algorithm supports a particular max number of KES evolutions,
 -- but we can configure a potentially lower maximum for the ledger, that's why
 -- we take it as an argument.
@@ -248,9 +265,9 @@ mkGenesisConfig pVer k d slotLength kesCfg coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = recip recipF
+    , sgActiveSlotsCoeff      = recip recipActiveSlotsCoeff
     , sgSecurityParam         = maxRollbacks k
-    , sgEpochLength           = EpochSize (10 * maxRollbacks k * recipF)
+    , sgEpochLength           = mkEpochSize k
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
     , sgMaxKESEvolutions      = maxEvolutions     kesCfg
     , sgSlotLength            = getSlotLength slotLength
@@ -262,16 +279,6 @@ mkGenesisConfig pVer k d slotLength kesCfg coreNodes =
     , sgStaking               = initialStake
     }
   where
-    -- the reciprocal of the active slot coefficient
-    recipF :: Num a => a
-    recipF = 2   -- so f = 0.5
-
-    networkId :: SL.Network
-    networkId = SL.Testnet
-
-    initialLovelacePerCoreNode :: Word64
-    initialLovelacePerCoreNode = 1000
-
      -- TODO
     maxLovelaceSupply :: Word64
     maxLovelaceSupply =
@@ -361,16 +368,14 @@ mkGenesisConfig pVer k d slotLength kesCfg coreNodes =
             , let vrfHash = SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
             ]
 
-    mkCredential :: SignKeyDSIGN (DSIGN c) -> SL.Credential r c
-    mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
-
 mkProtocolRealTPraos
   :: forall m c. (IOLike m, TPraosCrypto c)
   => ShelleyGenesis c
   -> SL.Nonce
+  -> ProtVer
   -> CoreNode c
   -> ProtocolInfo m (ShelleyBlock c)
-mkProtocolRealTPraos genesis initialNonce coreNode =
+mkProtocolRealTPraos genesis initialNonce protVer coreNode =
     protocolInfoShelley
       genesis
       initialNonce
@@ -378,5 +383,113 @@ mkProtocolRealTPraos genesis initialNonce coreNode =
       protVer
       (Just (mkLeaderCredentials coreNode))
   where
-    protVer = SL.ProtVer 0 0
     maxMajorPV = 1000 -- TODO
+
+{-------------------------------------------------------------------------------
+  Necessary transactions for updating the 'DecentralizationParam'
+-------------------------------------------------------------------------------}
+
+incrementMinorProtVer :: SL.ProtVer -> SL.ProtVer
+incrementMinorProtVer (SL.ProtVer major minor) = SL.ProtVer major (succ minor)
+
+mkSetDecentralizationParamTxs
+  :: forall c. (TPraosCrypto c)
+  => [CoreNode c]
+  -> ProtVer   -- ^ The proposed protocol version
+  -> SlotNo   -- ^ The TTL
+  -> DecentralizationParam   -- ^ The new value
+  -> [GenTx (ShelleyBlock c)]
+mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
+    (:[]) $
+    mkShelleyTx $
+    SL.Tx
+      { _body       = body
+      , _witnessSet = witnessSet
+      , _metadata   = SL.SNothing
+      }
+  where
+    -- The funds touched by this transaction assume it's the first transaction
+    -- executed.
+    scheduledEpoch :: EpochNo
+    scheduledEpoch = EpochNo 0
+
+    witnessSet :: SL.WitnessSet c
+    witnessSet = SL.WitnessSet
+      { addrWits = Set.fromList signatures
+      , bootWits = Set.empty
+      , msigWits = Map.empty
+      }
+
+    -- Every node signs the transaction body, since it includes a " vote " from
+    -- every node.
+    signatures :: [SL.WitVKey c 'SL.Witness]
+    signatures =
+        [ SL.WitVKey (SL.VKey vk) $
+          signedDSIGN () (hashWithSerialiser toCBOR body) sk
+        | cn <- coreNodes
+        , let sk = cnDelegateKey cn
+        , let vk = deriveVerKeyDSIGN sk
+        ]
+
+    -- Nothing but the parameter update and the obligatory touching of an
+    -- input.
+    body :: SL.TxBody c
+    body = SL.TxBody
+      { _certs    = Seq.empty
+      , _inputs   = Set.singleton (fst touchCoins)
+      , _mdHash   = SL.SNothing
+      , _outputs  = Seq.singleton (snd touchCoins)
+      , _ttl      = ttl
+      , _txfee    = SL.Coin 0
+      , _txUpdate = SL.SJust update
+      , _wdrls    = SL.Wdrl Map.empty
+      }
+
+    -- Every Shelley transaction requires one input.
+    --
+    -- We use the input of the first node, but we just put it all right back.
+    --
+    -- ASSUMPTION: This transaction runs in the first slot.
+    touchCoins :: (SL.TxIn c, SL.TxOut c)
+    touchCoins = case coreNodes of
+        []   -> error "no nodes!"
+        cn:_ ->
+            ( SL.initialFundsPseudoTxIn addr
+            , SL.TxOut addr coin
+            )
+          where
+            addr = SL.Addr networkId
+                (mkCredential (cnDelegateKey cn))
+                (SL.StakeRefBase (mkCredential (cnStakingKey cn)))
+            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+
+    -- One replicant of the parameter update per each node.
+    update :: SL.Update c
+    update =
+        flip SL.Update scheduledEpoch $ SL.ProposedPPUpdates $
+        Map.fromList $
+        [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
+          , SL.emptyPParamsUpdate
+              { SL._d =
+                  SL.SJust $
+                  SL.unitIntervalFromRational $
+                  decentralizationParamToRational dNew
+              , SL._protocolVersion =
+                  SL.SJust pVer
+              }
+          )
+        | cn <- coreNodes
+        ]
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+initialLovelacePerCoreNode :: Word64
+initialLovelacePerCoreNode = 1000
+
+mkCredential :: TPraosCrypto c => SignKeyDSIGN (DSIGN c) -> SL.Credential r c
+mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
+
+networkId :: SL.Network
+networkId = SL.Testnet
