@@ -238,4 +238,3 @@ instance RunNode ByronBlock where
       genesisEBB = forgeEBB (configBlock cfg) (SlotNo 0) (BlockNo 0) GenesisHash
 
   nodeCheckIntegrity     = verifyBlockIntegrity . configBlock
-  nodeGetBinaryBlockInfo = byronBinaryBlockInfo

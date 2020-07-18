@@ -21,8 +21,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (BinaryBlockInfo (..), ChunkInfo)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -36,33 +35,32 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
 
       -- HasFS instances
-      cdbHasFSImmDb         :: HasFS m h1
-    , cdbHasFSVolDb         :: HasFS m h2
-    , cdbHasFSLgrDB         :: HasFS m h3
+      cdbHasFSImmDb       :: HasFS m h1
+    , cdbHasFSVolDb       :: HasFS m h2
+    , cdbHasFSLgrDB       :: HasFS m h3
 
       -- Policy
-    , cdbImmValidation      :: ImmDB.ValidationPolicy
-    , cdbVolValidation      :: VolDB.BlockValidationPolicy
-    , cdbBlocksPerFile      :: VolDB.BlocksPerFile
-    , cdbParamsLgrDB        :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy         :: LgrDB.DiskPolicy
+    , cdbImmValidation    :: ImmDB.ValidationPolicy
+    , cdbVolValidation    :: VolDB.BlockValidationPolicy
+    , cdbBlocksPerFile    :: VolDB.BlocksPerFile
+    , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
+    , cdbDiskPolicy       :: LgrDB.DiskPolicy
 
       -- Integration
-    , cdbTopLevelConfig     :: TopLevelConfig blk
-    , cdbChunkInfo          :: ChunkInfo
-    , cdbCheckIntegrity     :: blk -> Bool
-    , cdbGenesis            :: m (ExtLedgerState blk)
-    , cdbCheckInFuture      :: CheckInFuture m blk
-    , cdbGetBinaryBlockInfo :: blk -> BinaryBlockInfo
-    , cdbImmDbCacheConfig   :: ImmDB.CacheConfig
+    , cdbTopLevelConfig   :: TopLevelConfig blk
+    , cdbChunkInfo        :: ChunkInfo
+    , cdbCheckIntegrity   :: blk -> Bool
+    , cdbGenesis          :: m (ExtLedgerState blk)
+    , cdbCheckInFuture    :: CheckInFuture m blk
+    , cdbImmDbCacheConfig :: ImmDB.CacheConfig
 
       -- Misc
-    , cdbTracer             :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger        :: Tracer m (LgrDB.LedgerDB blk)
-    , cdbRegistry           :: ResourceRegistry m
-    , cdbGcDelay            :: DiffTime
-    , cdbGcInterval         :: DiffTime
-    , cdbBlocksToAddSize    :: Word
+    , cdbTracer           :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger      :: Tracer m (LgrDB.LedgerDB blk)
+    , cdbRegistry         :: ResourceRegistry m
+    , cdbGcDelay          :: DiffTime
+    , cdbGcInterval       :: DiffTime
+    , cdbBlocksToAddSize  :: Word
       -- ^ Size of the queue used to store asynchronously added blocks. This
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
@@ -145,8 +143,7 @@ fromChainDbArgs :: ChainDbArgs m blk
                    )
 fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
-          immGetBinaryBlockInfo = cdbGetBinaryBlockInfo
-        , immCodecConfig        = configCodec cdbTopLevelConfig
+          immCodecConfig        = configCodec cdbTopLevelConfig
         , immChunkInfo          = cdbChunkInfo
         , immValidation         = cdbImmValidation
         , immCheckIntegrity     = cdbCheckIntegrity
@@ -159,7 +156,6 @@ fromChainDbArgs ChainDbArgs{..} = (
           volHasFS              = cdbHasFSVolDb
         , volCheckIntegrity     = cdbCheckIntegrity
         , volBlocksPerFile      = cdbBlocksPerFile
-        , volGetBinaryBlockInfo = cdbGetBinaryBlockInfo
         , volCodecConfig        = configCodec cdbTopLevelConfig
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer
@@ -212,7 +208,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbCheckIntegrity       = immCheckIntegrity
     , cdbGenesis              = lgrGenesis
     , cdbCheckInFuture        = cdbsCheckInFuture
-    , cdbGetBinaryBlockInfo   = immGetBinaryBlockInfo
     , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc
     , cdbTracer               = cdbsTracer

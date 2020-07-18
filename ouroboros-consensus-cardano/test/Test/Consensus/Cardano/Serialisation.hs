@@ -14,7 +14,6 @@ import           Data.Proxy (Proxy (..))
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
@@ -87,7 +86,7 @@ prop_CardanoBinaryBlockInfo blk =
     encodedNestedHeader === extractedHeader
   where
     BinaryBlockInfo { headerOffset, headerSize } =
-      nodeGetBinaryBlockInfo blk
+      getBinaryBlockInfo blk
 
     extractedHeader :: Lazy.ByteString
     extractedHeader =

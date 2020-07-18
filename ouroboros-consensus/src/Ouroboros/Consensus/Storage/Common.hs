@@ -1,13 +1,18 @@
-{-# LANGUAGE DeriveFunctor  #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE GADTs          #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Consensus.Storage.Common (
     -- * Indexing
     tipIsGenesis
+    -- * PrefixLen
+  , PrefixLen (..)
+  , addPrefixLen
+  , takePrefix
     -- * BinaryBlockInfo
   , BinaryBlockInfo (..)
   , extractHeader
@@ -17,21 +22,20 @@ module Ouroboros.Consensus.Storage.Common (
   , castBlockComponent
     -- * Re-exports
   , SizeInBytes
-  , PrefixLen (..)
-  , takePrefix
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.Word
 import           GHC.Generics
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (PrefixLen (..), takePrefix)
 
 {-------------------------------------------------------------------------------
   Indexing
@@ -40,6 +44,26 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 tipIsGenesis :: WithOrigin r -> Bool
 tipIsGenesis Origin        = True
 tipIsGenesis (NotOrigin _) = False
+
+{-------------------------------------------------------------------------------
+  PrefixLen
+-------------------------------------------------------------------------------}
+
+-- | Number of bytes from the start of a block needed to reconstruct the
+-- nested context.
+--
+-- See 'reconstructPrefixLen'.
+newtype PrefixLen = PrefixLen {
+      getPrefixLen :: Word8
+    }
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+
+addPrefixLen :: Word8 -> PrefixLen -> PrefixLen
+addPrefixLen m (PrefixLen n) = PrefixLen (m + n)
+
+takePrefix :: PrefixLen -> BL.ByteString -> ShortByteString
+takePrefix (PrefixLen n) =
+    Short.toShort . BL.toStrict . BL.take (fromIntegral n)
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo

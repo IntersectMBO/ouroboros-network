@@ -596,7 +596,6 @@ test cmds = do
         parser = blockFileParser'
           TestBlockCodecConfig
           hasFS
-          testBlockBinaryBlockInfo
           ((\blk bytes -> (takePrefix testPrefixLen bytes, blk)) <$> decode)
           testBlockIsValid
           ValidateAll

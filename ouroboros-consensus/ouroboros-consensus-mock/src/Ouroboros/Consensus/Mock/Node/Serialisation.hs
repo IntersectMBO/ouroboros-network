@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mock.Node.Serialisation (
 
 import           Codec.Serialise (Serialise, decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised)
 
@@ -40,9 +41,12 @@ type MockBlock ext = SimpleBlock SimpleMockCrypto ext
   We use the default instances relying on 'Serialise' where possible.
 -------------------------------------------------------------------------------}
 
-instance Serialise ext => ImmDbSerialiseConstraints (MockBlock ext)
+instance (Serialise ext, Typeable ext) => HasBinaryBlockInfo (MockBlock ext) where
+  getBinaryBlockInfo = simpleBlockBinaryBlockInfo
+
+instance (Serialise ext, Typeable ext) => ImmDbSerialiseConstraints (MockBlock ext)
 instance RunMockBlock SimpleMockCrypto ext => LgrDbSerialiseConstraints (MockBlock ext)
-instance Serialise ext => VolDbSerialiseConstraints (MockBlock ext)
+instance (Serialise ext, Typeable ext) => VolDbSerialiseConstraints (MockBlock ext)
 instance (Serialise ext, RunMockBlock SimpleMockCrypto ext)
       => SerialiseDiskConstraints  (MockBlock ext)
 

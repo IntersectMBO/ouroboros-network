@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Util.SOP
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import qualified Ouroboros.Consensus.HardFork.Combinator.Serialisation as HFC
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
@@ -413,10 +412,6 @@ instance RunNode TestBlock where
                          . History.getShape
                          . hardForkLedgerConfigShape
                          . configLedger
-  nodeGetBinaryBlockInfo = HFC.binaryBlockInfo
-                              $ fn (mapIK binaryBlockInfoA)
-                             :* fn (mapIK binaryBlockInfoB)
-                             :* Nil
 
 {-------------------------------------------------------------------------------
   Translation

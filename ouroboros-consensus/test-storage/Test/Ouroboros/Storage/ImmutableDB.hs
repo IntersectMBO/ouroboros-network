@@ -66,7 +66,6 @@ openTestDB registry hasFS =
                TestBlockCodecConfig
                hasFS
                (const <$> S.decode)
-               testBlockBinaryBlockInfo
                testBlockIsValid
 
 -- Shorthand

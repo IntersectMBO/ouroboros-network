@@ -51,7 +51,7 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
       -> [(Point block, query result)]   -- ^ Remainder
       -> ClientStAcquired block query m
                           [(Point block, Either AcquireFailure result)]
-    goAcquired acc [] = SendMsgRelease $ SendMsgDone $ reverse acc
+    goAcquired acc [] = SendMsgRelease $ pure $ SendMsgDone $ reverse acc
     goAcquired acc ((pt, qs):ptqss') = SendMsgReAcquire pt $
       goAcquiring acc pt qs ptqss'
 

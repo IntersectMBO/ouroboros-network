@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
                      VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
 {-------------------------------------------------------------------------------
@@ -79,6 +78,7 @@ class ( LedgerSupportsProtocol           blk
       , ConfigSupportsNode               blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
+      , HasBinaryBlockInfo               blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
@@ -105,10 +105,6 @@ class ( LedgerSupportsProtocol           blk
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
   nodeCheckIntegrity :: TopLevelConfig blk -> blk -> Bool
-
-  -- | Return information about the serialised block, i.e., how to extract the
-  -- bytes corresponding to the header from the serialised block.
-  nodeGetBinaryBlockInfo :: blk -> BinaryBlockInfo
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block

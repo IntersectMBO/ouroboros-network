@@ -77,3 +77,5 @@ instance SerialiseHFC '[ByronBlock] where
   reconstructHfcNestedCtxt _ prefix blockSize =
       mapSomeNestedCtxt NCZ $
         reconstructNestedCtxt (Proxy @(Header ByronBlock)) prefix blockSize
+  getHfcBinaryBlockInfo (DegenBlock b) =
+      getBinaryBlockInfo b

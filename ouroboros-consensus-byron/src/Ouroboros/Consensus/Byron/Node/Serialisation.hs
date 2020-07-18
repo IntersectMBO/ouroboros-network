@@ -42,6 +42,9 @@ import           Ouroboros.Consensus.Byron.Protocol
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
 
+instance HasBinaryBlockInfo ByronBlock where
+  getBinaryBlockInfo = byronBinaryBlockInfo
+
 instance ImmDbSerialiseConstraints ByronBlock
 instance LgrDbSerialiseConstraints ByronBlock
 instance VolDbSerialiseConstraints ByronBlock

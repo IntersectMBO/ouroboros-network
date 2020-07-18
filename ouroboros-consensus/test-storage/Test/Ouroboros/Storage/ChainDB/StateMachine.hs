@@ -1633,7 +1633,6 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbCheckInFuture        = InFuture.miracle
                                   (readTVar varCurSlot)
                                   maxClockSkew
-    , cdbGetBinaryBlockInfo   = testBlockBinaryBlockInfo
     , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
 
     -- Misc

@@ -49,7 +49,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
@@ -141,6 +140,18 @@ instance TPraosCrypto sc => SerialiseHFC (CardanoEras sc) where
         2 -> SomeBlock $ NestedCtxt (NCS (NCZ Shelley.CtxtShelley))
         _ -> error $ "CardanoBlock: invalid prefix " <> show prefix
 
+  getHfcBinaryBlockInfo = \case
+      BlockByron   blockByron   ->
+        getBinaryBlockInfo blockByron
+      BlockShelley blockShelley ->
+        -- We need to account for the two extra bytes of the envelope.
+        shiftHeaderOffset 2 $ getBinaryBlockInfo blockShelley
+    where
+      shiftHeaderOffset :: Word16 -> BinaryBlockInfo -> BinaryBlockInfo
+      shiftHeaderOffset shift binfo = binfo {
+            headerOffset = headerOffset binfo + shift
+          }
+
 -- | Prepend the given tag by creating a CBOR 2-tuple with the tag as the
 -- first element and the given 'Encoding' as the second.
 prependTag :: Word -> Encoding -> Encoding
@@ -218,19 +229,6 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
                      . History.getShape
                      . hardForkLedgerConfigShape
                      . configLedger
-
-  nodeGetBinaryBlockInfo = \case
-      BlockByron   blockByron   ->
-        nodeGetBinaryBlockInfo blockByron
-      BlockShelley blockShelley ->
-        -- We need to account for the two extra bytes of the envelope, see the
-        -- 'SerialiseHFC' instance.
-        shiftHeaderOffset 2 $ nodeGetBinaryBlockInfo blockShelley
-    where
-      shiftHeaderOffset :: Word16 -> BinaryBlockInfo -> BinaryBlockInfo
-      shiftHeaderOffset shift binfo = binfo {
-            headerOffset = headerOffset binfo + shift
-          }
 
   -- Call Byron's intialisation, as the chain starts with Byron
   nodeInitChainDB cfg initChainDB =
