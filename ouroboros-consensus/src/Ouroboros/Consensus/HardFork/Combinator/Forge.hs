@@ -11,6 +11,7 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Forge (
     undistribMaintainForgeState
+  , distribForgeState
   ) where
 
 import           Data.Functor.Product
