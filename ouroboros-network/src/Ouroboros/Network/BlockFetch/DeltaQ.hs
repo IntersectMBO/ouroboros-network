@@ -63,8 +63,13 @@ calculatePeerFetchInFlightLimits PeerGSV {
     -- more). Lets say our maximum schedule delay is @d@ seconds.
     --
     inFlightBytesLowWatermark =
-        ceiling (seconds (g_out + g_in + d) / seconds (s_in 1))
+        max minLowWaterMark (ceiling (seconds (g_out + g_in + d) / seconds (s_in 1)))
       where
+        -- To ensure that blockfetch can do pipelining we enforce a minimal
+        -- low water mark of at least 3 64k blocks
+        minLowWaterMark :: SizeInBytes
+        minLowWaterMark = 3 * 64 * 1024
+
         seconds :: DiffTime -> Fixed.Pico
         seconds = realToFrac
       --FIXME: s is now a function of bytes, not unit seconds / octet
