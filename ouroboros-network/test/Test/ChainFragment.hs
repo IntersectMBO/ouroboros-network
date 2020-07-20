@@ -8,6 +8,7 @@ module Test.ChainFragment
   ( tests
   , TestBlockChainFragmentAndUpdates(..)
   , TestBlockChainFragment(..)
+  , TestHeaderChainFragment(..)
   , TestChainFragmentAndPoint (..)
   , TestChainFragmentFork(..)
   , TestAddBlock(..)
@@ -28,7 +29,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
-import           Test.Chain ()
 import           Test.ChainGenerators (TestBlockChain (..),
                      TestChainAndRange (..), addSlotGap, genChainAnchor,
                      genNonNegative, genSlotGap)
