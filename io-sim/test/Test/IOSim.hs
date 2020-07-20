@@ -9,6 +9,7 @@ module Test.IOSim
     ) where
 
 import           Data.Array
+import           Data.Either (isLeft)
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
 import           Data.Function (on)
@@ -54,6 +55,7 @@ tests =
     , testProperty "5" unit_catch_5
     , testProperty "6" unit_catch_6
     ]
+  , testProperty "evaluate unit test" unit_evaluate_0
   , testGroup "fork unit tests"
     [ testProperty "1" unit_fork_1
     , testProperty "2" unit_fork_2
@@ -467,6 +469,14 @@ unit_catch_6 =
       )
  ===
     ["inner", "handler1", "handler2", "after"]
+
+
+-- evaluate should catch pure errors
+unit_evaluate_0 :: Property
+unit_evaluate_0 =
+    -- This property also fails if the @error@ is not caught by the sim monad
+    -- and instead reaches the QuickCheck driver.
+    property $ isLeft $ runSim $ evaluate (error "boom" :: ())
 
 
 -- The sim terminates when the main thread terminates
