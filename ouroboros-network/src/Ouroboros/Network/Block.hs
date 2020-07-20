@@ -46,6 +46,7 @@ module Ouroboros.Network.Block (
   , castTip
   , getTipPoint
   , getTipBlockNo
+  , getTipSlotNo
   , getLegacyTipBlockNo
   , legacyTip
   , toLegacyTip
@@ -291,6 +292,10 @@ getTipPoint (Tip s h _) = BlockPoint s h
 getTipBlockNo :: Tip b -> WithOrigin BlockNo
 getTipBlockNo TipGenesis  = Origin
 getTipBlockNo (Tip _ _ b) = At b
+
+getTipSlotNo :: Tip b -> WithOrigin SlotNo
+getTipSlotNo TipGenesis  = Origin
+getTipSlotNo (Tip s _ _) = At s
 
 -- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
 --
