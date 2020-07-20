@@ -22,7 +22,10 @@ import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
 import           Data.Void
 
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
@@ -53,9 +56,14 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
 
 
 fetchLogicIterations
-  :: (MonadSTM m, Ord peer,
-      HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
+  :: ( HasHeader header
+     , HasHeader block
+     , HeaderHash header ~ HeaderHash block
+     , MonadDelay m
+     , MonadMonotonicTime m
+     , MonadSTM m
+     , Ord peer
+     )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
@@ -67,19 +75,24 @@ fetchLogicIterations decisionTracer clientStateTracer
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
 
-    iterateForever initialFetchStateFingerprint $ \stateFingerprint ->
+    iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
 
       -- Run a single iteration of the fetch logic:
       --
       -- + wait for the state to change and make decisions for the new state
       -- + act on those decisions
-
-      fetchLogicIteration
+      start <- getMonotonicTime
+      stateFingerprint' <- fetchLogicIteration
         decisionTracer clientStateTracer
         fetchDecisionPolicy
         fetchTriggerVariables
         fetchNonTriggerVariables
         stateFingerprint
+      end <- getMonotonicTime
+      let delta = diffTime end start
+      -- Limit descision making to 100Hz.
+      when (delta < 0.01) $ threadDelay delta
+      return stateFingerprint'
 
 
 iterateForever :: Monad m => a -> (a -> m a) -> m Void
