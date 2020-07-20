@@ -451,6 +451,7 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
       { bfcMaxConcurrencyBulkSync = 1
       , bfcMaxConcurrencyDeadline = 2
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
+      , bfcDecisionLoopInterval   = 0.01 -- 10ms
       }
 
 -- | We allow the user running the node to customise the 'NodeArgs' through

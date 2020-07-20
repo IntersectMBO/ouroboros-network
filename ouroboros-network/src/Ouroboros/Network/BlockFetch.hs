@@ -103,6 +103,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -214,7 +216,10 @@ data BlockFetchConfiguration =
          bfcMaxConcurrencyDeadline :: !Word,
 
          -- | Maximum requests in flight per each peer.
-         bfcMaxRequestsInflight    :: !Word
+         bfcMaxRequestsInflight    :: !Word,
+
+         -- | Desired intervall between calls to fetchLogicIteration
+         bfcDecisionLoopInterval  :: !DiffTime
      }
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
@@ -225,9 +230,14 @@ data BlockFetchConfiguration =
 -- This runs forever and should be shut down using mechanisms such as async.
 --
 blockFetchLogic :: forall peer header block m.
-                   (MonadSTM m, Ord peer,
-                    HasHeader header, HasHeader block,
-                    HeaderHash header ~ HeaderHash block)
+                   ( HasHeader header
+                   , HasHeader block
+                   , HeaderHash header ~ HeaderHash block
+                   , MonadDelay m
+                   , MonadMonotonicTime m
+                   , MonadSTM m
+                   , Ord peer
+                   )
                 => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
@@ -260,6 +270,7 @@ blockFetchLogic decisionTracer clientStateTracer
         maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
         maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
+        decisionLoopInterval     = bfcDecisionLoopInterval,
 
         plausibleCandidateChain,
         compareCandidateChains,

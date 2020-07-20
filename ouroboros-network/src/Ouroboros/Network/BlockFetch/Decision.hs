@@ -31,6 +31,7 @@ import           Data.Set (Set)
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
+import           Control.Monad.Class.MonadTime (DiffTime)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -55,6 +56,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
 
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
+       decisionLoopInterval    :: DiffTime,
 
        plausibleCandidateChain :: AnchoredFragment header
                                -> AnchoredFragment header -> Bool,

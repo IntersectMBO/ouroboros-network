@@ -74,7 +74,9 @@ calculatePeerFetchInFlightLimits PeerGSV {
         seconds = realToFrac
       --FIXME: s is now a function of bytes, not unit seconds / octet
 
-    d = 2e-3 -- 2 milliseconds
+    d = 2e-2 -- 20 milliseconds, we desire to make a new descison every 10ms.
+             -- This gives us some margin.
+
     -- But note that the minimum here is based on the assumption that we can
     -- react as the /leading/ edge of the low watermark arrives, but in fact
     -- we can only react when the /trailing/ edge arrives. So when we 

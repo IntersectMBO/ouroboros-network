@@ -913,6 +913,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   bfcMaxConcurrencyBulkSync = 1
                 , bfcMaxConcurrencyDeadline = 2
                 , bfcMaxRequestsInflight    = 10
+                , bfcDecisionLoopInterval   = 0.0 -- Mock testsuite can use sub-second slot
+                                                  -- interval which doesn't play nice with
+                                                  -- blockfetch descision interval.
                 }
             }
 

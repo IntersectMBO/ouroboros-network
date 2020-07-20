@@ -380,7 +380,12 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                       (contramap show stdoutTracer) -- state tracer
                       blockFetchPolicy
                       registry
-                      (BlockFetchConfiguration 1 1 10)
+                      (BlockFetchConfiguration {
+                        bfcMaxConcurrencyBulkSync = 1,
+                        bfcMaxConcurrencyDeadline = 2,
+                        bfcMaxRequestsInflight    = 10,
+                        bfcDecisionLoopInterval   = 0.01
+                        })
                  >> return ()
 
     chainAsync <- async (chainSelection Map.empty)
