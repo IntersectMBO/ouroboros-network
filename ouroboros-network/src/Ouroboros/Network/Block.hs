@@ -295,7 +295,7 @@ getTipBlockNo (Tip _ _ b) = At b
 
 getTipSlotNo :: Tip b -> WithOrigin SlotNo
 getTipSlotNo TipGenesis  = Origin
-getTipSlotNo (Tip b _ _) = At b
+getTipSlotNo (Tip s _ _) = At s
 
 -- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
 --
