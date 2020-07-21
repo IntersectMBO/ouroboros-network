@@ -39,6 +39,7 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
+import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
@@ -53,6 +54,7 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
+import qualified Test.QuickCheck.Exception as QC
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -273,6 +275,7 @@ type EdgeStatusVar m = StrictTVar m EdgeStatus
 runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , MonadTimer m
+                    , MonadThrow.MonadEvaluate m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
@@ -637,8 +640,38 @@ runThreadNetwork systemTime ThreadNetworkArgs
         ledger <- atomically $ ledgerState <$> getExtLedger
         -- Combine the node's seed with the current slot number, to make sure
         -- we generate different transactions in each slot.
-        let txs = runGen (nodeSeed `combineWith` unSlotNo curSlotNo) $
-                    testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
+        let genTxs i =
+                runGen
+                  (nodeSeed `combineWith` unSlotNo curSlotNo `combineWith` i)
+                  (testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger)
+
+        -- These TxGen generators fail by invoking 'QC.discard'. We try many
+        -- times before actually giving up. When we give up, it fatal, not just
+        -- a discard.
+        let loop acc = do
+                let txs = genTxs acc
+                lr <- tryJust isDiscard $ MonadThrow.evaluate $ seqList txs
+                case lr of
+                  Right _ -> pure txs
+                  Left  _ ->
+                      if acc < accLimit then loop (acc + 1) else
+                      MonadThrow.throwM (TxGenFailure accLimit)
+              where
+                seqList :: forall a. [a] -> ()
+                seqList = \case
+                    []   -> ()
+                    x:xs -> x `seq` seqList xs
+
+                isDiscard :: Exn.SomeException -> Maybe ()
+                isDiscard = guard . QC.isDiscard
+
+                -- At time of writing, a RealTPraos test run maxed out at about
+                -- 85 consecutive failures here.
+                --
+                -- TODO Better justification.
+                accLimit = 1000 :: Int
+
+        txs <- loop (1 :: Int)
         void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
@@ -1610,3 +1643,9 @@ data JitEbbError blk
 
 deriving instance LedgerSupportsProtocol blk => Show (JitEbbError blk)
 instance LedgerSupportsProtocol blk => Exception (JitEbbError blk)
+
+-- | The 'TxGen' generator consecutively failed too many times
+data TxGenFailure = TxGenFailure Int   -- ^ how many times it failed
+  deriving (Show)
+
+instance Exception TxGenFailure
