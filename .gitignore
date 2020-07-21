@@ -48,3 +48,6 @@ doc/*.fls
 doc/*.synctex.gz
 
 haddocks/
+
+# Visual Studio Code
+/.vscode
