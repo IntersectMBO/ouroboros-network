@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
@@ -12,7 +13,10 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
   , proxySingle
     -- * Era index
   , EraIndex(..)
-  , emptyEraIndex
+  , eraIndexEmpty
+  , eraIndexFromNS
+  , eraIndexZero
+  , eraIndexSucc
   ) where
 
 import           Codec.Serialise
@@ -31,6 +35,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Info
@@ -110,6 +115,17 @@ instance All SingleEraBlock xs => Show (EraIndex xs) where
           . singleEraName
           $ singleEraInfo (Proxy @blk)
 
+instance All SingleEraBlock xs => Condense (EraIndex xs) where
+  condense = hcollapse . hcmap proxySingle getEraName . getEraIndex
+    where
+      getEraName :: forall blk. SingleEraBlock blk
+                 => K () blk -> K String blk
+      getEraName _ =
+            K
+          . Text.unpack
+          . singleEraName
+          $ singleEraInfo (Proxy @blk)
+
 instance SListI xs => Serialise (EraIndex xs) where
   encode = encode . nsToIndex . getEraIndex
   decode = do
@@ -118,5 +134,14 @@ instance SListI xs => Serialise (EraIndex xs) where
       Nothing       -> fail $ "EraIndex: invalid index " <> show idx
       Just eraIndex -> return (EraIndex eraIndex)
 
-emptyEraIndex :: EraIndex '[] -> Void
-emptyEraIndex (EraIndex ns) = case ns of {}
+eraIndexEmpty :: EraIndex '[] -> Void
+eraIndexEmpty (EraIndex ns) = case ns of {}
+
+eraIndexFromNS :: SListI xs => NS f xs -> EraIndex xs
+eraIndexFromNS = EraIndex . hmap (const (K ()))
+
+eraIndexZero :: EraIndex (x ': xs)
+eraIndexZero = EraIndex (Z (K ()))
+
+eraIndexSucc :: EraIndex xs -> EraIndex (x ': xs)
+eraIndexSucc (EraIndex ix) = EraIndex (S ix)

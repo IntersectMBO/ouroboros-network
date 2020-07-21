@@ -583,7 +583,7 @@ data TraceAddBlockEvent blk =
     -- fragment) and we have successfully used it to extend our (new) current
     -- chain (second fragment).
   | AddedToCurrentChain
-      [LedgerWarning blk]
+      [LedgerEvent blk]
       (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
@@ -592,7 +592,7 @@ data TraceAddBlockEvent blk =
     -- (second fragment), as it is preferable to our (previous) current chain
     -- (first fragment).
   | SwitchedToAFork
-      [LedgerWarning blk]
+      [LedgerEvent blk]
       (NewTipInfo blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))

@@ -31,7 +31,6 @@ import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
-import           Data.Void
 
 import           Cardano.Prelude (Natural)
 
@@ -335,9 +334,10 @@ protocolClientInfoShelley =
   Inspection
 -------------------------------------------------------------------------------}
 
+-- TODO: This should be updated as soon as we start preparing for the
+-- hard fork transition out of Shelley.
 instance InspectLedger (ShelleyBlock c) where
-  type LedgerWarning (ShelleyBlock c) = Void
-  inspectLedger _ _ = []
+  -- Use defaults
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance
@@ -369,4 +369,3 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     where
       TPraosParams { tpraosSlotsPerKESPeriod } =
         tpraosParams $ configConsensus cfg
-

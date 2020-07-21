@@ -73,7 +73,7 @@ toValidatedFragment
   => ValidatedChainDiff b l
   -> ValidatedFragment b l
 toValidatedFragment (UnsafeValidatedChainDiff cs l) =
-    VF.new (Diff.getSuffix cs) l
+    VF.ValidatedFragment (Diff.getSuffix cs) l
 
 rollbackExceedsSuffix :: HasHeader b => ValidatedChainDiff b l -> Bool
 rollbackExceedsSuffix = Diff.rollbackExceedsSuffix . getChainDiff

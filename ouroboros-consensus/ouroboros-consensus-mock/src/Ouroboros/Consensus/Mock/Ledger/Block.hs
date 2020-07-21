@@ -70,7 +70,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -476,8 +475,7 @@ instance (SimpleCrypto c, Typeable ext)
 -------------------------------------------------------------------------------}
 
 instance InspectLedger (SimpleBlock c ext) where
-  type LedgerWarning (SimpleBlock c ext) = Void
-  inspectLedger _ _ = []
+  -- Use defaults
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

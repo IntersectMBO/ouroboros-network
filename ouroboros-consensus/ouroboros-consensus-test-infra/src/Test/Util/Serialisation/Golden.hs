@@ -34,7 +34,6 @@ import           Control.Exception (SomeException, evaluate, try)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.UTF8 as BS.UTF8
-import           Data.List (intercalate)
 import           Data.List (nub)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -435,12 +434,8 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
 deriving instance Generic TermToken
 deriving instance ToExpr  TermToken
 
-instance Condense FlatTerm where
-  condense [] = "[]"
-  condense (x:ys) = intercalate "\n" $
-      [ "[ " <> show x ] <>
-      [ ", " <> show y | y <- ys ] <>
-      [ "]" ]
+instance Condense TermToken where
+  condense = show
 
 {-------------------------------------------------------------------------------
   Diffing Cbor

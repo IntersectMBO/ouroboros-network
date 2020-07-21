@@ -188,7 +188,9 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
 
 instance InspectLedger ByronBlock where
   type LedgerWarning ByronBlock = Void
-  inspectLedger _ _ = []
+  type LedgerUpdate  ByronBlock = Void -- TODO
+
+  inspectLedger _ _ _ = []
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance

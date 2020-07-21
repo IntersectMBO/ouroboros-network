@@ -127,6 +127,9 @@ instance Arbitrary L.Tx where
          <$> pure mempty  -- For simplicity
          <*> arbitrary
 
+instance Arbitrary L.Addr where
+  arbitrary = elements ["a", "b", "c"]
+
 instance Arbitrary (L.MockState blk) where
   arbitrary = return $ L.MockState {
         mockUtxo      = Map.empty

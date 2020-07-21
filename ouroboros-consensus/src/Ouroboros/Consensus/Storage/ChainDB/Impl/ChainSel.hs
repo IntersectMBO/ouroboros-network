@@ -111,7 +111,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
     -- We use the empty fragment anchored at @i@ as the current chain (and
     -- ledger) and the default in case there is no better candidate.
     let curChain          = Empty (AF.castAnchor i)
-        curChainAndLedger = VF.new curChain ledger
+        curChainAndLedger = VF.ValidatedFragment curChain ledger
 
     case NE.nonEmpty (filter (preferAnchoredCandidate cfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
@@ -132,7 +132,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
       case chainDiff of
         ChainDiff rollback suffix
           | rollback == 0
-          -> VF.new suffix ledger
+          -> VF.ValidatedFragment suffix ledger
           | otherwise
           -> error "constructed an initial chain with rollback"
 
@@ -431,7 +431,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to
           -- reason about when doing chain selection, etc.
           assert (fromIntegral (AF.length curChain) <= k) $
-          VF.new curChain ledgerDB
+          VF.ValidatedFragment curChain ledgerDB
 
         immBlockNo :: WithOrigin BlockNo
         immBlockNo = AF.anchorBlockNo curChain
@@ -548,7 +548,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           Nothing          -> return curTip
           Just chainDiffs' ->
             chainSelection chainSelEnv chainDiffs' >>= \case
-              Nothing                 ->
+              Nothing ->
                 return curTip
               Just validatedChainDiff ->
                 switchTo validatedChainDiff AddedToCurrentChain
@@ -658,7 +658,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
       :: HasCallStack
       => ValidatedChainDiff (Header blk) (LgrDB.LedgerDB blk)
          -- ^ Chain and ledger to switch to
-      -> (    [LedgerWarning blk]
+      -> (    [LedgerEvent blk]
            -> NewTipInfo blk
            -> AnchoredFragment (Header blk)
            -> AnchoredFragment (Header blk)
@@ -668,8 +668,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
     switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
-        (curChain, newChain, warnings) <- atomically $ do
-          curChain <- readTVar cdbChain
+        (curChain, newChain, events) <- atomically $ do
+          curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
+          curLedger <- LgrDB.getCurrent cdbLgrDB
           case Diff.apply curChain chainDiff of
             -- Impossible, as described in the docstring
             Nothing       ->
@@ -679,8 +680,11 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               LgrDB.setCurrent cdbLgrDB newLedger
 
               -- Inspect the new ledger for potential problems
-              let warnings = inspectLedger cdbTopLevelConfig $
-                               ledgerState (LgrDB.ledgerDbCurrent newLedger)
+              let events :: [LedgerEvent blk]
+                  events = inspectLedger
+                             cdbTopLevelConfig
+                             (ledgerState $ LgrDB.ledgerDbCurrent curLedger)
+                             (ledgerState $ LgrDB.ledgerDbCurrent newLedger)
 
               -- Update the readers
               --
@@ -691,9 +695,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               forM_ readerHandles $ \readerHandle ->
                 rhSwitchFork readerHandle ipoint newChain
 
-              return (curChain, newChain, warnings)
+              return (curChain, newChain, events)
 
-        trace $ mkTraceEvent warnings (mkNewTipInfo newLedger) curChain newChain
+        trace $ mkTraceEvent events (mkNewTipInfo newLedger) curChain newChain
         traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain

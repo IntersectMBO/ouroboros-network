@@ -351,15 +351,46 @@ instance HasNestedContent Header BlockA where
 instance ReconstructNestedCtxt Header BlockA
   -- Use defaults
 
+data UpdateA =
+   ProposalSubmitted
+ | ProposalStable
+ deriving (Show, Eq)
+
+instance Condense UpdateA where
+  condense = show
+
 instance InspectLedger BlockA where
   type LedgerWarning BlockA = Void
-  inspectLedger _ _ = []
+  type LedgerUpdate  BlockA = UpdateA
+
+  inspectLedger cfg before after =
+     case (getConfirmationDepth before, getConfirmationDepth after) of
+       (Nothing, Just _) ->
+         return $ LedgerUpdate ProposalSubmitted
+       (Just (_, d), Just (_, d')) -> do
+         guard $ d < k && d' >= k
+         return $ LedgerUpdate ProposalStable
+       _otherwise ->
+         []
+    where
+      k = stabilityWindowA (lcfgA_k (snd (configLedger cfg)))
+
+getConfirmationDepth :: LedgerState BlockA -> Maybe (SlotNo, Word64)
+getConfirmationDepth st = do
+    confirmedInSlot <- lgrA_transition st
+    return $ case ledgerTipSlot st of
+               Origin      -> error "impossible"
+               NotOrigin s -> if s < confirmedInSlot
+                                then error "impossible"
+                                else ( confirmedInSlot
+                                     , History.countSlots s confirmedInSlot
+                                     )
 
 instance SingleEraBlock BlockA where
   singleEraInfo _ = SingleEraInfo "A"
 
   singleEraTransition cfg EraParams{..} eraStart st = do
-      confirmedInSlot <- lgrA_transition st
+      (confirmedInSlot, confirmationDepth) <- getConfirmationDepth st
 
       -- The ledger must report the scheduled transition to the next era as soon
       -- as the block containing this transaction is immutable (that is, at
@@ -367,12 +398,6 @@ instance SingleEraBlock BlockA where
       -- corresponding 'SingleEraBlock' instance. It must not report it sooner
       -- than that because the consensus layer requires that conversions about
       -- time (when successful) must not be subject to rollback.
-      let confirmationDepth =
-            case ledgerTipSlot st of
-              Origin      -> error "impossible"
-              NotOrigin s -> if s < confirmedInSlot
-                               then error "impossible"
-                               else History.countSlots s confirmedInSlot
       guard $ confirmationDepth >= stabilityWindowA (lcfgA_k cfg)
 
       -- Consensus /also/ insists that as long as the transition to the next era

@@ -1,17 +1,37 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Ouroboros.Consensus.Mock.Ledger.Address (
     Addr
   , AddrDist
   , mkAddrDist
   ) where
 
+import           Codec.Serialise (Serialise)
+import           Control.DeepSeq (NFData)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.String
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.Util.Condense
 
 -- | Mock address
-type Addr = String
+newtype Addr = Addr String
+  deriving (
+      Show
+    , Eq
+    , Ord
+    , IsString
+    , Serialise
+    , NFData
+    , NoUnexpectedThunks
+    )
+
+instance Condense Addr where
+  condense (Addr addr) = addr
 
 -- | Mapping from addresses to node IDs
 --
@@ -21,7 +41,7 @@ type AddrDist = Map Addr NodeId
 -- | Construct address to node ID mapping
 mkAddrDist :: NumCoreNodes -> AddrDist
 mkAddrDist numCoreNodes =
-    Map.fromList $ zip [ [addr] | addr <- ['a'..] ]
+    Map.fromList $ zip [ fromString [addr] | addr <- ['a'..] ]
                        [ CoreId nid
                        | nid <- enumCoreNodes numCoreNodes
                        ]
