@@ -85,6 +85,10 @@ library
                        Ouroboros.Network.Protocol.LocalStateQuery.Server
                        Ouroboros.Network.Protocol.LocalStateQuery.Type
                        Ouroboros.Network.Protocol.LocalTxMonitor.Type
+                       Ouroboros.Network.Protocol.TipSample.Type
+                       Ouroboros.Network.Protocol.TipSample.Client
+                       Ouroboros.Network.Protocol.TipSample.Server
+                       Ouroboros.Network.Protocol.TipSample.Codec
                        Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Server
@@ -195,6 +199,9 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Protocol.TipSample.Direct
+                       Ouroboros.Network.Protocol.TipSample.Examples
+                       Ouroboros.Network.Protocol.TipSample.Test
                        Ouroboros.Network.Protocol.TxSubmission.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Test
@@ -217,6 +224,7 @@ library ouroboros-protocol-tests
                        text,
 
                        cardano-prelude,
+                       cardano-slotting,
                        contra-tracer,
 
                        io-sim,
