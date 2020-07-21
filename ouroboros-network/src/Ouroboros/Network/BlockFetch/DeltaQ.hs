@@ -12,6 +12,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     calculatePeerFetchInFlightLimits,
     estimateResponseDeadlineProbability,
     estimateExpectedResponseDuration,
+    comparePeerGSV,
 --    estimateBlockFetchResponse,
 --    blockArrivalShedule,
   ) where
@@ -27,6 +28,16 @@ data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
        inFlightBytesLowWatermark  :: SizeInBytes
      }
   deriving Show
+
+-- Order two PeerGSVs based on `g`.
+comparePeerGSV :: PeerGSV -> PeerGSV -> Ordering
+comparePeerGSV a b = compare (gs a) (gs b)
+  where
+    gs :: PeerGSV -> DiffTime
+    gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
+                 inboundGSV  = GSV g_in  _s_in  _v_in
+               } = g_out + g_in
+
 
 calculatePeerFetchInFlightLimits :: PeerGSV -> PeerFetchInFlightLimits
 calculatePeerFetchInFlightLimits PeerGSV {
@@ -63,13 +74,20 @@ calculatePeerFetchInFlightLimits PeerGSV {
     -- more). Lets say our maximum schedule delay is @d@ seconds.
     --
     inFlightBytesLowWatermark =
-        ceiling (seconds (g_out + g_in + d) / seconds (s_in 1))
+        max minLowWaterMark (ceiling (seconds (g_out + g_in + d) / seconds (s_in 1)))
       where
+        -- To ensure that blockfetch can do pipelining we enforce a minimal
+        -- low water mark of at least 3 64k blocks
+        minLowWaterMark :: SizeInBytes
+        minLowWaterMark = 3 * 64 * 1024
+
         seconds :: DiffTime -> Fixed.Pico
         seconds = realToFrac
       --FIXME: s is now a function of bytes, not unit seconds / octet
 
-    d = 2e-3 -- 2 milliseconds
+    d = 2e-2 -- 20 milliseconds, we desire to make a new descison every 10ms.
+             -- This gives us some margin.
+
     -- But note that the minimum here is based on the assumption that we can
     -- react as the /leading/ edge of the low watermark arrives, but in fact
     -- we can only react when the /trailing/ edge arrives. So when we 

@@ -128,7 +128,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
-          (BlockFetchConfiguration 2 1 10)
+          (BlockFetchConfiguration {
+            bfcMaxConcurrencyBulkSync = 1,
+            bfcMaxConcurrencyDeadline = 2,
+            bfcMaxRequestsInflight    = 10,
+            bfcDecisionLoopInterval   = 0.01
+          })
         >> return ()
 
     driver :: TestFetchedBlockHeap m Block -> m ()

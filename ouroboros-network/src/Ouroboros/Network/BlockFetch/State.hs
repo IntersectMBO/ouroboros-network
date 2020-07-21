@@ -23,6 +23,8 @@ import qualified Data.Set as Set
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
@@ -53,9 +55,14 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
 
 
 fetchLogicIterations
-  :: (MonadSTM m, Ord peer,
-      HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
+  :: ( HasHeader header
+     , HasHeader block
+     , HeaderHash header ~ HeaderHash block
+     , MonadDelay m
+     , MonadMonotonicTime m
+     , MonadSTM m
+     , Ord peer
+     )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
@@ -67,19 +74,24 @@ fetchLogicIterations decisionTracer clientStateTracer
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
 
-    iterateForever initialFetchStateFingerprint $ \stateFingerprint ->
+    iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
 
       -- Run a single iteration of the fetch logic:
       --
       -- + wait for the state to change and make decisions for the new state
       -- + act on those decisions
-
-      fetchLogicIteration
+      start <- getMonotonicTime
+      stateFingerprint' <- fetchLogicIteration
         decisionTracer clientStateTracer
         fetchDecisionPolicy
         fetchTriggerVariables
         fetchNonTriggerVariables
         stateFingerprint
+      end <- getMonotonicTime
+      let delta = diffTime end start
+      -- Limit descision making to once every decisionLoopInterval.
+      threadDelay $ (decisionLoopInterval fetchDecisionPolicy) - delta
+      return stateFingerprint'
 
 
 iterateForever :: Monad m => a -> (a -> m a) -> m Void
@@ -136,7 +148,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- Trace the batch of fetch decisions
     traceWith decisionTracer
       [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
-      | (decision, (_, _, _, (_, peer))) <- decisions ]
+      | (decision, (_, _, _, peer, _)) <- decisions ]
 
     -- Tell the fetch clients to act on our decisions
     statusUpdates <- fetchLogicIterationAct clientStateTracer
@@ -147,7 +159,7 @@ fetchLogicIteration decisionTracer clientStateTracer
 
     return stateFingerprint''
   where
-    swizzleReqVar (d,(_,_,g,(rq,p))) = (d,g,rq,p)
+    swizzleReqVar (d,(_,_,g,_,(rq,p))) = (d,g,rq,p)
 
     fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
     fetchRequestPoints (FetchRequest headerss) =
@@ -166,7 +178,7 @@ fetchDecisionsForStateSnapshot
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
-        PeerInfo header (FetchClientStateVars m header, peer)
+        PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
 
 fetchDecisionsForStateSnapshot
@@ -201,7 +213,7 @@ fetchDecisionsForStateSnapshot
         fetchStatePeerGSVs
 
     swizzle (peer, ((chain, (status, inflight, vars)), gsvs)) =
-      (chain, (status, inflight, gsvs, (vars, peer)))
+      (chain, (status, inflight, gsvs, peer, (vars, peer)))
 
 
 -- | Act on decisions to send new requests. In fact all we do here is update
