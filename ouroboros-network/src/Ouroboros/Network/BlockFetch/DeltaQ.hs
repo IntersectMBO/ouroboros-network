@@ -12,7 +12,6 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     calculatePeerFetchInFlightLimits,
     estimateResponseDeadlineProbability,
     estimateExpectedResponseDuration,
-    comparePeerGSV,
 --    estimateBlockFetchResponse,
 --    blockArrivalShedule,
   ) where
@@ -28,16 +27,6 @@ data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
        inFlightBytesLowWatermark  :: SizeInBytes
      }
   deriving Show
-
--- Order two PeerGSVs based on `g`.
-comparePeerGSV :: PeerGSV -> PeerGSV -> Ordering
-comparePeerGSV a b = compare (gs a) (gs b)
-  where
-    gs :: PeerGSV -> DiffTime
-    gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
-                 inboundGSV  = GSV g_in  _s_in  _v_in
-               } = g_out + g_in
-
 
 calculatePeerFetchInFlightLimits :: PeerGSV -> PeerFetchInFlightLimits
 calculatePeerFetchInFlightLimits PeerGSV {
