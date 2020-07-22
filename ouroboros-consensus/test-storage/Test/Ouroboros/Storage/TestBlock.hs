@@ -75,7 +75,6 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
-import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -671,8 +670,7 @@ instance HasHardForkHistory TestBlock where
   hardForkSummary = neverForksHardForkSummary id
 
 instance InspectLedger TestBlock where
-  type LedgerWarning TestBlock = Void
-  inspectLedger _ _ = []
+  -- Use defaults
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

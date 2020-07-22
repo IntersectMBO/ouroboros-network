@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -10,11 +11,10 @@
 -- > import Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 -- > import qualified Ouroboros.Consensus.Fragment.Validated as VF
 module Ouroboros.Consensus.Fragment.Validated (
-    ValidatedFragment -- Opaque
+    ValidatedFragment(ValidatedFragment)
   , validatedFragment
   , validatedLedger
   , validatedTip
-  , new
   ) where
 
 import           GHC.Stack
@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Util.Assert
 -- INVARIANT:
 --
 -- > AF.headPoint validatedFragment == ledgerTipPoint validatedLedger
-data ValidatedFragment b l = ValidatedFragment {
+data ValidatedFragment b l = UnsafeValidatedFragment {
       -- | Chain fragment
       validatedFragment :: !(AnchoredFragment b)
 
@@ -39,6 +39,15 @@ data ValidatedFragment b l = ValidatedFragment {
     , validatedLedger   :: !l
     }
   deriving (Functor)
+
+{-# COMPLETE ValidatedFragment #-}
+
+pattern ValidatedFragment ::
+     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
+  => AnchoredFragment b -> l -> ValidatedFragment b l
+pattern ValidatedFragment f l <- UnsafeValidatedFragment f l
+  where
+    ValidatedFragment f l = new f l
 
 validatedTip :: HasHeader b => ValidatedFragment b l -> Point b
 validatedTip = AF.headPoint . validatedFragment
@@ -48,7 +57,7 @@ invariant ::
      (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l)
   => ValidatedFragment b l
   -> Either String ()
-invariant ValidatedFragment{..}
+invariant (ValidatedFragment fragment ledger)
     | ledgerTip /= headPoint
     = Left $ concat [
           "ledger tip "
@@ -60,8 +69,8 @@ invariant ValidatedFragment{..}
     = Right ()
   where
    ledgerTip, headPoint :: Point b
-   ledgerTip = castPoint $ getTip validatedLedger
-   headPoint = castPoint $ AF.headPoint validatedFragment
+   ledgerTip = castPoint $ getTip ledger
+   headPoint = castPoint $ AF.headPoint fragment
 
 -- | Constructor for 'ValidatedFragment' that checks the invariant
 new ::
@@ -75,7 +84,7 @@ new fragment ledger =
       validated
   where
     validated :: ValidatedFragment b l
-    validated = ValidatedFragment {
+    validated = UnsafeValidatedFragment {
           validatedFragment = fragment
         , validatedLedger   = ledger
         }

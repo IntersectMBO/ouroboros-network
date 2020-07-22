@@ -472,6 +472,7 @@ prop_general_internal syncity pga testOutput =
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
     tabulate "average #txs/block" [show (range averageNumTxs)] $
+    tabulate "updates" [unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeUpdates))] $
     prop_no_BlockRejections .&&.
     prop_no_unexpected_CannotLeads .&&.
     prop_no_invalid_blocks .&&.
@@ -620,6 +621,7 @@ prop_general_internal syncity pga testOutput =
 
     nodeChains    = nodeOutputFinalChain <$> testOutputNodes
     nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
+    nodeUpdates   = nodeOutputUpdates    <$> testOutputNodes
 
     isConsensusExpected :: Bool
     isConsensusExpected = consensusExpected k nodeJoinPlan schedule

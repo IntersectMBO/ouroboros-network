@@ -20,6 +20,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
     HardForkLedgerError(..)
   , HardForkLedgerWarning(..)
+  , HardForkLedgerUpdate(..)
   , HardForkEnvelopeErr(..)
     -- * Type family instances
   , Ticked(..)
@@ -48,6 +49,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -510,7 +512,8 @@ shiftView past TickedHardForkLedgerView{..} = TickedHardForkLedgerView {
 -------------------------------------------------------------------------------}
 
 data HardForkLedgerWarning xs =
-    HardForkLedgerWarningInEra (OneEraLedgerWarning xs)
+    -- | Warning from the underlying era
+    HardForkWarningInEra (OneEraLedgerWarning xs)
 
     -- | The transition to the next era does not match the 'EraParams'
     --
@@ -519,70 +522,248 @@ data HardForkLedgerWarning xs =
     -- /before/ this lower bound, the node is misconfigured and will likely
     -- not work correctly. This should be taken care of as soon as possible
     -- (before the transition happens).
-  | HardForkLedgerWarningUnexpectedTransition EraParams EpochNo
+  | HardForkWarningTransitionMismatch (EraIndex xs) EraParams EpochNo
+
+    -- | Transition in the final era
+    --
+    -- The final era should never confirm any transitions. For clarity, we also
+    -- record the index of that final era.
+  | HardForkWarningTransitionInFinalEra (EraIndex xs) EpochNo
+
+    -- | An already-confirmed transition got un-confirmed
+  | HardForkWarningTransitionUnconfirmed (EraIndex xs)
+
+    -- | An already-confirmed transition got changed
+    --
+    -- We record the indices of the era we are transitioning from and to,
+    -- as well as the old and new 'EpochNo' of that transition, in that order.
+  | HardForkWarningTransitionReconfirmed (EraIndex xs) (EraIndex xs) EpochNo EpochNo
+
+data HardForkLedgerUpdate xs =
+    HardForkUpdateInEra (OneEraLedgerUpdate xs)
+
+    -- | Hard fork transition got confirmed
+  | HardForkUpdateTransitionConfirmed (EraIndex xs) (EraIndex xs) EpochNo
+
+    -- | Hard fork transition happened
+    --
+    -- We record the 'EpochNo' at the start of the era after the transition
+  | HardForkUpdateTransitionDone (EraIndex xs) (EraIndex xs) EpochNo
+
+    -- | The hard fork transition rolled back
+  | HardForkUpdateTransitionRolledBack (EraIndex xs) (EraIndex xs)
 
 deriving instance CanHardFork xs => Show (HardForkLedgerWarning xs)
 deriving instance CanHardFork xs => Eq   (HardForkLedgerWarning xs)
 
+deriving instance CanHardFork xs => Show (HardForkLedgerUpdate xs)
+deriving instance CanHardFork xs => Eq   (HardForkLedgerUpdate xs)
+
+instance CanHardFork xs => Condense (HardForkLedgerUpdate xs) where
+  condense (HardForkUpdateInEra (OneEraLedgerUpdate update)) =
+      hcollapse $ hcmap proxySingle (K . condense . unwrapLedgerUpdate) update
+  condense (HardForkUpdateTransitionConfirmed ix ix' t) =
+      "confirmed " ++ condense (ix, ix', t)
+  condense (HardForkUpdateTransitionDone ix ix' e) =
+      "done " ++ condense (ix, ix', e)
+  condense (HardForkUpdateTransitionRolledBack ix ix') =
+      "rolled back " ++ condense (ix, ix')
+
 instance CanHardFork xs => InspectLedger (HardForkBlock xs) where
   type LedgerWarning (HardForkBlock xs) = HardForkLedgerWarning xs
+  type LedgerUpdate  (HardForkBlock xs) = HardForkLedgerUpdate  xs
 
-  inspectLedger cfg (HardForkLedgerState st) = concat [
-        -- Inspect the underlying ledger
-          hcollapse
-        . hczipWith3 proxySingle inspectOne cfgs injections
-        $ State.tip st
-
-        -- Hard fork specific warnings
-      ,   hcollapse
-        . hczipWith3 proxySingle additionalChecks pcfgs shape
-        $ Telescope.tip (getHardForkState st)
-      ]
+  inspectLedger cfg
+                (HardForkLedgerState before)
+                (HardForkLedgerState after) =
+      inspectHardForkLedger
+        pcfgs
+        shape
+        cfgs
+        (Telescope.tip (getHardForkState before))
+        (Telescope.tip (getHardForkState after))
     where
       HardForkLedgerConfig{..} = configLedger cfg
 
       pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       shape = History.getShape hardForkLedgerConfigShape
       cfgs  = distribTopLevelConfig ei cfg
-      ei    = State.epochInfoLedger (configLedger cfg) st
+      ei    = State.epochInfoLedger (configLedger cfg) after
 
-inspectOne :: forall blk xs. SingleEraBlock blk
-           => TopLevelConfig blk
-           -> Injection WrapLedgerWarning xs blk
-           -> LedgerState blk
-           -> K [HardForkLedgerWarning xs] blk
-inspectOne cfg inj st = K $ map aux $ inspectLedger cfg st
+inspectHardForkLedger ::
+     CanHardFork xs
+  => NP WrapPartialLedgerConfig xs
+  -> NP (K EraParams) xs
+  -> NP TopLevelConfig xs
+  -> NS (Current LedgerState) xs
+  -> NS (Current LedgerState) xs
+  -> [LedgerEvent (HardForkBlock xs)]
+inspectHardForkLedger = go
   where
-    aux :: LedgerWarning blk -> HardForkLedgerWarning xs
-    aux = HardForkLedgerWarningInEra
-        . OneEraLedgerWarning
-        . unK
-        . apFn inj
-        . WrapLedgerWarning
+    go :: All SingleEraBlock xs
+       => NP WrapPartialLedgerConfig xs
+       -> NP (K EraParams) xs
+       -> NP TopLevelConfig xs
+       -> NS (Current LedgerState) xs
+       -> NS (Current LedgerState) xs
+       -> [LedgerEvent (HardForkBlock xs)]
 
-additionalChecks :: SingleEraBlock blk
-                 => WrapPartialLedgerConfig blk
-                 -> K EraParams blk
-                 -> Current LedgerState blk
-                 -> K [HardForkLedgerWarning xs] blk
-additionalChecks (WrapPartialLedgerConfig pcfg) (K eraParams) Current{..} = K $
-    concat [
-        [ HardForkLedgerWarningUnexpectedTransition eraParams transition
-        | Just transition <- [singleEraTransition
-                                pcfg
-                                eraParams
-                                currentStart
-                                currentState]
-        , not $ validLowerBound
-                  (History.safeBeforeEpoch (History.eraSafeZone eraParams))
+    go (pc :* _) (K ps :* pss) (c :* _) (Z before) (Z after) = concat [
+          map liftEvent $
+            inspectLedger c (currentState before) (currentState after)
+
+        , case (pss, confirmedBefore, confirmedAfter) of
+            (_, Nothing, Nothing) ->
+              []
+            (_, Just _, Nothing) ->
+              -- TODO: This should be a warning, but this can currently happen
+              -- in Byron.
+              []
+              -- return $ LedgerWarning $
+              --   HardForkWarningTransitionUnconfirmed eraIndexZero
+            (Nil, Nothing, Just transition) ->
+              return $ LedgerWarning $
+                HardForkWarningTransitionInFinalEra eraIndexZero transition
+            (Nil, Just transition, Just transition') -> do
+              -- Only warn if the transition has changed
+              guard (transition /= transition')
+              return $ LedgerWarning $
+                HardForkWarningTransitionInFinalEra eraIndexZero transition
+            ((:*){}, Nothing, Just transition) ->
+              return $
+                if validLowerBound (History.safeBeforeEpoch safeZone) transition
+                  then LedgerUpdate $
+                         HardForkUpdateTransitionConfirmed
+                           eraIndexZero
+                           (eraIndexSucc eraIndexZero)
+                           transition
+                  else LedgerWarning $
+                         HardForkWarningTransitionMismatch
+                           eraIndexZero
+                           ps
+                           transition
+            ((:*){}, Just transition, Just transition') -> do
+              guard (transition /= transition')
+              return $ LedgerWarning $
+                HardForkWarningTransitionReconfirmed
+                  eraIndexZero
+                  (eraIndexSucc eraIndexZero)
                   transition
+                  transition'
         ]
-      ]
-  where
+      where
+        safeZone :: History.SafeZone
+        safeZone = History.eraSafeZone ps
+
+        confirmedBefore, confirmedAfter :: Maybe EpochNo
+        confirmedBefore = singleEraTransition
+                            (unwrapPartialLedgerConfig pc)
+                            ps
+                            (currentStart before)
+                            (currentState before)
+        confirmedAfter  = singleEraTransition
+                            (unwrapPartialLedgerConfig pc)
+                            ps
+                            (currentStart after)
+                            (currentState after)
+
+    go Nil _ _ before _ =
+        case before of {}
+    go (_ :* pcs) (_ :* pss) (_ :* cs) (S before) (S after) =
+        map shiftEvent $ go pcs pss cs before after
+    go _ _ _ (Z _) (S after) =
+        return $
+          LedgerUpdate $
+            HardForkUpdateTransitionDone
+              eraIndexZero
+              (eraIndexSucc $ eraIndexFromNS after)
+              (hcollapse $ hmap (K . boundEpoch . currentStart) after)
+    go _ _ _ (S before) (Z _) =
+        return $
+          LedgerUpdate $
+            HardForkUpdateTransitionRolledBack
+              (eraIndexSucc $ eraIndexFromNS before)
+              eraIndexZero
+
     validLowerBound :: Maybe History.SafeBeforeEpoch -> EpochNo -> Bool
     validLowerBound Nothing                       _  = False
     validLowerBound (Just History.NoLowerBound  ) _  = True
     validLowerBound (Just (History.LowerBound e)) e' = e' >= e
+
+{-------------------------------------------------------------------------------
+  Internal auxiliary: lifting and shifting events
+-------------------------------------------------------------------------------}
+
+liftEvent :: LedgerEvent x
+          -> LedgerEvent (HardForkBlock (x ': xs))
+liftEvent (LedgerWarning warning) = LedgerWarning $ liftWarning warning
+liftEvent (LedgerUpdate  update)  = LedgerUpdate  $ liftUpdate  update
+
+liftWarning :: LedgerWarning x -> HardForkLedgerWarning (x ': xs)
+liftWarning =
+      HardForkWarningInEra
+    . OneEraLedgerWarning
+    . Z
+    . WrapLedgerWarning
+
+liftUpdate :: LedgerUpdate x -> HardForkLedgerUpdate (x ': xs)
+liftUpdate =
+      HardForkUpdateInEra
+    . OneEraLedgerUpdate
+    . Z
+    . WrapLedgerUpdate
+
+shiftEvent :: LedgerEvent (HardForkBlock xs)
+           -> LedgerEvent (HardForkBlock (x ': xs))
+shiftEvent (LedgerWarning warning) = LedgerWarning $ shiftWarning warning
+shiftEvent (LedgerUpdate  update)  = LedgerUpdate  $ shiftUpdate  update
+
+shiftWarning :: HardForkLedgerWarning xs -> HardForkLedgerWarning (x ': xs)
+shiftWarning = go
+  where
+    go (HardForkWarningInEra (OneEraLedgerWarning warning)) =
+        HardForkWarningInEra
+          (OneEraLedgerWarning (S warning))
+    go (HardForkWarningTransitionMismatch ix ps t) =
+        HardForkWarningTransitionMismatch
+          (eraIndexSucc ix)
+          ps
+          t
+    go (HardForkWarningTransitionInFinalEra ix t) =
+        HardForkWarningTransitionInFinalEra
+          (eraIndexSucc ix)
+          t
+    go (HardForkWarningTransitionUnconfirmed ix) =
+        HardForkWarningTransitionUnconfirmed
+          (eraIndexSucc ix)
+    go (HardForkWarningTransitionReconfirmed ix ix' t t') =
+        HardForkWarningTransitionReconfirmed
+          (eraIndexSucc ix)
+          (eraIndexSucc ix')
+          t
+          t'
+
+shiftUpdate :: HardForkLedgerUpdate xs -> HardForkLedgerUpdate (x ': xs)
+shiftUpdate = go
+  where
+    go :: HardForkLedgerUpdate xs -> HardForkLedgerUpdate (x ': xs)
+    go (HardForkUpdateInEra (OneEraLedgerUpdate update)) =
+        HardForkUpdateInEra
+          (OneEraLedgerUpdate (S update))
+    go (HardForkUpdateTransitionConfirmed ix ix' t) =
+        HardForkUpdateTransitionConfirmed
+          (eraIndexSucc ix)
+          (eraIndexSucc ix')
+          t
+    go (HardForkUpdateTransitionDone ix ix' e) =
+        HardForkUpdateTransitionDone
+          (eraIndexSucc ix)
+          (eraIndexSucc ix')
+          e
+    go (HardForkUpdateTransitionRolledBack ix ix') =
+        HardForkUpdateTransitionRolledBack
+          (eraIndexSucc ix)
+          (eraIndexSucc ix')
 
 {-------------------------------------------------------------------------------
   Auxiliary

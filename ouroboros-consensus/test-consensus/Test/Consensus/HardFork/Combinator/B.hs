@@ -295,8 +295,7 @@ instance ReconstructNestedCtxt Header BlockB
   -- Use defaults
 
 instance InspectLedger BlockB where
-  type LedgerWarning BlockB = Void
-  inspectLedger _ _ = []
+  -- Use defaults
 
 instance SingleEraBlock BlockB where
   singleEraInfo _     = SingleEraInfo "B"

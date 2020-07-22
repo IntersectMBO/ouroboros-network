@@ -14,6 +14,7 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapHeaderHash(..)
   , WrapLedgerConfig(..)
   , WrapLedgerErr(..)
+  , WrapLedgerUpdate(..)
   , WrapLedgerWarning(..)
   , WrapTipInfo(..)
   , WrapFullBlockConfig(..)
@@ -63,6 +64,7 @@ newtype WrapGenTxId         blk = WrapGenTxId         { unwrapGenTxId         ::
 newtype WrapHeaderHash      blk = WrapHeaderHash      { unwrapHeaderHash      :: HeaderHash               blk }
 newtype WrapLedgerConfig    blk = WrapLedgerConfig    { unwrapLedgerConfig    :: LedgerConfig             blk }
 newtype WrapLedgerErr       blk = WrapLedgerErr       { unwrapLedgerErr       :: LedgerError              blk }
+newtype WrapLedgerUpdate    blk = WrapLedgerUpdate    { unwrapLedgerUpdate    :: LedgerUpdate             blk }
 newtype WrapLedgerWarning   blk = WrapLedgerWarning   { unwrapLedgerWarning   :: LedgerWarning            blk }
 newtype WrapTipInfo         blk = WrapTipInfo         { unwrapTipInfo         :: TipInfo                  blk }
 newtype WrapFullBlockConfig blk = WrapFullBlockConfig { unwrapFullBlockConfig :: FullBlockConfig (LedgerState blk) blk }
@@ -99,6 +101,7 @@ newtype WrapNodeToClientVersion blk = WrapNodeToClientVersion { unwrapNodeToClie
 deriving instance Eq (ApplyTxErr               blk) => Eq (WrapApplyTxErr    blk)
 deriving instance Eq (GenTxId                  blk) => Eq (WrapGenTxId       blk)
 deriving instance Eq (LedgerError              blk) => Eq (WrapLedgerErr     blk)
+deriving instance Eq (LedgerUpdate             blk) => Eq (WrapLedgerUpdate  blk)
 deriving instance Eq (LedgerWarning            blk) => Eq (WrapLedgerWarning blk)
 deriving instance Eq (OtherHeaderEnvelopeError blk) => Eq (WrapEnvelopeErr   blk)
 deriving instance Eq (TipInfo                  blk) => Eq (WrapTipInfo       blk)
@@ -109,6 +112,7 @@ deriving instance Show (ApplyTxErr               blk) => Show (WrapApplyTxErr   
 deriving instance Show (ExtraForgeState          blk) => Show (WrapExtraForgeState blk)
 deriving instance Show (GenTxId                  blk) => Show (WrapGenTxId         blk)
 deriving instance Show (LedgerError              blk) => Show (WrapLedgerErr       blk)
+deriving instance Show (LedgerUpdate             blk) => Show (WrapLedgerUpdate    blk)
 deriving instance Show (LedgerWarning            blk) => Show (WrapLedgerWarning   blk)
 deriving instance Show (OtherHeaderEnvelopeError blk) => Show (WrapEnvelopeErr     blk)
 deriving instance Show (TipInfo                  blk) => Show (WrapTipInfo         blk)

@@ -689,11 +689,13 @@ instance HasBinaryBlockInfo m => HasBinaryBlockInfo (DualBlock m a) where
 -- for it. We therefore just use the main block.
 instance InspectLedger m => InspectLedger (DualBlock m a) where
   type LedgerWarning (DualBlock m a) = LedgerWarning m
+  type LedgerUpdate  (DualBlock m a) = LedgerUpdate  m
 
-  inspectLedger cfg st =
+  inspectLedger cfg before after = map castLedgerEvent $
       inspectLedger
         (dualTopLevelConfigMain cfg)
-        (dualLedgerStateMain    st)
+        (dualLedgerStateMain    before)
+        (dualLedgerStateMain    after)
 
 {-------------------------------------------------------------------------------
   Auxiliary

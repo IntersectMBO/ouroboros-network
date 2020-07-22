@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
@@ -650,13 +651,15 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -- ^ added block tracer
            -> Tracer m (RealPoint blk, BlockNo)
               -- ^ block selection tracer
+           -> Tracer m (LedgerUpdate blk)
+              -- ^ ledger updates tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> CoreNodeId
            -> ChainDbArgs m blk
     mkArgs
       clock registry
       cfg initLedger
-      invalidTracer addTracer selTracer
+      invalidTracer addTracer selTracer updatesTracer
       nodeDBs _coreNodeId = ChainDbArgs
         { -- HasFS instances
           cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
@@ -701,12 +704,16 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedToCurrentChain warnings p _old new)
-              -> assertWithMsg (noWarnings warnings) $
+              (ChainDB.AddedToCurrentChain events p _old new)
+              -> let (warnings, updates) = partitionLedgerEvents events in
+                 assertWithMsg (noWarnings warnings) $ do
+                   mapM_ (traceWith updatesTracer) updates
                    traceWith selTracer (ChainDB.newTipPoint p, prj new)
           ChainDB.TraceAddBlockEvent
-              (ChainDB.SwitchedToAFork warnings p _old new)
-              -> assertWithMsg (noWarnings warnings) $
+              (ChainDB.SwitchedToAFork events p _old new)
+              -> let (warnings, updates) = partitionLedgerEvents events in
+                 assertWithMsg (noWarnings warnings) $ do
+                   mapM_ (traceWith updatesTracer) updates
                    traceWith selTracer (ChainDB.newTipPoint p, prj new)
 
           _   -> pure ()
@@ -744,7 +751,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
             } = nodeInfo
 
       -- prop_general relies on these tracers
-      let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
+      let invalidTracer = nodeEventsInvalids nodeInfoEvents
+          updatesTracer = nodeEventsUpdates  nodeInfoEvents
           wrapTracer tr   = Tracer $ \(p, bno) -> do
             s <- OracularClock.getCurrentSlot clock
             traceWith tr (s, p, bno)
@@ -757,6 +765,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             invalidTracer
             addTracer
             selTracer
+            updatesTracer
             nodeInfoDBs
             coreNodeId
       chainDB <- snd <$>
@@ -1318,6 +1327,8 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'ChainDB.AddedToCurrentChain' and 'ChainDB.SwitchedToAFork'
   , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
+  , nodeEventsUpdates     :: ev (LedgerUpdate blk)
+    -- ^ Ledger updates every time we adopt a block/switch to a fork
   }
 
 -- | A vector with an element for each database of a node
@@ -1344,9 +1355,10 @@ newNodeInfo = do
       (t4, m4) <- recordingTracerTVar
       (t5, m5) <- recordingTracerTVar
       (t6, m6) <- recordingTracerTVar
+      (t7, m7) <- recordingTracerTVar
       pure
-          ( NodeEvents     t1     t2     t3     t4     t5     t6
-          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5 <*> m6
+          ( NodeEvents     t1     t2     t3     t4     t5     t6     t7
+          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5 <*> m6 <*> m7
           )
 
   (nodeInfoDBs, readDBs) <- do
@@ -1381,6 +1393,7 @@ data NodeOutput blk = NodeOutput
   , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
   , nodeOutputNodeDBs     :: NodeDBs MockFS
   , nodeOutputSelects     :: Map SlotNo [(RealPoint blk, BlockNo)]
+  , nodeOutputUpdates     :: [LedgerUpdate blk]
   }
 
 data TestOutput blk = TestOutput
@@ -1413,6 +1426,7 @@ mkTestOutput vertexInfos = do
               , nodeEventsInvalids
               , nodeEventsSelects
               , nodeEventsTipBlockNos
+              , nodeEventsUpdates
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
               { nodeOutputAdds        =
@@ -1438,6 +1452,7 @@ mkTestOutput vertexInfos = do
                   ]
               , nodeOutputInvalids    = (:[]) <$> Map.fromList nodeEventsInvalids
               , nodeOutputNodeDBs     = nodeInfoDBs
+              , nodeOutputUpdates     = nodeEventsUpdates
               }
 
         pure

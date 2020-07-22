@@ -36,6 +36,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , OneEraEnvelopeErr(..)
   , OneEraValidationErr(..)
   , OneEraLedgerError(..)
+  , OneEraLedgerUpdate(..)
   , OneEraLedgerWarning(..)
   , OneEraValidateView(..)
   , OneEraSelectView(..)
@@ -102,6 +103,7 @@ newtype OneEraTipInfo       xs = OneEraTipInfo       { getOneEraTipInfo       ::
 newtype OneEraEnvelopeErr   xs = OneEraEnvelopeErr   { getOneEraEnvelopeErr   :: NS WrapEnvelopeErr   xs }
 newtype OneEraValidationErr xs = OneEraValidationErr { getOneEraValidationErr :: NS WrapValidationErr xs }
 newtype OneEraLedgerError   xs = OneEraLedgerError   { getOneEraLedgerError   :: NS WrapLedgerErr     xs }
+newtype OneEraLedgerUpdate  xs = OneEraLedgerUpdate  { getOneEraLedgerUpdate  :: NS WrapLedgerUpdate  xs }
 newtype OneEraLedgerWarning xs = OneEraLedgerWarning { getOneEraLedgerWarning :: NS WrapLedgerWarning xs }
 newtype OneEraValidateView  xs = OneEraValidateView  { getOneEraValidateView  :: NS WrapValidateView  xs }
 newtype OneEraSelectView    xs = OneEraSelectView    { getOneEraSelectView    :: NS WrapSelectView    xs }
@@ -276,6 +278,7 @@ deriving via LiftNS WrapApplyTxErr     xs instance CanHardFork xs => Eq (OneEraA
 deriving via LiftNS WrapEnvelopeErr    xs instance CanHardFork xs => Eq (OneEraEnvelopeErr    xs)
 deriving via LiftNS WrapGenTxId        xs instance CanHardFork xs => Eq (OneEraGenTxId        xs)
 deriving via LiftNS WrapLedgerErr      xs instance CanHardFork xs => Eq (OneEraLedgerError    xs)
+deriving via LiftNS WrapLedgerUpdate   xs instance CanHardFork xs => Eq (OneEraLedgerUpdate   xs)
 deriving via LiftNS WrapLedgerWarning  xs instance CanHardFork xs => Eq (OneEraLedgerWarning  xs)
 deriving via LiftNS WrapTipInfo        xs instance CanHardFork xs => Eq (OneEraTipInfo        xs)
 deriving via LiftNS WrapValidationErr  xs instance CanHardFork xs => Eq (OneEraValidationErr  xs)
@@ -287,6 +290,7 @@ deriving via LiftNP WrapExtraForgeState xs instance CanHardFork xs => Show (PerE
 deriving via LiftNP WrapChainSelConfig  xs instance CanHardFork xs => Show (PerEraChainSelConfig  xs)
 deriving via LiftNS WrapEnvelopeErr     xs instance CanHardFork xs => Show (OneEraEnvelopeErr     xs)
 deriving via LiftNS WrapLedgerErr       xs instance CanHardFork xs => Show (OneEraLedgerError     xs)
+deriving via LiftNS WrapLedgerUpdate    xs instance CanHardFork xs => Show (OneEraLedgerUpdate    xs)
 deriving via LiftNS WrapLedgerWarning   xs instance CanHardFork xs => Show (OneEraLedgerWarning   xs)
 deriving via LiftNS WrapTipInfo         xs instance CanHardFork xs => Show (OneEraTipInfo         xs)
 deriving via LiftNS WrapValidationErr   xs instance CanHardFork xs => Show (OneEraValidationErr   xs)

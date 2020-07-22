@@ -19,6 +19,7 @@ import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text, unpack)
+import           Data.Void
 import           Data.Word
 import           Formatting (build, sformat)
 import           Numeric.Natural
@@ -43,7 +44,8 @@ import qualified Ouroboros.Consensus.Util.HList as HList
 
 -- Imports from lower-level libs to avoid circular dependencies
 import           Cardano.Slotting.Block (BlockNo (..))
-import           Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
+import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
+                     WithOrigin (..))
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 
 {-------------------------------------------------------------------------------
@@ -69,8 +71,8 @@ condense1 = liftCondense condense
   Instances for standard types
 -------------------------------------------------------------------------------}
 
-instance Condense String where
-  condense = id
+instance Condense Void where
+  condense = absurd
 
 instance Condense Text where
   condense = unpack
@@ -105,10 +107,7 @@ instance Condense1 [] where
 instance Condense1 Set where
   liftCondense f = liftCondense f . Set.toList
 
-instance {-# OVERLAPPING #-} Condense [String] where
-  condense ss = "[" ++ intercalate "," ss ++ "]"
-
-instance {-# OVERLAPPABLE #-} Condense a => Condense [a] where
+instance Condense a => Condense [a] where
   condense = condense1
 
 instance Condense a => Condense (Maybe a) where
@@ -155,6 +154,9 @@ instance Condense BlockNo where
 
 instance Condense SlotNo where
   condense (SlotNo n) = show n
+
+instance Condense EpochNo where
+  condense (EpochNo n) = show n
 
 instance Condense (HeaderHash b) => Condense (ChainHash b) where
   condense GenesisHash   = "genesis"

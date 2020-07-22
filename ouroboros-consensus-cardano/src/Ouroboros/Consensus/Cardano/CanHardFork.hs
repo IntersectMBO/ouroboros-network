@@ -17,30 +17,23 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , ShelleyPartialLedgerConfig (..)
   ) where
 
-import           Control.Monad (guard)
 import           Control.Monad.Reader (runReader)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
 import           Data.Proxy
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
-import qualified Cardano.Chain.ProtocolConstants as CC
-import qualified Cardano.Chain.Slotting as CC
-import qualified Cardano.Chain.Update as CC.Update
-import qualified Cardano.Chain.Update.Validation.Endorsement as CC.Update
-import qualified Cardano.Chain.Update.Validation.Interface as CC.Update
-import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hashing as Hashing
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Update as CC.Update
+import qualified Cardano.Chain.UTxO as CC
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.History (Bound (..),
-                     EraParams (..))
-import qualified Ouroboros.Consensus.HardFork.History.Util as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
@@ -52,7 +45,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 
 import           Ouroboros.Consensus.Byron.Ledger
-import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
+import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
 import           Ouroboros.Consensus.Byron.Node ()
 import           Ouroboros.Consensus.Protocol.PBFT (PBft, PBftCrypto)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
@@ -132,78 +125,22 @@ import           Ouroboros.Consensus.Cardano.Block
 
 byronTransition :: PartialLedgerConfig ByronBlock
                 -> Word16   -- ^ Shelley major protocol version
-                -> EraParams
-                -> Bound
                 -> LedgerState ByronBlock
                 -> Maybe EpochNo
-byronTransition ByronPartialLedgerConfig{..}
-                shelleyMajorVersion
-                EraParams{..}
-                eraStart
-                st@ByronLedgerState{..} =
-      fmap cpuEpoch
-    . filterMaybe bumpsMajorProtocolVersion
-    . latest
-    . filter isStable
-    . CC.Update.candidateProtocolUpdates
-    . CC.cvsUpdateState
-    $ byronLedgerState
+byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion =
+      latest
+    . mapMaybe Byron.Inspect.isStableCandidate
+    . filter bumpsMajorProtocolVersion
+    . Byron.Inspect.protocolUpdates byronLedgerConfig
   where
-    k :: CC.BlockCount
-    k = CC.Genesis.gdK $ CC.Genesis.configGenesisData byronLedgerConfig
-
-    stableAfter, takesEffectAfter :: Word64
-    stableAfter      = CC.unSlotCount $ CC.kSlotSecurityParam    k
-    takesEffectAfter = CC.unSlotCount $ CC.kUpdateStabilityParam k
-
-    cpuSlot :: CC.Update.CandidateProtocolUpdate -> SlotNo
-    cpuSlot = Byron.fromByronSlotNo . CC.Update.cpuSlot
-
-    -- This follows the same structure as the computation in the A/B test. Let
-    -- @s@ be the slot the update proposal was endorsed (gathered enough
-    -- endorsements). Note that the very first slot in which the transition
-    -- /could/ occur is @s + 1@; adding the required stability, the first slot
-    -- in which the transition could occur is @s + 4k + 1@. This means that the
-    -- last slot which /must/ be in /this/ era is @s + 4k@. Hence the last
-    -- /epoch/ that must be in this era is @epoch (s + 4k)@, and the first epoch
-    -- of the /next/ era is @succ (epoch (s + 4k))@.
-    cpuEpoch :: CC.Update.CandidateProtocolUpdate -> EpochNo
-    cpuEpoch upd = succ (slotToEpoch $ History.addSlots takesEffectAfter (cpuSlot upd))
-
-    -- Slot conversion (valid for slots in this era only)
-    slotToEpoch :: SlotNo -> EpochNo
-    slotToEpoch s =
-        History.addEpochs
-          (History.countSlots s (boundSlot eraStart) `div` unEpochSize eraEpochSize)
-          (boundEpoch eraStart)
-
-    isStable :: CC.Update.CandidateProtocolUpdate -> Bool
-    isStable upd = endorsementDepth >= stableAfter
-      where
-        endorsedInSlot :: SlotNo
-        endorsedInSlot = cpuSlot upd
-
-        -- The impossible cases are impossible because the ledger contains
-        -- at least the block containing the update proposal, and hence cannot
-        -- be empty or have a tip /before/ the slot number of that block.
-        endorsementDepth :: Word64
-        endorsementDepth =
-            case ledgerTipSlot st of
-              Origin       -> error "byronTransition: impossible"
-              NotOrigin s  -> if s < endorsedInSlot
-                                then error "byronTransition: impossible"
-                                else History.countSlots s endorsedInSlot
-
-    -- check if the candidate update protocol induces a hard fork to Shelley
-    bumpsMajorProtocolVersion :: CC.Update.CandidateProtocolUpdate -> Bool
-    bumpsMajorProtocolVersion upd =
-        shelleyMajorVersion
-          == CC.Update.pvMajor (CC.Update.cpuProtocolVersion upd)
+    bumpsMajorProtocolVersion :: Byron.Inspect.ProtocolUpdate -> Bool
+    bumpsMajorProtocolVersion Byron.Inspect.ProtocolUpdate{..} =
+           shelleyMajorVersion
+        == CC.Update.pvMajor protocolUpdateVersion
 
     -- 'tryBumpVersion' assumes head of the list of stable proposals is the
     -- newest, so we do too
-    latest :: [CC.Update.CandidateProtocolUpdate]
-           -> Maybe CC.Update.CandidateProtocolUpdate
+    latest :: [a] -> Maybe a
     latest (newest:_) = Just newest
     latest []         = Nothing
 
@@ -212,7 +149,7 @@ byronTransition ByronPartialLedgerConfig{..}
 -------------------------------------------------------------------------------}
 
 instance SingleEraBlock ByronBlock where
-  singleEraTransition pcfg eraParams eraStart ledgerState =
+  singleEraTransition pcfg _eraParams _eraStart ledgerState =
       case triggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
@@ -220,8 +157,6 @@ instance SingleEraBlock ByronBlock where
             byronTransition
               pcfg
               shelleyMajorVersion
-              eraParams
-              eraStart
               ledgerState
 
   singleEraInfo _ = SingleEraInfo {
@@ -536,13 +471,3 @@ translateLedgerViewByronToShelley shelleyCfg epochNo = TickedPraosLedgerView $
           epochNo
           (Map.keysSet (sgGenDelegs genesisShelley))
           (sgProtocolParams genesisShelley)
-
-{-------------------------------------------------------------------------------
-  Miscellany
--------------------------------------------------------------------------------}
-
-filterMaybe :: (a -> Bool) -> Maybe a -> Maybe a
-filterMaybe f m = do
-  x <- m
-  guard (f x)
-  Just x
