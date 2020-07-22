@@ -87,7 +87,7 @@ data CoreNodeKeyInfo h = CoreNodeKeyInfo
           )
   , cnkiCoreNode ::
       ( SL.KeyPair 'SL.Genesis (TPraosMockCrypto h)
-      , Gen.AllIssuerKeys h 'SL.GenesisDelegate
+      , Gen.AllIssuerKeys (TPraosMockCrypto h) 'SL.GenesisDelegate
       )
   }
 

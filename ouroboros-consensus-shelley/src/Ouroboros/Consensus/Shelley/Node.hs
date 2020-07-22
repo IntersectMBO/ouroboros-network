@@ -56,7 +56,6 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
-import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
@@ -283,14 +282,8 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- See STS DELEG for details
         newDState :: SL.DState c
         newDState = (SL._dstate oldDPState) {
-          SL._stkCreds = SL.StakeCreds
-                        . Map.map (const $ SlotNo 0)
-                        . Map.mapKeys SL.KeyHashObj
-                        $ sgsStake
-        , SL._rewards = Map.mapKeys ( SL.mkRwdAcnt (SL.sgNetworkId genesis)
-                                    . SL.KeyHashObj
-                                    )
-                      . Map.map (const $ SL.Coin 0)
+          SL._rewards = Map.map (const $ SL.Coin 0)
+                      . Map.mapKeys SL.KeyHashObj
                       $ sgsStake
         , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
         }
@@ -299,8 +292,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- See STS POOL for details
         newPState :: SL.PState c
         newPState = (SL._pstate oldDPState) {
-          SL._stPools = SL.StakePools $ Map.map (const $ SlotNo 0) $ sgsPools
-        , SL._pParams = sgsPools
+          SL._pParams = sgsPools
         }
 
         -- The new stake distribution is made on the basis of a snapshot taken

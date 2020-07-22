@@ -259,7 +259,8 @@ exampleLedgerState = reapplyLedgerBlock
       , tickedShelleyState = STS.chainNes startState
       })
   where
-    Examples.CHAINExample { startState, newBlock } = Examples.ex2A (Proxy @ShortHash)
+    Examples.CHAINExample { startState, newBlock } =
+      Examples.ex2A (Proxy @(TPraosMockCrypto ShortHash))
     cfg = FullBlockConfig {
           blockConfigLedger = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo testMaxMajorPV
         , blockConfigBlock  = mkShelleyBlockConfig (SL.ProtVer 2 0) testShelleyGenesis NotABlockIssuer

@@ -43,7 +43,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
 import           Test.Consensus.Shelley.MockCrypto
-import           Test.Shelley.Spec.Ledger.SerializationProperties ()
+import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 {-------------------------------------------------------------------------------
   Generators

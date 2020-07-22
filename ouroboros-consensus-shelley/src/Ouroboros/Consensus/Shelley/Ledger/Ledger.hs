@@ -54,7 +54,6 @@ import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Type.Equality ((:~:) (Refl), apply)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -415,7 +414,6 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
           answerQuery cfg query' st
       GetFilteredDelegationsAndRewardAccounts creds ->
         getFilteredDelegationsAndRewardAccounts
-          (shelleyLedgerGlobals cfg)
           (shelleyState st)
           creds
     where
@@ -532,18 +530,15 @@ getCurrentEpochState = SL.nesEs
 getDState :: SL.ShelleyState c -> SL.DState c
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
 
-getFilteredDelegationsAndRewardAccounts :: SL.Globals
-                                        -> SL.ShelleyState c
+getFilteredDelegationsAndRewardAccounts :: SL.ShelleyState c
                                         -> Set (SL.Credential 'SL.Staking c)
                                         -> (Delegations c, SL.RewardAccounts c)
-getFilteredDelegationsAndRewardAccounts globals ss creds =
+getFilteredDelegationsAndRewardAccounts ss creds =
     (filteredDelegations, filteredRwdAcnts)
   where
-    network = SL.networkId globals
-    rwdAcnts = Set.map (SL.RewardAcnt network) creds
     dstate = getDState ss
     filteredDelegations = Map.restrictKeys (SL._delegations dstate) creds
-    filteredRwdAcnts = Map.restrictKeys (SL._rewards dstate) rwdAcnts
+    filteredRwdAcnts = Map.restrictKeys (SL._rewards dstate) creds
 
 {-------------------------------------------------------------------------------
   Serialisation
