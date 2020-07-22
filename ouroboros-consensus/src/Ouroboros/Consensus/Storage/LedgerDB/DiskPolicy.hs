@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
+import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
 
 import           Control.Monad.Class.MonadTime
@@ -62,24 +63,19 @@ data DiskPolicy = DiskPolicy {
 
 -- | Default on-disk policy
 --
--- The goal of the default policy is to take a snapshot roughly every @k@
--- blocks during normal operation, and every 500k blocks during syncing
--- (in early 2020, the chain consists of roughly 3.6M blocks, so we'd take
--- roughly 9 snapshots during a full sync).
---
--- @k@ blocks during normal operation means one snapshot every 12 hours.
--- We therefore take a snapshot every 12 ours, or every 500k blocks, whichever
--- comes first.
+-- We want to take a snapshot every 50k blocks or roughly every hour (72
+-- minutes actually) when @k = 2160@ (for other values of @k@ we scale
+-- proportionally), but not more rapidly than 10 per hour (which is important
+-- for bulk sync).
 --
 -- If users never leave their wallet running for long, however, this would mean
--- that we /never/ take snapshots after syncing (until we get to 500k blocks).
+-- that we /never/ take snapshots after syncing (until we get to 50k blocks).
 -- So, on startup, we take a snapshot as soon as there are @k@ blocks replayed.
 -- This means that even if users frequently shut down their wallet, we still
 -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
 -- an extra unnecessary snapshot during syncing (if the node is restarted), but
 -- that is not a big deal.
-defaultDiskPolicy :: SecurityParam     -- ^ Maximum rollback
-                  -> DiskPolicy
+defaultDiskPolicy :: SecurityParam -> DiskPolicy
 defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word
@@ -87,7 +83,8 @@ defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
 
     onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
     onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
-           timeSinceLast   >= fromIntegral (k * 20)
-        || blocksSinceLast >= 500_000
+           timeSinceLast >= secondsToDiffTime (fromIntegral (k * 2))
+        || (   blocksSinceLast >= 50_000
+            && timeSinceLast > 6 * secondsToDiffTime 60)
     onDiskShouldTakeSnapshot Nothing blocksSinceLast =
            blocksSinceLast >= k
