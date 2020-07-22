@@ -97,13 +97,6 @@ finish () {
     # Don't abort during this exception handler
     set +e
 
-    # Dump to stdout the last line of each log file
-    (   cd "$logAbsDir"
-
-        forEachFile "$logAbsDir" "*.log" \
-            'echo "==> {} <=="; tail -n1 "{}"; echo;'
-    )
-
     # Collect each suite's logs into one artifact file
     for suite in $suites; do
         forEachFile "$logAbsDir" "*-${suite}.log" \
@@ -173,19 +166,22 @@ innerCommand () {
     suite=$1
     n=$2
 
+    logfile="${logAbsDir}/${uniqueInvocationId}-${suite}.log"
+
     # Run the specified tests with the nightly flag set
     "${nixAbsDir}/${suite}/bin/test" \
         --pattern "$suite ThreadNet" \
         --quickcheck-tests=$n \
         --iohk-enable-nightly-tests \
-        1>"${logAbsDir}/${uniqueInvocationId}-${suite}.log" 2>&1
+        1>"$logfile" 2>&1
 
     # Notify the user
     #
     # Likely atomic, since it's almost surely less than PIPE_BUF.
     #
     # https://arto.s3.amazonaws.com/notes/posix#pipe-buf
-    echo Completed Invocation-$uniqueInvocationId: $suite $n
+    echo Completed Invocation-${uniqueInvocationId}, $suite ${n}: \
+        $(tail -n1 "$logfile")
 }
 # Exported so GNU parallel workers can see it.
 export -f innerCommand
