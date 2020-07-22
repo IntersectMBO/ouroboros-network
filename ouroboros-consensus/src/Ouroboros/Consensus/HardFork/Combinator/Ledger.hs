@@ -616,8 +616,11 @@ inspectHardForkLedger = go
             (_, Nothing, Nothing) ->
               []
             (_, Just _, Nothing) ->
-              return $ LedgerWarning $
-                HardForkWarningTransitionUnconfirmed eraIndexZero
+              -- TODO: This should be a warning, but this can currently happen
+              -- in Byron.
+              []
+              -- return $ LedgerWarning $
+              --   HardForkWarningTransitionUnconfirmed eraIndexZero
             (Nil, Nothing, Just transition) ->
               return $ LedgerWarning $
                 HardForkWarningTransitionInFinalEra eraIndexZero transition
