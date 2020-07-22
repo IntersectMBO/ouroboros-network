@@ -35,6 +35,7 @@ library
                        Ouroboros.Consensus.Byron.Ledger.DelegationHistory
                        Ouroboros.Consensus.Byron.Ledger.Forge
                        Ouroboros.Consensus.Byron.Ledger.HeaderValidation
+                       Ouroboros.Consensus.Byron.Ledger.Inspect
                        Ouroboros.Consensus.Byron.Ledger.Integrity
                        Ouroboros.Consensus.Byron.Ledger.Ledger
                        Ouroboros.Consensus.Byron.Ledger.Mempool
@@ -42,9 +43,9 @@ library
                        Ouroboros.Consensus.Byron.Ledger.Orphans
                        Ouroboros.Consensus.Byron.Ledger.PBFT
                        Ouroboros.Consensus.Byron.Ledger.Serialisation
-                       Ouroboros.Consensus.Byron.Protocol
                        Ouroboros.Consensus.Byron.Node
                        Ouroboros.Consensus.Byron.Node.Serialisation
+                       Ouroboros.Consensus.Byron.Protocol
 
   build-depends:       base              >=4.9   && <4.13
                      , binary            >=0.8   && <0.9
