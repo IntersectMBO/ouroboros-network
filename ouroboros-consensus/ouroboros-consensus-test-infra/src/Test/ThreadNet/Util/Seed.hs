@@ -31,4 +31,4 @@ runGen (Seed seed) g =
     qcSeed = mkQCGen seed
 
 instance Arbitrary Seed where
-  arbitrary = Seed <$> arbitrary
+  arbitrary = Seed <$> choose (minBound, maxBound)
