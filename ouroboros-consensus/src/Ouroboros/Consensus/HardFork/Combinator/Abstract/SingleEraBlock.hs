@@ -110,7 +110,7 @@ instance All SingleEraBlock xs => Show (EraIndex xs) where
                  => K () blk -> K String blk
       getEraName _ =
             K
-          . ("EraIndex " <>)
+          . (\name -> "<EraIndex " <> name <> ">")
           . Text.unpack
           . singleEraName
           $ singleEraInfo (Proxy @blk)
