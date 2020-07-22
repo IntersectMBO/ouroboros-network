@@ -71,6 +71,7 @@ import qualified System.IO.Error as IO.Error (userError)
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
+import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
 import           Data.STRef.Lazy
 
 import qualified Control.Monad.Catch as Exceptions
@@ -121,6 +122,7 @@ data SimA s a where
   Throw        :: SomeException -> SimA s a
   Catch        :: Exception e =>
                   SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
+  Evaluate     :: a -> (a -> SimA s b) -> SimA s b
 
   Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
   GetThreadId  :: (ThreadId -> SimA s b) -> SimA s b
@@ -231,7 +233,7 @@ instance MonadThrow (SimM s) where
   throwM e = SimM $ \_ -> Throw (toException e)
 
 instance MonadEvaluate (SimM s) where
-  evaluate a = SimM $ \k -> k $! a
+  evaluate a = SimM $ \k -> Evaluate a k
 
 instance Exceptions.MonadThrow (SimM s) where
   throwM = MonadThrow.throwM
@@ -776,6 +778,18 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl action'
                                                (CatchFrame handler k ctl) }
       schedule thread' simstate
+
+    Evaluate expr k -> do
+      mbWHNF <- unsafeIOToST $ try $ evaluate expr
+      case mbWHNF of
+        Left e -> do
+          -- schedule this thread to immediately raise the exception
+          let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
+          schedule thread' simstate
+        Right whnf -> do
+          -- continue with the resulting WHNF
+          let thread' = thread { threadControl = ThreadControl (k whnf) ctl }
+          schedule thread' simstate
 
     Say msg k -> do
       let thread' = thread { threadControl = ThreadControl k ctl }
