@@ -425,8 +425,12 @@ translateChainDepStateByronToShelley TPraosConfig { tpraosParams } pbftState =
     TPraosState.empty (PBftState.tipSlot pbftState) $
       SL.ChainDepState
         { SL.csProtocol = SL.PrtclState Map.empty nonce nonce
-        , SL.csTickn = SL.TicknState nonce nonce
-        , SL.csLabNonce = nonce
+        , SL.csTickn    = SL.TicknState {
+              ticknStateEpochNonce    = nonce
+            , ticknStatePrevHashNonce = SL.NeutralNonce
+            }
+          -- Overridden before used
+        , SL.csLabNonce = SL.NeutralNonce
         }
   where
     nonce = tpraosInitialNonce tpraosParams
