@@ -259,6 +259,7 @@ test-suite test-network
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.TipSample.TipFragment
+                       Test.Ouroboros.Network.TipSample.TipRegistry
                        Test.Mux
                        Test.Pipe
                        Test.Socket
