@@ -188,7 +188,7 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     , sgSlotsPerKESPeriod     = 20
     , sgMaxKESEvolutions      = maxKESEvolutions
     , sgSlotLength            = getSlotLength slotLength
-    , sgUpdateQuorum          = 1  -- TODO
+    , sgUpdateQuorum          = quorum
     , sgMaxLovelaceSupply     = maxLovelaceSupply
     , sgProtocolParams        = pparams
     , sgGenDelegs             = coreNodesToGenesisMapping
@@ -210,6 +210,11 @@ mkGenesisConfig pVer k d slotLength maxKESEvolutions coreNodes =
     maxLovelaceSupply :: Word64
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+
+    quorum :: Word64
+    quorum = nbCoreNodes `min` ((nbCoreNodes `div` 2) + 1)
+      where
+        nbCoreNodes = fromIntegral (length coreNodes)
 
     pparams :: SL.PParams
     pparams = SL.emptyPParams
