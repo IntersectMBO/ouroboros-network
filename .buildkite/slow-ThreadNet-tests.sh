@@ -13,15 +13,6 @@ set -euo pipefail
 #
 # INVARIANT: No whitespace in any word.
 #
-# At time of writing, 100 (nightly) Cardano tests take approximately 60 seconds
-# and 100 (nightly) RealTPraos tests take approximately 700s on the BuildKite
-# instance reserved for benchmarking. So, for example, a 1000 RealTPraos tests
-# should take a single core about two hours and 5000 Cardano tests should take
-# about fifty minutes.
-#
-# See
-# https://buildkite.com/input-output-hk/ouroboros-network-nightly/builds/144#0f2d1638-9751-4397-82e8-21ec5f457f1c
-#
 # We only test in multiples of 100 because otherwise it risks skewing the
 # QuickCheck generator distribution (note that QuickCheck sets `maxSize stdArgs
 # = 100`).
@@ -33,10 +24,10 @@ set -euo pipefail
 # overhead and also more reliable percentages in their QuickCheck statistics.
 rows=(
     # From the slowest individual invocation ...
-    '1 RealTPraos 1000'
-    '1 Cardano    5000'
-    '5 RealTPraos 100'
-    '5 Cardano    500'
+    '1 Cardano    5000'  # ~45 minutes per invocation
+    '2 RealTPraos 200'   # ~30 minutes per invocation (but high variance)
+    '4 RealTPraos 100'   # ~15 minutes per invocation (but high variance)
+    '5 Cardano    500'   # ~5 minutes per invocation
     # ... to fastest individual invocation
     #
     # And the number of invocations is non-decreasing.
@@ -96,13 +87,6 @@ forEachFile () {
 finish () {
     # Don't abort during this exception handler
     set +e
-
-    # Dump to stdout the last line of each log file
-    (   cd "$logAbsDir"
-
-        forEachFile "$logAbsDir" "*.log" \
-            'echo "==> {} <=="; tail -n1 "{}"; echo;'
-    )
 
     # Collect each suite's logs into one artifact file
     for suite in $suites; do
@@ -173,19 +157,22 @@ innerCommand () {
     suite=$1
     n=$2
 
+    logfile="${logAbsDir}/${uniqueInvocationId}-${suite}.log"
+
     # Run the specified tests with the nightly flag set
     "${nixAbsDir}/${suite}/bin/test" \
         --pattern "$suite ThreadNet" \
         --quickcheck-tests=$n \
         --iohk-enable-nightly-tests \
-        1>"${logAbsDir}/${uniqueInvocationId}-${suite}.log" 2>&1
+        1>"$logfile" 2>&1
 
     # Notify the user
     #
     # Likely atomic, since it's almost surely less than PIPE_BUF.
     #
     # https://arto.s3.amazonaws.com/notes/posix#pipe-buf
-    echo Completed Invocation-$uniqueInvocationId: $suite $n
+    echo Completed Invocation-${uniqueInvocationId}, $suite ${n}: \
+        $(tail -n1 "$logfile")
 }
 # Exported so GNU parallel workers can see it.
 export -f innerCommand

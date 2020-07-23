@@ -27,7 +27,6 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot (EpochNo, EpochSize (..), SlotNo (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
-import qualified Cardano.Crypto.KES.Class as KES
 
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
@@ -103,8 +102,7 @@ partitionExclusiveUpperBound (Partition s (NumSlots d)) = Util.addSlots d s
 data TestSetup = TestSetup
   { setupByronLowerBound   :: Bool
     -- ^ whether to use the @HardFork.LowerBound@ optimization
-  , setupD                 :: Double
-    -- ^ decentralization parameter
+  , setupD                 :: Shelley.DecentralizationParam
   , setupHardFork          :: Bool
     -- ^ whether the proposal should trigger a hard fork or not
   , setupK                 :: SecurityParam
@@ -118,7 +116,9 @@ data TestSetup = TestSetup
 
 instance Arbitrary TestSetup where
   arbitrary = do
-    setupD <- (/10)         <$> choose (1, 10)
+    setupD <- arbitrary
+                -- TODO Issue 2388 prevents `d=0` in this test.
+                `suchThat` ((/= 0) . Shelley.decentralizationParamToRational)
     setupK <- SecurityParam <$> choose (2, 6)
 
     setupSlotLengthByron   <- arbitrary
@@ -346,6 +346,7 @@ prop_simple_cardano_convergence TestSetup
     TestConfig
       { initSeed
       , numCoreNodes
+      , numSlots
       } = setupTestConfig
 
     testConfigB = TestConfigB
@@ -434,10 +435,6 @@ prop_simple_cardano_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    maxKESEvolutions :: Word64
-    maxKESEvolutions = fromIntegral $
-      KES.totalPeriodsKES (Proxy @(KES Crypto))
-
     coreNodes :: [Shelley.CoreNode Crypto]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
@@ -452,7 +449,7 @@ prop_simple_cardano_convergence TestSetup
           setupK
           setupD
           setupSlotLengthShelley
-          maxKESEvolutions
+          (Shelley.mkKesConfig (Proxy @(KES Crypto)) numSlots)
           coreNodes
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
@@ -519,7 +516,6 @@ prop_simple_cardano_convergence TestSetup
             -- most 1 in a billion.
       }
       where
-        TestConfig{numSlots}        = setupTestConfig
         NumSlots t                  = numSlots
         TestOutput{testOutputNodes} = testOutput
 

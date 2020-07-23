@@ -4,16 +4,15 @@
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE ViewPatterns             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Shelley (
     ShelleyTxGenExtra(..)
+  , WhetherToGeneratePPUs(..)
   , genTx
   , mkGenEnv
   ) where
 
 import           Control.Monad.Except (runExcept)
-import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Crypto.Hash (HashAlgorithm)
 
@@ -24,7 +23,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
-import qualified Shelley.Spec.Ledger.Tx as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 
@@ -43,24 +41,33 @@ import           Test.ThreadNet.Infra.Shelley
 
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.
-    stgeGenEnv :: Gen.GenEnv (TPraosMockCrypto h)
+    stgeGenEnv  :: Gen.GenEnv (TPraosMockCrypto h)
+    -- | Generate no transactions before this slot.
+  , stgeStartAt :: SlotNo
   }
 
 instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 
   type TxGenExtra (ShelleyBlock (TPraosMockCrypto h)) = ShelleyTxGenExtra h
 
-  testGenTxs _numCoreNodes curSlotNo cfg (ShelleyTxGenExtra genEnv) lst = do
+  testGenTxs _numCoreNodes curSlotNo cfg extra lst
+      | stgeStartAt > curSlotNo = pure []
+      | otherwise               = do
       n <- choose (0, 20)
       go [] n $ applyChainTick (configLedger cfg) curSlotNo lst
     where
+      ShelleyTxGenExtra
+        { stgeGenEnv
+        , stgeStartAt
+        } = extra
+
       go :: [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
          -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
          -> Gen [GenTx (ShelleyBlock (TPraosMockCrypto h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-        tx <- genTx cfg curSlotNo st genEnv
+        tx <- genTx cfg curSlotNo st stgeGenEnv
         case runExcept $ applyTx (configLedger cfg) curSlotNo tx st of
           -- We don't mind generating invalid transactions
           Left  _   -> go (tx:acc) (n - 1) st
@@ -77,17 +84,8 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
-      (utxoSt, dpState) `suchThat` isSimpleTx
+      (utxoSt, dpState)
   where
-    -- Filter (for the moment) to "simple" transactions - in particular, we
-    -- filter all transactions which have certificates. Testing with
-    -- certificates requires additional handling in the testing framework,
-    -- because, for example, they may transfer block issuance rights from one
-    -- node to another, and we must have the relevant nodes brought online at
-    -- that point.
-    isSimpleTx (SL._body -> txb) =
-      (Seq.null $ SL._certs txb)
-
     epochState :: CSL.EpochState (TPraosMockCrypto h)
     epochState = SL.nesEs tickedShelleyState
 
@@ -111,15 +109,31 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
       . SL.esLState
       $ epochState
 
+data WhetherToGeneratePPUs = DoNotGeneratePPUs | DoGeneratePPUs
+  deriving (Show)
+
 mkGenEnv :: forall h. HashAlgorithm h
-         => [CoreNode (TPraosMockCrypto h)]
+         => WhetherToGeneratePPUs
+         -> [CoreNode (TPraosMockCrypto h)]
          -> Gen.GenEnv (TPraosMockCrypto h)
-mkGenEnv coreNodes = Gen.GenEnv keySpace constants
+mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
   where
+    -- Configuration of the transaction generator
     constants :: Gen.Constants
-    constants = Gen.defaultConstants
-      { Gen.frequencyMIRCert = 0
-      }
+    constants =
+        setCerts $
+        setPPUs $
+        Gen.defaultConstants{ Gen.frequencyMIRCert = 0 }
+      where
+        -- Testing with certificates requires additional handling in the
+        -- testing framework, because, for example, they may transfer block
+        -- issuance rights from one node to another, and we must have the
+        -- relevant nodes brought online at that point.
+        setCerts cs = cs{ Gen.maxCertsPerTx = 0 }
+
+        setPPUs cs = case whetherPPUs of
+            DoGeneratePPUs    -> cs
+            DoNotGeneratePPUs -> cs{ Gen.frequencyTxUpdates = 0 }
 
     keySpace :: Gen.KeySpace (TPraosMockCrypto h)
     keySpace =
