@@ -437,8 +437,8 @@ subscriptionLoop
                 mapM_ (\tid ->
                         cancelWith tid
                         (SubscriberError
-                          SubscriberParrallelConnectionCancelled
-                          "Parrallel connection cancelled"
+                          SubscriberParallelConnectionCancelled
+                          "Parallel connection cancelled"
                           callStack)
                       )threads
 
@@ -586,7 +586,7 @@ data SubscriberError = SubscriberError {
 
 -- | Enumeration of error conditions.
 --
-data SubscriberErrorType = SubscriberParrallelConnectionCancelled
+data SubscriberErrorType = SubscriberParallelConnectionCancelled
                          | SubscriberWorkerCancelled
                          deriving (Eq, Show)
 
