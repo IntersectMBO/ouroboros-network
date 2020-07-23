@@ -785,11 +785,14 @@ prop_ReachesShelley rs = case BoolProps.checkReqs rs of
 -- Calculates the delays that implement 'setupPartition'.
 mkMessageDelay :: Partition -> CalcMessageDelay blk
 mkMessageDelay part = CalcMessageDelay $
-    \(CoreNodeId i, CoreNodeId j) curSlot _hdr -> NumSlots $ if
+    \(CoreNodeId i, CoreNodeId j) curSlot hdr -> NumSlots $ if
       | curSlot <  firstSlotIn    -> 0
       | curSlot >= firstSlotAfter -> 0
       | mod i 2 == mod j 2        -> 0
-      | otherwise                 -> unSlotNo $ firstSlotAfter - curSlot
+      | otherwise                 ->
+      -- 'CalcMessageDelay' definition specifies the calculated delay is
+      -- interpreted relative to the header's slot
+      unSlotNo $ firstSlotAfter - blockSlot hdr
   where
     Partition firstSlotIn _ = part
     firstSlotAfter          = partitionExclusiveUpperBound part
