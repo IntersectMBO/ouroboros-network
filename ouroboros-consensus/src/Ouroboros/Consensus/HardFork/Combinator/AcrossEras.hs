@@ -58,7 +58,10 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
 
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except (throwError)
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as BSC
 import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as Short
 import           Data.SOP.Strict hiding (shift)
 import           Data.Text (Text)
 import           Data.Void
@@ -125,7 +128,10 @@ newtype OneEraApplyTxErr    xs = OneEraApplyTxErr    { getOneEraApplyTxErr    ::
 -- So, the type parameter @xs@ here is merely a phantom one, and we just store
 -- the underlying raw hash.
 newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: ShortByteString }
-  deriving newtype (Eq, Ord, Show, NoUnexpectedThunks, Serialise)
+  deriving newtype (Eq, Ord, NoUnexpectedThunks, Serialise)
+
+instance Show (OneEraHash xs) where
+  show = BSC.unpack . B16.encode . Short.fromShort . getOneEraHash
 
 {-------------------------------------------------------------------------------
   Value for two /different/ eras

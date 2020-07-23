@@ -193,9 +193,16 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
                tickedHeaderState
       }
     where
-      cantBeError :: Except e a -> a
-      cantBeError = either (error "reapplyLedgerBlock: impossible") id
-                  . runExcept
+      cantBeError :: Show e => Except e a -> a
+      cantBeError =
+            either
+              (\e ->
+                  error $
+                    "reapplyLedgerBlock " <>
+                    show (blockPoint blk) <>
+                    ": " <> show e)
+              id
+          . runExcept
 
 {-------------------------------------------------------------------------------
   Serialisation

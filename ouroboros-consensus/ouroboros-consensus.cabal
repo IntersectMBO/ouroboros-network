@@ -267,6 +267,7 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.13
+                     , base16-bytestring
                      , bifunctors
                      , bimap             >=0.3   && <0.5
                      , binary            >=0.8   && <0.9
