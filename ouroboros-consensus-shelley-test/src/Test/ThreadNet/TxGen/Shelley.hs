@@ -43,7 +43,7 @@ import           Test.ThreadNet.Infra.Shelley
 
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.
-    stgeGenEnv :: Gen.GenEnv h
+    stgeGenEnv :: Gen.GenEnv (TPraosMockCrypto h)
   }
 
 instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
@@ -71,7 +71,7 @@ genTx
   => TopLevelConfig (ShelleyBlock (TPraosMockCrypto h))
   -> SlotNo
   -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
-  -> Gen.GenEnv h
+  -> Gen.GenEnv (TPraosMockCrypto h)
   -> Gen (GenTx (ShelleyBlock (TPraosMockCrypto h)))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
     mkShelleyTx <$> Gen.genTx
@@ -88,7 +88,7 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
     isSimpleTx (SL._body -> txb) =
       (Seq.null $ SL._certs txb)
 
-    epochState :: CSL.EpochState h
+    epochState :: CSL.EpochState (TPraosMockCrypto h)
     epochState = SL.nesEs tickedShelleyState
 
     ledgerEnv :: STS.LedgerEnv
@@ -99,13 +99,13 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
       , ledgerAccount  = SL.esAccountState epochState
       }
 
-    utxoSt :: CSL.UTxOState h
+    utxoSt :: CSL.UTxOState (TPraosMockCrypto h)
     utxoSt =
         SL._utxoState
       . SL.esLState
       $ epochState
 
-    dpState :: CSL.DPState h
+    dpState :: CSL.DPState (TPraosMockCrypto h)
     dpState =
         SL._delegationState
       . SL.esLState
@@ -113,7 +113,7 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
 
 mkGenEnv :: forall h. HashAlgorithm h
          => [CoreNode (TPraosMockCrypto h)]
-         -> Gen.GenEnv h
+         -> Gen.GenEnv (TPraosMockCrypto h)
 mkGenEnv coreNodes = Gen.GenEnv keySpace constants
   where
     constants :: Gen.Constants
@@ -121,7 +121,7 @@ mkGenEnv coreNodes = Gen.GenEnv keySpace constants
       { Gen.frequencyMIRCert = 0
       }
 
-    keySpace :: Gen.KeySpace h
+    keySpace :: Gen.KeySpace (TPraosMockCrypto h)
     keySpace =
       Gen.KeySpace
         (cnkiCoreNode <$> cn)
