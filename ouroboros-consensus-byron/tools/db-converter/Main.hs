@@ -31,7 +31,8 @@ import qualified System.IO as IO
 import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Epoch.File as CC
 import           Cardano.Chain.Slotting (EpochSlots (..))
-import           Cardano.Crypto (ProtocolMagicId (..))
+
+import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -42,7 +43,7 @@ data Args w = Args
     { epochDir        :: w ::: FilePath     <?> "Path to the directory containing old epoch files"
     , dbDir           :: w ::: FilePath     <?> "Path to the new database directory"
     , epochSlots      :: w ::: Word64       <?> "Slots per epoch"
-    , protocolMagicId :: w ::: Maybe Word32 <?> "Magic Id of the network"
+    , networkMagic    :: w ::: Maybe Word32 <?> "Magic Id of the network"
     }
   deriving (Generic)
 
@@ -52,25 +53,25 @@ deriving instance Show (Args Unwrapped)
 
 main :: IO ()
 main = do
-    Args {epochDir, dbDir, epochSlots, protocolMagicId} <- unwrapRecord "Byron DB converter"
+    Args {epochDir, dbDir, epochSlots, networkMagic} <- unwrapRecord "Byron DB converter"
     dbDir' <- parseAbsDir =<< canonicalizePath dbDir
     (_, files) <- listDir =<< parseAbsDir =<< canonicalizePath epochDir
     let epochFiles = filter (\f -> fileExtension f == ".epoch") files
     putStrLn $ "Writing to " ++ show dbDir
     for_ (sort epochFiles) $ \f -> do
       putStrLn $ "Converting file " ++ show f
-      convertChunkFile (EpochSlots epochSlots) f dbDir' (mkProtocolMagicId protocolMagicId)
+      convertChunkFile (EpochSlots epochSlots) f dbDir' (mkNetworkMagic networkMagic)
 
--- | If 'ProtocolMagicId' is not specified, we assume by default it's mainnet.
-mkProtocolMagicId :: Maybe Word32 -> ProtocolMagicId
-mkProtocolMagicId Nothing  = ProtocolMagicId 764824073
-mkProtocolMagicId (Just w) = ProtocolMagicId w
+-- | If 'NetworkMagic' is not specified, we assume by default it's mainnet.
+mkNetworkMagic :: Maybe Word32 -> NetworkMagic
+mkNetworkMagic Nothing  = NetworkMagic 764824073
+mkNetworkMagic (Just w) = NetworkMagic w
 
 convertChunkFile
   :: EpochSlots
   -> Path Abs File -- ^ Input
   -> Path Abs Dir -- ^ Ouput directory
-  -> ProtocolMagicId
+  -> NetworkMagic
   -> IO (Either CC.ParseError ())
 convertChunkFile es inFile outDir magicId = do
     createDirIfMissing True dbDir

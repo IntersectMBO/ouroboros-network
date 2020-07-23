@@ -31,8 +31,10 @@ import           Control.Tracer (contramap, debugTracer, nullTracer)
 import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
-import           Cardano.Crypto (Hash, ProtocolMagicId (..),
-                     RequiresNetworkMagic (..), decodeAbstractHash)
+import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
+                     decodeAbstractHash)
+
+import           Ouroboros.Network.Magic
 
 import qualified Shelley.Spec.Ledger.PParams as SL
 
@@ -107,22 +109,22 @@ main = do
       Just Cardano -> validate cmd (Proxy @(CardanoBlock TPraosStandardCrypto))
       Nothing -> do
         -- check the dbmarker of the db if the block type is not specified.
-        protocolMagicId <- readDBMarker dbDir
-        case unProtocolMagicId protocolMagicId of
+        networkMagic <- readDBMarker dbDir
+        case unNetworkMagic networkMagic of
           764824073  -> validate cmd (Proxy @ByronBlock)
           1097911063 -> validate cmd (Proxy @ByronBlock)
           42         -> validate cmd (Proxy @(ShelleyBlock TPraosStandardCrypto))
-          _          -> error $ "unsupported protocolMagicId: " ++ show protocolMagicId
+          _          -> error $ "unsupported networkMagic: " ++ show networkMagic
 
-readDBMarker :: FilePath -> IO ProtocolMagicId
+readDBMarker :: FilePath -> IO NetworkMagic
 readDBMarker dbPath = do
     bs <- BS.readFile markerPath
-    protocolMagicId <- runExceptT $ dbMarkerParse markerPath bs
+    networkMagic <- runExceptT $ dbMarkerParse markerPath bs
     either
       (\err -> error $
-        "failed to parse protocolMagicId from db Marker file. Error " ++ show err)
+        "failed to parse networkMagic from db Marker file. Error " ++ show err)
       return
-      protocolMagicId
+      networkMagic
   where
     markerPath :: String
     markerPath = dbPath FilePath.</> Text.unpack dbMarkerFile

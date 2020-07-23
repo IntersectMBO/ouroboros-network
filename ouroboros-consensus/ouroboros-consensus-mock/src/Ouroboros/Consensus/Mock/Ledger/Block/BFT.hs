@@ -93,7 +93,7 @@ instance SignedHeader (SimpleBftHeader c c') where
 instance ( SimpleCrypto c
          , BftCrypto c'
          ) => RunMockBlock c (SimpleBftExt c c') where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance ( SimpleCrypto c
          , BftCrypto c'

@@ -104,7 +104,7 @@ instance ( SimpleCrypto c
          , PBftCrypto c'
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)

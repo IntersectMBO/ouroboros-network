@@ -336,9 +336,8 @@ instance InspectLedger (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 instance ConfigSupportsNode (ShelleyBlock c) where
-  getSystemStart     = shelleySystemStart
-  getNetworkMagic    = shelleyNetworkMagic
-  getProtocolMagicId = shelleyProtocolMagicId
+  getSystemStart  = shelleySystemStart
+  getNetworkMagic = shelleyNetworkMagic
 
 {-------------------------------------------------------------------------------
   RunNode instance
