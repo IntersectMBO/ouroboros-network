@@ -108,7 +108,7 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          ) => RunMockBlock c (SimplePraosExt c c') where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance ( SimpleCrypto c
          , PraosCrypto c'

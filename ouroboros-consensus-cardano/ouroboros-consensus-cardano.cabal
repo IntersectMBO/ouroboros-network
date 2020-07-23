@@ -87,7 +87,6 @@ test-suite test
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-slotting
@@ -186,6 +185,7 @@ executable db-validator
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-shelley
+                     , ouroboros-network
 
   default-language:    Haskell2010
   ghc-options:         -Wall

@@ -342,7 +342,7 @@ withDBChecks RunNodeArgs{..} body = do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
-      (getProtocolMagicId (configBlock pInfoConfig))
+      (getNetworkMagic (configBlock pInfoConfig))
 
     -- Then create the lock file.
     withLockDB mountPoint $ do
