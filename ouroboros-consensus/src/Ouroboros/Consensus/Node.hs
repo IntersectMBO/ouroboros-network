@@ -449,7 +449,7 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
     defaultBlockFetchConfiguration :: BlockFetchConfiguration
     defaultBlockFetchConfiguration = BlockFetchConfiguration
       { bfcMaxConcurrencyBulkSync = 1
-      , bfcMaxConcurrencyDeadline = 2
+      , bfcMaxConcurrencyDeadline = 1
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
       , bfcDecisionLoopInterval   = 0.01 -- 10ms
       }
