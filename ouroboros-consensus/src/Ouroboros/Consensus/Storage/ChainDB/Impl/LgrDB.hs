@@ -318,15 +318,11 @@ getCurrent LgrDB{..} = readTVar varDB
 getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
-getPastState :: (IOLike m, UpdateLedger blk, LedgerSupportsProtocol blk)
+getPastState :: (IOLike m, HasHeader blk)
              => LgrDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
     db <- atomically $ readTVar varDB
-    LedgerDB.defaultResolveBlocks resolveBlock $
-      LedgerDB.ledgerDbPast
-        (extLedgerCfgFromTopLevel (lgrTopLevelConfig args))
-        (pointToWithOriginRealPoint p)
-        db
+    return $ LedgerDB.ledgerDbPast (pointToWithOriginRealPoint p) db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
