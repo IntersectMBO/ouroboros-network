@@ -935,6 +935,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 , bfcDecisionLoopInterval   = 0.0 -- Mock testsuite can use sub-second slot
                                                   -- interval which doesn't play nice with
                                                   -- blockfetch descision interval.
+                , bfcSalt                   = 0
                 }
             }
 

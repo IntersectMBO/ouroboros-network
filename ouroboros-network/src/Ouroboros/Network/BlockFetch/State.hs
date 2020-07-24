@@ -17,6 +17,7 @@ module Ouroboros.Network.BlockFetch.State (
   ) where
 
 import           Data.Functor.Contravariant (contramap)
+import           Data.Hashable (Hashable)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
@@ -62,6 +63,7 @@ fetchLogicIterations
      , MonadMonotonicTime m
      , MonadSTM m
      , Ord peer
+     , Hashable peer
      )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
@@ -107,7 +109,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * deciding for each peer if we will initiate a new fetch request
 --
 fetchLogicIteration
-  :: (MonadSTM m, Ord peer,
+  :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
@@ -174,7 +176,8 @@ fetchLogicIteration decisionTracer clientStateTracer
 fetchDecisionsForStateSnapshot
   :: (HasHeader header,
       HeaderHash header ~ HeaderHash block,
-      Ord peer)
+      Ord peer,
+      Hashable peer)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),

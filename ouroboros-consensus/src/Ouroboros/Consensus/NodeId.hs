@@ -12,6 +12,7 @@ module Ouroboros.Consensus.NodeId (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Data.Hashable
 import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet
@@ -34,6 +35,8 @@ instance Condense NodeId where
   condense (CoreId (CoreNodeId i)) = "c" ++ show i
   condense (RelayId            i ) = "r" ++ show i
 
+instance Hashable NodeId
+
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId {
       unCoreNodeId :: Word64
@@ -41,6 +44,8 @@ newtype CoreNodeId = CoreNodeId {
   deriving stock   (Eq, Ord, Generic)
   deriving newtype (Condense, Serialise, NoUnexpectedThunks)
   deriving Show via Quiet CoreNodeId
+
+instance Hashable CoreNodeId
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId = CoreId

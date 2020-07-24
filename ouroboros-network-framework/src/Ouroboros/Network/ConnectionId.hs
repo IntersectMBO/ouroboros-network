@@ -6,6 +6,7 @@ module Ouroboros.Network.ConnectionId where
 
 import           Cardano.Prelude (UseIsNormalForm (..), NoUnexpectedThunks (..))
 
+import           Data.Hashable
 import           GHC.Generics (Generic)
 
 
@@ -20,3 +21,5 @@ data ConnectionId addr = ConnectionId {
   }
   deriving (Eq, Ord, Show, Generic)
   deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
+
+instance Hashable a => Hashable (ConnectionId a)

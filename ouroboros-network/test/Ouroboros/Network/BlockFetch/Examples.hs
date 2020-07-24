@@ -132,7 +132,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01
+            bfcDecisionLoopInterval   = 0.01,
+            bfcSalt                   = 0
           })
         >> return ()
 

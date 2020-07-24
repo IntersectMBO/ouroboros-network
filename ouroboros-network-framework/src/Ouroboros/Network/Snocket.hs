@@ -26,6 +26,7 @@ import           Control.Exception
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
+import           Data.Hashable
 #if !defined(mingw32_HOST_OS)
 import           Network.Socket ( Family (AF_UNIX) )
 #endif
@@ -131,6 +132,8 @@ berkeleyAccept ioManager sock = go
 newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
   deriving (Show, Eq, Ord)
 
+instance Hashable LocalAddress where
+    hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
 -- | We support either sockets or named pipes.
 --

@@ -12,6 +12,10 @@
 -- it is useful to have 'HasInitiator' constraint on 'connectToNode' & friends.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
+-- For Hashable SockAddr
+{-# OPTIONS_GHC -Wno-orphans #-}
+
+
 -- |
 -- Module exports interface for running a node over a socket over TCP \/ IP.
 --
@@ -74,10 +78,12 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
+import           Data.Hashable
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Proxy (Proxy (..))
 import           Data.Void
+import           Data.Word (Word16)
 
 import qualified Network.Socket as Socket
 
@@ -140,6 +146,11 @@ sockAddrFamily
 sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
+
+instance Hashable Socket.SockAddr where
+  hashWithSalt s (Socket.SockAddrInet   p   a   ) = hashWithSalt s (fromIntegral p :: Word16, a)
+  hashWithSalt s (Socket.SockAddrInet6  p _ a _ ) = hashWithSalt s (fromIntegral p :: Word16, a)
+  hashWithSalt s (Socket.SockAddrUnix   p       ) = hashWithSalt s p
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
 -- There is no upper bound on the time we wait when waiting for a new SDU.

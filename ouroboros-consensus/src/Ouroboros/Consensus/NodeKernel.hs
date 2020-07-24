@@ -24,6 +24,7 @@ module Ouroboros.Consensus.NodeKernel (
 
 import           Control.Monad
 import           Control.Monad.Except
+import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
@@ -133,6 +134,7 @@ initNodeKernel
        , RunNode blk
        , NoUnexpectedThunks remotePeer
        , Ord remotePeer
+       , Hashable remotePeer
        )
     => NodeArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)

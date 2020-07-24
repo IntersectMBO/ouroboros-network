@@ -40,7 +40,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           System.Random (randomRIO)
+import           System.Random (randomIO, randomRIO)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
@@ -426,6 +426,7 @@ mkNodeArgs
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
 mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
     mBlockForging <- sequence mInitBlockForging
+    bfsalt <- randomIO -- Per-node specific value used by blockfetch when ranking peers.
     return NodeArgs
       { tracers
       , registry
@@ -438,15 +439,16 @@ mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters
-      , blockFetchConfiguration = defaultBlockFetchConfiguration
+      , blockFetchConfiguration = defaultBlockFetchConfiguration bfsalt
       }
   where
-    defaultBlockFetchConfiguration :: BlockFetchConfiguration
-    defaultBlockFetchConfiguration = BlockFetchConfiguration
+    defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
+    defaultBlockFetchConfiguration bfsalt = BlockFetchConfiguration
       { bfcMaxConcurrencyBulkSync = 1
       , bfcMaxConcurrencyDeadline = 1
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
       , bfcDecisionLoopInterval   = 0.01 -- 10ms
+      , bfcSalt                   = bfsalt
       }
 
 -- | We allow the user running the node to customise the 'NodeArgs' through

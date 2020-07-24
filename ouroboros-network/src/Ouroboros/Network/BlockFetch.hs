@@ -99,6 +99,7 @@ module Ouroboros.Network.BlockFetch (
     SizeInBytes,
   ) where
 
+import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import           Data.Void
 
@@ -218,7 +219,10 @@ data BlockFetchConfiguration =
          bfcMaxRequestsInflight    :: !Word,
 
          -- | Desired intervall between calls to fetchLogicIteration
-         bfcDecisionLoopInterval  :: !DiffTime
+         bfcDecisionLoopInterval   :: !DiffTime,
+
+         -- | Salt used when comparing peers
+         bfcSalt                   :: !Int
      }
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
@@ -236,6 +240,7 @@ blockFetchLogic :: forall peer header block m.
                    , MonadMonotonicTime m
                    , MonadSTM m
                    , Ord peer
+                   , Hashable peer
                    )
                 => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
@@ -270,6 +275,7 @@ blockFetchLogic decisionTracer clientStateTracer
         maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
         decisionLoopInterval     = bfcDecisionLoopInterval,
+        peerSalt                 = bfcSalt,
 
         plausibleCandidateChain,
         compareCandidateChains,

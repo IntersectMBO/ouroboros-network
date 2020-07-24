@@ -18,6 +18,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
   ) where
 
 import           Data.Fixed as Fixed (Pico)
+import           Data.Hashable
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.DeltaQ
@@ -29,9 +30,17 @@ data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
      }
   deriving Show
 
--- Order two PeerGSVs based on `g`.
-comparePeerGSV :: PeerGSV -> PeerGSV -> Ordering
-comparePeerGSV a b = compare (gs a) (gs b)
+-- | Order two PeerGSVs based on `g`.
+-- Incase the g values are within +/- 5% of each other `peer` is used as a tie breaker.
+-- The salt is unique per running node, which avoids all nodes prefering the same peer in case of
+-- a tie.
+comparePeerGSV :: Hashable peer => Int -> (PeerGSV, peer)  -> (PeerGSV, peer) -> Ordering
+comparePeerGSV salt (a, a_p) (b, b_p) =
+    let gs_a = gs a
+        gs_b = gs b in
+    if abs (gs_a - gs_b) < 0.05*gs_a
+       then compare (hashWithSalt salt a_p) (hashWithSalt salt b_p)
+       else compare gs_a gs_b
   where
     gs :: PeerGSV -> DiffTime
     gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
