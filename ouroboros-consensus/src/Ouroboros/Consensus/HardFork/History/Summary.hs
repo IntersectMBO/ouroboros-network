@@ -28,7 +28,6 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , mkEraEnd
     -- * Overall summary
   , Summary(..)
-  , PastHorizonException(..)
     -- ** Construction
   , summaryWithExactly
   , neverForksSummary
@@ -49,7 +48,6 @@ import           Codec.CBOR.Decoding (TokenType (TypeNull), decodeNull,
                      peekTokenType)
 import           Codec.CBOR.Encoding (encodeListLen, encodeNull)
 import           Codec.Serialise
-import           Control.Exception (Exception)
 import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -59,7 +57,6 @@ import           Data.SOP.Strict (K (..), NP (..), SListI, lengthSList)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
@@ -203,18 +200,6 @@ newtype Summary xs = Summary (NonEmpty xs EraSummary)
 -- WHNF is sufficient, because the counting types are all strict
 deriving via UseIsNormalFormNamed "Summary" (Summary xs)
          instance NoUnexpectedThunks (Summary xs)
-
--- | We tried to convert something that is past the horizon
---
--- That is, we tried to convert something that is past the point in time
--- beyond which we lack information due to uncertainty about the next
--- hard fork.
---
--- We record the condition we were looking for and the bounds on the summary.
-data PastHorizonException = PastHorizon CallStack [EraSummary]
-
-deriving instance Show PastHorizonException
-instance Exception PastHorizonException
 
 {-------------------------------------------------------------------------------
   Trivial summary

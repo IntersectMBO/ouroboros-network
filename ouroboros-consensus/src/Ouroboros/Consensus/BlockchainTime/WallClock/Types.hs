@@ -30,6 +30,7 @@ import           Control.Exception (assert)
 import           Data.Fixed
 import           Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime)
 import           GHC.Generics (Generic)
+import           Quiet
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
                      UseIsNormalForm (..))
@@ -51,8 +52,9 @@ newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
 
 -- | 'RelativeTime' is time relative to the 'SystemStart'
 newtype RelativeTime = RelativeTime { getRelativeTime :: NominalDiffTime }
-  deriving stock   (Show, Eq, Ord, Generic)
+  deriving stock   (Eq, Ord, Generic)
   deriving newtype (NoUnexpectedThunks)
+  deriving Show via Quiet RelativeTime
 
 addRelTime :: NominalDiffTime -> RelativeTime -> RelativeTime
 addRelTime delta (RelativeTime t) = RelativeTime (t + delta)
