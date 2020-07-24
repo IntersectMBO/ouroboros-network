@@ -40,7 +40,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           System.Random (randomRIO)
+import           System.Random (randomIO, randomRIO)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
@@ -207,6 +207,7 @@ run runargs@RunNodeArgs{..} =
                       (pure $ BackoffDelay 60) -- see 'BackoffDelay'
                       (ledgerState <$>
                          ChainDB.getCurrentLedger chainDB)
+      bfsalt <- randomIO -- Per-node specific value used by blockfetch when ranking peers.
       nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
                       mkNodeArgs
                         registry
@@ -215,6 +216,7 @@ run runargs@RunNodeArgs{..} =
                         rnTraceConsensus
                         btime
                         chainDB
+                        bfsalt
       nodeKernel <- initNodeKernel nodeArgs
       rnNodeKernelHook registry nodeKernel
 
@@ -425,8 +427,9 @@ mkNodeArgs
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
+  -> Int
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
+mkNodeArgs registry cfg mIsLeader tracers btime chainDB bfsalt = do
     blockProduction <-
       case mIsLeader of
         Just (proof, mfs) -> Just <$> defaultBlockProduction cfg proof mfs
@@ -452,6 +455,7 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
       , bfcMaxConcurrencyDeadline = 1
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
       , bfcDecisionLoopInterval   = 0.01 -- 10ms
+      , bfcSalt                   = bfsalt
       }
 
 -- | We allow the user running the node to customise the 'NodeArgs' through

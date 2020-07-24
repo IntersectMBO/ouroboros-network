@@ -26,6 +26,7 @@ import qualified Data.Set as Set
 
 import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Function (on)
+import           Data.Hashable
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 
@@ -58,6 +59,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
        decisionLoopInterval    :: DiffTime,
+       peerSalt                :: Int,
 
        plausibleCandidateChain :: AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
@@ -146,7 +148,8 @@ type CandidateFragments header = (ChainSuffix header, [AnchoredFragment header])
 
 
 fetchDecisions
-  :: (Eq peer,
+  :: (Ord peer,
+      Hashable peer,
       HasHeader header,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
@@ -779,6 +782,7 @@ obviously take that into account when considering later peer chains.
 fetchRequestDecisions
   :: forall extra header peer.
       ( Eq peer
+      , Hashable peer
       , HasHeader header
       )
   => FetchDecisionPolicy header
@@ -880,7 +884,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nPreferedPeers =
         map snd
       . take (fromIntegral maxConcurrentFetchPeers)
-      . sortBy (\(a, _) (b, _) -> comparePeerGSV a b)
+      . sortBy (\a b -> comparePeerGSV (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
       $ chains
 
