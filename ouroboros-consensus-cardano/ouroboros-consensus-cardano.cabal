@@ -79,6 +79,7 @@ test-suite test
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Examples
                        Test.Consensus.Cardano.Serialisation
+                       Test.Consensus.Cardano.Translation
                        Test.ThreadNet.Cardano
                        Test.ThreadNet.TxGen.Cardano
 
@@ -94,6 +95,7 @@ test-suite test
                      , cardano-prelude
                      , cborg             >=0.2.2 && <0.3
                      , containers
+                     , hedgehog-quickcheck
                      , mtl
                      , QuickCheck
                      , sop-core

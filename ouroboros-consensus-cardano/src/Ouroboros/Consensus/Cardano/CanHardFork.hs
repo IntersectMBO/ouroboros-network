@@ -15,6 +15,9 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
     TriggerHardFork (..)
   , ByronPartialLedgerConfig (..)
   , ShelleyPartialLedgerConfig (..)
+    -- * Exported for testing purposes
+  , translateTxIdByronToShelley
+  , translateCompactTxOutByronToShelley
   ) where
 
 import           Control.Monad.Reader (runReader)
@@ -60,7 +63,6 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
 import           Ouroboros.Consensus.Util (hashFromBytesE)
 
-import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
@@ -271,35 +273,34 @@ translatePointByronToShelley = \case
     GenesisPoint   -> GenesisPoint
     BlockPoint s h -> BlockPoint s (translateHeaderHashByronToShelley h)
 
+
+-- | We use the same hashing algorithm so we can unwrap and rewrap the bytes.
+-- We don't care about the type that is hashed, which will differ going from
+-- Byron to Shelley, we just use the hashes as IDs.
+translateTxIdByronToShelley :: Crypto sc => CC.TxId -> SL.TxId sc
+translateTxIdByronToShelley =
+    SL.TxId . hashFromBytesE . Hashing.hashToBytes
+
+translateCompactTxInByronToShelley :: Crypto sc => CC.CompactTxIn -> SL.TxIn sc
+translateCompactTxInByronToShelley (CC.CompactTxInUtxo compactTxId idx) =
+    SL.TxInCompact
+      (translateTxIdByronToShelley (CC.fromCompactTxId compactTxId))
+      (fromIntegral idx)
+
+translateCompactTxOutByronToShelley :: CC.CompactTxOut -> SL.TxOut sc
+translateCompactTxOutByronToShelley (CC.CompactTxOut compactAddr amount) =
+    SL.TxOutCompact
+      (CC.unsafeGetCompactAddress compactAddr)
+      (CC.unsafeGetLovelace amount)
+
 translateUTxOByronToShelley :: forall sc. Crypto sc => CC.UTxO -> SL.UTxO sc
 translateUTxOByronToShelley (CC.UTxO utxoByron) =
     SL.UTxO $ Map.fromList
       [ (txInShelley, txOutShelley)
       | (txInByron, txOutByron) <- Map.toList utxoByron
-      , let txInShelley  = translateTxIn  $ CC.fromCompactTxIn  txInByron
-            txOutShelley = translateTxOut $ CC.fromCompactTxOut txOutByron
+      , let txInShelley  = translateCompactTxInByronToShelley  txInByron
+            txOutShelley = translateCompactTxOutByronToShelley txOutByron
       ]
-  where
-    translateTxIn :: CC.TxIn -> SL.TxIn sc
-    translateTxIn (CC.TxInUtxo txId idx) =
-      SL.TxIn (translateTxId txId) (fromIntegral idx)
-
-    translateTxOut :: CC.TxOut -> SL.TxOut sc
-    translateTxOut (CC.TxOut addr amount) =
-      SL.TxOut (translateAddr addr) (translateAmount amount)
-
-    -- | We use the same hasing algorithm so we can unwrap and rewrap the
-    -- bytes. We don't care about the type that is hashed, which will differ
-    -- going from Byron to Shelley, we just use the hashes as IDs.
-    translateTxId :: CC.TxId -> SL.TxId sc
-    translateTxId =
-      SL.TxId . hashFromBytesE . Hashing.hashToBytes
-
-    translateAmount :: CC.Lovelace -> SL.Coin
-    translateAmount = SL.Coin . CC.lovelaceToInteger
-
-    translateAddr :: CC.Address -> SL.Addr sc
-    translateAddr = SL.AddrBootstrap . SL.BootstrapAddress
 
 translateLedgerStateByronToShelleyWrapper
   :: forall sc. Crypto sc
