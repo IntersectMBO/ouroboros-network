@@ -260,6 +260,7 @@ test-suite test-network
                        Test.Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.TipSample.TipFragment
                        Test.Ouroboros.Network.TipSample.TipRegistry
+                       Test.Ouroboros.Network.TipSample.Client
                        Test.Mux
                        Test.Pipe
                        Test.Socket
@@ -288,11 +289,13 @@ test-suite test-network
                        serialise,
                        splitmix,
                        stm,
+                       statistics,
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
                        text,
                        time,
+                       vector,
 
                        cardano-binary,
                        cardano-prelude,

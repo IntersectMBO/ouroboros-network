@@ -17,6 +17,7 @@ import qualified Ouroboros.Network.NodeToNode.Version.Test (tests)
 import qualified Ouroboros.Network.NodeToClient.Version.Test (tests)
 import qualified Test.Ouroboros.Network.TipSample.TipFragment (tests)
 import qualified Test.Ouroboros.Network.TipSample.TipRegistry (tests)
+import qualified Test.Ouroboros.Network.TipSample.Client (tests)
 import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
@@ -62,6 +63,7 @@ tests =
   , Ouroboros.Network.NodeToClient.Version.Test.tests
   , Test.Ouroboros.Network.TipSample.TipFragment.tests
   , Test.Ouroboros.Network.TipSample.TipRegistry.tests
+  , Test.Ouroboros.Network.TipSample.Client.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
