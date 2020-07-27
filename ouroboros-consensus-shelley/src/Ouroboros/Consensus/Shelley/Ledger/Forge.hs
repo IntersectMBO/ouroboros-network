@@ -17,11 +17,15 @@ module Ouroboros.Consensus.Shelley.Ledger.Forge (
   ) where
 
 import           Control.Exception
+import           Control.Monad.Except
+import           Data.List (foldl')
 import qualified Data.Sequence.Strict as Seq
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Util.Assert
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -54,7 +58,9 @@ forgeShelleyBlock
   -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
   -> ShelleyBlock c
 forgeShelleyBlock cfg forgeState curNo curSlot tickedLedger txs isLeader =
-    assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) blk
+    assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) $
+    assertWithMsg bodySizeEstimate
+      blk
   where
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
@@ -73,6 +79,23 @@ forgeShelleyBlock cfg forgeState curNo curSlot tickedLedger txs isLeader =
       . getTipHash
       $ tickedLedger
 
+    bodySizeEstimate :: Either String ()
+    bodySizeEstimate
+      | actualBodySize > estimatedBodySize + fixedBlockBodyOverhead
+      = throwError $
+          "Actual block body size > Estimated block body size + fixedBlockBodyOverhead: "
+            <> show actualBodySize
+            <> " > "
+            <> show estimatedBodySize
+            <> " + "
+            <> show (fixedBlockBodyOverhead :: Int)
+      | otherwise
+      = return ()
+
+    estimatedBodySize, actualBodySize :: Int
+    estimatedBodySize = fromIntegral $ foldl' (+) 0 (map txInBlockSize txs)
+    actualBodySize    = SL.bBodySize body
+
     mkBhBody toSign = SL.BHBody {
           bheaderPrev    = prevHash
         , bheaderVk      = SL.VKey tpraosToSignIssuerVK
@@ -81,7 +104,7 @@ forgeShelleyBlock cfg forgeState curNo curSlot tickedLedger txs isLeader =
         , bheaderBlockNo = curNo
         , bheaderEta     = tpraosToSignEta
         , bheaderL       = tpraosToSignLeader
-        , bsize          = fromIntegral $ SL.bBodySize body
+        , bsize          = fromIntegral actualBodySize
         , bhash          = SL.bbHash body
         , bheaderOCert   = tpraosToSignOCert
         , bprotver       = shelleyProtocolVersion $ configBlock cfg

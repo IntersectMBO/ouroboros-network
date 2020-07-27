@@ -17,6 +17,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   , GenTx (..)
   , TxId (..)
   , mkShelleyTx
+  , fixedBlockBodyOverhead
+  , perTxOverhead
   ) where
 
 import           Control.Monad.Except (Except)
@@ -62,6 +64,31 @@ type instance ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
 -- orphaned instance
 instance Typeable c => ShowProxy (SL.ApplyTxError c) where
 
+
+-- |'txInBlockSize' is used to estimate how many transactions we can grab from
+-- the Mempool to put into the block we are going to forge without exceeding
+-- the maximum block body size according to the ledger. If we exceed that
+-- limit, we will have forged a block that is invalid according to the ledger.
+-- We ourselves won't even adopt it, causing us to lose our slot, something we
+-- must try to avoid.
+--
+-- For this reason it is better to overestimate the size of a transaction than
+-- to underestimate. The only downside is that we maybe could have put one (or
+-- more?) transactions extra in that block.
+--
+-- As the sum of the serialised transaction sizes is not equal to the size of
+-- the serialised block body ('SL.TxSeq') consisting of those transactions
+-- (see cardano-node#1545 for an example), we account for some extra overhead
+-- per transaction as a safety margin.
+--
+-- Also see 'perTxOverhead'.
+fixedBlockBodyOverhead :: Num a => a
+fixedBlockBodyOverhead = 1024
+
+-- | See 'fixedBlockBodyOverhead'.
+perTxOverhead :: Num a => a
+perTxOverhead = 4
+
 instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   txInvariant = const True
 
@@ -72,30 +99,13 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   reapplyTx = applyShelleyTx
 
   maxTxCapacity (TickedShelleyLedgerState _ _ shelleyState) =
-      fromIntegral maxBlockBodySize
+      fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
     where
       SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
 
-  txInBlockSize (ShelleyTx _ tx) = txSize + blockBodyOverhead
+  txInBlockSize (ShelleyTx _ tx) = txSize + perTxOverhead
     where
       txSize = fromIntegral . Lazy.length . SL.txFullBytes $ tx
-
-      -- 'txInBlockSize' is used to estimate how many transactions we can grab
-      -- from the Mempool to put into the block we are going to forge without
-      -- exceeding the maximum block body size according to the ledger. If we
-      -- exceed that limit, we will have forged a block that is invalid
-      -- according to the ledger. We ourselves won't even adopt it, causing us
-      -- to lose our slot, something we must try to avoid.
-      --
-      -- For this reason it is better to overestimate the size of a
-      -- transaction than to underestimate. The only downside is that we maybe
-      -- could have put one (or more?) transactions extra in that block.
-      --
-      -- As the sum of the serialised transaction sizes is not equal to the
-      -- size of the serialised block body ('SL.TxSeq') consisting of those
-      -- transactions (see cardano-node#1545 for an example), we account for
-      -- some extra overhead per transaction as a safety margin.
-      blockBodyOverhead = 8
 
 mkShelleyTx :: Crypto c => SL.Tx c -> GenTx (ShelleyBlock c)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
