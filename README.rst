@@ -1,4 +1,9 @@
-|Build Status|
+.. raw:: html
+
+   <p align="center">
+      <a href='https://cardano-foundation-ouroboros-network.readthedocs-hosted.com/en/latest/?badge=latest'><img src='https://readthedocs.com/projects/cardano-foundation-ouroboros-network/badge/?version=latest&token=303e7bcb5816d902dcbc690e400427d18217bfa8912d1b567348c4d95bd2d2dc' alt='Documentation Status' /></a>
+      <a href='https://buildkite.com/input-output-hk/ouroboros-network'><img src='https://badge.buildkite.com/3c5e581fd69202ceddd64e91351846c41baa285aaca835cdd9.svg?style=flat-square&branch=master' alt='Build Status' /></a>
+   </p>
 
 Ouroboros-Network
 =================
@@ -229,6 +234,3 @@ use the right version of ``stylish-haskell``.
 .. code:: bash
 
    nix-shell --run ./scripts/buildkite/check-stylish.sh
-
-.. |Build Status| image:: https://badge.buildkite.com/3c5e581fd69202ceddd64e91351846c41baa285aaca835cdd9.svg?style=flat-square&branch=master
-   :target: https://buildkite.com/input-output-hk/ouroboros-network
