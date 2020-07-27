@@ -26,3 +26,11 @@ ouroboros-network
    ouroboros-consensus-shelley/README
    ouroboros-consensus-shelley-test/README
    Win32-network/README
+
+.. toctree::
+   :maxdepth: 3
+   :caption: Ouroboros Network Reference
+   :titlesonly:
+   :hidden:
+
+   reference/index
