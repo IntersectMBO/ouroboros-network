@@ -26,11 +26,3 @@ ouroboros-network
    ouroboros-consensus-shelley/README
    ouroboros-consensus-shelley-test/README
    Win32-network/README
-
-.. toctree::
-   :maxdepth: 3
-   :caption: Reference
-   :titlesonly:
-   :hidden:
-
-   reference/cardano-node-cli-reference
