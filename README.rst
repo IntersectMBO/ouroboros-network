@@ -13,23 +13,17 @@ Ouroboros-Network
 -  io-sim-classes - type classes, all of them have instance for both
    ``IOSim`` and ``IO``.
 -  ``typed-protocols`` - session type framework with support of
-   `protocol
-   pipelining <https://en.wikipedia.org/wiki/Protocol_pipelining>`__
+   `protocol pipelining <https://en.wikipedia.org/wiki/Protocol_pipelining>`__
 
    -  See 45min Haskell eXchange 2019
       `talk <https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts>`__
       by @dcoutts.
-   -  See three 50min Monadic Party 2019 workshop talks by @coot: `Part
-      1 <https://www.youtube.com/watch?v=j8gza2L61nM>`__, `Part
-      2 <https://www.youtube.com/watch?v=oV6KSl1srL8>`__, `Part
-      3 <https://www.youtube.com/watch?v=nOIQCRPwmPA>`__.
+   -  See three 50min Monadic Party 2019 workshop talks by @coot: `Part 1 <https://www.youtube.com/watch?v=j8gza2L61nM>`__, `Part 2 <https://www.youtube.com/watch?v=oV6KSl1srL8>`__, `Part 3 <https://www.youtube.com/watch?v=nOIQCRPwmPA>`__.
 
 -  ``ouroboros-network``- ouroboros network package which implements
    protocols which to run ouroboros family of protocols, multiplexing
    layer.
--  The
-   ```byron-proxy`` <https://github.com/input-output-hk/cardano-byron-proxy>`__
-   is a network protocol proxy between Byron and Shelley. It now lives
+-  The `Byron Proxy`__ is a network protocol proxy between Byron and Shelley. It now lives
    in a seaprate repository.
 
 Ouroboros-Network API
@@ -234,3 +228,6 @@ use the right version of ``stylish-haskell``.
 .. code:: bash
 
    nix-shell --run ./scripts/buildkite/check-stylish.sh
+
+
+.. _Byron Proxy: https://github.com/input-output-hk/cardano-byron-proxy
