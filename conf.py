@@ -21,7 +21,7 @@ if rtd_version not in ["stable", "latest"]:
 
 # -- Project information -----------------------------------------------------
 
-project = 'cardano-node Documentation'
+project = 'ouroboros-network Documentation'
 copyright = '2020, IOHK'
 author = 'IOHK'
 
