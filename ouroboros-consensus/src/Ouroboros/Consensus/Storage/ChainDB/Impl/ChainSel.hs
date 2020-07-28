@@ -72,6 +72,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
+                     (LookupBlockInfo)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Paths as Paths
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
@@ -145,7 +148,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
         mapM constructChain suffixesAfterI
       where
         suffixesAfterI :: [NonEmpty (HeaderHash blk)]
-        suffixesAfterI = VolDB.candidates succsOf (AF.anchorToPoint i)
+        suffixesAfterI = Paths.candidates succsOf (AF.anchorToPoint i)
 
         constructChain :: NonEmpty (HeaderHash blk)
                        -> StateT (Map (HeaderHash blk) (Header blk))
@@ -461,7 +464,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         trace (TryAddToCurrentChain p)
         addToCurrentChain succsOf' curChainAndLedger
 
-      | Just diff <- VolDB.isReachable lookupBlockInfo' curChain p -> do
+      | Just diff <- Paths.isReachable lookupBlockInfo' curChain p -> do
         -- ### Switch to a fork
         trace (TrySwitchToAFork p diff)
         switchToAFork succsOf' lookupBlockInfo' curChainAndLedger diff
@@ -508,7 +511,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                          -- ^ The current chain and ledger
                       -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger = do
-        let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
+        let suffixesAfterB = Paths.candidates succsOf (realPointToPoint p)
 
         -- Fragments that are anchored at @curHead@, i.e. suffixes of the
         -- current chain.
@@ -566,7 +569,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- a new fork.
     switchToAFork :: HasCallStack
                   => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-                  -> VolDB.LookupBlockInfo blk
+                  -> LookupBlockInfo blk
                   -> ChainAndLedger blk
                      -- ^ The current chain (anchored at @i@) and ledger
                   -> ChainDiff (HeaderFields blk)
@@ -597,7 +600,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
             -- for those candidates.
           . NE.filter (not . Diff.rollbackExceedsSuffix)
             -- 1. Extend the diff with candidates fitting on @B@
-          . VolDB.extendWithSuccessors succsOf lookupBlockInfo
+          . Paths.extendWithSuccessors succsOf lookupBlockInfo
           $ diff
 
         case NE.nonEmpty chainDiffs of

@@ -8,7 +8,7 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Test.Ouroboros.Storage.ChainDB.VolDB (tests) where
+module Test.Ouroboros.Storage.ChainDB.Paths (tests) where
 
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (fromChainHash,
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (fromChainHash,
                      isReachable)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
@@ -37,7 +37,7 @@ import           Test.Util.Orphans.Slotting.Arbitrary ()
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
-tests = testGroup "VolDB" [
+tests = testGroup "Paths" [
       testProperty "isReachable" prop_isReachable
     ]
 

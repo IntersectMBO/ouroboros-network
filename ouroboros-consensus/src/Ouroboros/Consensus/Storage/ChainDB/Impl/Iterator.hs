@@ -43,6 +43,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
                      ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (Path (..),
+                     computePath)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
                      VolDbSerialiseConstraints)
@@ -343,11 +345,11 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     findPathInVolDB :: HasCallStack
                     => ExceptT (UnknownRange blk) m (Iterator m blk b)
     findPathInVolDB = do
-      path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
+      path <- lift $ computePathVolDB itVolDB from to
       case path of
-        VolDB.NotInVolDB        _hash        -> throwError $ ForkTooOld from
-        VolDB.PartiallyInVolDB  predHash pts -> streamFromBoth predHash pts
-        VolDB.CompletelyInVolDB pts          -> case NE.nonEmpty pts of
+        NotInVolDB        _hash        -> throwError $ ForkTooOld from
+        PartiallyInVolDB  predHash pts -> streamFromBoth predHash pts
+        CompletelyInVolDB pts          -> case NE.nonEmpty pts of
           Just pts' -> lift $ streamFromVolDB pts'
           Nothing   -> lift $ emptyIterator
 
@@ -467,6 +469,21 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
       newIteratorKey <- readTVar itNextIteratorKey
       modifyTVar itNextIteratorKey succ
       return newIteratorKey
+
+-- | Variant of 'computePath' that computes a path through the VolDB. Throws
+-- an 'InvalidIteratorRange' exception when the range is invalid (i.e.,
+-- 'computePath' returned 'Nothing').
+computePathVolDB
+  :: forall m blk. (IOLike m, HasHeader blk)
+  => VolDB m blk
+  -> StreamFrom blk
+  -> StreamTo   blk
+  -> m (Path blk)
+computePathVolDB volDB from to = do
+    lookupBlockInfo <- atomically $ VolDB.getBlockInfo volDB
+    case computePath lookupBlockInfo from to of
+      Just path -> return path
+      Nothing   -> throwM $ InvalidIteratorRange from to
 
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').
