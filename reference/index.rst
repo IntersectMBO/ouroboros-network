@@ -4,14 +4,6 @@ Ouroboros Network Docs
 The network documentation is a work in progress, we have various
 documents in various stages:
 
--  `Shelly Network Design`_ The scope of this document is to describe
-   and justify design decisions. It is a work in progress.
-
-   Snapshot sent for review:
-
-   -  `V1.5 for internal review`_ with internal appendices
-   -  `V1.5 for external review`_ without internal appendices
-
 -  `Technical report`_ which contains technical documentation of the
    network stack: mux layer, protocol descriptions and their state
    machines. Other parts of the document will be merged / reused in the
