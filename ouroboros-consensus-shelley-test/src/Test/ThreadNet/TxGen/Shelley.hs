@@ -39,16 +39,16 @@ import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import           Test.ThreadNet.Infra.Shelley
 
-data ShelleyTxGenExtra h = ShelleyTxGenExtra
+data ShelleyTxGenExtra c = ShelleyTxGenExtra
   { -- | Generator environment.
-    stgeGenEnv  :: Gen.GenEnv (TPraosMockCrypto h)
+    stgeGenEnv  :: Gen.GenEnv c
     -- | Generate no transactions before this slot.
   , stgeStartAt :: SlotNo
   }
 
-instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
+instance CSL.Mock c => TxGen (ShelleyBlock c) where
 
-  type TxGenExtra (ShelleyBlock (TPraosMockCrypto h)) = ShelleyTxGenExtra h
+  type TxGenExtra (ShelleyBlock c) = ShelleyTxGenExtra c
 
   testGenTxs _numCoreNodes curSlotNo cfg extra lst
       | stgeStartAt > curSlotNo = pure []
@@ -61,10 +61,10 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
         , stgeStartAt
         } = extra
 
-      go :: [GenTx (ShelleyBlock (TPraosMockCrypto h))]  -- ^ Accumulator
+      go :: [GenTx (ShelleyBlock c)]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
-         -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
-         -> Gen [GenTx (ShelleyBlock (TPraosMockCrypto h))]
+         -> TickedLedgerState (ShelleyBlock c)
+         -> Gen [GenTx (ShelleyBlock c)]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
         tx <- genTx cfg curSlotNo st stgeGenEnv
@@ -74,19 +74,19 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
           Right st' -> go (tx:acc) (n - 1) st'
 
 genTx
-  :: forall h. HashAlgorithm h
-  => TopLevelConfig (ShelleyBlock (TPraosMockCrypto h))
+  :: forall h. CSL.Mock c
+  => TopLevelConfig (ShelleyBlock c)
   -> SlotNo
-  -> TickedLedgerState (ShelleyBlock (TPraosMockCrypto h))
-  -> Gen.GenEnv (TPraosMockCrypto h)
-  -> Gen (GenTx (ShelleyBlock (TPraosMockCrypto h)))
+  -> TickedLedgerState (ShelleyBlock c)
+  -> Gen.GenEnv c
+  -> Gen (GenTx (ShelleyBlock c))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
       (utxoSt, dpState)
   where
-    epochState :: CSL.EpochState (TPraosMockCrypto h)
+    epochState :: CSL.EpochState c
     epochState = SL.nesEs tickedShelleyState
 
     ledgerEnv :: STS.LedgerEnv
@@ -97,13 +97,13 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
       , ledgerAccount  = SL.esAccountState epochState
       }
 
-    utxoSt :: CSL.UTxOState (TPraosMockCrypto h)
+    utxoSt :: CSL.UTxOState c
     utxoSt =
         SL._utxoState
       . SL.esLState
       $ epochState
 
-    dpState :: CSL.DPState (TPraosMockCrypto h)
+    dpState :: CSL.DPState c
     dpState =
         SL._delegationState
       . SL.esLState
@@ -112,10 +112,10 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
 data WhetherToGeneratePPUs = DoNotGeneratePPUs | DoGeneratePPUs
   deriving (Show)
 
-mkGenEnv :: forall h. HashAlgorithm h
+mkGenEnv :: forall c. CSL.Mock c
          => WhetherToGeneratePPUs
-         -> [CoreNode (TPraosMockCrypto h)]
-         -> Gen.GenEnv (TPraosMockCrypto h)
+         -> [CoreNode c]
+         -> Gen.GenEnv c
 mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
   where
     -- Configuration of the transaction generator
@@ -135,7 +135,7 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
             DoGeneratePPUs    -> cs
             DoNotGeneratePPUs -> cs{ Gen.frequencyTxUpdates = 0 }
 
-    keySpace :: Gen.KeySpace (TPraosMockCrypto h)
+    keySpace :: Gen.KeySpace c
     keySpace =
       Gen.KeySpace
         (cnkiCoreNode <$> cn)

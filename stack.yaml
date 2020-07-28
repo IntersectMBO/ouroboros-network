@@ -38,12 +38,12 @@ flags:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: efa4b5ecd7f0a13124616b12679cd42517cd905a
+    commit: d8f35c3c725be67148681227f9d64876f5909120
     subdirs:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 7d795c3040ea7785812efa1c97864bbb41b15d3e
+    commit: df8687488449f71dce3d881800c21e41fe1b7fc1
     subdirs:
       - binary
       - binary/test
@@ -52,7 +52,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: be1e61ad0f73c099a8b9ca1be430e3b40706f398
+    commit: 337dca57130a75ce026ce702220cc08fbd75b9b0
     subdirs:
       - byron/chain/executable-spec
       - byron/ledger/executable-spec
@@ -68,7 +68,7 @@ extra-deps:
 
   # Needed for `cardano-ledger-specs`
   - git: https://github.com/input-output-hk/goblins
-    commit: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
+    commit: 312198a1523736181ef7ddab15958bb32a9d9052
   - moo-1.2
   - gray-code-0.3.1
 
