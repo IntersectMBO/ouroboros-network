@@ -52,8 +52,8 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.SOP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()

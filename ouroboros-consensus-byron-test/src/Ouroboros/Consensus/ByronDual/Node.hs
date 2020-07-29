@@ -66,7 +66,7 @@ dualByronBlockForging
   -> BlockForging m DualByronBlock
 dualByronBlockForging creds = BlockForging {
       canBeLeader      = canBeLeader
-    , updateForgeState = updateForgeState
+    , updateForgeState = fmap castForgeStateUpdateInfo . updateForgeState
     , checkCanForge    = checkCanForge . dualTopLevelConfigMain
     , forgeBlock       = return .....: forgeDualByronBlock
     }

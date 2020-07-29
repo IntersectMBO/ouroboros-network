@@ -118,6 +118,8 @@ type instance CannotForge (SimpleBftBlock c c') = Void
 
 type instance ForgeStateInfo (SimpleBftBlock c c') = ()
 
+type instance ForgeStateUpdateError (SimpleBftBlock c c') = Void
+
 forgeBftExt :: forall c c'.
                ( SimpleCrypto c
                , BftCrypto c'

@@ -44,6 +44,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
 import           Codec.Serialise (Serialise (..))
 import qualified Control.Exception as Exn
 import           Control.Monad.Except
+import           Data.Bifunctor (first)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Proxy (Proxy (..))
@@ -337,8 +338,8 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
             Just gk -> do
               let state' = append cfg params (slot, gk) state
               case pbftWindowExceedsThreshold params state' gk of
-                Nothing -> return $! state'
-                Just n  -> throwError $ PBftExceededSignThreshold gk n
+                Left n   -> throwError $ PBftExceededSignThreshold gk n
+                Right () -> return $! state'
     where
       params = pbftWindowParams cfg
 
@@ -379,11 +380,13 @@ pbftWindowSize (SecurityParam k) = S.WindowSize k
 pbftWindowExceedsThreshold ::
      PBftCrypto c
   => PBftWindowParams
-  -> PBftState c -> PBftVerKeyHash c -> Maybe Word64
+  -> PBftState c
+  -> PBftVerKeyHash c
+  -> Either Word64 ()
 pbftWindowExceedsThreshold PBftWindowParams{..} st gk =
     if numSigned > threshold
-      then Just numSigned
-      else Nothing
+      then Left numSigned
+      else Right ()
   where
     numSigned = S.countSignedBy st gk
 
@@ -460,12 +463,12 @@ pbftCheckCanForge ::
   -> PBftCanBeLeader c
   -> SlotNo
   -> Ticked (PBftState c)
-  -> Maybe (PBftCannotForge c)
+  -> Either (PBftCannotForge c) ()
 pbftCheckCanForge cfg PBftCanBeLeader{..} slot tickedChainDepState =
     case Bimap.lookupR dlgKeyHash dms of
-      Nothing -> Just $ PBftCannotForgeInvalidDelegation dlgKeyHash
+      Nothing -> Left $ PBftCannotForgeInvalidDelegation dlgKeyHash
       Just gk ->
-        PBftCannotForgeThresholdExceeded <$>
+        first PBftCannotForgeThresholdExceeded $
           pbftWindowExceedsThreshold params (append cfg params (slot, gk) cds) gk
   where
     params = pbftWindowParams cfg

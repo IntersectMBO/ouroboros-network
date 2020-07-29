@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
+{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
@@ -108,6 +109,8 @@ type instance CannotForge (ShelleyBlock c) = TPraosCannotForge c
 
 type instance ForgeStateInfo (ShelleyBlock c) = HotKey.KESInfo
 
+type instance ForgeStateUpdateError (ShelleyBlock c) = HotKey.KESEvolutionError
+
 shelleyBlockForging
   :: forall m c. (TPraosCrypto c, IOLike m)
   => TPraosParams
@@ -122,17 +125,13 @@ shelleyBlockForging TPraosParams {..}
     return BlockForging {
         canBeLeader      = canBeLeader
       , updateForgeState = \curSlot ->
-                               HotKey.evolve hotKey (slotToPeriod curSlot)
-      , checkCanForge    = \cfg curSlot _tickedChainDepState isLeader -> do
-                               kesInfo <- HotKey.getInfo hotKey
-                               return $
-                                 tpraosCheckCanForge
-                                   (configConsensus cfg)
-                                   forgingVRFHash
-                                   curSlot
-                                   isLeader
-                                   kesInfo
-
+                               ForgeStateUpdateInfo <$>
+                                 HotKey.evolve hotKey (slotToPeriod curSlot)
+      , checkCanForge    = \cfg curSlot _tickedChainDepState ->
+                               tpraosCheckCanForge
+                                 (configConsensus cfg)
+                                 forgingVRFHash
+                                 curSlot
       , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
       }
   where
