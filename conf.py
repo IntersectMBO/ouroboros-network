@@ -99,7 +99,7 @@ html_logo = ".sphinx/cardano-logo.png"
 html_context = {
   "display_github": True, # Add 'Edit on Github' link instead of 'View page source'
   "github_user": "input-output-hk",
-  "github_repo": "cardano-node",
+  "github_repo": "ouroboros-network",
   "github_version": "master",
   "conf_py_path": "/",
   "source_suffix": source_suffix,
