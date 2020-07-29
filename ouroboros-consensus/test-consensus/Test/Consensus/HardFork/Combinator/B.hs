@@ -208,8 +208,9 @@ instance HasPartialConsensusConfig ProtocolB
 
 instance HasPartialLedgerConfig BlockB
 
-type instance CannotForge    BlockB = Void
-type instance ForgeStateInfo BlockB = ()
+type instance CannotForge           BlockB = Void
+type instance ForgeStateInfo        BlockB = ()
+type instance ForgeStateUpdateError BlockB = Void
 
 forgeBlockB ::
      TopLevelConfig BlockB
@@ -233,8 +234,8 @@ forgeBlockB _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
 blockForgingB :: Monad m => BlockForging m BlockB
 blockForgingB = BlockForging {
      canBeLeader      = ()
-   , updateForgeState = \_ -> return ()
-   , checkCanForge    = \_ _ _ _ -> return Nothing
+   , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+   , checkCanForge    = \_ _ _ _ _ -> return ()
    , forgeBlock       = return .....: forgeBlockB
    }
 

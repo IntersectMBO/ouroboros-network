@@ -26,6 +26,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , PerEraBlockConfig(..)
   , PerEraCodecConfig(..)
   , PerEraForgeStateInfo(..)
+  , PerEraForgeStateUpdateError(..)
     -- * Value for /one/ era
   , OneEraBlock(..)
   , OneEraHeader(..)
@@ -73,7 +74,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.SOP (OptNP)
+import           Ouroboros.Consensus.Util.OptNP (OptNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
@@ -94,7 +95,8 @@ newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig 
 
 -- | We might not be a leader, but /when/ we need the 'ForgeStateInfo', e.g.,
 -- in 'checkIsLeader', then 'ForgeStateInfo' will be non-empty.
-newtype PerEraForgeStateInfo xs = PerEraForgeStateInfo { getPerEraForgeStateInfo :: OptNP 'False WrapForgeStateInfo xs }
+newtype PerEraForgeStateInfo        xs = PerEraForgeStateInfo        { getPerEraForgeStateInfo        :: OptNP 'False WrapForgeStateInfo        xs }
+newtype PerEraForgeStateUpdateError xs = PerEraForgeStateUpdateError { getPerEraForgeStateUpdateError :: OptNP 'False WrapForgeStateUpdateError xs }
 
 {-------------------------------------------------------------------------------
   Value for /one/ era
@@ -290,7 +292,8 @@ deriving via LiftNS WrapLedgerWarning  xs instance CanHardFork xs => Show (OneEr
 deriving via LiftNS WrapTipInfo        xs instance CanHardFork xs => Show (OneEraTipInfo        xs)
 deriving via LiftNS WrapValidationErr  xs instance CanHardFork xs => Show (OneEraValidationErr  xs)
 
-deriving via LiftOptNP 'False WrapForgeStateInfo xs instance CanHardFork xs => Show (PerEraForgeStateInfo xs)
+deriving via LiftOptNP 'False WrapForgeStateInfo        xs instance CanHardFork xs => Show (PerEraForgeStateInfo        xs)
+deriving via LiftOptNP 'False WrapForgeStateUpdateError xs instance CanHardFork xs => Show (PerEraForgeStateUpdateError xs)
 
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Eq   (MismatchEraInfo xs)
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Show (MismatchEraInfo xs)

@@ -353,20 +353,23 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
 
         -- Check if we are the leader
         proof <- do
-          mIsLeader <- lift $
-            getLeaderProof blockForging
+          shouldForge <- lift $
+            checkShouldForge blockForging
               (forgeStateInfoTracer tracers)
-              (contramap
-                (TraceNodeCannotForge currentSlot)
-                (forgeTracer tracers))
               cfg
               currentSlot
               (tickedHeaderStateConsensus $ tickedHeaderState ticked)
-          case mIsLeader of
-            Just   p -> return p
-            Nothing  -> do
+          case shouldForge of
+            ForgeStateUpdateError err -> do
+              trace $ TraceForgeStateUpdateError currentSlot err
+              exitEarly
+            CannotForge cannotForge -> do
+              trace $ TraceNodeCannotForge currentSlot cannotForge
+              exitEarly
+            NotLeader -> do
               trace $ TraceNodeNotLeader currentSlot
               exitEarly
+            ShouldForge p -> return p
 
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot

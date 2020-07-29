@@ -83,6 +83,7 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseNodeToClientConstraints blk
       , Show                (CannotForge blk)
       , Show             (ForgeStateInfo blk)
+      , Show      (ForgeStateUpdateError blk)
       , Typeable                         blk
       , Typeable             (ApplyTxErr blk)
       , ShowProxy                        blk

@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Byron.Node (
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
+import           Data.Void (Void)
 
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
@@ -106,15 +107,16 @@ type instance CannotForge ByronBlock = PBftCannotForge PBftByronCrypto
 
 type instance ForgeStateInfo ByronBlock = ()
 
+type instance ForgeStateUpdateError ByronBlock = Void
+
 byronBlockForging
   :: Monad m
   => ByronLeaderCredentials
   -> BlockForging m ByronBlock
 byronBlockForging creds = BlockForging {
       canBeLeader
-    , updateForgeState = \_ -> return ()
-    , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
-                           return $
+    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+    , checkCanForge    = \cfg slot tickedPBftState _isLeader () ->
                              pbftCheckCanForge
                                (configConsensus cfg)
                                canBeLeader

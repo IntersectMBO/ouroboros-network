@@ -57,10 +57,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
 
-    -- | Called on every slot with the possibly updated 'ForgeStateInfo'
-    --
-    -- It is the responsibility of the tracer to only show the
-    -- 'ForgeStateInfo' when it is changed (or possibly periodically).
+    -- | Used to trace the 'ForgeStateInfo' whenever it is updated
   , forgeStateInfoTracer         :: f (ForgeStateInfo blk)
   }
 
@@ -114,6 +111,7 @@ showTracers :: ( Show blk
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show (ForgeStateInfo blk)
+               , Show (ForgeStateUpdateError blk)
                , Show (CannotForge blk)
                , Show remotePeer
                , LedgerSupportsProtocol blk
@@ -145,15 +143,19 @@ showTracers tr = Tracers
 --
 -- > TraceStartLeadershipCheck
 -- >          |
--- >          +--- TraceNodeNotLeader
--- >          |
 -- >          +--- TraceBlockFromFuture (leadership check failed)
 -- >          |
 -- >          +--- TraceSlotIsImmutable (leadership check failed)
 -- >          |
 -- >          +--- TraceNoLedgerState (leadership check failed)
 -- >          |
--- >          +--- TraceNoLedgerView (leadership check failed)-- >
+-- >          +--- TraceNoLedgerView (leadership check failed)
+-- >          |
+-- >          +--- TraceForgeStateUpdateError (leadership check failed)
+-- >          |
+-- >          +--- TraceNodeCannotForge (leadership check failed)
+-- >          |
+-- >          +--- TraceNodeNotLeader
 -- >          |
 -- >   TraceNodeIsLeader
 -- >          |
@@ -183,6 +185,13 @@ data TraceForgeEvent blk
   --
   -- We record the current slot number
   | TraceNodeNotLeader SlotNo
+
+  -- | Updating the forge state failed.
+  --
+  -- For example, the KES key could not be evolved anymore.
+  --
+  -- We record the error returned by 'updateForgeState'.
+  | TraceForgeStateUpdateError SlotNo (ForgeStateUpdateError blk)
 
   -- | We did the leadership check and concluded that we should lead and forge
   -- a block, but cannot
@@ -280,10 +289,12 @@ data TraceForgeEvent blk
 deriving instance ( LedgerSupportsProtocol blk
                   , Eq blk
                   , Eq (GenTx blk)
+                  , Eq (ForgeStateUpdateError blk)
                   , Eq (CannotForge blk)
                   ) => Eq (TraceForgeEvent blk)
 deriving instance ( LedgerSupportsProtocol blk
                   , Show blk
                   , Show (GenTx blk)
+                  , Show (ForgeStateUpdateError blk)
                   , Show (CannotForge blk)
                   ) => Show (TraceForgeEvent blk)

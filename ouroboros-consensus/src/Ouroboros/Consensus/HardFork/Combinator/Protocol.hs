@@ -39,7 +39,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.SOP
+import           Ouroboros.Consensus.Util.OptNP (OptNP)
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -233,7 +234,7 @@ check HardForkConsensusConfig{..}
           proxySingle
           checkOne
           cfgs
-          (fromOptNP canBeLeader)
+          (OptNP.toNP canBeLeader)
           (State.tip chainDepState)
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra

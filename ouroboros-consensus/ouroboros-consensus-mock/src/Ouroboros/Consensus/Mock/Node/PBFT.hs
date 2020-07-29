@@ -86,7 +86,7 @@ pbftBlockForging ::
   -> BlockForging m (SimplePBftBlock c c')
 pbftBlockForging canBeLeader = BlockForging {
       canBeLeader
-    , updateForgeState = \_ -> return ()
+    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
                            return $
                              pbftCheckCanForge

@@ -144,7 +144,10 @@ pretendTicked (StakeDist sd) = TickedStakeDist sd
 
 type instance CannotForge (SimplePraosBlock c c') = Void
 
-type instance ForgeStateInfo (SimplePraosBlock c c') = ()
+type instance ForgeStateInfo (SimplePraosBlock c c') = HotKey c'
+
+type instance ForgeStateUpdateError (SimplePraosBlock c c') =
+  HotKeyEvolutionError
 
 forgePraosExt :: forall c c'.
                  ( SimpleCrypto c

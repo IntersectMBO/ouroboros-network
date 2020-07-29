@@ -35,13 +35,13 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , computeRandomnessStabilisationWindow
     -- * CannotForge
   , TPraosCannotForge (..)
-  , TPraosUnusableKey (..)
   , tpraosCheckCanForge
     -- * Type instances
   , ConsensusConfig (..)
   , Ticked (..)
   ) where
 
+import           Control.Monad.Except (throwError)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity)
@@ -73,10 +73,11 @@ import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey (..))
+import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
@@ -135,7 +136,7 @@ forgeTPraosFields :: ( TPraosCrypto c
                   -> (TPraosToSign c -> toSign)
                   -> m (TPraosFields c toSign)
 forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
-    signature <- sign hotKey toSign
+    signature <- HotKey.sign hotKey toSign
     return TPraosFields {
         tpraosSignature = signature
       , tpraosToSign    = toSign
@@ -500,9 +501,20 @@ computeRandomnessStabilisationWindow securityParam asc =
 -- | Expresses that, whilst we believe ourselves to be a leader for this slot,
 -- we are nonetheless unable to forge a block.
 data TPraosCannotForge c =
-    -- | The KES key in our operational certificate is not usable for the
+    -- | The KES key in our operational certificate can't be used because the
+    -- current (wall clock) period is before the start period of the key.
     -- current KES period.
-    TPraosCannotForgeUnusableKESKey !TPraosUnusableKey
+    --
+    -- Note: the opposite case, i.e., the wall clock period being after the
+    -- end period of the key, is caught when trying to update the key in
+    -- 'updateForgeState'.
+    TPraosCannotForgeKeyNotUsableYet
+      !Absolute.KESPeriod
+      -- ^ Current KES period according to the wallclock slot, i.e., the KES
+      -- period in which we want to use the key.
+      !Absolute.KESPeriod
+      -- ^ Start KES period of the KES key.
+
     -- | We are a genesis delegate, but our VRF key (second argument) does not
     -- match the registered key for that delegate (first argument).
   | TPraosCannotForgeWrongVRF
@@ -512,30 +524,6 @@ data TPraosCannotForge c =
 
 deriving instance TPraosCrypto c => Show (TPraosCannotForge c)
 
-data TPraosUnusableKey = TPraosUnusableKey {
-      tpraosUnusableKeyStart   :: !SL.KESPeriod
-    , tpraosUnusableKeyEnd     :: !SL.KESPeriod
-    , tpraosUnusableKeyCurrent :: !SL.KESPeriod
-      -- ^ Current KES period of the key
-    , tpraosUnusableWallClock  :: !SL.KESPeriod
-      -- ^ Current KES period according to the wallclock slot, i.e., the KES
-      -- period in which we want to use the key.
-    }
-  deriving (Show)
-
-checkKesPeriod :: SL.KESPeriod -> HotKey.KESInfo -> Either TPraosUnusableKey ()
-checkKesPeriod wallclockPeriod kesInfo
-    | let curKeyPeriod = HotKey.kesAbsolutePeriod kesInfo
-    , curKeyPeriod /= wallclockPeriod
-    = Left TPraosUnusableKey {
-          tpraosUnusableKeyStart   = HotKey.kesStartPeriod kesInfo
-        , tpraosUnusableKeyEnd     = HotKey.kesEndPeriod   kesInfo
-        , tpraosUnusableKeyCurrent = curKeyPeriod
-        , tpraosUnusableWallClock  = wallclockPeriod
-        }
-    | otherwise
-    = Right ()
-
 tpraosCheckCanForge ::
      ConsensusConfig (TPraos c)
   -> SL.Hash c (VerKeyVRF (VRF c))
@@ -543,23 +531,24 @@ tpraosCheckCanForge ::
   -> SlotNo
   -> IsLeader (TPraos c)
   -> HotKey.KESInfo
-  -> Maybe (TPraosCannotForge c)
+  -> Either (TPraosCannotForge c) ()
 tpraosCheckCanForge TPraosConfig{tpraosParams}
                     forgingVRFHash
                     curSlot
                     TPraosIsLeader{tpraosIsLeaderGenVRFHash}
                     kesInfo
-  | Left unusableKey <- checkKesPeriod wallclockPeriod kesInfo
-  = Just $ TPraosCannotForgeUnusableKESKey unusableKey
+  | let startPeriod = HotKey.kesStartPeriod kesInfo
+  , startPeriod > wallclockPeriod
+  = throwError $ TPraosCannotForgeKeyNotUsableYet wallclockPeriod startPeriod
   | Just genVRFHash <- tpraosIsLeaderGenVRFHash
   , genVRFHash /= forgingVRFHash
-  = Just $ TPraosCannotForgeWrongVRF genVRFHash forgingVRFHash
+  = throwError $ TPraosCannotForgeWrongVRF genVRFHash forgingVRFHash
   | otherwise
-  = Nothing
+  = return ()
   where
     -- The current wallclock KES period
-    wallclockPeriod :: SL.KESPeriod
-    wallclockPeriod = SL.KESPeriod $ fromIntegral $
+    wallclockPeriod :: Absolute.KESPeriod
+    wallclockPeriod = Absolute.KESPeriod $ fromIntegral $
         unSlotNo curSlot `div` tpraosSlotsPerKESPeriod tpraosParams
 
 {-------------------------------------------------------------------------------
