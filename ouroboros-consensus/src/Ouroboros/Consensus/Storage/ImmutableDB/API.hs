@@ -26,6 +26,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
 
 import           Data.ByteString.Builder (Builder)
+import           Data.ByteString.Short (ShortByteString)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -204,6 +205,7 @@ instance DB (ImmutableDB hash m) where
   type DBBlock      (ImmutableDB hash m) = ()
   type DBHeader     (ImmutableDB hash m) = ()
   type DBHeaderHash (ImmutableDB hash m) = hash
+  type DBNestedCtxt (ImmutableDB hash m) = ShortByteString
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
 -- blobs. Slots not containing a blob and missing EBBs are skipped.

@@ -47,7 +47,6 @@ instance HasBinaryBlockInfo ByronBlock where
 
 instance ImmDbSerialiseConstraints ByronBlock
 instance LgrDbSerialiseConstraints ByronBlock
-instance VolDbSerialiseConstraints ByronBlock
 instance SerialiseDiskConstraints  ByronBlock
 
 instance EncodeDisk ByronBlock ByronBlock where

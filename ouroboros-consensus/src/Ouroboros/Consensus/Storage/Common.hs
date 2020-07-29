@@ -99,10 +99,17 @@ extractHeader BinaryBlockInfo { headerOffset, headerSize } =
 
 -- | The type of a block, header, and header hash of a database. Used by
 -- 'BlockComponent'.
+--
+-- TODO this class should be removed when #2264 is done.
 class DB db where
   type DBBlock      db :: Type
   type DBHeader     db :: Type
   type DBHeaderHash db :: Type
+  -- | While working towards #2264, the VolatileDB will already be aware of
+  -- the actual type that is parameterised by @blk@, while the ImmutableDB
+  -- will still use 'ShortByteString', hence the need to parameterise it over
+  -- the database.
+  type DBNestedCtxt db :: Type
 
 -- | Which component of the block to read from a database: the whole block,
 -- its header, its hash, the block size, ..., or combinations thereof.
@@ -118,7 +125,7 @@ data BlockComponent db a where
   GetIsEBB      :: BlockComponent db IsEBB
   GetBlockSize  :: BlockComponent db Word32
   GetHeaderSize :: BlockComponent db Word16
-  GetNestedCtxt :: BlockComponent db ShortByteString
+  GetNestedCtxt :: BlockComponent db (DBNestedCtxt db)
   GetPure       :: a
                 -> BlockComponent db a
   GetApply      :: BlockComponent db (a -> b)
@@ -138,6 +145,7 @@ castBlockComponent
   :: ( DBBlock      db1 ~ DBBlock      db2
      , DBHeader     db1 ~ DBHeader     db2
      , DBHeaderHash db1 ~ DBHeaderHash db2
+     , DBNestedCtxt db1 ~ DBNestedCtxt db2
      )
   => BlockComponent db1 b
   -> BlockComponent db2 b

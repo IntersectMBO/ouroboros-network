@@ -60,11 +60,11 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , readerForward
   , readerClose
     -- * ModelSupportsBlock
-  , ModelSupportsBlock (..)
+  , ModelSupportsBlock
     -- * Exported for testing purposes
   , between
   , blocks
-  , volDbBlocks
+  , volatileDbBlocks
   , immDbChain
   , validChains
   , initLedger
@@ -75,7 +75,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , copyToImmDB
   , closeDB
   , reopen
-  , wipeVolDB
+  , wipeVolatileDB
   , advanceCurSlot
   , chains
   ) where
@@ -123,27 +123,24 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (ReconstructNestedCtxt (..))
-import           Ouroboros.Consensus.Storage.Common (PrefixLen (..), takePrefix)
 
 type IteratorId = Int
 
 -- | Model of the chain DB
 data Model blk = Model {
-      volDbBlocks   :: Map (HeaderHash blk) blk
+      volatileDbBlocks :: Map (HeaderHash blk) blk
       -- ^ The VolatileDB
-    , immDbChain    :: Chain blk
+    , immDbChain       :: Chain blk
       -- ^ The ImmutableDB
-    , cps           :: CPS.ChainProducerState blk
-    , currentLedger :: ExtLedgerState blk
-    , initLedger    :: ExtLedgerState blk
-    , iterators     :: Map IteratorId [blk]
-    , invalid       :: InvalidBlocks blk
-    , currentSlot   :: SlotNo
-    , maxClockSkew  :: Word64
+    , cps              :: CPS.ChainProducerState blk
+    , currentLedger    :: ExtLedgerState blk
+    , initLedger       :: ExtLedgerState blk
+    , iterators        :: Map IteratorId [blk]
+    , invalid          :: InvalidBlocks blk
+    , currentSlot      :: SlotNo
+    , maxClockSkew     :: Word64
       -- ^ Max clock skew in terms of slots. A static configuration parameter.
-    , isOpen        :: Bool
+    , isOpen           :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
       -- ChainDB that wraps this model will throw a 'ClosedDBError' whenever
@@ -169,11 +166,11 @@ immDbBlocks Model { immDbChain } = Map.fromList $
     ]
 
 blocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
-blocks m = volDbBlocks m <> immDbBlocks m
+blocks m = volatileDbBlocks m <> immDbBlocks m
 
 futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 futureBlocks m =
-    Map.filter ((currentSlot m <) . blockSlot) (volDbBlocks m)
+    Map.filter ((currentSlot m <) . blockSlot) (volatileDbBlocks m)
 
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
@@ -386,16 +383,16 @@ empty
   -> Word64   -- ^ Max clock skew in number of blocks
   -> Model blk
 empty initLedger maxClockSkew = Model {
-      volDbBlocks   = Map.empty
-    , immDbChain    = Chain.Genesis
-    , cps           = CPS.initChainProducerState Chain.Genesis
-    , currentLedger = initLedger
-    , initLedger    = initLedger
-    , iterators     = Map.empty
-    , invalid       = Map.empty
-    , currentSlot   = 0
-    , maxClockSkew  = maxClockSkew
-    , isOpen        = True
+      volatileDbBlocks = Map.empty
+    , immDbChain       = Chain.Genesis
+    , cps              = CPS.initChainProducerState Chain.Genesis
+    , currentLedger    = initLedger
+    , initLedger       = initLedger
+    , iterators        = Map.empty
+    , invalid          = Map.empty
+    , currentSlot      = 0
+    , maxClockSkew     = maxClockSkew
+    , isOpen           = True
     }
 
 -- | Advance the 'currentSlot' of the model to the given 'SlotNo' if the
@@ -410,16 +407,16 @@ addBlock :: forall blk. LedgerSupportsProtocol blk
          -> blk
          -> Model blk -> Model blk
 addBlock cfg blk m = Model {
-      volDbBlocks   = volDbBlocks'
-    , immDbChain    = immDbChain m
-    , cps           = CPS.switchFork newChain (cps m)
-    , currentLedger = newLedger
-    , initLedger    = initLedger m
-    , iterators     = iterators  m
-    , invalid       = invalid'
-    , currentSlot   = currentSlot  m
-    , maxClockSkew  = maxClockSkew m
-    , isOpen        = True
+      volatileDbBlocks = volatileDbBlocks'
+    , immDbChain       = immDbChain m
+    , cps              = CPS.switchFork newChain (cps m)
+    , currentLedger    = newLedger
+    , initLedger       = initLedger m
+    , iterators        = iterators  m
+    , invalid          = invalid'
+    , currentSlot      = currentSlot  m
+    , maxClockSkew     = maxClockSkew m
+    , isOpen           = True
     }
   where
     secParam = configSecurityParam cfg
@@ -435,18 +432,18 @@ addBlock cfg blk m = Model {
         -- If it's an invalid block we've seen before, ignore it.
         Map.member (blockHash blk) (invalid m)
 
-    volDbBlocks' :: Map (HeaderHash blk) blk
-    volDbBlocks'
+    volatileDbBlocks' :: Map (HeaderHash blk) blk
+    volatileDbBlocks'
         | ignoreBlock
-        = volDbBlocks m
+        = volatileDbBlocks m
         | otherwise
-        = Map.insert (blockHash blk) blk (volDbBlocks m)
+        = Map.insert (blockHash blk) blk (volatileDbBlocks m)
 
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
     invalid'   :: InvalidBlocks blk
     candidates :: [(Chain blk, ExtLedgerState blk)]
-    (invalid', candidates) = validChains cfg m (immDbBlocks m <> volDbBlocks')
+    (invalid', candidates) = validChains cfg m (immDbBlocks m <> volatileDbBlocks')
 
     immutableChainHashes =
         map blockHash
@@ -548,11 +545,10 @@ getBlockComponent blk = \case
     GetIsEBB      -> headerToIsEBB (getHeader blk)
     GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedCtxt -> takePrefix prefixLen $ serialise blk
+    GetNestedCtxt -> case unnest (getHeader blk) of
+                       DepPair nestedCtxt _ -> SomeBlock nestedCtxt
     GetPure a     -> a
     GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
-  where
-    prefixLen = modelGetPrefixLen (Proxy @blk)
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.
@@ -632,16 +628,8 @@ class ( HasHeader blk
       , HasHeader (Header blk)
       , Serialise blk
       , Serialise (Header blk)
-      ) => ModelSupportsBlock blk where
-  modelGetPrefixLen :: Proxy blk -> PrefixLen
-
-  -- Default implementation in terms of @ReconstructNestedCtxt Header blk@
-  -- instead of requiring it as a constraint, so that test blocks not
-  -- implementating the constraint can provide a dummy implementation.
-  default modelGetPrefixLen
-    :: ReconstructNestedCtxt Header blk
-    => Proxy blk -> PrefixLen
-  modelGetPrefixLen _ = reconstructPrefixLen (Proxy @(Header blk))
+      , HasNestedContent Header blk
+      ) => ModelSupportsBlock blk
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
@@ -959,8 +947,8 @@ garbageCollectableIteratorNext secParam m itId =
 
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
-garbageCollect secParam m@Model{..} = m
-    { volDbBlocks = Map.filter (not . collectable) volDbBlocks
+garbageCollect secParam m@Model{..} = m {
+      volatileDbBlocks = Map.filter (not . collectable) volatileDbBlocks
     }
     -- TODO what about iterators that will stream garbage collected blocks?
   where
@@ -984,19 +972,19 @@ closeDB m@Model{..} = m {
 reopen :: Model blk -> Model blk
 reopen m = m { isOpen = True }
 
-wipeVolDB
+wipeVolatileDB
   :: forall blk. LedgerSupportsProtocol blk
   => TopLevelConfig blk
   -> Model blk
   -> (Point blk, Model blk)
-wipeVolDB cfg m =
+wipeVolatileDB cfg m =
     (tipPoint m', reopen m')
   where
-    m' = (closeDB m)
-      { volDbBlocks   = Map.empty
-      , cps           = CPS.switchFork newChain (cps m)
-      , currentLedger = newLedger
-      , invalid       = Map.empty
+    m' = (closeDB m) {
+        volatileDbBlocks = Map.empty
+      , cps              = CPS.switchFork newChain (cps m)
+      , currentLedger    = newLedger
+      , invalid          = Map.empty
       }
 
     -- Get the chain ending at the ImmutableDB by doing chain selection on the

@@ -22,9 +22,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (fromChainHash,
-                     isReachable)
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (isReachable)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -58,7 +57,7 @@ data ReachableSetup blk = ReachableSetup {
       currentChain :: AnchoredFragment (Header blk)
     , forkTip      :: RealPoint blk
     , fork         :: Maybe (ChainDiff (HeaderFields blk))
-    , blockInfo    :: Map (HeaderHash blk) (VolDB.BlockInfo (HeaderHash blk))
+    , blockInfo    :: Map (HeaderHash blk) (VolatileDB.BlockInfo blk)
     }
 
 deriving instance (HasHeader blk, Show (Header blk)) => Show (ReachableSetup blk)
@@ -229,22 +228,22 @@ chainDiffForkTip =
 headerToBlockInfo ::
      (GetHeader blk, GetPrevHash blk)
   => Header blk
-  -> VolDB.BlockInfo (HeaderHash blk)
-headerToBlockInfo hdr = VolDB.BlockInfo {
-      bbid          = headerHash hdr
-    , bslot         = blockSlot  hdr
-    , bbno          = blockNo    hdr
-    , bpreBid       = fromChainHash (headerPrevHash hdr)
-    , bisEBB        = headerToIsEBB hdr
+  -> VolatileDB.BlockInfo blk
+headerToBlockInfo hdr = VolatileDB.BlockInfo {
+      biHash         = headerHash hdr
+    , biSlotNo       = blockSlot  hdr
+    , biBlockNo      = blockNo    hdr
+    , biPrevHash     = headerPrevHash hdr
+    , biIsEBB        = headerToIsEBB hdr
     -- We don't care about those two
-    , bheaderOffset = 0
-    , bheaderSize   = 0
+    , biHeaderOffset = 0
+    , biHeaderSize   = 0
     }
 
 headersToBlockInfo ::
      (GetHeader blk, GetPrevHash blk, Foldable f)
   => f (Header blk)
-  -> Map (HeaderHash blk) (VolDB.BlockInfo (HeaderHash blk))
+  -> Map (HeaderHash blk) (VolatileDB.BlockInfo blk)
 headersToBlockInfo = foldMap $ \hdr ->
     Map.singleton (headerHash hdr) (headerToBlockInfo hdr)
 

@@ -65,7 +65,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -89,7 +88,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 -- Support for tests
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
@@ -357,6 +355,7 @@ instance DB (ChainDB m blk) where
   type DBBlock      (ChainDB m blk) = m blk
   type DBHeader     (ChainDB m blk) = m (Header blk)
   type DBHeaderHash (ChainDB m blk) = HeaderHash blk
+  type DBNestedCtxt (ChainDB m blk) = SomeBlock (NestedCtxt Header) blk
 
 {-------------------------------------------------------------------------------
   Adding a block
@@ -468,29 +467,14 @@ getSerialisedBlockWithPoint
 getSerialisedBlockWithPoint =
     WithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
 
-getSerialisedHeader
-  :: forall m blk. ReconstructNestedCtxt Header blk
-  => BlockComponent (ChainDB m blk) (SerialisedHeader blk)
+getSerialisedHeader :: BlockComponent (ChainDB m blk) (SerialisedHeader blk)
 getSerialisedHeader =
-    mkSerialisedHeader
+    curry serialisedHeaderFromPair
       <$> GetNestedCtxt
-      <*> GetBlockSize
       <*> GetRawHeader
-  where
-    mkSerialisedHeader
-      :: ShortByteString
-      -> SizeInBytes
-      -> Lazy.ByteString
-      -> SerialisedHeader blk
-    mkSerialisedHeader prefix blockSize rawHdr =
-        serialisedHeaderFromPair (
-            reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize
-          , rawHdr
-          )
 
-getSerialisedHeaderWithPoint
-  :: ReconstructNestedCtxt Header blk
-  => BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
+getSerialisedHeaderWithPoint ::
+     BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
 getSerialisedHeaderWithPoint =
     WithPoint <$> getSerialisedHeader <*> getPoint
 
@@ -779,26 +763,13 @@ data ChainDbFailure =
     -- These are errors indicative of a disk failure (as opposed to API misuse)
   | ImmDbFailure ImmDB.UnexpectedError
 
-    -- | Block missing from the volatile DB
-    --
-    -- This exception gets thrown when a block that we /know/ should exist
-    -- in the DB (for example, because its hash exists in the volatile DB's
-    -- successor index) nonetheless was not found
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbMissingBlock (Proxy blk) (HeaderHash blk)
-
     -- | A block got corrupted in the volatile DB
     --
     -- This exception gets thrown when, while copying blocks from the volatile
     -- DB to the immutable DB, a block doesn't pass the integrity check
     -- (hash/signature check).
   | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbCorruptBlock (BlockRef blk)
-
-    -- | The volatile DB throw an "unexpected error"
-    --
-    -- These are errors indicative of a disk failure (as opposed to API misuse)
-  | VolDbFailure VolDB.UnexpectedError
+      VolatileDbCorruptBlock (BlockRef blk)
 
     -- | The ledger DB threw a file-system error
   | LgrDbFailure FsError
@@ -824,10 +795,7 @@ instance Exception ChainDbFailure where
         ImmDB.InvalidFileError {}      -> corruption
         ImmDB.MissingFileError {}      -> corruption
         ImmDB.ChecksumMismatchError {} -> corruption
-      VolDbMissingBlock {}                -> corruption
-      VolDbCorruptBlock {}                -> corruption
-      VolDbFailure e -> case e of
-        VolDB.FileSystemError fse -> fsError fse
+      VolatileDbCorruptBlock {}           -> corruption
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where
@@ -869,20 +837,11 @@ instance Eq ChainDbFailure where
   ImmDbFailure a1 == ImmDbFailure a2 = ImmDB.sameUnexpectedError a1 a2
   ImmDbFailure {} == _               = False
 
-  VolDbMissingBlock (Proxy :: Proxy blk) a1 == VolDbMissingBlock (Proxy :: Proxy blk') a2 =
+  VolatileDbCorruptBlock (a1 :: BlockRef blk) == VolatileDbCorruptBlock (a2 :: BlockRef blk') =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> a1 == a2
-  VolDbMissingBlock {} == _ = False
-
-  VolDbCorruptBlock (a1 :: BlockRef blk) == VolDbCorruptBlock (a2 :: BlockRef blk') =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2
-  VolDbCorruptBlock {} == _ = False
-
-  VolDbFailure a1 == VolDbFailure a2 = VolDB.sameUnexpectedError a1 a2
-  VolDbFailure {} == _               = False
+  VolatileDbCorruptBlock {} == _ = False
 
   LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
   LgrDbFailure {} == _               = False

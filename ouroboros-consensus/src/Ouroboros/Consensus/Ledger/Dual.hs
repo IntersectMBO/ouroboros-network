@@ -185,8 +185,8 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
 -------------------------------------------------------------------------------}
 
 data instance CodecConfig (DualBlock m a) = DualCodecConfig {
-      dualCodecConfigMain :: CodecConfig m
-    , dualCodecConfigAux  :: CodecConfig a
+      dualCodecConfigMain :: !(CodecConfig m)
+    , dualCodecConfigAux  :: !(CodecConfig a)
     }
   deriving (Generic)
 
@@ -594,7 +594,7 @@ deriving instance Ord  (GenTxId m) => Ord  (TxId (GenTx (DualBlock m a)))
   Since we only have a single header, we just delegate to the main block.
 -------------------------------------------------------------------------------}
 
-data instance NestedCtxt_ (DualBlock m a) f x where
+newtype instance NestedCtxt_ (DualBlock m a) f x where
     CtxtDual :: NestedCtxt_ m f x -> NestedCtxt_ (DualBlock m a) f x
 
 deriving instance Show (NestedCtxt_ m f x)

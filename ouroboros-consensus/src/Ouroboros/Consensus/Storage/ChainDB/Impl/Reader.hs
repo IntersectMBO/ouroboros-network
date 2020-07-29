@@ -40,8 +40,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
-                     (VolDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 {-------------------------------------------------------------------------------
@@ -88,7 +86,6 @@ newReader
      , HasHeader blk
      , GetHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
@@ -127,7 +124,6 @@ makeNewReader
      , HasHeader blk
      , GetHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
@@ -207,7 +203,6 @@ instructionHelper
      , HasHeader blk
      , GetHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      , EncodeDiskDep (NestedCtxt Header) blk
      , Traversable f, Applicative f
      )
@@ -312,11 +307,11 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
           getBlockComponentFromHeader hdr f <*>
           getBlockComponentFromHeader hdr bc
       where
-        -- | Use the 'ImmDB' and 'VolDB' to read the 'BlockComponent' from
+        -- | Use the 'ImmDB' and 'VolatileDB' to read the 'BlockComponent' from
         -- disk (or memory).
         getBlockComponent :: forall c. BlockComponent (ChainDB m blk) c -> m c
         getBlockComponent bc =
-          Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerRealPoint hdr)
+          Query.getAnyKnownBlockComponent cdbImmDB cdbVolatileDB bc (headerRealPoint hdr)
 
         rawHdr :: Lazy.ByteString
         rawHdr = case unnest hdr of

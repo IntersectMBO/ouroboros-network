@@ -11,7 +11,7 @@ module Test.Ouroboros.Storage.Util
   , expectUnexpectedError
   , expectFsResult
   , expectImmDBResult
-  , expectVolDBResult
+  , expectVolatileDBResult
   , apiEquivalenceFs
   , apiEquivalenceImmDB
   , tryFS
@@ -113,10 +113,11 @@ expectImmDBResult :: (a -> Assertion)
                   -> Assertion
 expectImmDBResult = expectResult prettyImmutableDBError
 
-expectVolDBResult :: (a -> Assertion)
-                  -> Either VolatileDBError a
-                  -> Assertion
-expectVolDBResult = expectResult show
+expectVolatileDBResult ::
+     (a -> Assertion)
+  -> Either VolatileDBError a
+  -> Assertion
+expectVolatileDBResult = expectResult show
 
 -- | Given a \"script\", runs it over a simulated FS and over IO (using a
 -- temporary, throw-away folder) and compare the results.

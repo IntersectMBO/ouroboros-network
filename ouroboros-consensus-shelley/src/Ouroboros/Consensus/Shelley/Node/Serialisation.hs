@@ -34,7 +34,6 @@ instance Era era => HasBinaryBlockInfo (ShelleyBlock era) where
 
 instance Era era => ImmDbSerialiseConstraints (ShelleyBlock era)
 instance Era era => LgrDbSerialiseConstraints (ShelleyBlock era)
-instance Era era => VolDbSerialiseConstraints (ShelleyBlock era)
 instance Era era => SerialiseDiskConstraints  (ShelleyBlock era)
 
 instance Era era => EncodeDisk (ShelleyBlock era) (ShelleyBlock era) where

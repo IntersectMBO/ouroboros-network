@@ -31,7 +31,6 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
@@ -102,7 +101,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (LedgerDbParams (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
@@ -163,7 +162,7 @@ data Cmd blk it rdr
     -- Internal
   | RunBgTasks
     -- Corruption
-  | WipeVolDB
+  | WipeVolatileDB
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 -- = Invalid blocks
@@ -251,7 +250,7 @@ type AllComponentsM m blk =
   , IsEBB
   , Word32
   , Word16
-  , ShortByteString
+  , SomeBlock (NestedCtxt Header) blk
   )
 
 -- | Convert @'AllComponentsM m'@ to 'AllComponents'
@@ -303,13 +302,13 @@ data ChainDBState m blk = ChainDBState
   deriving NoUnexpectedThunks via AllowThunk (ChainDBState m blk)
 
 -- | Environment to run commands against the real ChainDB implementation.
-data ChainDBEnv m blk = ChainDBEnv
-  { varDB      :: StrictMVar m (ChainDBState m blk)
-  , registry   :: ResourceRegistry m
-  , varCurSlot :: StrictTVar m SlotNo
-  , varNextId  :: StrictTVar m Id
-  , varVolDbFs :: StrictTVar m MockFS
-  , args       :: ChainDbArgs m blk
+data ChainDBEnv m blk = ChainDBEnv {
+    varDB           :: StrictMVar m (ChainDBState m blk)
+  , registry        :: ResourceRegistry m
+  , varCurSlot      :: StrictTVar m SlotNo
+  , varNextId       :: StrictTVar m Id
+  , varVolatileDbFs :: StrictTVar m MockFS
+  , args            :: ChainDbArgs m blk
     -- ^ Needed to reopen a ChainDB, i.e., open a new one.
   }
 
@@ -366,7 +365,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       Close                    -> Unit                <$> close st
       Reopen                   -> Unit                <$> reopen env
       RunBgTasks               -> ignore              <$> runBgTasks internal
-      WipeVolDB                -> Point               <$> wipeVolDB st
+      WipeVolatileDB           -> Point               <$> wipeVolatileDB st
   where
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
@@ -381,10 +380,10 @@ run env@ChainDBEnv { varDB, .. } cmd =
       atomically $ modifyTVar varCurSlot (max newCurSlot)
       addBlock chainDB blk
 
-    wipeVolDB :: ChainDBState m blk -> m (Point blk)
-    wipeVolDB st = do
+    wipeVolatileDB :: ChainDBState m blk -> m (Point blk)
+    wipeVolatileDB st = do
       close st
-      atomically $ writeTVar varVolDbFs Mock.empty
+      atomically $ writeTVar varVolatileDbFs Mock.empty
       reopen env
       ChainDB { getTipPoint } <- chainDB <$> readMVar varDB
       atomically $ getTipPoint
@@ -460,10 +459,13 @@ data IteratorResultGCed blk = IteratorResultGCed
   , iterResult :: IteratorResult blk (AllComponents blk)
   }
 
-deriving instance (Show blk, Show (Header blk), StandardHash blk)
-               => Show (IteratorResultGCed blk)
+deriving instance ( Show blk
+                  , Show (Header blk)
+                  , StandardHash blk
+                  , HasNestedContent Header blk
+                  ) => Show (IteratorResultGCed blk)
 
-instance (Eq blk, Eq (Header blk), StandardHash blk)
+instance (Eq blk, Eq (Header blk), StandardHash blk, HasNestedContent Header blk)
       => Eq (IteratorResultGCed blk) where
   IteratorResultGCed real1 iterResult1 == IteratorResultGCed real2 iterResult2 =
       case (real1, real2) of
@@ -581,7 +583,7 @@ runPure cfg = \case
     RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
-    WipeVolDB                -> ok  Point               $ update  (Model.wipeVolDB cfg)
+    WipeVolatileDB           -> ok  Point               $ update  (Model.wipeVolatileDB cfg)
   where
     k = configSecurityParam cfg
 
@@ -762,7 +764,7 @@ lockstep model@Model {..} cmd (At resp) = Event
         , knownIters   = RE.empty
         , knownReaders = RE.empty
         }
-      WipeVolDB -> model
+      WipeVolatileDB -> model
         { dbModel      = dbModel'
         , knownIters   = RE.empty
         , knownReaders = RE.empty
@@ -820,7 +822,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
       -- Internal
     , (if empty then 1 else 10, return RunBgTasks)
-    , (if empty then 1 else 10, return WipeVolDB)
+    , (if empty then 1 else 10, return WipeVolatileDB)
     ]
     -- TODO adjust the frequencies after labelling
   where
@@ -1014,7 +1016,7 @@ precondition Model {..} (At cmd) =
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s .&&
                                  Not (futureBlockWithSameBlockNo (blockNo blk))
-     WipeVolDB                -> Boolean $ Model.isOpen dbModel
+     WipeVolatileDB           -> Boolean $ Model.isOpen dbModel
      -- We don't allow 'GetIsValid' for blocks from the future, since the real
      -- implementation might have validated them before detecting they're from
      -- the future, whereas the model won't include them in the output of
@@ -1248,8 +1250,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
-deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
-deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
+deriving instance SOP.Generic         (VolatileDB.TraceEvent blk)
+deriving instance SOP.HasDatatypeInfo (VolatileDB.TraceEvent blk)
 
 data Tag =
     TagGetIsValidJust
@@ -1473,7 +1475,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       (tracer, getTrace) <- recordingTracerIORef
       varCurSlot         <- uncheckedNewTVarM 0
       varNextId          <- uncheckedNewTVarM 0
-      fsVars@(_, varVolDbFs, _) <- (,,)
+      fsVars@(_, varVolatileDbFs, _) <- (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
@@ -1493,7 +1495,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
                 , registry = iteratorRegistry
                 , varCurSlot
                 , varNextId
-                , varVolDbFs
+                , varVolatileDbFs
                 , args
                 }
               sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
@@ -1515,14 +1517,14 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       closeRegistry iteratorRegistry
 
       -- Read the final MockFS of each database
-      let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
+      let (immDbFsVar, volatileDbFsVar, lgrDbFsVar) = fsVars
       fses <- atomically $ (,,)
         <$> readTVar immDbFsVar
-        <*> readTVar volDbFsVar
+        <*> readTVar volatileDbFsVar
         <*> readTVar lgrDbFsVar
 
       let modelChain = Model.currentChain $ dbModel model
-          (immDbFs, volDbFs, lgrDbFs) = fses
+          (immDbFs, volatileDbFs, lgrDbFs) = fses
           prop =
             counterexample ("Model chain: " <> condense modelChain)      $
             counterexample ("TraceEvents: " <> unlines (map show trace)) $
@@ -1533,7 +1535,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
             counterexample "ImmutableDB is leaking file handles"
                            (Mock.numOpenHandles immDbFs === 0) .&&.
             counterexample "VolatileDB is leaking file handles"
-                           (Mock.numOpenHandles volDbFs === 0) .&&.
+                           (Mock.numOpenHandles volatileDbFs === 0) .&&.
             counterexample "LedgerDB is leaking file handles"
                            (Mock.numOpenHandles lgrDbFs === 0) .&&.
             counterexample "There were registered clean-up actions"
@@ -1597,7 +1599,7 @@ traceEventName = \case
     TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
-    TraceVolDBEvent          ev    -> "VolDB."        <> constrName ev
+    TraceVolatileDBEvent     ev    -> "VolatileDB."   <> constrName ev
 
 mkArgs :: IOLike m
        => TopLevelConfig Blk
@@ -1611,16 +1613,16 @@ mkArgs :: IOLike m
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
-       (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
+       (immDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- HasFS instances
       cdbHasFSImmDb           = SomeHasFS $ simHasFS immDbFsVar
-    , cdbHasFSVolDb           = SomeHasFS $ simHasFS volDbFsVar
+    , cdbHasFSVolatileDB      = SomeHasFS $ simHasFS volatileDbFsVar
     , cdbHasFSLgrDB           = SomeHasFS $ simHasFS lgrDbFsVar
 
       -- Policy
     , cdbImmValidation        = ValidateAllChunks
-    , cdbVolValidation        = VolDB.ValidateAll
-    , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+    , cdbVolatileDbValidation = VolatileDB.ValidateAll
+    , cdbMaxBlocksPerFile     = VolatileDB.mkBlocksPerFile 4
     , cdbParamsLgrDB          = LedgerDbParams {
                                     ledgerDbSecurityParam = configSecurityParam cfg
                                   }

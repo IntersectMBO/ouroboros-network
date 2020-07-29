@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
 
       -- * Exception handling
     , wrapFsError
-    , tryVolDB
+    , tryVolatileDB
 
       -- * Map of Set utilities
     , insertMapSet
@@ -32,7 +32,8 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Storage.VolatileDB.Error
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 
 {------------------------------------------------------------------------------
   FileId utilities
@@ -82,10 +83,11 @@ wrapFsError = handle $ throwM . UnexpectedError . FileSystemError
 -- This should be used whenever you want to run an action on the VolatileDB
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryVolDB :: forall m a. MonadCatch m
-         => m a
-         -> m (Either VolatileDBError a)
-tryVolDB = try . wrapFsError
+tryVolatileDB ::
+     forall m a. MonadCatch m
+  => m a
+  -> m (Either VolatileDBError a)
+tryVolatileDB = try . wrapFsError
 
 {------------------------------------------------------------------------------
   Map of Set utilities

@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
 import           Block.Byron (ByronBlockArgs)
@@ -168,7 +168,7 @@ analyse CmdLine {..} args =
                     dbDir cfg initLedger chunkInfo
           chainDbArgs = args' {
               ChainDB.cdbImmValidation = immValidationPolicy
-            , ChainDB.cdbVolValidation = volValidationPolicy
+            , ChainDB.cdbVolatileDbValidation = volValidationPolicy
             }
           (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
       if onlyImmDB then
@@ -197,7 +197,7 @@ analyse CmdLine {..} args =
       _                                -> ImmDB.ValidateMostRecentChunk
 
     volValidationPolicy = case (analysis, validation) of
-      (_, Just ValidateAllBlocks)      -> VolDB.ValidateAll
-      (_, Just MinimumBlockValidation) -> VolDB.NoValidation
-      (OnlyValidation, _ )             -> VolDB.ValidateAll
-      _                                -> VolDB.NoValidation
+      (_, Just ValidateAllBlocks)      -> VolatileDB.ValidateAll
+      (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
+      (OnlyValidation, _ )             -> VolatileDB.ValidateAll
+      _                                -> VolatileDB.NoValidation

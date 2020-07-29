@@ -85,7 +85,7 @@ type RawHeader         = CC.AHeader         Strict.ByteString
 -- nested type instead.
 data instance NestedCtxt_ ByronBlock f a where
   CtxtByronRegular ::
-       SizeInBytes
+       !SizeInBytes
     -> NestedCtxt_ ByronBlock Header RawHeader
 
   -- | In order to reconstruct 'Header ByronBlock' we need the 'SlotNo'
@@ -93,7 +93,7 @@ data instance NestedCtxt_ ByronBlock f a where
   -- We could compute that using 'EpochSlots', but we don't have that available
   -- here.
   CtxtByronBoundary ::
-       SizeInBytes
+       !SizeInBytes
     -> NestedCtxt_ ByronBlock Header (SlotNo, RawBoundaryHeader)
 
 deriving instance Show (NestedCtxt_ ByronBlock f a)

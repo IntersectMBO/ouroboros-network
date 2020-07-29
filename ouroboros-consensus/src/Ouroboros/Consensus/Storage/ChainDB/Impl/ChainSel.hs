@@ -62,7 +62,7 @@ import           Ouroboros.Consensus.Fragment.ValidatedDiff
                      (ValidatedChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
-                     InvalidBlockReason (..))
+                     BlockComponent (..), InvalidBlockReason (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
@@ -75,9 +75,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Paths as Paths
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
-                     VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
@@ -86,10 +85,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk.
-     (IOLike m, LedgerSupportsProtocol blk, VolDbSerialiseConstraints blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ImmDB m blk
-  -> VolDB m blk
+  -> VolatileDB m blk
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> TopLevelConfig blk
@@ -97,14 +95,15 @@ initialChainSelection
   -> StrictTVar m (FutureBlocks blk)
   -> CheckInFuture m blk
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
+initialChainSelection immDB volatileDB lgrDB tracer cfg varInvalid varFutureBlocks
                       futureCheck = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Anchor blk <- ImmDB.getAnchorForTip immDB
     (succsOf, ledger) <- atomically $ do
       invalid <- forgetFingerprint <$> readTVar varInvalid
-      (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.filterByPredecessor volDB)
+      (,) <$> (ignoreInvalidSuc volatileDB invalid <$>
+                  VolatileDB.filterByPredecessor volatileDB)
           <*> LgrDB.getCurrent lgrDB
 
     chains <- constructChains i succsOf
@@ -139,22 +138,24 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
 
     -- | Use the VolatileDB to construct all chains starting from the tip of
     -- the ImmutableDB.
-    constructChains :: Anchor blk -- ^ Tip of the ImmutableDB, @i@
-                    -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-                    -> m [AnchoredFragment (Header blk)]
+    constructChains ::
+         Anchor blk -- ^ Tip of the ImmutableDB, @i@
+      -> (ChainHash blk -> Set (HeaderHash blk))
+      -> m [AnchoredFragment (Header blk)]
     constructChains i succsOf = flip evalStateT Map.empty $
         mapM constructChain suffixesAfterI
       where
         suffixesAfterI :: [NonEmpty (HeaderHash blk)]
         suffixesAfterI = Paths.candidates succsOf (AF.anchorToPoint i)
 
-        constructChain :: NonEmpty (HeaderHash blk)
-                       -> StateT (Map (HeaderHash blk) (Header blk))
-                                 m
-                                 (AnchoredFragment (Header blk))
+        constructChain ::
+             NonEmpty (HeaderHash blk)
+          -> StateT (Map (HeaderHash blk) (Header blk))
+                    m
+                    (AnchoredFragment (Header blk))
         constructChain hashes =
-          AF.fromOldestFirst (AF.castAnchor i) <$>
-          mapM (getKnownHeaderThroughCache volDB) (NE.toList hashes)
+            AF.fromOldestFirst (AF.castAnchor i) <$>
+            mapM (getKnownHeaderThroughCache volatileDB) (NE.toList hashes)
 
     -- | Perform chain selection (including validation) on the given
     -- candidates.
@@ -236,7 +237,6 @@ addBlockSync
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -244,7 +244,7 @@ addBlockSync
   -> m ()
 addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     (isMember, invalid, curChain) <- atomically $ (,,)
-      <$> VolDB.getIsMember               cdbVolDB
+      <$> VolatileDB.getIsMember          cdbVolatileDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
       <*> Query.getCurrentChain           cdb
 
@@ -267,7 +267,7 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
       | isMember (blockHash b) -> do
-        trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
+        trace $ IgnoreBlockAlreadyInVolatileDB (blockRealPoint b)
         deliverWrittenToDisk True
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
@@ -278,8 +278,8 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
       -- The remaining cases
       | otherwise -> do
-        VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
+        VolatileDB.putBlock cdbVolatileDB b
+        trace $ AddedBlockToVolatileDB (blockRealPoint b) (blockNo b) isEBB
         deliverWrittenToDisk True
 
         let blockCache = BlockCache.singleton b
@@ -351,7 +351,6 @@ chainSelectionForFutureBlocks
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk -> BlockCache blk -> m (Point blk)
@@ -410,7 +409,6 @@ chainSelectionForBlock
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -421,11 +419,11 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB)
       <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
-          <*> VolDB.filterByPredecessor cdbVolDB
-          <*> VolDB.getBlockInfo        cdbVolDB
-          <*> Query.getCurrentChain     cdb
-          <*> Query.getTipPoint         cdb
-          <*> LgrDB.getCurrent          cdbLgrDB
+          <*> VolatileDB.filterByPredecessor  cdbVolatileDB
+          <*> VolatileDB.getBlockInfo         cdbVolatileDB
+          <*> Query.getCurrentChain           cdb
+          <*> Query.getTipPoint               cdb
+          <*> LgrDB.getCurrent                cdbLgrDB
     let curChainAndLedger :: ChainAndLedger blk
         curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
@@ -503,11 +501,12 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
     -- | PRECONDITION: the header @hdr@ (and block @b@) fit onto the end of
     -- the current chain.
-    addToCurrentChain :: HasCallStack
-                      => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-                      -> ChainAndLedger blk
-                         -- ^ The current chain and ledger
-                      -> m (Point blk)
+    addToCurrentChain ::
+         HasCallStack
+      => (ChainHash blk -> Set (HeaderHash blk))
+      -> ChainAndLedger blk
+         -- ^ The current chain and ledger
+      -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger = do
         let suffixesAfterB = Paths.candidates succsOf (realPointToPoint p)
 
@@ -523,7 +522,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
             -- up the headers /after/ b, so they won't be on the current
             -- chain.
             flip evalStateT Map.empty $ forM suffixesAfterB' $ \hashes -> do
-              hdrs <- mapM (getKnownHeaderThroughCache cdbVolDB) $
+              hdrs <- mapM (getKnownHeaderThroughCache cdbVolatileDB) $
                         NE.toList hashes
               return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
@@ -565,14 +564,15 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- We try to extend this path by looking for forks that start with the
     -- given block, then we do chain selection and /possibly/ try to switch to
     -- a new fork.
-    switchToAFork :: HasCallStack
-                  => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-                  -> LookupBlockInfo blk
-                  -> ChainAndLedger blk
-                     -- ^ The current chain (anchored at @i@) and ledger
-                  -> ChainDiff (HeaderFields blk)
-                     -- ^ Header fields for @(x,b]@
-                  -> m (Point blk)
+    switchToAFork ::
+         HasCallStack
+      => (ChainHash blk -> Set (HeaderHash blk))
+      -> LookupBlockInfo blk
+      -> ChainAndLedger blk
+         -- ^ The current chain (anchored at @i@) and ledger
+      -> ChainDiff (HeaderFields blk)
+         -- ^ Header fields for @(x,b]@
+      -> m (Point blk)
     switchToAFork succsOf lookupBlockInfo curChainAndLedger diff = do
         -- We use a cache to avoid reading the headers from disk multiple
         -- times in case they're part of multiple forks that go through @b@.
@@ -721,21 +721,21 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- ^ Fork, anchored at @x@, contains (the header of) @b@ and ends
          -- with the suffix @s@.
     translateToHeaders =
-        Diff.mapM (getKnownHeaderThroughCache cdbVolDB . headerFieldHash)
+        Diff.mapM (getKnownHeaderThroughCache cdbVolatileDB . headerFieldHash)
 
 -- | Check whether the header for the hash is in the cache, if not, get
 -- the corresponding header from the VolatileDB and store it in the cache.
 --
 -- PRECONDITION: the header (block) must exist in the VolatileDB.
 getKnownHeaderThroughCache
-  :: (MonadCatch m, HasHeader blk, VolDbSerialiseConstraints blk)
-  => VolDB m blk
+  :: (MonadThrow m, HasHeader blk)
+  => VolatileDB m blk
   -> HeaderHash blk
   -> StateT (Map (HeaderHash blk) (Header blk)) m (Header blk)
-getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
+getKnownHeaderThroughCache volatileDB hash = gets (Map.lookup hash) >>= \case
     Just hdr -> return hdr
     Nothing  -> do
-      hdr <- lift $ VolDB.getKnownHeader volDB hash
+      hdr <- lift $ VolatileDB.getKnownBlockComponent volatileDB GetHeader hash
       modify (Map.insert hash hdr)
       return hdr
 
@@ -1075,7 +1075,7 @@ ignoreInvalidSuc
   :: HasHeader blk
   => proxy blk
   -> InvalidBlocks blk
-  -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-  -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+  -> (ChainHash blk -> Set (HeaderHash blk))
+  -> (ChainHash blk -> Set (HeaderHash blk))
 ignoreInvalidSuc _ invalid succsOf =
     Set.filter (`Map.notMember` invalid) . succsOf

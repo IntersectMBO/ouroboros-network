@@ -64,6 +64,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.chunkFileParser
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
 import           Control.Monad.Except
@@ -74,6 +76,7 @@ import qualified Data.Binary.Get as Get
 import           Data.Binary.Put (Put)
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.ByteString.Short (ShortByteString)
 import           Data.Functor ((<&>))
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
@@ -106,7 +109,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
                      Iterator (..), closeDB)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
@@ -258,12 +260,36 @@ mkImmDB immDB codecConfig chunkInfo = ImmDB {..}
 -------------------------------------------------------------------------------}
 
 -- | Translate a 'BlockComponent' from ChainDB to ImmutableDB
-translateBlockComponent
-  :: (HasHeader blk, ImmDbSerialiseConstraints blk, MonadThrow m)
+translateBlockComponent ::
+     forall m blk b.
+     (HasHeader blk, ImmDbSerialiseConstraints blk, MonadThrow m)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk)                  b
   -> BlockComponent (ImmutableDB (HeaderHash blk) m) b
-translateBlockComponent ImmDB { codecConfig } = translateToRawDB codecConfig
+translateBlockComponent ImmDB { codecConfig = ccfg } = go
+  where
+    go ::
+         forall b'. BlockComponent (ChainDB m blk) b'
+      -> BlockComponent (ImmutableDB (HeaderHash blk) m) b'
+    go = \case
+      GetBlock      -> parseBlock ccfg <$> getBlockRef <*> GetRawBlock
+      GetRawBlock   -> GetRawBlock
+      GetHeader     -> parseHeader ccfg
+                         <$> getBlockRef
+                         <*> GetNestedCtxt
+                         <*> GetBlockSize
+                         <*> GetRawHeader
+      GetRawHeader  -> GetRawHeader
+      GetHash       -> GetHash
+      GetSlot       -> GetSlot
+      GetIsEBB      -> GetIsEBB
+      GetBlockSize  -> GetBlockSize
+      GetHeaderSize -> GetHeaderSize
+      GetNestedCtxt -> reconstructNestedCtxt (Proxy @(Header blk))
+                         <$> GetNestedCtxt
+                         <*> GetBlockSize
+      GetPure a     -> GetPure a
+      GetApply f bc -> GetApply (go f) (go bc)
 
 -- | Return 'True' when the given point is in the ImmutableDB.
 --
@@ -650,3 +676,60 @@ iteratorClose :: (HasCallStack, MonadCatch m)
               -> ImmDB.Iterator (HeaderHash blk) m a
               -> m ()
 iteratorClose db it = withDB db $ const $ ImmDB.iteratorClose it
+
+{-------------------------------------------------------------------------------
+  Parsing
+-------------------------------------------------------------------------------}
+
+getBlockRef :: DBHeaderHash db ~ HeaderHash blk
+            => BlockComponent db (BlockRef blk)
+getBlockRef = mkBlockRef <$> GetSlot <*> GetHash <*> GetIsEBB
+  where
+    mkBlockRef :: SlotNo -> HeaderHash blk -> IsEBB -> BlockRef blk
+    mkBlockRef slot hash = BlockRef (BlockPoint slot hash)
+
+parseBlock ::
+     ( HasHeader blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , MonadThrow m
+     )
+  => CodecConfig blk
+  -> BlockRef blk
+  -> Lazy.ByteString
+  -> m blk
+parseBlock ccfg blockRef bytes = throwParseErrors blockRef bytes $
+      CBOR.deserialiseFromBytes (decodeDisk ccfg) bytes
+
+parseHeader ::
+     forall m blk.
+     ( HasHeader blk
+     , ReconstructNestedCtxt Header blk
+     , DecodeDiskDep (NestedCtxt Header) blk
+     , MonadThrow m
+     )
+  => CodecConfig blk
+  -> BlockRef blk
+  -> ShortByteString
+  -> SizeInBytes
+  -> Lazy.ByteString
+  -> m (Header blk)
+parseHeader ccfg blockRef prefix blockSize bytes =
+    case reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize of
+      SomeBlock ctxt ->
+        throwParseErrors blockRef bytes $
+          CBOR.deserialiseFromBytes (parser ctxt) bytes
+  where
+    parser :: NestedCtxt Header blk a -> Decoder s (Lazy.ByteString -> Header blk)
+    parser ctxt = (\f -> nest . DepPair ctxt . f) <$> decodeDiskDep ccfg ctxt
+
+throwParseErrors ::
+     (HasHeader blk, MonadThrow m)
+  => BlockRef blk
+  -> Lazy.ByteString
+  -> Either CBOR.DeserialiseFailure (Lazy.ByteString, Lazy.ByteString -> b)
+  -> m b
+throwParseErrors blockRef fullBytes = \case
+    Right (trailing, f)
+      | Lazy.null trailing -> return $ f fullBytes
+      | otherwise          -> throwM $ ChainDbTrailingData blockRef trailing
+    Left err               -> throwM $ ChainDbParseFailure blockRef err

@@ -65,8 +65,8 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockRef (..),
-                     ChainDbFailure (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
+                     BlockRef (..), ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                      (addBlockSync)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
@@ -76,9 +76,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
-                     (VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -92,7 +90,6 @@ launchBgTasks
      , HasHardForkHistory blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -140,7 +137,6 @@ copyToImmDB
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , VolDbSerialiseConstraints blk
      , ImmDbSerialiseConstraints blk
      , HasCallStack
      )
@@ -170,12 +166,12 @@ copyToImmDB CDB{..} = withCopyLock $ do
         -- This call is cheap
         slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
         assert (pointSlot pt >= slotNoAtImmDBTip) $ return ()
-        blk <- VolDB.getKnownBlock cdbVolDB hash
+        blk <- VolatileDB.getKnownBlockComponent cdbVolatileDB GetBlock hash
         -- When we found a corrupt block, shut down the node. This exception
         -- will make sure we restart with validation enabled.
         unless (cdbCheckIntegrity blk) $
           let blockRef = BlockRef (blockPoint blk) (headerToIsEBB (getHeader blk))
-          in throwM $ VolDbCorruptBlock blockRef
+          in throwM $ VolatileDbCorruptBlock blockRef
 
         -- We're the only one modifying the ImmutableDB, so the tip cannot
         -- have changed since we last checked it.
@@ -217,10 +213,10 @@ copyToImmDB CDB{..} = withCopyLock $ do
     mustBeUnlocked = fromMaybe
                    $ error "copyToImmDB running concurrently with itself"
 
--- | Copy blocks from the VolDB to ImmDB and take snapshots of the LgrDB
+-- | Copy blocks from the VolatileDB to ImmDB and take snapshots of the LgrDB
 --
 -- We watch the chain for changes. Whenever the chain is longer than @k@, then
--- the headers older than @k@ are copied from the VolDB to the ImmDB (using
+-- the headers older than @k@ are copied from the VolatileDB to the ImmDB (using
 -- 'copyToImmDB'). Once that is complete,
 --
 -- * We periodically take a snapshot of the LgrDB (depending on its config).
@@ -229,7 +225,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
 --   start of this function.
 --   NOTE: After this initial snapshot we do not take a snapshot of the LgrDB
 --   until the chain has changed again, irrespective of the LgrDB policy.
--- * Schedule GC of the VolDB ('scheduleGC') for the 'SlotNo' of the most
+-- * Schedule GC of the VolatileDB ('scheduleGC') for the 'SlotNo' of the most
 --   recent block that was copied.
 --
 -- It is important that we only take LgrDB snapshots when are are /sure/ they
@@ -238,8 +234,8 @@ copyToImmDB CDB{..} = withCopyLock $ do
 -- can handle it by reverting to an older LgrDB snapshot, but we should need
 -- this only in exceptional circumstances.)
 --
--- We do not store any state of the VolDB GC. If the node shuts down before GC
--- can happen, when we restart the node and schedule the /next/ GC, it will
+-- We do not store any state of the VolatileDB GC. If the node shuts down before
+-- GC can happen, when we restart the node and schedule the /next/ GC, it will
 -- /imply/ any previously scheduled GC, since GC is driven by slot number
 -- ("garbage collect anything older than @x@").
 copyAndSnapshotRunner
@@ -250,7 +246,6 @@ copyAndSnapshotRunner
      , GetHeader blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> GcSchedule m
@@ -329,7 +324,7 @@ updateLedgerSnapshots CDB{..} = do
 -- @putBlock@ and @getBlock@.
 garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()
 garbageCollect CDB{..} slotNo = do
-    VolDB.garbageCollect cdbVolDB slotNo
+    VolatileDB.garbageCollect cdbVolatileDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
       modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . invalidBlockSlotNo)
@@ -529,7 +524,6 @@ addBlockRunner
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk

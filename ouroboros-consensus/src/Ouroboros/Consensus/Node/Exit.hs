@@ -21,8 +21,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..),
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
                      (ImmutableDBError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Types as ImmDB
-import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
-import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
+import           Ouroboros.Consensus.Storage.VolatileDB.Error (VolatileDBError)
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Error as VolatileDB
 
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 
@@ -113,19 +113,18 @@ toExitReason e
     | Just (e' :: ChainDbFailure) <- fromException e
     = case e' of
         ImmDbFailure ue -> immDbUnexpectedError ue
-        VolDbFailure ue -> volDbUnexpectedError ue
         LgrDbFailure fe -> fsError fe
         _               -> DatabaseCorruption
 
-    -- The three exceptions below will always be wrapped in a
+    | Just (e' :: VolatileDBError) <- fromException e
+    = case e' of
+        VolatileDB.UnexpectedError ue -> volatileDbUnexpectedError ue
+        _                             -> Other
+    -- The two exceptions below will always be wrapped in a
     -- 'ChainDbFailure', but we include them just in case.
     | Just (e' :: ImmutableDBError) <- fromException e
     = case e' of
         ImmDB.UnexpectedError ue -> immDbUnexpectedError ue
-        _                        -> Other
-    | Just (e' :: VolatileDBError) <- fromException e
-    = case e' of
-        VolDB.UnexpectedError ue -> volDbUnexpectedError ue
         _                        -> Other
     | Just (e' :: FsError) <- fromException e
     = fsError e'
@@ -138,9 +137,10 @@ toExitReason e
       ImmDB.FileSystemError fe -> fsError fe
       _                        -> DatabaseCorruption
 
-    volDbUnexpectedError :: VolDB.UnexpectedError -> ExitReason
-    volDbUnexpectedError = \case
-      VolDB.FileSystemError fe -> fsError fe
+    volatileDbUnexpectedError :: VolatileDB.UnexpectedError -> ExitReason
+    volatileDbUnexpectedError = \case
+      VolatileDB.FileSystemError fe -> fsError fe
+      _                             -> DatabaseCorruption
 
     fsError :: FsError -> ExitReason
     fsError FsError { fsErrorType } = case fsErrorType of

@@ -54,7 +54,6 @@ instance SupportedNetworkProtocolVersion DualByronBlock where
 
 instance ImmDbSerialiseConstraints DualByronBlock
 instance LgrDbSerialiseConstraints DualByronBlock
-instance VolDbSerialiseConstraints DualByronBlock
 instance SerialiseDiskConstraints  DualByronBlock
 
 instance EncodeDisk DualByronBlock DualByronBlock where

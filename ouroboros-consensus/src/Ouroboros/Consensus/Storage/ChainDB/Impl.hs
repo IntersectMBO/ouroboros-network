@@ -27,7 +27,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Re-exported for convenience
   , ImmDB.ImmDbSerialiseConstraints
   , LgrDB.LgrDbSerialiseConstraints
-  , VolDB.VolDbSerialiseConstraints
+  , VolatileDB.VolatileDbSerialiseConstraints
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -65,7 +65,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -116,8 +116,8 @@ openDBInternal args launchBgTasks = do
     let immDbTipChunk = chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB immDbTipPoint immDbTipChunk
 
-    volDB   <- VolDB.openDB argsVolDb
-    traceWith tracer $ TraceOpenEvent OpenedVolDB
+    volatileDB <- VolatileDB.openDB argsVolatileDb
+    traceWith tracer $ TraceOpenEvent OpenedVolatileDB
     let lgrReplayTracer =
           LgrDB.decorateReplayTracer
             immDbTipPoint
@@ -125,7 +125,7 @@ openDBInternal args launchBgTasks = do
     (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immDB
-                            (Query.getAnyKnownBlock immDB volDB)
+                            (Query.getAnyKnownBlock immDB volatileDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
     varInvalid      <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
@@ -133,14 +133,14 @@ openDBInternal args launchBgTasks = do
 
 
     chainAndLedger <- ChainSel.initialChainSelection
-      immDB
-      volDB
-      lgrDB
-      tracer
-      (Args.cdbTopLevelConfig args)
-      varInvalid
-      varFutureBlocks
-      (Args.cdbCheckInFuture args)
+                        immDB
+                        volatileDB
+                        lgrDB
+                        tracer
+                        (Args.cdbTopLevelConfig args)
+                        varInvalid
+                        varFutureBlocks
+                        (Args.cdbCheckInFuture args)
 
     let chain  = VF.validatedFragment chainAndLedger
         ledger = VF.validatedLedger   chainAndLedger
@@ -157,7 +157,7 @@ openDBInternal args launchBgTasks = do
     blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
     let env = CDB { cdbImmDB           = immDB
-                  , cdbVolDB           = volDB
+                  , cdbVolatileDB      = volatileDB
                   , cdbLgrDB           = lgrDB
                   , cdbChain           = varChain
                   , cdbIterators       = varIterators
@@ -216,7 +216,7 @@ openDBInternal args launchBgTasks = do
     return (chainDB, testing)
   where
     tracer = Args.cdbTracer args
-    (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
+    (argsImmDb, argsVolatileDb, argsLgrDb, _) = Args.fromChainDbArgs args
 
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
@@ -249,7 +249,7 @@ closeDB (CDBHandle varState) = do
       killBgThreads
 
       ImmDB.closeDB cdbImmDB
-      VolDB.closeDB cdbVolDB
+      VolatileDB.closeDB cdbVolatileDB
 
       chain <- atomically $ readTVar cdbChain
 

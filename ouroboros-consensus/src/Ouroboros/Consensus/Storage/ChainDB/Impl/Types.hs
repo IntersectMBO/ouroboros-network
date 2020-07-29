@@ -95,14 +95,14 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
-                     VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
+                     VolatileDbSerialiseConstraints)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmDbSerialiseConstraints blk
       , LgrDbSerialiseConstraints blk
-      , VolDbSerialiseConstraints blk
+      , VolatileDbSerialiseConstraints blk
         -- Needed for Reader
       , EncodeDiskDep (NestedCtxt Header) blk
       ) => SerialiseDiskConstraints blk
@@ -161,7 +161,7 @@ data ChainDbState m blk
 
 data ChainDbEnv m blk = CDB
   { cdbImmDB           :: !(ImmDB m blk)
-  , cdbVolDB           :: !(VolDB m blk)
+  , cdbVolatileDB      :: !(VolatileDB m blk)
   , cdbLgrDB           :: !(LgrDB m blk)
   , cdbChain           :: !(StrictTVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
@@ -488,7 +488,7 @@ data TraceEvent blk
   | TraceLedgerEvent       (LgrDB.TraceEvent (RealPoint  blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent             blk)
-  | TraceVolDBEvent        (VolDB.TraceEvent             blk)
+  | TraceVolatileDBEvent   (VolatileDB.TraceEvent        blk)
   deriving (Generic)
 
 deriving instance
@@ -521,7 +521,7 @@ data TraceOpenEvent blk =
       ImmDB.ChunkNo  -- ^ Chunk number of the immutable tip
 
     -- | The VolatileDB was opened.
-  | OpenedVolDB
+  | OpenedVolatileDB
 
     -- | The LedgerDB was opened.
   | OpenedLgrDB
@@ -561,7 +561,7 @@ data TraceAddBlockEvent blk =
     IgnoreBlockOlderThanK (RealPoint blk)
 
     -- | A block that is already in the Volatile DB was ignored.
-  | IgnoreBlockAlreadyInVolDB (RealPoint blk)
+  | IgnoreBlockAlreadyInVolatileDB (RealPoint blk)
 
     -- | A block that is know to be invalid was ignored.
   | IgnoreInvalidBlock (RealPoint blk) (InvalidBlockReason blk)
@@ -575,7 +575,7 @@ data TraceAddBlockEvent blk =
   | BlockInTheFuture (RealPoint blk) SlotNo
 
     -- | A block was added to the Volatile DB
-  | AddedBlockToVolDB (RealPoint blk) BlockNo IsEBB
+  | AddedBlockToVolatileDB (RealPoint blk) BlockNo IsEBB
 
     -- | The block fits onto the current chain, we'll try to use it to extend
     -- our chain.
@@ -728,7 +728,7 @@ data TraceGCEvent blk
 data TraceIteratorEvent blk
   = UnknownRangeRequested (UnknownRange blk)
     -- ^ An unknown range was requested, see 'UnknownRange'.
-  | StreamFromVolDB
+  | StreamFromVolatileDB
       (StreamFrom blk)
       (StreamTo   blk)
       [RealPoint  blk]
@@ -745,17 +745,17 @@ data TraceIteratorEvent blk
       [RealPoint  blk]
 
     -- ^ Stream from both the VolatileDB and the ImmutableDB.
-  | BlockMissingFromVolDB (RealPoint blk)
+  | BlockMissingFromVolatileDB (RealPoint blk)
     -- ^ A block is no longer in the VolatileDB because it has been garbage
     -- collected. It might now be in the ImmutableDB if it was part of the
     -- current chain.
   | BlockWasCopiedToImmDB (RealPoint blk)
     -- ^ A block that has been garbage collected from the VolatileDB is now
     -- found and streamed from the ImmutableDB.
-  | BlockGCedFromVolDB    (RealPoint blk)
+  | BlockGCedFromVolatileDB    (RealPoint blk)
     -- ^ A block is no longer in the VolatileDB and isn't in the ImmutableDB
     -- either; it wasn't part of the current chain.
-  | SwitchBackToVolDB
+  | SwitchBackToVolatileDB
     -- ^ We have stream one or more blocks from the ImmutableDB that were part
     -- of the VolatileDB when initialising the iterator. Now, we have to look
     -- back in the VolatileDB again because the ImmutableDB doesn't have the

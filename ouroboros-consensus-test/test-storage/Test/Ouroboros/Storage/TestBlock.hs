@@ -35,7 +35,6 @@ module Test.Ouroboros.Storage.TestBlock (
   , mkNextBlock'
   , mkNextEBB'
     -- ** Query
-  , testBlockToBlockInfo
   , testBlockIsValid
   , testBlockIsEBB
   , testBlockChainLength
@@ -114,7 +113,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..))
-import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.SignableRepresentation ()
@@ -241,7 +239,7 @@ data instance BlockConfig TestBlock = TestBlockConfig {
   deriving (Generic, NoUnexpectedThunks)
 
 data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, Show)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -295,21 +293,6 @@ testBlockFromLazyByteString bs = case CBOR.deserialiseFromBytes decode bs of
       -> a
       | otherwise
       -> error $ "left-over bytes: " <> show bs'
-
-testBlockToBlockInfo :: TestBlock -> BlockInfo TestHeaderHash
-testBlockToBlockInfo tb = BlockInfo {
-      bbid          = thHash
-    , bslot         = thSlotNo
-    , bbno          = thBlockNo
-    , bpreBid       = case thPrevHash of
-        GenesisHash -> Origin
-        BlockHash h -> NotOrigin h
-    , bisEBB        = blockToIsEBB tb
-    , bheaderOffset = testBlockHeaderOffset
-    , bheaderSize   = testBlockHeaderSize tb
-    }
-  where
-    TestHeader{..} = testHeader tb
 
 {-------------------------------------------------------------------------------
   Real chain length
@@ -741,7 +724,6 @@ instance HasBinaryBlockInfo TestBlock where
 
 instance ImmDbSerialiseConstraints TestBlock
 instance LgrDbSerialiseConstraints TestBlock
-instance VolDbSerialiseConstraints TestBlock
 instance SerialiseDiskConstraints  TestBlock
 
 instance EncodeDisk TestBlock TestBlock

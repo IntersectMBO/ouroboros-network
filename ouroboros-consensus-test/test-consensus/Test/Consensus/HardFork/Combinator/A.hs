@@ -484,7 +484,6 @@ instance HasBinaryBlockInfo BlockA where
 
 instance SerialiseConstraintsHFC          BlockA
 instance ImmDbSerialiseConstraints        BlockA
-instance VolDbSerialiseConstraints        BlockA
 instance LgrDbSerialiseConstraints        BlockA
 instance SerialiseDiskConstraints         BlockA
 instance SerialiseNodeToNodeConstraints   BlockA

@@ -37,7 +37,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 chainSyncHeadersServer
     :: forall m blk.
        ( IOLike m
-       , ReconstructNestedCtxt Header blk
        , HasHeader (Header blk)
        )
     => Tracer m (TraceChainSyncServerEvent blk)

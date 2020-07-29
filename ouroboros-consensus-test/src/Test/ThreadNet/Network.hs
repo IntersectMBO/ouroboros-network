@@ -103,7 +103,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -670,12 +670,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
       nodeDBs _coreNodeId = ChainDbArgs
         { -- HasFS instances
           cdbHasFSImmDb           = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb           = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSVolatileDB      = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB           = SomeHasFS $ simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
         , cdbImmValidation        = ImmDB.ValidateAllChunks
-        , cdbVolValidation        = VolDB.ValidateAll
-        , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+        , cdbVolatileDbValidation = VolatileDB.ValidateAll
+        , cdbMaxBlocksPerFile     = VolatileDB.mkBlocksPerFile 4
         , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
         , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
@@ -707,7 +707,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith invalidTracer (p, e)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+              (ChainDB.AddedBlockToVolatileDB p bno IsNotEBB)
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent
@@ -1353,7 +1353,7 @@ data NodeInfo blk db ev = NodeInfo
 -- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
   { nodeEventsAdds        :: ev (SlotNo, RealPoint blk, BlockNo)
-    -- ^ every 'AddedBlockToVolDB' excluding EBBs
+    -- ^ every 'AddedBlockToVolatileDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk)
     -- ^ every 'TraceForgeEvent'
   , nodeEventsHeaderAdds  :: ev (SlotNo, RealPoint blk, BlockNo)

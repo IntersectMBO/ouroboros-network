@@ -179,7 +179,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Args
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Background
                        Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
@@ -188,7 +187,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Query
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Consensus.Storage.ChainDB.Init
                        Ouroboros.Consensus.Storage.ChainDB.Serialisation
                        Ouroboros.Consensus.Storage.Common
@@ -219,12 +217,14 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
+                       Ouroboros.Consensus.Storage.VolatileDB.Error
                        Ouroboros.Consensus.Storage.VolatileDB.Impl
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.Index
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.State
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
-                       Ouroboros.Consensus.Storage.VolatileDB.Types
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
