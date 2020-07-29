@@ -666,12 +666,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
       nodeDBs _coreNodeId = ChainDbArgs
         { -- HasFS instances
           cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSVolatileDb      = simHasFS (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
         , cdbImmValidation        = ImmDB.ValidateAllChunks
-        , cdbVolValidation        = VolDB.ValidateAll
-        , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+        , cdbVolatileDbValidation = VolDB.ValidateAll
+        , cdbMaxBlocksPerFile     = VolDB.mkBlocksPerFile 4
         , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
         , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
@@ -703,7 +703,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith invalidTracer (p, e)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+              (ChainDB.AddedBlockToVolatileDB p bno IsNotEBB)
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent

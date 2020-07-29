@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
 
 import           Test.Util.TestBlock
 
-import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as M
 
 tests :: TestTree
@@ -109,6 +109,4 @@ cantBeGenesis (BlockPoint s h) = RealPoint s h
   Orphan instances
 -------------------------------------------------------------------------------}
 
-instance ModelSupportsBlock TestBlock where
-  -- We don't use this in the tests
-  modelGetPrefixLen _ = error "modelGetPrefixLen used by Test.Util.TestBlock"
+instance ModelSupportsBlock TestBlock

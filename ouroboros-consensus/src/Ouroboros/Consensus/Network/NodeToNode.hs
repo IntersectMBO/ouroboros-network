@@ -91,7 +91,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (ReconstructNestedCtxt, SerialisedHeader)
+                     (SerialisedHeader)
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -155,7 +155,6 @@ mkHandlers
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
-     , ReconstructNestedCtxt Header blk
      , Ord remotePeer
      )
   => NodeArgs   m remotePeer localPeer blk

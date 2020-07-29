@@ -13,7 +13,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
                      (ImmutableDBError)
-import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
+import           Ouroboros.Consensus.Storage.VolatileDB.Error (VolatileDBError)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server

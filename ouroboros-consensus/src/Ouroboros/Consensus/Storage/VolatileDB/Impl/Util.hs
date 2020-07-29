@@ -32,7 +32,8 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Storage.VolatileDB.Error
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 
 {------------------------------------------------------------------------------
   FileId utilities

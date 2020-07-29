@@ -64,7 +64,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , ledgerCursorState
   , ledgerCursorMove
     -- * ModelSupportsBlock
-  , ModelSupportsBlock (..)
+  , ModelSupportsBlock
     -- * Exported for testing purposes
   , between
   , blocks
@@ -124,9 +124,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      LedgerCursorFailure (..), StreamFrom (..), StreamTo (..),
                      UnknownRange (..), validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (ReconstructNestedCtxt (..))
-import           Ouroboros.Consensus.Storage.Common (PrefixLen (..), takePrefix)
 
 type IteratorId = Int
 
@@ -544,11 +541,10 @@ getBlockComponent blk = \case
     GetIsEBB      -> headerToIsEBB (getHeader blk)
     GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedCtxt -> takePrefix prefixLen $ serialise blk
+    GetNestedCtxt -> case unnest (getHeader blk) of
+                       DepPair nestedCtxt _ -> SomeBlock nestedCtxt
     GetPure a     -> a
     GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
-  where
-    prefixLen = modelGetPrefixLen (Proxy @blk)
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.
@@ -662,16 +658,8 @@ class ( HasHeader blk
       , HasHeader (Header blk)
       , Serialise blk
       , Serialise (Header blk)
-      ) => ModelSupportsBlock blk where
-  modelGetPrefixLen :: Proxy blk -> PrefixLen
-
-  -- Default implementation in terms of @ReconstructNestedCtxt Header blk@
-  -- instead of requiring it as a constraint, so that test blocks not
-  -- implementating the constraint can provide a dummy implementation.
-  default modelGetPrefixLen
-    :: ReconstructNestedCtxt Header blk
-    => Proxy blk -> PrefixLen
-  modelGetPrefixLen _ = reconstructPrefixLen (Proxy @(Header blk))
+      , HasNestedContent Header blk
+      ) => ModelSupportsBlock blk
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

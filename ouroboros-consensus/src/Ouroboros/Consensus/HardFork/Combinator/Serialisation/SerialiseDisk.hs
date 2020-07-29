@@ -21,10 +21,10 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
-instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
-instance SerialiseHFC xs => ImmDbSerialiseConstraints (HardForkBlock xs)
-instance SerialiseHFC xs => VolDbSerialiseConstraints (HardForkBlock xs)
-instance SerialiseHFC xs => LgrDbSerialiseConstraints (HardForkBlock xs)
+instance SerialiseHFC xs => SerialiseDiskConstraints       (HardForkBlock xs)
+instance SerialiseHFC xs => ImmDbSerialiseConstraints      (HardForkBlock xs)
+instance SerialiseHFC xs => VolatileDbSerialiseConstraints (HardForkBlock xs)
+instance SerialiseHFC xs => LgrDbSerialiseConstraints      (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   'ReconstructNestedCtxt'

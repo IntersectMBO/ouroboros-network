@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Test.Ouroboros.Storage.ChainDB.Iterator
   ( tests
@@ -11,7 +12,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise (encode, serialiseIncremental)
+import           Codec.Serialise (encode)
 import           Control.Monad.Except
 import           Control.Tracer
 import           Data.List (intercalate)
@@ -35,19 +36,20 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
                      (IteratorEnv (..), newIterator)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (IteratorKey (..), TraceIteratorEvent (..))
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
                      (HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Common
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Tracer (recordingTracerTVar)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.Mock as ImmDB (openDBMock)
 import           Test.Ouroboros.Storage.TestBlock
-import qualified Test.Ouroboros.Storage.VolatileDB.Mock as VolDB (openDBMock)
+import qualified Test.Ouroboros.Storage.VolatileDB.Mock as VolatileDB
+                     (openDBMock)
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -374,36 +376,25 @@ initIteratorEnv
 initIteratorEnv TestSetup { immutable, volatile } tracer = do
     iters       <- uncheckedNewTVarM Map.empty
     nextIterKey <- uncheckedNewTVarM $ IteratorKey 0
-    volDB       <- openVolDB volatile
+    volatileDB  <- openVolatileDB volatile
     immDB       <- openImmDB immutable
     return IteratorEnv
       { itImmDB           = immDB
-      , itVolDB           = volDB
+      , itVolatileDB      = volatileDB
       , itIterators       = iters
       , itNextIteratorKey = nextIterKey
       , itTracer          = tracer
       }
   where
     -- | Open a mock VolatileDB and add the given blocks
-    openVolDB :: [TestBlock] -> m (VolDB m TestBlock)
-    openVolDB blocks = do
-        (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
-        forM_ blocks $ \block ->
-          VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB TestBlockCodecConfig
-
-    blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
-    blockInfo tb = VolDB.BlockInfo
-      { VolDB.bbid          = blockHash tb
-      , VolDB.bslot         = blockSlot tb
-      , VolDB.bbno          = blockNo   tb
-      , VolDB.bpreBid       = case blockPrevHash TestBlockCodecConfig tb of
-          GenesisHash -> Origin
-          BlockHash h -> NotOrigin h
-      , VolDB.bisEBB        = testBlockIsEBB tb
-      , VolDB.bheaderOffset = 0
-      , VolDB.bheaderSize   = 0
-      }
+    openVolatileDB :: [TestBlock] -> m (VolatileDB m TestBlock)
+    openVolatileDB blocks = do
+        (_volDBModel, volatileDB) <-
+          VolatileDB.openDBMock
+            (VolatileDB.mkBlocksPerFile 1)
+            TestBlockCodecConfig
+        forM_ blocks $ VolatileDB.putBlock volatileDB
+        return volatileDB
 
     epochSize :: EpochSize
     epochSize = 10

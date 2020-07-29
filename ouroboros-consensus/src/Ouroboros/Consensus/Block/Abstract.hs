@@ -1,8 +1,10 @@
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Block.Abstract (
@@ -67,8 +69,10 @@ import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word32)
 
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin), fromWithOrigin,
@@ -242,6 +246,16 @@ decodeRawHash p = fromShortRawHash p <$> Serialise.decode
 -- in partial applications.
 data SomeBlock (f :: * -> * -> *) blk where
   SomeBlock :: f blk a -> SomeBlock f blk
+
+-- | We can write a manual instance using the following quantified constraint:
+--
+-- > forall a. NoUnexpectedThunks (f blk a)
+--
+-- However, this constraint would have to be propagated all the way up, which
+-- is rather verbose and annoying (standalone deriving has to be used), hence
+-- we use 'UseIsNormalForm' for convenience.
+deriving via UseIsNormalForm (SomeBlock f blk)
+  instance (Typeable f, Typeable blk) => NoUnexpectedThunks (SomeBlock f blk)
 
 {-------------------------------------------------------------------------------
   Custom patterns for WithOrigin

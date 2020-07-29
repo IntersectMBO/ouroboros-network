@@ -18,8 +18,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (
   , computeReversePath
     -- * Reachability
   , isReachable
-    -- * Auxiliary
-  , fromChainHash
   ) where
 
 import           Data.Foldable (foldl')
@@ -38,7 +36,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
                      closeDB, getMaxSlotNo)
@@ -49,8 +47,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
 
 -- | Return the block info for the block with the given hash. Return 'Nothing'
 -- when not in the VolatileDB.
-type LookupBlockInfo blk =
-  HeaderHash blk -> Maybe (VolDB.BlockInfo (HeaderHash blk))
+type LookupBlockInfo blk = HeaderHash blk -> Maybe (VolatileDB.BlockInfo blk)
 
 {-------------------------------------------------------------------------------
   Candidates
@@ -69,20 +66,20 @@ type LookupBlockInfo blk =
 -- the chain (fragment) ending with @B@ is also a potential candidate.
 candidates
   :: forall blk.
-     (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+     (ChainHash blk -> Set (HeaderHash blk))
      -- ^ @filterByPredecessor@
   -> Point blk -- ^ @B@
   -> [NonEmpty (HeaderHash blk)]
      -- ^ Each element in the list is a list of hashes from which we can
      -- construct a fragment anchored at the point @B@.
-candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
+candidates succsOf b = mapMaybe NE.nonEmpty $ go (pointHash b)
   where
-    go :: WithOrigin (HeaderHash blk) -> [[HeaderHash blk]]
+    go :: ChainHash blk -> [[HeaderHash blk]]
     go mbHash = case Set.toList $ succsOf mbHash of
       []    -> [[]]
       succs -> [ next : candidate
                | next <- succs
-               , candidate <- go (NotOrigin next)
+               , candidate <- go (BlockHash next)
                ]
 
 -- | Extend the 'ChainDiff' with the successors found by 'candidates'.
@@ -97,7 +94,7 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
 -- of extensions.
 extendWithSuccessors ::
      forall blk. HasHeader blk
-  => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+  => (ChainHash blk -> Set (HeaderHash blk))
   -> LookupBlockInfo blk
   -> ChainDiff (HeaderFields blk)
   -> NonEmpty (ChainDiff (HeaderFields blk))
@@ -108,7 +105,7 @@ extendWithSuccessors succsOf lookupBlockInfo diff =
   where
     extensions =
         [ foldl' Diff.append diff (lookupHeaderFields <$> candHashes)
-        | candHashes <- candidates succsOf (Diff.getTip diff)
+        | candHashes <- candidates succsOf (castPoint (Diff.getTip diff))
         ]
 
     lookupHeaderFields :: HeaderHash blk -> HeaderFields blk
@@ -141,7 +138,7 @@ computePath ::
 computePath lookupBlockInfo from to =
     case computeReversePath lookupBlockInfo (realPointHash endPt) of
       Nothing
-        -> Just $ NotInVolDB endPt
+        -> Just $ NotInVolatileDB endPt
       Just volPath
         | exclUpperBound
         -- When there's an exclusive upper bound, we must exclude the first
@@ -188,7 +185,7 @@ computePath lookupBlockInfo from to =
     go !acc = \case
         StoppedAtGenesis
           | StreamFromExclusive GenesisPoint <- from
-          -> Just $ CompletelyInVolDB acc
+          -> Just $ CompletelyInVolatileDB acc
           | otherwise
             -- If 'StreamFrom' was not from genesis, then the range must be
             -- invalid.
@@ -196,26 +193,26 @@ computePath lookupBlockInfo from to =
 
         StoppedAt hash _bno
           | StreamFromExclusive GenesisPoint <- from
-          -> Just $ PartiallyInVolDB hash acc
+          -> Just $ PartiallyInVolatileDB hash acc
           | StreamFromExclusive (BlockPoint _ hash') <- from
           , hash == hash'
-          -> Just $ CompletelyInVolDB acc
+          -> Just $ CompletelyInVolatileDB acc
           | StreamFromExclusive (BlockPoint _ _) <- from
-          -> Just $ PartiallyInVolDB hash acc
+          -> Just $ PartiallyInVolatileDB hash acc
           | StreamFromInclusive _ <- from
-          -> Just $ PartiallyInVolDB hash acc
+          -> Just $ PartiallyInVolatileDB hash acc
 
         volPath' ::> (flds, _isEBB)
           | StreamFromExclusive GenesisPoint <- from
           -> go (addToAcc flds acc) volPath'
           | StreamFromExclusive (BlockPoint _ hash') <- from
           , headerFieldHash flds == hash'
-          -> Just $ CompletelyInVolDB acc
+          -> Just $ CompletelyInVolatileDB acc
           | StreamFromExclusive (BlockPoint _ _) <- from
           -> go (addToAcc flds acc) volPath'
           | StreamFromInclusive pt' <- from
           , fieldsToRealPoint flds == pt'
-          -> Just $ CompletelyInVolDB (addToAcc flds acc)
+          -> Just $ CompletelyInVolatileDB (addToAcc flds acc)
           | StreamFromInclusive _ <- from
           -> go (addToAcc flds acc) volPath'
 
@@ -225,10 +222,10 @@ computePath lookupBlockInfo from to =
 -- corresponding to the points in the path will be valid, i.e., the blocks
 -- will fit onto each other.
 data Path blk =
-    NotInVolDB (RealPoint blk)
+    NotInVolatileDB (RealPoint blk)
     -- ^ The @end@ point (@'StreamToInclusive' end@ or @'StreamToExclusive'
     -- end@) was not part of the VolatileDB.
-  | CompletelyInVolDB [RealPoint blk]
+  | CompletelyInVolatileDB [RealPoint blk]
     -- ^ A complete path, from start point to end point was constructed from
     -- the VolatileDB. The list contains the points from oldest to newest.
     --
@@ -241,7 +238,7 @@ data Path blk =
     --   the last element of the list.
     -- * If the upper bound was @'StreamToExclusive' pt@, then the last
     --   element of the list will correspond to the first block before @pt@.
-  | PartiallyInVolDB (HeaderHash blk) [RealPoint blk]
+  | PartiallyInVolatileDB (HeaderHash blk) [RealPoint blk]
     -- ^ Only a partial path could be constructed from the VolatileDB. The
     -- missing predecessor could still be in the ImmutableDB. The list
     -- contains the points from oldest to newest.
@@ -265,14 +262,12 @@ deriving instance HasHeader blk => Show (Path blk)
   Reverse path
 -------------------------------------------------------------------------------}
 
-headerFieldsFromBlockInfo ::
-     VolDB.BlockInfo (HeaderHash blk)
-  -> HeaderFields blk
-headerFieldsFromBlockInfo VolDB.BlockInfo { bslot, bbid, bbno } =
+headerFieldsFromBlockInfo :: VolatileDB.BlockInfo blk -> HeaderFields blk
+headerFieldsFromBlockInfo VolatileDB.BlockInfo { biSlotNo, biHash, biBlockNo } =
     HeaderFields {
-        headerFieldHash    = bbid
-      , headerFieldSlot    = bslot
-      , headerFieldBlockNo = bbno
+        headerFieldHash    = biHash
+      , headerFieldSlot    = biSlotNo
+      , headerFieldBlockNo = biBlockNo
       }
 
 -- | A reverse path through the VolatileDB starting at a block in the
@@ -328,23 +323,23 @@ computeReversePath
 computeReversePath lookupBlockInfo endHash =
     case lookupBlockInfo endHash of
       Nothing                                               -> Nothing
-      Just blockInfo@VolDB.BlockInfo { bbno, bisEBB, bpreBid } -> Just $
-        go bpreBid bbno bisEBB ::> (headerFieldsFromBlockInfo blockInfo, bisEBB)
+      Just blockInfo@VolatileDB.BlockInfo { biBlockNo, biIsEBB, biPrevHash } -> Just $
+        go biPrevHash biBlockNo biIsEBB ::> (headerFieldsFromBlockInfo blockInfo, biIsEBB)
   where
     go ::
-         WithOrigin (HeaderHash blk)
+         ChainHash blk
          -- ^ The predecessor of the last block added to the path. Not
          -- necessarily in the VolatileDB.
       -> BlockNo  -- ^ The block number of the last block
       -> IsEBB    -- ^ Whether the last block is an EBB or not
       -> ReversePath blk
     go predecessor lastBlockNo lastIsEBB = case predecessor of
-      Origin             -> StoppedAtGenesis
-      NotOrigin prevHash -> case lookupBlockInfo prevHash of
+      GenesisHash        -> StoppedAtGenesis
+      BlockHash prevHash -> case lookupBlockInfo prevHash of
         Nothing ->
           StoppedAt prevHash (prevBlockNo lastBlockNo lastIsEBB)
-        Just blockInfo@VolDB.BlockInfo { bbno, bisEBB, bpreBid } ->
-          go bpreBid bbno bisEBB ::> (headerFieldsFromBlockInfo blockInfo, bisEBB)
+        Just blockInfo@VolatileDB.BlockInfo { biBlockNo, biIsEBB, biPrevHash } ->
+          go biPrevHash biBlockNo biIsEBB ::> (headerFieldsFromBlockInfo blockInfo, biIsEBB)
 
     -- | Predict the block number of the missing predecessor.
     --
@@ -486,11 +481,3 @@ isReachable lookupBlockInfo = \chain b ->
         (IsNotEBB, IsEBB)    -> LT
         (IsEBB,    IsEBB)    -> EQ
         (IsNotEBB, IsNotEBB) -> EQ
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
-fromChainHash GenesisHash      = Origin
-fromChainHash (BlockHash hash) = NotOrigin hash

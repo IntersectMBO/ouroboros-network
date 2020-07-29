@@ -29,6 +29,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
@@ -124,8 +125,8 @@ instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
 -------------------------------------------------------------------------------}
 
 data instance NestedCtxt_ (HardForkBlock xs) :: (* -> *) -> (* -> *) where
-    NCZ :: NestedCtxt_ x                  f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
-    NCS :: NestedCtxt_ (HardForkBlock xs) f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
+    NCZ :: !(NestedCtxt_ x                  f a) -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
+    NCS :: !(NestedCtxt_ (HardForkBlock xs) f a) -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
 
 deriving instance All SingleEraBlock xs => Show (NestedCtxt_ (HardForkBlock xs) Header a)
 

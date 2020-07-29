@@ -24,36 +24,40 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
-import           Ouroboros.Consensus.Storage.VolatileDB.Types (FileId)
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
 
 -- | Mapping from 'FileId' to 'FileInfo'
-newtype Index blockId = Index {unIndex :: IntMap (FileInfo blockId)}
+--
+-- Just like 'FileInfo', we parameterise by @hash@ instead of @blk@ because
+-- @HeaderHash blk@ is a type family and would lead to ambiguity problems.
+newtype Index hash = Index { unIndex :: IntMap (FileInfo hash) }
   deriving (Generic, NoUnexpectedThunks)
 
-modifyIndex :: (IntMap (FileInfo blockId) -> IntMap (FileInfo blockId))
-            -> Index blockId
-            -> Index blockId
-modifyIndex mdf (Index mp) = Index (mdf mp)
+modifyIndex ::
+     (IntMap (FileInfo hash) -> IntMap (FileInfo hash))
+  -> Index hash
+  -> Index hash
+modifyIndex f (Index index) = Index (f index)
 
-empty :: Index blockId
+empty :: Index hash
 empty = Index IM.empty
 
-lookup :: FileId -> Index blockId -> Maybe (FileInfo blockId)
-lookup path (Index mp) = IM.lookup path mp
+lookup :: FileId -> Index hash -> Maybe (FileInfo hash)
+lookup fileId (Index index) = IM.lookup fileId index
 
-insert :: FileId -> FileInfo blockId -> Index blockId -> Index blockId
-insert path info = modifyIndex (IM.insert path info)
+insert :: FileId -> FileInfo hash -> Index hash -> Index hash
+insert fileId fileInfo = modifyIndex (IM.insert fileId fileInfo)
 
-delete :: FileId -> Index blockId -> Index blockId
-delete path = modifyIndex (IM.delete path)
+delete :: FileId -> Index hash -> Index hash
+delete fileId = modifyIndex (IM.delete fileId)
 
-toAscList :: Index blockId -> [(FileId, FileInfo blockId)]
-toAscList (Index mp) = IM.toAscList mp
+toAscList :: Index hash -> [(FileId, FileInfo hash)]
+toAscList (Index index) = IM.toAscList index
 
-elems :: Index blockId -> [FileInfo blockId]
-elems (Index mp) = IM.elems mp
+elems :: Index hash -> [FileInfo hash]
+elems (Index index) = IM.elems index
 
 -- | Return the last, i.e. the /highest/, 'FileId' and corresponding
 -- 'FileInfo' stored in the 'Index'. Return 'Nothing' when empty.
-lastFile :: Index blockId -> Maybe (FileId, FileInfo blockId)
+lastFile :: Index hash -> Maybe (FileId, FileInfo hash)
 lastFile = fmap fst . IM.maxViewWithKey . unIndex

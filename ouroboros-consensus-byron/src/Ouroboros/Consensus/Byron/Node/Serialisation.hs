@@ -45,10 +45,10 @@ import           Ouroboros.Consensus.Byron.Protocol
 instance HasBinaryBlockInfo ByronBlock where
   getBinaryBlockInfo = byronBinaryBlockInfo
 
-instance ImmDbSerialiseConstraints ByronBlock
-instance LgrDbSerialiseConstraints ByronBlock
-instance VolDbSerialiseConstraints ByronBlock
-instance SerialiseDiskConstraints  ByronBlock
+instance ImmDbSerialiseConstraints      ByronBlock
+instance LgrDbSerialiseConstraints      ByronBlock
+instance VolatileDbSerialiseConstraints ByronBlock
+instance SerialiseDiskConstraints       ByronBlock
 
 instance EncodeDisk ByronBlock ByronBlock where
   encodeDisk _ = encodeByronBlock

@@ -70,7 +70,6 @@ import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception (..))
 import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -95,7 +94,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 -- Support for tests
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
@@ -356,6 +354,7 @@ instance DB (ChainDB m blk) where
   type DBBlock      (ChainDB m blk) = m blk
   type DBHeader     (ChainDB m blk) = m (Header blk)
   type DBHeaderHash (ChainDB m blk) = HeaderHash blk
+  type DBNestedCtxt (ChainDB m blk) = SomeBlock (NestedCtxt Header) blk
 
 {-------------------------------------------------------------------------------
   Adding a block
@@ -467,29 +466,14 @@ getSerialisedBlockWithPoint
 getSerialisedBlockWithPoint =
     WithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
 
-getSerialisedHeader
-  :: forall m blk. ReconstructNestedCtxt Header blk
-  => BlockComponent (ChainDB m blk) (SerialisedHeader blk)
+getSerialisedHeader :: BlockComponent (ChainDB m blk) (SerialisedHeader blk)
 getSerialisedHeader =
-    mkSerialisedHeader
+    curry serialisedHeaderFromPair
       <$> GetNestedCtxt
-      <*> GetBlockSize
       <*> GetRawHeader
-  where
-    mkSerialisedHeader
-      :: ShortByteString
-      -> SizeInBytes
-      -> Lazy.ByteString
-      -> SerialisedHeader blk
-    mkSerialisedHeader prefix blockSize rawHdr =
-        serialisedHeaderFromPair (
-            reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize
-          , rawHdr
-          )
 
-getSerialisedHeaderWithPoint
-  :: ReconstructNestedCtxt Header blk
-  => BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
+getSerialisedHeaderWithPoint ::
+     BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
 getSerialisedHeaderWithPoint =
     WithPoint <$> getSerialisedHeader <*> getPoint
 
@@ -839,11 +823,6 @@ data ChainDbFailure =
   | forall blk. (Typeable blk, StandardHash blk) =>
       VolDbCorruptBlock (BlockRef blk)
 
-    -- | The volatile DB throw an "unexpected error"
-    --
-    -- These are errors indicative of a disk failure (as opposed to API misuse)
-  | VolDbFailure VolDB.UnexpectedError
-
     -- | The ledger DB threw a file-system error
   | LgrDbFailure FsError
 
@@ -870,8 +849,6 @@ instance Exception ChainDbFailure where
         ImmDB.ChecksumMismatchError {} -> corruption
       VolDbMissingBlock {}                -> corruption
       VolDbCorruptBlock {}                -> corruption
-      VolDbFailure e -> case e of
-        VolDB.FileSystemError fse -> fsError fse
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where
@@ -924,9 +901,6 @@ instance Eq ChainDbFailure where
       Nothing   -> False
       Just Refl -> a1 == a2
   VolDbCorruptBlock {} == _ = False
-
-  VolDbFailure a1 == VolDbFailure a2 = VolDB.sameUnexpectedError a1 a2
-  VolDbFailure {} == _               = False
 
   LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
   LgrDbFailure {} == _               = False

@@ -45,10 +45,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (Path (..),
                      computePath)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
-                     VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 -- | Stream blocks
 --
@@ -193,7 +193,6 @@ stream
      ( IOLike m
      , HasHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbHandle m blk
@@ -219,7 +218,7 @@ stream h registry blockComponent from to = getEnv h $ \cdb ->
 -- provide this record.
 data IteratorEnv m blk = IteratorEnv
   { itImmDB           :: ImmDB m blk
-  , itVolDB           :: VolDB m blk
+  , itVolatileDB      :: VolatileDB m blk
   , itIterators       :: StrictTVar m (Map IteratorKey (m ()))
   , itNextIteratorKey :: StrictTVar m IteratorKey
   , itTracer          :: Tracer m (TraceIteratorEvent blk)
@@ -229,7 +228,7 @@ data IteratorEnv m blk = IteratorEnv
 fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
   { itImmDB           = cdbImmDB
-  , itVolDB           = cdbVolDB
+  , itVolatileDB      = cdbVolatileDB
   , itIterators       = cdbIterators
   , itNextIteratorKey = cdbNextIteratorKey
   , itTracer          = contramap TraceIteratorEvent cdbTracer
@@ -241,7 +240,6 @@ newIterator
      ( IOLike m
      , HasHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => IteratorEnv m blk
@@ -278,7 +276,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     start :: HasCallStack
           => ExceptT (UnknownRange blk) m (Iterator m blk b)
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
-      Origin                                              -> findPathInVolDB
+      Origin                                              -> findPathInVolatileDB
       NotOrigin (tipSlot, tipHash, tipIsEBB, _tipBlockNo) ->
         case realPointSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
@@ -335,28 +333,28 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
                 -- more correct.
                 const (throwError $ ForkTooOld from)
              | otherwise  -- Cases 4-6
-             -> findPathInVolDB
+             -> findPathInVolatileDB
 
           -- The end point is > the tip of the ImmutableDB
-          GT -> findPathInVolDB
+          GT -> findPathInVolatileDB
 
     -- | PRECONDITION: the upper bound >= the tip of the ImmutableDB.
     -- Greater or /equal/, because of EBBs :(
-    findPathInVolDB :: HasCallStack
-                    => ExceptT (UnknownRange blk) m (Iterator m blk b)
-    findPathInVolDB = do
-      path <- lift $ computePathVolDB itVolDB from to
+    findPathInVolatileDB ::
+         HasCallStack => ExceptT (UnknownRange blk) m (Iterator m blk b)
+    findPathInVolatileDB = do
+      path <- lift $ computePathVolatileDB itVolatileDB from to
       case path of
-        NotInVolDB        _hash        -> throwError $ ForkTooOld from
-        PartiallyInVolDB  predHash pts -> streamFromBoth predHash pts
-        CompletelyInVolDB pts          -> case NE.nonEmpty pts of
-          Just pts' -> lift $ streamFromVolDB pts'
+        NotInVolatileDB        _hash        -> throwError $ ForkTooOld from
+        PartiallyInVolatileDB  predHash pts -> streamFromBoth predHash pts
+        CompletelyInVolatileDB pts          -> case NE.nonEmpty pts of
+          Just pts' -> lift $ streamFromVolatileDB pts'
           Nothing   -> lift $ emptyIterator
 
-    streamFromVolDB :: NonEmpty (RealPoint blk) -> m (Iterator m blk b)
-    streamFromVolDB pts = do
-      trace $ StreamFromVolDB from to (NE.toList pts)
-      createIterator $ InVolDB from pts
+    streamFromVolatileDB :: NonEmpty (RealPoint blk) -> m (Iterator m blk b)
+    streamFromVolatileDB pts = do
+      trace $ StreamFromVolatileDB from to (NE.toList pts)
+      createIterator $ InVolatileDB from pts
 
     streamFromImmDB :: ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromImmDB = do
@@ -429,7 +427,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
                     -> NonEmpty (RealPoint blk)
                     -> ExceptT (UnknownRange blk) m (Iterator m blk b)
         startStream immTip pts' = do
-          let immEnd = SwitchToVolDBFrom (StreamToInclusive immTip) pts'
+          let immEnd = SwitchToVolatileDBFrom (StreamToInclusive immTip) pts'
           immIt <- ExceptT $
             ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
               from (StreamToInclusive immTip)
@@ -470,17 +468,17 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
       modifyTVar itNextIteratorKey succ
       return newIteratorKey
 
--- | Variant of 'computePath' that computes a path through the VolDB. Throws
--- an 'InvalidIteratorRange' exception when the range is invalid (i.e.,
+-- | Variant of 'computePath' that computes a path through the VolatileDB.
+-- Throws an 'InvalidIteratorRange' exception when the range is invalid (i.e.,
 -- 'computePath' returned 'Nothing').
-computePathVolDB
+computePathVolatileDB
   :: forall m blk. (IOLike m, HasHeader blk)
-  => VolDB m blk
+  => VolatileDB m blk
   -> StreamFrom blk
   -> StreamTo   blk
   -> m (Path blk)
-computePathVolDB volDB from to = do
-    lookupBlockInfo <- atomically $ VolDB.getBlockInfo volDB
+computePathVolatileDB volatileDB from to = do
+    lookupBlockInfo <- atomically $ VolatileDB.getBlockInfo volatileDB
     case computePath lookupBlockInfo from to of
       Just path -> return path
       Nothing   -> throwM $ InvalidIteratorRange from to
@@ -504,19 +502,19 @@ implIteratorClose varItState itrKey IteratorEnv{..} = do
 -- | Possible states of an iterator.
 --
 -- When streaming solely from the ImmutableDB ('InImmDB' where 'InImmDBEnd' is
--- /not/ 'SwitchToVolDBFrom'): we will remain in this state until we are done,
--- and end up in 'Closed'.
+-- /not/ 'SwitchToVolatileDBFrom'): we will remain in this state until we are
+-- done, and end up in 'Closed'.
 --
--- When streaming solely from the VolatileDB ('InVolDB'): when
--- 'VolDB.getBlock' returns 'Nothing', i.e. the block is missing from the
+-- When streaming solely from the VolatileDB ('InVolatileDB'): when
+-- 'VolatileDB.getBlock' returns 'Nothing', i.e. the block is missing from the
 -- VolatileDB and might have moved to the ImmutableDB: we switch to the
 -- 'InImmDBRetry' state, unless we just come from that state, in that case,
 -- return 'IteratorBlockGCed' and close the iterator.
 --
 -- When streaming from the ImmutableDB with a planned switchover to the
--- VolatileDB ('InImmDB' where 'InImmDBEnd' is 'SwitchToVolDBFrom') and we
--- have reached the end of the ImmutableDB iterator (exhausted or upper bound
--- is reached): we switch to the 'InVolDB' state.
+-- VolatileDB ('InImmDB' where 'InImmDBEnd' is 'SwitchToVolatileDBFrom') and
+-- we have reached the end of the ImmutableDB iterator (exhausted or upper
+-- bound is reached): we switch to the 'InVolatileDB' state.
 --
 -- In the 'InImmDBRetry' state, we distinguish two cases:
 --
@@ -530,7 +528,7 @@ implIteratorClose varItState itrKey IteratorEnv{..} = do
 -- 2. We have successfully streamed one or more blocks from the ImmutableDB
 --    that were previously part of the VolatileDB. When we now encounter a
 --    block of which the point does not match the expected point or when the
---    iterator is exhausted, we switch back to the 'InVolDB' state.
+--    iterator is exhausted, we switch back to the 'InVolatileDB' state.
 --
 data IteratorState m blk b
   = InImmDB
@@ -548,7 +546,7 @@ data IteratorState m blk b
     -- include them in its stream.
     --
     -- Invariant: the iterator is not exhausted.
-  | InVolDB
+  | InVolatileDB
       !(StreamFrom blk)
       !(NonEmpty (RealPoint blk))
     -- ^ Streaming from the VolatileDB.
@@ -571,7 +569,7 @@ data IteratorState m blk b
     -- the ImmutableDB since we initialised the iterator (and built the path),
     -- so we'll try if we can stream it from the ImmutableDB.
     --
-    -- Invariants: invariants of 'InImmDB' + invariant of 'InVolDB'.
+    -- Invariants: invariants of 'InImmDB' + invariant of 'InVolatileDB'.
 
   | Closed
   deriving (Generic)
@@ -588,16 +586,16 @@ iteratorStateImmIt = \case
     Closed                 -> Nothing
     InImmDB      _ immIt _ -> Just immIt
     InImmDBRetry _ immIt _ -> Just immIt
-    InVolDB {}             -> Nothing
+    InVolatileDB {}        -> Nothing
 
 -- | Determines if/when to stop streaming from the ImmutableDB and what to do
 -- afterwards.
 data InImmDBEnd blk
   = StreamAll
     -- ^ Don't stop streaming until the iterator is exhausted.
-  | StreamTo          !(StreamTo blk)
+  | StreamTo               !(StreamTo blk)
     -- ^ Stream to the upper bound.
-  | SwitchToVolDBFrom !(StreamTo blk)  !(NonEmpty (RealPoint blk))
+  | SwitchToVolatileDBFrom !(StreamTo blk) !(NonEmpty (RealPoint blk))
     -- ^ Stream to the upper bound. Afterwards, start streaming the path (the
     -- second parameter) from the VolatileDB.
   deriving (Generic, NoUnexpectedThunks)
@@ -607,7 +605,6 @@ implIteratorNext
      ( IOLike m
      , HasHeader blk
      , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ResourceRegistry m
   -> StrictTVar m (IteratorState m blk b)
@@ -622,24 +619,26 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
         nextInImmDB continueAfter immIt immEnd
       InImmDBRetry continueAfter immIt immPts ->
         nextInImmDBRetry (Just continueAfter) immIt immPts
-      InVolDB continueAfter volPts ->
-        nextInVolDB continueAfter volPts
+      InVolatileDB continueAfter volPts ->
+        nextInVolatileDB continueAfter volPts
   where
     trace = traceWith itTracer
 
-    -- | Read the next block while in the 'InVolDB' state.
-    nextInVolDB :: StreamFrom blk
-                   -- ^ In case the block corresponding to the first point in
-                   -- the path is missing from the VolatileDB, we can use this
-                   -- lower bound to try to stream it from the ImmutableDB (if
-                   -- the block indeed has been moved there).
-                -> NonEmpty (RealPoint blk)
-                -> m (IteratorResult blk b)
-    nextInVolDB continueFrom (pt@(realPointHash -> hash) NE.:| pts) =
-      VolDB.getBlockComponent itVolDB blockComponent hash >>= \case
+    -- | Read the next block while in the 'InVolatileDB' state.
+    nextInVolatileDB ::
+         StreamFrom blk
+         -- ^ In case the block corresponding to the first point in
+         -- the path is missing from the VolatileDB, we can use this
+         -- lower bound to try to stream it from the ImmutableDB (if
+         -- the block indeed has been moved there).
+      -> NonEmpty (RealPoint blk)
+      -> m (IteratorResult blk b)
+    nextInVolatileDB continueFrom (pt@(realPointHash -> hash) NE.:| pts) =
+      VolatileDB.getBlockComponent itVolatileDB
+        (Query.projVolatileDbBlockComponent blockComponent) hash >>= \case
         -- Block is missing
         Nothing -> do
-            trace $ BlockMissingFromVolDB pt
+            trace $ BlockMissingFromVolatileDB pt
             -- Try if we can stream a block from the ImmutableDB that was
             -- previously in the VolatileDB. This will only work if the block
             -- was part of the current chain, otherwise it will not have been
@@ -658,7 +657,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
                 -- disappeared altogether), /but/ after GC the imm DB cannot be
                 -- empty (because GC will only be triggered after some newly
                 -- immutable blocks have been copied to the imm DB).
-                error "nextInVolDB: impossible"
+                error "nextInVolatileDB: impossible"
               NotOrigin tip ->
                 ImmDB.stream itImmDB registry
                   ((,) <$> getPoint <*> blockComponent)
@@ -667,7 +666,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
                     -- The block was not found in the ImmutableDB, it must have
                     -- been garbage-collected
                     Left  _ -> do
-                      trace $ BlockGCedFromVolDB pt
+                      trace $ BlockGCedFromVolatileDB pt
                       return $ IteratorBlockGCed pt
                     Right immIt ->
                       nextInImmDBRetry Nothing immIt (pt NE.:| pts)
@@ -675,7 +674,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
         -- Block is there
         Just b | Just pts' <- NE.nonEmpty pts -> do
           let continueFrom' = StreamFromExclusive (realPointToPoint pt)
-          atomically $ writeTVar varItState (InVolDB continueFrom' pts')
+          atomically $ writeTVar varItState (InVolatileDB continueFrom' pts')
           return $ IteratorResult b
         -- No more points, so we can stop
         Just b -> do
@@ -694,15 +693,15 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           atomically $ writeTVar varItState (InImmDB continueFrom' immIt immEnd)
           return $ IteratorResult b
         -- True indicates that this is the last element in the stream
-        DoneAfter (pt, b) | SwitchToVolDBFrom _ pts <- immEnd -> do
+        DoneAfter (pt, b) | SwitchToVolatileDBFrom _ pts <- immEnd -> do
           let continueFrom' = StreamFromExclusive pt
-          atomically $ writeTVar varItState (InVolDB continueFrom' pts)
+          atomically $ writeTVar varItState (InVolatileDB continueFrom' pts)
           return $ IteratorResult b
         DoneAfter (_pt, b) -> do
           atomically $ writeTVar varItState Closed
           return $ IteratorResult b
-        Done | SwitchToVolDBFrom _ pts <- immEnd ->
-          nextInVolDB continueFrom pts
+        Done | SwitchToVolatileDBFrom _ pts <- immEnd ->
+          nextInVolatileDB continueFrom pts
         Done -> do
           -- No need to switch to the VolatileDB, so we can stop
           atomically $ writeTVar varItState Closed
@@ -743,8 +742,8 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           case NE.nonEmpty pts of
             Nothing      -> atomically $ writeTVar varItState Closed
             Just pts' -> do
-              atomically $ writeTVar varItState $ InVolDB continueFrom' pts'
-              trace SwitchBackToVolDB
+              atomically $ writeTVar varItState $ InVolatileDB continueFrom' pts'
+              trace SwitchBackToVolatileDB
           return $ IteratorResult b
 
         -- Point mismatch or 'Done'. Close the ImmDB Iterator (idempotent).
@@ -755,7 +754,7 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           -- ImmutableDB either.
           Nothing -> do
             atomically $ writeTVar varItState Closed
-            trace $ BlockGCedFromVolDB expectedPt
+            trace $ BlockGCedFromVolatileDB expectedPt
             return $ IteratorBlockGCed expectedPt
 
           -- We have already streamed something from the iterator. We can try
@@ -763,8 +762,8 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
           -- yet, switching to the VolatileDB would be pointless as we just
           -- came from there.
           Just continueFrom -> do
-            trace SwitchBackToVolDB
-            nextInVolDB continueFrom (expectedPt NE.:| pts)
+            trace SwitchBackToVolatileDB
+            nextInVolatileDB continueFrom (expectedPt NE.:| pts)
 
     -- | Given an ImmutableDB iterator, try to stream a value from it and
     -- convert it to a 'Done'. See the documentation of 'Done' for more

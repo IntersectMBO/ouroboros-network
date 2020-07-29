@@ -76,9 +76,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
-                     (VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -92,7 +90,6 @@ launchBgTasks
      , HasHardForkHistory blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -140,7 +137,6 @@ copyToImmDB
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , VolDbSerialiseConstraints blk
      , ImmDbSerialiseConstraints blk
      , HasCallStack
      )
@@ -170,7 +166,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
         -- This call is cheap
         slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
         assert (pointSlot pt >= slotNoAtImmDBTip) $ return ()
-        blk <- VolDB.getKnownBlock cdbVolDB hash
+        blk <- VolatileDB.getKnownBlock cdbVolatileDB hash
         -- When we found a corrupt block, shut down the node. This exception
         -- will make sure we restart with validation enabled.
         unless (cdbCheckIntegrity blk) $
@@ -250,7 +246,6 @@ copyAndSnapshotRunner
      , GetHeader blk
      , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> GcSchedule m
@@ -329,7 +324,7 @@ updateLedgerSnapshots CDB{..} = do
 -- @putBlock@ and @getBlock@.
 garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()
 garbageCollect CDB{..} slotNo = do
-    VolDB.garbageCollect cdbVolDB slotNo
+    VolatileDB.garbageCollect cdbVolatileDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
       modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . invalidBlockSlotNo)
@@ -529,7 +524,6 @@ addBlockRunner
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk

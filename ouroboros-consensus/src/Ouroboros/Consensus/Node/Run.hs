@@ -8,7 +8,7 @@ module Ouroboros.Consensus.Node.Run (
     SerialiseDiskConstraints
   , ImmDbSerialiseConstraints
   , LgrDbSerialiseConstraints
-  , VolDbSerialiseConstraints
+  , VolatileDbSerialiseConstraints
     -- * SerialiseNodeToNode
   , SerialiseNodeToNodeConstraints
     -- * SerialiseNodeToClient
@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
-                     VolDbSerialiseConstraints)
+                     VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)

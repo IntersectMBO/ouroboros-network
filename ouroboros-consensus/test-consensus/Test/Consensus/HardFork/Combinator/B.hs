@@ -350,7 +350,7 @@ instance HasBinaryBlockInfo BlockB where
 
 instance SerialiseConstraintsHFC          BlockB
 instance ImmDbSerialiseConstraints        BlockB
-instance VolDbSerialiseConstraints        BlockB
+instance VolatileDbSerialiseConstraints   BlockB
 instance LgrDbSerialiseConstraints        BlockB
 instance SerialiseDiskConstraints         BlockB
 instance SerialiseNodeToNodeConstraints   BlockB

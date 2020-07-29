@@ -31,7 +31,6 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
@@ -101,7 +100,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (LedgerDbParams (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
@@ -248,7 +247,7 @@ type AllComponentsM m blk =
   , IsEBB
   , Word32
   , Word16
-  , ShortByteString
+  , SomeBlock (NestedCtxt Header) blk
   )
 
 -- | Convert @'AllComponentsM m'@ to 'AllComponents'
@@ -456,10 +455,13 @@ data IteratorResultGCed blk = IteratorResultGCed
   , iterResult :: IteratorResult blk (AllComponents blk)
   }
 
-deriving instance (Show blk, Show (Header blk), StandardHash blk)
-               => Show (IteratorResultGCed blk)
+deriving instance ( Show blk
+                  , Show (Header blk)
+                  , StandardHash blk
+                  , HasNestedContent Header blk
+                  ) => Show (IteratorResultGCed blk)
 
-instance (Eq blk, Eq (Header blk), StandardHash blk)
+instance (Eq blk, Eq (Header blk), StandardHash blk, HasNestedContent Header blk)
       => Eq (IteratorResultGCed blk) where
   IteratorResultGCed real1 iterResult1 == IteratorResultGCed real2 iterResult2 =
       case (real1, real2) of
@@ -1244,8 +1246,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
-deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
-deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
+deriving instance SOP.Generic         (VolatileDB.TraceEvent blk)
+deriving instance SOP.HasDatatypeInfo (VolatileDB.TraceEvent blk)
 
 data Tag =
     TagGetIsValidJust
@@ -1593,7 +1595,7 @@ traceEventName = \case
     TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
-    TraceVolDBEvent          ev    -> "VolDB."        <> constrName ev
+    TraceVolatileDBEvent     ev    -> "VolatileDB."   <> constrName ev
 
 mkArgs :: IOLike m
        => TopLevelConfig Blk
@@ -1607,16 +1609,16 @@ mkArgs :: IOLike m
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
-       (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
+       (immDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- HasFS instances
       cdbHasFSImmDb           = simHasFS immDbFsVar
-    , cdbHasFSVolDb           = simHasFS volDbFsVar
+    , cdbHasFSVolatileDb      = simHasFS volatileDbFsVar
     , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
     , cdbImmValidation        = ValidateAllChunks
-    , cdbVolValidation        = VolDB.ValidateAll
-    , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+    , cdbVolatileDbValidation = VolatileDB.ValidateAll
+    , cdbMaxBlocksPerFile     = VolatileDB.mkBlocksPerFile 4
     , cdbParamsLgrDB          = LedgerDbParams {
                                     -- Pick a small value for 'ledgerDbSnapEvery',
                                     -- so that maximum supported rollback is limited
