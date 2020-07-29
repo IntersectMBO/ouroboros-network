@@ -25,12 +25,12 @@ ouroboros-network
    ouroboros-consensus-cardano/README
    ouroboros-consensus-shelley/README
    ouroboros-consensus-shelley-test/README
-   Win32-network/README
 
 .. toctree::
    :maxdepth: 3
-   :caption: Ouroboros Network Reference
+   :caption: Ouroboros Network
    :titlesonly:
    :hidden:
 
    reference/index
+   Win32-network/README
