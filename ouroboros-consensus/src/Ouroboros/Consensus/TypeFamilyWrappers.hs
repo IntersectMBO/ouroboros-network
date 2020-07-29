@@ -11,6 +11,7 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapCannotForge(..)
   , WrapEnvelopeErr(..)
   , WrapForgeStateInfo(..)
+  , WrapForgeStateUpdateError(..)
   , WrapGenTxId(..)
   , WrapHeaderHash(..)
   , WrapLedgerConfig(..)
@@ -53,18 +54,19 @@ import           Ouroboros.Consensus.Protocol.Abstract
   Block based
 -------------------------------------------------------------------------------}
 
-newtype WrapApplyTxErr      blk = WrapApplyTxErr      { unwrapApplyTxErr      :: ApplyTxErr               blk }
-newtype WrapCannotForge     blk = WrapCannotForge     { unwrapCannotForge     :: CannotForge              blk }
-newtype WrapEnvelopeErr     blk = WrapEnvelopeErr     { unwrapEnvelopeErr     :: OtherHeaderEnvelopeError blk }
-newtype WrapForgeStateInfo  blk = WrapForgeStateInfo  { unwrapForgeStateInfo  :: ForgeStateInfo           blk }
-newtype WrapGenTxId         blk = WrapGenTxId         { unwrapGenTxId         :: GenTxId                  blk }
-newtype WrapHeaderHash      blk = WrapHeaderHash      { unwrapHeaderHash      :: HeaderHash               blk }
-newtype WrapLedgerConfig    blk = WrapLedgerConfig    { unwrapLedgerConfig    :: LedgerConfig             blk }
-newtype WrapLedgerErr       blk = WrapLedgerErr       { unwrapLedgerErr       :: LedgerError              blk }
-newtype WrapLedgerUpdate    blk = WrapLedgerUpdate    { unwrapLedgerUpdate    :: LedgerUpdate             blk }
-newtype WrapLedgerWarning   blk = WrapLedgerWarning   { unwrapLedgerWarning   :: LedgerWarning            blk }
-newtype WrapTipInfo         blk = WrapTipInfo         { unwrapTipInfo         :: TipInfo                  blk }
-newtype WrapFullBlockConfig blk = WrapFullBlockConfig { unwrapFullBlockConfig :: FullBlockConfig (LedgerState blk) blk }
+newtype WrapApplyTxErr            blk = WrapApplyTxErr            { unwrapApplyTxErr            :: ApplyTxErr               blk }
+newtype WrapCannotForge           blk = WrapCannotForge           { unwrapCannotForge           :: CannotForge              blk }
+newtype WrapEnvelopeErr           blk = WrapEnvelopeErr           { unwrapEnvelopeErr           :: OtherHeaderEnvelopeError blk }
+newtype WrapForgeStateInfo        blk = WrapForgeStateInfo        { unwrapForgeStateInfo        :: ForgeStateInfo           blk }
+newtype WrapForgeStateUpdateError blk = WrapForgeStateUpdateError { unwrapForgeStateUpdateError :: ForgeStateUpdateError    blk }
+newtype WrapGenTxId               blk = WrapGenTxId               { unwrapGenTxId               :: GenTxId                  blk }
+newtype WrapHeaderHash            blk = WrapHeaderHash            { unwrapHeaderHash            :: HeaderHash               blk }
+newtype WrapLedgerConfig          blk = WrapLedgerConfig          { unwrapLedgerConfig          :: LedgerConfig             blk }
+newtype WrapLedgerErr             blk = WrapLedgerErr             { unwrapLedgerErr             :: LedgerError              blk }
+newtype WrapLedgerUpdate          blk = WrapLedgerUpdate          { unwrapLedgerUpdate          :: LedgerUpdate             blk }
+newtype WrapLedgerWarning         blk = WrapLedgerWarning         { unwrapLedgerWarning         :: LedgerWarning            blk }
+newtype WrapTipInfo               blk = WrapTipInfo               { unwrapTipInfo               :: TipInfo                  blk }
+newtype WrapFullBlockConfig       blk = WrapFullBlockConfig       { unwrapFullBlockConfig       :: FullBlockConfig (LedgerState blk) blk }
 
 {-------------------------------------------------------------------------------
   Consensus based
@@ -92,7 +94,6 @@ newtype WrapNodeToClientVersion blk = WrapNodeToClientVersion { unwrapNodeToClie
 -------------------------------------------------------------------------------}
 
 deriving instance Eq (ApplyTxErr               blk) => Eq (WrapApplyTxErr     blk)
-deriving instance Eq (ForgeStateInfo           blk) => Eq (WrapForgeStateInfo blk)
 deriving instance Eq (GenTxId                  blk) => Eq (WrapGenTxId        blk)
 deriving instance Eq (LedgerError              blk) => Eq (WrapLedgerErr      blk)
 deriving instance Eq (LedgerUpdate             blk) => Eq (WrapLedgerUpdate   blk)
@@ -102,15 +103,16 @@ deriving instance Eq (TipInfo                  blk) => Eq (WrapTipInfo        bl
 
 deriving instance Ord (GenTxId blk) => Ord (WrapGenTxId blk)
 
-deriving instance Show (ApplyTxErr               blk) => Show (WrapApplyTxErr     blk)
-deriving instance Show (CannotForge              blk) => Show (WrapCannotForge    blk)
-deriving instance Show (ForgeStateInfo           blk) => Show (WrapForgeStateInfo blk)
-deriving instance Show (GenTxId                  blk) => Show (WrapGenTxId        blk)
-deriving instance Show (LedgerError              blk) => Show (WrapLedgerErr      blk)
-deriving instance Show (LedgerUpdate             blk) => Show (WrapLedgerUpdate   blk)
-deriving instance Show (LedgerWarning            blk) => Show (WrapLedgerWarning  blk)
-deriving instance Show (OtherHeaderEnvelopeError blk) => Show (WrapEnvelopeErr    blk)
-deriving instance Show (TipInfo                  blk) => Show (WrapTipInfo        blk)
+deriving instance Show (ApplyTxErr               blk) => Show (WrapApplyTxErr            blk)
+deriving instance Show (CannotForge              blk) => Show (WrapCannotForge           blk)
+deriving instance Show (ForgeStateInfo           blk) => Show (WrapForgeStateInfo        blk)
+deriving instance Show (ForgeStateUpdateError    blk) => Show (WrapForgeStateUpdateError blk)
+deriving instance Show (GenTxId                  blk) => Show (WrapGenTxId               blk)
+deriving instance Show (LedgerError              blk) => Show (WrapLedgerErr             blk)
+deriving instance Show (LedgerUpdate             blk) => Show (WrapLedgerUpdate          blk)
+deriving instance Show (LedgerWarning            blk) => Show (WrapLedgerWarning         blk)
+deriving instance Show (OtherHeaderEnvelopeError blk) => Show (WrapEnvelopeErr           blk)
+deriving instance Show (TipInfo                  blk) => Show (WrapTipInfo               blk)
 
 deriving instance NoUnexpectedThunks (GenTxId                  blk) => NoUnexpectedThunks (WrapGenTxId         blk)
 deriving instance NoUnexpectedThunks (LedgerError              blk) => NoUnexpectedThunks (WrapLedgerErr       blk)

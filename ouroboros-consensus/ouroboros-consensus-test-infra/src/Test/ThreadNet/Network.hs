@@ -1544,6 +1544,7 @@ type TracingConstraints blk =
   , Show (GenTx blk)
   , Show (GenTxId blk)
   , Show (ForgeStateInfo blk)
+  , Show (ForgeStateUpdateError blk)
   , Show (CannotForge blk)
   , HasNestedContent Header blk
   )

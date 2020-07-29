@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
@@ -132,6 +133,8 @@ pretendTicked (PBftLedgerView ds) = TickedPBftLedgerView ds
 type instance CannotForge (SimplePBftBlock c c') = PBftCannotForge c'
 
 type instance ForgeStateInfo (SimplePBftBlock c c') = ()
+
+type instance ForgeStateUpdateError (SimplePBftBlock c c') = Void
 
 forgePBftExt :: forall c c'.
                 ( SimpleCrypto c

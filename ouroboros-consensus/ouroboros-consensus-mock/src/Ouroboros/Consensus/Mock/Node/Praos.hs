@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Mock.Node.Praos (
   , protocolInfoPraos
   ) where
 
+import           Data.Bifunctor (second)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -78,12 +79,13 @@ protocolInfoPraos numCoreNodes nid params eraParams =
 
     initHotKey :: HotKey PraosMockCrypto
     initHotKey =
-      HotKey $
-        SignKeyMockKES
-          -- key ID
-          (fst $ verKeys Map.! nid)
-          -- KES initial slot
+        HotKey
           0
+          (SignKeyMockKES
+            -- key ID
+            (fst $ verKeys Map.! nid)
+            -- KES initial slot
+            0)
 
 praosBlockForging ::
      IOLike m
@@ -94,8 +96,9 @@ praosBlockForging cid initHotKey = do
     varHotKey <- newMVar initHotKey
     return $ BlockForging {
         canBeLeader      = cid
-      , updateForgeState = updateMVar_ varHotKey . evolveKey
-      , checkCanForge    = \_ _ _ _ -> return Nothing
+      , updateForgeState = \sno -> updateMVar varHotKey $
+                               second ForgeStateUpdateInfo . evolveKey sno
+      , checkCanForge    = \_ _ _ _ _ -> return ()
       , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do
                                hotKey <- readMVar varHotKey
                                return $

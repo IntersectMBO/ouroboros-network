@@ -54,7 +54,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.SOP (OptNP (..))
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation

@@ -249,8 +249,10 @@ instance HasPartialLedgerConfig BlockA where
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
 
-type instance CannotForge    BlockA = Void
-type instance ForgeStateInfo BlockA = ()
+type instance CannotForge           BlockA = Void
+type instance ForgeStateInfo        BlockA = ()
+type instance ForgeStateUpdateError BlockA = Void
+
 
 forgeBlockA ::
      TopLevelConfig BlockA
@@ -278,8 +280,8 @@ forgeBlockA tlc bno sno (TickedLedgerStateA st) _txs _ = BlkA {
 blockForgingA :: Monad m => BlockForging m BlockA
 blockForgingA = BlockForging {
      canBeLeader      = ()
-   , updateForgeState = \_ -> return ()
-   , checkCanForge    = \_ _ _ _ -> return Nothing
+   , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+   , checkCanForge    = \_ _ _ _ _ -> return ()
    , forgeBlock       = return .....: forgeBlockA
    }
 
