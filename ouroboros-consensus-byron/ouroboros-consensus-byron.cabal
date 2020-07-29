@@ -59,7 +59,7 @@ library
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
-                     , cryptonite        >=0.25  && <0.26
+                     , cryptonite        >=0.25  && <0.28
                      , formatting        >=6.3   && <6.4
                      , memory
                      , mtl               >=2.2   && <2.3
