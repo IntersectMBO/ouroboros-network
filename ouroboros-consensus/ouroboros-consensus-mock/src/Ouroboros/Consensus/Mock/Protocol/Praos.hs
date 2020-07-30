@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosChainDepState(..)
   , HotKey(..)
   , forgePraosFields
+  , HotKeyEvolutionError(..)
   , evolveKey
     -- * Tags
   , PraosCrypto(..)
@@ -50,9 +51,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
-import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -67,7 +68,7 @@ import           Cardano.Crypto.Util
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
-import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -119,52 +120,68 @@ praosValidateView getFields hdr =
   Forging
 -------------------------------------------------------------------------------}
 
-newtype HotKey c = HotKey (SignKeyKES (PraosKES c))
+data HotKey c =
+    HotKey
+      !Period  -- ^ Absolute period of the KES key
+      !(SignKeyKES (PraosKES c))
+  | HotKeyPoisoned
   deriving (Generic)
+
+instance PraosCrypto c => NoUnexpectedThunks (HotKey c)
 
 deriving instance PraosCrypto c => Show (HotKey c)
 
--- We override 'showTypeOf' to make sure to show @c@
-instance PraosCrypto c => NoUnexpectedThunks (HotKey c) where
-  showTypeOf _ = show $ typeRep (Proxy @(HotKey c))
+-- | The 'HotKey' could not be evolved to the given 'Period'.
+newtype HotKeyEvolutionError = HotKeyEvolutionError Period
+  deriving (Show)
 
-evolveKey :: (Monad m, PraosCrypto c)
-          => SlotNo -> HotKey c -> m (HotKey c)
-evolveKey slotNo (HotKey oldKey) = do
-    let newKey = fromMaybe (error "evolveKey: updateKES failed") $
-                 updateKES () oldKey kesPeriod
-    return $ HotKey newKey
+-- | To be used in conjunction with, e.g., 'updateMVar'.
+--
+-- NOTE: when the key's period is after the target period, we shouldn't use
+-- it, but we currently do. In real TPraos we check this in
+-- 'tpraosCheckCanForge'.
+evolveKey ::
+     PraosCrypto c
+  => SlotNo
+  -> HotKey c
+  -> (HotKey c, UpdateInfo (HotKey c) (HotKey c) HotKeyEvolutionError)
+evolveKey slotNo hotKey = case hotKey of
+    HotKey keyPeriod oldKey
+      | keyPeriod >= targetPeriod
+      -> (hotKey, Unchanged hotKey)
+      | otherwise
+      -> case updateKES () oldKey keyPeriod of
+           Nothing     ->
+             (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
+           Just newKey ->
+             evolveKey slotNo (HotKey (keyPeriod + 1) newKey)
+    HotKeyPoisoned ->
+      (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
   where
-   kesPeriod :: Period
-   kesPeriod = fromIntegral $ unSlotNo slotNo
+   targetPeriod :: Period
+   targetPeriod = fromIntegral $ unSlotNo slotNo
 
 forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
+                    , HasCallStack
                     )
-                 => ConsensusConfig (Praos c)
+                 => PraosProof c
                  -> HotKey c
-                 -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> PraosFields c toSign
-forgePraosFields PraosConfig{..} (HotKey key) PraosProof{..} mkToSign =
-    PraosFields {
-        praosSignature   = signature
-      , praosExtraFields = signedFields
-      }
+forgePraosFields PraosProof{..} hotKey mkToSign =
+    case hotKey of
+      HotKey kesPeriod key -> PraosFields {
+          praosSignature   = signedKES () kesPeriod (mkToSign signedFields) key
+        , praosExtraFields = signedFields
+        }
+      HotKeyPoisoned -> error "trying to sign with a poisoned key"
   where
     signedFields = PraosExtraFields {
         praosCreator = praosLeader
       , praosRho     = praosProofRho
       , praosY       = praosProofY
       }
-
-    signature = signedKES () kesPeriod (mkToSign signedFields) key
-
-    -- For the mock implementation, we consider the KES period to be the slot.
-    -- In reality, there will be some kind of constant slotsPerPeriod factor.
-    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
-    kesPeriod :: Period
-    kesPeriod = fromIntegral $ unSlotNo praosProofSlot
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -187,10 +204,9 @@ deriving instance PraosCrypto c => Show (PraosFields c toSign)
 deriving instance PraosCrypto c => Eq   (PraosFields c toSign)
 
 data PraosProof c = PraosProof {
-      praosProofRho  :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
-    , praosProofY    :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
-    , praosLeader    :: CoreNodeId
-    , praosProofSlot :: SlotNo
+      praosProofRho :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
+    , praosProofY   :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
+    , praosLeader   :: CoreNodeId
     }
 
 data PraosValidationError c =
@@ -246,10 +262,6 @@ data instance ConsensusConfig (Praos c) = PraosConfig
 instance PraosCrypto c => ChainSelection (Praos c) where
   -- Use defaults
 
-instance PraosCrypto c => HasChainIndepState (Praos c) where
-  type ChainIndepState (Praos c) = HotKey c
-  updateChainIndepState _ () = evolveKey
-
 newtype PraosChainDepState c = PraosChainDepState {
       praosHistory :: [BlockInfo c]
     }
@@ -278,17 +290,15 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type ValidateView  (Praos c) = PraosValidateView    c
   type ChainDepState (Praos c) = PraosChainDepState   c
   type CanBeLeader   (Praos c) = CoreNodeId
-  type CannotLead    (Praos c) = Void
 
-  checkIsLeader cfg@PraosConfig{..} nid _cis slot (TickedPraosChainDepState _u  cds) = do
+  checkIsLeader cfg@PraosConfig{..} nid slot (TickedPraosChainDepState _u  cds) =
       if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t
-      then IsLeader PraosProof {
-               praosProofRho  = rho
-             , praosProofY    = y
-             , praosLeader    = nid
-             , praosProofSlot = slot
+      then Just PraosProof {
+               praosProofRho = rho
+             , praosProofY   = y
+             , praosLeader   = nid
              }
-      else NotLeader
+      else Nothing
     where
       (rho', y', t) = rhoYT cfg (praosHistory cds) slot nid
 

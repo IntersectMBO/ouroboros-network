@@ -697,6 +697,14 @@ instance InspectLedger m => InspectLedger (DualBlock m a) where
         (dualLedgerStateMain    after)
 
 {-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+type instance CannotForge           (DualBlock m a) = CannotForge           m
+type instance ForgeStateInfo        (DualBlock m a) = ForgeStateInfo        m
+type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
+
+{-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 

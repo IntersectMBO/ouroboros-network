@@ -29,7 +29,8 @@ data Rekeying m blk = forall opKey. Rekeying
     -- IE the first slot that will result in a block successfully being forged
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
-         ProtocolInfo m blk
+         CoreNodeId
+      -> ProtocolInfo m blk
       -> EpochNo
       -> opKey
       -> Maybe (TestNodeInitialization m blk)
@@ -56,6 +57,6 @@ fromRekeyingToRekeyM Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} = do
           x :< xs <- readTVar rekeyVar
           x <$ writeTVar rekeyVar xs
         eno <- mkEno s'
-        pure $ case rekeyUpd pInfo eno x of
+        pure $ case rekeyUpd cid pInfo eno x of
           Nothing  -> plainTestNodeInitialization pInfo
           Just tni -> tni

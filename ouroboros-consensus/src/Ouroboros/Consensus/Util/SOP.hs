@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE EmptyCase            #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -7,7 +8,9 @@
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -28,11 +31,6 @@ module Ouroboros.Consensus.Util.SOP (
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
   , checkIsNonEmpty
-    -- * NP with optional values
-  , OptNP(..)
-  , fromOptNP
-  , singletonOptNP
-  , fromSingletonOptNP
   ) where
 
 import           Data.SOP.Dict
@@ -170,32 +168,3 @@ checkIsNonEmpty :: forall xs. SListI xs => Proxy xs -> Maybe (ProofNonEmpty xs)
 checkIsNonEmpty _ = case sList @xs of
     SNil  -> Nothing
     SCons -> Just $ ProofNonEmpty Proxy Proxy
-
-{-------------------------------------------------------------------------------
-  NP with optional values
--------------------------------------------------------------------------------}
-
--- | Like an 'NP', but with optional values
-data OptNP (allowedEmpty :: Bool) (f :: k -> *) (xs :: [k]) where
-  OptNil  :: OptNP 'True f '[]
-  OptCons :: !(f x) -> !(OptNP 'True f xs) -> OptNP allowedEmpty f (x ': xs)
-  OptSkip :: !(OptNP allowedEmpty f xs) -> OptNP allowedEmpty f (x ': xs)
-
-fromOptNP :: OptNP allowedEmpty f xs -> NP (Maybe :.: f) xs
-fromOptNP = go
-  where
-    go :: OptNP allowedEmpty f xs -> NP (Maybe :.: f) xs
-    go OptNil         = Nil
-    go (OptCons x xs) = Comp (Just x) :* go xs
-    go (OptSkip   xs) = Comp Nothing  :* go xs
-
-singletonOptNP :: f x -> OptNP allowedEmpty f '[x]
-singletonOptNP x = OptCons x OptNil
-
--- | If 'OptNP' is not allowed to be empty, it must contain at least one value
-fromSingletonOptNP :: OptNP 'False f '[x] -> f x
-fromSingletonOptNP = go
-  where
-    go :: OptNP 'False f '[x] -> f x
-    go (OptCons x _) = x
-    go (OptSkip xs)  = case xs of {}

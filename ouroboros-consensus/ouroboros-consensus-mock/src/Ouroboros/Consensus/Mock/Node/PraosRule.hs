@@ -10,21 +10,20 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
+import           Ouroboros.Consensus.Mock.Node
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
-import           Ouroboros.Consensus.Util.IOLike
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
-protocolInfoPraosRule :: IOLike m
+protocolInfoPraosRule :: Monad m
                       => NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
@@ -38,19 +37,16 @@ protocolInfoPraosRule numCoreNodes
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
-          topLevelConfigProtocol = FullProtocolConfig {
-              protocolConfigConsensus = WLSConfig {
-                  wlsConfigSchedule = schedule
-                , wlsConfigP        = PraosConfig
-                    { praosParams       = params
-                    , praosSignKeyVRF   = NeverUsedSignKeyVRF
-                    , praosInitialEta   = 0
-                    , praosInitialStake = genesisStakeDist addrDist
-                    , praosVerKeys      = verKeys
-                    }
-                , wlsConfigNodeId   = nid
+          topLevelConfigProtocol = WLSConfig {
+              wlsConfigSchedule = schedule
+            , wlsConfigP        = PraosConfig
+                { praosParams       = params
+                , praosSignKeyVRF   = NeverUsedSignKeyVRF
+                , praosInitialEta   = 0
+                , praosInitialStake = genesisStakeDist addrDist
+                , praosVerKeys      = verKeys
                 }
-            , protocolConfigIndep = ()
+            , wlsConfigNodeId   = nid
             }
         , topLevelConfigBlock = FullBlockConfig {
               blockConfigLedger = SimpleLedgerConfig () eraParams
@@ -62,12 +58,10 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoLeaderCreds = Just (
-          ()
-        , defaultMaintainForgeState
-        )
+    , pInfoBlockForging = Just (return (simpleBlockForging () forgePraosRuleExt))
     }
   where
+    addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
 
     verKeys :: Map CoreNodeId (VerKeyKES NeverKES, VerKeyVRF NeverVRF)

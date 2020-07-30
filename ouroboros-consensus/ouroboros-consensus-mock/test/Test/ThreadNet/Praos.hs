@@ -81,15 +81,15 @@ prop_simple_praos_convergence TestSetup
   } =
     counterexample (tracesToDot (SimpleCodecConfig k) testOutputNodes) $
     prop_general PropGeneralArgs
-      { pgaBlockProperty      = prop_validSimpleBlock
-      , pgaCountTxs           = countSimpleGenTxs
-      , pgaExpectedCannotLead = noExpectedCannotLeads
-      , pgaFirstBlockNo       = 0
-      , pgaFixedMaxForkLength = Nothing
-      , pgaFixedSchedule      = Nothing
-      , pgaSecurityParam      = k
-      , pgaTestConfig         = testConfig
-      , pgaTestConfigB        = testConfigB
+      { pgaBlockProperty       = prop_validSimpleBlock
+      , pgaCountTxs            = countSimpleGenTxs
+      , pgaExpectedCannotForge = noExpectedCannotForges
+      , pgaFirstBlockNo        = 0
+      , pgaFixedMaxForkLength  = Nothing
+      , pgaFixedSchedule       = Nothing
+      , pgaSecurityParam       = k
+      , pgaTestConfig          = testConfig
+      , pgaTestConfigB         = testConfigB
       }
       testOutput
   where

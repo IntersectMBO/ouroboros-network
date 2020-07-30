@@ -40,14 +40,15 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
 import           Ouroboros.Consensus.Byron.Ledger
 import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as DH
-import           Ouroboros.Consensus.Byron.Node (PBftLeaderCredentials (..),
-                     mkPBftIsLeader)
+import           Ouroboros.Consensus.Byron.Node (ByronLeaderCredentials (..))
 
 import           Test.Util.Serialisation.Golden (Labelled, labelled, unlabelled)
 import qualified Test.Util.Serialisation.Golden as Golden
@@ -90,7 +91,7 @@ fullBlockConfig = FullBlockConfig {
     , blockConfigCodec  = codecConfig
     }
 
-leaderCredentials :: PBftLeaderCredentials
+leaderCredentials :: ByronLeaderCredentials
 leaderCredentials =
     mkLeaderCredentials
       CC.dummyConfig
@@ -133,7 +134,13 @@ exampleBlock =
       (SlotNo 1)
       (applyChainTick CC.dummyConfig (SlotNo 1) ledgerStateAfterEBB)
       [exampleGenTx]
-      (mkPBftIsLeader leaderCredentials)
+      (fakeMkIsLeader leaderCredentials)
+  where
+    -- | Normally, we'd have to use 'checkIsLeader' to produce this proof.
+    fakeMkIsLeader (ByronLeaderCredentials signKey dlgCert _) = PBftIsLeader {
+          pbftIsLeaderSignKey = SignKeyByronDSIGN signKey
+        , pbftIsLeaderDlgCert = dlgCert
+        }
 
 exampleEBB :: ByronBlock
 exampleEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
