@@ -12,9 +12,10 @@
 
 module Test.Consensus.Ledger.Mock.Generators () where
 
-import           Codec.Serialise (Serialise, encode)
+import           Codec.Serialise (Serialise, encode, serialise)
 import           Control.Monad
 import qualified Data.ByteString as Strict
+import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable
@@ -63,18 +64,23 @@ instance Arbitrary (HeaderHash blk) => Arbitrary (Point blk) where
 -- These generators blindly create random values, so the block will not be
 -- valid, but this does not matter for serialisation tests.
 
-instance (HashAlgorithm (SimpleHash c), Arbitrary ext, Serialise ext)
+instance (SimpleCrypto c, Arbitrary ext, Serialise ext)
       => Arbitrary (SimpleBlock c ext) where
-  arbitrary = SimpleBlock <$> arbitrary <*> arbitrary
-
-instance (HashAlgorithm (SimpleHash c), Arbitrary ext, Serialise ext)
-      => Arbitrary (Header (SimpleBlock c ext)) where
   arbitrary = do
     simpleStdHeader <- arbitrary
-    ext <- arbitrary
-    let hdr     = SimpleHeader hdrHash simpleStdHeader ext
-        hdrHash = hashWithSerialiser (encodeSimpleHeader encode) hdr
-    return hdr
+    body            <- arbitrary
+    ext             <- arbitrary
+    let simpleStdHeader' = simpleStdHeader {
+            -- Fill in the right body size, because we rely on this in the
+            -- serialisation tests
+            simpleBodySize = fromIntegral $ Lazy.length $ serialise body
+          }
+        hdr = mkSimpleHeader encode simpleStdHeader' ext
+    return $ SimpleBlock hdr body
+
+instance (SimpleCrypto c, Arbitrary ext, Serialise ext, Typeable ext)
+      => Arbitrary (Header (SimpleBlock c ext)) where
+  arbitrary = getHeader <$> arbitrary
 
 instance (HashAlgorithm (SimpleHash c), Arbitrary ext, Serialise ext)
       => Arbitrary (SimpleStdHeader c ext) where

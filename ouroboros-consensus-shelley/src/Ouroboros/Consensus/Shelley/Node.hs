@@ -345,7 +345,11 @@ instance ConfigSupportsNode (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto c => RunNode (ShelleyBlock c) where
-  nodeBlockFetchSize = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw
+  nodeBlockFetchSize hdr = overhead + headerSize + bodySize
+    where
+      overhead   = 5 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
+      bodySize   = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw $ hdr
+      headerSize = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
 
   -- We fix the chunk size to 10k
   nodeImmDbChunkInfo =

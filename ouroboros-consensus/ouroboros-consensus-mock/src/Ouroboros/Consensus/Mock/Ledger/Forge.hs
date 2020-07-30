@@ -59,15 +59,12 @@ forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock curSlot tickedLedger t
 
     stdHeader :: SimpleStdHeader c ext
     stdHeader = SimpleStdHeader {
-          simplePrev      = castHash $ getTipHash tickedLedger
-        , simpleSlotNo    = curSlot
-        , simpleBlockNo   = curBlock
-        , simpleBodyHash  = hashWithSerialiser toCBOR body
-        , simpleBlockSize = bodySize
+          simplePrev     = castHash $ getTipHash tickedLedger
+        , simpleSlotNo   = curSlot
+        , simpleBlockNo  = curBlock
+        , simpleBodyHash = hashWithSerialiser toCBOR body
+        , simpleBodySize = bodySize
         }
 
-    -- We use the size of the body, not of the whole block (= header + body),
-    -- since the header size is fixed and this size is only used for
-    -- prioritisation.
-    bodySize :: Word64
+    bodySize :: Word32
     bodySize = fromIntegral $ Lazy.length $ serialise body

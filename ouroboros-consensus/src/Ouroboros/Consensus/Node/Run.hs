@@ -91,6 +91,12 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                        (Query blk)
       , ShowProxy                        (TxId (GenTx blk))
       ) => RunNode blk where
+  -- | An upper bound the size in bytes of the block corresponding to the
+  -- header. This can be an overestimate, but not an underestimate.
+  --
+  -- The block fetch client uses this to estimate how bytes will be in flight.
+  -- This is also used to limit the number of bytes accepted when downloading
+  -- a block.
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
 
   nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
