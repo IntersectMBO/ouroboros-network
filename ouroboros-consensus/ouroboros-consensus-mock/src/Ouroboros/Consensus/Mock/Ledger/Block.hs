@@ -112,8 +112,19 @@ data SimpleBlock' c ext ext' = SimpleBlock {
       simpleHeader :: Header (SimpleBlock' c ext ext')
     , simpleBody   :: SimpleBody
     }
-  deriving stock    (Generic, Show, Eq)
-  deriving anyclass (Serialise)
+  deriving (Generic, Show, Eq)
+
+instance (SimpleCrypto c, Serialise ext') => Serialise (SimpleBlock' c ext ext') where
+  encode (SimpleBlock hdr body) = mconcat [
+        CBOR.encodeListLen 2
+      , encode hdr
+      , encode body
+      ]
+  decode = do
+      CBOR.decodeListLenOf 2
+      hdr  <- decode
+      body <- decode
+      return (SimpleBlock hdr body)
 
 instance (Typeable c, Typeable ext, Typeable ext')
     => ShowProxy (SimpleBlock' c ext ext') where
@@ -151,11 +162,11 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
   headerIsEBB = const Nothing
 
 data SimpleStdHeader c ext = SimpleStdHeader {
-      simplePrev      :: ChainHash (SimpleBlock c ext)
-    , simpleSlotNo    :: SlotNo
-    , simpleBlockNo   :: BlockNo
-    , simpleBodyHash  :: Hash (SimpleHash c) SimpleBody
-    , simpleBlockSize :: Word64
+      simplePrev     :: ChainHash (SimpleBlock c ext)
+    , simpleSlotNo   :: SlotNo
+    , simpleBlockNo  :: BlockNo
+    , simpleBodyHash :: Hash (SimpleHash c) SimpleBody
+    , simpleBodySize :: Word32
     }
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise, NoUnexpectedThunks)
@@ -163,8 +174,11 @@ data SimpleStdHeader c ext = SimpleStdHeader {
 data SimpleBody = SimpleBody {
       simpleTxs :: [Mock.Tx]
     }
-  deriving stock    (Generic, Show, Eq)
-  deriving anyclass (Serialise)
+  deriving (Generic, Show, Eq)
+
+instance Serialise SimpleBody where
+  encode (SimpleBody txs) = encode txs
+  decode = SimpleBody <$> decode
 
 {-------------------------------------------------------------------------------
   Working with 'SimpleBlock'
@@ -565,6 +579,6 @@ simpleBlockBinaryBlockInfo ::
      (SimpleCrypto c, Serialise ext', Typeable ext, Typeable ext')
   => SimpleBlock' c ext ext' -> BinaryBlockInfo
 simpleBlockBinaryBlockInfo b = BinaryBlockInfo
-    { headerOffset = 2 -- For the 'encodeListLen'
+    { headerOffset = 1 -- For the 'encodeListLen'
     , headerSize   = fromIntegral $ Lazy.length $ serialise (getHeader b)
     }

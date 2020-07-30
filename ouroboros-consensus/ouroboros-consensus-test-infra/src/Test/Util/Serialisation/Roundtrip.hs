@@ -46,7 +46,8 @@ import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run (SerialiseNodeToClientConstraints,
+import           Ouroboros.Consensus.Node.Run (RunNode (..),
+                     SerialiseNodeToClientConstraints,
                      SerialiseNodeToNodeConstraints)
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
@@ -105,14 +106,7 @@ type Arbitrary' a = (Arbitrary a, Eq a, Show a)
 -- (real crypto) to Shelley (mock crypto) has differently sized hashes.
 roundtrip_all
   :: forall blk.
-     ( StandardHash blk
-
-     , SerialiseDiskConstraints blk
-     , SerialiseNodeToNodeConstraints blk
-     , SerialiseNodeToClientConstraints blk
-
-     , Show (BlockNodeToNodeVersion blk)
-     , Show (BlockNodeToClientVersion blk)
+     ( RunNode blk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
@@ -143,6 +137,7 @@ roundtrip_all ccfg dictNestedHdr =
       , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient ccfg
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
+      , testProperty "nodeBlockFetchSize" $ prop_nodeBlockFetchSize         ccfg
       ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
@@ -428,6 +423,51 @@ prop_hashSize
   => Proxy blk -> HeaderHash blk -> Property
 prop_hashSize p h =
     hashSize p === fromIntegral (Short.length (toShortRawHash p h))
+
+{-------------------------------------------------------------------------------
+  nodeBlockFetchSize
+-------------------------------------------------------------------------------}
+
+prop_nodeBlockFetchSize ::
+     RunNode blk
+  => CodecConfig blk
+  -> WithVersion (BlockNodeToNodeVersion blk) blk
+  -> Property
+prop_nodeBlockFetchSize ccfg (WithVersion version blk)
+  | actualBlockSize > expectedBlockSize
+  = counterexample
+      ("actualBlockSize > expectedBlockSize: "
+         <> show actualBlockSize <> " > "
+         <> show expectedBlockSize)
+      (property False)
+  | actualBlockSize < expectedBlockSize - allowedUnderestimate
+  = counterexample
+      ("actualBlockSize < expectedBlockSize - allowedUnderestimate: "
+         <> show actualBlockSize <> " > "
+         <> show expectedBlockSize <> " - "
+         <> show allowedUnderestimate)
+      (property False)
+  | otherwise
+  = classify (actualBlockSize == expectedBlockSize) "exact"
+  $ classify (actualBlockSize <  expectedBlockSize) "underestimate"
+  $ property True
+  where
+    allowedUnderestimate :: SizeInBytes
+    allowedUnderestimate = 10
+
+    actualBlockSize :: SizeInBytes
+    actualBlockSize =
+          fromIntegral
+        . Lazy.length
+        . toLazyByteString
+        . encodeNodeToNode ccfg version
+        $ blk
+
+    expectedBlockSize :: SizeInBytes
+    expectedBlockSize =
+          nodeBlockFetchSize
+        . getHeader
+        $ blk
 
 {-------------------------------------------------------------------------------
   Serialised helpers

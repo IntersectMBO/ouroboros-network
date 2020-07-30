@@ -15,6 +15,7 @@ import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 
 import           Test.Tasty
