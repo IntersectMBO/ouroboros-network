@@ -146,12 +146,14 @@ instance GetHeader ByronBlock where
         byronHeaderRaw           = CC.abobHdrFromBlock byronBlockRaw
       , byronHeaderSlotNo        = byronBlockSlotNo
       , byronHeaderHash          = byronBlockHash
-      , byronHeaderBlockSizeHint = fromIntegral . Strict.length $
+      , byronHeaderBlockSizeHint = (+ overhead) . fromIntegral . Strict.length $
           -- For some reason regular blocks lack a 'Decoded' instance
           case byronBlockRaw of
             CC.ABOBBlock    blk -> CC.blockAnnotation blk
             CC.ABOBBoundary blk -> recoverBytes       blk
       }
+    where
+      overhead = 5 {- CBOR-in-CBOR -} + 2 {- EBB tag -}
 
   -- Check if a block matches its header
   --
