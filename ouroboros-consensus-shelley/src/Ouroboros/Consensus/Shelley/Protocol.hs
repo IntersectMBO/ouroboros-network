@@ -528,7 +528,7 @@ meetsLeaderThreshold
         (tpraosLeaderF tpraosParams)
   where
     SL.PoolDistr poolDistr = lvPoolDistr
-    r = maybe 0 fst
+    r = maybe 0 SL.individualPoolStake
         $ Map.lookup keyHash poolDistr
 
 {-------------------------------------------------------------------------------
