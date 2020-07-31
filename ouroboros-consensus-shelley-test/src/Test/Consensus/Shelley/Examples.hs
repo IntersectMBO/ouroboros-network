@@ -52,21 +52,16 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Coin as SL
-import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Scripts as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
-import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
-                     hashKeyVRF)
 import qualified Test.Shelley.Spec.Ledger.Examples as Examples
 import           Test.Shelley.Spec.Ledger.Orphans ()
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
@@ -187,7 +182,7 @@ examples = Golden.Examples {
     stakeDistribution :: SL.PoolDistr (TPraosMockCrypto ShortHash)
     stakeDistribution = SL.PoolDistr $ Map.singleton
         (SL.KeyHash $ SL.hashWithSerialiser toCBOR 4)
-        (SL.IndividualPoolStake 1 (hashKeyVRF $ VerKeyFakeVRF 0))
+        (SL.IndividualPoolStake 1 (SL.hashVerKeyVRF $ VerKeyFakeVRF 0))
 
 exampleBlock :: Block ShortHash
 exampleBlock = mkShelleyBlock Examples.blockEx3B
@@ -284,7 +279,7 @@ exampleHeaderState = genesisHeaderState st
           SL.mkNonceFromNumber 2
       }
 
-    st :: TPraosState (ConcreteCrypto ShortHash)
+    st :: TPraosState (TPraosMockCrypto ShortHash)
     st = TPraosState.empty (NotOrigin 1) prtclState
 
 exampleExtLedgerState :: ExtLedgerState (Block ShortHash)

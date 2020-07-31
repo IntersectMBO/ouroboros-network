@@ -30,7 +30,6 @@ import           Test.QuickCheck
 
 import           Test.ThreadNet.TxGen (TxGen (..))
 
-import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as CSL
 import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
@@ -86,7 +85,7 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
       ledgerEnv
       (utxoSt, dpState)
   where
-    epochState :: CSL.EpochState (TPraosMockCrypto h)
+    epochState :: SL.EpochState (TPraosMockCrypto h)
     epochState = SL.nesEs tickedShelleyState
 
     ledgerEnv :: STS.LedgerEnv
@@ -97,13 +96,13 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
       , ledgerAccount  = SL.esAccountState epochState
       }
 
-    utxoSt :: CSL.UTxOState (TPraosMockCrypto h)
+    utxoSt :: SL.UTxOState (TPraosMockCrypto h)
     utxoSt =
         SL._utxoState
       . SL.esLState
       $ epochState
 
-    dpState :: CSL.DPState (TPraosMockCrypto h)
+    dpState :: SL.DPState (TPraosMockCrypto h)
     dpState =
         SL._delegationState
       . SL.esLState
