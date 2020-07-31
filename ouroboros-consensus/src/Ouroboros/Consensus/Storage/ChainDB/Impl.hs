@@ -155,7 +155,7 @@ openDBInternal args launchBgTasks = do
     varNextReaderKey   <- newTVarM (ReaderKey   0)
     varCopyLock        <- newMVar  ()
     varKillBgThreads   <- newTVarM $ return ()
-    blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
+    chainSelQueue      <- newChainSelectionQueue (Args.cdbChainSelQueueSize args)
 
     let env = CDB { cdbImmDB           = immDB
                   , cdbVolDB           = volDB
@@ -177,7 +177,7 @@ openDBInternal args launchBgTasks = do
                   , cdbChunkInfo       = Args.cdbChunkInfo args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbCheckInFuture   = Args.cdbCheckInFuture args
-                  , cdbBlocksToAdd     = blocksToAdd
+                  , cdbChainSelQueue   = chainSelQueue
                   , cdbFutureBlocks    = varFutureBlocks
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
@@ -206,7 +206,7 @@ openDBInternal args launchBgTasks = do
           { intCopyToImmDB             = getEnv  h Background.copyToImmDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
-          , intAddBlockRunner          = getEnv  h Background.addBlockRunner
+          , intAddBlockRunner          = getEnv  h Background.chainSelectionRunner
           , intKillBgThreads           = varKillBgThreads
           }
 

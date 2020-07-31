@@ -133,9 +133,10 @@ data ChainDB m blk = ChainDB {
       -- part of the chain if there are other chains available that are
       -- preferred by the consensus algorithm (typically, longer chains).
       --
-      -- This function typically returns immediately, yielding a
-      -- 'AddBlockPromise' which can be used to wait for the result. You can
-      -- use 'addBlock' to add the block synchronously.
+      -- This function typically returns immediately after writing the block
+      -- to disk, yielding a 'AddBlockPromise' which can be used to wait until
+      -- the block has been processed by chain selection. You can use
+      -- 'addBlock' to add the block synchronously.
       --
       -- NOTE: back pressure can be applied when overloaded.
       addBlockAsync      :: blk -> m (AddBlockPromise m blk)
@@ -361,24 +362,10 @@ instance DB (ChainDB m blk) where
   Adding a block
 -------------------------------------------------------------------------------}
 
-data AddBlockPromise m blk = AddBlockPromise
-    { blockWrittenToDisk :: STM m Bool
-      -- ^ Use this 'STM' transaction to wait until the block has been written
-      -- to disk.
-      --
-      -- Returns 'True' when the block was written to disk or 'False' when it
-      -- was ignored, e.g., because it was older than @k@.
-      --
-      -- If the 'STM' transaction has returned 'True' then 'getIsFetched' will
-      -- return 'True' for the added block.
-      --
-      -- NOTE: Even when the result is 'False', 'getIsFetched' might still
-      -- return 'True', e.g., the block was older than @k@, but it has been
-      -- downloaded and stored on disk before.
-    , blockProcessed     :: STM m (Point blk)
-      -- ^ Use this 'STM' transaction to wait until the block has been
-      -- processed: the block has been written to disk and chain selection has
-      -- been performed for the block, /unless/ the block is from the future.
+newtype AddBlockPromise m blk = AddBlockPromise
+    { blockProcessed     :: STM m (Point blk)
+      -- ^ Use this 'STM' transaction to wait until chain selection has been
+      -- performed for the block, /unless/ the block is from the future.
       --
       -- The ChainDB's tip after chain selection is returned. When this tip
       -- doesn't match the added block, it doesn't necessarily mean the block
@@ -393,12 +380,10 @@ data AddBlockPromise m blk = AddBlockPromise
       -- disk.
     }
 
--- | Add a block synchronously: wait until the block has been written to disk
--- (see 'blockWrittenToDisk').
-addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> blk -> m Bool
-addBlockWaitWrittenToDisk chainDB blk = do
-    promise <- addBlockAsync chainDB blk
-    atomically $ blockWrittenToDisk promise
+-- | Add a block, return after the block has been written to disk, but do not
+-- wait until the block has been processed.
+addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> blk -> m ()
+addBlockWaitWrittenToDisk chainDB blk = void $ addBlockAsync chainDB blk
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.

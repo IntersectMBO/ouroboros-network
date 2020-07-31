@@ -15,7 +15,6 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
   ( initialChainSelection
   , addBlockAsync
-  , addBlockSync
   , chainSelectionForBlock
     -- * Exported for testing purposes
   , olderThanK
@@ -213,22 +212,6 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
 -- the next startup, a correct in-memory state will be reconstructed from the
 -- file system state.
 addBlockAsync
-  :: forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
-  -> blk
-  -> m (AddBlockPromise m blk)
-addBlockAsync CDB { cdbTracer, cdbBlocksToAdd } =
-    addBlockToAdd (contramap TraceAddBlockEvent cdbTracer) cdbBlocksToAdd
-
--- | Add a block to the ChainDB, /synchronously/.
---
--- This is the only operation that actually changes the ChainDB. It will store
--- the block on disk and trigger chain selection, possibly switching to a
--- fork.
---
--- When the slot of the block is > the current slot, a chain selection will be
--- scheduled in the slot of the block.
-addBlockSync
   :: forall m blk.
      ( IOLike m
      , GetPrevHash blk
@@ -236,12 +219,11 @@ addBlockSync
      , InspectLedger blk
      , HasHardForkHistory blk
      , VolDbSerialiseConstraints blk
-     , HasCallStack
      )
   => ChainDbEnv m blk
-  -> BlockToAdd m blk
-  -> m ()
-addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
+  -> blk
+  -> m (AddBlockPromise m blk)
+addBlockAsync cdb@CDB {..} b = do
     (isMember, invalid, curChain) <- atomically $ (,,)
       <$> VolDB.getIsMember               cdbVolDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
@@ -259,36 +241,36 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- 'chainSelectionForFutureBlocks'.
 
     -- ### Ignore
-    newTip <- if
+    if
       | olderThanK hdr isEBB immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockRealPoint b)
-        deliverWrittenToDisk False
-        chainSelectionForFutureBlocks cdb BlockCache.empty
+        newTip <- chainSelectionForFutureBlocks cdb BlockCache.empty
+        return $ ignoredBlockPromise newTip
 
       | isMember (blockHash b) -> do
         trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
-        deliverWrittenToDisk True
-        chainSelectionForFutureBlocks cdb BlockCache.empty
+        newTip <- chainSelectionForFutureBlocks cdb BlockCache.empty
+        return $ ignoredBlockPromise newTip
 
       | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
         trace $ IgnoreInvalidBlock (blockRealPoint b) reason
-        deliverWrittenToDisk False
-        chainSelectionForFutureBlocks cdb BlockCache.empty
+        newTip <- chainSelectionForFutureBlocks cdb BlockCache.empty
+        return $ ignoredBlockPromise newTip
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
-        deliverWrittenToDisk True
 
         let blockCache = BlockCache.singleton b
         -- Do chain selection for future blocks before chain selection for the
         -- new block. When some future blocks are now older than the current
         -- block, we will do chain selection in a more chronological order.
         void $ chainSelectionForFutureBlocks cdb blockCache
-        chainSelectionForBlock cdb blockCache hdr
-
-    deliverProcessed newTip
+        addBlockToProcess
+          (contramap TraceAddBlockEvent cdbTracer)
+          cdbChainSelQueue
+          b
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -299,17 +281,10 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     isEBB :: IsEBB
     isEBB = headerToIsEBB hdr
 
-    -- | Fill in the 'TMVar' for the 'varBlockWrittenToDisk' of the block's
-    -- 'AddBlockPromise' with the given 'Bool'.
-    deliverWrittenToDisk :: Bool -> m ()
-    deliverWrittenToDisk writtenToDisk = atomically $
-        putTMVar varBlockWrittenToDisk writtenToDisk
-
-    -- | Fill in the 'TMVar' for the 'varBlockProcessed' of the block's
-    -- 'AddBlockPromise' with the given tip.
-    deliverProcessed :: Point blk -> m ()
-    deliverProcessed tip = atomically $
-        putTMVar varBlockProcessed tip
+    ignoredBlockPromise :: Point blk -> AddBlockPromise m blk
+    ignoredBlockPromise newTip = AddBlockPromise {
+          blockProcessed = return newTip
+        }
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain
@@ -444,6 +419,15 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     assert (isJust $ lookupBlockInfo (headerHash hdr)) $ return ()
 
     if
+      -- If the block is already in the current chain, ignore it. As we add
+      -- blocks to the VolatileDB before adding them to the chain selection
+      -- queue, it can often happen that when we did chain selection for a
+      -- block, we already extended its candidate chain with its successors
+      -- (that are in the queue) as they are already part of the VolatileDB.
+      | AF.withinFragmentBounds (blockPoint hdr) curChain -> do
+        trace $ IgnoreBlockAlreadyInChain p
+        return tipPoint
+
       -- The chain might have grown since we added the block such that the
       -- block is older than @k@.
       | olderThanK hdr isEBB immBlockNo -> do

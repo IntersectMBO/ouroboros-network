@@ -1639,7 +1639,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbTracer               = tracer
     , cdbTraceLedger          = nullTracer
     , cdbRegistry             = registry
-    , cdbBlocksToAddSize      = 2
+    , cdbChainSelQueueSize    = 2
       -- We don't run the background threads, so these are not used
     , cdbGcDelay              = 1
     , cdbGcInterval           = 1

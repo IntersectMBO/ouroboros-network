@@ -688,7 +688,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           -- TODO vary these
         , cdbGcDelay              = 0
         , cdbGcInterval           = 1
-        , cdbBlocksToAddSize      = 2
+        , cdbChainSelQueueSize    = 2
         }
       where
         prj af = case AF.headBlockNo af of

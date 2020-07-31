@@ -262,7 +262,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     -- Waits until the block has been written to disk, but not until chain
     -- selection has processed the block.
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = void . ChainDB.addBlockWaitWrittenToDisk chainDB
+    addFetchedBlock _pt = ChainDB.addBlockWaitWrittenToDisk chainDB
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB

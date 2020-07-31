@@ -10,13 +10,14 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
   , empty
   , singleton
   , cacheBlock
+  , fromList
   , lookup
   ) where
 
 import           Prelude hiding (lookup)
 
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import           Ouroboros.Consensus.Block
 
@@ -33,3 +34,6 @@ cacheBlock blk (BlockCache cache) = BlockCache (Map.insert (blockHash blk) blk c
 
 lookup :: HasHeader blk => HeaderHash blk -> BlockCache blk -> Maybe blk
 lookup hash (BlockCache cache) = Map.lookup hash cache
+
+fromList :: HasHeader blk => [(HeaderHash blk, blk)] -> BlockCache blk
+fromList = BlockCache . Map.fromList

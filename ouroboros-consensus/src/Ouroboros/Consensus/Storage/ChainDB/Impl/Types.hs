@@ -40,11 +40,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
     -- * Future blocks
   , FutureBlocks
     -- * Blocks to add
-  , BlocksToAdd
-  , BlockToAdd (..)
-  , newBlocksToAdd
-  , addBlockToAdd
-  , getBlockToAdd
+  , ChainSelectionQueue
+  , BlockToProcess (..)
+  , newChainSelectionQueue
+  , addBlockToProcess
+  , getBlockToProcess
     -- * Trace types
   , TraceEvent (..)
   , NewTipInfo (..)
@@ -60,6 +60,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
 import           Data.Void (Void)
@@ -89,6 +90,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      StreamTo, UnknownRange)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
+                     (BlockCache)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
                      ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -230,8 +234,8 @@ data ChainDbEnv m blk = CDB
   , cdbChunkInfo       :: !ImmDB.ChunkInfo
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbCheckInFuture   :: !(CheckInFuture m blk)
-  , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
-    -- ^ Queue of blocks that still have to be added.
+  , cdbChainSelQueue   :: !(ChainSelectionQueue m blk)
+    -- ^ Queue of blocks that still have to be processed by chain selection.
   , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks blk))
     -- ^ Blocks from the future
     --
@@ -408,59 +412,86 @@ data InvalidBlockInfo blk = InvalidBlockInfo
 type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
 
 {-------------------------------------------------------------------------------
-  Blocks to add
+  Chain selection queue
 -------------------------------------------------------------------------------}
 
--- | FIFO queue used to add blocks asynchronously to the ChainDB. Blocks are
--- read from this queue by a background thread, which processes the blocks
--- synchronously.
-newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlocksToAdd" (BlocksToAdd m blk)
+-- | FIFO queue used to perform chain selection on blocks asynchronously.
+-- Blocks are read from this queue by a background thread, which performs
+-- chain selection for each block synchronously.
+data ChainSelectionQueue m blk = ChainSelectionQueue {
+      getChainSelectionQueue      :: !(StrictTVar m (Map (RealPoint blk) (BlockToProcess m blk)))
+      -- ^
+      -- TODO account for EBBs in the ordering of the map?
+      -- TODO maybe a simple list + 'insertBy' is actually faster?
+    , chainSelectionQueueCapacity :: !Word
+    }
+  deriving (Generic)
 
--- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
--- to implement 'AddBlockPromise'.
-data BlockToAdd m blk = BlockToAdd
-  { blockToAdd            :: !blk
-  , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
-    -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
-  , varBlockProcessed     :: !(StrictTMVar m (Point blk))
-    -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
-  }
+deriving instance (IOLike m, HasHeader blk) => NoUnexpectedThunks (ChainSelectionQueue m blk)
 
--- | Create a new 'BlocksToAdd' with the given size.
-newBlocksToAdd :: IOLike m => Word -> m (BlocksToAdd m blk)
-newBlocksToAdd queueSize = BlocksToAdd <$>
-    atomically (newTBQueue (fromIntegral queueSize))
+-- | Entry in the 'ChainSelectionQueue' queue: a block together with the
+-- 'TMVar' used to implement 'AddBlockPromise'.
+data BlockToProcess m blk = BlockToProcess {
+      blockToProcess    :: !blk
+    , varBlockProcessed :: !(StrictTMVar m (Point blk))
+      -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockToProcess" (BlockToProcess m blk)
 
--- | Add a block to the 'BlocksToAdd' queue. Can block when the queue is full.
-addBlockToAdd
-  :: (IOLike m, HasHeader blk)
-  => Tracer m (TraceAddBlockEvent blk)
-  -> BlocksToAdd m blk
-  -> blk
-  -> m (AddBlockPromise m blk)
-addBlockToAdd tracer (BlocksToAdd queue) blk = do
-    varBlockWrittenToDisk <- newEmptyTMVarM
-    varBlockProcessed     <- newEmptyTMVarM
-    let !toAdd = BlockToAdd
-          { blockToAdd = blk
-          , varBlockWrittenToDisk
-          , varBlockProcessed
-          }
-    queueSize <- atomically $ do
-      writeTBQueue  queue toAdd
-      lengthTBQueue queue
-    traceWith tracer $
-      AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
-    return AddBlockPromise
-      { blockWrittenToDisk      = readTMVar varBlockWrittenToDisk
-      , blockProcessed          = readTMVar varBlockProcessed
+-- | Create a new 'ChainSelectionQueue' with the given capacity.
+newChainSelectionQueue ::
+     (IOLike m, HasHeader blk)
+  => Word
+  -> m (ChainSelectionQueue m blk)
+newChainSelectionQueue queueCapacity = do
+    varQueue <- newTVarM Map.empty
+    return ChainSelectionQueue {
+        getChainSelectionQueue      = varQueue
+      , chainSelectionQueueCapacity = queueCapacity
       }
 
--- | Get the oldest block from the 'BlocksToAdd' queue. Can block when the
--- queue is empty.
-getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
-getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
+-- | Add a block to the 'ChainSelectionQueue' queue. Can block when the queue
+-- is full.
+addBlockToProcess
+  :: (IOLike m, HasHeader blk)
+  => Tracer m (TraceAddBlockEvent blk)
+  -> ChainSelectionQueue m blk
+  -> blk
+  -> m (AddBlockPromise m blk)
+addBlockToProcess tracer (ChainSelectionQueue varQueue capacity) blk = do
+    varBlockProcessed <- newEmptyTMVarM
+    let !toProcess = BlockToProcess { blockToProcess = blk, varBlockProcessed }
+    queueSize <- atomically $ do
+      queue <- readTVar varQueue
+      let queue'    = Map.insert (blockRealPoint blk) toProcess queue
+          queueSize = Map.size queue'
+      check (fromIntegral queueSize <= capacity)
+      writeTVar varQueue queue'
+      return queueSize
+    traceWith tracer $
+      AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
+    return AddBlockPromise { blockProcessed = readTMVar varBlockProcessed }
+
+-- | Get the block from the 'ChainSelectionQueue' queue with the smallest slot
+-- number. Will block when the queue is empty.
+--
+-- Returns a 'BlockCache' with the other blocks in the queue, /including/ the
+-- returned 'BlockToProcess'.
+getBlockToProcess ::
+     (IOLike m, HasHeader blk)
+  => ChainSelectionQueue m blk
+  -> m (BlockToProcess m blk, BlockCache blk)
+getBlockToProcess (ChainSelectionQueue varQueue _) = atomically $ do
+    queue <- readTVar varQueue
+    case Map.minView queue of
+      Nothing -> retry
+      Just (toProcess, queue') -> do
+        writeTVar varQueue queue'
+        let blockCache = BlockCache.fromList [
+                (realPointHash pt, blockToProcess toProcess')
+              | (pt, toProcess') <- Map.toList queue
+              ]
+        return (toProcess, blockCache)
 
 {-------------------------------------------------------------------------------
   Trace types
@@ -552,6 +583,10 @@ data TraceAddBlockEvent blk =
 
     -- | A block that is already in the Volatile DB was ignored.
   | IgnoreBlockAlreadyInVolDB (RealPoint blk)
+
+    -- | A block already part of the current chain was ignored when doing the
+    -- chain selection for it.
+  | IgnoreBlockAlreadyInChain (RealPoint blk)
 
     -- | A block that is know to be invalid was ignored.
   | IgnoreInvalidBlock (RealPoint blk) (InvalidBlockReason blk)

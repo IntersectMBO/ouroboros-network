@@ -482,12 +482,9 @@ addBlockPromise
 addBlockPromise cfg blk m = (result, m')
   where
     m' = addBlock cfg blk m
-    blockWritten = Map.notMember (blockHash blk) (blocks m)
-                && Map.member    (blockHash blk) (blocks m')
-    result = AddBlockPromise
-      { blockWrittenToDisk = return blockWritten
-      , blockProcessed     = return $ tipPoint m'
-      }
+    result = AddBlockPromise {
+          blockProcessed = return $ tipPoint m'
+        }
 
 {-------------------------------------------------------------------------------
   Iterators

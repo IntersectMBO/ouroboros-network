@@ -33,8 +33,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
     -- ** Testing
   , ScheduledGc (..)
   , dumpGcSchedule
-    -- * Adding blocks to the ChainDB
-  , addBlockRunner
+    -- * Performing chain selection
+  , chainSelectionRunner
   ) where
 
 import           Control.Exception (assert)
@@ -68,7 +68,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockRef (..),
                      ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
-                     (addBlockSync)
+                     (chainSelectionForBlock)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
                      (ImmDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -98,8 +98,8 @@ launchBgTasks
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
 launchBgTasks cdb@CDB{..} replayed = do
-    !addBlockThread <- launch "ChainDB.addBlockRunner" $
-      addBlockRunner cdb
+    !addBlockThread <- launch "ChainDB.chainSelectionRunner" $
+      chainSelectionRunner cdb
     gcSchedule <- newGcSchedule
     !gcThread <- launch "ChainDB.gcScheduleRunner" $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
@@ -519,12 +519,12 @@ dumpGcSchedule :: IOLike m => GcSchedule m -> STM m [ScheduledGc]
 dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 
 {-------------------------------------------------------------------------------
-  Adding blocks to the ChainDB
+  Performing chain selection
 -------------------------------------------------------------------------------}
 
--- | Read blocks from 'cdbBlocksToAdd' and add them synchronously to the
--- ChainDB.
-addBlockRunner
+-- | Read blocks from 'ChainSelectionQueue' and add perform chain selection
+-- for them.
+chainSelectionRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
@@ -534,6 +534,12 @@ addBlockRunner
      )
   => ChainDbEnv m blk
   -> m Void
-addBlockRunner cdb@CDB{..} = forever $ do
-    blockToAdd <- getBlockToAdd cdbBlocksToAdd
-    addBlockSync cdb blockToAdd
+chainSelectionRunner cdb@CDB{..} = forever $ do
+    (BlockToProcess { blockToProcess, varBlockProcessed }, cache) <-
+      getBlockToProcess cdbChainSelQueue
+    newTip <-
+      chainSelectionForBlock
+        cdb
+        cache
+        (getHeader blockToProcess)
+    atomically $ putTMVar varBlockProcessed newTip
