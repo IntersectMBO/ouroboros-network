@@ -347,7 +347,14 @@ instance ConfigSupportsNode (ShelleyBlock c) where
 instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeBlockFetchSize hdr = overhead + headerSize + bodySize
     where
-      overhead   = 5 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
+      -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block
+      -- is:
+      --
+      -- > D8 18          # tag(24)
+      -- >    1A 00010000 # bytes(65536)
+      --
+      -- Which is 7 bytes, enough for up to 4294967295 bytes.
+      overhead   = 7 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
       bodySize   = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw $ hdr
       headerSize = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
 

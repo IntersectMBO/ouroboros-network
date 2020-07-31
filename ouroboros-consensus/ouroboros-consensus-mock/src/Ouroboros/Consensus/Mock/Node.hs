@@ -48,7 +48,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
   nodeBlockFetchSize hdr =
-      5 {- CBOR-in-CBOR -} + 1 {- encodeListLen 2 -} + hdrSize + bodySize
+      7 {- CBOR-in-CBOR -} + 1 {- encodeListLen 2 -} + hdrSize + bodySize
     where
       hdrSize  = fromIntegral (Lazy.length (serialise hdr))
       bodySize = simpleBodySize (simpleHeaderStd hdr)
