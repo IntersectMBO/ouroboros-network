@@ -187,7 +187,7 @@ examples = Golden.Examples {
     stakeDistribution :: SL.PoolDistr (TPraosMockCrypto ShortHash)
     stakeDistribution = SL.PoolDistr $ Map.singleton
         (SL.KeyHash $ SL.hashWithSerialiser toCBOR 4)
-        (1, hashKeyVRF $ VerKeyFakeVRF 0)
+        (SL.IndividualPoolStake 1 (hashKeyVRF $ VerKeyFakeVRF 0))
 
 exampleBlock :: Block ShortHash
 exampleBlock = mkShelleyBlock Examples.blockEx3B
