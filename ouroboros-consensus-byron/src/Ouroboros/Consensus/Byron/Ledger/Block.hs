@@ -153,7 +153,14 @@ instance GetHeader ByronBlock where
             CC.ABOBBoundary blk -> recoverBytes       blk
       }
     where
-      overhead = 5 {- CBOR-in-CBOR -} + 2 {- EBB tag -}
+      -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block
+      -- is:
+      --
+      -- > D8 18          # tag(24)
+      -- >    1A 00010000 # bytes(65536)
+      --
+      -- Which is 7 bytes, enough for up to 4294967295 bytes.
+      overhead = 7 {- CBOR-in-CBOR -} + 2 {- EBB tag -}
 
   -- Check if a block matches its header
   --
