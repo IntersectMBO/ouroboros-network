@@ -32,8 +32,10 @@ in
     cp -r ${mainnet-converted}/* $out
     chmod -R u+rw,g+rw,a+x $out/*
     ${db-validator}/bin/db-validator \
-      --configFile ${cardano-mainnet-config} \
+      --db $out \
+      byron \
       --genesisHash 5f20df933584822601f9e3f8c024eb5eb252fe8cefb24d1317dc3d432e940ebb \
-      --dbDir $out \
+      --configByron ${cardano-mainnet-config} \
+      --threshold 0.22 \
       ${immDBStr}
     ''
