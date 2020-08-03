@@ -1,15 +1,13 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE TypeOperators          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -18,28 +16,21 @@ module Main (main) where
 
 import           Control.Monad.Except (runExceptT)
 import qualified Data.Aeson as Aeson
-import           Data.Bifunctor (first)
-import qualified Data.ByteString as BS
-import qualified Data.Text as Text
-import           Data.Time (UTCTime)
-import qualified Options.Applicative as Options
-import           Options.Generic
-import qualified System.FilePath as FilePath ((</>))
+import           Data.Foldable (asum)
+import           Options.Applicative
 
 import           Control.Tracer (contramap, debugTracer, nullTracer)
 
 import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
-import           Cardano.Crypto (Hash, ProtocolMagicId (..),
-                     RequiresNetworkMagic (..), decodeAbstractHash)
+import           Cardano.Crypto (Hash, RequiresNetworkMagic (..))
 
 import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import qualified Ouroboros.Consensus.Node as Node
-import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -61,77 +52,136 @@ import           Ouroboros.Consensus.Cardano.Block (CardanoBlock)
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
 
-instance ParseField UTCTime
+data CmdLine = CmdLine {
+    dbDir     :: FilePath
+  , verbose   :: Bool
+  , onlyImmDB :: Bool
+  , blockType :: BlockType
+  }
 
-instance ParseFields UTCTime
+parseCmdLine :: Parser CmdLine
+parseCmdLine = CmdLine
+    <$> strOption (mconcat [
+            long "db"
+          , help "Path to the chain DB"
+          , metavar "PATH"
+          ])
+    <*> flag False True (mconcat [
+            long "verbose"
+          , help "Enable verbose logging"
+          ])
+    <*> flag False True (mconcat [
+            long "onlyImmDB"
+          , help "Validate only the immutable DB (e.g. do not do ledger validation)"
+          ])
+    <*> blockTypeParser
 
-instance ParseRecord UTCTime where
-  parseRecord = fmap getOnly parseRecord
+data BlockType =
+    ByronBlock   ByronBlockArgs
+  | ShelleyBlock ShelleyBlockArgs
+  | CardanoBlock CardanoBlockArgs
 
-instance ParseField (Hash CB.Raw) where
-  readField = Options.eitherReader (first Text.unpack . decodeAbstractHash . Text.pack)
+blockTypeParser :: Parser BlockType
+blockTypeParser = subparser $ mconcat
+  [ command "byron"   (info (parseByronType   <**> helper) (progDesc "byron command"  ))
+  , command "shelley" (info (parseShelleyType <**> helper) (progDesc "shelley command"))
+  , command "cardano" (info (parseCardanoType <**> helper) (progDesc "cardano command"))
+  ]
 
-instance ParseFields (Hash CB.Raw)
+data ByronBlockArgs = ByronBlockArgs {
+    configFileByron      :: FilePath
+  , requiresNetworkMagic :: Bool
+  , genesisHash          :: Hash CB.Raw
+  , threshold            :: Maybe PBftSignatureThreshold
+  }
 
-instance ParseRecord (Hash CB.Raw) where
-  parseRecord = fmap getOnly parseRecord
+parseByronType :: Parser BlockType
+parseByronType = ByronBlock <$> parseByronArgs
 
-instance ParseField  BlockType
-instance ParseRecord BlockType
-instance ParseFields BlockType
+parseByronArgs :: Parser ByronBlockArgs
+parseByronArgs = ByronBlockArgs
+    <$> strOption (mconcat [
+            long "configByron"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
+    <*> flag False True (mconcat [
+            long "testnet"
+          , help "The DB contains blocks from testnet rather than mainnet"
+          ])
+    <*> option auto (mconcat [
+            long "genesisHash"
+          , help "Expected genesis hash"
+          , metavar "PATH"
+          ])
+    <*> asum [ Just . PBftSignatureThreshold <$> thresholdParser
+             , pure Nothing
+             ]
+  where
+    thresholdParser = option auto (mconcat [
+            long "threshold"
+          , help "PBftSignatureThreshold"
+          , metavar "THRESHOLD"
+          ])
 
-data Args w = Args {
-    dbDir                :: w ::: FilePath        <?> "Path to the new database directory"
-  , configFile           :: w ::: [FilePath]      <?> "Configuration file (e.g. mainnet-genesis.json)"
-  , requiresNetworkMagic :: w ::: Bool            <?> "Expecto patronum?"
-  , genesisHash          :: w ::: Hash CB.Raw     <?> "Expected genesis hash"
-  , blockType            :: w ::: Maybe BlockType <?> "type of network"
-  , verbose              :: w ::: Bool            <?> "Enable verbose logging"
-  , onlyImmDB            :: w ::: Bool            <?> "Validate only the immutable DB (e.g. do not do ledger validation)"
-  } deriving (Generic)
+data ShelleyBlockArgs = ShelleyBlockArgs {
+    configFileShelley :: FilePath
+  , initialNonce      :: Nonce
+  } deriving Show
 
-instance ParseRecord (Args Wrapped)
+parseShelleyType :: Parser BlockType
+parseShelleyType = ShelleyBlock <$> parseShelleyArgs
 
-deriving instance Show (Args Unwrapped)
+parseShelleyArgs :: Parser ShelleyBlockArgs
+parseShelleyArgs = ShelleyBlockArgs
+    <$> strOption (mconcat [
+            long "configShelley"
+          , help "Path to config file."
+          , metavar "PATH"
+          ])
+    <*> asum [ Nonce  <$> parseNonce
+             , pure NeutralNonce]
+  where
+    parseNonce = strOption (mconcat [
+            long "nonce"
+          , help "initial nonce"
+          , metavar "NONCE"
+          ])
 
-data BlockType = Byron | Shelley | Cardano
-  deriving (Generic, Show, Read)
+parseCardanoType :: Parser BlockType
+parseCardanoType = CardanoBlock <$> parseCardanoArgs
+
+parseCardanoArgs :: Parser CardanoBlockArgs
+parseCardanoArgs = CardanoBlockArgs
+    <$> parseByronArgs
+    <*> parseShelleyArgs
+
+data CardanoBlockArgs = CardanoBlockArgs {
+    byronArgs   :: ByronBlockArgs
+  , shelleyArgs :: ShelleyBlockArgs
+  }
 
 main :: IO ()
 main = do
-    cmd <- unwrapRecord "DB validator"
-    let Args{ dbDir, blockType } = cmd
-    case blockType of
-      Just Byron   -> validate cmd (Proxy @ByronBlock)
-      Just Shelley -> validate cmd (Proxy @(ShelleyBlock TPraosStandardCrypto))
-      Just Cardano -> validate cmd (Proxy @(CardanoBlock TPraosStandardCrypto))
-      Nothing -> do
-        -- check the dbmarker of the db if the block type is not specified.
-        protocolMagicId <- readDBMarker dbDir
-        case unProtocolMagicId protocolMagicId of
-          764824073  -> validate cmd (Proxy @ByronBlock)
-          1097911063 -> validate cmd (Proxy @ByronBlock)
-          42         -> validate cmd (Proxy @(ShelleyBlock TPraosStandardCrypto))
-          _          -> error $ "unsupported protocolMagicId: " ++ show protocolMagicId
+    cmdLine <- getCmdLine
+    case blockType cmdLine of
+      ByronBlock args   -> validate cmdLine args
+      ShelleyBlock args -> validate cmdLine args
+      CardanoBlock args -> validate cmdLine args
 
-readDBMarker :: FilePath -> IO ProtocolMagicId
-readDBMarker dbPath = do
-    bs <- BS.readFile markerPath
-    protocolMagicId <- runExceptT $ dbMarkerParse markerPath bs
-    either
-      (\err -> error $
-        "failed to parse protocolMagicId from db Marker file. Error " ++ show err)
-      return
-      protocolMagicId
+getCmdLine :: IO CmdLine
+getCmdLine = execParser opts
   where
-    markerPath :: String
-    markerPath = dbPath FilePath.</> Text.unpack dbMarkerFile
+    opts = info (parseCmdLine <**> helper) (mconcat [
+          fullDesc
+        , progDesc "Simple framework used to validate a Chain DB"
+        ])
 
 validate :: forall blk. (HasProtocolInfo blk, Node.RunNode blk, Show (Header blk))
-         => Args Unwrapped -> Proxy blk ->  IO ()
-validate Args {..} _ = do
-    protocolInfo <- mkProtocolInfo @blk configFile genesisHash requiresNetworkMagic
-    validateChainDb dbDir protocolInfo onlyImmDB verbose
+         => CmdLine -> Args blk -> IO ()
+validate CmdLine {..} args = do
+    protocolInfo <- mkProtocolInfo @blk args
+    validateChainDb @blk dbDir protocolInfo onlyImmDB verbose
 
 validateChainDb
   :: (Node.RunNode blk, Show (Header blk))
@@ -170,22 +220,18 @@ validateChainDb dbDir protocolInfo onlyImmDB verbose =
         }
 
 class HasProtocolInfo blk where
-  mkProtocolInfo :: [FilePath]
-                 -> Hash CB.Raw
-                 -> Bool  -- is it mainnet?
-                 -> IO (ProtocolInfo IO blk)
+  type Args blk = args | args -> blk
+  mkProtocolInfo :: Args blk -> IO (ProtocolInfo IO blk)
 
 {-------------------------------------------------------------------------------
   ByronBlock instance
 -------------------------------------------------------------------------------}
 
 instance HasProtocolInfo ByronBlock where
-  mkProtocolInfo [configFile] genesisHash requiresNetworkMagic = do
-    config <- openGenesisByron configFile genesisHash requiresNetworkMagic
-    return $ mkProtocolInfoByron config
-  mkProtocolInfo ls _ _ =
-     error $
-       "a single genesis file is needed for pure Byron. Given " ++ show ls
+  type Args ByronBlock = ByronBlockArgs
+  mkProtocolInfo ByronBlockArgs {..} = do
+    config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
+    return $ mkProtocolInfoByron config threshold
 
 openGenesisByron :: FilePath -> Hash CB.Raw -> Bool -> IO CC.Genesis.Config
 openGenesisByron configFile genesisHash requiresNetworkMagic = do
@@ -197,10 +243,12 @@ openGenesisByron configFile genesisHash requiresNetworkMagic = do
           genesisHash
     either (error . show) return econfig
 
-mkProtocolInfoByron :: CC.Genesis.Config -> ProtocolInfo IO ByronBlock
-mkProtocolInfoByron genesisConfig = protocolInfoByron
+mkProtocolInfoByron :: CC.Genesis.Config
+                    -> Maybe PBftSignatureThreshold
+                    -> ProtocolInfo IO ByronBlock
+mkProtocolInfoByron genesisConfig signatureThreshold = protocolInfoByron
     genesisConfig
-    (Just $ PBftSignatureThreshold 0.22) -- PBFT signature threshold
+    signatureThreshold
     (CC.Update.ProtocolVersion 1 0 0)
     (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano SL") 2)
     Nothing
@@ -209,21 +257,21 @@ mkProtocolInfoByron genesisConfig = protocolInfoByron
   ShelleyBlock instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => HasProtocolInfo (ShelleyBlock c) where
-  mkProtocolInfo [shelleyGenesis] _ _ = do
-    config <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' shelleyGenesis
-    return $ mkShelleyProtocolInfo config
-  mkProtocolInfo ls _ _ =
-     error $
-       "a single genesis file is needed for pure Shelley. Given " ++ show ls
+instance HasProtocolInfo (ShelleyBlock TPraosStandardCrypto) where
+  type Args (ShelleyBlock TPraosStandardCrypto) = ShelleyBlockArgs
+  mkProtocolInfo ShelleyBlockArgs {..}  = do
+    config <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFileShelley
+    return $ mkShelleyProtocolInfo config initialNonce
 
 mkShelleyProtocolInfo :: forall c. TPraosCrypto c
                       => ShelleyGenesis c
+                      -> Nonce
                       -> ProtocolInfo IO (ShelleyBlock c)
-mkShelleyProtocolInfo genesis =
+mkShelleyProtocolInfo genesis nonce =
     protocolInfoShelley
       genesis
-      NeutralNonce -- TODO
+      nonce
       2000
       (SL.ProtVer 0 0)
       Nothing
@@ -232,27 +280,31 @@ mkShelleyProtocolInfo genesis =
   CardanoBlock instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => HasProtocolInfo (CardanoBlock c) where
-  mkProtocolInfo [byronGenesis, shelleyGenesis] genesisHash requiresNetworkMagic = do
-    byronConfig <- openGenesisByron byronGenesis genesisHash requiresNetworkMagic
-    shelleyConfig <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' shelleyGenesis
-    return $ mkCardanoProtocolInfo byronConfig shelleyConfig
-  mkProtocolInfo ls _ _ =
-    error $ "Two genesis files are needed for Cardano. Given " ++ show ls
+instance HasProtocolInfo (CardanoBlock TPraosStandardCrypto) where
+  type Args (CardanoBlock TPraosStandardCrypto) = CardanoBlockArgs
+  mkProtocolInfo CardanoBlockArgs {..} = do
+    let ByronBlockArgs {..} = byronArgs
+    let ShelleyBlockArgs {..} = shelleyArgs
+    byronConfig <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
+    shelleyConfig <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFileShelley
+    return $ mkCardanoProtocolInfo byronConfig shelleyConfig threshold initialNonce
 
 mkCardanoProtocolInfo :: forall c. TPraosCrypto c
                       => CC.Genesis.Config
                       -> ShelleyGenesis c
+                      -> Maybe PBftSignatureThreshold
+                      -> Nonce
                       -> ProtocolInfo IO (CardanoBlock c)
-mkCardanoProtocolInfo byronConfig shelleyConfig =
+mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold nonce =
     protocolInfoCardano
       byronConfig
-      (Just $ PBftSignatureThreshold 0.22)
+      signatureThreshold
       (CC.Update.ProtocolVersion 1 0 0)
       (CC.Update.SoftwareVersion (CC.Update.ApplicationName "db-validator") 2)
       Nothing
       shelleyConfig
-      NeutralNonce -- TODO
+      nonce
       (SL.ProtVer 2 0)
       2000
       Nothing
