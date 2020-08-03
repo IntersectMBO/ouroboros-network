@@ -122,7 +122,12 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
     constants =
         setCerts $
         setPPUs $
-        Gen.defaultConstants{ Gen.frequencyMIRCert = 0 }
+        Gen.defaultConstants
+          { Gen.frequencyMIRCert = 0
+          , Gen.genTxRetries     = 1000
+                -- At time of writing, about 85 retries have been enough for
+                -- any individual invocation; most need much fewer.
+          }
       where
         -- Testing with certificates requires additional handling in the
         -- testing framework, because, for example, they may transfer block

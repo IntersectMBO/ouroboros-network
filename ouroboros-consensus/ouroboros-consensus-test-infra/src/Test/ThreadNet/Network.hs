@@ -54,9 +54,6 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
-import qualified Test.QuickCheck.Exception as QC
-
-import           Cardano.Prelude (forceElemsToWHNF)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -640,38 +637,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
         ledger <- atomically $ ledgerState <$> getExtLedger
         -- Combine the node's seed with the current slot number, to make sure
         -- we generate different transactions in each slot.
-        let genTxs i =
-                runGen
-                  (nodeSeed `combineWith` unSlotNo curSlotNo `combineWith` i)
-                  (testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger)
+        let txs = runGen
+                (nodeSeed `combineWith` unSlotNo curSlotNo)
+                (testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger)
 
-        -- These TxGen generators fail by invoking 'QC.discard'. We try many
-        -- times before actually giving up. When we give up, it's fatal, not
-        -- just a discard.
-        let loop :: Int -> m [GenTx blk]
-            loop nthAttempt = do
-                let txs = genTxs nthAttempt
-                lr <-
-                  tryJust isDiscard $
-                  evaluate (forceElemsToWHNF txs)
-                case lr of
-                  Right _ -> pure txs
-                  Left  _ ->
-                      if nthAttempt < attemptLimit
-                      then loop (nthAttempt + 1)
-                      else throwM (TxGenFailure attemptLimit)
-              where
-                isDiscard :: Exn.SomeException -> Maybe ()
-                isDiscard = guard . QC.isDiscard
-
-                -- At time of writing, a RealTPraos test run maxed out at about
-                -- 85 consecutive failures here.
-                --
-                -- Revisit this scheme after Issue
-                -- input-output-hk/cardano-ledger-specs#1689
-                attemptLimit = 1000 :: Int
-
-        txs <- loop (1 :: Int)
         void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
