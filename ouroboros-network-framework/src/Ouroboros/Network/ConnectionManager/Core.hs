@@ -57,6 +57,10 @@ data ConnectionHandle peerAddr socket muxPromise m = ConnectionHandle {
 
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionHandle'.
 --
+-- It is important we can lookup by remote @peerAddr@; this way we can find if
+-- the connection manager is already managing a connection towards that
+-- @peerAddr@ and reuse the 'ConnectionHandle'.
+--
 type State peerAddr socket muxPromise m
   = Map peerAddr (ConnectionHandle peerAddr socket muxPromise m)
 
