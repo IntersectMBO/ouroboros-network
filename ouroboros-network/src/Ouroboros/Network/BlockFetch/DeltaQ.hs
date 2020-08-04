@@ -1,5 +1,7 @@
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Network.BlockFetch.DeltaQ (
@@ -19,6 +21,8 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
 
 import           Data.Fixed as Fixed (Pico)
 import           Data.Hashable
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.DeltaQ
@@ -34,14 +38,32 @@ data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
 -- Incase the g values are within +/- 5% of each other `peer` is used as a tie breaker.
 -- The salt is unique per running node, which avoids all nodes prefering the same peer in case of
 -- a tie.
-comparePeerGSV :: Hashable peer => Int -> (PeerGSV, peer)  -> (PeerGSV, peer) -> Ordering
-comparePeerGSV salt (a, a_p) (b, b_p) =
-    let gs_a = gs a
-        gs_b = gs b in
+comparePeerGSV :: forall peer.
+      ( Hashable peer
+      , Ord peer
+      )
+      => Set peer
+      -> Int
+      -> (PeerGSV, peer)
+      -> (PeerGSV, peer)
+      -> Ordering
+comparePeerGSV activePeers salt (a, a_p) (b, b_p) =
+    let gs_a = if isActive a_p then activeAdvantage * gs a
+                               else gs a
+        gs_b = if isActive b_p then activeAdvantage * gs b
+                               else gs b in
     if abs (gs_a - gs_b) < 0.05*gs_a
        then compare (hashWithSalt salt a_p) (hashWithSalt salt b_p)
        else compare gs_a gs_b
   where
+    -- In order to avoid switching between peers with similar g we give
+    -- active peers a slight advantage.
+    activeAdvantage :: DiffTime
+    activeAdvantage = 0.8
+
+    isActive :: peer -> Bool
+    isActive p = Set.member p activePeers
+
     gs :: PeerGSV -> DiffTime
     gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
                  inboundGSV  = GSV g_in  _s_in  _v_in
