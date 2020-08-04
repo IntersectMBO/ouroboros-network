@@ -781,9 +781,9 @@ obviously take that into account when considering later peer chains.
 
 fetchRequestDecisions
   :: forall extra header peer.
-      ( Eq peer
-      , Hashable peer
+      ( Hashable peer
       , HasHeader header
+      , Ord peer
       )
   => FetchDecisionPolicy header
   -> FetchMode
@@ -865,14 +865,17 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                     | fragment <- fragments
                     , header   <- AF.toOldestFirst fragment ]
 
-    nConcurrentFetchPeers0 =
-        fromIntegral
-      . length
-      . filter (> 0)
-      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, _, _) ->
-                       peerFetchReqsInFlight)
-      $ chains
+    nConcurrentFetchPeers0 = fromIntegral $ Set.size nActivePeers
 
+    -- Set of peers with outstanding bytes.
+    nActivePeers :: Set peer
+    nActivePeers =
+        Set.fromList
+      . map snd
+      . filter (\(inFlight, _) -> inFlight > 0)
+      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, p, _) ->
+                       (peerFetchReqsInFlight, p))
+      $ chains
 
     -- Order the peers based on current PeerGSV. The top performing peers will be
     -- permitted to go active even if we're above the desired maxConcurrentFetchPeers
@@ -884,7 +887,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nPreferedPeers =
         map snd
       . take (fromIntegral maxConcurrentFetchPeers)
-      . sortBy (\a b -> comparePeerGSV (peerSalt fetchDecisionPolicy) a b)
+      . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
       $ chains
 
