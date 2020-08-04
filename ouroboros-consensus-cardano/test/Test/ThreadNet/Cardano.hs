@@ -63,7 +63,7 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.Consensus.Cardano.MockCrypto (TPraosMockCryptoCompatByron)
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
@@ -81,7 +81,9 @@ import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
-type Crypto = TPraosMockCrypto Blake2b_256
+-- | Use 'TPraosMockCryptoCompatByron' so that bootstrap addresses and
+-- bootstrap witnesses are supported.
+type Crypto = TPraosMockCryptoCompatByron Blake2b_256
 
 -- | When and for how long the nodes are partitioned
 --

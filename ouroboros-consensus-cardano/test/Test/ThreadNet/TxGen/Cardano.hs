@@ -8,8 +8,8 @@ import           Ouroboros.Consensus.Cardano
 
 import           Test.ThreadNet.TxGen
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.Consensus.Shelley.MockCrypto (TPraosMockCryptoCompatByron)
 
-instance TxGen (CardanoBlock (TPraosMockCrypto h)) where
+instance TxGen (CardanoBlock (TPraosMockCryptoCompatByron h)) where
   -- TODO
   testGenTxs _ _ _ _ _ = return []
