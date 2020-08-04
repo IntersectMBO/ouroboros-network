@@ -21,7 +21,7 @@ import           Test.Util.QuickCheck
 -------------------------------------------------------------------------------}
 
 instance TxGen (SimpleBlock SimpleMockCrypto ext) where
-  testGenTxs numCoreNodes curSlotNo _cfg () ledgerState = do
+  testGenTxs _coreNodeId numCoreNodes curSlotNo _cfg () ledgerState = do
       n <- choose (0, 20)
       -- We don't update the UTxO after each transaction, so some of the
       -- generated transactions could very well be invalid.

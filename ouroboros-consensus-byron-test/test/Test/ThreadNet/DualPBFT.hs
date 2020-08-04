@@ -259,7 +259,7 @@ realPBftParams ByronSpecGenesis{..} =
 -------------------------------------------------------------------------------}
 
 instance TxGen DualByronBlock where
-  testGenTxs _numCoreNodes curSlotNo cfg () = \st -> do
+  testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg () = \st -> do
       n <- choose (0, 20)
       go [] n $ applyChainTick (configLedger cfg) curSlotNo st
     where
