@@ -6,13 +6,15 @@ module Ouroboros.Network.Protocol.KeepAlive.Client (
     keepAliveClientPeer
   ) where
 
+import           Control.Monad.Class.MonadThrow
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 data KeepAliveClient m a where
     SendMsgKeepAlive
-      :: (m (KeepAliveClient m a))
+      :: Cookie
+      -> (m (KeepAliveClient m a))
       -> KeepAliveClient m a
 
     SendMsgDone
@@ -24,7 +26,7 @@ data KeepAliveClient m a where
 -- 'KeepAlive' protocol.
 --
 keepAliveClientPeer
-  :: Functor m
+  :: MonadThrow m
   => KeepAliveClient m a
   -> Peer KeepAlive AsClient StClient m a
 
@@ -32,7 +34,8 @@ keepAliveClientPeer (SendMsgDone mresult) =
     Yield (ClientAgency TokClient) MsgDone $
       Effect (Done TokDone <$> mresult)
 
-keepAliveClientPeer (SendMsgKeepAlive next) =
-    Yield (ClientAgency TokClient) MsgKeepAlive $
-      Await (ServerAgency TokServer) $ \MsgKeepAliveResponse ->
-        Effect $ keepAliveClientPeer <$> next
+keepAliveClientPeer (SendMsgKeepAlive cookieReq next) =
+    Yield (ClientAgency TokClient) (MsgKeepAlive cookieReq) $
+      Await (ServerAgency TokServer) $ \(MsgKeepAliveResponse cookieRsp) ->
+        if cookieReq == cookieRsp then Effect $ keepAliveClientPeer <$> next
+                                  else Effect $ throwM $ KeepAliveCookieMissmatch cookieReq cookieRsp

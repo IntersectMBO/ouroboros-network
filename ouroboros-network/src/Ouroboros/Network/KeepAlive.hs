@@ -20,11 +20,13 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
+import           System.Random (StdGen, random)
 
 import           Ouroboros.Network.Mux (RunOrStop (..), ScheduledStop)
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
+import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }
@@ -44,13 +46,15 @@ keepAliveClient
        , Ord peer
        )
     => Tracer m (TraceKeepAliveClient peer)
+    -> StdGen
     -> ScheduledStop m
     -> peer
     -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
     -> KeepAliveClient m ()
-keepAliveClient tracer shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
-    SendMsgKeepAlive (go Nothing)
+keepAliveClient tracer inRng shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
+    let (cookie, rng) = random inRng in
+    SendMsgKeepAlive (Cookie cookie) (go rng Nothing)
   where
     payloadSize = 2
 
@@ -66,8 +70,8 @@ keepAliveClient tracer shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInt
                  then return Run
                  else retry
 
-    go :: Maybe Time -> m (KeepAliveClient m ())
-    go startTime_m = do
+    go :: StdGen -> Maybe Time -> m (KeepAliveClient m ())
+    go rng startTime_m = do
       endTime <- getMonotonicTime
       case startTime_m of
            Just startTime -> do
@@ -91,7 +95,9 @@ keepAliveClient tracer shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInt
       decision <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
       case decision of
-        Run  -> pure (SendMsgKeepAlive $ go $ Just now)
+        Run  ->
+            let (cookie, rng') = random rng in
+            pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
         Stop -> pure (SendMsgDone (pure ()))
 
 

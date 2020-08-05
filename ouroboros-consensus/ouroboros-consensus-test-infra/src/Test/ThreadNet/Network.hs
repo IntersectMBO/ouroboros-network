@@ -54,6 +54,7 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
+import           System.Random (mkStdGen)
 import qualified Test.QuickCheck.Exception as QC
 
 import           Cardano.Prelude (forceElemsToWHNF)
@@ -936,6 +937,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
                  (ledgerState <$>
                     ChainDB.getCurrentLedger chainDB)
 
+      let kaRng = case seed of
+                       Seed s -> mkStdGen s
       let nodeArgs = NodeArgs
             { tracers
             , registry
@@ -947,6 +950,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , blockFetchSize          = nodeBlockFetchSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+            , keepAliveRng            = kaRng
             , miniProtocolParameters  = MiniProtocolParameters {
                   chainSyncPipeliningHighMark = 4,
                   chainSyncPipeliningLowMark  = 2,
