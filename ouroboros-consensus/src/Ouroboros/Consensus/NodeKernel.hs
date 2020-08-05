@@ -29,6 +29,7 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word32)
+import           System.Random (StdGen)
 
 import           Control.Tracer
 
@@ -126,6 +127,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
+    , keepAliveRng            :: StdGen
     }
 
 initNodeKernel

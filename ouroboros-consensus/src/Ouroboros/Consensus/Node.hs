@@ -40,7 +40,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           System.Random (randomIO, randomRIO)
+import           System.Random (newStdGen, randomIO, randomRIO)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
@@ -427,6 +427,7 @@ mkNodeArgs
 mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
     mBlockForging <- sequence mInitBlockForging
     bfsalt <- randomIO -- Per-node specific value used by blockfetch when ranking peers.
+    keepAliveRng <- newStdGen
     return NodeArgs
       { tracers
       , registry
@@ -440,6 +441,7 @@ mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters
       , blockFetchConfiguration = defaultBlockFetchConfiguration bfsalt
+      , keepAliveRng            = keepAliveRng
       }
   where
     defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration

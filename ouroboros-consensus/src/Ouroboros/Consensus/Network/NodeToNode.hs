@@ -162,7 +162,7 @@ mkHandlers
   -> NodeKernel m remotePeer localPeer blk
   -> Handlers   m remotePeer           blk
 mkHandlers
-      NodeArgs {miniProtocolParameters}
+      NodeArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient =
@@ -197,7 +197,7 @@ mkHandlers
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             version
-      , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers)
+      , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers) keepAliveRng
       , hKeepAliveServer = \_version _peer -> keepAliveServer
       }
 

@@ -23,6 +23,7 @@ import           Control.Monad.IOSim ( runSimTrace, selectTraceEventsSay
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as M
+import           System.Random
 import           Text.Printf
 
 
@@ -58,13 +59,14 @@ runKeepAliveClient
         , MonadThrow (STM m)
         , Ord peer)
     => Tracer m (TraceKeepAliveClient peer)
+    -> StdGen
     -> ScheduledStop m
     -> FetchClientRegistry peer header block m
     -> peer
     -> Channel m BL.ByteString
     -> KeepAliveInterval
     -> m ((), Maybe BL.ByteString)
-runKeepAliveClient tracer scheduledStop registry peer channel keepAliveInterval =
+runKeepAliveClient tracer rng scheduledStop registry peer channel keepAliveInterval =
     let kacApp dqCtx = runPeerWithLimits
                          nullTracer
                          codecKeepAlive
@@ -72,7 +74,7 @@ runKeepAliveClient tracer scheduledStop registry peer channel keepAliveInterval 
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer
-                         $ keepAliveClient tracer scheduledStop peer dqCtx keepAliveInterval in
+                         $ keepAliveClient tracer rng scheduledStop peer dqCtx keepAliveInterval in
     bracketKeepAliveClient registry peer kacApp
 
 runKeepAliveServer
@@ -112,16 +114,17 @@ runKeepAliveClientAndServer
         , Ord peer
         , Show peer)
     => NetworkDelay
+    -> Int
     -> Tracer m (TraceKeepAliveClient peer)
     -> ScheduledStop m
     -> FetchClientRegistry peer header block m
     -> peer
     -> KeepAliveInterval
     -> m (Async m ((), Maybe BL.ByteString), Async m ((), Maybe BL.ByteString))
-runKeepAliveClientAndServer (NetworkDelay nd) tracer scheduledStop registry peer keepAliveInterval = do
+runKeepAliveClientAndServer (NetworkDelay nd) seed tracer scheduledStop registry peer keepAliveInterval = do
     (clientChannel, serverChannel) <- createConnectedChannels
 
-    clientAsync <- async $ runKeepAliveClient tracer scheduledStop registry peer
+    clientAsync <- async $ runKeepAliveClient tracer (mkStdGen seed) scheduledStop registry peer
                                (delayChannel nd clientChannel) keepAliveInterval
     serverAsync <- async $ runKeepAliveServer serverChannel
     return (clientAsync, serverAsync)
@@ -147,8 +150,9 @@ prop_keepAlive_convergenceM
         , MonadThrow (STM m)
         )
     => NetworkDelay
+    -> Int
     -> m Property
-prop_keepAlive_convergenceM (NetworkDelay nd) = do
+prop_keepAlive_convergenceM (NetworkDelay nd) seed = do
     registry <- newFetchClientRegistry
     scheduledStopV <- newTVarM Run
     let scheduledStop = readTVar scheduledStopV
@@ -156,7 +160,7 @@ prop_keepAlive_convergenceM (NetworkDelay nd) = do
         timeConstant = 1000 -- Same as in PeerGSV's <> definition
         keepAliveInterval = 10
 
-    (c_aid, s_aid) <- runKeepAliveClientAndServer (NetworkDelay nd) verboseTracer scheduledStop
+    (c_aid, s_aid) <- runKeepAliveClientAndServer (NetworkDelay nd) seed verboseTracer scheduledStop
                           registry clientId (KeepAliveInterval keepAliveInterval)
     threadDelay $ timeConstant * keepAliveInterval
     dqLive <- atomically $ readPeerGSVs registry
@@ -187,10 +191,10 @@ prop_keepAlive_convergenceM (NetworkDelay nd) = do
 
 -- Test that our estimate of PeerGSV's G terms converge to
 -- a given constant delay.
-prop_keepAlive_convergence :: NetworkDelay -> Property
-prop_keepAlive_convergence nd = do
+prop_keepAlive_convergence :: NetworkDelay -> Int -> Property
+prop_keepAlive_convergence nd seed = do
     let (_output, r_e) = (selectTraceEventsSay &&& traceResult True)
-                             (runSimTrace $ prop_keepAlive_convergenceM nd)
+                             (runSimTrace $ prop_keepAlive_convergenceM nd seed)
     ioProperty $ do
         --printf "new testcase %s\n" (show nd)
         --mapM_ (printf "%s\n") _output
