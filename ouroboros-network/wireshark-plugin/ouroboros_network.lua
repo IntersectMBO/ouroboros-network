@@ -19,7 +19,9 @@ local conv_ids = {
 	[0x0003] = "BlockFetch Initiator",
 	[0x8003] = "BlockFetch Responder",
 	[0x8004] = "TxSubmission Responder",
-	[0x0004] = "TxSubmission Initiator"
+	[0x0004] = "TxSubmission Initiator",
+	[0x8008] = "KeepAlive Responder",
+	[0x0008] = "KeepAlive Initiator"
 }
 local on_conversation = ProtoField.uint16("ouroboros.conv", "Conversation", base.HEX, conv_ids, nil, "Conversation ids")
 
@@ -61,13 +63,23 @@ local on_txsubmission_msg = ProtoField.uint8("ouroboros.txsubmsg", "TxSubmission
 
 local ON_HDR_LEN = 8
 
+local keepalive_msg_codes = {
+	[0] = "MsgKeepAlive",
+	[1] = "MsgKeepAliveResponse",
+	[2] = "MsgDone"
+}
+
+local on_keepalive_msg = ProtoField.uint8("ouroboros.keepalivemsg", "KeepAlive Message", base.DEC, keepalive_msg_codes, nil, "KeepAlive Message Types")
+
+
 ouroboros.fields = {
 	on_transmission_time,
 	on_conversation,
 	on_length,
 	on_chainsync_msg,
 	on_blockfetch_msg,
-	on_txsubmission_msg
+	on_txsubmission_msg,
+	on_keepalive_msg
 }
 
 
@@ -127,6 +139,7 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 	if     convId == 2 then subtree:add(on_chainsync_msg, tvbuf:range(offset + 9, 1))
 	elseif convId == 3 then subtree:add(on_blockfetch_msg, tvbuf:range(offset + 9, 1))
 	elseif convId == 4 then subtree:add(on_txsubmission_msg, tvbuf:range(offset + 9, 1))
+	elseif convId == 8 then subtree:add(on_keepalive_msg, tvbuf:range(offset + 8, 1))
 	end
 
 	return ON_HDR_LEN + length
