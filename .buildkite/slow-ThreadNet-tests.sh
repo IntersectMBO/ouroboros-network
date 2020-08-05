@@ -166,6 +166,8 @@ innerCommand () {
         --iohk-enable-nightly-tests \
         1>"$logfile" 2>&1
 
+    xc=$?
+
     # Notify the user
     #
     # Likely atomic, since it's almost surely less than PIPE_BUF.
@@ -173,6 +175,8 @@ innerCommand () {
     # https://arto.s3.amazonaws.com/notes/posix#pipe-buf
     echo Completed Invocation-${uniqueInvocationId}, $suite ${n}: \
         $(tail -n1 "$logfile")
+
+    return $xc
 }
 # Exported so GNU parallel workers can see it.
 export -f innerCommand
