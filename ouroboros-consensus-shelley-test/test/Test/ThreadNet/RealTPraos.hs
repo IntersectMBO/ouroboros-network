@@ -317,6 +317,8 @@ prop_simple_real_tpraos_convergence TestSetup
               actual = SL._d $ SL.esPp $ SL.nesEs ls
 
               -- The expected final value of @d@
+              --
+              -- NOTE: Not applicable if 'dWasFreeToVary'.
               expected :: DecentralizationParam
               expected = if dShouldUpdate then setupD2 else setupD
           in
@@ -328,11 +330,20 @@ prop_simple_real_tpraos_convergence TestSetup
               show (dUpdatedAsOf, dShouldUpdate)
             ) $
           counterexample msg $
-          SL.unitIntervalToRational actual ===
-            decentralizationParamToRational expected
+          dWasFreeToVary .||.
+            SL.unitIntervalToRational actual ===
+              decentralizationParamToRational expected
         | (nid, lsUnticked) <- finalLedgers
         ]
       where
+        -- If the test setup does not introduce a PPU then the normal Shelley
+        -- generator might do so, and so we will not know what d to expect at
+        -- the end.
+        dWasFreeToVary :: Bool
+        dWasFreeToVary = case inclPPUs of
+            DoGeneratePPUs    -> True
+            DoNotGeneratePPUs -> False
+
         finalLedgers :: [(NodeId, LedgerState (ShelleyBlock Crypto))]
         finalLedgers =
             Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
