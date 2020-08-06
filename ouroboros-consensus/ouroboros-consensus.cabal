@@ -34,7 +34,7 @@ library
                        Ouroboros.Consensus.Block
                        Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.EBB
-                       Ouroboros.Consensus.Block.Forge
+                       Ouroboros.Consensus.Block.Forging
                        Ouroboros.Consensus.Block.NestedContent
                        Ouroboros.Consensus.Block.RealPoint
                        Ouroboros.Consensus.Block.SupportsProtocol
@@ -65,7 +65,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Compat
                        Ouroboros.Consensus.HardFork.Combinator.Condense
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
-                       Ouroboros.Consensus.HardFork.Combinator.Forge
+                       Ouroboros.Consensus.HardFork.Combinator.Forging
                        Ouroboros.Consensus.HardFork.Combinator.Info
                        Ouroboros.Consensus.HardFork.Combinator.InjectTxs
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
@@ -129,7 +129,6 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
-                       Ouroboros.Consensus.Node.BlockProduction
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.ProtocolInfo
@@ -163,6 +162,7 @@ library
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.MonadSTM.RAWLock
                        Ouroboros.Consensus.Util.MonadSTM.StrictMVar
+                       Ouroboros.Consensus.Util.OptNP
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
@@ -274,7 +274,6 @@ library
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
@@ -410,7 +409,6 @@ test-suite test-consensus
   build-depends:       base
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting
                      , cborg
@@ -525,7 +523,6 @@ test-suite test-storage
                      , binary
                      , bytestring
                      , cardano-crypto-class
-                     , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting
                      , cborg

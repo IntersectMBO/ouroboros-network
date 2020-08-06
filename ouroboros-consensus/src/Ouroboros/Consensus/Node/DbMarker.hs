@@ -22,7 +22,7 @@ import           Data.Text (Text)
 import           Data.Word
 import           Text.Read (readMaybe)
 
-import           Cardano.Crypto (ProtocolMagicId (..))
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -48,15 +48,15 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 --
 -- To protect us from unwanted deletion of valid files, we first check whether
 -- we have been given the path to the right database folder. We do this by
--- reading the 'ProtocolMagicId' of the net from a file stored in the root of
+-- reading the 'NetworkMagic' of the net from a file stored in the root of
 -- the database folder. This file's name is defined in 'dbMarkerFile'.
 --
--- * If the 'ProtocolMagicId' from the file matches that of the net, we have
+-- * If the 'NetworkMagic' from the file matches that of the net, we have
 --   the right database folder.
 -- * If not, we are opening the wrong database folder and abort by throwing a
 --   'DbMarkerError'.
 -- * If there is no such file and the folder is empty, we create it and store
---   the net's 'ProtocolMagicId' in it.
+--   the net's 'NetworkMagic' in it.
 -- * If there is no such file, but the folder is not empty, we throw a
 --   'DbMarkerError', because we have likely been given the wrong path,
 --   maybe to a folder containing user or system files. This includes the case
@@ -71,22 +71,22 @@ checkDbMarker
   -> MountPoint
      -- ^ Database directory. Should be the mount point of the @HasFS@. Used
      -- in error messages.
-  -> ProtocolMagicId
+  -> NetworkMagic
   -> m (Either DbMarkerError ())
-checkDbMarker hasFS mountPoint protocolMagicId = runExceptT $ do
+checkDbMarker hasFS mountPoint networkMagic = runExceptT $ do
     fileExists <- lift $ doesFileExist hasFS pFile
     if fileExists then do
-      actualProtocolMagicId <- readProtocolMagicIdFile
-      when (actualProtocolMagicId /= protocolMagicId) $
-        throwError $ ProtocolMagicIdMismatch
+      actualNetworkMagic <- readNetworkMagicFile
+      when (actualNetworkMagic /= networkMagic) $
+        throwError $ NetworkMagicMismatch
           fullPath
-          actualProtocolMagicId
-          protocolMagicId
+          actualNetworkMagic
+          networkMagic
     else do
       lift $ createDirectoryIfMissing hasFS False root
       isEmpty <- lift $ Set.null <$> listDirectory hasFS root
       if isEmpty then
-        createProtocolMagicIdFile
+        createNetworkMagicFile
       else
         throwError $ NoDbMarkerAndNotEmpty fullPath
   where
@@ -94,17 +94,17 @@ checkDbMarker hasFS mountPoint protocolMagicId = runExceptT $ do
     pFile    = fsPathFromList [dbMarkerFile]
     fullPath = fsToFilePath mountPoint pFile
 
-    readProtocolMagicIdFile :: ExceptT DbMarkerError m ProtocolMagicId
-    readProtocolMagicIdFile = ExceptT $
+    readNetworkMagicFile :: ExceptT DbMarkerError m NetworkMagic
+    readNetworkMagicFile = ExceptT $
       withFile hasFS pFile ReadMode $ \h -> do
         bs <- toStrict <$> hGetAll hasFS h
         runExceptT $ dbMarkerParse fullPath bs
 
-    createProtocolMagicIdFile :: ExceptT DbMarkerError m ()
-    createProtocolMagicIdFile = lift $
+    createNetworkMagicFile :: ExceptT DbMarkerError m ()
+    createNetworkMagicFile = lift $
       withFile hasFS pFile (AppendMode MustBeNew) $ \h ->
         void $ hPutAll hasFS h $
-          fromStrict $ dbMarkerContents protocolMagicId
+          fromStrict $ dbMarkerContents networkMagic
 
 {-------------------------------------------------------------------------------
   Error
@@ -112,12 +112,12 @@ checkDbMarker hasFS mountPoint protocolMagicId = runExceptT $ do
 
 data DbMarkerError =
     -- | There was a 'dbMarkerFile' in the database folder, but it
-    -- contained a different 'ProtocolMagicId' than the expected one. This
+    -- contained a different 'NetworkMagic' than the expected one. This
     -- indicates that this database folder corresponds to another net.
-    ProtocolMagicIdMismatch
+    NetworkMagicMismatch
       FilePath         -- ^ The full path to the 'dbMarkerFile'
-      ProtocolMagicId  -- ^ Actual
-      ProtocolMagicId  -- ^ Expected
+      NetworkMagic  -- ^ Actual
+      NetworkMagic  -- ^ Expected
 
     -- | The database folder contained no 'dbMarkerFile', but also
     -- contained some files. Either the given folder is a non-database folder
@@ -134,8 +134,8 @@ data DbMarkerError =
 
 instance Exception DbMarkerError where
   displayException e = case e of
-    ProtocolMagicIdMismatch f actual expected ->
-      "Wrong protocolMagicId in \"" <> f <> "\": " <> show actual <>
+    NetworkMagicMismatch f actual expected ->
+      "Wrong NetworkMagic in \"" <> f <> "\": " <> show actual <>
       ", but expected: " <> show expected
     NoDbMarkerAndNotEmpty f ->
       "Missing \"" <> f <> "\" but the folder was not empty"
@@ -146,6 +146,8 @@ instance Exception DbMarkerError where
   Configuration (filename, file format)
 -------------------------------------------------------------------------------}
 
+-- | For legacy reasons it was using 'ProtocolMagicId' not 'NetworkMagic'
+-- which are really the same thing.
 dbMarkerFile :: Text
 dbMarkerFile = "protocolMagicId"
 
@@ -156,9 +158,9 @@ dbMarkerFile = "protocolMagicId"
 -- Type annotation on @pmid@ is here so that /if/ the type changes, this
 -- code will fail to build. This is important, because if we change the
 -- type, we must consider how this affects existing DB deployments.
-dbMarkerContents :: ProtocolMagicId -> ByteString
-dbMarkerContents (ProtocolMagicId (pmid :: Word32)) =
-    BS.Char8.pack $ show pmid
+dbMarkerContents :: NetworkMagic -> ByteString
+dbMarkerContents (NetworkMagic (nm :: Word32)) =
+    BS.Char8.pack $ show nm
 
 -- | Parse contents of the DB marker file
 --
@@ -166,8 +168,8 @@ dbMarkerContents (ProtocolMagicId (pmid :: Word32)) =
 dbMarkerParse :: Monad m
               => FilePath
               -> ByteString
-              -> ExceptT DbMarkerError m ProtocolMagicId
+              -> ExceptT DbMarkerError m NetworkMagic
 dbMarkerParse fullPath bs =
     case readMaybe (BS.Char8.unpack bs) of
-      Just pmid -> return     $ ProtocolMagicId pmid
-      Nothing   -> throwError $ CorruptDbMarker fullPath
+      Just nm -> return     $ NetworkMagic nm
+      Nothing -> throwError $ CorruptDbMarker fullPath

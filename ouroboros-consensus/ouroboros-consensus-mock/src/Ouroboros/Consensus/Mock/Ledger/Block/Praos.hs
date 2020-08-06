@@ -16,12 +16,14 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
+  , forgePraosExt
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
@@ -30,7 +32,6 @@ import           Cardano.Crypto.Util
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -40,7 +41,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -108,7 +108,7 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          ) => RunMockBlock c (SimplePraosExt c c') where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
@@ -142,41 +142,34 @@ pretendTicked (StakeDist sd) = TickedStakeDist sd
   Forging
 -------------------------------------------------------------------------------}
 
+type instance CannotForge (SimplePraosBlock c c') = Void
+
+type instance ForgeStateInfo (SimplePraosBlock c c') = HotKey c'
+
+type instance ForgeStateUpdateError (SimplePraosBlock c c') =
+  HotKeyEvolutionError
+
 forgePraosExt :: forall c c'.
                  ( SimpleCrypto c
                  , PraosCrypto c'
                  , Signable (PraosKES c') (SignedSimplePraos c c')
                  )
-              => TopLevelConfig (SimplePraosBlock c c')
-              -> ForgeState (SimplePraosBlock c c')
-              -> IsLeader (BlockProtocol (SimplePraosBlock c c'))
-              -> SimpleBlock' c (SimplePraosExt c c') ()
-              -> SimplePraosBlock c c'
-forgePraosExt cfg ForgeState { chainIndepState = hotKey } isLeader SimpleBlock{..} =
-    SimpleBlock {
+              => HotKey c'
+              -> ForgeExt c (SimplePraosExt c c')
+forgePraosExt hotKey = ForgeExt $ \_cfg isLeader SimpleBlock{..} ->
+    let SimpleHeader{..} = simpleHeader
+
+        ext :: SimplePraosExt c c'
+        ext = SimplePraosExt $
+          forgePraosFields isLeader hotKey $ \praosExtraFields ->
+            SignedSimplePraos {
+                signedSimplePraos = simpleHeaderStd
+              , signedPraosFields = praosExtraFields
+              }
+    in SimpleBlock {
         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
       , simpleBody   = simpleBody
       }
-  where
-    SimpleHeader{..} = simpleHeader
-
-    ext :: SimplePraosExt c c'
-    ext = SimplePraosExt $
-      forgePraosFields (configConsensus cfg)
-                       hotKey
-                       isLeader
-                       $ \praosExtraFields ->
-        SignedSimplePraos {
-            signedSimplePraos = simpleHeaderStd
-          , signedPraosFields = praosExtraFields
-          }
-
-instance ( SimpleCrypto c
-         , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
-         )
-     => CanForge (SimplePraosBlock c c') where
-  forgeBlock = forgeSimple $ ForgeExt forgePraosExt
 
 {-------------------------------------------------------------------------------
   Serialisation

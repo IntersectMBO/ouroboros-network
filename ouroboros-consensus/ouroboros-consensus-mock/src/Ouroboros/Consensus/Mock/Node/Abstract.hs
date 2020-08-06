@@ -6,15 +6,13 @@
 module Ouroboros.Consensus.Mock.Node.Abstract (
     CodecConfig(..)
   , RunMockBlock(..)
-  , constructMockProtocolMagicId
+  , constructMockNetworkMagic
   ) where
 
 import           Data.Hashable (hash)
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           GHC.Stack
-
-import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -31,17 +29,17 @@ class ( MockProtocolSpecific c ext
       , EncodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
       , DecodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
       ) => RunMockBlock c ext where
-  mockProtocolMagicId
+  mockNetworkMagic
     :: BlockConfig (SimpleBlock c ext)
-    -> ProtocolMagicId
+    -> NetworkMagic
 
 -- | Construct protocol magic ID depending on where in the code this is called
 --
 -- The sole purpose of this is to make sure that these mock protocols have
 -- different IDs from each other and from regular protocols.
-constructMockProtocolMagicId :: HasCallStack => ProtocolMagicId
-constructMockProtocolMagicId =
-    ProtocolMagicId $ fromIntegral $ hash (prettyCallStack callStack)
+constructMockNetworkMagic :: HasCallStack => NetworkMagic
+constructMockNetworkMagic =
+    NetworkMagic $ fromIntegral $ hash (prettyCallStack callStack)
 
 instance RunMockBlock c ext
       => ConfigSupportsNode (SimpleBlock c ext) where
@@ -49,5 +47,5 @@ instance RunMockBlock c ext
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
-  getNetworkMagic    = const $ NetworkMagic 0x0000ffff
-  getProtocolMagicId = mockProtocolMagicId
+
+  getNetworkMagic = mockNetworkMagic

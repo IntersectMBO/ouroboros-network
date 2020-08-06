@@ -21,6 +21,7 @@ module Test.Consensus.HardFork.Combinator.B (
     ProtocolB
   , BlockB(..)
   , safeZoneB
+  , blockForgingB
     -- * Type family instances
   , BlockConfig(..)
   , CodecConfig(..)
@@ -42,7 +43,6 @@ import qualified Data.Set as Set
 import           Data.Void
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Test.Util.Time (dawnOfTime)
@@ -53,6 +53,7 @@ import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -70,6 +71,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -88,22 +90,18 @@ data instance ConsensusConfig ProtocolB = CfgB {
 instance ChainSelection ProtocolB where
   -- Use defaults
 
-instance HasChainIndepState ProtocolB where
-  -- Use defaults
-
 instance ConsensusProtocol ProtocolB where
   type ChainDepState ProtocolB = ()
   type LedgerView    ProtocolB = ()
   type IsLeader      ProtocolB = ()
   type CanBeLeader   ProtocolB = ()
-  type CannotLead    ProtocolB = Void
   type ValidateView  ProtocolB = ()
   type ValidationErr ProtocolB = Void
 
-  checkIsLeader CfgB{..} () _ slot _ =
+  checkIsLeader CfgB{..} () slot _ =
       if slot `Set.member` cfgB_leadInSlots
-      then IsLeader ()
-      else NotLeader
+      then Just ()
+      else Nothing
 
   protocolSecurityParam = cfgB_k
 
@@ -141,9 +139,8 @@ data instance CodecConfig BlockB = CCfgB
   deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockB where
-  getSystemStart     _ = SystemStart dawnOfTime
-  getNetworkMagic    _ = NetworkMagic 0
-  getProtocolMagicId _ = ProtocolMagicId 0
+  getSystemStart  _ = SystemStart dawnOfTime
+  getNetworkMagic _ = NetworkMagic 0
 
 instance StandardHash BlockB
 
@@ -200,18 +197,6 @@ instance CommonProtocolParams BlockB where
   maxHeaderSize _ = maxBound
   maxTxSize     _ = maxBound
 
-instance CanForge BlockB where
-  forgeBlock _ _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
-      blkB_header = HdrB {
-          hdrB_fields = HeaderFields {
-              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
-            , headerFieldSlot    = sno
-            , headerFieldBlockNo = bno
-            }
-        , hdrB_prev = ledgerTipHash st
-        }
-    }
-
 instance BlockSupportsProtocol BlockB where
   validateView _ _ = ()
 
@@ -222,6 +207,37 @@ instance LedgerSupportsProtocol BlockB where
 instance HasPartialConsensusConfig ProtocolB
 
 instance HasPartialLedgerConfig BlockB
+
+type instance CannotForge           BlockB = Void
+type instance ForgeStateInfo        BlockB = ()
+type instance ForgeStateUpdateError BlockB = Void
+
+forgeBlockB ::
+     TopLevelConfig BlockB
+  -> BlockNo
+  -> SlotNo
+  -> TickedLedgerState BlockB
+  -> [GenTx BlockB]
+  -> IsLeader (BlockProtocol BlockB)
+  -> BlockB
+forgeBlockB _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
+      blkB_header = HdrB {
+          hdrB_fields = HeaderFields {
+              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldSlot    = sno
+            , headerFieldBlockNo = bno
+            }
+        , hdrB_prev = ledgerTipHash st
+        }
+    }
+
+blockForgingB :: Monad m => BlockForging m BlockB
+blockForgingB = BlockForging {
+     canBeLeader      = ()
+   , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+   , checkCanForge    = \_ _ _ _ _ -> return ()
+   , forgeBlock       = return .....: forgeBlockB
+   }
 
 -- | A basic 'History.SafeZone'
 --

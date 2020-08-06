@@ -51,8 +51,6 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -83,34 +81,6 @@ newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
 deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
 deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
 deriving newtype instance CanHardFork xs => NoUnexpectedThunks (LedgerState (HardForkBlock xs))
-
-{-------------------------------------------------------------------------------
-  Chain independent state
--------------------------------------------------------------------------------}
-
-instance CanHardFork xs => HasChainIndepState (HardForkProtocol xs) where
-  type ChainIndepStateConfig (HardForkProtocol xs) = PerEraChainIndepStateConfig xs
-  type ChainIndepState       (HardForkProtocol xs) = PerEraChainIndepState       xs
-
-  -- Operations on the chain independent state
-
-  updateChainIndepState _ cfg slot =
-        fmap PerEraChainIndepState
-      . hsequence'
-      . hczipWith proxySingle updateOne cfgs
-      . getPerEraChainIndepState
-    where
-      cfgs = getPerEraChainIndepStateConfig cfg
-
-      updateOne ::
-           forall m blk. (SingleEraBlock blk, IOLike m)
-        => WrapChainIndepStateConfig blk
-        -> WrapChainIndepState blk
-        -> (m :.: WrapChainIndepState) blk
-      updateOne (WrapChainIndepStateConfig cfg') (WrapChainIndepState st) =
-        Comp $
-          WrapChainIndepState <$>
-            updateChainIndepState (Proxy @(BlockProtocol blk)) cfg' slot st
 
 {-------------------------------------------------------------------------------
   Protocol config
@@ -236,18 +206,15 @@ distribTopLevelConfig :: CanHardFork xs
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei tlc =
     hcpure proxySingle
-      (fn_5 (\cfgConsensus cfgIndep cfgLedger cfgBlock cfgCodec ->
+      (fn_4 (\cfgConsensus cfgLedger cfgBlock cfgCodec ->
            mkTopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
-             (unwrapChainIndepStateConfig cfgIndep)
              (completeLedgerConfig'    ei cfgLedger)
              cfgBlock
              cfgCodec))
     `hap`
       (getPerEraConsensusConfig $
          hardForkConsensusConfigPerEra (configConsensus tlc))
-    `hap`
-      (getPerEraChainIndepStateConfig (configIndep tlc))
     `hap`
       (getPerEraLedgerConfig $
          hardForkLedgerConfigPerEra (configLedger tlc))

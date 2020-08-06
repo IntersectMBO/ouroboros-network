@@ -213,15 +213,12 @@ initLgrDB k chain = do
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock
 testCfg securityParam = TopLevelConfig {
-      topLevelConfigProtocol = FullProtocolConfig {
-          protocolConfigConsensus = BftConfig
-            { bftParams  = BftParams { bftSecurityParam = securityParam
-                                     , bftNumNodes      = numCoreNodes
-                                     }
-            , bftSignKey = SignKeyMockDSIGN 0
-            , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-            }
-        , protocolConfigIndep = ()
+      topLevelConfigProtocol = BftConfig {
+          bftParams  = BftParams { bftSecurityParam = securityParam
+                                 , bftNumNodes      = numCoreNodes
+                                 }
+        , bftSignKey = SignKeyMockDSIGN 0
+        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , topLevelConfigBlock = FullBlockConfig {
           blockConfigLedger = eraParams

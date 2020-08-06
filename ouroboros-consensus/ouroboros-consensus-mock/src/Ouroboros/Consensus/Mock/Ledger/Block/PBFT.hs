@@ -17,11 +17,13 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   , SimplePBftHeader
   , SimplePBftExt(..)
   , SignedSimplePBft(..)
+  , forgePBftExt
   ) where
 
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
@@ -35,7 +37,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
@@ -104,7 +105,7 @@ instance ( SimpleCrypto c
          , PBftCrypto c'
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
@@ -129,36 +130,31 @@ pretendTicked (PBftLedgerView ds) = TickedPBftLedgerView ds
   Forging
 -------------------------------------------------------------------------------}
 
+type instance CannotForge (SimplePBftBlock c c') = PBftCannotForge c'
+
+type instance ForgeStateInfo (SimplePBftBlock c c') = ()
+
+type instance ForgeStateUpdateError (SimplePBftBlock c c') = Void
+
 forgePBftExt :: forall c c'.
                 ( SimpleCrypto c
                 , PBftCrypto c'
                 , Signable (PBftDSIGN c') (SignedSimplePBft c c')
                 , ContextDSIGN (PBftDSIGN c') ~ ()
                 )
-             => IsLeader (BlockProtocol (SimplePBftBlock c c'))
-             -> SimpleBlock' c (SimplePBftExt c c') ()
-             -> SimplePBftBlock c c'
-forgePBftExt isLeader SimpleBlock{..} = SimpleBlock {
-      simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-    , simpleBody   = simpleBody
-    }
-  where
-    SimpleHeader{..} = simpleHeader
-    ext :: SimplePBftExt c c'
-    ext = SimplePBftExt $
-      forgePBftFields
-        (const ())
-        isLeader
-        SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
-
-instance ( SimpleCrypto c
-         , PBftCrypto c'
-         , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         , ContextDSIGN (PBftDSIGN c') ~ ()
-         )
-     => CanForge (SimplePBftBlock c c') where
-  forgeBlock = forgeSimple $ ForgeExt $ \_cfg _update isLeader ->
-      forgePBftExt isLeader
+             => ForgeExt c (SimplePBftExt c c')
+forgePBftExt = ForgeExt $ \_cfg isLeader SimpleBlock{..} ->
+    let SimpleHeader{..} = simpleHeader
+        ext :: SimplePBftExt c c'
+        ext = SimplePBftExt $
+          forgePBftFields
+            (const ())
+            isLeader
+            SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
+    in SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
 
 {-------------------------------------------------------------------------------
   Serialisation

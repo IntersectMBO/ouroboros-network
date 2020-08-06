@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -21,11 +20,11 @@ module Control.Monad.Class.MonadThrow
 
 import           Control.Exception (Exception (..), SomeException)
 import qualified Control.Exception as IO
-import qualified Control.Monad.STM as STM
-import           Control.Monad.STM (STM)
 import           Control.Monad (liftM)
 import           Control.Monad.Except (ExceptT (..), lift, runExceptT)
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
+import           Control.Monad.STM (STM)
+import qualified Control.Monad.STM as STM
 
 -- | Throwing exceptions, and resource handling in the presence of exceptions.
 --
@@ -272,6 +271,9 @@ instance MonadMask m => MonadMask (ReaderT r m) where
     ReaderT $ \e -> uninterruptibleMask $ \u -> runReaderT (a $ q u) e
       where q :: (m a -> m a) -> ReaderT e m a -> ReaderT e m a
             q u (ReaderT b) = ReaderT (u . b)
+
+instance MonadEvaluate m => MonadEvaluate (ReaderT r m) where
+  evaluate = lift . evaluate
 
 --
 -- Instances for ExceptT

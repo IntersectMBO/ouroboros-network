@@ -12,15 +12,11 @@ module Ouroboros.Consensus.Config (
   , castTopLevelConfig
     -- ** Derived extraction functions
   , configConsensus
-  , configIndep
   , configLedger
   , configBlock
   , configCodec
     -- ** Additional convenience functions
   , configSecurityParam
-    -- * Protocol config
-  , FullProtocolConfig(..)
-  , castFullProtocolConfig
     -- * Block config
   , FullBlockConfig(..)
   , castFullBlockConfig
@@ -45,7 +41,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The top-level node configuration
 data TopLevelConfig blk = TopLevelConfig {
-      topLevelConfigProtocol :: !(FullProtocolConfig (BlockProtocol blk))
+      topLevelConfigProtocol :: !(ConsensusConfig (BlockProtocol blk))
     , topLevelConfigBlock    :: !(FullBlockConfig (LedgerState blk) blk)
     }
   deriving (Generic)
@@ -57,27 +53,22 @@ instance ( ConsensusProtocol (BlockProtocol blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
 -- | Convenience constructor for 'TopLevelConfig'
-mkTopLevelConfig :: ConsensusConfig       (BlockProtocol blk)
-                 -> ChainIndepStateConfig (BlockProtocol blk)
+mkTopLevelConfig :: ConsensusConfig (BlockProtocol blk)
                  -> LedgerConfig blk
                  -> BlockConfig  blk
                  -> CodecConfig  blk
                  -> TopLevelConfig blk
-mkTopLevelConfig protocolConfigConsensus
-                 protocolConfigIndep
+mkTopLevelConfig configProtocol
                  blockConfigLedger
                  blockConfigBlock
                  blockConfigCodec =
     TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig{..}
+        topLevelConfigProtocol = configProtocol
       , topLevelConfigBlock    = FullBlockConfig{..}
       }
 
 configConsensus :: TopLevelConfig blk -> ConsensusConfig (BlockProtocol blk)
-configConsensus = protocolConfigConsensus . topLevelConfigProtocol
-
-configIndep :: TopLevelConfig blk -> ChainIndepStateConfig (BlockProtocol blk)
-configIndep = protocolConfigIndep . topLevelConfigProtocol
+configConsensus = topLevelConfigProtocol
 
 configLedger :: TopLevelConfig blk -> LedgerConfig blk
 configLedger = blockConfigLedger . topLevelConfigBlock
@@ -95,38 +86,14 @@ configSecurityParam = protocolSecurityParam . configConsensus
 castTopLevelConfig ::
      ( Coercible (ConsensusConfig (BlockProtocol blk))
                  (ConsensusConfig (BlockProtocol blk'))
-     ,   ChainIndepStateConfig (BlockProtocol blk)
-       ~ ChainIndepStateConfig (BlockProtocol blk')
      , LedgerConfig blk ~ LedgerConfig blk'
      , Coercible (BlockConfig blk) (BlockConfig blk')
      , Coercible (CodecConfig blk) (CodecConfig blk')
      )
   => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
-      topLevelConfigProtocol = castFullProtocolConfig topLevelConfigProtocol
-    , topLevelConfigBlock    = castFullBlockConfig    topLevelConfigBlock
-    }
-
-{-------------------------------------------------------------------------------
-  Protocol config
--------------------------------------------------------------------------------}
-
-data FullProtocolConfig p = FullProtocolConfig {
-      protocolConfigConsensus :: !(ConsensusConfig       p)
-    , protocolConfigIndep     :: !(ChainIndepStateConfig p)
-    }
-  deriving (Generic)
-
-instance ConsensusProtocol p => NoUnexpectedThunks (FullProtocolConfig p)
-
-castFullProtocolConfig ::
-     ( Coercible (ConsensusConfig p) (ConsensusConfig p')
-     , ChainIndepStateConfig p ~ ChainIndepStateConfig p'
-     )
-  => FullProtocolConfig p -> FullProtocolConfig p'
-castFullProtocolConfig FullProtocolConfig{..} = FullProtocolConfig{
-      protocolConfigConsensus = coerce protocolConfigConsensus
-    , protocolConfigIndep     = protocolConfigIndep
+      topLevelConfigProtocol = coerce topLevelConfigProtocol
+    , topLevelConfigBlock    = castFullBlockConfig topLevelConfigBlock
     }
 
 {-------------------------------------------------------------------------------

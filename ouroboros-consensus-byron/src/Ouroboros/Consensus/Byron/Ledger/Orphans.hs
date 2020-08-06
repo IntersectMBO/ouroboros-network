@@ -129,6 +129,9 @@ instance Condense (CC.AMempoolPayload a) where
     condense (CC.MempoolUpdateVote vote) =
       "updatevote: " <> unpack (sformat build (void vote))
 
+instance Condense Cardano.Crypto.VerificationKey where
+  condense = unpack . sformat build
+
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks
 -------------------------------------------------------------------------------}

@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Mock.Node.Praos (
   , protocolInfoPraos
   ) where
 
+import           Data.Bifunctor (second)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -36,15 +37,12 @@ protocolInfoPraos :: IOLike m
 protocolInfoPraos numCoreNodes nid params eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PraosConfig {
-                    praosParams       = params
-                  , praosSignKeyVRF   = signKeyVRF nid
-                  , praosInitialEta   = 0
-                  , praosInitialStake = genesisStakeDist addrDist
-                  , praosVerKeys      = verKeys
-                  }
-              , protocolConfigIndep = ()
+            topLevelConfigProtocol = PraosConfig {
+                praosParams       = params
+              , praosSignKeyVRF   = signKeyVRF nid
+              , praosInitialEta   = 0
+              , praosInitialStake = genesisStakeDist addrDist
+              , praosVerKeys      = verKeys
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = SimpleLedgerConfig addrDist eraParams
@@ -56,16 +54,7 @@ protocolInfoPraos numCoreNodes nid params eraParams =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState (PraosChainDepState [])
           }
-      , pInfoLeaderCreds = Just (
-            nid
-          , defaultMaintainNoExtraForgeState
-              (HotKey $
-                    SignKeyMockKES
-                      -- key ID
-                      (fst $ verKeys Map.! nid)
-                      -- KES initial slot
-                      0)
-          )
+      , pInfoBlockForging = Just (praosBlockForging nid initHotKey)
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
@@ -87,3 +76,37 @@ protocolInfoPraos numCoreNodes nid params eraParams =
       , let !kesKey = verKeyKES nid'
             !vrfKey = verKeyVRF nid'
       ]
+
+    initHotKey :: HotKey PraosMockCrypto
+    initHotKey =
+        HotKey
+          0
+          (SignKeyMockKES
+            -- key ID
+            (fst $ verKeys Map.! nid)
+            -- KES initial slot
+            0)
+
+praosBlockForging ::
+     IOLike m
+  => CoreNodeId
+  -> HotKey PraosMockCrypto
+  -> m (BlockForging m MockPraosBlock)
+praosBlockForging cid initHotKey = do
+    varHotKey <- newMVar initHotKey
+    return $ BlockForging {
+        canBeLeader      = cid
+      , updateForgeState = \sno -> updateMVar varHotKey $
+                               second ForgeStateUpdateInfo . evolveKey sno
+      , checkCanForge    = \_ _ _ _ _ -> return ()
+      , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do
+                               hotKey <- readMVar varHotKey
+                               return $
+                                 forgeSimple
+                                   (forgePraosExt hotKey)
+                                   cfg
+                                   bno sno
+                                   tickedLedgerSt
+                                   txs
+                                   isLeader
+      }

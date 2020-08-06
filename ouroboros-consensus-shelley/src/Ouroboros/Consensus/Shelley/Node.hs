@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
+{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
@@ -17,11 +18,11 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
+  , shelleyBlockForging
   , tpraosBlockIssuerVKey
   , SL.ProtVer
   , SL.Nonce (..)
   , SL.emptyGenesisStaking
-  , shelleyMaintainForgeState
   , validateGenesis
   ) where
 
@@ -35,6 +36,7 @@ import qualified Data.Text as Text
 import           Cardano.Prelude (Natural)
 
 import           Cardano.Crypto.KES.Class
+import           Cardano.Crypto.VRF.Class (VerKeyVRF, deriveVerKeyVRF)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -46,6 +48,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -58,8 +61,10 @@ import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
+import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
@@ -73,47 +78,80 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
-                     (HotKey (..))
+import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
 {-------------------------------------------------------------------------------
-  ProtocolInfo
+  Credentials
 -------------------------------------------------------------------------------}
 
 data TPraosLeaderCredentials c = TPraosLeaderCredentials {
     -- | The unevolved signing KES key (at evolution 0).
     --
-    -- Note that this is not inside 'TPraosIsCoreNode' since it gets evolved
-    -- automatically, whereas 'TPraosIsCoreNode' does not change.
-    tpraosLeaderCredentialsSignKey    :: SignKeyKES (KES c)
-  , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
+    -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
+    -- automatically, whereas 'TPraosCanBeLeader' does not change.
+    tpraosLeaderCredentialsInitSignKey :: SignKeyKES (KES c)
+  , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader c
   }
 
 tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials c) -> BlockIssuerVKey c
 tpraosBlockIssuerVKey mbCredentials =
-    case tpraosIsCoreNodeColdVerKey . tpraosLeaderCredentialsIsCoreNode
+    case tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
            <$> mbCredentials of
       Nothing   -> NotABlockIssuer
       Just vkey -> BlockIssuerVKey vkey
 
-shelleyMaintainForgeState
-  :: forall m c. (IOLike m, TPraosCrypto c)
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+type instance CannotForge (ShelleyBlock c) = TPraosCannotForge c
+
+type instance ForgeStateInfo (ShelleyBlock c) = HotKey.KESInfo
+
+type instance ForgeStateUpdateError (ShelleyBlock c) = HotKey.KESEvolutionError
+
+shelleyBlockForging
+  :: forall m c. (TPraosCrypto c, IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials c
-  -> MaintainForgeState m (ShelleyBlock c)
-shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials signKeyKES icn) =
-    defaultMaintainNoExtraForgeState initHotKey
-  where
-    SL.KESPeriod start = SL.ocertKESPeriod $ tpraosIsCoreNodeOpCert icn
-
-    initHotKey = HotKey {
-        hkStart     = SL.KESPeriod start
-      , hkEnd       = SL.KESPeriod (start + fromIntegral tpraosMaxKESEvo)
-        -- We get an unevolved KES key
-      , hkEvolution = 0
-      , hkKey       = signKeyKES
+  -> m (BlockForging m (ShelleyBlock c))
+shelleyBlockForging TPraosParams {..}
+                    TPraosLeaderCredentials {
+                        tpraosLeaderCredentialsInitSignKey = initSignKey
+                      , tpraosLeaderCredentialsCanBeLeader = canBeLeader
+                      } = do
+    hotKey <- HotKey.mkHotKey initSignKey startPeriod tpraosMaxKESEvo
+    return BlockForging {
+        canBeLeader      = canBeLeader
+      , updateForgeState = \curSlot ->
+                               ForgeStateUpdateInfo <$>
+                                 HotKey.evolve hotKey (slotToPeriod curSlot)
+      , checkCanForge    = \cfg curSlot _tickedChainDepState ->
+                               tpraosCheckCanForge
+                                 (configConsensus cfg)
+                                 forgingVRFHash
+                                 curSlot
+      , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
       }
+  where
+    forgingVRFHash :: SL.Hash c (VerKeyVRF (VRF c))
+    forgingVRFHash =
+          SL.hashVerKeyVRF
+        . deriveVerKeyVRF
+        . tpraosCanBeLeaderSignKeyVRF
+        $ canBeLeader
+
+    startPeriod :: Absolute.KESPeriod
+    startPeriod = SL.ocertKESPeriod $ tpraosCanBeLeaderOpCert canBeLeader
+
+    slotToPeriod :: SlotNo -> Absolute.KESPeriod
+    slotToPeriod (SlotNo slot) =
+        SL.KESPeriod $ fromIntegral $ slot `div` tpraosSlotsPerKESPeriod
+
+{-------------------------------------------------------------------------------
+  ProtocolInfo
+-------------------------------------------------------------------------------}
 
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
@@ -138,17 +176,14 @@ protocolInfoShelley
 protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
-        pInfoConfig      = topLevelConfig
-      , pInfoInitLedger  = initExtLedgerState
-      , pInfoLeaderCreds = mkLeaderCreds <$> mbCredentials
+        pInfoConfig       = topLevelConfig
+      , pInfoInitLedger   = initExtLedgerState
+      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
     topLevelConfig = TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = consensusConfig
-          , protocolConfigIndep     = tpraosParams
-          }
+        topLevelConfigProtocol = consensusConfig
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigLedger = ledgerConfig
           , blockConfigBlock  = blockConfig
@@ -170,13 +205,6 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorPV initialNonce genesis
-
-    mkLeaderCreds :: TPraosLeaderCredentials c
-                  -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
-    mkLeaderCreds creds@(TPraosLeaderCredentials _ isACoreNode) = (
-          isACoreNode
-        , shelleyMaintainForgeState tpraosParams creds
-        )
 
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig =
@@ -336,9 +364,8 @@ instance InspectLedger (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 instance ConfigSupportsNode (ShelleyBlock c) where
-  getSystemStart     = shelleySystemStart
-  getNetworkMagic    = shelleyNetworkMagic
-  getProtocolMagicId = shelleyProtocolMagicId
+  getSystemStart  = shelleySystemStart
+  getNetworkMagic = shelleyNetworkMagic
 
 {-------------------------------------------------------------------------------
   RunNode instance

@@ -10,8 +10,6 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
-
 module Ouroboros.Consensus.Shelley.Ledger.Forge (
     forgeShelleyBlock
   ) where
@@ -35,40 +33,35 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Integrity
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 import           Ouroboros.Consensus.Shelley.Protocol
-
-{-------------------------------------------------------------------------------
-  CanForge
--------------------------------------------------------------------------------}
-
-instance TPraosCrypto c => CanForge (ShelleyBlock c) where
-  forgeBlock = forgeShelleyBlock
+import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 
 {-------------------------------------------------------------------------------
   Forging
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock
-  :: TPraosCrypto c
-  => TopLevelConfig (ShelleyBlock c)
-  -> ForgeState (ShelleyBlock c)
+  :: (TPraosCrypto c, Monad m)
+  => HotKey c m
+  -> TPraosCanBeLeader c
+  -> TopLevelConfig (ShelleyBlock c)
   -> BlockNo                             -- ^ Current block number
   -> SlotNo                              -- ^ Current slot number
   -> TickedLedgerState (ShelleyBlock c)  -- ^ Current ledger
   -> [GenTx (ShelleyBlock c)]            -- ^ Txs to add in the block
-  -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
-  -> ShelleyBlock c
-forgeShelleyBlock cfg forgeState curNo curSlot tickedLedger txs isLeader =
-    assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) $
-    assertWithMsg bodySizeEstimate
-      blk
+  -> TPraosIsLeader c                    -- ^ Leader proof
+  -> m (ShelleyBlock c)
+forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader = do
+    tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
+    let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
+    return $
+      assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) $
+      assertWithMsg bodySizeEstimate $
+        blk
   where
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
 
-    hotKey       = chainIndepState forgeState
-    tpraosFields = forgeTPraosFields hotKey isLeader mkBhBody
-    blk          = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
-    body         = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
+    body = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
       SL.BHeader tpraosToSign tpraosSignature

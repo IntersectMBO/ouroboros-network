@@ -304,6 +304,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadFork
            , MonadAsync
            , MonadST
+           , MonadEvaluate
            )
 
 deriving via AllowThunk (OverrideDelay s a)
@@ -340,7 +341,8 @@ instance MonadDelay (OverrideDelay (SimM s)) where
 instance MonadDelay (OverrideDelay IO) where
   threadDelay d = OverrideDelay $ ReaderT $ \_schedule -> threadDelay d
 
-instance (IOLike m, MonadDelay (OverrideDelay m)) => IOLike (OverrideDelay m)
+instance (IOLike m, MonadDelay (OverrideDelay m)) => IOLike (OverrideDelay m) where
+  forgetSignKeyKES = OverrideDelay . lift . forgetSignKeyKES
 
 overrideDelay :: UTCTime
               -> Schedule

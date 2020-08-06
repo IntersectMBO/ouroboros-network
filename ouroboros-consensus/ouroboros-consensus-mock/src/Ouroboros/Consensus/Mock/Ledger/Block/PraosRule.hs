@@ -16,9 +16,11 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
+  , forgePraosRuleExt
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
@@ -86,7 +88,7 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  mockProtocolMagicId = const constructMockProtocolMagicId
+  mockNetworkMagic = const constructMockNetworkMagic
 
 instance
   ( SimpleCrypto c
@@ -114,22 +116,21 @@ instance PraosCrypto PraosCryptoUnused where
   Forging
 -------------------------------------------------------------------------------}
 
-forgePraosRuleExt :: SimpleCrypto c
-                  => TopLevelConfig (SimplePraosRuleBlock c')
-                  -> SimpleBlock' c SimplePraosRuleExt ()
-                  -> SimplePraosRuleBlock c
-forgePraosRuleExt cfg SimpleBlock{..} =
-    SimpleBlock {
+
+type instance CannotForge (SimplePraosRuleBlock c) = Void
+
+type instance ForgeStateInfo (SimplePraosRuleBlock c) = ()
+
+type instance ForgeStateUpdateError (SimplePraosRuleBlock c) = Void
+
+forgePraosRuleExt :: SimpleCrypto c => ForgeExt c SimplePraosRuleExt
+forgePraosRuleExt = ForgeExt $ \cfg _ SimpleBlock{..} ->
+    let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
+        SimpleHeader{..} = simpleHeader
+    in SimpleBlock {
         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
       , simpleBody   = simpleBody
       }
-  where
-    ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
-    SimpleHeader{..} = simpleHeader
-
-instance SimpleCrypto c => CanForge (SimplePraosRuleBlock c) where
-  forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
-      forgePraosRuleExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

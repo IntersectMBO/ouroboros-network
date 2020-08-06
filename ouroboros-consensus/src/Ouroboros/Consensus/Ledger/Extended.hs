@@ -95,7 +95,7 @@ data instance Ticked (ExtLedgerState blk) = TickedExtLedgerState {
 -- Since the extended ledger also does the consensus protocol validation, we
 -- also need the consensus config.
 data ExtLedgerCfg blk = ExtLedgerCfg {
-      extLedgerCfgProtocol :: !(FullProtocolConfig (BlockProtocol blk))
+      extLedgerCfgProtocol :: !(ConsensusConfig (BlockProtocol blk))
     , extLedgerCfgLedger   :: !(LedgerConfig blk)
     }
   deriving (Generic)
@@ -106,7 +106,7 @@ instance ( ConsensusProtocol (BlockProtocol blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 
--- | The addition of the 'FullProtocolConfig' means we have the full config.
+-- | The addition of the 'ConsensusConfig' means we have the full config.
 extLedgerCfgToTopLevel :: FullBlockConfig (ExtLedgerState blk) blk
                        -> TopLevelConfig blk
 extLedgerCfgToTopLevel FullBlockConfig{..} = TopLevelConfig {
@@ -160,7 +160,7 @@ instance ( IsLedger (LedgerState  blk)
       tickedHeaderState :: Ticked (HeaderState blk)
       tickedHeaderState =
           tickHeaderState
-            (protocolConfigConsensus $ extLedgerCfgProtocol cfg)
+            (extLedgerCfgProtocol cfg)
             tickedLedgerView
             slot
             header

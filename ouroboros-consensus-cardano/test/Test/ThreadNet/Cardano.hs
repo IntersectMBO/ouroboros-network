@@ -326,18 +326,18 @@ prop_simple_cardano_convergence TestSetup
     tabulateFinalIntersectionDepth $
     tabulatePartitionPosition $
     prop_general_semisync PropGeneralArgs
-      { pgaBlockProperty      = const $ property True
-      , pgaCountTxs           = fromIntegral . length . extractTxs
-      , pgaExpectedCannotLead = noExpectedCannotLeads
-      , pgaFirstBlockNo       = 0
-      , pgaFixedMaxForkLength = Just maxForkLength
-      , pgaFixedSchedule      =
+      { pgaBlockProperty       = const $ property True
+      , pgaCountTxs            = fromIntegral . length . extractTxs
+      , pgaExpectedCannotForge = noExpectedCannotForges
+      , pgaFirstBlockNo        = 0
+      , pgaFixedMaxForkLength  = Just maxForkLength
+      , pgaFixedSchedule       =
           -- the leader schedule isn't fixed because the Shelley leader
           -- schedule is (at least ideally) unpredictable
           Nothing
-      , pgaSecurityParam      = setupK
-      , pgaTestConfig         = setupTestConfig
-      , pgaTestConfigB        = testConfigB
+      , pgaSecurityParam       = setupK
+      , pgaTestConfig          = setupTestConfig
+      , pgaTestConfigB         = testConfigB
       }
       testOutput .&&.
     prop_inSync testOutput .&&.
@@ -649,7 +649,7 @@ mkProtocolCardanoAndHardForkTxs
 
     -- Byron
 
-    leaderCredentialsByron :: PBftLeaderCredentials
+    leaderCredentialsByron :: ByronLeaderCredentials
     leaderCredentialsByron =
         Byron.mkLeaderCredentials
           genesisByron

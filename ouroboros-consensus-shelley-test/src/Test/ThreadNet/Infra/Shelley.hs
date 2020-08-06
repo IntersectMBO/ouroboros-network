@@ -200,11 +200,11 @@ genCoreNode startKESPeriod = do
 mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
     TPraosLeaderCredentials {
-        tpraosLeaderCredentialsSignKey    = cnKES
-      , tpraosLeaderCredentialsIsCoreNode = TPraosIsCoreNode {
-          tpraosIsCoreNodeOpCert     = cnOCert
-        , tpraosIsCoreNodeColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-        , tpraosIsCoreNodeSignKeyVRF = cnVRF
+        tpraosLeaderCredentialsInitSignKey = cnKES
+      , tpraosLeaderCredentialsCanBeLeader = TPraosCanBeLeader {
+          tpraosCanBeLeaderOpCert     = cnOCert
+        , tpraosCanBeLeaderColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+        , tpraosCanBeLeaderSignKeyVRF = cnVRF
         }
       }
 

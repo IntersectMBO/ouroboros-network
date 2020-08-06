@@ -39,7 +39,6 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
-import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
@@ -48,6 +47,7 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -91,7 +91,6 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -277,7 +276,6 @@ type EdgeStatusVar m = StrictTVar m EdgeStatus
 runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , MonadTimer m
-                    , MonadThrow.MonadEvaluate m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
@@ -655,13 +653,13 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 let txs = genTxs nthAttempt
                 lr <-
                   tryJust isDiscard $
-                  MonadThrow.evaluate (forceElemsToWHNF txs)
+                  evaluate (forceElemsToWHNF txs)
                 case lr of
                   Right _ -> pure txs
                   Left  _ ->
                       if nthAttempt < attemptLimit
                       then loop (nthAttempt + 1)
-                      else MonadThrow.throwM (TxGenFailure attemptLimit)
+                      else throwM (TxGenFailure attemptLimit)
               where
                 isDiscard :: Exn.SomeException -> Maybe ()
                 isDiscard = guard . QC.isDiscard
@@ -806,13 +804,20 @@ runThreadNetwork systemTime ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      let (canBeLeader, maintainForgeState) =
-            case pInfoLeaderCreds of
-              Nothing    -> error "runThreadNetwork: cannot produce blocks"
-              Just creds -> creds
+      origBlockForging <-
+        fromMaybe
+          (error "runThreadNetwork: cannot produce blocks")
+          pInfoBlockForging
 
-      blockProduction <- customForgeBlockProduction pInfoConfig canBeLeader maintainForgeState $
-         \forgeState currentBno currentSlot tickedLdgSt txs prf -> do
+      let customForgeBlock ::
+               TopLevelConfig blk
+            -> BlockNo
+            -> SlotNo
+            -> TickedLedgerState blk
+            -> [GenTx blk]
+            -> IsLeader (BlockProtocol blk)
+            -> m blk
+          customForgeBlock cfg' currentBno currentSlot tickedLdgSt txs prf = do
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
             -- EBBs are only ever possible in the first era
@@ -831,15 +836,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
             case mbForgeEbbEnv <* guard needEBB of
               Nothing ->
                  -- no EBB needed, forge without making one
-                  return $
-                    forgeBlock
-                      pInfoConfig
-                      forgeState
-                      currentBno
-                      currentSlot
-                      tickedLdgSt
-                      txs
-                      prf
+                 forgeBlock
+                   origBlockForging
+                   cfg'
+                   currentBno
+                   currentSlot
+                   tickedLdgSt
+                   txs
+                   prf
               Just forgeEbbEnv -> do
                   -- The EBB shares its BlockNo with its predecessor (if
                   -- there is one)
@@ -868,14 +872,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                   -- forge the block usings the ledger state that includes
                   -- the EBB
-                  let blk = forgeBlock
-                              pInfoConfig
-                              forgeState
-                              currentBno
-                              currentSlot
-                              tickedLdgSt'
-                              txs
-                              prf
+                  blk <- forgeBlock
+                           origBlockForging
+                           cfg'
+                           currentBno
+                           currentSlot
+                           tickedLdgSt'
+                           txs
+                           prf
 
                   -- If the EBB or the subsequent block is invalid, then the
                   -- ChainDB will reject it as invalid, and
@@ -883,6 +887,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- because of a block rejection.
                   void $ ChainDB.addBlock chainDB ebb
                   pure blk
+
+      let blockForging = origBlockForging { forgeBlock = customForgeBlock }
 
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
@@ -943,7 +949,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , btime
             , chainDB
             , initChainDB             = nodeInitChainDB
-            , blockProduction         = Just blockProduction
+            , blockForging            = Just blockForging
             , blockFetchSize          = nodeBlockFetchSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
@@ -1419,16 +1425,16 @@ newNodeInfo = do
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
-  { nodeOutputAdds        :: Map SlotNo (Set (RealPoint blk, BlockNo))
-  , nodeOutputCannotLeads :: Map SlotNo [CannotLead (BlockProtocol blk)]
-  , nodeOutputFinalChain  :: Chain blk
-  , nodeOutputFinalLedger :: LedgerState blk
-  , nodeOutputForges      :: Map SlotNo blk
-  , nodeOutputHeaderAdds  :: Map SlotNo [(RealPoint blk, BlockNo)]
-  , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
-  , nodeOutputNodeDBs     :: NodeDBs MockFS
-  , nodeOutputSelects     :: Map SlotNo [(RealPoint blk, BlockNo)]
-  , nodeOutputUpdates     :: [LedgerUpdate blk]
+  { nodeOutputAdds         :: Map SlotNo (Set (RealPoint blk, BlockNo))
+  , nodeOutputCannotForges :: Map SlotNo [CannotForge blk]
+  , nodeOutputFinalChain   :: Chain blk
+  , nodeOutputFinalLedger  :: LedgerState blk
+  , nodeOutputForges       :: Map SlotNo blk
+  , nodeOutputHeaderAdds   :: Map SlotNo [(RealPoint blk, BlockNo)]
+  , nodeOutputInvalids     :: Map (RealPoint blk) [ExtValidationError blk]
+  , nodeOutputNodeDBs      :: NodeDBs MockFS
+  , nodeOutputSelects      :: Map SlotNo [(RealPoint blk, BlockNo)]
+  , nodeOutputUpdates      :: [LedgerUpdate blk]
   }
 
 data TestOutput blk = TestOutput
@@ -1467,9 +1473,9 @@ mkTestOutput vertexInfos = do
               { nodeOutputAdds        =
                   Map.fromListWith Set.union $
                   [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
-              , nodeOutputCannotLeads =
+              , nodeOutputCannotForges =
                   Map.fromListWith (flip (++)) $
-                  [ (s, [err]) | TraceNodeCannotLead s err <- nodeEventsForges ]
+                  [ (s, [err]) | TraceNodeCannotForge s err <- nodeEventsForges ]
               , nodeOutputFinalChain  = ch
               , nodeOutputFinalLedger = ldgr
               , nodeOutputForges      =
@@ -1537,8 +1543,9 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
-  , Show (ExtraForgeState blk)
-  , ShowQuery (Query blk)
+  , Show (ForgeStateInfo blk)
+  , Show (ForgeStateUpdateError blk)
+  , Show (CannotForge blk)
   , HasNestedContent Header blk
   )
 

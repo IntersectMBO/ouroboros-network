@@ -37,7 +37,6 @@ import qualified Cardano.Chain.Update.Validation.Registration as Registration
 import           Cardano.Chain.Update.Vote (AVote)
 import qualified Cardano.Chain.Update.Vote as Vote
 import qualified Cardano.Crypto as Crypto
-import qualified Cardano.Crypto.DSIGN as Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -387,7 +386,9 @@ mkProtocolRealPBftAndHardForkTxs
     bcfg = configBlock pInfoConfig
 
     pInfo :: ProtocolInfo m ByronBlock
-    pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
+    opKey :: Crypto.SigningKey
+    (pInfo, Crypto.SignKeyByronDSIGN opKey) =
+        mkProtocolRealPBFT params cid genesisConfig genesisSecrets
 
     proposals :: [Byron.GenTx ByronBlock]
     proposals =
@@ -411,8 +412,6 @@ mkProtocolRealPBftAndHardForkTxs
           (Update.recoverUpId proposal)
           True   -- the serialization hardwires this value anyway
           (Crypto.noPassSafeSigner opKey)
-      where
-        Crypto.SignKeyByronDSIGN opKey = getOpKey pInfo
 
     proposal :: AProposal ByteString
     proposal =
@@ -439,12 +438,12 @@ mkHardForkProposal params genesisConfig genesisSecrets propPV =
       (Crypto.noPassSafeSigner opKey)
   where
     pInfo :: ProtocolInfo Identity ByronBlock
-    pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
+    opKey :: Crypto.SigningKey
+    (pInfo, Crypto.SignKeyByronDSIGN opKey) =
+        mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
 
     ProtocolInfo{pInfoConfig} = pInfo
     bcfg = configBlock pInfoConfig
-
-    Crypto.SignKeyByronDSIGN opKey = getOpKey pInfo
 
     propBody :: Proposal.ProposalBody
     propBody = Proposal.ProposalBody
@@ -468,16 +467,6 @@ mkHardForkProposal params genesisConfig genesisSecrets propPV =
       , Proposal.softwareVersion          = theProposedSoftwareVersion
       , Proposal.metadata                 = Map.empty
       }
-
--- | Get the delegate's operational signing key
---
-getOpKey
-  :: ProtocolInfo m ByronBlock
-  -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-getOpKey pInfo =
-    case pInfoLeaderCreds pInfo of
-      Just (PBftIsLeader{pbftSignKey}, _) -> pbftSignKey
-      Nothing                             -> error "impossible!"
 
 -- | Add the bytestring annotations that would be present if we were to
 -- serialize the argument, send it to ourselves, receive it, and deserialize it

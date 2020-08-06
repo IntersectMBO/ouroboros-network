@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -9,18 +10,18 @@ module Ouroboros.Consensus.Byron.Node (
   , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
+  , byronBlockForging
     -- * Secrets
-  , PBftLeaderCredentials
-  , PBftLeaderCredentialsError
-  , mkPBftLeaderCredentials
-  , mkPBftIsLeader
-    -- * For testing
-  , plcCoreNodeId
+  , ByronLeaderCredentials(..)
+  , ByronLeaderCredentialsError
+  , mkByronLeaderCredentials
+  , mkPBftCanBeLeader
   ) where
 
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
+import           Data.Void (Void)
 
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
@@ -40,10 +41,12 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
+import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -56,24 +59,24 @@ import           Ouroboros.Consensus.Byron.Protocol
   Credentials
 -------------------------------------------------------------------------------}
 
-data PBftLeaderCredentials = PBftLeaderCredentials {
-      plcSignKey    :: Crypto.SigningKey
-    , plcDlgCert    :: Delegation.Certificate
-    , plcCoreNodeId :: CoreNodeId
+data ByronLeaderCredentials = ByronLeaderCredentials {
+      blcSignKey    :: Crypto.SigningKey
+    , blcDlgCert    :: Delegation.Certificate
+    , blcCoreNodeId :: CoreNodeId
     } deriving Show
 
--- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
+-- | Make the 'ByronLeaderCredentials', with a couple sanity checks:
 --
 -- * That the block signing key and the delegation certificate match.
 -- * That the delegation certificate does correspond to one of the genesis
 --   keys from the genesis file.
 --
-mkPBftLeaderCredentials :: Genesis.Config
-                        -> Crypto.SigningKey
-                        -> Delegation.Certificate
-                        -> Either PBftLeaderCredentialsError
-                                  PBftLeaderCredentials
-mkPBftLeaderCredentials gc sk cert = do
+mkByronLeaderCredentials ::
+     Genesis.Config
+  -> Crypto.SigningKey
+  -> Delegation.Certificate
+  -> Either ByronLeaderCredentialsError ByronLeaderCredentials
+mkByronLeaderCredentials gc sk cert = do
     guard (Delegation.delegateVK cert == Crypto.toVerification sk)
       ?! NodeSigningKeyDoesNotMatchDelegationCertificate
 
@@ -81,20 +84,55 @@ mkPBftLeaderCredentials gc sk cert = do
     nid <- genesisKeyCoreNodeId gc (VerKeyByronDSIGN vkGenesis)
              ?! DelegationCertificateNotFromGenesisKey
 
-    return PBftLeaderCredentials {
-      plcSignKey     = sk
-    , plcDlgCert     = cert
-    , plcCoreNodeId  = nid
+    return ByronLeaderCredentials {
+      blcSignKey     = sk
+    , blcDlgCert     = cert
+    , blcCoreNodeId  = nid
     }
   where
     (?!) :: Maybe a -> e -> Either e a
     Just x  ?! _ = Right x
     Nothing ?! e = Left  e
 
-data PBftLeaderCredentialsError =
+data ByronLeaderCredentialsError =
        NodeSigningKeyDoesNotMatchDelegationCertificate
      | DelegationCertificateNotFromGenesisKey
   deriving (Eq, Show)
+
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+type instance CannotForge ByronBlock = PBftCannotForge PBftByronCrypto
+
+type instance ForgeStateInfo ByronBlock = ()
+
+type instance ForgeStateUpdateError ByronBlock = Void
+
+byronBlockForging
+  :: Monad m
+  => ByronLeaderCredentials
+  -> BlockForging m ByronBlock
+byronBlockForging creds = BlockForging {
+      canBeLeader
+    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+    , checkCanForge    = \cfg slot tickedPBftState _isLeader () ->
+                             pbftCheckCanForge
+                               (configConsensus cfg)
+                               canBeLeader
+                               slot
+                               tickedPBftState
+    , forgeBlock       = return .....: forgeByronBlock
+    }
+  where
+    canBeLeader = mkPBftCanBeLeader creds
+
+mkPBftCanBeLeader :: ByronLeaderCredentials -> CanBeLeader (PBft PBftByronCrypto)
+mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid) = PBftCanBeLeader {
+      pbftCanBeLeaderCoreNodeId = nid
+    , pbftCanBeLeaderSignKey    = SignKeyByronDSIGN sk
+    , pbftCanBeLeaderDlgCert    = cert
+    }
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -115,20 +153,17 @@ protocolInfoByron :: forall m. Monad m
                   -> Maybe PBftSignatureThreshold
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion
-                  -> Maybe PBftLeaderCredentials
+                  -> Maybe ByronLeaderCredentials
                   -> ProtocolInfo m ByronBlock
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PBftConfig {
-                    pbftParams = byronPBftParams genesisConfig mSigThresh
-                  }
-              , protocolConfigIndep = ()
+            topLevelConfigProtocol = PBftConfig {
+                pbftParams = byronPBftParams genesisConfig mSigThresh
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = genesisConfig
-              , blockConfigBlock  = byronConfig
+              , blockConfigBlock  = mkByronConfig genesisConfig pVer sVer
               , blockConfigCodec  = mkByronCodecConfig genesisConfig
               }
           }
@@ -136,14 +171,9 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
-      , pInfoLeaderCreds = mkCreds <$> mLeader
+      , pInfoBlockForging =
+          return . byronBlockForging <$> mLeader
       }
-  where
-    byronConfig = mkByronConfig genesisConfig pVer sVer
-
-    mkCreds :: PBftLeaderCredentials
-            -> (PBftIsLeader PBftByronCrypto, MaintainForgeState m ByronBlock)
-    mkCreds cred = (mkPBftIsLeader cred, defaultMaintainForgeState)
 
 protocolClientInfoByron :: EpochSlots
                         -> SecurityParam
@@ -162,13 +192,6 @@ byronPBftParams cfg threshold = PBftParams {
     , pbftNumNodes           = genesisNumCoreNodes  cfg
     , pbftSignatureThreshold = unSignatureThreshold
                              $ fromMaybe defaultPBftSignatureThreshold threshold
-    }
-
-mkPBftIsLeader :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
-mkPBftIsLeader (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
-      pbftCoreNodeId = nid
-    , pbftSignKey    = SignKeyByronDSIGN sk
-    , pbftDlgCert    = cert
     }
 
 mkByronConfig :: Genesis.Config
@@ -196,8 +219,6 @@ instance ConfigSupportsNode ByronBlock where
     . Crypto.unProtocolMagicId
     . Genesis.gdProtocolMagicId
     . extractGenesisData
-
-  getProtocolMagicId = byronProtocolMagicId
 
 extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . byronGenesisConfig

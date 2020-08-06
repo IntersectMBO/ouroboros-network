@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
@@ -58,11 +57,8 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
 
-    -- | Called on every slot with the possibly updated 'ForgeState'
-    --
-    -- It is the responsibility of the tracer to only show (parts of) the
-    -- 'ForgeState' when it is changed (or possibly periodically).
-  , forgeStateTracer              :: f (ForgeState blk)
+    -- | Used to trace the 'ForgeStateInfo' whenever it is updated
+  , forgeStateInfoTracer         :: f (ForgeStateInfo blk)
   }
 
 instance (forall a. Semigroup (f a))
@@ -79,8 +75,8 @@ instance (forall a. Semigroup (f a))
       , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
       , mempoolTracer                 = f mempoolTracer
       , forgeTracer                   = f forgeTracer
-      , forgeStateTracer              = f forgeStateTracer
       , blockchainTimeTracer          = f blockchainTimeTracer
+      , forgeStateInfoTracer          = f forgeStateInfoTracer
       }
     where
       f :: forall a. Semigroup a
@@ -105,8 +101,8 @@ nullTracers = Tracers
     , localTxSubmissionServerTracer = nullTracer
     , mempoolTracer                 = nullTracer
     , forgeTracer                   = nullTracer
-    , forgeStateTracer              = nullTracer
     , blockchainTimeTracer          = nullTracer
+    , forgeStateInfoTracer          = nullTracer
     }
 
 showTracers :: ( Show blk
@@ -114,7 +110,9 @@ showTracers :: ( Show blk
                , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
-               , Show (ExtraForgeState blk)
+               , Show (ForgeStateInfo blk)
+               , Show (ForgeStateUpdateError blk)
+               , Show (CannotForge blk)
                , Show remotePeer
                , LedgerSupportsProtocol blk
                )
@@ -131,8 +129,8 @@ showTracers tr = Tracers
     , localTxSubmissionServerTracer = showTracing tr
     , mempoolTracer                 = showTracing tr
     , forgeTracer                   = showTracing tr
-    , forgeStateTracer              = showTracing tr
     , blockchainTimeTracer          = showTracing tr
+    , forgeStateInfoTracer          = showTracing tr
     }
 
 {-------------------------------------------------------------------------------
@@ -145,15 +143,19 @@ showTracers tr = Tracers
 --
 -- > TraceStartLeadershipCheck
 -- >          |
--- >          +--- TraceNodeNotLeader
--- >          |
 -- >          +--- TraceBlockFromFuture (leadership check failed)
 -- >          |
 -- >          +--- TraceSlotIsImmutable (leadership check failed)
 -- >          |
 -- >          +--- TraceNoLedgerState (leadership check failed)
 -- >          |
--- >          +--- TraceNoLedgerView (leadership check failed)-- >
+-- >          +--- TraceNoLedgerView (leadership check failed)
+-- >          |
+-- >          +--- TraceForgeStateUpdateError (leadership check failed)
+-- >          |
+-- >          +--- TraceNodeCannotForge (leadership check failed)
+-- >          |
+-- >          +--- TraceNodeNotLeader
 -- >          |
 -- >   TraceNodeIsLeader
 -- >          |
@@ -184,12 +186,20 @@ data TraceForgeEvent blk
   -- We record the current slot number
   | TraceNodeNotLeader SlotNo
 
-  -- | We did the leadership check and concluded that we should lead, but cannot
+  -- | Updating the forge state failed.
+  --
+  -- For example, the KES key could not be evolved anymore.
+  --
+  -- We record the error returned by 'updateForgeState'.
+  | TraceForgeStateUpdateError SlotNo (ForgeStateUpdateError blk)
+
+  -- | We did the leadership check and concluded that we should lead and forge
+  -- a block, but cannot
   --
   -- This should only happen rarely and should be logged with warning severity.
   --
-  -- Records why we cannot lead.
-  | TraceNodeCannotLead SlotNo (CannotLead (BlockProtocol blk))
+  -- Records why we cannot forge a block.
+  | TraceNodeCannotForge SlotNo (CannotForge blk)
 
   -- | Leadership check failed: we were unable to get the ledger state
   -- for the point of the block we want to connect to
@@ -279,9 +289,12 @@ data TraceForgeEvent blk
 deriving instance ( LedgerSupportsProtocol blk
                   , Eq blk
                   , Eq (GenTx blk)
-                  , Eq (CannotLead (BlockProtocol blk))
+                  , Eq (ForgeStateUpdateError blk)
+                  , Eq (CannotForge blk)
                   ) => Eq (TraceForgeEvent blk)
 deriving instance ( LedgerSupportsProtocol blk
                   , Show blk
                   , Show (GenTx blk)
+                  , Show (ForgeStateUpdateError blk)
+                  , Show (CannotForge blk)
                   ) => Show (TraceForgeEvent blk)

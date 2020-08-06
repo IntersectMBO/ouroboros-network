@@ -22,6 +22,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , BlockA(..)
   , safeFromTipA
   , stabilityWindowA
+  , blockForgingA
     -- * Additional types
   , PartialLedgerConfigA(..)
   , TxPayloadA(..)
@@ -50,7 +51,6 @@ import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo
 
@@ -82,7 +82,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Util (repeatedlyM)
+import           Ouroboros.Consensus.Util (repeatedlyM, (.....:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -101,22 +101,18 @@ data instance ConsensusConfig ProtocolA = CfgA {
 instance ChainSelection ProtocolA where
   -- Use defaults
 
-instance HasChainIndepState ProtocolA where
-  -- Use defaults
-
 instance ConsensusProtocol ProtocolA where
   type ChainDepState ProtocolA = ()
   type LedgerView    ProtocolA = ()
   type IsLeader      ProtocolA = ()
   type CanBeLeader   ProtocolA = ()
-  type CannotLead    ProtocolA = Void
   type ValidateView  ProtocolA = ()
   type ValidationErr ProtocolA = Void
 
-  checkIsLeader CfgA{..} () _ slot _ =
+  checkIsLeader CfgA{..} () slot _ =
       if slot `Set.member` cfgA_leadInSlots
-      then IsLeader ()
-      else NotLeader
+      then Just ()
+      else Nothing
 
   protocolSecurityParam = cfgA_k
 
@@ -155,9 +151,8 @@ data instance CodecConfig BlockA = CCfgA
   deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockA where
-  getSystemStart     _ = SystemStart dawnOfTime
-  getNetworkMagic    _ = NetworkMagic 0
-  getProtocolMagicId _ = ProtocolMagicId 0
+  getSystemStart  _ = SystemStart dawnOfTime
+  getNetworkMagic _ = NetworkMagic 0
 
 instance StandardHash BlockA
 
@@ -237,22 +232,6 @@ instance CommonProtocolParams BlockA where
   maxHeaderSize _ = maxBound
   maxTxSize     _ = maxBound
 
-instance CanForge BlockA where
-  forgeBlock tlc _ bno sno (TickedLedgerStateA st) _txs _ = BlkA {
-        blkA_header = HdrA {
-            hdrA_fields = HeaderFields {
-                headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
-              , headerFieldSlot    = sno
-              , headerFieldBlockNo = bno
-              }
-          , hdrA_prev = ledgerTipHash st
-          }
-      , blkA_body = Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig)
-      }
-    where
-      ledgerConfig :: PartialLedgerConfig BlockA
-      ledgerConfig = snd $ configLedger tlc
-
 instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()
 
@@ -269,6 +248,42 @@ instance HasPartialLedgerConfig BlockA where
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+
+type instance CannotForge           BlockA = Void
+type instance ForgeStateInfo        BlockA = ()
+type instance ForgeStateUpdateError BlockA = Void
+
+
+forgeBlockA ::
+     TopLevelConfig BlockA
+  -> BlockNo
+  -> SlotNo
+  -> TickedLedgerState BlockA
+  -> [GenTx BlockA]
+  -> IsLeader (BlockProtocol BlockA)
+  -> BlockA
+forgeBlockA tlc bno sno (TickedLedgerStateA st) _txs _ = BlkA {
+      blkA_header = HdrA {
+          hdrA_fields = HeaderFields {
+              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldSlot    = sno
+            , headerFieldBlockNo = bno
+            }
+        , hdrA_prev = ledgerTipHash st
+        }
+    , blkA_body = Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig)
+    }
+  where
+    ledgerConfig :: PartialLedgerConfig BlockA
+    ledgerConfig = snd $ configLedger tlc
+
+blockForgingA :: Monad m => BlockForging m BlockA
+blockForgingA = BlockForging {
+     canBeLeader      = ()
+   , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+   , checkCanForge    = \_ _ _ _ _ -> return ()
+   , forgeBlock       = return .....: forgeBlockA
+   }
 
 -- | See 'Ouroboros.Consensus.HardFork.History.EraParams.safeFromTip'
 safeFromTipA :: SecurityParam -> Word64

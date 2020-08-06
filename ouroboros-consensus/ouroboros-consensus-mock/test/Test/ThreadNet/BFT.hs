@@ -79,16 +79,16 @@ prop_simple_bft_convergence TestSetup
   , setupNodeJoinPlan = nodeJoinPlan
   } =
     prop_general PropGeneralArgs
-      { pgaBlockProperty      = prop_validSimpleBlock
-      , pgaCountTxs           = countSimpleGenTxs
-      , pgaExpectedCannotLead = noExpectedCannotLeads
-      , pgaFirstBlockNo       = 0
-      , pgaFixedMaxForkLength = Nothing
-      , pgaFixedSchedule      =
+      { pgaBlockProperty       = prop_validSimpleBlock
+      , pgaCountTxs            = countSimpleGenTxs
+      , pgaExpectedCannotForge = noExpectedCannotForges
+      , pgaFirstBlockNo        = 0
+      , pgaFixedMaxForkLength  = Nothing
+      , pgaFixedSchedule       =
           Just $ roundRobinLeaderSchedule numCoreNodes numSlots
-      , pgaSecurityParam      = k
-      , pgaTestConfig         = testConfig
-      , pgaTestConfigB        = testConfigB
+      , pgaSecurityParam       = k
+      , pgaTestConfig          = testConfig
+      , pgaTestConfigB         = testConfigB
       }
       testOutput
   where

@@ -166,9 +166,8 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
-  getSystemStart     = getSystemStart     . dualBlockConfigMain
-  getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
-  getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
+  getSystemStart  = getSystemStart  . dualBlockConfigMain
+  getNetworkMagic = getNetworkMagic . dualBlockConfigMain
 
 {-------------------------------------------------------------------------------
   Splitting the config
@@ -696,6 +695,14 @@ instance InspectLedger m => InspectLedger (DualBlock m a) where
         (dualTopLevelConfigMain cfg)
         (dualLedgerStateMain    before)
         (dualLedgerStateMain    after)
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+type instance CannotForge           (DualBlock m a) = CannotForge           m
+type instance ForgeStateInfo        (DualBlock m a) = ForgeStateInfo        m
+type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
 
 {-------------------------------------------------------------------------------
   Auxiliary

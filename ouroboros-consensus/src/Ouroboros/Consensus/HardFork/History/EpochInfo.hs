@@ -36,7 +36,7 @@ summaryToEpochInfo =
   where
     go :: RunWithCachedSummary xs m -> EpochInfo (STM m)
     go run = EpochInfo {
-          epochInfoSize_  = \e -> cachedRunQueryThrow run (QEpochSize   e)
+          epochInfoSize_  = \e -> cachedRunQueryThrow run (epochToSize  e)
         , epochInfoFirst_ = \e -> cachedRunQueryThrow run (epochToSlot' e)
         , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch' s)
         }
@@ -47,7 +47,7 @@ summaryToEpochInfo =
 -- error as a /pure/ exception. Such an exception would indicate a bug.
 snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize_  = \e -> runQueryPure' (QEpochSize   e)
+      epochInfoSize_  = \e -> runQueryPure' (epochToSize  e)
     , epochInfoFirst_ = \e -> runQueryPure' (epochToSlot' e)
     , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch' s)
     }

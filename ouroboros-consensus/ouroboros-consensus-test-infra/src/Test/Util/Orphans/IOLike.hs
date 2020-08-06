@@ -10,4 +10,5 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 instance MonadSTMTxExtended (SimSTM s) where
   lengthTBQueue = lengthTBQueueDefault
 
-instance IOLike (SimM s)
+instance IOLike (SimM s) where
+  forgetSignKeyKES = const $ return ()
