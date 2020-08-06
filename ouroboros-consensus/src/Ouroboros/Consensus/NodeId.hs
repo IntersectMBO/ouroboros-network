@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.NodeId (
@@ -13,6 +14,7 @@ module Ouroboros.Consensus.NodeId (
 import           Codec.Serialise (Serialise)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Quiet
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -36,8 +38,9 @@ instance Condense NodeId where
 newtype CoreNodeId = CoreNodeId {
       unCoreNodeId :: Word64
     }
-  deriving stock   (Show, Eq, Ord)
+  deriving stock   (Eq, Ord, Generic)
   deriving newtype (Condense, Serialise, NoUnexpectedThunks)
+  deriving Show via Quiet CoreNodeId
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId = CoreId

@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.Config.SecurityParam (
@@ -7,6 +8,7 @@ module Ouroboros.Consensus.Config.SecurityParam (
 
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Quiet
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -20,4 +22,5 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Eq, Generic, NoUnexpectedThunks)
+  deriving Show via Quiet SecurityParam

@@ -43,8 +43,9 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Show)
+  deriving (Eq, Generic)
   deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
+  deriving Show via Quiet SystemStart
 
 {-------------------------------------------------------------------------------
   Relative time
@@ -98,7 +99,8 @@ data SystemTime m = SystemTime {
 
 -- | Slot length
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Eq, Generic, NoUnexpectedThunks)
+  deriving Show via Quiet SlotLength
 
 -- | Constructor for 'SlotLength'
 mkSlotLength :: NominalDiffTime -> SlotLength
