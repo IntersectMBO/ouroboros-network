@@ -33,8 +33,8 @@
 
 \tableofcontents
 
-\hypertarget{revision-history}{%
-\section{​2​~Revision History}\label{revision-history}}
+\section{​Revision History}
+\label{revision-history}
 
 \begin{longtable}[]{@{}llll@{}}
 \toprule
@@ -63,8 +63,8 @@ headings\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{executive-summary}{%
-\section{​3​~Executive Summary}\label{executive-summary}}
+\section{​Executive Summary}
+\label{executive-summary}
 
 \emph{\textbf{Purpose of document.} }
 
@@ -114,9 +114,8 @@ globally distributed network. This is a novel, technically complex
 issue. The resulting implementation is carefully designed but relatively
 simple. It has been validated, substantially implemented and tested.
 
-\hypertarget{technical-summary-and-motivation-for-the-new-design}{%
-\section{​4​~Technical Summary and Motivation for the New
-Design}\label{technical-summary-and-motivation-for-the-new-design}}
+\section{​Technical Summary and Motivation for the New Design}
+\label{technical-summary-and-motivation-for-the-new-design}
 
 The networking requirements for a Proof-of-Stake (PoS) system, such as
 Ouroboros, differ from those of a Proof-of-Work (PoW) system, such as
@@ -156,8 +155,8 @@ has not yet been deployed, namely the peer selection and subscription
 management (outline design in
 \protect\hyperlink{decentralisation-design}{{Section 6.7}}).
 
-\hypertarget{introduction}{%
-\section{​5​~Introduction}\label{introduction}}
+\section{​Introduction}
+\label{introduction}
 
 A blockchain is a mechanism for computing \emph{distributed consensus}
 on a global scale, i.e. coming to global agreement on a sequence of
@@ -240,9 +239,8 @@ slightly different things -- technically, data diffuses \emph{across} a
 network -- for simplicity we may use these terms synonymously in this
 document.
 
-\hypertarget{structure-of-the-document}{%
-\subsection{​5.1​~Structure of the
-document}\label{structure-of-the-document}}
+\subsection{​Structure of the document}
+\label{structure-of-the-document}
 
 \todo[inline]{ND: May be missing "this is how the bits fit together" part of the story - this could be as diagram(s) or text.
 The aim would be to "tell them what we are going to tell them" to provide some hooks for the reader to attach ideas to as they are presented.}
@@ -305,8 +303,8 @@ This document is structured as follows:
   \end{quote}
 \end{enumerate}
 
-\hypertarget{overview}{%
-\section{​6​~Overview}\label{overview}}
+\section{​Overview}
+\label{overview}
 
 This document concerns the requirements, constraints and design
 decisions of the network layer of Cardano. However, the network layer
@@ -330,9 +328,8 @@ understand the design constraints and design decisions for the network
 layer implementation we must first consider the requirements,
 constraints and design decisions of the consensus layer implementation.
 
-\hypertarget{consensus-constraints-and-design-decisions}{%
-\subsection{​6.1​~Consensus constraints and design
-decisions}\label{consensus-constraints-and-design-decisions}}
+\subsection{​Consensus constraints and design decisions}
+\label{consensus-constraints-and-design-decisions}
 
 Cardano as a cryptocurrency system fundamentally relies on an
 implementation of Ouroboros {[}BGKR17, BGKRZ19{]}. The underlying
@@ -436,13 +433,10 @@ environment with potentially powerful adversaries. This environment
 combined with the capabilities of the adversaries collectively comprise
 the \protect\hyperlink{high-level-threat-model}{{threat model}}.
 
-\hypertarget{interleaving-transmission-and-validation}{%
-\subsubsection{​6.1.1​~Interleaving transmission and
-validation}\label{interleaving-transmission-and-validation}}
+\subsubsection{Interleaving transmission and validation}
+\label{interleaving-transmission-and-validation}
 
-\hypertarget{the-ouroboros-specification}{%
-\paragraph{​6.1.1.1​~The Ouroboros
-specification}\label{the-ouroboros-specification}}
+\paragraph{The Ouroboros specification}
 
 Ouroboros \emph{as an algorithm specification} is elegantly modular,
 comprising:
@@ -519,9 +513,7 @@ requires the Ouroboros chain selection and chain validation features,
 which can be used to reduce the number of chains broadcast to within a
 plausible bound that could fit within the available resources.
 
-\hypertarget{consequences-of-pos-vs-pow}{%
-\paragraph{​6.1.1.2​~Consequences of PoS vs
-PoW}\label{consequences-of-pos-vs-pow}}
+\paragraph{Consequences of PoS vs PoW}
 
 A crucial difference exists between PoS and PoW at the network layer,
 with significant design consequences: in PoW-based systems,
@@ -581,9 +573,7 @@ implemented in isolation, and that an integrated design is required that
 combines all three areas of Ouroboros functionality: chain broadcast,
 validation and selection.
 
-\hypertarget{bounding-the-resource-use-of-honest-nodes}{%
-\paragraph{​6.1.1.3​~Bounding the resource use of honest
-nodes}\label{bounding-the-resource-use-of-honest-nodes}}
+\paragraph{Bounding the resource use of honest nodes}
 
 An important consideration in making a more detailed design for
 Ouroboros stems from the nature of the proof of the Ouroboros
@@ -707,8 +697,8 @@ cannot easily be adapted to provide an implementation of this design. It
 is nevertheless a relatively simple design and can be implemented
 directly, with some further essential refinement.
 
-\hypertarget{blockbody-splitting}{%
-\subsubsection{​6.1.2​~Block/body splitting}\label{blockbody-splitting}}
+\subsubsection{Block/body splitting}
+\label{blockbody-splitting}
 
 An essential and uncontroversial design refinement in any blockchain
 implementation is to separate block headers and block bodies:
@@ -745,9 +735,8 @@ rather than whole blocks, and using a secondary mechanism to download
 block bodies of interest\footnote{Blocks can be fetched from any peer
   who announces it, or from multiple sources if desired.}.
 
-\hypertarget{stateful-chain-following}{%
-\subsubsection{​6.1.3​~Stateful
-chain-following}\label{stateful-chain-following}}
+\subsubsection{Stateful chain-following}
+\label{stateful-chain-following}
 
 The next design decision revolves around how to implement the
 transmission of chains of headers in a resource-bounded way.
@@ -829,8 +818,8 @@ finality relatively easily. The simplest possible version of the chain
 synchronisation protocol is essentially this, and our final version is
 not significantly more complicated.
 
-\hypertarget{storage-subsystem}{%
-\subsubsection{​6.1.4​~Storage subsystem}\label{storage-subsystem}}
+\subsubsection{Storage subsystem}
+\label{storage-subsystem}
 
 This is not immediately obviously connected to the network design
 decisions, but there are some areas of contact.
@@ -868,8 +857,8 @@ fragments\footnote{The in-memory chain fragment data structure is used
   numbers, in addition to the normal efficient sequence operations.} of
 chain headers where it allows for a simple and efficient representation.
 
-\hypertarget{consensus-components}{%
-\subsection{​6.2​~Consensus components}\label{consensus-components}}
+\subsection{​Consensus components}
+\label{consensus-components}
 
 In addition to chain synchronisation, the consensus implementation needs
 to:
@@ -1060,9 +1049,8 @@ flexibility and makes the code amenable to rigorous component level
 testing and it also simplifies the review process (whether internal or
 external).
 
-\hypertarget{network-constraints-and-design-decisions}{%
-\subsection{​6.3​~Network constraints and design
-decisions}\label{network-constraints-and-design-decisions}}
+\subsection{​Network constraints and design decisions}
+\label{network-constraints-and-design-decisions}
 
 There is no clear line between the consensus and network layers of an
 Ouroboros design. After all, Ouroboros itself is a high-level
@@ -1110,9 +1098,8 @@ requirements on three areas:
   \end{quote}
 \end{enumerate}
 
-\hypertarget{stateful-versus-stateless-protocols}{%
-\subsubsection{​6.3.1​~Stateful versus stateless
-protocols}\label{stateful-versus-stateless-protocols}}
+\subsubsection{Stateful versus stateless protocols}
+\label{stateful-versus-stateless-protocols}
 
 Requirement 1 above (to support a stateful connection-oriented
 application-level protocol) implies some notion of connection or
@@ -1217,8 +1204,8 @@ association with a peer is that, for the duration of that connection, we
 can integrate information derived from that connection to inform local
 decision making.
 
-\hypertarget{concurrency}{%
-\subsubsection{​6.3.2​~Concurrency}\label{concurrency}}
+\subsubsection{Concurrency}
+\label{concurrency}
 
 Recall, from the beginning of
 \protect\hyperlink{network-constraints-and-design-decisions}{{Section
@@ -1248,9 +1235,8 @@ per upstream and downstream peer. In extreme cases, this could be a
 large number of threads but managing this is well within the
 capabilities of the GHC runtime system {[}Marlow13, Chapter 15{]}.
 
-\hypertarget{bearer-and-multiplexing}{%
-\subsubsection{​6.3.3​~Bearer and
-multiplexing}\label{bearer-and-multiplexing}}
+\subsubsection{Bearer and multiplexing}
+\label{bearer-and-multiplexing}
 
 We must pick some underlying lower-level \emph{bearer} protocol over
 which to run the collection of application-level protocols. Having
@@ -1291,8 +1277,8 @@ presented by the multiplexer is essentially the same as that of TCP
 itself: a reliable ordered byte stream. This is described in more detail
 in the \protect\hyperlink{network-mux}{{Annex (12.7.2)}}.
 
-\hypertarget{performance}{%
-\subsubsection{​6.3.4​~Performance}\label{performance}}
+\subsubsection{Performance}
+\label{performance}
 
 Performance is a very important consideration for the network layer,
 deriving from:
@@ -1359,8 +1345,8 @@ is that it tends to complicate the data flow and control flow in the
 application\footnote{Surprisingly few HTTP client applications take
   advantage of HTTP pipelining for example.}.
 
-\hypertarget{binary-formats}{%
-\subsubsection{​6.3.5​~Binary formats}\label{binary-formats}}
+\subsubsection{Binary formats}
+\label{binary-formats}
 
 We must choose an encoding format for messages in the protocols. Choices
 include
@@ -1476,9 +1462,8 @@ compatible implementation. The present implementation uses an existing
 Haskell CBOR implementation that has been tested and externally audited
 to deal robustly with untrusted input.
 
-\hypertarget{network-libraries-and-components}{%
-\subsection{​6.4​~Network libraries and
-components}\label{network-libraries-and-components}}
+\subsection{​Network libraries and components}
+\label{network-libraries-and-components}
 
 Following from the high-level design choices above, the network layer
 design consists of the following libraries and components:
@@ -1710,9 +1695,8 @@ production or in the IO simulator for testing. For example the consensus
 storage subsystem is tested this way with simulated I/O failures and
 file corruption.
 
-\hypertarget{related-work-data-diffusion}{%
-\subsection{​6.5​~Related work (data
-diffusion)}\label{related-work-data-diffusion}}
+\subsection{​Related work (data diffusion)}
+\label{related-work-data-diffusion}
 
 As discussed in
 \protect\hyperlink{interleaving-transmission-and-validation}{{Section
@@ -1723,8 +1707,8 @@ algorithm with the necessary checks is not a reasonable engineering
 trade-off. This excludes many implementations of broadcast, including
 multicast and pub/sub (publish/subscribe) algorithms.
 
-\hypertarget{poldercast}{%
-\subsubsection{​6.5.1​~PolderCast}\label{poldercast}}
+\subsubsection{PolderCast}
+\label{poldercast}
 
 PolderCast {[}SSVV12{]} is an implementation of pub/sub. As such it is
 not useful for an implementation of Ouroboros data diffusion as
@@ -1737,9 +1721,8 @@ in \protect\hyperlink{related-work-decentralisation}{{Section 6.9}} and
 PolderCast is considered in more detail in
 \protect\hyperlink{poldercast-1}{{Section 8.3}}.
 
-\hypertarget{other-blockchain-systems}{%
-\subsubsection{​6.5.2​~Other blockchain
-systems}\label{other-blockchain-systems}}
+\subsubsection{Other blockchain systems}
+\label{other-blockchain-systems}
 
 Significant related work is the data diffusion function of other
 existing (PoW) blockchain systems. As discussed in
@@ -1755,8 +1738,8 @@ in more detail in
 \protect\hyperlink{comparison-with-previous-network-implementations}{{Section
 7.2.2}}.
 
-\hypertarget{other-related-work}{%
-\subsubsection{​6.5.3​~Other related work}\label{other-related-work}}
+\subsubsection{Other related work}
+\label{other-related-work}
 
 Much related work exists on the choice of lower level network protocols.
 HTTP and the issue of stateless protocols was discussed in
@@ -1800,9 +1783,8 @@ literature on session types. The
 Professor Wadler is involved, maintains a large collection of references
 and other resources.
 
-\hypertarget{decentralisation-constraints}{%
-\subsection{​6.6​~Decentralisation
-constraints}\label{decentralisation-constraints}}
+\subsection{​Decentralisation constraints}
+\label{decentralisation-constraints}
 
 The requirements for decentralisation come from a combination of the
 business requirements and technical requirements deriving from
@@ -1999,9 +1981,8 @@ time scales are very practical. More analysis is needed for medium and
 high stake attackers. Our threat model dictates that we must at least
 handle low stake adversaries.
 
-\hypertarget{decentralisation-design}{%
-\subsection{​6.7​~Decentralisation
-design}\label{decentralisation-design}}
+\subsection{​Decentralisation design}
+\label{decentralisation-design}
 
 Analysis of ``S/Kademlia'' suggests that one of the main drivers for its
 complex design is that it attempts to establish a degree of resistance
@@ -2290,9 +2271,8 @@ and hot states. All the rest is governed by purely local policies and
 hence there is significant scope to adjust these over a series of
 releases without introducing significant compatibility problems.
 
-\hypertarget{related-work-decentralisation}{%
-\subsection{​6.8​~Related work
-(decentralisation)}\label{related-work-decentralisation}}
+\subsection{​Related work (decentralisation)}
+\label{related-work-decentralisation}
 
 \todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
 
@@ -2353,13 +2333,11 @@ topic and would benefit from further study.
 Other implementation approaches to decentralization are discussed in
 \protect\hyperlink{analysis-of-alternative-approaches}{{§8}}.
 
-\hypertarget{distributed-consensus-on-a-global-scale}{%
-\section{​7​~Distributed consensus on a global
-scale}\label{distributed-consensus-on-a-global-scale}}
+\section{​Distributed consensus on a global scale}
+\label{distributed-consensus-on-a-global-scale}
 
-\hypertarget{characteristics-of-cardano}{%
-\subsection{​7.1​~Characteristics of
-Cardano}\label{characteristics-of-cardano}}
+\subsection{​Characteristics of Cardano}
+\label{characteristics-of-cardano}
 
 We start with a PoS algorithm called \emph{Ouroboros}, and a
 mathematical proof that it works even with a substantial proportion of
@@ -2386,9 +2364,9 @@ federated nodes that produce blocks.
 \protect\hyperlink{decentralisation-design}{{Full decentralisation}} is
 the goal of the second phase of Shelley.
 
-\hypertarget{fundamental-requirements-of-cardano-data-diffusion}{%
-\subsection{​7.2​~Fundamental requirements of Cardano data
-diffusion}\label{fundamental-requirements-of-cardano-data-diffusion}}
+\subsection{​Fundamental requirements of Cardano data
+diffusion}
+\label{fundamental-requirements-of-cardano-data-diffusion}
 
 The Shelley network component has a specific problem to solve: it must
 meet the \emph{information exchange requirements} of the consensus
@@ -2422,9 +2400,8 @@ performance, in particular the global public IP network\footnote{Which
   also suffers from the legacy of many sub-optimal design decisions
   {[}JD08{]}.}.
 
-\hypertarget{timeliness-constraint}{%
-\subsubsection{​7.2.1​~Timeliness
-constraint}\label{timeliness-constraint}}
+\subsubsection{Timeliness constraint}
+\label{timeliness-constraint}
 
 The time-slotted nature of the Ouroboros algorithm introduces a strong
 timeliness constraint on data diffusion to all nodes. Since \emph{any}
@@ -2487,15 +2464,13 @@ the threats enumerated in
 scale of the network (which will not be under any control once the
 system is fully decentralised).
 
-\hypertarget{comparison-with-previous-network-implementations}{%
-\subsubsection{​7.2.2​~Comparison with previous network
-implementations}\label{comparison-with-previous-network-implementations}}
+\subsubsection{Comparison with previous network implementations}
+\label{comparison-with-previous-network-implementations}
 
 The immediate question is: is this timeliness constraint hard to meet,
 or not? We consider some evidence from Bitcoin, Ethereum, and Cardano.
 
-\hypertarget{bitcoin}{%
-\paragraph{​7.2.2.1​~Bitcoin}\label{bitcoin}}
+\paragraph{Bitcoin}
 
 There is some evidence available from Bitcoin, in the form of two
 research papers and publicly available data following those papers.
@@ -2551,8 +2526,7 @@ block validation is needed before relaying, as not doing so would open
 up an asymmetric resource DoS attack on the network, as discussed in
 \protect\hyperlink{interleaving-transmission-and-validation}{{§6.1.1}}.
 
-\hypertarget{ethereum}{%
-\paragraph{​7.2.2.2​~Ethereum}\label{ethereum}}
+\paragraph{Ethereum}
 
 Etherscan shows data for the
 \href{https://etherscan.io/chart/blocktime}{{average block time in
@@ -2657,8 +2631,7 @@ proving outcomes within a threat model. Indeed, even with the adoption
 of the recommendations from the academic analysis of Ethereum's
 Kademlia, eclipse attacks using thousands of nodes are still possible.
 
-\hypertarget{cardano-byron}{%
-\paragraph{​7.2.2.3​~Cardano Byron}\label{cardano-byron}}
+\paragraph{Cardano Byron}
 
 The third data point is the first implementation of Cardano itself.
 Before launching, an extensive benchmark/stress test determined that we
@@ -2682,9 +2655,8 @@ surrounded by relay nodes that facilitate communication with end users
 -- and to the long-term decision to design a network stack that could
 handle the unique requirements of Cardano.
 
-\hypertarget{stateful-connections}{%
-\subsubsection{​7.2.3​~Stateful
-connections}\label{stateful-connections}}
+\subsubsection{Stateful connections}
+\label{stateful-connections}
 
 In constructing an implementation of the consensus algorithm, it is
 essential to interleave aspects of validation with communication, as
@@ -2695,9 +2667,8 @@ communications} from any peer needs to be preserved, which means that
 connections need to be stateful. This effectively rules out stateless
 communication stacks, such as typical RPC approaches.
 
-\hypertarget{high-level-threat-model}{%
-\subsection{​7.3​~High-level threat
-model}\label{high-level-threat-model}}
+\subsection{​High-level threat model}
+\label{high-level-threat-model}
 
 Fundamentally, the threat model is that of Ouroboros, with some
 practical real-world considerations (like having to work on the existing
@@ -2749,8 +2720,8 @@ The principal threats considered in the Shelley network design are:
 The response to these in the Shelley network design is summarised in
 \protect\hyperlink{summary-response-to-threats}{{§10.9.}}
 
-\hypertarget{adversarial-peers}{%
-\subsubsection{​7.3.1​~Adversarial peers}\label{adversarial-peers}}
+\subsubsection{Adversarial peers}
+\label{adversarial-peers}
 
 The Cardano system consists of independently operating nodes that
 exchange information according to a specific protocol; the set of nodes
@@ -2789,8 +2760,8 @@ invalid blocks, and low level examples such as sending unexpected or
 ill-formed protocol messages. Non-functional violations include examples
 such as failing to forward blocks or transactions.
 
-\hypertarget{eclipse-attacks}{%
-\subsubsection{​7.3.2​~Eclipse attacks}\label{eclipse-attacks}}
+\subsubsection{Eclipse attacks}
+\label{eclipse-attacks}
 
 A particular case of adversarial peers is the \textbf{eclipse attack},
 in which a high proportion of a node's peers are adversarial and
@@ -2818,9 +2789,8 @@ blocks that are invalid. This means that making eclipse attacks
 difficult is \emph{not} a requirement for the network component of
 Shelley.
 
-\hypertarget{resource-exhaustion-attacks}{%
-\subsubsection{​7.3.3​~Resource exhaustion
-attacks}\label{resource-exhaustion-attacks}}
+\subsubsection{Resource exhaustion attacks}
+\label{resource-exhaustion-attacks}
 
 Another way to attack a node is to exhaust some resource such as:
 
@@ -2886,8 +2856,8 @@ constraint; if an attacker can increase the resources used by a node to
 the point where it becomes significantly slower to respond this could
 impact timely diffusion of blocks.
 
-\hypertarget{tier-1-actors}{%
-\subsubsection{​7.3.4​~Tier-1 actors}\label{tier-1-actors}}
+\subsubsection{Tier-1 actors}
+\label{tier-1-actors}
 
 Executing any consensus algorithm between a set of distributed nodes
 connected by the global IP network adds new threats from outside the
@@ -2908,9 +2878,8 @@ be preserved. Ensuring the delivery of correct and timely information so
 that Cardano as a whole cannot be easily compromised is one of the
 primary goals of the network design.
 
-\hypertarget{bearer-level-attacks}{%
-\subsubsection{​7.3.5​~Bearer-level
-attacks}\label{bearer-level-attacks}}
+\subsubsection{Bearer-level attacks}
+\label{bearer-level-attacks}
 
 In our context, the bearer is TCP over the public IP network. An attack
 on the node at this level is typically a denial-of-service (DoS) attack
@@ -2922,9 +2891,8 @@ affected by any action a node can take\footnote{An organisation or
   longer timescale.}. However, the impact of such attacks can be
 mitigated by careful design of the network architecture.
 
-\hypertarget{analysis-of-alternative-approaches}{%
-\section{​8​~Analysis of alternative
-approaches}\label{analysis-of-alternative-approaches}}
+\section{​Analysis of alternative approaches}
+\label{analysis-of-alternative-approaches}
 
 A variety of approaches to constructing networks have been proposed in
 the literature. Questions to ask about them include:
@@ -3013,8 +2981,8 @@ In general:
 
 We now consider selected published related work in more detail.
 
-\hypertarget{dandelion}{%
-\subsection{​8.1​~Dandelion}\label{dandelion}}
+\subsection{​Dandelion}
+\label{dandelion}
 
 This is an approach to improve potential anonymity for the submission of
 transactions in existing cryptocurrency network systems such as
@@ -3028,8 +2996,8 @@ system provides no guarantee of anonymity against
 Such anonymity enhancement is not a requirement for Shelley, but could
 be considered in later iterations.
 
-\hypertarget{kademlia}{%
-\subsection{​8.2​~Kademlia}\label{kademlia}}
+\subsection{​Kademlia}
+\label{kademlia}
 
 Kademlia {[}MM02{]} is an approach to creating distributed hash tables,
 which helps with randomizing peer choices to minimise the risk of node
@@ -3199,8 +3167,8 @@ In summary, Kademlia:
   \end{itemize}
 \end{itemize}
 
-\hypertarget{poldercast-1}{%
-\subsection{​8.3​~PolderCast}\label{poldercast-1}}
+\subsection{PolderCast}
+\label{poldercast-1}
 
 PolderCast {[}SSVV12{]} is a pub/sub system designed to support large
 numbers of ``topic'' channels, each with a few publishers and many
@@ -3281,8 +3249,8 @@ channel. Thus, PolderCast has no means of managing node resources at
 either the network or data storage levels, which arms a range of
 denial-of-service attacks.
 
-\hypertarget{summary-of-comparison}{%
-\subsection{​8.4​~Summary of comparison}\label{summary-of-comparison}}
+\subsection{Summary of comparison}
+\label{summary-of-comparison}
 
 \begin{longtable}[]{@{}llll@{}}
 \toprule
@@ -3314,9 +3282,8 @@ misaligned\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{operational-environment-and-constraints}{%
-\section{​9​~Operational environment and
-constraints}\label{operational-environment-and-constraints}}
+\section{​Operational environment and constraints}
+\label{operational-environment-and-constraints}
 
 Cardano Shelley should be realisable on various platforms and scales of
 resources, from large stake pools processing many transactions and
@@ -3421,8 +3388,8 @@ It should be executable without consuming excessive\footnote{We take a
   \end{quote}
 \end{itemize}
 
-\hypertarget{thresholds-and-targets}{%
-\subsection{​9.1​~Thresholds and targets}\label{thresholds-and-targets}}
+\subsection{Thresholds and targets}
+\label{thresholds-and-targets}
 
 The fundamental task of the data diffusion function is to distribute
 blocks amongst peers in a timely fashion. Failure to deliver on time
@@ -3469,8 +3436,8 @@ so the maximum rate that needs to be sustained\footnote{Note that this
 is only 100kb/s, which is roughly 1Mbit/s, even in the `super-stretch'
 scenario where 2Mb blocks emerge (on average) every 20s.
 
-\hypertarget{fundamental-tradeoffs}{%
-\subsection{​9.2​~Fundamental tradeoffs}\label{fundamental-tradeoffs}}
+\subsection{Fundamental tradeoffs}
+\label{fundamental-tradeoffs}
 
 The intrinsic nature of any distributed consensus process (as discussed
 in \protect\hyperlink{decentralisation-constraints}{{§6.6}} above)
@@ -3566,9 +3533,8 @@ transactions sizes in the 8k+ range. Envisaged future uses (Plutus /
 Marlow) will bring with them their own characteristic transaction size
 distributions.
 
-\hypertarget{adversarial-power-and-knowledge}{%
-\subsection{​9.3​~Adversarial power and
-knowledge}\label{adversarial-power-and-knowledge}}
+\subsection{Adversarial power and knowledge}
+\label{adversarial-power-and-knowledge}
 
 Following established best practice in security design, we assume the
 adversary knows every detail of how the system works (i.e. has access to
@@ -3589,15 +3555,15 @@ We assume that power outages, network connectivity failures, routing
 table failures etc. can occur, but can't be predicted or correlated by
 an adversary. An adversary might exploit them when they occur, however.
 
-\hypertarget{stake-distribution}{%
-\subsection{​9.4​~Stake distribution}\label{stake-distribution}}
+\subsection{Stake distribution}
+\label{stake-distribution}
 
 Assuming that stake pools exhibit rational behavior, we expect of our
 delegation design\footnote{https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/delegationDesignSpec/latest/download-by-type/doc-pdf/delegation\_design\_spec}
 that roughly {1000 peers}\todo{PT: still correct?} will hold at least 80\% of the total stake.
 
-\hypertarget{graceful-degradation}{%
-\subsection{​9.5​~Graceful degradation}\label{graceful-degradation}}
+\subsection{Graceful degradation}
+\label{graceful-degradation}
 
 In order to maximise the chances that Cardano/Shelley will survive a
 major incident, we need to implement a precedence order of failure. This
@@ -3623,9 +3589,8 @@ means prioritising:
   \end{quote}
 \end{enumerate}
 
-\hypertarget{backward-compatibility-and-extensibility}{%
-\subsection{​9.6​~Backward compatibility and
-extensibility}\label{backward-compatibility-and-extensibility}}
+\subsection{Backward compatibility and extensibility}
+\label{backward-compatibility-and-extensibility}
 
 While Shelley aims to be more efficient than Byron, it must still be
 possible to communicate between the two different versions of Cardano in
@@ -3639,8 +3604,8 @@ to provide a clean boundary between the network component and the
 consensus component, so that they can be developed, tested, and evolve
 independently.
 
-\hypertarget{key-design-decisions}{%
-\section{​10​~Key design decisions}\label{key-design-decisions}}
+\section{​Key design decisions}
+\label{key-design-decisions}
 
 Creating an efficient implementation of an algorithm\footnote{For
   Ouroboros, an example would be broadcasting blocks rather than
@@ -3710,9 +3675,8 @@ The most important are:
   \end{quote}
 \end{itemize}
 
-\hypertarget{stateful-implementation}{%
-\subsection{​10.1​~Stateful
-implementation}\label{stateful-implementation}}
+\subsection{Stateful implementation}
+\label{stateful-implementation}
 
 As noted in \protect\hyperlink{stateful-chain-following}{{Section
 6.1.3}}, the option to have a connection-oriented stateful protocol
@@ -3772,8 +3736,8 @@ in software support, tool support and in the physical infrastructure of
 the internet. Furthermore it is supported in every OS and receives
 updates for security and performance issues.
 
-\hypertarget{peer-with-peer}{%
-\subsection{​10.2​~Peer-with-peer}\label{peer-with-peer}}
+\subsection{Peer-with-peer}
+\label{peer-with-peer}
 
 A typical `peer-to-peer' application such as BitTorrent or PolderCast
 establishes a forwarding graph between nodes and then forwards data as
@@ -3839,9 +3803,8 @@ design decisions:
   \end{quote}
 \end{enumerate}
 
-\hypertarget{validated-forwarding}{%
-\subsubsection{​10.2.1​~Validated
-forwarding}\label{validated-forwarding}}
+\subsubsection{Validated forwarding}
+\label{validated-forwarding}
 
 Nodes are responsible for the validity of forwarded messages. In
 particular, messages must be:
@@ -3908,9 +3871,8 @@ design is discussed in full detail, with justification and a diagram, in
 \protect\hyperlink{consensus-constraints-and-design-decisions}{{Sections
 6.1}} and \protect\hyperlink{consensus-components}{{6.2}}.
 
-\hypertarget{demand-driven-protocols}{%
-\subsubsection{​10.2.2​~Demand-driven
-protocols}\label{demand-driven-protocols}}
+\subsubsection{Demand-driven protocols}
+\label{demand-driven-protocols}
 
 Protocols are designed in a demand-driven style, so that for each node
 and each peer connected to that node, the node controls the rate of data
@@ -3938,8 +3900,8 @@ value in sending such information. Thus approaches such as reputation
 scores to assess trustworthiness of nodes cannot be employed. Each node
 trusts only information that it can verify itself.
 
-\hypertarget{network-architecture}{%
-\subsection{​10.3​~Network architecture}\label{network-architecture}}
+\subsection{Network architecture}
+\label{network-architecture}
 
 The approach to mitigation of bearer-level DoS attacks is to defend
 \textbf{core} nodes, meaning the top stake pools and the transitional
@@ -3961,8 +3923,8 @@ This is embodied in the figure below:
 
 \includegraphics[width=6.26772in,height=3.61111in]{./media/image5.png}
 
-\hypertarget{development-approach}{%
-\subsection{​10.4​~Development approach}\label{development-approach}}
+\subsection{Development approach}
+\label{development-approach}
 
 To deal with the threat of an adversary who knows the code (which is
 inevitable for an open-source project), two methods were used to
@@ -4007,9 +3969,8 @@ eliminate implementation errors:
   \end{enumerate}
 \end{enumerate}
 
-\hypertarget{session-type-framework}{%
-\subsubsection{​10.4.1​~Session Type
-Framework}\label{session-type-framework}}
+\subsubsection{Session Type Framework}
+\label{session-type-framework}
 
 An important feature of any protocol design is avoiding deadlock, in
 which both parties are either waiting for something or trying to send
@@ -4051,9 +4012,8 @@ protocols with mathematical precision, providing proofs of their
 correctness. We can also write tests for the protocols without running
 them on a network or using multiple threads.
 
-\hypertarget{point-to-point-bearers}{%
-\subsection{​10.5​~Point-to-point
-bearers}\label{point-to-point-bearers}}
+\subsection{Point-to-point bearers}
+\label{point-to-point-bearers}
 
 The idea is to use a single `bearer' between peers over which all
 interactions are multiplexed . This allows us to control the resources
@@ -4084,9 +4044,8 @@ This also accords with the `minimise resource usage' principle expressed
 at the start of §6, by using only one TCP port per connected peer. Also,
 using a uniform abstraction reduces the attack surface.
 
-\hypertarget{demand-driven-spanning-tree}{%
-\subsection{​10.6​~Demand-driven spanning
-tree}\label{demand-driven-spanning-tree}}
+\subsection{Demand-driven spanning tree}
+\label{demand-driven-spanning-tree}
 
 The set of nodes that blocks need to reach quickly is given by the stake
 distribution/number of stake pools. The block distribution time then
@@ -4143,11 +4102,11 @@ peer that is downloading blocks from the node will consume up to
 capacity could not accept requests from more than 10 peers. In extreme
 cases it might only serve blocks it generated itself!
 
-\hypertarget{protocol-framework}{%
-\subsection{​10.7​~Protocol framework}\label{protocol-framework}}
+\subsection{Protocol framework}
+\label{protocol-framework}
 
-\hypertarget{compositionality}{%
-\subsubsection{​10.7.1​~Compositionality}\label{compositionality}}
+\subsubsection{Compositionality}
+\label{compositionality}
 
 Shelley fundamentally improves on Byron by having a \emph{compositional}
 design. This strong form of modularity means that separate aspects of
@@ -4187,9 +4146,8 @@ overhead, both in bytes over the network and in CPU cycles\footnote{Note
   effectively run a Cardano node, as
   \protect\hyperlink{fundamental-tradeoffs}{{discussed in §9.2.}}}.
 
-\hypertarget{structured-information-exchanges}{%
-\subsubsection{​10.7.2​~Structured information
-exchanges}\label{structured-information-exchanges}}
+\subsubsection{Structured information exchanges}
+\label{structured-information-exchanges}
 
 A naive implementation of Ouroboros would transmit far more data than
 strictly necessary, making it impossible to meet the timeliness
@@ -4270,9 +4228,8 @@ Details of these protocols can be found in the
 \href{https://hydra.iohk.io/build/1011577/download/1/network.pdf}{{second
 part of the design documentation}}.
 
-\hypertarget{protocol-polymorphism}{%
-\subsubsection{​10.7.3​~Protocol polymorphism
-}\label{protocol-polymorphism}}
+\subsubsection{Protocol polymorphism}
+\label{protocol-polymorphism}
 
 A key point is the separation of:
 
@@ -4307,9 +4264,8 @@ provides a clean separation of concerns between the components and
 allows consensus algorithm evolution without changing the data diffusion
 code.
 
-\hypertarget{performance-assessment-and-optimisation}{%
-\subsection{​10.8​~Performance assessment and
-optimisation}\label{performance-assessment-and-optimisation}}
+\subsection{Performance assessment and optimisation}
+\label{performance-assessment-and-optimisation}
 
 The strict timeliness constraints of block diffusion means that the data
 diffusion component must constantly monitor and optimise performance.
@@ -4334,9 +4290,8 @@ the bearer (this is discussed in more
 The goal is to optimise the topography of the data diffusion network,
 not just its topology.
 
-\hypertarget{summary-response-to-threats}{%
-\subsection{​10.9​~Summary response to
-threats}\label{summary-response-to-threats}}
+\subsection{Summary response to threats}
+\label{summary-response-to-threats}
 
 Here we summarise the responses to the threats discussed in
 \protect\hyperlink{high-level-threat-model}{{§7.3}} embodied in the
@@ -4361,8 +4316,8 @@ stake-holding nodes are defended against DoS attacks\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{bootstrap}{%
-\subsection{​10.10​~Bootstrap}\label{bootstrap}}
+\subsection{Bootstrap}
+\label{bootstrap}
 
 Note that the problem of NAT/firewalls means that there is no way to
 construct a network without at least some nodes having accessible public
@@ -4406,13 +4361,11 @@ addresses of) other nodes is called `gossiping', and is required for the
 fully decentralised version of Shelley (2.2). The implementation that
 will be taken here is inspired by Kademlia, but can be far less complex.
 
-\hypertarget{outstandingunresolved-issues}{%
-\section{​11​~Outstanding/unresolved
-issues}\label{outstandingunresolved-issues}}
+\section{Outstanding/unresolved issues}
+\label{outstandingunresolved-issues}
 
-\hypertarget{coldblack-start-scenarios}{%
-\subsection{​11.1​~Cold/black start
-scenarios}\label{coldblack-start-scenarios}}
+\subsection{Cold/black start scenarios}
+\label{coldblack-start-scenarios}
 
 Cold start scenarios arise when some event has taken all block-producing
 nodes and other intermediate nodes offline for some time. Examples
@@ -4425,9 +4378,8 @@ and handling them may require Ouroboros protocol modifications, and may
 also require additional out-of-band communication between stake pool
 operators. This requires further analysis.
 
-\hypertarget{resources-and-decentralisation}{%
-\subsection{​11.2​~Resources and
-decentralisation}\label{resources-and-decentralisation}}
+\subsection{Resources and decentralisation}
+\label{resources-and-decentralisation}
 
 The size ratio between empty and full blocks is more than 3000, and to
 create full blocks a similar amount of data must be moved in
@@ -4459,16 +4411,16 @@ allocation and other stakepool operation is, perhaps, something that the
 Cardano Foundation could help manage through a suitable conformance /
 certification programme.
 
-\hypertarget{annexes}{%
-\section{​12​~Annexes}\label{annexes}}
+\section{​Annexes}
+\label{annexes}
 
-\hypertarget{business-requirements}{%
 \subsection[​12.1​~Business
 requirements]{\texorpdfstring{​12.1​~Business requirements\footnote{Reproduced
   from
   \href{https://github.com/input-output-hk/ouroboros-network-docs/blob/master/technical-report/network.pdf}{{part
   2 of the documentation}} to satisfy the requirement for a
-  self-contained document.}}{​12.1​~Business requirements}}\label{business-requirements}}
+  self-contained document.}}{​12.1​~Business requirements}}
+\label{business-requirements}
 
 The high level business requirements reproduced below in italics come
 from
@@ -4495,13 +4447,10 @@ style. Roughly, there are three kinds of users:
   \end{quote}
 \end{enumerate}
 
-\hypertarget{network-connectivity}{%
-\subsubsection{​12.1.1​~Network
-connectivity}\label{network-connectivity}}
+\subsubsection{Network connectivity}
+\label{network-connectivity}
 
-\hypertarget{participate-as-a-user-who-has-delegated}{%
-\paragraph{​12.1.1.1​~Participate as a user who has delegated
-}\label{participate-as-a-user-who-has-delegated}}
+\paragraph{Participate as a user who has delegated}
 
 As a Daedalus home user with my stake delegated to other users I would
 like to join the Cardano network so I can participate in the network.
@@ -4541,9 +4490,7 @@ like to join the Cardano network so I can participate in the network.
   \end{quote}
 \end{enumerate}
 
-\hypertarget{participate-in-network-as-small-stakeholder}{%
-\paragraph{​12.1.1.2​~Participate in network as small stakeholder
-}\label{participate-in-network-as-small-stakeholder}}
+\paragraph{Participate in network as small stakeholder}
 
 As a Daedalus home user operating a node with a small stake, I would
 like to join the Cardano network so I can participate in the network as
@@ -4634,9 +4581,7 @@ else.
   \end{quote}
 \end{enumerate}
 
-\hypertarget{participate-in-network-as-a-large-stakeholder}{%
-\paragraph{​12.1.1.3​~Participate in network as a large stakeholder
-}\label{participate-in-network-as-a-large-stakeholder}}
+\paragraph{Participate in network as a large stakeholder}
 
 As a user running a core node on a server and with large stake in the
 network, I would like to join the Cardano network so I can participate
@@ -4742,12 +4687,10 @@ Stretch & \textgreater{} 99\%\tabularnewline
   \end{quote}
 \end{enumerate}
 
-\hypertarget{network-performance}{%
-\subsubsection{​12.1.2​~Network performance}\label{network-performance}}
+\subsubsection{Network performance}
+\label{network-performance}
 
-\hypertarget{poor-network-connectivity-notification}{%
-\paragraph{​12.1.2.1​~Poor network connectivity notification
-}\label{poor-network-connectivity-notification}}
+\paragraph{Poor network connectivity notification}
 
 As a home user, I want to see a network connection status on Daedalus so
 that I know the state of my network connection.
@@ -4789,9 +4732,7 @@ This assumes that the slot time remains 20 seconds\footnote{Under Praos
   this should be interpreted as the average time between production of
   new blocks is 20 seconds.}.
 
-\hypertarget{transaction-throughput}{%
-\paragraph{​12.1.2.2​~Transaction
-Throughput}\label{transaction-throughput}}
+\paragraph{Transaction Throughput}
 
 The transaction per second of the system as a whole will be:
 
@@ -4807,9 +4748,7 @@ The transaction per second of the system as a whole will be:
 
 This assumes that the slot time remains 20 seconds.
 
-\hypertarget{network-bearer-resource-use-end-user-control}{%
-\paragraph{​12.1.2.3​~Network Bearer Resource Use -- end user
-control}\label{network-bearer-resource-use-end-user-control}}
+\paragraph{Network Bearer Resource Use -- end user control}
 
 As a user operating on the network as a home user not behind a firewall,
 I would like a cap on the total amount of network capacity in terms of
@@ -4858,9 +4797,7 @@ data diffusion function.
   \end{quote}
 \end{enumerate}
 
-\hypertarget{participant-performance-measurement}{%
-\paragraph{​12.1.2.4​~Participant performance measurement
-}\label{participant-performance-measurement}}
+\paragraph{Participant performance measurement}
 
 There may be a requirement for measuring if a large stakeholder is not
 meeting their network obligation Brünjes et al. (2018).
@@ -4869,12 +4806,10 @@ It is accepted that this requirement is a ``nice to have'', and it has
 not been established that it is possible, nor has it been incorporated
 into the incentives mechanism.
 
-\hypertarget{distributed-system-resilience-and-security}{%
-\subsubsection{​12.1.3​~Distributed System Resilience and
-Security}\label{distributed-system-resilience-and-security}}
+\subsubsection{Distributed System Resilience and Security}
+\label{distributed-system-resilience-and-security}
 
-\hypertarget{resilience-to-abuse}{%
-\paragraph{​12.1.3.1​~Resilience to abuse}\label{resilience-to-abuse}}
+\paragraph{Resilience to abuse}
 
 As a user I should not be able to attack the system using an asymmetric
 denial of service attack that will deplete network resources from other
@@ -4901,8 +4836,7 @@ users.
   \end{quote}
 \end{enumerate}
 
-\hypertarget{ddos-protection}{%
-\paragraph{​12.1.3.2​~DDoS protection}\label{ddos-protection}}
+\paragraph{DDoS protection}
 
 As a large stakeholder running a core node on a server, I should still
 be able to communicate with other users in this segment, even if the
@@ -4951,12 +4885,10 @@ Assumption
   \end{quote}
 \end{itemize}
 
-\hypertarget{network-decentralisation}{%
-\subsubsection{​12.1.4​~Network
-decentralisation}\label{network-decentralisation}}
+\subsubsection{Network decentralisation}
+\label{network-decentralisation}
 
-\hypertarget{no-hegemony}{%
-\paragraph{​12.1.4.1​~No hegemony}\label{no-hegemony}}
+\paragraph{No hegemony}
 
 As a user I want to be assured that IOHK and its business partners are
 not in an especially privileged position in terms of trust,
@@ -4976,9 +4908,8 @@ avoided.
   \end{quote}
 \end{itemize}
 
-\hypertarget{tcp-rpc-response-behavior}{%
-\subsection{​12.2​~TCP RPC response
-behavior}\label{tcp-rpc-response-behavior}}
+\subsection{TCP RPC response behavior}
+\label{tcp-rpc-response-behavior}
 
 In Shelley we are using (pre-established) TCP/IP bearers, over which
 information exchanges are multiplexed.
@@ -5018,10 +4949,8 @@ information exchanges are multiplexed.
   \end{quote}
 \end{enumerate}
 
-\hypertarget{time-to-transmit-a-block-of-given-size-across-given-latencies}{%
-\subsubsection{​12.2.1​~Time to transmit a block of given size across
-given
-latencies}\label{time-to-transmit-a-block-of-given-size-across-given-latencies}}
+\subsubsection{Time to transmit a block of given size across given latencies}
+\label{time-to-transmit-a-block-of-given-size-across-given-latencies}
 
 The ∆Q\textbar{}\textsubscript{G} value\footnote{The concept of ∆Q is
   explained in {[}Comp20{]}. Here is a link to
@@ -5154,10 +5083,8 @@ Medium max window size (near default) & & & & & & & & & &\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{examples-of-tcpip-window-opening-between-london-and-sydney}{%
-\subsubsection{​12.2.2​~Examples of TCP/IP window opening between London
-and Sydney
-}\label{examples-of-tcpip-window-opening-between-london-and-sydney}}
+\subsubsection{Examples of TCP/IP window opening between London and Sydney}
+\label{examples-of-tcpip-window-opening-between-london-and-sydney}
 
 The figure below shows the window size over a four-minute run:
 
@@ -5175,9 +5102,8 @@ rule''; if an odd number of packets arrived just before a pause, its
 acknowledgement would be dependent on the ACK timeout
 (\textasciitilde{}40ms ?).
 
-\hypertarget{model-of-network-scaling}{%
-\subsection{​12.3​~Model of network
-scaling}\label{model-of-network-scaling}}
+\subsection{Model of network scaling}
+\label{model-of-network-scaling}
 
 Per-hop budget for ``data diffusion''
 
@@ -5225,9 +5151,8 @@ because it reduces the per-hop time budget, and a large valency is
 problematic because it increases the resources required by a node. The
 figures in red represent reasonable compromises.
 
-\hypertarget{performance-model-of-ouroboros-praos}{%
-\subsection{​12.4​~Performance model of Ouroboros
-Praos}\label{performance-model-of-ouroboros-praos}}
+\subsection{Performance model of Ouroboros Praos}
+\label{performance-model-of-ouroboros-praos}
 
 \begin{longtable}[]{@{}lll@{}}
 \toprule
@@ -5246,9 +5171,8 @@ k & Depth of chain for effective immutability &\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{distribution-of-leadership}{%
-\subsubsection{​12.4.1​~Distribution of
-leadership}\label{distribution-of-leadership}}
+\subsubsection{Distribution of leadership}
+\label{distribution-of-leadership}
 
 From {[}BGKR17{]}, the probability of stakeholder U\textsubscript{i}
 with relative stake \(\alpha_{i}\)being chosen in any slot is:
@@ -5333,9 +5257,8 @@ least one leader in time t, then t is bounded by:
 This is relevant for the consideration of timeouts that might be
 triggered by a leaderless interval.
 
-\hypertarget{comparison-with-general-overlay-networks}{%
-\subsection{​12.5​~Comparison with general overlay networks
-}\label{comparison-with-general-overlay-networks}}
+\subsection{Comparison with general overlay networks}
+\label{comparison-with-general-overlay-networks}
 
 One approach to building a large-scale decentralized blockchain
 applications is to take existing P2P protocols designed for other
@@ -5468,9 +5391,8 @@ of commonality and of a consistent theory of operation\tabularnewline
 \bottomrule
 \end{longtable}
 
-\hypertarget{time-synchronisation-constraints}{%
-\subsection{​12.6​~Time synchronisation
-constraints}\label{time-synchronisation-constraints}}
+\subsection{Time synchronisation constraints}
+\label{time-synchronisation-constraints}
 
 Ouroboros Praos (in common with the original `classic' version) assumes
 that the notion of a time-slot is unambiguous, which requires
@@ -5511,8 +5433,8 @@ the consequences of violating the clock-synchronisation assumption of
 {[}BGKR17{]}, since Cardano is otherwise potentially vulnerable to
 NTP-spoofing attacks.
 
-\hypertarget{leap-seconds}{%
-\subsubsection{​12.6.1​~Leap seconds}\label{leap-seconds}}
+\subsubsection{Leap seconds}
+\label{leap-seconds}
 
 A further complication arises from the occasional insertion of `leap
 seconds' into UTC. A leap second is a one-second adjustment that is
@@ -5579,9 +5501,8 @@ node happened to be synchronised with GPS time, say, and failed to
 account for the offset to UTC, it would be unable to participate
 properly in the protocol.
 
-\hypertarget{ouroboros-network-components}{%
-\subsection{​12.7​~Ouroboros Network
-Components}\label{ouroboros-network-components}}
+\subsection{Ouroboros Network Components}
+\label{ouroboros-network-components}
 
 The \textbf{Ouroboros Network} implementation consists of the following
 Haskell packages:
@@ -5632,8 +5553,8 @@ The bearer is an abstraction which allows reading / writing bytes from
 the underlying network (TCP socket, Unix socket, Windows named pipes,
 etc.). Protocols are expressed using the session type framework.
 
-\hypertarget{typed-protocols}{%
-\subsubsection{​12.7.1​~Typed Protocols}\label{typed-protocols}}
+\subsubsection{Typed Protocols}
+\label{typed-protocols}
 
 Typed protocols is a standalone library which implements a form of
 \textbf{session types}. It allows expression of both a server and a
@@ -5663,8 +5584,8 @@ other low level network protocols is also plausible. Within a local
 computational context we can use named pipes as the bearers, which
 removes a lot of complexity.
 
-\hypertarget{network-mux}{%
-\subsubsection{​12.7.2​~Network-Mux}\label{network-mux}}
+\subsubsection{Network-Mux}
+\label{network-mux}
 
 \emph{network-mux} is a general multiplexing library which allows us to
 run multiple protocols over a single bearer. The multiplexer avoids
@@ -5696,24 +5617,18 @@ simultaneously.
 This component is independent of typed-protocols (or any protocol
 library), and thus can be used for many different purposes.
 
-\hypertarget{data-flow-in-network-mux}{%
-\paragraph{​12.7.2.1​~Data Flow in
-Network-Mux}\label{data-flow-in-network-mux}}
+\paragraph{Data Flow in Network-Mux}
 
-\hypertarget{incoming-data-path-ingress-path}{%
-\subparagraph{​12.7.2.1.1​~Incoming Data path (Ingress
-path)}\label{incoming-data-path-ingress-path}}
+\subparagraph{Incoming Data path (Ingress path)}
 
 \includegraphics[width=6.27083in,height=2.875in]{./media/image2.png}
 
-\hypertarget{outgoing-data-path-egress-path}{%
-\subparagraph{​12.7.2.1.2​~Outgoing Data Path (Egress
-Path)}\label{outgoing-data-path-egress-path}}
+\subparagraph{Outgoing Data Path (Egress Path)}
 
 ~\includegraphics[width=6.27083in,height=2.59722in]{./media/image6.png}
 
-\hypertarget{ouroboros-network}{%
-\subsubsection{​12.7.3​~Ouroboros-Network}\label{ouroboros-network}}
+\subsubsection{Ouroboros-Network}
+\label{ouroboros-network}
 
 The \emph{ouroboros-network} library implements \textbf{mini-protocols}
 for \emph{node-to-node} and \emph{node-to-client} communication using
@@ -5773,9 +5688,7 @@ are using the same \emph{chain-sync} protocol, but the difference is
 that for the former we are only sending headers through the network,
 while the latter is sending whole blocks.
 
-\hypertarget{block-fetch-component}{%
-\paragraph{​12.7.3.1​~Block Fetch
-Component}\label{block-fetch-component}}
+\paragraph{Block Fetch Component}
 
 Block fetch logic is the component responsible for downloading blocks
 from connected peers. It runs the client and server sides of the block
@@ -5784,9 +5697,7 @@ component which orchestrates all the downloads. The block fetch logic
 makes decisions from whom to download a block (as blocks may be
 available from various peers).
 
-\hypertarget{handshake-mini-protocol}{%
-\paragraph{​12.7.3.2​~Handshake Mini
-Protocol}\label{handshake-mini-protocol}}
+\paragraph{Handshake Mini Protocol}
 
 On all incoming connections, before starting the multiplexer we run a
 handshake protocol. It allows agreement on protocol parameters. It is
@@ -5798,9 +5709,7 @@ distinguishing various networks, e.g. stage-net, test-net, main-net. The
 protocol is extensible in the sense that any future version can support
 its own set of protocol parameters.
 
-\hypertarget{other-components-of-ouroboros-network-package}{%
-\paragraph{​12.7.3.3​~Other components of Ouroboros-Network
-package}\label{other-components-of-ouroboros-network-package}}
+\paragraph{Other components of Ouroboros-Network package}
 
 We implemented a peer-to-peer governor which role is to drive decisions
 about promotions, demotions and gossip. It is there to provide the rest
@@ -5813,8 +5722,8 @@ handle various deployment scenarios as well as internal usage - we plan
 to use it not only in a decentralised setting but also to subscribe
 clients (wallets, explorers) over a local bearer to a node.
 
-\hypertarget{chain-fragments}{%
-\subparagraph{​12.7.3.3.1​~Chain Fragments}\label{chain-fragments}}
+\subparagraph{Chain Fragments}
+\label{chain-fragments}
 
 This is a small part of the Ouroboros-Network package which implements
 efficient chain data structure: `ChainFragment` and `AnchoredChain`.
@@ -5827,9 +5736,8 @@ tree} data structure instantiated for block headers to enable efficient
 O(log n) operations based on slot numbers and block numbers, in addition
 to the normal efficient sequence operations.
 
-\hypertarget{simulator-environment-simm}{%
-\subsubsection{​12.7.4​~Simulator environment
-SimM}\label{simulator-environment-simm}}
+\subsubsection{Simulator environment SimM}
+\label{simulator-environment-simm}
 
 \emph{Source Lines of Code:\\
 }
@@ -5925,8 +5833,8 @@ Haskell packages, and it was designed to help in the reviewing process
 (both during development, and for external evaluation). Standard Haskell
 instances are also exported.
 
-\hypertarget{testing-strategies}{%
-\subsubsection{​12.7.5​~Testing Strategies}\label{testing-strategies}}
+\subsubsection{Testing Strategies}
+\label{testing-strategies}
 
 All the protocols are tested on several different levels:
 
@@ -5991,8 +5899,8 @@ scenarios. We use this technique in the \emph{BlockFetch},
 cases it allowed us to catch subtle bugs early in the development
 process.
 
-\hypertarget{references}{%
-\section{​13​~References}\label{references}}
+\section{​References}
+\label{references}
 
 {[}MM02{]} Maymounkov P., Mazières D. (2002) Kademlia: A Peer-to-Peer
 Information System Based on the XOR Metric. In: Druschel P., Kaashoek
