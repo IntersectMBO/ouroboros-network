@@ -5150,50 +5150,71 @@ k & Depth of chain for effective immutability &\tabularnewline
 \subsubsection{Distribution of leadership}
 \label{distribution-of-leadership}
 
-From {[}BGKR17{]}, the probability of stakeholder U\textsubscript{i}
-with relative stake \(\alpha_{i}\)being chosen in any slot is:
+From {[}BGKR17{]}, the probability of stakeholder $U_i$
+with relative stake $\alpha_{i}$being chosen in any slot is:
 
-\(p_{i} = {\phi_{f}\left( \alpha_{i} \right) = 1 - \left( 1 - f \right)^{\alpha_{i}}}_{}\)
+\begin{align*}
+p_{i} &= \phi_{f}(\alpha_{i}) \\
+      &= 1 - (1 - f)^{\alpha_{i}}
+\end{align*}
 
 We assume here that each of the N active nodes has an equal amount of
 stake\footnote{The incentive system is designed to encourage a uniform
   distribution of stake between major nodes.},
-\(\alpha_{i} = \frac{1}{N}\), and hence equal probability of being a
+$\alpha_{i} = \frac{1}{N}$, and hence equal probability of being a
 leader in any particular slot. Then:
 
-\(p_{i}{= 1 - \left( 1 - f \right)^{\frac{1}{N}}}_{}\)
+\begin{equation*}
+p_i = 1 - (1 - f)^\frac{1}{N}
+\end{equation*}
 
-The probability that stakeholder Ui is not the leader is
-\({1 - p}_{i} = \left( 1 - f \right)^{\frac{1}{N}}\), and so the
+The probability that stakeholder $U_i$ is not the leader is
+$1 - p_{i} = (1 - f)^\frac{1}{N}$, and so the
 probability that no stakeholder is the leader (i.e. we have an empty
 slot) is\footnote{Each node decides independently whether it is the
   leader, so we just multiply probabilities.}:
 
-\(P\left( \text{no\ leader} \right) = \left( \left( 1 - f \right)^{\frac{1}{N}} \right)^{N} = \ 1 - f\)
+\begin{align*}
+P(\text{no\ leader}) &= \left( (1 - f)^{\frac{1}{N}} \right)^{N} \\
+                     &= 1 - f
+\end{align*}
 
 (Hence the definition of f as the active slot fraction). If the
 probability of leadership was directly proportional to stake it would be
-\(\frac{f}{N}\) for each node. The error relative to the true function
+$\frac{f}{N}$ for each node. The error relative to the true function
 above is:
 
-\({E_{f,N} = p}_{i} - \frac{f}{N} = 1 - \frac{f}{N} - \left( 1 - f \right)^{\frac{1}{N}} \simeq 1 - \frac{f}{N} - \left( 1 - \frac{f}{N} + {\frac{\left( \frac{1}{N} - 1 \right)}{2N}f}^{2} \right) \simeq \frac{f^{2}}{2N}\)
+\begin{align*}
+E_{f,N} = p_{i} - \frac{f}{N}
+  &= 1 - \frac{f}{N} - (1 - f)^{\frac{1}{N}} \\
+  &\simeq 1 - \frac{f}{N} - \left( 1 - \frac{f}{N} + {\frac{(\frac{1}{N} - 1)}{2N}f}^{2} \right) \\
+  &\simeq \frac{f^{2}}{2N}
+\end{align*}
 
 For reasonably large N and small f we could ignore this error term, and
 use the linear approximation\footnote{Which is simpler than the true
   Binomial distribution.}. This would imply:
 
-\(P\left( \text{one\ leader} \right) = f\left( 1 - \frac{f}{N} \right)^{N - 1}\)
+\begin{equation*}
+P( \text{one\ leader} ) = f \left( 1 - \frac{f}{N} \right)^{N - 1}
+\end{equation*}
 
 In the large N limit\footnote{The intention is to encourage
   \textasciitilde{}1000 stake pools, which is enough for the large N
   limit to be quite accurate.} this becomes:
 
-\(P\left( \text{one\ leader} \right) = fe^{- f}\)
+\begin{equation*}
+P( \text{one\ leader} ) = fe^{- f}
+\end{equation*}
 
 Conversely, the probability of a run of m successive empty slots (since
 these are independent trials) is:
 
-\(P_{m}^{\text{NL}} \equiv P(m\ slots\ no\ leader)\  = {P(no\ leader)}^{m} = \left( 1 - f \right)^{m}\)
+\begin{align*}
+P_{m}^{\text{NL}} &\equiv P(m \text{ slots no leader}) \\
+                  &= {P(\text{no leader})}^m \\
+                  &= ( 1 - f )^{m}
+\end{align*}
 
 This gives the following table:
 
@@ -5223,12 +5244,19 @@ Conversely, if we want to know the probability that a certain time
 interval t will be leaderless, we can approximate this\footnote{Ignoring
   the quantisation of m.} as:
 
-\(P_{t}^{\text{NL}} \equiv P(t\ seconds\ no\ leader)\  = {P(slot\ has\ no\ leader)}^{\frac{t}{T_{s}}} = \left( 1 - f \right)^{\frac{t}{T_{s}}} = \left( \left( 1 - f \right)^{\frac{1}{T_{s}}} \right)^{t}\)
+\begin{align*}
+P_{t}^{\text{NL}} &\equiv P(t \text{ seconds no leader}) \\
+                  &= {P(\text{slot has no leader})}^{\frac{t}{T_s}} \\
+                  &= (1 - f)^{\frac{t}{T_s}} \\
+                  &= \left( (1 - f)^{\frac{1}{T_s}} \right)^t
+\end{align*}
 
 If we set a threshold Y (say 0.999) for the probability of having at
 least one leader in time t, then t is bounded by:
 
-\(t \geq T_{s}\frac{\log\left( 1 - Y \right)}{\log\left( 1 - f \right)}\)
+\begin{equation*}
+t \geq T_{s}\frac{\log(1 - Y)}{\log(1 - f)}
+\end{equation*}
 
 This is relevant for the consideration of timeouts that might be
 triggered by a leaderless interval.
