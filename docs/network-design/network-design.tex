@@ -1310,7 +1310,7 @@ In the context of networks, performance amounts primarily to trying to
 use the network resource effectively whenever possible. Time that is
 expended without sending or receiving data is time that can never be
 regained. Point-to-point connections over a network can very
-crudely\footnote{A much more precise characterisation is based on ∆Q,
+crudely\footnote{A much more precise characterisation is based on $\Delta{}Q$,
   see {[}Comp20{]}.} be characterised as having a certain bandwidth and
 latency. Network connections do not support bursts of traffic well,
 since they have a maximum bandwidth. Full network utilisation requires
@@ -2181,7 +2181,7 @@ peers requires further explanation. The primary purpose is to address
 the challenge of avoiding too many long hops in the graph. The random
 gossip is oblivious to hop distance. By actually connecting to a
 selection of peers and measuring the round trip delays\footnote{Or more
-  precisely the two unidirectional ∆Q measures} we can start to
+  precisely the two unidirectional $\Delta{}Q$ measures} we can start to
 establish which peers are near or far. The policy for selecting which
 warm peers to promote to hot peers will take into account this network
 hop distance. The purpose of a degree of churn between cold and warm
@@ -2675,7 +2675,7 @@ The Ouroboros assumption is quite weak: simply that at least 50\% of the
 stake is held by agents that will follow the Ouroboros algorithm
 faithfully\footnote{Technically, in Ouroboros Praos, this assertion is
   diluted by allowing for delays in delivering messages. The honest
-  stake proportion becomes 50\% + F(∆), where ∆ is the number of
+  stake proportion becomes $50\% + F(\Delta)$, where $\Delta$ is the number of
   slot-times that a message is allowed to be delayed.}. This obviously
 says very little about the trustworthiness of any particular
 agent/network node.
@@ -2728,7 +2728,7 @@ peers are adversarial)\footnote{This is consistent with the use of the
 The Ouroboros algorithm works to deliver reliable consensus even when
 some nodes are adversarial, provided the proportion of the total stake
 held by the remaining `honest' nodes is no less than 51\%.\footnote{In
-  fact 50\%+ε would do, but it would take a long time to certify that
+  fact $50\%+\varepsilon$ would do, but it would take a long time to certify that
   the system has settled to a consistent state.}
 
 Adversarial peers can engage in the protocols incorrectly in two main
@@ -3067,7 +3067,7 @@ Kademlia introduces considerable complexity: a month-long study was
 performed early in the design cycle that concluded that validating a
 Kademlia implementation would be extremely hard, and debugging any
 issues that arose in deployment even harder. At a minimum it would
-require adding the peer selection via ∆Q, which is not native to
+require adding the peer selection via $\Delta{}Q$, which is not native to
 Kademlia.
 
 Kademlia is designed to work over UDP, which typically fails to reach
@@ -3389,7 +3389,7 @@ Ouroboros Classic\footnote{We assume that relaxing these constraints
   substantially -- which would lead to Shelley having much lower
   transaction throughput and longer settling times -- is not acceptable
   from a business/community acceptance perspective.} by aiming for a
-slot time of 1s and a slot occupancy of 5\%. Allowing the Praos ∆
+slot time of 1s and a slot occupancy of 5\%. Allowing the Praos $\Delta$
 parameter to be \textasciitilde{}20 gives the following thresholds and
 targets\footnote{Based on informal discussions with the research group.}
 for bloc distribution:
@@ -3436,7 +3436,7 @@ creates a series of fundamental tradeoffs that need to be managed:
 \begin{itemize}
 \item
   \begin{quote}
-  Between geographic spread and minimum slot time / ∆;
+  Between geographic spread and minimum slot time / $\Delta$;
   \end{quote}
 
   \begin{itemize}
@@ -4257,12 +4257,12 @@ code.
 The strict timeliness constraints of block diffusion means that the data
 diffusion component must constantly monitor and optimise performance.
 Each node evaluates the performance of its peer connections by measuring
-their ∆Q {[}Comp20{]}, at both the bearer and mini-protocol levels. This
+their $\Delta{}Q$ {[}Comp20{]}, at both the bearer and mini-protocol levels. This
 enables efficient performance-optimising decisions by the
 mini-protocols; for instance, the block-fetch protocol can select
 between several different peers offering the same block(s) on the basis
 of which would be expected to deliver soonest based on their measured
-∆Qs.
+$\Delta{}Q$.
 
 Congestion between each pair of nodes is managed by the Mux function,
 and overall congestion at the network interface of a node is bounded by
@@ -4779,7 +4779,7 @@ data diffusion function.
 \paragraph{Participant performance measurement}
 
 There may be a requirement for measuring if a large stakeholder is not
-meeting their network obligation Brünjes et al. (2018).
+meeting their network obligation Br\"unjes et al. (2018).
 
 It is accepted that this requirement is a ``nice to have'', and it has
 not been established that it is possible, nor has it been incorporated
@@ -4931,12 +4931,12 @@ information exchanges are multiplexed.
 \subsubsection{Time to transmit a block of given size across given latencies}
 \label{time-to-transmit-a-block-of-given-size-across-given-latencies}
 
-The ∆Q\textbar{}\textsubscript{G} value\footnote{The concept of ∆Q is
+The $\Delta{}Q|_G$ value\footnote{The concept of $\Delta{}Q$ is
   explained in {[}Comp20{]}. Here is a link to
   \href{https://www.slideshare.net/pnsol-slides/q-and-blockchain-83943683}{{slides
   on applicability to block chain}}.} here is for the round trip time,
-the ∆Q\textbar{}\textsubscript{S} is 8*10\textsuperscript{-8} s/o (the
-typical value from tests), and the ∆Q per direction is taken to be ½ the
+the $\Delta{}Q|_S$ is 8\texttimes{}10\textsuperscript{-8} s/o (the
+typical value from tests), and the $\Delta{}Q$ per direction is taken to be ½ the
 round trip (reasonable in an AWS environment, not so in an asymmetric
 networking case e.g. residential, SME)
 
@@ -4960,7 +4960,7 @@ Unrestricted Window Size & & & & & & & & & &\tabularnewline
 \midrule
 \endhead
 & File size (kb) & & & & & & & & &\tabularnewline
-∆Q\textbar{}\textsubscript{G} (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
+$\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
@@ -4996,7 +4996,7 @@ Large max window size (near default maximum) & & & & & & & & &
 \midrule
 \endhead
 & File Size (ko) & & & & & & & & &\tabularnewline
-∆Q\textbar{}\textsubscript{G} (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
+$\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
@@ -5021,12 +5021,11 @@ Large max window size (near default maximum) & & & & & & & & &
 \bottomrule
 \end{longtable}
 
-Note a ∆Q\textbar{}\textsubscript{G,S} of (300ms,
-8*10\textsuperscript{-8} o/s) is not the absolute worst case -- the
-worst we've measured (in other work) is ∆Q\textbar{}\textsubscript{G,S}
-of (188ms, 6.14*10\textsuperscript{-5} o/s) \emph{one-way} between San
-Paulo and Singapore. This would give a time-to-complete of 5.38s in the
-2000 ko transfer case.
+Note a $\Delta{}Q|_{G,S}$ of (300ms, 8\texttimes{}10\textsuperscript{-8} o/s) is not the
+absolute worst case -- the worst we've measured (in other work) is
+$\Delta{}Q|_{G,S}$ of (188ms, 6.14\texttimes{}10\textsuperscript{-5} o/s) \emph{one-way}
+between San Paulo and Singapore. This would give a time-to-complete of
+5.38s in the 2000 ko transfer case.
 
 The next table represents the default case -- i.e. no special action on
 the code and hence acceptance of the contemporary window size default.
@@ -5037,7 +5036,7 @@ Medium max window size (near default) & & & & & & & & & &\tabularnewline
 \midrule
 \endhead
 & File Size (ko) & & & & & & & & &\tabularnewline
-∆Q\textbar{}\textsubscript{G} (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
+$\Delta{}Q|_{G,S}$  (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
@@ -5142,9 +5141,8 @@ N & Number of active nodes & Expected to be
 \textasciitilde{}1000\tabularnewline
 T\textsubscript{s} & Duration of a slot & Expected to be
 \textasciitilde{} 2s\tabularnewline
-f & Active slot fraction & 0 \textless{} f ≤ 1\tabularnewline
-∆ & Maximum number of slots before a diffused message is received & ∆ ≥
-1\tabularnewline
+f & Active slot fraction & $0 < f \leq 1$\tabularnewline
+$\Delta$ & Maximum number of slots before a diffused message is received & $\Delta \geq 1$\tabularnewline
 k & Depth of chain for effective immutability &\tabularnewline
 \bottomrule
 \end{longtable}
