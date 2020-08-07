@@ -11,6 +11,7 @@
 \usepackage{graphicx}
 
 \usepackage{hyperref}
+\usepackage[capitalise,noabbrev,nameinlink]{cleveref}
 \hypersetup{
   pdftitle={Introduction to the design of the Data Diffusion and Networking for Cardano/Shelley},
   pdfborder={0 0 0},
@@ -152,8 +153,8 @@ The implementation has been kept simple to minimise complexity and
 attack surface. It is fully integrated with the rest of the node and is
 working in the Shelly mainnet. At the time of writing only one component
 has not yet been deployed, namely the peer selection and subscription
-management (outline design in
-\protect\hyperlink{decentralisation-design}{{Section 6.7}}).
+management (outline design in \cref{decentralisation-design}
+\cref{decentralisation-design}).
 
 \section{​Introduction}
 \label{introduction}
@@ -251,7 +252,7 @@ This document is structured as follows:
 \def\labelenumi{\arabic{enumi}.}
 \item
   \begin{quote}
-  In \protect\hyperlink{overview}{{§}}6 we describe the overall
+  In \cref{overview} we describe the overall
   implementation of the Ouroboros algorithm, and summarise the key
   constraints and design decisions, in particular how validation and
   forwarding have to be interleaved in order to deliver a robust
@@ -259,7 +260,7 @@ This document is structured as follows:
   \end{quote}
 \item
   \begin{quote}
-  In \protect\hyperlink{_gr58ztigrqbm}{{§}}7 we discuss how the
+  In \cref{distributed-consensus-on-a-global-scale} we discuss how the
   constraints of the physical world impact on a distributed ledger
   system and also the implications of running an autonomous
   collaborative algorithm with hard real-time constraints on a
@@ -270,36 +271,37 @@ This document is structured as follows:
   \end{quote}
 \item
   \begin{quote}
-  In \protect\hyperlink{_tkmbjtva6lkr}{{§}}8 we consider a range of
+  In \cref{analysis-of-alternative-approaches} we consider a range of
   published approaches to transferring information between nodes and the
   extent to which they are able to meet the constraints and deal with
   the threats that were discussed in
-  \protect\hyperlink{_gr58ztigrqbm}{{§}}7.
+  \cref{distributed-consensus-on-a-global-scale}.
   \end{quote}
 \item
   \begin{quote}
-  In \protect\hyperlink{_c2gr8venq915}{{§}}9 we enumerate the
+  In \cref{operational-environment-and-constraints} we enumerate the
   operational environment and the constraints that are derived from the
-  business requirements from
-  \protect\hyperlink{business-requirements}{{Annex 12.1}}.
+  business requirements from \cref{business-requirements}.
   \end{quote}
 \item
   \begin{quote}
-  In \protect\hyperlink{_ky7e6si1z2eh}{{§}}10 we discuss our development
+  In \cref{key-design-decisions} we discuss our development
   approach and design decisions.
   \end{quote}
 \item
   \begin{quote}
-  In \protect\hyperlink{_7mku7szfvt6w}{{§}}11 we look at currently
+  In \cref{outstanding-unresolved-issues} we look at currently
   unresolved issues.
   \end{quote}
 \item
   \begin{quote}
-  In the Annexes of \protect\hyperlink{annexes}{{§1}}2 we provide: the
-  previously-agreed business requirements; numerical models of TCP
-  performance, the network scaling, and the leadership distribution in
-  Ouroboros Praos; and give a detailed description of the software
-  components that are required by our solution.
+  In the appendix we provide: the previously-agreed business
+  requirements (\cref{business-requirements}); numerical models of TCP
+  performance (\cref{tcp-rpc-response-behavior}), the network scaling
+  (\cref{model-of-network-scaling}), and the leadership distribution in
+  Ouroboros Praos (\cref{performance-model-of-ouroboros-praos}); and
+  give a detailed description of the software components that are
+  required by our solution (\cref{ouroboros-network-components}).
   \end{quote}
 \end{enumerate}
 
@@ -351,7 +353,7 @@ fully exposed to bad actors.
 The key requirements for the Ouroboros implementation come from the
 Ouroboros specification as embodied in the published and peer-reviewed
 \href{https://iohk.io/research/papers/}{{papers}}, and from business
-requirements (see \protect\hyperlink{business-requirements}{{Annex}})
+requirements (see \cref{business-requirements})
 including quantitative non-functional requirements.
 
 There are three levels of refinement:
@@ -431,12 +433,13 @@ and \emph{persistence}\footnote{These two properties are the
 surprisingly weak assumptions {[}BGKRZ19, Section 1{]}, and in an
 environment with potentially powerful adversaries. This environment
 combined with the capabilities of the adversaries collectively comprise
-the \protect\hyperlink{high-level-threat-model}{{threat model}}.
+the threat model (see \cref{high-level-threat-model}).
 
 \subsubsection{Interleaving transmission and validation}
 \label{interleaving-transmission-and-validation}
 
 \paragraph{The Ouroboros specification}
+\label{the-ouroboros-specification}
 
 Ouroboros \emph{as an algorithm specification} is elegantly modular,
 comprising:
@@ -499,8 +502,7 @@ of a broadcast algorithm.
 
 Therefore, existing off-the-shelf implementations of the broadcasting
 paradigm (\emph{pure} \emph{gossip} and/or \emph{pub/sub}) are hard to
-reuse; any form of broadcast in a PoS context
-\protect\hypertarget{dpbtiakzv0oy}{}{}opens up trivial DoS attacks, in
+reuse; any form of broadcast in a PoS context opens up trivial DoS attacks, in
 which the asymmetric power of broadcast is weighted in favour of the
 attacker. Mitigating that problem is impossible in practice, since every
 end user would be susceptible to attack. At best we can use broadcast as
@@ -589,7 +591,7 @@ adversaries more ways to interact with the honest nodes.
 For example, a single abstract broadcast interaction may be replaced by
 a collection of RPC interactions running atop layers of lower level
 protocols, each with their own complex interactions. We discussed in
-\protect\hyperlink{the-ouroboros-specification}{{Section 6.1.1.1}} the
+\cref{the-ouroboros-specification} the
 problems that arise when the resource use of honest nodes is under the
 control of adversaries; this too can only get worse during design
 refinement or implementation, as we provide new mechanisms to interact.
@@ -603,7 +605,7 @@ even with the caveats of ``plausible'' and ``informal''. The contrasts
 with the orthodox approach, which only solves the simpler problem of
 solving or mitigating against known classes of attack\footnote{For
   example, much of the critique of Kademlia (ours in
-  \protect\hyperlink{kademlia}{{Section 8.2}} and others' {[}MHG18{]})
+  \cref{kademlia} and others' {[}MHG18{]})
   comes down to the fact that it followed the orthadox design approach.
   It does not start with a threat model and establish positive results.
   Many academic papers on Kademlia establish negative results: they find
@@ -691,7 +693,7 @@ chains that it receives.
 
 It is worth noting again that this design is not `broadcast' in the
 classical sense, and hence, as discussed earlier in
-\protect\hyperlink{the-ouroboros-specification}{{Section 6.1.1.1}},
+\cref{the-ouroboros-specification},
 existing broadcast implementations (including multicast and pub/sub)
 cannot easily be adapted to provide an implementation of this design. It
 is nevertheless a relatively simple design and can be implemented
@@ -775,7 +777,7 @@ and a clear argument for working in bounded resources. In particular
 either more complex or are less efficient in both the typical case and
 adversarial cases. The ones that have been considered also suffered from
 asymmetric resource attacks that can be avoided in the stateful version.
-See \protect\hyperlink{stateful-implementation}{{Section 10.1}} for more
+See \cref{stateful-implementation} for more
 details.
 
 It may appear unfortunate that we have chosen a stateful protocol since
@@ -849,7 +851,7 @@ ordered in the same order as the blocks appear in the chain. We take
 advantage of this, in particular in the implementation of in-memory
 fragments\footnote{The in-memory chain fragment data structure is used
   throughout the network and consensus layers. It is briefly covered in
-  \protect\hyperlink{chain-fragments}{{Section 12.9.3.3.3}}. The
+  \cref{chain-fragments}. The
   implementation represents the sequence of headers using a
   \href{http://www.staff.city.ac.uk/~ross/papers/FingerTree.html}{{finger
   tree}} data structure that is instantiated for block headers such as
@@ -1111,7 +1113,7 @@ notion of session to a stateless protocol (at a price of more complex
 resource management).
 
 This design decision is discussed in
-\protect\hyperlink{stateful-implementation}{{Section 10.1}}. The summary
+\cref{stateful-implementation}. The summary
 is that there are not as many off-the-shelf solutions available as it
 might first appear, since most protocol implementations are designed for
 use within a data centre (thus within a controlled operational
@@ -1208,8 +1210,7 @@ decision making.
 \label{concurrency}
 
 Recall, from the beginning of
-\protect\hyperlink{network-constraints-and-design-decisions}{{Section
-6.3}}, that the consensus information exchange requirements cover three
+\cref{network-constraints-and-design-decisions}, that the consensus information exchange requirements cover three
 areas: chain sync, block fetch and tx submission. Each relationship with
 a direct upstream and downstream peer needs to cover all three areas,
 however there is no requirement for any synchronisation between them
@@ -1275,7 +1276,7 @@ interleave them on the single TCP data stream, and at the other end we
 demultiplex to reverse the transformation. The abstraction that is
 presented by the multiplexer is essentially the same as that of TCP
 itself: a reliable ordered byte stream. This is described in more detail
-in the \protect\hyperlink{network-mux}{{Annex (12.7.2)}}.
+in the \cref{network-mux}.
 
 \subsubsection{Performance}
 \label{performance}
@@ -1320,8 +1321,7 @@ network connection, and this challenge tends to leak all the way up to
 the application-level protocols and application design. Network
 latencies also vary considerably, with many orders of magnitude
 difference between peers within a data center versus peers on other
-continents (\protect\hyperlink{tcp-rpc-response-behavior}{{see §12,2
-Annex}}). Catering for this very wide range of latencies requires
+continents (see \cref{tcp-rpc-response-behavior}). Catering for this very wide range of latencies requires
 careful design. Ideally, protocols should be capable of adapting to the
 latency that is actually experienced, rather than being targeted to a
 specific latency.
@@ -1577,7 +1577,7 @@ implementation is simpler, smaller, more modular, and a better fit for
 the new design requirements.
 
 We have the requirement
-(\protect\hyperlink{network-connectivity}{{Section 12.1.1}}) that small
+(\cref{network-connectivity}) that small
 stakeholders with reasonable consumer-grade network connections and
 equipment should be able to operate a stake pool. This translates to the
 technical requirement that nodes behind firewalls should be able to take
@@ -1699,8 +1699,7 @@ file corruption.
 \label{related-work-data-diffusion}
 
 As discussed in
-\protect\hyperlink{interleaving-transmission-and-validation}{{Section
-6.1.1}}, there are strong reasons to conclude that pure broadcast cannot
+\cref{interleaving-transmission-and-validation}, there are strong reasons to conclude that pure broadcast cannot
 be used in any Ouroboros implementation that respects the Ouroboros
 threat model, and reasons to conclude that modifying a broadcast
 algorithm with the necessary checks is not a reasonable engineering
@@ -1713,21 +1712,18 @@ multicast and pub/sub (publish/subscribe) algorithms.
 PolderCast {[}SSVV12{]} is an implementation of pub/sub. As such it is
 not useful for an implementation of Ouroboros data diffusion as
 discussed in
-\protect\hyperlink{interleaving-transmission-and-validation}{{Section
-6.1.1}}, (namely the asymmetry in favour of adeversies). PolderCast,
+\cref{interleaving-transmission-and-validation}, (namely the asymmetry in favour of adeversies). PolderCast,
 however, also establishes a P2P graph which is a necessary feature of a
 fully distributed Cardano implementation. This is discussed in summary
-in \protect\hyperlink{related-work-decentralisation}{{Section 6.9}} and
-PolderCast is considered in more detail in
-\protect\hyperlink{poldercast-1}{{Section 8.3}}.
+in \cref{related-work-decentralisation} and PolderCast is considered in
+more detail in \cref{poldercast-1}.
 
 \subsubsection{Other blockchain systems}
 \label{other-blockchain-systems}
 
 Significant related work is the data diffusion function of other
 existing (PoW) blockchain systems. As discussed in
-\protect\hyperlink{interleaving-transmission-and-validation}{{Section
-6.1.1}}, PoW provides a balance between adversaries and honest nodes
+\cref{interleaving-transmission-and-validation}, PoW provides a balance between adversaries and honest nodes
 that allows such systems to use broadcast algorithms (at least for block
 headers) modified with a stateless verification filter. PoW systems are
 also typically asynchronous, unlike Ouroboros which must ensure block
@@ -1735,22 +1731,21 @@ delivery within deadlines.
 
 Bitcoin, Ethereum and the previous Cardano implementation are considered
 in more detail in
-\protect\hyperlink{comparison-with-previous-network-implementations}{{Section
-7.2.2}}.
+\cref{comparison-with-previous-network-implementations}.
 
 \subsubsection{Other related work}
 \label{other-related-work}
 
 Much related work exists on the choice of lower level network protocols.
 HTTP and the issue of stateless protocols was discussed in
-\protect\hyperlink{stateful-versus-stateless-protocols}{{Section 6.3.1}}
+\cref{stateful-versus-stateless-protocols}
 and is also discussed in
-\protect\hyperlink{stateful-implementation}{{Section 10.1}}.
+\cref{stateful-implementation}.
 
 Other stateful protocol layers include libraries such as ZeroMQ or
 servers for message queue protocols like AMQP such as RabbitMQ.
 Unfortunately, as discussed in
-\protect\hyperlink{stateful-implementation}{{Section 10.1}} the widely
+\cref{stateful-implementation} the widely
 used choices are not designed to be used on the public internet.
 
 The \href{https://martinfowler.com/eaaDev/EventSourcing.html}{{event
@@ -1789,7 +1784,7 @@ and other resources.
 The requirements for decentralisation come from a combination of the
 business requirements and technical requirements deriving from
 Ouroboros. The business requirements are set out in
-\protect\hyperlink{business-requirements}{{Section 12.1}}. The dominant
+\cref{business-requirements}. The dominant
 constraints derive from the nature of reality and from characteristics
 of the Internet as it currently exists. We will review the key
 requirements and constraints.
@@ -1809,14 +1804,14 @@ Kiayias set a practical target of achieving the deadline in 95\% of
 cases. Compare this, for example, with a PoW system such as Ethereum,
 which is an asynchronous system without hard deadlines. It can be, and
 has been, adjusted over time, with longer block times during periods of
-high load (see \protect\hyperlink{ethereum}{{Section 7.2.2.2}} for
+high load (see \cref{ethereum} for
 details). This is not an option for Ouroboros as it exists now: we must
 pick the slot length parameter and we have no mechanism to adjust it on
 short time scales in response to network events. If we pick too relaxed
 a target then we leave transaction throughput on the table, and too
 tight a target risks system collapse. Thus a clear priority is
 \emph{consistency} of block delivery times. We wish to avoid a long
-tail\footnote{See \protect\hyperlink{bitcoin}{{Section 7.2.2.1}} which
+tail\footnote{See \cref{bitcoin} which
   touches on an analysis of the Bitcoin network and the long tail of
   block delivery times}.
 
@@ -1842,8 +1837,8 @@ The other key business requirements are:
   1,000 stakepool nodes holding about 80\% of the system's
   stake\footnote{The original business requirement was for 100
     large-scale stake pools (see
-    \protect\hyperlink{participate-in-network-as-a-large-stakeholder}{Section
-    12.1.1.3}) but this was later raised to 1000.};
+    \cref{participate-in-network-as-a-large-stakeholder}) but this was
+    later raised to 1000.};
   \end{quote}
 \item
   \begin{quote}
@@ -1879,14 +1874,14 @@ hops through the graph to get from one slot leader to the next. Since we
 are interested in the overall transmission time between slot leaders
 then we must be interested in both the number of hops and the
 transmission time on each hop. A useful technical graph metric here is
-one known as the \protect\hyperlink{rm0n4bczhl67}{{characteristic path
-length}}. Informally it can be thought of the typical path length,
-taking into account both the number of hops and the hop transmission
-times.
+one known as the characteristic path length (see
+\cref{characteristic-path-length}). Informally it can be thought of the
+typical path length, taking into account both the number of hops and
+the hop transmission times.
 
 Let us consider the number of hops. The typical number of hops clearly
 depends on the size of the graph, the typical valency and the shape of
-the graph. \protect\hyperlink{model-of-network-scaling}{Section 12.3}
+the graph. \cref{model-of-network-scaling}
 provides tables relating hop counts and valencies with maximum graph
 size (at least in the perfect case of a homogeneous spanning tree). This
 tells us that for our target of 1000 stake pools, related relay nodes,
@@ -1899,7 +1894,7 @@ substantially higher valency.
 Let us consider the transmission time per hop. This clearly depends on
 the characteristics of the Internet and of TCP, the underlying transport
 protocol that we use.
-\protect\hyperlink{tcp-rpc-response-behavior}{{Section 12.2}} presents
+\cref{tcp-rpc-response-behavior} presents
 tables of transmission delays based on a model of TCP, calibrated with
 measurements between AWS data centres in various regions. For larger
 block sizes, such as 1Mb, the transmission times for intercontinental
@@ -1916,14 +1911,13 @@ course a combination). We already know, however, that we must expect hop
 counts of at least five, and five intercontinental hops brings us
 perilously close to our overall slot time budget once one takes into
 account other delays such as processing time, clock skews and other
-factors mentioned in \protect\hyperlink{timeliness-constraint}{{Section
-7.2.1}}. So this suggests that at least for larger block sizes, we are
+factors mentioned in \cref{timeliness-constraint}. So this suggests that at least for larger block sizes, we are
 not in the "easy" scenario since we must keep both hop count and hop
 transmission times under control.
 
 How large must the blocks be to hit our TPS targets? This is a
 straightforward calculation.
-\protect\hyperlink{fundamental-tradeoffs}{{Section 9.2}} has a table
+\cref{fundamental-tradeoffs} has a table
 relating average transaction size, block size and TPS, for 20s slot
 times. For example, for 1kb (kilobyte) transactions, 50 TPS requires 1Mb
 (megabyte) blocks. In the existing Byron system the smallest practical
@@ -1974,7 +1968,7 @@ validating nodes inherently know the current stake distribution. The
 node that is the target of the attack can compare the chain it observes
 with the current stake distribution and gather probabilistic evidence
 that it is being eclipsed.
-\protect\hyperlink{performance-model-of-ouroboros-praos}{{Section 12.4}}
+\cref{performance-model-of-ouroboros-praos}
 provides an analysis of the speed and confidence with which this can be
 established. The conclusion is that at least for low stake attackers the
 time scales are very practical. More analysis is needed for medium and
@@ -2013,9 +2007,9 @@ the behaviour of TCP\footnote{Using TCP is not a theoretical constraint,
   but it is a practical engineering and development schedule constraint.}.
 Selected related work is discussed in the next section, and the
 constraints are analysed in more detail in
-\protect\hyperlink{timeliness-constraint}{{Section 7.2.1}} and
-\protect\hyperlink{annexes}{{Section 1}}2. The literature review does
-however reveal useful theory.
+\cref{timeliness-constraint} and
+\crefrange{tcp-rpc-response-behavior}{time-synchronisation-constraints}.
+The literature review does however reveal useful theory.
 
 Graph theory {[}Watts99{]} tells us that small hop counts\footnote{This
   research provides a basis for the pre-existing popular "small world"
@@ -2276,8 +2270,7 @@ releases without introducing significant compatibility problems.
 
 \todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
 
-As discussed in \protect\hyperlink{decentralisation-design}{{Section
-6.7}}, prior graph theory {[}Watts99{]} tells us that we can construct
+As discussed in \cref{decentralisation-design}, prior graph theory {[}Watts99{]} tells us that we can construct
 large graphs with small hop counts from a range of starting graph types.
 To do so however requires a high enough mean and variance for the
 valency, well above 2-3. The results also demonstrate that using rings
@@ -2285,7 +2278,7 @@ as the starting graph type is dramatically worse than using random
 graphs for the starting graph type.
 
 As discussed in
-\protect\hyperlink{decentralisation-constraints}{{Section 6.6}}, poor
+\cref{decentralisation-constraints}, poor
 network topography can sometimes be tolerated provided that the block
 size, and hence TPS, are suitably low. For example if 32k blocks were
 used (similar to the typical Ethereum size\footnote{This fits in two TCP
@@ -2331,7 +2324,7 @@ with experts is that P2P graph construction is not a mature academic
 topic and would benefit from further study.
 
 Other implementation approaches to decentralization are discussed in
-\protect\hyperlink{analysis-of-alternative-approaches}{{§8}}.
+\cref{analysis-of-alternative-approaches}.
 
 \section{​Distributed consensus on a global scale}
 \label{distributed-consensus-on-a-global-scale}
@@ -2343,7 +2336,7 @@ We start with a PoS algorithm called \emph{Ouroboros}, and a
 mathematical proof that it works even with a substantial proportion of
 bad actors (adversaries) and a certain amount of delay in communication
 between nodes {[}BGKR17{]}. As described in
-\protect\hyperlink{overview}{{Section 6}}, the engineering design of
+\cref{overview}, the engineering design of
 Cardano -- and its Shelley implementation in particular -- refines
 Ouroboros\footnote{Shelley includes an array of proofs and tests to
   ensure that desirable properties of the Ouroboros algorithm are
@@ -2361,7 +2354,7 @@ not a client-server design, so there is fundamentally no central point
 of control nor any privileged class of centrally managed servers.
 However, its original implementation codenamed `Byron' has seven
 federated nodes that produce blocks.
-\protect\hyperlink{decentralisation-design}{{Full decentralisation}} is
+\cref{decentralisation-design} is
 the goal of the second phase of Shelley.
 
 \subsection{​Fundamental requirements of Cardano data
@@ -2451,16 +2444,16 @@ creating the next block.
 \bottomrule
 \end{longtable}
 
-The budget also needs to accommodate the
-\protect\hyperlink{time-synchronisation-constraints}{{potential clock
-skew}} between nodes, which can be 100ms or more. These figures should
+The budget also needs to accommodate the potential clock skew between
+nodes (as discussed in \cref{time-synchronisation-constraints}),
+which can be 100ms or more. These figures should
 be compared with the time-to-complete for delivering a block in
-\protect\hyperlink{time-to-transmit-a-block-of-given-size-across-given-latencies}{{§12.1.1}}.
+\cref{time-to-transmit-a-block-of-given-size-across-given-latencies}.
 
 The budget also needs to cover worst-case and not just typical
 conditions. Factors making meeting the constraint harder to meet include
 the threats enumerated in
-\protect\hyperlink{high-level-threat-model}{{§7.3}} and the extent and
+\cref{high-level-threat-model} and the extent and
 scale of the network (which will not be under any control once the
 system is fully decentralised).
 
@@ -2471,6 +2464,7 @@ The immediate question is: is this timeliness constraint hard to meet,
 or not? We consider some evidence from Bitcoin, Ethereum, and Cardano.
 
 \paragraph{Bitcoin}
+\label{bitcoin}
 
 There is some evidence available from Bitcoin, in the form of two
 research papers and publicly available data following those papers.
@@ -2524,9 +2518,10 @@ Keep in mind that for Bitcoin it suffices to check just the hash of the
 block before passing it on to peers, but for Cardano, more expensive
 block validation is needed before relaying, as not doing so would open
 up an asymmetric resource DoS attack on the network, as discussed in
-\protect\hyperlink{interleaving-transmission-and-validation}{{§6.1.1}}.
+\cref{interleaving-transmission-and-validation}.
 
 \paragraph{Ethereum}
+\label{ethereum}
 
 Etherscan shows data for the
 \href{https://etherscan.io/chart/blocktime}{{average block time in
@@ -2602,8 +2597,7 @@ want up to 50 transactions per second\footnote{50 is the stretch target,
   not the minimum, but it does mean we should not have a design
   limitation that would prevent 50.}, which for transaction sizes of 1kb
 and a slot length of 20s, implies 1Mb (megabyte) blocks, which take
-significantly longer to send (compare with
-\protect\hyperlink{tcp-rpc-response-behavior}{{tables in the Annex}}).
+significantly longer to send (compare with \cref{tcp-rpc-response-behavior}).
 
 So the short answer to the question
 
@@ -2661,8 +2655,7 @@ handle the unique requirements of Cardano.
 In constructing an implementation of the consensus algorithm, it is
 essential to interleave aspects of validation with communication, as
 explained in detail in
-\protect\hyperlink{consensus-constraints-and-design-decisions}{{Section
-6.1}}. This has the important implication that the \emph{sequence of
+\cref{consensus-constraints-and-design-decisions}. This has the important implication that the \emph{sequence of
 communications} from any peer needs to be preserved, which means that
 connections need to be stateful. This effectively rules out stateless
 communication stacks, such as typical RPC approaches.
@@ -2718,7 +2711,7 @@ The principal threats considered in the Shelley network design are:
 \end{enumerate}
 
 The response to these in the Shelley network design is summarised in
-\protect\hyperlink{summary-response-to-threats}{{§10.9.}}
+\cref{summary-response-to-threats}
 
 \subsubsection{Adversarial peers}
 \label{adversarial-peers}
@@ -2777,14 +2770,14 @@ using information available within the system\footnote{Information
 by delaying or deleting blocks generated by honest miners. This leads to
 requirements on the network layer to construct connectivity graphs in
 which eclipse attacks are more difficult (see
-\protect\hyperlink{kademlia}{{§8.2}} on Kademlia).
+\cref{kademlia} on Kademlia).
 
 In PoS systems such as Ouroboros, however, blocks are generated
 according to a pre-established stake distribution, so a node can
 \emph{always} detect eclipse; either it receives few or no
 blocks\footnote{Complications in eclipse detection arising from the
   random generation of blocks in Ouroboros Praos are discussed in
-  \protect\hyperlink{distribution-of-leadership}{{Annex 1}}2.4.}, or
+  \cref{distribution-of-leadership}}, or
 blocks that are invalid. This means that making eclipse attacks
 difficult is \emph{not} a requirement for the network component of
 Shelley.
@@ -2843,8 +2836,7 @@ context\footnote{If we delay validating headers until adding the whole
   block to the chain then we have already spent our network resources on
   downloading the corresponding block body. This would open up lots of
   resource attacks.}, as discussed in detail in the
-\protect\hyperlink{interleaving-transmission-and-validation}{{Section
-6.1.1}}. Adversaries with a relatively modest amount of stake can create
+\cref{interleaving-transmission-and-validation}. Adversaries with a relatively modest amount of stake can create
 unbounded numbers of apparently valid headers and blocks (in the slots
 in which they are entitled to create blocks). For DoS prevention
 overall, the balance between honest vs adversarial nodes in a PoW system
@@ -2991,7 +2983,7 @@ Bitcoin's through encrypted forwarding and randomised routing
 \emph{within the distributed ledger} \emph{system} can obtain about the
 ultimate source of a transaction. The authors admit, however, that their
 system provides no guarantee of anonymity against
-\protect\hyperlink{tier-1-actors}{{Tier-1 actors}}.
+\cref{tier-1-actors}.
 
 Such anonymity enhancement is not a requirement for Shelley, but could
 be considered in later iterations.
@@ -3056,13 +3048,12 @@ space) that is unrelated to physical network distance. This can mean
 that a path from London to Dublin goes via Sydney, or worse since the
 typical path length will be considerably more than two. This problem
 could perhaps be solved by yet another overlay, but see
-\protect\hyperlink{comparison-with-general-overlay-networks}{{Section
-12.5}} on the drawbacks.
+\cref{comparison-with-general-overlay-networks} on the drawbacks.
 
 Proof-of-work systems must rely to some extent on what peers report
 about other peers\footnote{We could refer to this as `transitive trust'.}
-(note that this requires nodes to have stable identities) see the
-\protect\hyperlink{eclipse-attacks}{{section on eclipse attacks}} above.
+(note that this requires nodes to have stable identities) see
+\cref{eclipse-attacks} on eclipse attacks.
 Cardano does not need this because the stake-based leader selection
 means that an adversary cannot spoof blocks; it can only reduce the
 chain growth quality. Thus the intended benefits of Kademlia (over and
@@ -3071,7 +3062,7 @@ above the use of gossiping) are not required for Cardano.
 Conversely the randomisation of the node topology imposed by Kademlia
 works against the timeliness of data diffusion and thus reduces the
 performance and security of Cardano. This is evidenced by the block
-distribution \protect\hyperlink{ethereum}{{data from Ethereum}}.
+distribution data from Ethereum in \cref{ethereum}.
 
 Kademlia introduces considerable complexity: a month-long study was
 performed early in the design cycle that concluded that validating a
@@ -3183,7 +3174,7 @@ only two topics -- blocks and transactions -- but all nodes are
 interested in blocks and the vast majority are interested in publishing
 transactions.
 
-As \protect\hyperlink{dpbtiakzv0oy}{{discussed above}}, pub/sub systems
+As discussed in \cref{the-ouroboros-specification}, pub/sub systems
 do not have the appropriate properties to support chain sync. However,
 there is another aspect of that could be of interest -- that of topology
 creation.
@@ -3440,7 +3431,7 @@ scenario where 2Mb blocks emerge (on average) every 20s.
 \label{fundamental-tradeoffs}
 
 The intrinsic nature of any distributed consensus process (as discussed
-in \protect\hyperlink{decentralisation-constraints}{{§6.6}} above)
+in \cref{decentralisation-constraints} above)
 creates a series of fundamental tradeoffs that need to be managed:
 
 \begin{itemize}
@@ -3640,7 +3631,7 @@ implementation process we need to take care to:
 We call this \emph{threat-aware design}.
 
 Following the threat-aware principle while respecting the targets and
-constraints of \protect\hyperlink{overview}{{Section 6}} has led to
+constraints of \cref{overview} has led to
 mutually reinforcing design decisions for the data diffusion component.
 The most important are:
 
@@ -3678,8 +3669,7 @@ The most important are:
 \subsection{Stateful implementation}
 \label{stateful-implementation}
 
-As noted in \protect\hyperlink{stateful-chain-following}{{Section
-6.1.3}}, the option to have a connection-oriented stateful protocol
+As noted in \cref{stateful-chain-following}, the option to have a connection-oriented stateful protocol
 enables protocols that rely on an \emph{amortised} analysis for their
 resource bounds. Establishing resource bounds at all is difficult,
 especially while balancing the other priorities, such as achieving good
@@ -3868,8 +3858,7 @@ Note that it is a misunderstanding to think that block validation logic
 is `pushed down' into the network layer. They are clearly separated, but
 there is an interleaving in the data flow. How this is done in the
 design is discussed in full detail, with justification and a diagram, in
-\protect\hyperlink{consensus-constraints-and-design-decisions}{{Sections
-6.1}} and \protect\hyperlink{consensus-components}{{6.2}}.
+\cref{consensus-constraints-and-design-decisions} and \cref{consensus-components}.
 
 \subsubsection{Demand-driven protocols}
 \label{demand-driven-protocols}
@@ -4021,7 +4010,7 @@ that can be consumed at a node by any connected peer, thereby minimising
 the scope for resource consumption attacks, including peer-related
 denial-of-service attacks. This has the downside of making the RTT more
 of a problem for performance, which we manage with pipelining (see
-\protect\hyperlink{performance}{{§6.3.4}}). We apply backpressure to
+\cref{performance}). We apply backpressure to
 manage edge conditions, while minimising head-of-line blocking
 effects\footnote{Failure to clear the queues by reading from the TCP
   socket will cause the receive window to fill up and the sender will
@@ -4051,7 +4040,7 @@ The set of nodes that blocks need to reach quickly is given by the stake
 distribution/number of stake pools. The block distribution time then
 depends on the topology of the peer interconnections between these
 nodes. As discussed in
-\protect\hyperlink{decentralisation-constraints}{{§6.6}}, Cardano nodes
+\cref{decentralisation-constraints}, Cardano nodes
 can detect eclipse attacks, unlike PoW systems such as Bitcoin, and so
 the Kademlia approach of enforcing randomness on the connectivity graph
 to make such attacks more difficult is not required. A more pressing
@@ -4081,7 +4070,7 @@ blocks and/or transactions\tabularnewline
 Peers delivering data that is incorrect or late are rapidly deselected,
 i.e. removed or demoted from `hot' to `warm'. The `cold' set is
 populated at start-up (as described in
-\protect\hyperlink{decentralisation-design}{{§6.7}}) and refreshed by
+\cref{decentralisation-design}) and refreshed by
 lists of addresses provided on connection with peers. A node will move
 peers between these sets in response to receiving (or not) the number of
 well-formed blocks that it expects. Ultimately, if this fails (which
@@ -4095,7 +4084,7 @@ the loss of only a few bearers. This means some `warm' peers will need
 to be `far off' (i.e. kept in the set even if they perform poorly).
 
 As discussed in
-\protect\hyperlink{decentralisation-constraints}{{§6.6}}, one constraint
+\cref{decentralisation-constraints}, one constraint
 is the total capacity of the network interface of a node. Each connected
 peer that is downloading blocks from the node will consume up to
 \textasciitilde{}1Mbit/s. Thus a `domestic' node with a 10Mbit/s uplink
@@ -4143,8 +4132,8 @@ The wireformat used by Mux is simple and compact which gives a low
 overhead, both in bytes over the network and in CPU cycles\footnote{Note
   that the efficiency of the encoding is important as it affects the
   network interface capacity required, which in turn constrains who can
-  effectively run a Cardano node, as
-  \protect\hyperlink{fundamental-tradeoffs}{{discussed in §9.2.}}}.
+  effectively run a Cardano node, as discussed in
+  \cref{fundamental-tradeoffs}}.
 
 \subsubsection{Structured information exchanges}
 \label{structured-information-exchanges}
@@ -4156,8 +4145,7 @@ information exchange requirements (IERs) and then map these onto data
 transfers in the most efficient way, while avoiding opening up
 opportunities for adversaries to attack the system. This is described
 above in
-\protect\hyperlink{consensus-constraints-and-design-decisions}{{Section
-6.1}}
+\cref{consensus-constraints-and-design-decisions}
 
 Resulting design decisions include:
 
@@ -4285,8 +4273,7 @@ traffic is limited)
 The `topography' is the combination of topology and performance.
 Performance is a function of both capacity and distance, because
 achievable TCP download speeds depend on the round-trip time (RTT) of
-the bearer (this is discussed in more
-\protect\hyperlink{tcp-rpc-response-behavior}{{detail in the Annex}}).
+the bearer (this is discussed in more detail in \cref{tcp-rpc-response-behavior}).
 The goal is to optimise the topography of the data diffusion network,
 not just its topology.
 
@@ -4294,7 +4281,7 @@ not just its topology.
 \label{summary-response-to-threats}
 
 Here we summarise the responses to the threats discussed in
-\protect\hyperlink{high-level-threat-model}{{§7.3}} embodied in the
+\cref{high-level-threat-model} embodied in the
 Shelley network design.
 
 \begin{longtable}[]{@{}ll@{}}
@@ -4361,8 +4348,8 @@ addresses of) other nodes is called `gossiping', and is required for the
 fully decentralised version of Shelley (2.2). The implementation that
 will be taken here is inspired by Kademlia, but can be far less complex.
 
-\section{Outstanding/unresolved issues}
-\label{outstandingunresolved-issues}
+\section{Outstanding and unresolved issues}
+\label{outstanding-unresolved-issues}
 
 \subsection{Cold/black start scenarios}
 \label{coldblack-start-scenarios}
@@ -4582,6 +4569,7 @@ else.
 \end{enumerate}
 
 \paragraph{Participate in network as a large stakeholder}
+\label{participate-in-network-as-a-large-stakeholder}
 
 As a user running a core node on a server and with large stake in the
 network, I would like to join the Cardano network so I can participate
@@ -5122,8 +5110,7 @@ Per-hop budget for ``data diffusion''
 \end{longtable}
 
 These budgets should be compared with the time-to-complete for
-delivering a block in
-\protect\hyperlink{time-to-transmit-a-block-of-given-size-across-given-latencies}{{§12.2.1}}.
+delivering a block in \cref{time-to-transmit-a-block-of-given-size-across-given-latencies}.
 
 Size of spanning tree as a function of depth and node valency (assuming
 homogeneity):
@@ -5541,7 +5528,7 @@ Haskell packages:
 
 For the larger picture how all the network components fit together with
 the consensus components in a full node, see the diagram in
-\protect\hyperlink{consensus-components}{{Section 6.2}}.
+\cref{consensus-components}.
 
 All the \emph{node-to-node} mini-protocols (\emph{chain-sync},
 \emph{block-fetch} and \emph{tx-submission} protocols) are multiplexed
