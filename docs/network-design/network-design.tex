@@ -2,6 +2,9 @@
 \PassOptionsToPackage{hyphens}{url}
 %
 \documentclass[]{article}
+
+\usepackage{todonotes}
+
 \usepackage{lmodern}
 \usepackage{amssymb,amsmath}
 \usepackage{ifxetex,ifluatex}
@@ -457,6 +460,8 @@ Team.
 
 \emph{\textbf{Who the original was for:. }}
 
+\todo[inline]{ND: Need Biz Level decision - is this still the avowed intended audience?}
+
 It was intended to provide a management-level overview of the Cardano
 Shelley networking layer to inform strategic decision making and to
 provide confidence in the proposed networking implementation,
@@ -613,6 +618,9 @@ document.
 \hypertarget{structure-of-the-document}{%
 \subsection{​5.1​~Structure of the
 document}\label{structure-of-the-document}}
+
+\todo[inline]{ND: May be missing "this is how the bits fit together" part of the story - this could be as diagram(s) or text.
+The aim would be to "tell them what we are going to tell them" to provide some hooks for the reader to attach ideas to as they are presented.}
 
 This document is structured as follows:
 
@@ -2661,6 +2669,8 @@ releases without introducing significant compatibility problems.
 \subsection{​6.8​~Related work
 (decentralisation)}\label{related-work-decentralisation}}
 
+\todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
+
 As discussed in \protect\hyperlink{decentralisation-design}{{Section
 6.7}}, prior graph theory {[}Watts99{]} tells us that we can construct
 large graphs with small hop counts from a range of starting graph types.
@@ -3802,6 +3812,9 @@ parameter to be \textasciitilde{}20 gives the following thresholds and
 targets\footnote{Based on informal discussions with the research group.}
 for bloc distribution:
 
+\todo[inline]{Need to review the numbers above and below based on the choice
+of slot length, $f$ and praos $\Delta$ parameters.}
+
 \begin{itemize}
 \item
   \begin{quote}
@@ -3920,7 +3933,7 @@ It can be seen that high transaction rates limit the transaction size,
 even with large blocks. Also there are combinations that are infeasible
 for different uses. A transaction\footnote{At least in the benchmarking
   environment -- which is using the simplest forms of transaction -
-  correct at time of writing..} has a minimum size of 305 §bytes (single
+  correct at time of writing..} has a {minimum size of 305 §bytes}\todo{PT: is this still correct?} (single
 input UTxO to single UTxO), a ``useful'' one (1 input to two output) 361
 bytes. Coin selection (for privacy enhancement) uses multiple inputs and
 multiple outputs. And exchanges look for large numbers (50+) and
@@ -3956,7 +3969,7 @@ an adversary. An adversary might exploit them when they occur, however.
 
 Assuming that stake pools exhibit rational behavior, we expect of our
 delegation design\footnote{https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/delegationDesignSpec/latest/download-by-type/doc-pdf/delegation\_design\_spec}
-that roughly 1000 peers will hold at least 80\% of the total stake.
+that roughly {1000 peers}\todo{PT: still correct?} will hold at least 80\% of the total stake.
 
 \hypertarget{graceful-degradation}{%
 \subsection{​9.5​~Graceful degradation}\label{graceful-degradation}}
