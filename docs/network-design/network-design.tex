@@ -34,7 +34,7 @@
 
 \tableofcontents
 
-\section{​Revision History}
+\section{Revision History}
 \label{revision-history}
 
 \begin{longtable}[]{@{}llll@{}}
@@ -64,7 +64,7 @@ headings\tabularnewline
 \bottomrule
 \end{longtable}
 
-\section{​Executive Summary}
+\section{Executive Summary}
 \label{executive-summary}
 
 \emph{\textbf{Purpose of document.} }
@@ -115,7 +115,7 @@ globally distributed network. This is a novel, technically complex
 issue. The resulting implementation is carefully designed but relatively
 simple. It has been validated, substantially implemented and tested.
 
-\section{​Technical Summary and Motivation for the New Design}
+\section{Technical Summary and Motivation for the New Design}
 \label{technical-summary-and-motivation-for-the-new-design}
 
 The networking requirements for a Proof-of-Stake (PoS) system, such as
@@ -156,7 +156,7 @@ has not yet been deployed, namely the peer selection and subscription
 management (outline design in \cref{decentralisation-design}
 \cref{decentralisation-design}).
 
-\section{​Introduction}
+\section{Introduction}
 \label{introduction}
 
 A blockchain is a mechanism for computing \emph{distributed consensus}
@@ -240,7 +240,7 @@ slightly different things -- technically, data diffuses \emph{across} a
 network -- for simplicity we may use these terms synonymously in this
 document.
 
-\subsection{​Structure of the document}
+\subsection{Structure of the document}
 \label{structure-of-the-document}
 
 \todo[inline]{ND: May be missing "this is how the bits fit together" part of the story - this could be as diagram(s) or text.
@@ -305,7 +305,7 @@ This document is structured as follows:
   \end{quote}
 \end{enumerate}
 
-\section{​Overview}
+\section{Overview}
 \label{overview}
 
 This document concerns the requirements, constraints and design
@@ -330,7 +330,7 @@ understand the design constraints and design decisions for the network
 layer implementation we must first consider the requirements,
 constraints and design decisions of the consensus layer implementation.
 
-\subsection{​Consensus constraints and design decisions}
+\subsection{Consensus constraints and design decisions}
 \label{consensus-constraints-and-design-decisions}
 
 Cardano as a cryptocurrency system fundamentally relies on an
@@ -859,7 +859,7 @@ fragments\footnote{The in-memory chain fragment data structure is used
   numbers, in addition to the normal efficient sequence operations.} of
 chain headers where it allows for a simple and efficient representation.
 
-\subsection{​Consensus components}
+\subsection{Consensus components}
 \label{consensus-components}
 
 In addition to chain synchronisation, the consensus implementation needs
@@ -1051,7 +1051,7 @@ flexibility and makes the code amenable to rigorous component level
 testing and it also simplifies the review process (whether internal or
 external).
 
-\subsection{​Network constraints and design decisions}
+\subsection{Network constraints and design decisions}
 \label{network-constraints-and-design-decisions}
 
 There is no clear line between the consensus and network layers of an
@@ -1462,7 +1462,7 @@ compatible implementation. The present implementation uses an existing
 Haskell CBOR implementation that has been tested and externally audited
 to deal robustly with untrusted input.
 
-\subsection{​Network libraries and components}
+\subsection{Network libraries and components}
 \label{network-libraries-and-components}
 
 Following from the high-level design choices above, the network layer
@@ -1695,7 +1695,7 @@ production or in the IO simulator for testing. For example the consensus
 storage subsystem is tested this way with simulated I/O failures and
 file corruption.
 
-\subsection{​Related work (data diffusion)}
+\subsection{Related work (data diffusion)}
 \label{related-work-data-diffusion}
 
 As discussed in
@@ -1778,7 +1778,7 @@ literature on session types. The
 Professor Wadler is involved, maintains a large collection of references
 and other resources.
 
-\subsection{​Decentralisation constraints}
+\subsection{Decentralisation constraints}
 \label{decentralisation-constraints}
 
 The requirements for decentralisation come from a combination of the
@@ -1975,7 +1975,7 @@ time scales are very practical. More analysis is needed for medium and
 high stake attackers. Our threat model dictates that we must at least
 handle low stake adversaries.
 
-\subsection{​Decentralisation design}
+\subsection{Decentralisation design}
 \label{decentralisation-design}
 
 Analysis of ``S/Kademlia'' suggests that one of the main drivers for its
@@ -2265,7 +2265,7 @@ and hot states. All the rest is governed by purely local policies and
 hence there is significant scope to adjust these over a series of
 releases without introducing significant compatibility problems.
 
-\subsection{​Related work (decentralisation)}
+\subsection{Related work (decentralisation)}
 \label{related-work-decentralisation}
 
 \todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
@@ -2326,10 +2326,10 @@ topic and would benefit from further study.
 Other implementation approaches to decentralization are discussed in
 \cref{analysis-of-alternative-approaches}.
 
-\section{​Distributed consensus on a global scale}
+\section{Distributed consensus on a global scale}
 \label{distributed-consensus-on-a-global-scale}
 
-\subsection{​Characteristics of Cardano}
+\subsection{Characteristics of Cardano}
 \label{characteristics-of-cardano}
 
 We start with a PoS algorithm called \emph{Ouroboros}, and a
@@ -2357,8 +2357,7 @@ federated nodes that produce blocks.
 \cref{decentralisation-design} is
 the goal of the second phase of Shelley.
 
-\subsection{​Fundamental requirements of Cardano data
-diffusion}
+\subsection{Fundamental requirements of Cardano data diffusion}
 \label{fundamental-requirements-of-cardano-data-diffusion}
 
 The Shelley network component has a specific problem to solve: it must
@@ -2660,7 +2659,7 @@ communications} from any peer needs to be preserved, which means that
 connections need to be stateful. This effectively rules out stateless
 communication stacks, such as typical RPC approaches.
 
-\subsection{​High-level threat model}
+\subsection{High-level threat model}
 \label{high-level-threat-model}
 
 Fundamentally, the threat model is that of Ouroboros, with some
@@ -2883,7 +2882,7 @@ affected by any action a node can take\footnote{An organisation or
   longer timescale.}. However, the impact of such attacks can be
 mitigated by careful design of the network architecture.
 
-\section{​Analysis of alternative approaches}
+\section{Analysis of alternative approaches}
 \label{analysis-of-alternative-approaches}
 
 A variety of approaches to constructing networks have been proposed in
@@ -2973,7 +2972,7 @@ In general:
 
 We now consider selected published related work in more detail.
 
-\subsection{​Dandelion}
+\subsection{Dandelion}
 \label{dandelion}
 
 This is an approach to improve potential anonymity for the submission of
@@ -2988,7 +2987,7 @@ system provides no guarantee of anonymity against
 Such anonymity enhancement is not a requirement for Shelley, but could
 be considered in later iterations.
 
-\subsection{​Kademlia}
+\subsection{Kademlia}
 \label{kademlia}
 
 Kademlia {[}MM02{]} is an approach to creating distributed hash tables,
@@ -3273,7 +3272,7 @@ misaligned\tabularnewline
 \bottomrule
 \end{longtable}
 
-\section{​Operational environment and constraints}
+\section{Operational environment and constraints}
 \label{operational-environment-and-constraints}
 
 Cardano Shelley should be realisable on various platforms and scales of
@@ -3595,7 +3594,7 @@ to provide a clean boundary between the network component and the
 consensus component, so that they can be developed, tested, and evolve
 independently.
 
-\section{​Key design decisions}
+\section{Key design decisions}
 \label{key-design-decisions}
 
 Creating an efficient implementation of an algorithm\footnote{For
@@ -4398,21 +4397,13 @@ allocation and other stakepool operation is, perhaps, something that the
 Cardano Foundation could help manage through a suitable conformance /
 certification programme.
 
-\section{​Annexes}
+\section{Annexes}
 \label{annexes}
 
-\subsection[​12.1​~Business
-requirements]{\texorpdfstring{​12.1​~Business requirements\footnote{Reproduced
-  from
-  \href{https://github.com/input-output-hk/ouroboros-network-docs/blob/master/technical-report/network.pdf}{{part
-  2 of the documentation}} to satisfy the requirement for a
-  self-contained document.}}{​12.1​~Business requirements}}
+\subsection{Business requirements}
 \label{business-requirements}
 
-The high level business requirements reproduced below in italics come
-from
-\href{https://github.com/input-output-hk/ouroboros-network-docs/blob/master/technical-report/network.pdf}{{part
-2 of the documentation}} for the reader's convenience. They were signed
+The high level business requirements reproduced below were signed
 off in late 2017.
 
 They are expressed in informal prose, often following a ``user story''
@@ -5886,7 +5877,7 @@ scenarios. We use this technique in the \emph{BlockFetch},
 cases it allowed us to catch subtle bugs early in the development
 process.
 
-\section{​References}
+\section{References}
 \label{references}
 
 {[}MM02{]} Maymounkov P., Mazières D. (2002) Kademlia: A Peer-to-Peer
