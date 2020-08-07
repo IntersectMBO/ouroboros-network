@@ -169,15 +169,12 @@ Distributed consensus algorithms fall into two main camps: proof-of-work
 
 \begin{itemize}
 \item
-  \begin{quote}
   \textbf{Proof-of-work} algorithms, like Bitcoin's, are a race to
   `mine' blocks. The winner gets to add a block on the blockchain, and
   collects rewards for doing so.\\
   Miners consume vast computational resources as they compete on a
   global scale.
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{Proof-of-stake} algorithms take turns to produce blocks in
   proportions that are determined by the users' stakes in the system.\\
   Blocks can be produced efficiently and frequently, improving
@@ -185,7 +182,6 @@ Distributed consensus algorithms fall into two main camps: proof-of-work
     pass for the consensus to be considered immutable.}, but at the risk
   of creating forks if a previous block fails to reach the next block
   producer in time.
-  \end{quote}
 \end{itemize}
 
 Cardano is a third-generation blockchain\footnote{Bitcoin was the first
@@ -199,17 +195,12 @@ Shelley is a full, modular, reimplementation of Cardano, organised into
 two main functional components:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   the \emph{data diffusion} layer, which governs how data propagates
   between Cardano nodes, and
-  \end{quote}
 \item
-  \begin{quote}
   the \emph{consensus} layer, which implements the Ouroboros algorithm
   and applies the ledger rules.
-  \end{quote}
 \end{enumerate}
 
 Cardano is a distributed algorithm. Consequently in the Shelley
@@ -219,20 +210,13 @@ functions interact via the data diffusion component.
 This document describes, for the Shelley implementation of Cardano:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   the goals and constraints of the data diffusion component,
-  \end{quote}
 \item
-  \begin{quote}
   the design decisions that were made in meeting these goals and
   constraints, and
-  \end{quote}
 \item
-  \begin{quote}
   why those particular decisions were made.
-  \end{quote}
 \end{enumerate}
 
 A note on terminology: while ``data diffusion'' and ``network'' mean
@@ -249,17 +233,13 @@ The aim would be to "tell them what we are going to tell them" to provide some h
 This document is structured as follows:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   In \cref{overview} we describe the overall
   implementation of the Ouroboros algorithm, and summarise the key
   constraints and design decisions, in particular how validation and
   forwarding have to be interleaved in order to deliver a robust
   implementation.
-  \end{quote}
 \item
-  \begin{quote}
   In \cref{distributed-consensus-on-a-global-scale} we discuss how the
   constraints of the physical world impact on a distributed ledger
   system and also the implications of running an autonomous
@@ -268,33 +248,23 @@ This document is structured as follows:
   it is global and open, including the possibility of \emph{adversarial
   nodes} within the system and the vulnerability of being on the global
   Internet, such as exposure to DDoS attacks.
-  \end{quote}
 \item
-  \begin{quote}
   In \cref{analysis-of-alternative-approaches} we consider a range of
   published approaches to transferring information between nodes and the
   extent to which they are able to meet the constraints and deal with
   the threats that were discussed in
   \cref{distributed-consensus-on-a-global-scale}.
-  \end{quote}
 \item
-  \begin{quote}
   In \cref{operational-environment-and-constraints} we enumerate the
   operational environment and the constraints that are derived from the
   business requirements from \cref{business-requirements}.
-  \end{quote}
 \item
-  \begin{quote}
   In \cref{key-design-decisions} we discuss our development
   approach and design decisions.
-  \end{quote}
 \item
-  \begin{quote}
   In \cref{outstanding-unresolved-issues} we look at currently
   unresolved issues.
-  \end{quote}
 \item
-  \begin{quote}
   In the appendix we provide: the previously-agreed business
   requirements (\cref{business-requirements}); numerical models of TCP
   performance (\cref{tcp-rpc-response-behavior}), the network scaling
@@ -302,7 +272,6 @@ This document is structured as follows:
   Ouroboros Praos (\cref{performance-model-of-ouroboros-praos}); and
   give a detailed description of the software components that are
   required by our solution (\cref{ouroboros-network-components}).
-  \end{quote}
 \end{enumerate}
 
 \section{Overview}
@@ -314,13 +283,9 @@ design is fundamentally shaped by
 
 \begin{itemize}
 \item
-  \begin{quote}
   the constraints and design of the Cardano consensus layer, and
-  \end{quote}
 \item
-  \begin{quote}
   keeping extensibility in mind for the product roadmap.
-  \end{quote}
 \end{itemize}
 
 Thus far, the network parts exist almost exclusively to serve the needs
@@ -359,62 +324,40 @@ including quantitative non-functional requirements.
 There are three levels of refinement:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The underpinning academic papers (e.g. {[}BGKR17, BGKRZ19{]}) that
   give a \emph{mathematical description} of the algorithm;
-  \end{quote}
 \item
-  \begin{quote}
   An \emph{implementation design} that:
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
   \item
-    \begin{quote}
     Can be shown equivalent to the mathematical description (informally
     at first, formal proof to follow as and when time permits);
-    \end{quote}
   \item
-    \begin{quote}
     Can be implemented in a real-world distributed computational
     setting;
-    \end{quote}
   \item
-    \begin{quote}
     Does not introduce new possibilities -- with respect to the
     mathematical description -- for attackers to disrupt or subvert the
     system, or at least includes mitigations for any vulnerabilities
     that it does introduce;
-    \end{quote}
   \end{enumerate}
 \item
-  \begin{quote}
   A \emph{software implementation} that follows from the implementation
   design;
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
-  \setcounter{enumii}{3}
   \item
-    \begin{quote}
     The correspondence between the two being checked through tests,
     property checking etc.;
-    \end{quote}
   \item
-    \begin{quote}
     That is efficient, modular and easy to maintain; and
-    \end{quote}
   \item
-    \begin{quote}
     That does not introduce any further possibilities -- with respect to
     the implementation design -- for attackers to disrupt or subvert the
     system through refinements of or changes to the design, or at least
     includes mitigations for any that it does introduce.
-    \end{quote}
   \end{enumerate}
 \end{enumerate}
 
@@ -445,19 +388,12 @@ Ouroboros \emph{as an algorithm specification} is elegantly modular,
 comprising:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Reliable chain broadcast; followed by
-  \end{quote}
 \item
-  \begin{quote}
   Chain validation; followed by
-  \end{quote}
 \item
-  \begin{quote}
   Chain selection
-  \end{quote}
 \end{enumerate}
 
 All current members of the Ouroboros family have this same structure,
@@ -528,46 +464,34 @@ In PoW systems:
 
 \begin{itemize}
 \item
-  \begin{quote}
   The number of different block headers with a valid PoW that can be
   constructed (over any given period of time) is bounded by the total
   available hashing power in the world. In Bitcoin for example this is
   one header every ten minutes on average.
-  \end{quote}
 \item
-  \begin{quote}
   The header PoW can be checked with little computational cost. This
   does not require any significant or recent state, only a
   vaguely-recent lower bound on the hashing difficulty value is needed.
-  \end{quote}
 \item
-  \begin{quote}
   Such a cheap and simple test can be easily integrated into existing
   distributed algorithms such as broadcast algorithms.
-  \end{quote}
 \end{itemize}
 
 By contrast, with PoS in Ouroboros:
 
 \begin{itemize}
 \item
-  \begin{quote}
   There is no equivalent of the PoW check that is expensive for the
   adversaries and cheap for the honest nodes: adversaries can create
   many apparently valid or actually valid candidate headers or whole
   chains.
-  \end{quote}
 \item
-  \begin{quote}
   Block headers can only be fully validated with access to a very recent
   copy of the full ledger state, and the other preceding headers --
   which is not a simple stateless check.
-  \end{quote}
 \item
-  \begin{quote}
   Having the full ledger state relies on the other two pieces of
   Ouroboros functionality: chain validation and chain selection.
-  \end{quote}
 \end{itemize}
 
 Thus we conclude that the Ouroboros broadcast functionality cannot be
@@ -629,17 +553,11 @@ the three parts of the Ouroboros algorithm functionality:
 
 \begin{itemize}
 \item
-  \begin{quote}
   chain transmission,
-  \end{quote}
 \item
-  \begin{quote}
   chain validation and
-  \end{quote}
 \item
-  \begin{quote}
   chain selection.
-  \end{quote}
 \end{itemize}
 
 These three parts are used at every node in the graph that indirectly
@@ -663,27 +581,17 @@ algorithm is as follows:
 
 \begin{itemize}
 \item
-  \begin{quote}
   each node transmits its current chain to its immediate neighbours;
-  \end{quote}
 \item
-  \begin{quote}
   each node validates the incoming chain from each neighbour;
-  \end{quote}
 \item
-  \begin{quote}
   each node does chain selection on the candidate chains;
-  \end{quote}
 \item
-  \begin{quote}
   the selected chain becomes the node's new current chain, ready to be
   transmitted to its neighbours again; and
-  \end{quote}
 \item
-  \begin{quote}
   when a node is a slot leader, it extends its own current chain with
   the new block.
-  \end{quote}
 \end{itemize}
 
 By contrast, recall that in the original mathematical description of the
@@ -707,20 +615,16 @@ implementation is to separate block headers and block bodies:
 
 \begin{itemize}
 \item
-  \begin{quote}
   If blocks can be almost fully validated in O(1) time based on looking
   at only a small fixed size block header, then honest nodes can
   validate candidate chains with a small bounded amount of work.
-  \end{quote}
 \item
-  \begin{quote}
   It also enables a design where a node can see blocks available from
   many immediate peers but can choose to download each block body of
   interest just once (from a peer of its choosing from which it is
   available). This saves network bandwidth\footnote{We also exploit this
     to choose a peer that we have reason to believe will deliver the
     block soonest.}.
-  \end{quote}
 \end{itemize}
 
 In the case of Ouroboros, we can pack all the cryptographic consensus
@@ -867,22 +771,14 @@ to:
 
 \begin{itemize}
 \item
-  \begin{quote}
   download block bodies;
-  \end{quote}
 \item
-  \begin{quote}
   validate new transactions;
-  \end{quote}
 \item
-  \begin{quote}
   forward transactions towards block producing nodes; and
-  \end{quote}
 \item
-  \begin{quote}
   use chain synchronisation, block download and transaction submission
   with multiple upstream and downstream peers at once.
-  \end{quote}
 \end{itemize}
 
 None of these interactions needs to be synchronised with any of the
@@ -894,56 +790,37 @@ above consists of the following components:
 
 \begin{itemize}
 \item
-  \begin{quote}
   The \emph{chain database} component wraps several other sub-components
   and covers several areas of consensus functionality:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     It stores the node's current chain and the corresponding ledger
     state.
-    \end{quote}
   \item
-    \begin{quote}
     It manages the on-disk persistence of both pieces of state.
-    \end{quote}
   \item
-    \begin{quote}
     It maintains a set of blocks that have been recently downloaded but
     do not yet link onto the current chain, or are part of a recent fork
     that is not the current chain.
-    \end{quote}
   \item
-    \begin{quote}
     It performs the final stages of block validation: validating the
     contents of blocks according to the ledger rules.
-    \end{quote}
   \item
-    \begin{quote}
     It performs the final chain selection and adoption of a new chain as
     the current chain, keeping the current ledger state in sync.
-    \end{quote}
   \item
-    \begin{quote}
     It provides read access to the current chain and ledger state.
-    \end{quote}
   \item
-    \begin{quote}
     It provides a method to add new blocks to the database, which also
     triggers block body validation and chain selection.
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   The \emph{chain sync client} component engages in the consumer side of
   the chain synchronisation protocol to continuously get the candidate
   chains of headers from the immediate upstream peers, interleaved with
   chain header validation.
-  \end{quote}
 \item
-  \begin{quote}
   The \emph{block fetch} component selects plausible candidate chains
   based on the available valid chains of headers, and decides which
   block bodies to download from which peers (the \emph{block fetch
@@ -951,41 +828,30 @@ above consists of the following components:
   selected blocks from the selected peers (the \emph{block fetch
   client}). The implementation of this component sits within the network
   layer package.
-  \end{quote}
 \item
-  \begin{quote}
   Two simple components, the \emph{chain sync server} and \emph{block
   fetch server,} provide the producer side of the chain synchronisation
   and block fetching. These draw their data from the chain database and
   allow downstream peers to synchronise a copy of the node's current
   chain.
-  \end{quote}
 \item
-  \begin{quote}
   The \emph{mempool} component stores and manages a set of valid pending
   transactions. It deals with keeping the mempool in sync with the
   current ledger state. It also deals with validating new transactions
   that are added to the mempool.
-  \end{quote}
 \item
-  \begin{quote}
   The \emph{tx-submission client} component consumes transactions from
   the mempools of downstream peers and tries to add them to the local
   mempool. This enables downstream peers to submit their transactions to
   this node. It deals efficiently with the common case that the same
   transaction is available from many peers.
-  \end{quote}
 \item
-  \begin{quote}
   The \emph{tx-submission server} is a simple component to provide the
   producer side of the transaction submission system. This enables the
   node to submit transactions to other upstream peers.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{block forge} component creates new blocks when the node
   becomes the slot leader.
-  \end{quote}
 \end{itemize}
 
 Each of these components is illustrated in the diagram below, which
@@ -1000,15 +866,11 @@ The validation and chain selection functionalities of Ouroboros are in
 four separate places:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Peer chain header validation is performed in the chain sync client.
   This covers all the Ouroboros chain validation protocol checks, but
   none of the checks on the block bodies.
-  \end{quote}
 \item
-  \begin{quote}
   Initial selection of plausible chains takes place in the block fetch
   logic. It considers all the valid chains of headers maintained by the
   chain sync clients, and looks for ones that are longer than the
@@ -1017,18 +879,13 @@ four separate places:
   longest chain, the available network resources and the expected
   ability to complete within deadlines. This should be considered part
   of chain selection.
-  \end{quote}
 \item
-  \begin{quote}
   The evidence connecting the block header to the block body is checked
   by the block fetch client upon completing the download of the block
   body.
-  \end{quote}
 \item
-  \begin{quote}
   The final block body (ledger) validation and chain selection are
   performed in a single integrated algorithm in the chain database.
-  \end{quote}
 \end{enumerate}
 
 The fact that these are split up is deliberate. The checks are moved to
@@ -1062,15 +919,11 @@ layer provides the \emph{policy} and the network layer provides the
 
 \begin{itemize}
 \item
-  \begin{quote}
   The consensus layer handles issues deriving from the Ouroboros
   algorithm, whereas
-  \end{quote}
 \item
-  \begin{quote}
   the network layer handles issues of effective use of network
   resources.
-  \end{quote}
 \end{itemize}
 
 Both layers must be concerned with adversarial behaviour and asymmetric
@@ -1082,22 +935,15 @@ The final high level consensus design has information exchange
 requirements on three areas:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   \emph{\textbf{chain sync}}: a requirement to support a stateful
   application-level protocol for synchronising chains of headers;
-  \end{quote}
 \item
-  \begin{quote}
   \emph{\textbf{block fetch}}: a requirement for downloading block
   bodies; and
-  \end{quote}
 \item
-  \begin{quote}
   \emph{\textbf{tx submission}}: a requirement for transmitting new
   transactions from the mempool in one node to that of another.
-  \end{quote}
 \end{enumerate}
 
 \subsubsection{Stateful versus stateless protocols}
@@ -1155,15 +1001,11 @@ the node behind the firewall. This
 
 \begin{itemize}
 \item
-  \begin{quote}
   introduces an asymmetry into the design, and
-  \end{quote}
 \item
-  \begin{quote}
   makes it harder to push notifications promptly, such as block header
   announcements, which puts ``home'' stake pools at a further
   disadvantage in meeting the Ouroboros timing constraints.
-  \end{quote}
 \end{itemize}
 
 By comparison, with a bi-directional connection-oriented protocol such
@@ -1285,25 +1127,16 @@ Performance is a very important consideration for the network layer,
 deriving from:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   the Ouroboros timing constraints;
-  \end{quote}
 \item
-  \begin{quote}
   the business requirements to support certain latencies and
   throughputs;
-  \end{quote}
 \item
-  \begin{quote}
   the business requirement to support worldwide distribution; and
-  \end{quote}
 \item
-  \begin{quote}
   the requirement to support block-producing nodes on consumer-grade
   network connections.
-  \end{quote}
 \end{enumerate}
 
 In the context of networks, performance amounts primarily to trying to
@@ -1353,14 +1186,10 @@ include
 
 \begin{itemize}
 \item
-  \begin{quote}
   standardised text formats like JSON, and
-  \end{quote}
 \item
-  \begin{quote}
   standardised binary formats like ASN.1, MsgPack, CBOR and those used
   by Thrift and ProtoBufs.
-  \end{quote}
 \end{itemize}
 
 The implementation (not just the encoding format) must be robust against
@@ -1371,55 +1200,30 @@ roughly\footnote{The order is of course somewhat a matter of opinion,
 include:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   standardised format or not
-  \end{quote}
 \item
-  \begin{quote}
   stability of standard
-  \end{quote}
 \item
-  \begin{quote}
   availability of format documentation
-  \end{quote}
 \item
-  \begin{quote}
   availability of existing implementations
-  \end{quote}
 \item
-  \begin{quote}
   availability of existing implementations for 3rd party implementations
-  \end{quote}
 \item
-  \begin{quote}
   availability of existing support tools
-  \end{quote}
 \item
-  \begin{quote}
   having a schema language for documentation and validation
-  \end{quote}
 \item
-  \begin{quote}
   availability of schema tools
-  \end{quote}
 \item
-  \begin{quote}
   ease of forwards/backwards compatibility
-  \end{quote}
 \item
-  \begin{quote}
   encoding size
-  \end{quote}
 \item
-  \begin{quote}
   performance of encoding and decoding
-  \end{quote}
 \item
-  \begin{quote}
   minimising excessive code dependencies
-  \end{quote}
 \end{enumerate}
 
 There are several perfectly adequate choices that score well against all
@@ -1436,25 +1240,15 @@ significant savings:
 
 \begin{itemize}
 \item
-  \begin{quote}
   reduces dependencies,
-  \end{quote}
 \item
-  \begin{quote}
   simplifies documentation,
-  \end{quote}
 \item
-  \begin{quote}
   reduces the cognitive load for developers,
-  \end{quote}
 \item
-  \begin{quote}
   reduces audit costs, and
-  \end{quote}
 \item
-  \begin{quote}
   minimises the maintenance burden.
-  \end{quote}
 \end{itemize}
 
 This is true for the present Cardano implementation and any other
@@ -1470,75 +1264,52 @@ design consists of the following libraries and components:
 
 \begin{itemize}
 \item
-  \begin{quote}
   A \emph{multiplexer} component that carries multiple concurrent
   reliable ordered streams over a single reliable ordered bearer such as
   TCP\footnote{It can use any reliable ordered bearer connection.This
     greatly aids testing, but also adds flexibility.}.
-  \end{quote}
 \item
-  \begin{quote}
   The \emph{typed-protocols} framework for describing and using
   application level protocols, with enforcement via Haskell types. This
   is a form of \href{https://groups.inf.ed.ac.uk/abcd/}{{session
   typing}}. It also has direct support for pipelining. It is described
   in more detail in this section below.
-  \end{quote}
 \item
-  \begin{quote}
   An \emph{IO simulator} library was developed for the purpose of
   testing the network and consensus components. It is described in more
   detail in this section below.
-  \end{quote}
 \item
-  \begin{quote}
   The three application level protocols (node to node):
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     chain sync;
-    \end{quote}
   \item
-    \begin{quote}
     block fetch; and
-    \end{quote}
   \item
-    \begin{quote}
     tx submission.
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
-\begin{quote}
 These define the mechanism but not the policy for using these protocols.
 They are defined using the typed-protocols framework.
-\end{quote}
 
 \begin{itemize}
 \item
-  \begin{quote}
   A \emph{connection handshake} protocol used during the initial set-up
   of connections with peers. It covers protocol version negotiation and
   checking compatibility of parameters like the network magic\footnote{This
     provides early failure and feedback when nodes accidentally connect
     to the wrong network, e.g. testnet vs mainnet.}. This is also
   defined using the typed-protocols framework.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{subscription manager} component that decides when to make new
   outbound connections to peers, which peers to connect to, and handles
   the process of doing so.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{server} component that handles accepting and managing inbound
   connections from other peers.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{block fetch} component. This was also listed as a consensus
   component but because it incorporates many concerns from the network
   layer such as achieving good network performance it was developed by
@@ -1548,21 +1319,16 @@ They are defined using the typed-protocols framework.
   available valid chains of headers, and decides which block bodies to
   download from which peers. It provides the policy for the block fetch
   protocol.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{local tx submission protocol} which is tailored to local
   clients (wallets, explorers, etc.). Since it runs in a trusted
   environment it can be simpler, which reduces implementation complexity
   for clients. It also gives immediate verbose feedback to a client
   application on tx validation failures.
-  \end{quote}
 \item
-  \begin{quote}
   A \emph{chain fragment} module that is shared with the consensus
   layer. It defines an in-memory data structure for dealing efficiently
   with sub-sequences of blockchain headers.
-  \end{quote}
 \end{itemize}
 
 As described in the previous section, the multiplexer satisfies the need
@@ -1647,25 +1413,15 @@ constraints and qualities in mind. They are designed:
 
 \begin{itemize}
 \item
-  \begin{quote}
   to allow implementations that can work in bounded space;
-  \end{quote}
 \item
-  \begin{quote}
   to maximise the opportunities for pipelining;
-  \end{quote}
 \item
-  \begin{quote}
   to exclusively use consumer driven control flow, without polling;
-  \end{quote}
 \item
-  \begin{quote}
   to be highly parametric to maximise flexibility and simplify testing;
-  \end{quote}
 \item
-  \begin{quote}
   to otherwise minimise the complexity of protocol implementations.
-  \end{quote}
 \end{itemize}
 
 The motivations for these are all obvious except perhaps the consumer
@@ -1819,36 +1575,24 @@ The other key business requirements are:
 
 \begin{itemize}
 \item
-  \begin{quote}
   the network layer should be decentralised in the sense that "IOHK
   should be in the same position on the network as any other stakeholder
   with an equivalent amount of stake";
-  \end{quote}
 \item
-  \begin{quote}
   to support certain transaction latencies and throughput rates;
-  \end{quote}
 \item
-  \begin{quote}
   to support worldwide distribution;
-  \end{quote}
 \item
-  \begin{quote}
   1,000 stakepool nodes holding about 80\% of the system's
   stake\footnote{The original business requirement was for 100
     large-scale stake pools (see
     \cref{participate-in-network-as-a-large-stakeholder}) but this was
     later raised to 1000.};
-  \end{quote}
 \item
-  \begin{quote}
   10,000 other small-scale private stakepool nodes; and
-  \end{quote}
 \item
-  \begin{quote}
   the requirement to support private stake pools operating on
   consumer-grade network connections;
-  \end{quote}
 \end{itemize}
 
 There is a trade-off between block size and the transmission time of a
@@ -1950,15 +1694,11 @@ crucial difficulties for PoW systems appear to be these:
 
 \begin{itemize}
 \item
-  \begin{quote}
   attackers (with moderate hashing power) executing an eclipse attack
   can create growing -- albeit slowly growing -- valid chains; and
-  \end{quote}
 \item
-  \begin{quote}
   a node does not generally know the amount or distribution of hashing
   power.
-  \end{quote}
 \end{itemize}
 
 Ouroboros does not share these difficulties. While it remains the case
@@ -2052,21 +1792,15 @@ Each node maintains three sets of known peer nodes:
 
 \begin{itemize}
 \item
-  \begin{quote}
   \textbf{cold peers} are peers that are known of but where there is no
   established network connection;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{warm peers} are peers where a bearer connection is established
   but it used only for network measurements and is not used for any
   application level consensus protocols;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{hot peers} are peers where the bearer connection is actively
   used for the application level consensus protocols.
-  \end{quote}
 \end{itemize}
 
 Limited information is maintained for these peers, based on previous
@@ -2103,25 +1837,15 @@ The inner control loop governs the following activities:
 
 \begin{itemize}
 \item
-  \begin{quote}
   the random gossip used to discover more cold peers;
-  \end{quote}
 \item
-  \begin{quote}
   promotion of cold peers to be warm peers;
-  \end{quote}
 \item
-  \begin{quote}
   demotion of warm peers to cold peers;
-  \end{quote}
 \item
-  \begin{quote}
   promotion of warm peers to hot peers; and
-  \end{quote}
 \item
-  \begin{quote}
   demotion of hot peers to warm peers.
-  \end{quote}
 \end{itemize}
 
 The inner control loop has the following goals to establish and
@@ -2129,34 +1853,20 @@ maintain:
 
 \begin{itemize}
 \item
-  \begin{quote}
   enough cold peers (e.g. 1000);
-  \end{quote}
 \item
-  \begin{quote}
   enough hot peers to meet the valency target (e.g. order of 5--20);
-  \end{quote}
 \item
-  \begin{quote}
   enough warm peers in total (e.g. order of 10--50)
-  \end{quote}
 \item
-  \begin{quote}
   a set of warm peers that are sufficiently diverse in terms of hop
   distance.
-  \end{quote}
 \item
-  \begin{quote}
   a target churn frequency for hot/warm changes
-  \end{quote}
 \item
-  \begin{quote}
   a target churn frequency for warm/cold changes
-  \end{quote}
 \item
-  \begin{quote}
   a target churn frequency for cold/unknown changes
-  \end{quote}
 \end{itemize}
 
 The target churn values are adjusted by the outer control loop, which we
@@ -2211,21 +1921,15 @@ that cause connections to fail into three classes:
 
 \begin{itemize}
 \item
-  \begin{quote}
   internal node exceptions e.g. local disk corruption\footnote{The
     recovery from detected disk corruption involves resetting to a
     known-good state, which involves shutting down connections to all
     peers.};
-  \end{quote}
 \item
-  \begin{quote}
   network failures e.g. dropped TCP connections; and
-  \end{quote}
 \item
-  \begin{quote}
   adversarial behaviour, e.g. a protocol violation detected by the
   typed-protocols layer or by the consensus layer.
-  \end{quote}
 \end{itemize}
 
 In the case of adversarial behaviour the peer can immediately be demoted
@@ -2239,14 +1943,10 @@ control loop over longer time scales. The outer control loop controls:
 
 \begin{itemize}
 \item
-  \begin{quote}
   the target churn frequencies of the inner control loop for
   promotion/demotion between the cold/warm/hot states
-  \end{quote}
 \item
-  \begin{quote}
   partial or total re-bootstrapping under certain circumstances
-  \end{quote}
 \end{itemize}
 
 The outer control loop monitors the chain growth quality, comparing it
@@ -2366,20 +2066,14 @@ algorithm, in particular:
 
 \begin{itemize}
 \item
-  \begin{quote}
   diffusion of blocks to all potential creators of new blocks
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     within the required timing constraint.
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   propagation of transactions for inclusion into blocks
-  \end{quote}
 \end{itemize}
 
 It must do this using poorly-specified and/or poorly-implemented
@@ -2497,20 +2191,15 @@ and the system becomes easily attackable. The authors attribute this
 decrease in block propagation time to two things:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The appearance of relay networks such as FIBRE\footnote{Note that this
     is essentially the approach that we are taking with Cardano for the
     time being until we have demonstrated in simulation that our peer
     selection algorithm results are good, and have determined suitable
     parameters.}.
-  \end{quote}
 \item
-  \begin{quote}
   Changes in the bitcoin network have allowed a faster transmission of
   blocks.
-  \end{quote}
 \end{enumerate}
 
 Keep in mind that for Bitcoin it suffices to check just the hash of the
@@ -2574,14 +2263,10 @@ More on this in
 
 \begin{itemize}
 \item
-  \begin{quote}
   \href{https://ethereum.stackexchange.com/questions/10166/why-doesnt-ethereum-have-a-fast-relay-network-like-bitcoin}{{https://ethereum.stackexchange.com/questions/10166/why-doesnt-ethereum-have-a-fast-relay-network-like-bitcoin}}
   and also
-  \end{quote}
 \item
-  \begin{quote}
   \href{https://medium.facilelogin.com/the-mystery-behind-block-time-63351e35603a}{{https://medium.facilelogin.com/the-mystery-behind-block-time-63351e35603a}}).
-  \end{quote}
 \end{itemize}
 
 Besides, the block size for Ethereum is typically 20-30kb (kilobytes) --
@@ -2690,23 +2375,14 @@ the system.
 The principal threats considered in the Shelley network design are:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Adversarial peers
-  \end{quote}
 \item
-  \begin{quote}
   Resource exhaustion attacks
-  \end{quote}
 \item
-  \begin{quote}
   Tier-1 actors
-  \end{quote}
 \item
-  \begin{quote}
   Bearer-level attacks
-  \end{quote}
 \end{enumerate}
 
 The response to these in the Shelley network design is summarised in
@@ -2735,16 +2411,11 @@ Adversarial peers can engage in the protocols incorrectly in two main
 ways:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   functional: by sending incorrect information; and
-  \end{quote}
 \item
-  \begin{quote}
   non-functional: by failing to meet timing constraints -- deliberately
   or not.
-  \end{quote}
 \end{enumerate}
 
 Functional violations include high level examples such as sending
@@ -2788,21 +2459,13 @@ Another way to attack a node is to exhaust some resource such as:
 
 \begin{itemize}
 \item
-  \begin{quote}
   CPU capacity;
-  \end{quote}
 \item
-  \begin{quote}
   RAM;
-  \end{quote}
 \item
-  \begin{quote}
   storage;
-  \end{quote}
 \item
-  \begin{quote}
   network interface capacity.
-  \end{quote}
 \end{itemize}
 
 There is a further implied requirement to achieve timely information
@@ -2890,39 +2553,25 @@ the literature. Questions to ask about them include:
 
 \begin{itemize}
 \item
-  \begin{quote}
   What advantages do they offer?
-  \end{quote}
 \item
-  \begin{quote}
   Can they natively:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Ensure meeting the timeliness constraint?
-    \end{quote}
   \item
-    \begin{quote}
     Deal with adversarial peers?
-    \end{quote}
   \item
-    \begin{quote}
     Resist resource exhaustion attacks?
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   If not, what is the likely effort in modifying them to be able to do
   so?
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     And the risk of failing to do so in the Shelley delivery timescale?
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -2930,34 +2579,25 @@ In general:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Broadcast methods are not used here for two reasons:
-  \end{quote}
 
   \begin{enumerate}
   \def\labelenumi{\alph{enumi}.}
   \item
-    \begin{quote}
     broadcast without interleaved validation would be subject to trivial
     DoS,
-    \end{quote}
   \item
-    \begin{quote}
     quite some time was spent looking at how to use block broadcast to
     implement Ouroboros but did not produce anything safe, whereas using
     chain syncing the security was clear and relatively simple to
     validate.
-    \end{quote}
   \end{enumerate}
 \item
-  \begin{quote}
   Off-the-shelf P2P systems are not designed to deal with our threat
   model. In particular very few are designed to resist asymmetric
   resource consumption attacks. Such attacks are a real problem as
   demonstrated by recent CVEs on HTTP2 implementations\footnote{\href{https://www.securityweek.com/http2-implementation-vulnerabilities-expose-servers-dos-attacks}{{https://www.securityweek.com/http2-implementation-vulnerabilities-expose-servers-dos-attacks}}}.
-  \end{quote}
 \item
-  \begin{quote}
   Existing P2P graph-construction systems are of limited use to us
   because they rely on the number of attackers in the network being a
   modest fraction of the overall network. Since creating network nodes
@@ -2967,7 +2607,6 @@ In general:
     claim would essentially reduce to "assume 50\% of stake is
     non-adversarial \textbf{and} assume that nobody bothers to create
     1000 adversarial network nodes (with 0 stake each)".}.
-  \end{quote}
 \end{itemize}
 
 We now consider selected published related work in more detail.
@@ -3082,42 +2721,30 @@ There are three available Haskell implementations:
 
 \begin{itemize}
 \item
-  \begin{quote}
   The original one on
   \href{https://hackage.haskell.org/package/kademlia-1.1.0.0}{{hackage}}:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     This leaves ``some of the implementation details, like timeout
     intervals and k-bucket size, for the user.''
-    \end{quote}
   \item
-    \begin{quote}
     It has several open issues dating back to 2015, which does not
     inspire confidence in the quality of the code.
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   The Serokell derivative of this:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     This was included in the cardano-sl codebase but proved unsuitable
     for use in production.
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   A new implementation that the networking team started in 2018 but
   after at least a month's work decided to abandon because the peer
   validation and veracity mechanism was proving too complex and had
   significant problems.
-  \end{quote}
 \end{itemize}
 
 Thus, no suitable `off the shelf' implementation is available.
@@ -3126,33 +2753,23 @@ In summary, Kademlia:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Adds huge complexity, both in coding and testing
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     No suitable off-the-shelf implementation
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Delivers no specific benefits to Cardano
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Peer discovery `gossiping' function very simple to implement by
     itself
-    \end{quote}
 
     \begin{itemize}
     \item
-      \begin{quote}
       Kademlia approach is providing design inspiration for this part
-      \end{quote}
     \end{itemize}
   \end{itemize}
 \end{itemize}
@@ -3290,64 +2907,42 @@ requiring kernel modifications or parameter changes, including:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Windows
-  \end{quote}
 \item
-  \begin{quote}
   Linux
-  \end{quote}
 \item
-  \begin{quote}
   MacOS
-  \end{quote}
 \end{itemize}
 
 It should support a range of connectivity types:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Consumer broadband
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Implying firewall and NAT (domestic and carrier) traversal\footnote{This
       essentially forces us to use TCP as the underlying transport
       mechanism.}
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Datacenter networks
-  \end{quote}
 \item
-  \begin{quote}
   Wide-area networks
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     IPv4 and IPv6
-    \end{quote}
   \item
-    \begin{quote}
     Other bearers
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Intra-machine IPC
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Avoiding `TLS hell'
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -3357,25 +2952,15 @@ It should be executable without consuming excessive\footnote{We take a
 
 \begin{itemize}
 \item
-  \begin{quote}
   CPU
-  \end{quote}
 \item
-  \begin{quote}
   Memory
-  \end{quote}
 \item
-  \begin{quote}
   Network interface capacity
-  \end{quote}
 \item
-  \begin{quote}
   TCP ports
-  \end{quote}
 \item
-  \begin{quote}
   Storage
-  \end{quote}
 \end{itemize}
 
 \subsection{Thresholds and targets}
@@ -3399,17 +2984,11 @@ of slot length, $f$ and praos $\Delta$ parameters.}
 
 \begin{itemize}
 \item
-  \begin{quote}
   Threshold: 95\% of peers reached within 20s
-  \end{quote}
 \item
-  \begin{quote}
   Target: 95\% of peers reached within 15s
-  \end{quote}
 \item
-  \begin{quote}
   Stretch: 95\% of peers reached within 10s
-  \end{quote}
 \end{itemize}
 
 This should be achieved even when blocks are all `full', as constrained
@@ -3435,58 +3014,42 @@ creates a series of fundamental tradeoffs that need to be managed:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Between geographic spread and minimum slot time / $\Delta$;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     A consistent view can be created more quickly if the participating
     nodes are physically close together, so that there are lower delays
     in exchanging information;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Between transaction size (50 bytes - 10's kbytes) and rate\footnote{Transaction
     bytes per second might be a better measure than transaction rate.};
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Larger transactions take more space in the block, so fewer of them
     can be incorporated in any given slot;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Between node valency\footnote{Increasing average node valency has
     diminishing returns, such that values beyond 20 are probably not
     justified. What is more significant (from the characteristic path
     length point of view) is the variance of node valency - i.e. some
     nodes have substantially higher number of chain-following
     subscribers in the hundreds.}, path length and network capacity;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     A higher valency (more connected peers) reduces the number of hops
     that information must travel, but increases the consumption of
     available network capacity at a node;
-    \end{quote}
   \item
-    \begin{quote}
     A larger number of hops reduces the time that any individual hop can
     be allowed to take and hence demands more of the network capacity to
     deliver the information quickly to the next node;
-    \end{quote}
   \item
-    \begin{quote}
     Both of these drive up the peak capacity requirement at a node.
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -3560,23 +3123,14 @@ major incident, we need to implement a precedence order of failure. This
 means prioritising:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The system as a whole over any individual node;
-  \end{quote}
 \item
-  \begin{quote}
   Large nodes (in terms of stake) over small nodes;
-  \end{quote}
 \item
-  \begin{quote}
   Nodes that create blocks over those that do not;
-  \end{quote}
 \item
-  \begin{quote}
   Blocks over transactions.
-  \end{quote}
 \end{enumerate}
 
 \subsection{Backward compatibility and extensibility}
@@ -3618,13 +3172,9 @@ implementation process we need to take care to:
 
 \begin{itemize}
 \item
-  \begin{quote}
   minimise the increase in the attack surface, and
-  \end{quote}
 \item
-  \begin{quote}
   mitigate against any increase that we cannot avoid.
-  \end{quote}
 \end{itemize}
 
 We call this \emph{threat-aware design}.
@@ -3636,33 +3186,19 @@ The most important are:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Peer-with-peer communication;
-  \end{quote}
 \item
-  \begin{quote}
   A DoS-resistant network architecture;
-  \end{quote}
 \item
-  \begin{quote}
   A development approach exploiting the capabilities of Haskell;
-  \end{quote}
 \item
-  \begin{quote}
   The use of abstract multiplexed point-to-point bearers;
-  \end{quote}
 \item
-  \begin{quote}
   Managing the network topology with a demand-driven spanning tree;
-  \end{quote}
 \item
-  \begin{quote}
   Using a compositional, polymorphic, typed protocol framework;
-  \end{quote}
 \item
-  \begin{quote}
   Continual, automatic performance assessment and optimisation.
-  \end{quote}
 \end{itemize}
 
 \subsection{Stateful implementation}
@@ -3739,15 +3275,10 @@ can consume resources of many honest nodes in forwarding junk data.
 The key threat-aware design principles of:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Detect and disconnect adversarial peers
-  \end{quote}
 \item
-  \begin{quote}
   Control resource consumption
-  \end{quote}
 \end{enumerate}
 
 lead to a different model, which we call `peer-with-peer' to distinguish
@@ -3757,39 +3288,27 @@ information exchanged (i.e. its meaning in the context of the current
 state) to:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   detect aberrant behaviour and
-  \end{quote}
 \item
-  \begin{quote}
   manage resource consumption exposure\footnote{For an example of the
     consequences of failing to validate information before forwarding
     it, see:
     \href{https://www.theregister.co.uk/2019/08/20/centurylink_outage_report_fcc/}{{https://www.theregister.co.uk/2019/08/20/centurylink\_outage\_report\_fcc/}}}.
-  \end{quote}
 \end{enumerate}
 
 The assumption that no peer can be trusted leads to three fundamental
 design decisions:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Only forwarding validated information;
-  \end{quote}
 \item
-  \begin{quote}
   Strictly controlling the potential for resource consumption;
-  \end{quote}
 \item
-  \begin{quote}
   Not forwarding information about other nodes.\footnote{Apart from
     their addresses, which a node can use to attempt to form new
     connections.}
-  \end{quote}
 \end{enumerate}
 
 \subsubsection{Validated forwarding}
@@ -3800,34 +3319,22 @@ particular, messages must be:
 
 \begin{itemize}
 \item
-  \begin{quote}
   well-formed syntactically, and
-  \end{quote}
 \item
-  \begin{quote}
   semantically valid in the context of previously forwarded information
   from that peer (as determined by the consensus component):
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Blocks in order on their chain
-    \end{quote}
   \item
-    \begin{quote}
     Transactions
-    \end{quote}
 
     \begin{itemize}
     \item
-      \begin{quote}
       in submission order
-      \end{quote}
     \item
-      \begin{quote}
       compatible with UTxO and other recent transactions
-      \end{quote}
     \end{itemize}
   \end{itemize}
 \end{itemize}
@@ -3919,41 +3426,25 @@ inevitable for an open-source project), two methods were used to
 eliminate implementation errors:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Make maximum use of the Haskell type system;
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
   \item
-    \begin{quote}
     Using a simple version of session types\footnote{Session types:
       \href{https://groups.inf.ed.ac.uk/abcd/}{{https://groups.inf.ed.ac.uk/abcd/}}};
-    \end{quote}
   \end{enumerate}
 \item
-  \begin{quote}
   Build on the idea of an executable specification by being able to run
   the actual code in a simulated mode, which enables;
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
-  \setcounter{enumii}{1}
   \item
-    \begin{quote}
     control over entropy and timing for reproducibility;
-    \end{quote}
   \item
-    \begin{quote}
     regression testing;
-    \end{quote}
   \item
-    \begin{quote}
     trying out worst-case scenarios.
-    \end{quote}
   \end{enumerate}
 \end{enumerate}
 
@@ -4108,18 +3599,12 @@ becomes too complex to reason about. Key mini-protocols are:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Bulk block sync
-  \end{quote}
 \item
-  \begin{quote}
   Chain following -- filter useful interactions to the consensus
   component
-  \end{quote}
 \item
-  \begin{quote}
   Transaction submission
-  \end{quote}
 \end{itemize}
 
 A separate function called `the Mux' multiplexes these mini-protocols
@@ -4150,64 +3635,42 @@ Resulting design decisions include:
 
 \begin{itemize}
 \item
-  \begin{quote}
   Exchanging blocks rather than broadcasting chains;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     All practical consensus algorithms do this -- it is simply a
     mathematical convenience to formulate the Ouroboros algorithm in
     terms of broadcasting chains;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Interleaving forwarding with validation
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     To prevent adversaries consuming resources by sending invalid data;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Sending block headers ahead of whole blocks, using the chain-sync
   protocol;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     this allows a node to decide whether it needs to download a full
     block;
-    \end{quote}
   \item
-    \begin{quote}
     if it does it can choose which peer to download it from;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Sending transaction IDs ahead of full transactions;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Request a number of transactions;
-    \end{quote}
   \item
-    \begin{quote}
     Receive a set of (short) transaction IDs and sizes;
-    \end{quote}
   \item
-    \begin{quote}
     Request a subset of those transactions.
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -4222,17 +3685,11 @@ A key point is the separation of:
 
 \begin{itemize}
 \item
-  \begin{quote}
   codec
-  \end{quote}
 \item
-  \begin{quote}
   channel, and
-  \end{quote}
 \item
-  \begin{quote}
   consensus logic
-  \end{quote}
 \end{itemize}
 
 This enables early and thorough testing ahead of the integration of the
@@ -4313,28 +3770,20 @@ the deployment scenarios:
 
 \begin{itemize}
 \item
-  \begin{quote}
   The node can be provided with IP addresses in a configuration file;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     This would be the default option for an exchange or stakepool node,
     or in an enterprise setting;
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   The node can be provided with DNS names in a configuration file;
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     This would be the default option for smaller nodes, including
     wallets
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -4410,19 +3859,12 @@ They are expressed in informal prose, often following a ``user story''
 style. Roughly, there are three kinds of users:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   users who have delegated,
-  \end{quote}
 \item
-  \begin{quote}
   small stakeholders, and
-  \end{quote}
 \item
-  \begin{quote}
   large stakeholders.
-  \end{quote}
 \end{enumerate}
 
 \subsubsection{Network connectivity}
@@ -4434,38 +3876,27 @@ As a Daedalus home user with my stake delegated to other users I would
 like to join the Cardano network so I can participate in the network.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The system must be designed to provide this user segment with the
   ability to catch up and keep up with the blockchain without having to
   do any local network configuration.
-  \end{quote}
 \item
-  \begin{quote}
   The system must be designed to provide this user segment with the
   ability to continuously find and maintain a discovery of a sufficient
   number of other network participants that have reasonable
   connectivity.
-  \end{quote}
 \item
-  \begin{quote}
   The system must be designed to provide this user segment with the
   ability to find and maintain a minimum of 3 other network participants
   to maintain connectivity with performance that is sufficient to catch
   up with the blockchain.
-  \end{quote}
 \item
-  \begin{quote}
   The system design will take into account that this user will probably
   be behind a firewall.
-  \end{quote}
 \item
-  \begin{quote}
   Users in the segment can be defined by having all their stake
   delegated to other network participants. As such they will never be
   selected as a slot leader (i.e required to generate a block).
-  \end{quote}
 \end{enumerate}
 
 \paragraph{Participate in network as small stakeholder}
@@ -4476,87 +3907,59 @@ a node that produces blocks i.e. my stake is not delegated to someone
 else.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The system must be designed to provide this user segment with the
   ability to receive the transactions that will be incorporated into
   blocks (although sizing the operation of the distributed system to
   ensure that all such participants would be able to receive all
   transactions is not a bounding constraint).
-  \end{quote}
 \item
-  \begin{quote}
   The system must be designed to provide this user segment with the
   ability to participate in the MPC protocol\footnote{Note that this
     requirement is now redundant as the MPC protocol is required only
     for Ouroboros Classic}.
-  \end{quote}
 \item
-  \begin{quote}
   The system will be designed to provide this user segment with the
   ability to catch up and keep up with the blockchain without having to
   do any local network configuration (this is a bounding constraint).
-  \end{quote}
 \item
-  \begin{quote}
   The user will have sufficient connectivity and performance to receive
   a block within a time slot AND they have to be able to create and
   broadcast a block within a time slot in which the block is received by
   other participating nodes.
-  \end{quote}
 \item
-  \begin{quote}
   The system will be designed to maximise the likelihood that 50\% of
   home users operating a participating node are compliant with the
   previous requirement at any one time.
-  \end{quote}
 \item
-  \begin{quote}
   The system will be designed to provide this user segment with the
   ability to continuously find and maintain a discovery of a sufficient
   number of other network participants that have reasonable
   connectivity.
-  \end{quote}
 \item
-  \begin{quote}
   The system will provide a discovery mechanism that will find and
   maintain a minimum of 3 other network participants to maintain
   connectivity with performance that is sufficient to catch up with the
   blockchain.
-  \end{quote}
 \item
-  \begin{quote}
   The system design will take into account that this user may be behind
   a firewall (i.e being behind a firewall should not preclude a user
   participating in this fashion).
-  \end{quote}
 \item
-  \begin{quote}
   The Delegation workstream will provide a UI feature for the user to
   choose to control their own stake.
-  \end{quote}
 \item
-  \begin{quote}
   Users in this segment will be defined as NOT
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
   \item
-    \begin{quote}
     being in the top 100 users ranked by stake or
-    \end{quote}
   \item
-    \begin{quote}
     in a ranked set of users who together control 80\% of the stake
-    \end{quote}
   \end{enumerate}
 \item
-  \begin{quote}
   Users in this segment will not be part of the Core Dif, but still
   subject to the normal incentives related to creating blocks.
-  \end{quote}
 \end{enumerate}
 
 \paragraph{Participate in network as a large stakeholder}
@@ -4568,102 +3971,68 @@ in the network as a core server node that produces blocks i.e. have not
 delegated to someone else.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   A large stakeholder will be defined as
-  \end{quote}
 
   \begin{enumerate}
-  \def\labelenumii{\alph{enumii}.}
   \item
-    \begin{quote}
     being in the top 100 users ranked by stake; or
-    \end{quote}
   \item
-    \begin{quote}
     in a ranked set of users who combined control 80\% of the stake
-    \end{quote}
   \end{enumerate}
 \item
-  \begin{quote}
   Assuming that this user has sufficient connectivity and performance,
   the system should ensure that the collective operation of the
   distributed system will ensure that they have a high probability of
   receiving a block within a time slot such that they have sufficient
   time to be able to create and broadcast a block within a time slot
   where the block is received by other core nodes.
-  \end{quote}
 \item
-  \begin{quote}
   It is expected that the previous requirement will be fulfilled to a
   high degree of reliability between nodes in this category -- assuming
   normal network operations
-  \end{quote}
-\end{enumerate}
-
-\begin{longtable}[]{@{}ll@{}}
-\toprule
-Threshold & \textgreater{} 95\%\tabularnewline
-\midrule
-\endhead
-Target & \textgreater{} 98\%\tabularnewline
-Stretch & \textgreater{} 99\%\tabularnewline
-\bottomrule
-\end{longtable}
-
-\begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
-\setcounter{enumi}{3}
+  \begin{longtable}[]{@{}ll@{}}
+  \toprule
+  Threshold & \textgreater{} 95\%\tabularnewline
+  \midrule
+  \endhead
+  Target & \textgreater{} 98\%\tabularnewline
+  Stretch & \textgreater{} 99\%\tabularnewline
+  \bottomrule
+  \end{longtable}
 \item
-  \begin{quote}
   The system will be designed to provide this user segment with the
   ability to continuously find and maintain a discovery of a sufficient
   number of other network participants that have reasonable
   connectivity.
-  \end{quote}
 \item
-  \begin{quote}
   Discovery will find and maintain a minimum of 10 other network
   participants to maintain connectivity with performance that is
   sufficient to catch up with the blockchain.
-  \end{quote}
 \item
-  \begin{quote}
   Ability to receive the transactions that will be incorporated into
   blocks.
-  \end{quote}
 \item
-  \begin{quote}
   Ability to participate in the MPC protocol\footnote{Note that this
     requirement is now redundant as the MPC protocol is required only
     for Ouroboros Classic}.
-  \end{quote}
 \item
-  \begin{quote}
   The user will catch up and keep up with the blockchain.
-  \end{quote}
 \item
-  \begin{quote}
   The server firewall rules will be such that it can communicate with
   other core nodes on the system (and vice versa) -- The system will
   provide the necessary information to update firewall rules if the
   server is operating behind a firewall to ensure the server can
   communicate with other core nodes.
-  \end{quote}
 \item
-  \begin{quote}
   The threshold which defines the group of large stakeholders may be
   configurable on the network layer. The configuration may include
   toggling between the rules a) and b) in the previous requirement and
   the threshold numbers within these (this is pending a decision from
   the Incentives workstream.
-  \end{quote}
 \item
-  \begin{quote}
   The rules and threshold configuration may need to be a protocol
   parameter that is updated by the update system.
-  \end{quote}
 \end{enumerate}
 
 \subsubsection{Network performance}
@@ -4676,11 +4045,9 @@ that I know the state of my network connection.
 
 \begin{itemize}
 \item
-  \begin{quote}
   If the user receives a notification that they are in red or amber
   mode, Daedalus will give the user some helpful information on how to
   resolve common connectivity issues.
-  \end{quote}
 \end{itemize}
 
 There are three (at least) the following three distinct modes that the
@@ -4736,44 +4103,29 @@ connection so I am assured my network resource is not eaten up by the
 data diffusion function.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The cap should be based on a fraction of a typical home internet
   connection -- it can be changed by configuration including ``don't act
   as a super node''.
-  \end{quote}
 \item
-  \begin{quote}
   The system will allow users syncing with the latest version of the
   blockchain to download blocks from more then one and up to five
   network peers concurrently.
-  \end{quote}
 \item
-  \begin{quote}
   A cap on the number of incoming subscribers.
-  \end{quote}
 \item
-  \begin{quote}
   A cap on number of outbound requests for block syncing from other
   users.
-  \end{quote}
 \item
-  \begin{quote}
   The cap will not be imposed on core nodes running on a server.
-  \end{quote}
 \item
-  \begin{quote}
   If these resources are available, a reasonable connection speed should
   be available to users requesting to sync the latest version of the
   blockchain e.g. downloading blocks from 5 peers concurrently to
   aggregate the bandwidth.
-  \end{quote}
 \item
-  \begin{quote}
   (nice to have) the actual number and capacity being used is available
   to users.
-  \end{quote}
 \end{enumerate}
 
 \paragraph{Participant performance measurement}
@@ -4795,24 +4147,17 @@ denial of service attack that will deplete network resources from other
 users.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   The system should achieve its connectivity and performance
   requirements even in the presence of a non-trivial proportion of bad
   actors on the network.
-  \end{quote}
 \item
-  \begin{quote}
   There is an assumption that there are not large numbers of bad actors
   in the network.
-  \end{quote}
 \item
-  \begin{quote}
   The previous assumption does not follow from the assumptions of
   Ouroboros which states that the users that control 50\% of the stake
   are non-adversarial.
-  \end{quote}
 \end{enumerate}
 
 \paragraph{DDoS protection}
@@ -4823,45 +4168,33 @@ system comes under a DDoS attack.
 
 \begin{itemize}
 \item
-  \begin{quote}
   Users in this segment will be able to generate and broadcast blocks to
   each other within the usual timing constraints in this situation.
-  \end{quote}
 \end{itemize}
 
 IP addresses will be hidden.
 
 \begin{itemize}
 \item
-  \begin{quote}
   Encrypted IP addresses will be published by 10 of the other members of
   the group of large stakeholder core nodes.
-  \end{quote}
 \end{itemize}
 
 Assumption
 
 \begin{itemize}
 \item
-  \begin{quote}
   Core node operators will not publish their IP addresses publicly.
-  \end{quote}
 \item
-  \begin{quote}
   Encrypted IP addresses will be published by the 10 of the other
   members of the group of large stakeholder core nodes.
-  \end{quote}
 \item
-  \begin{quote}
   If a node operator's IP address is compromised the operator will
   respond and change the IP address of their node.
-  \end{quote}
 \item
-  \begin{quote}
   The system will allow operators to change the address of their core
   nodes and communicate with that new IP address within a reasonable
   period of time.
-  \end{quote}
 \end{itemize}
 
 \subsubsection{Network decentralisation}
@@ -4876,15 +4209,11 @@ avoided.
 
 \begin{itemize}
 \item
-  \begin{quote}
   IOHK should be in the same position on the network as any other
   stakeholder with an equivalent amount of stake.
-  \end{quote}
 \item
-  \begin{quote}
   There is a more general requirement that no other actor could achieve
   hegemonic control of the operation of the data diffusion layer.
-  \end{quote}
 \end{itemize}
 
 \subsection{TCP RPC response behavior}
@@ -4894,9 +4223,7 @@ In Shelley we are using (pre-established) TCP/IP bearers, over which
 information exchanges are multiplexed.
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Given the interval between block diffusions we are assuming that the
   TCP/IP congestion window will be reset to its \emph{IW} (initial
   window)\footnote{See §4.1 in
@@ -4907,9 +4234,7 @@ information exchanges are multiplexed.
     §2). For Cardano deployments within AWS this has a credible upper
     bound of one second (by observation and analysis), even between the
     most distant locations.}.
-  \end{quote}
 \item
-  \begin{quote}
   There is a plethora of options for TCP/IP window scaling
   algorithms\footnote{See
     \href{https://en.wikipedia.org/wiki/TCP_congestion_control}{{https://en.wikipedia.org/wiki/TCP\_congestion\_control}}
@@ -4920,12 +4245,9 @@ information exchanges are multiplexed.
     such as rate-based, may be more suitable for our needs.}, but
   changing them on a particular machine requires superuser access, which
   violates the constraint in §6.
-  \end{quote}
 \item
-  \begin{quote}
   As our exemplar environment here we are considering AWS linux
   deployments, specifically contemporary AWS Ubuntu images.
-  \end{quote}
 \end{enumerate}
 
 \subsubsection{Time to transmit a block of given size across given latencies}
@@ -5272,60 +4594,44 @@ It is a temptingly fast approach, but it comes with a number of
 security, scalability and performance hazards:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   Protocols that were designed for a specific environment (e.g.
   efficient location of distributed content) are not well-suited to the
   requirements of a blockchain. For example, the adoption of the
   Kademlia protocol in Ethereum facilitates low-resource Eclipse attacks
   on the nodes of the blockchain {[}MHG15{]}.
-  \end{quote}
 \item
-  \begin{quote}
   Protocols in a P2P framework are usually designed for a single
   environment, integrated into their original application, and hard to
   repurpose to different requirements. This exercise usually requires a
   redesign and re-implementation of the protocol from scratch, since the
   protocol is not designed with adaptability in mind {[}S19{]}
-  \end{quote}
 \item
-  \begin{quote}
   P2P frameworks mostly focus on the construction and maintenance of the
   overlay structure and on routing application requests / disseminating
   information. Other aspects that are also important for the
   communication of application instances are usually not covered, such
   as:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     Quality of service: ability to handle multiple classes of
     application traffic within the overlay and differentially allocate
     loss and delay to them.
-    \end{quote}
   \item
-    \begin{quote}
     Security: authentication, access control, confidentiality and
     message integrity, usually achieved through protocols that are not
     part of the P2P framework such as TLS or DTLS.
-    \end{quote}
   \item
-    \begin{quote}
     Ability to operate over multiple IP networks (e.g. public Internet
     or private IP networks) or other non-IP bearers (e.g. directly over
     Ethernet).
-    \end{quote}
   \end{itemize}
 \item
-  \begin{quote}
   Scalability of the overlay is achieved ad-hoc. Some P2P frameworks
   introduce the concept of ``super-peers'' {[}M15{]}, but there is no
   formal means of creating hierarchies within the overlay framework.
-  \end{quote}
 \item
-  \begin{quote}
   It is hard to reason about the correctness of a group of
   independently-designed protocols working in conjunction. The
   properties of their joint operation in production environments are
@@ -5334,7 +4640,6 @@ security, scalability and performance hazards:
   efficiency, security and performance standpoint compared to a solution
   that designs the complete ``communications middleware'' in a coherent
   and integrated fashion.
-  \end{quote}
 \end{enumerate}
 
 A piecemeal approach to addressing these communication challenges will
@@ -5512,35 +4817,24 @@ The \textbf{Ouroboros Network} implementation consists of the following
 Haskell packages:
 
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
-  \begin{quote}
   \textbf{typed-protocols} -- a standalone session type framework, which
   allows communication protocols to be expressed and enforced;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{typed-protocols-cbor} -- a small extension to provide codec
   support for the CBOR format;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{network-mux} -- a standalone multiplexing library;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{ouroboros-network-framework} -- a library which makes low
   level choice for \emph{ouroboros-network} and implements low level
   network components / primitives, e.g. connection manager, server.
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{ouroboros-network} -- a library which implements the consensus
   application-level protocols to support \emph{node-to-node} as well as
   \emph{node-to-client} communication (each consists of a bundle of
   \emph{mini-protocols} expressed with \emph{typed-protocols} package),
   and all the required architecture to run them.
-  \end{quote}
 \end{enumerate}
 
 For the larger picture how all the network components fit together with
@@ -5603,14 +4897,10 @@ fairness defined as:
 
 \begin{itemize}
 \item
-  \begin{quote}
   no starvation;
-  \end{quote}
 \item
-  \begin{quote}
   when presented with equal demand (from a selection of mini protocols)
   deliver equal service.
-  \end{quote}
 \end{itemize}
 
 \emph{network-mux} is designed to support full-duplex bearer
@@ -5644,20 +4934,14 @@ A \emph{node-to-node} protocol consists of:
 
 \begin{itemize}
 \item
-  \begin{quote}
   \textbf{chain-sync} mini-protocol -- a protocol which allows a node to
   reconstruct a chain of an upstream node;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{block-fetch} mini-protocol -- a protocol which allows a node
   to download block bodies from various peers;
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{tx-submission} mini-protocol -- a protocol which allows
   submission of transactions.
-  \end{quote}
 \end{itemize}
 
 A client is a standalone local application which communicates with a
@@ -5671,17 +4955,11 @@ The \emph{node-to-client} protocol consists of:
 
 \begin{itemize}
 \item
-  \begin{quote}
   \textbf{chain-sync} mini-protocol
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{local-tx-submission} mini-protocol
-  \end{quote}
 \item
-  \begin{quote}
   \textbf{local-state-query} mini-protocol
-  \end{quote}
 \end{itemize}
 
 From the networking perspective it is not important which flavour of
@@ -5767,30 +5045,18 @@ package). The simulator monad supports the following interfaces:
 
 \begin{itemize}
 \item
-  \begin{quote}
   software transactional memory \emph{STM}
-  \end{quote}
 \item
-  \begin{quote}
   concurrency in the form of low level \emph{fork} interface and the
   \emph{async} package
-  \end{quote}
 \item
-  \begin{quote}
   \emph{ST} monad interface
-  \end{quote}
 \item
-  \begin{quote}
   synchronous and asynchronous exception handling
-  \end{quote}
 \item
-  \begin{quote}
   timers \emph{API}
-  \end{quote}
 \item
-  \begin{quote}
   monotonic time
-  \end{quote}
 \end{itemize}
 
 The interface is presented as a set of type classes; its instances are
@@ -5798,15 +5064,11 @@ written with the following principles:
 
 \begin{itemize}
 \item
-  \begin{quote}
   the \emph{IO} instances are as close to the \emph{base}, \emph{stm}
   and \emph{async} packages as possible (we have very few places where
   we slightly diverge).
-  \end{quote}
 \item
-  \begin{quote}
   the \emph{Sim} instances are faithful to \emph{IO} instances.
-  \end{quote}
 \end{itemize}
 
 This allows us to write computations that can be interpreted both in
@@ -5844,33 +5106,23 @@ All the protocols are tested on several different levels:
 
 \begin{itemize}
 \item
-  \begin{quote}
   the \emph{typed-protocol} level, the tests prove that the
   implementation meets the specification. The \emph{type-protocol}
   package turns test errors into type errors. These tests are carried
   for both non-pipelined and pipelined clients.
-  \end{quote}
 \item
-  \begin{quote}
   The wrapper API for each protocol is tested. This is an un-typed
   version of the previous tests. It assures that the client and server
   types are dual to each other. These tests are carried for both
   non-pipelined and pipelined clients.
-  \end{quote}
 \item
-  \begin{quote}
   Test the protocols using example clients and servers over:
-  \end{quote}
 
   \begin{itemize}
   \item
-    \begin{quote}
     a channel (using \emph{STM}'s \emph{TMVar}'s)
-    \end{quote}
   \item
-    \begin{quote}
     using pipes
-    \end{quote}
   \end{itemize}
 \end{itemize}
 
@@ -5883,15 +5135,11 @@ properties which allows us to:
 
 \begin{itemize}
 \item
-  \begin{quote}
   test that decoding is the right inverse to encoding (e.g. decoding an
   encoded message brings back the original message)
-  \end{quote}
 \item
-  \begin{quote}
   test incremental decoders, which allows guarding against boundary
   errors.
-  \end{quote}
 \end{itemize}
 
 Some of the tests rely on the \emph{SimM} monad which has extensive
