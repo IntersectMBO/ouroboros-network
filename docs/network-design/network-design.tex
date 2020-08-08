@@ -152,8 +152,7 @@ The implementation has been kept simple to minimise complexity and
 attack surface. It is fully integrated with the rest of the node and is
 working in the Shelly mainnet. At the time of writing only one component
 has not yet been deployed, namely the peer selection and subscription
-management (outline design in \cref{decentralisation-design}
-\cref{decentralisation-design}).
+management (outline design in \cref{decentralisation-design}).
 
 \section{Introduction}
 \label{introduction}
@@ -3077,7 +3076,7 @@ It can be seen that high transaction rates limit the transaction size,
 even with large blocks. Also there are combinations that are infeasible
 for different uses. A transaction\footnote{At least in the benchmarking
   environment -- which is using the simplest forms of transaction -
-  correct at time of writing..} has a {minimum size of 305 §bytes}\todo{PT: is this still correct?} (single
+  correct at time of writing..} has a {minimum size of 305 bytes}\todo{PT: is this still correct?} (single
 input UTxO to single UTxO), a ``useful'' one (1 input to two output) 361
 bytes. Coin selection (for privacy enhancement) uses multiple inputs and
 multiple outputs. And exchanges look for large numbers (50+) and
@@ -3494,7 +3493,7 @@ them on a network or using multiple threads.
 \label{point-to-point-bearers}
 
 The idea is to use a single `bearer' between peers over which all
-interactions are multiplexed . This allows us to control the resources
+interactions are multiplexed. This allows us to control the resources
 that can be consumed at a node by any connected peer, thereby minimising
 the scope for resource consumption attacks, including peer-related
 denial-of-service attacks. This has the downside of making the RTT more
@@ -3519,7 +3518,7 @@ different processes (e.g. wallet backend) and the node can be done
 entirely within the security confines of a single machine.
 
 This also accords with the `minimise resource usage' principle expressed
-at the start of §6, by using only one TCP port per connected peer. Also,
+in \cref{overview}, by using only one TCP port per connected peer. Also,
 using a uniform abstraction reduces the attack surface.
 
 \subsection{Demand-driven spanning tree}
@@ -3790,10 +3789,11 @@ Once a node has succeeded in connecting to one peer, that peer can
 provide addresses of other peers that it knows; note that the receiving
 node does not need to trust the addresses that it is given, as it can
 try them out for itself and make dynamic decisions about which peers it
-uses as described in §7.5. This exchange of information about (the
-addresses of) other nodes is called `gossiping', and is required for the
-fully decentralised version of Shelley (2.2). The implementation that
-will be taken here is inspired by Kademlia, but can be far less complex.
+uses as described in \cref{decentralisation-design}. This exchange of
+information about (the addresses of) other nodes is called `gossiping',
+and is required for the fully decentralised version of Shelley. The
+implementation that will be taken here is inspired by Kademlia, but can
+be far less complex.
 
 \section{Outstanding and unresolved issues}
 \label{outstanding-unresolved-issues}
@@ -4225,12 +4225,12 @@ information exchanges are multiplexed.
 \item
   Given the interval between block diffusions we are assuming that the
   TCP/IP congestion window will be reset to its \emph{IW} (initial
-  window)\footnote{See §4.1 in
+  window)\footnote{See Section 4.1 in
     \href{https://tools.ietf.org/html/rfc5681}{{https://tools.ietf.org/html/rfc5681}}
     -- the reset to initial conditions timer is based on the TCP
     retransmit timer (see
     \href{https://tools.ietf.org/html/rfc6298}{{https://tools.ietf.org/html/rfc6298}}
-    §2). For Cardano deployments within AWS this has a credible upper
+    Section 2). For Cardano deployments within AWS this has a credible upper
     bound of one second (by observation and analysis), even between the
     most distant locations.}.
 \item
@@ -4243,7 +4243,7 @@ information exchanges are multiplexed.
     control mechanisms that are not available in a TCP/IP environment,
     such as rate-based, may be more suitable for our needs.}, but
   changing them on a particular machine requires superuser access, which
-  violates the constraint in §6.
+  violates the constraint in \cref{business-requirements}.
 \item
   As our exemplar environment here we are considering AWS linux
   deployments, specifically contemporary AWS Ubuntu images.
@@ -4273,7 +4273,7 @@ also note that the IW size can be 10, which reduces RTT count by one or
 so, so these effects are cancelled out for longer transfers as the
 actual ``bandwidth-delay product'' dominates those (i.e. once the TCP
 window is fully open). The red `danger' colour shows block transfer
-times that risk missing the targets set in §6.1.
+times that risk missing the targets set in \cref{business-requirements}.
 
 \begin{longtable}[]{@{}lllllllllll@{}}
 \toprule
@@ -4444,10 +4444,14 @@ Depth & 2 & 3 & 4 & 5 & 6\tabularnewline
 \end{longtable}
 
 The shading represents increasing `success' in reaching a large number
-of nodes. However, as discussed in §6.2, a large depth is problematic
+of nodes. However, as discussed in \cref{decentralisation-constraints},
+a large depth is problematic
 because it reduces the per-hop time budget, and a large valency is
 problematic because it increases the resources required by a node. The
 figures in red represent reasonable compromises.
+
+\todo[inline]{previously we had colour in the tables, and the text
+refers to the colours}
 
 \subsection{Performance model of Ouroboros Praos}
 \label{performance-model-of-ouroboros-praos}
