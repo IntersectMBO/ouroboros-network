@@ -1,7 +1,6 @@
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[margin=2.5cm]{geometry}
-\usepackage[utf8]{inputenc}
 \usepackage{parskip}
 \usepackage{todonotes}
 \usepackage{microtype}
@@ -4257,17 +4256,17 @@ The $\Delta{}Q|_G$ value\footnote{The concept of $\Delta{}Q$ is
   explained in {[}Comp20{]}. Here is a link to
   \href{https://www.slideshare.net/pnsol-slides/q-and-blockchain-83943683}{{slides
   on applicability to block chain}}.} here is for the round trip time,
-the $\Delta{}Q|_S$ is 8\texttimes{}10\textsuperscript{-8} s/o (the
-typical value from tests), and the $\Delta{}Q$ per direction is taken to be ½ the
-round trip (reasonable in an AWS environment, not so in an asymmetric
-networking case e.g. residential, SME)
+the $\Delta{}Q|_S$ is $8\text{}10^{-8}$ s/o (the
+typical value from tests), and the $\Delta{}Q$ per direction is taken to
+be $1/2$ the round trip (reasonable in an AWS environment, not so in an
+asymmetric networking case e.g. residential, SME)
 
 Note that window size is always restricted in practice: the unrestricted
 window case is presented here to capture the causality restriction
 within the slow-start TCP paradigm.
 
 The tables show the time in seconds to achieve the bulk transfer (as per
-the outcome description above) -- their likely accuracy is ± 1 RTT (left
+the outcome description above) -- their likely accuracy is $\pm 1$ RTT (left
 hand column) due to various vagaries of how actual behaviour is context
 sensitive. Note that this does not model the initial request time, but
 also note that the IW size can be 10, which reduces RTT count by one or
@@ -4343,9 +4342,9 @@ $\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 \bottomrule
 \end{longtable}
 
-Note a $\Delta{}Q|_{G,S}$ of (300ms, 8\texttimes{}10\textsuperscript{-8} o/s) is not the
+Note a $\Delta{}Q|_{G,S}$ of (300ms, $8\times{}10^{-8}$ o/s) is not the
 absolute worst case -- the worst we've measured (in other work) is
-$\Delta{}Q|_{G,S}$ of (188ms, 6.14\texttimes{}10\textsuperscript{-5} o/s) \emph{one-way}
+$\Delta{}Q|_{G,S}$ of (188ms, $6.14\times{}10^{-5}$ o/s) \emph{one-way}
 between San Paulo and Singapore. This would give a time-to-complete of
 5.38s in the 2000 ko transfer case.
 
@@ -4725,7 +4724,7 @@ consensus is (from {[}Mills12{]}):
 \begin{quote}
 As a rule of thumb, the accuracy over the Internet is proportional to
 the propagation delay. For a lightly loaded 100-Mb/s Ethernet, the
-accuracy is in the order of 100 μs. For an intercontinental Internet
+accuracy is in the order of $100 \mu{}$s. For an intercontinental Internet
 path, the accuracy can be up to several tens of milliseconds.
 
 On network paths with large asymmetric propagation delays, such as when
@@ -4803,7 +4802,7 @@ Another problem is that different time standards do not recognise the
 accumulation of leap seconds. International Atomic Time (TAI) is exactly
 37 seconds ahead of UTC (the 37 seconds results from the initial
 difference of 10 seconds at the start of 1972, plus 27 leap seconds in
-UTC since 1972). GPS time remains at a constant offset with TAI (TAI −
+UTC since 1972). GPS time remains at a constant offset with TAI (TAI $-$
 GPS = 19 seconds), and hence at a constant offset with UTC, although
 this offset changes whenever a leap-second is introduced. If a Cardano
 node happened to be synchronised with GPS time, say, and failed to
