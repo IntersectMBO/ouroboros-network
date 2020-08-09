@@ -184,7 +184,7 @@ Distributed consensus algorithms fall into two main camps: proof-of-work
 Cardano is a third-generation blockchain\footnote{Bitcoin was the first
   generation. Ethereum is an example of a second generation blockchain.}
 based on a new proof-of-stake consensus algorithm called Ouroboros
-{[}BGKR17, BGKRZ19{]}. Cardano's first implementation,
+\cite{BGKR17, BGKRZ19}. Cardano's first implementation,
 \href{https://cardanoroadmap.com/en/byron/}{{Byron}}, was introduced in
 September 2017.
 
@@ -296,7 +296,7 @@ constraints and design decisions of the consensus layer implementation.
 \label{consensus-constraints-and-design-decisions}
 
 Cardano as a cryptocurrency system fundamentally relies on an
-implementation of Ouroboros {[}BGKR17, BGKRZ19{]}. The underlying
+implementation of Ouroboros \cite{BGKR17, BGKRZ19}. The underlying
 properties of Ouroboros\footnote{Specifically, liveness and persistence
   -- see below.} ensure, \emph{by design,} that Cardano users can submit
 valid transactions and can rely on them being incorporated into the
@@ -322,7 +322,7 @@ There are three levels of refinement:
 
 \begin{enumerate}
 \item
-  The underpinning academic papers (e.g. {[}BGKR17, BGKRZ19{]}) that
+  The underpinning academic papers (e.g. \cite{BGKR17, BGKRZ19}) that
   give a \emph{mathematical description} of the algorithm;
 \item
   An \emph{implementation design} that:
@@ -370,7 +370,7 @@ refine the mathematical description to an implementation design.
 Ouroboros establishes strong properties of \emph{progress} (liveness)
 and \emph{persistence}\footnote{These two properties are the
   underpinning of the Cardano cryptocurrency ledger.} , based on
-surprisingly weak assumptions {[}BGKRZ19, Section 1{]}, and in an
+surprisingly weak assumptions \cite[Section 1]{BGKRZ19}, and in an
 environment with potentially powerful adversaries. This environment
 combined with the capabilities of the adversaries collectively comprise
 the threat model (see \cref{high-level-threat-model}).
@@ -526,7 +526,7 @@ even with the caveats of ``plausible'' and ``informal''. The contrasts
 with the orthodox approach, which only solves the simpler problem of
 solving or mitigating against known classes of attack\footnote{For
   example, much of the critique of Kademlia (ours in
-  \cref{kademlia} and others' {[}MHG18{]})
+  \cref{kademlia} and others' \cite{MHG18})
   comes down to the fact that it followed the orthadox design approach.
   It does not start with a threat model and establish positive results.
   Many academic papers on Kademlia establish negative results: they find
@@ -1058,7 +1058,7 @@ different peers, and at least semi-independent for a single peer.
 
 Concurrency is of course a technique to structure programs in a modular
 way, for those programs that need to interact with multiple external
-agents {[}Marlow13, Chapter 1{]}. It is a natural design decision to use
+agents \cite[Chapter 1]{Marlow13}. It is a natural design decision to use
 concurrency for talking to independent peers. The same motivations lead
 to the decision to handle the three areas (chain sync, block fetch and
 tx submission) concurrently when talking to a single peer.
@@ -1073,7 +1073,7 @@ consensus layer.
 We thus end up with one Haskell thread per application-level protocol
 per upstream and downstream peer. In extreme cases, this could be a
 large number of threads but managing this is well within the
-capabilities of the GHC runtime system {[}Marlow13, Chapter 15{]}.
+capabilities of the GHC runtime system \cite[Chapter 15]{Marlow13}.
 
 \subsubsection{Bearer and multiplexing}
 \label{bearer-and-multiplexing}
@@ -1141,7 +1141,7 @@ use the network resource effectively whenever possible. Time that is
 expended without sending or receiving data is time that can never be
 regained. Point-to-point connections over a network can very
 crudely\footnote{A much more precise characterisation is based on $\Delta{}Q$,
-  see {[}Comp20{]}.} be characterised as having a certain bandwidth and
+  see \cite{Comp20}.} be characterised as having a certain bandwidth and
 latency. Network connections do not support bursts of traffic well,
 since they have a maximum bandwidth. Full network utilisation requires
 that they be used at their maximum bandwidth continuously.
@@ -1362,10 +1362,10 @@ application level protocols.
 
 The typed-protocols library is the jewel in the crown\footnote{It is a
   session type framework. Session types are actively researched for more
-  than 20 years, see {[}H93, THK94, HVK98{]}, and various
+  than 20 years, see \cite{H93, THK94, HVK98}, and various
   implementations exists:
   \href{http://www.dcs.gla.ac.uk/research/mungo/}{{Mungo}} (Java),
-  \href{http://www.scrible.org}{{Scrible}}, or {[}MV11{]} (Erlang), and
+  \href{http://www.scrible.org}{{Scrible}}, or \cite{MV11} (Erlang), and
   many others.} of the network layer implementation and it has already
 been presented at three public events\footnote{Notably at the
   \href{https://monadic.party/\#talks}{``Monadic Party'' 2019 Haskell
@@ -1462,7 +1462,7 @@ multicast and pub/sub (publish/subscribe) algorithms.
 \subsubsection{PolderCast}
 \label{poldercast}
 
-PolderCast {[}SSVV12{]} is an implementation of pub/sub. As such it is
+PolderCast \cite{SSVV12} is an implementation of pub/sub. As such it is
 not useful for an implementation of Ouroboros data diffusion as
 discussed in
 \cref{interleaving-transmission-and-validation}, (namely the asymmetry in favour of adeversies). PolderCast,
@@ -1748,7 +1748,7 @@ constraints are analysed in more detail in
 \crefrange{tcp-rpc-response-behavior}{time-synchronisation-constraints}.
 The literature review does however reveal useful theory.
 
-Graph theory {[}Watts99{]} tells us that small hop counts\footnote{This
+Graph theory \cite{Watts99} tells us that small hop counts\footnote{This
   research provides a basis for the pre-existing popular "small world"
   idea of
   \href{https://en.wikipedia.org/wiki/Six_degrees_of_separation\#Computer_networks}{{six
@@ -1967,7 +1967,7 @@ releases without introducing significant compatibility problems.
 
 \todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
 
-As discussed in \cref{decentralisation-design}, prior graph theory {[}Watts99{]} tells us that we can construct
+As discussed in \cref{decentralisation-design}, prior graph theory \cite{Watts99} tells us that we can construct
 large graphs with small hop counts from a range of starting graph types.
 To do so however requires a high enough mean and variance for the
 valency, well above 2-3. The results also demonstrate that using rings
@@ -1984,7 +1984,7 @@ distance links is reduced, but even with the minimum useful transaction
 size we would hit only 4.5 TPS, which falls well short of the minimum
 TPS target from the business requirements of 8 TPS.
 
-A recent paper {[}CBTBC19{]} applies fountain codes to the problem of
+A recent paper \cite{CBTBC19} applies fountain codes to the problem of
 speeding up block broadcast. The essence is to improve the time to
 complete, compared even to a perfect spanning tree, by taking greater
 advantage of the full cross-sectional capacity of the graph. It works by
@@ -2032,7 +2032,7 @@ Other implementation approaches to decentralization are discussed in
 We start with a PoS algorithm called \emph{Ouroboros}, and a
 mathematical proof that it works even with a substantial proportion of
 bad actors (adversaries) and a certain amount of delay in communication
-between nodes {[}BGKR17{]}. As described in
+between nodes \cite{BGKR17}. As described in
 \cref{overview}, the engineering design of
 Cardano -- and its Shelley implementation in particular -- refines
 Ouroboros\footnote{Shelley includes an array of proofs and tests to
@@ -2081,7 +2081,7 @@ sub-systems outside Cardano's control\footnote{Any blockchain protocol
   of the global IP network's game.}, offering highly variable
 performance, in particular the global public IP network\footnote{Which
   also suffers from the legacy of many sub-optimal design decisions
-  {[}JD08{]}.}.
+  \cite{JD08}.}.
 
 \subsubsection{Timeliness constraint}
 \label{timeliness-constraint}
@@ -2161,7 +2161,7 @@ research papers and publicly available data following those papers.
 
 \href{http://bitcoinstats.com/network/propagation/}{{http://bitcoinstats.com/network/propagation/}}
 shows daily data on block and tx propagation time from 2013 to 2017,
-following a paper from 2013 {[}DW13{]}. The relevant data is the column
+following a paper from 2013 \cite{DW13}. The relevant data is the column
 "Block 90th percentile", showing the average time that it took a block
 to reach 90\% of the nodes (averaged over a day). There are very few
 days where this has been under 10 seconds, and several days where it
@@ -2181,7 +2181,7 @@ create another block. Any period of time where we do not reach that will
 lead to random forks, and an opportunity for an attacker to mount an
 attack.
 
-There is another paper {[}N18{]} that shows a large improvement in
+There is another paper \cite{N18} that shows a large improvement in
 Bitcoin block propagation time in 2018. With those numbers, it seems
 possible to run Cardano for a couple of months before forks would appear
 and the system becomes easily attackable. The authors attribute this
@@ -2299,7 +2299,7 @@ deliver blocks before the next block is created.
 Additionally, prior to early 2018, Ethereum was vulnerable to eclipse
 attacks that could be executed by attackers with very low resources.
 This was discovered by independent academic analysis of the code
-{[}MHG18{]}. There remains little positive evidence of the robustness of
+\cite{MHG18}. There remains little positive evidence of the robustness of
 the P2P layer in Ethereum to this class of problem. The existing
 research has focused on finding and fixing Kademlia flaws, rather than
 proving outcomes within a threat model. Indeed, even with the adoption
@@ -2614,7 +2614,7 @@ We now consider selected published related work in more detail.
 This is an approach to improve potential anonymity for the submission of
 transactions in existing cryptocurrency network systems such as
 Bitcoin's through encrypted forwarding and randomised routing
-{[}VFV17{]}. The goal is to minimise the information that observers
+\cite{VFV17}. The goal is to minimise the information that observers
 \emph{within the distributed ledger} \emph{system} can obtain about the
 ultimate source of a transaction. The authors admit, however, that their
 system provides no guarantee of anonymity against
@@ -2626,7 +2626,7 @@ be considered in later iterations.
 \subsection{Kademlia}
 \label{kademlia}
 
-Kademlia {[}MM02{]} is an approach to creating distributed hash tables,
+Kademlia \cite{MM02} is an approach to creating distributed hash tables,
 which helps with randomizing peer choices to minimise the risk of node
 eclipse in proof-of-work systems. Avoiding eclipse in PoW requires a
 node to associate with a majority of non-adversarial peers. Thus an
@@ -2634,7 +2634,7 @@ adversary will attempt to bias a node's selection of peers (towards
 other compromised nodes); Kademlia aims to prevent this. Several
 variants of Kademlia exist (e.g. "secure Kademlia"); overall, however,
 the Kademlia literature concludes this is not a robust solution to the
-problem of eclipse {[}MHG15{]}. In fact there is no argument that even
+problem of eclipse \cite{MHG15}. In fact there is no argument that even
 with various enhancements the algorithm in fact achieves anything, with
 any particular threat model.
 
@@ -2644,7 +2644,7 @@ graph. This functionality can be extracted, albeit with some necessary
 remaining vestiges\footnote{The equivalent of DHT lookup is needed to
   maintain the routing tables}. Ethereum uses a variant of S/Kademlia.
 
-A 2018 paper {[}MHG18{]} analysing Ethereum's Kademlia implementation
+A 2018 paper \cite{MHG18} analysing Ethereum's Kademlia implementation
 nevertheless demonstrated a number of different eclipse attacks
 requiring minimal resources. The countermeasures suggested by the paper
 authors mean that instead of two machines being required to execute the
@@ -2774,7 +2774,7 @@ In summary, Kademlia:
 \subsection{PolderCast}
 \label{poldercast-1}
 
-PolderCast {[}SSVV12{]} is a pub/sub system designed to support large
+PolderCast \cite{SSVV12} is a pub/sub system designed to support large
 numbers of ``topic'' channels, each with a few publishers and many
 subscribers, and aims to exploit variability in topic popularity.
 PolderCast is designed to support a large number of pub/sub topics while
@@ -2804,14 +2804,14 @@ can either be seen as a single topic or as a topic per potential slot
 leader -- each of which contains the total population of all nodes (both
 wallets and slot leaders). PolderCast is designed to support
 connectivity models (i.e. strongly connected graph components -- ``super
-nodes'') that occur in `small world' {[}Watts99{]} networks, of which
+nodes'') that occur in `small world' \cite{Watts99} networks, of which
 social networks are a good example.
 
 It creates a ring per topic and uses the non-uniformity of the user
 base's participation in a topic to derive \emph{proximity} (a measure of
 ``interest locality'') which, in turn, is used to drive one of the
 mutators that creates probabilistic short cuts. This non-uniformity is
-absent in the Ouroboros use case. It should be noted {[}SSVV12§5.4{]}
+absent in the Ouroboros use case. It should be noted \cite[Section 5.4]{SSVV12}
 that whenever PolderCast uses a ``gossip'' list (not one of the ring) to
 communicate with a peer it removes that peer association\footnote{The
   shot-cuts are single use only.}, re-establishing it only when it
@@ -2825,8 +2825,8 @@ latency'' assertion is based on hop count, which is ``typically of the
 order of the log of the topic subscribers''. It would appear (on the
 basis of the description of their construction mechanism) that the base
 of the log used is \textasciitilde{}2. Note that their simulation
-results in {[}SSVV12§6.4{]} (fig 8) appear to relate over the total
-population of all their topic sizes, which from {[}SSVV12§6.2{]} (fig 7)
+results in \cite[Section 6.4]{SSVV12} (fig 8) appear to relate over the total
+population of all their topic sizes, which from \cite[Section 6.2 fig 7]{SSVV12}
 are for (relatively) small topic population sizes (hundreds to a few
 thousand) compared to the target population size for Cardano --
 10k-100k+ total nodes.
@@ -2845,7 +2845,7 @@ even partition the network at will.
 There doesn't seem to be any inherent advantage to adopting a PolderCast
 style topology construction over assuming a random graph and appealing
 to the various phase transition properties (including characteristic
-path length) described in {[}Watts99{]}.
+path length) described in \cite{Watts99}.
 
 Furthermore, the basis of a pub/sub system is that subscribing to a
 channel implies a willingness to accept everything published on that
@@ -3711,7 +3711,7 @@ code.
 The strict timeliness constraints of block diffusion means that the data
 diffusion component must constantly monitor and optimise performance.
 Each node evaluates the performance of its peer connections by measuring
-their $\Delta{}Q$ {[}Comp20{]}, at both the bearer and mini-protocol levels. This
+their $\Delta{}Q$ \cite{Comp20}, at both the bearer and mini-protocol levels. This
 enables efficient performance-optimising decisions by the
 mini-protocols; for instance, the block-fetch protocol can select
 between several different peers offering the same block(s) on the basis
@@ -4252,7 +4252,7 @@ information exchanges are multiplexed.
 \label{time-to-transmit-a-block-of-given-size-across-given-latencies}
 
 The $\Delta{}Q|_G$ value\footnote{The concept of $\Delta{}Q$ is
-  explained in {[}Comp20{]}. Here is a link to
+  explained in \cite{Comp20}. Here is a link to
   \href{https://www.slideshare.net/pnsol-slides/q-and-blockchain-83943683}{{slides
   on applicability to block chain}}.} here is for the round trip time,
 the $\Delta{}Q|_S$ is $8\text{}10^{-8}$ s/o (the
@@ -4474,7 +4474,7 @@ k & Depth of chain for effective immutability &\tabularnewline
 \subsubsection{Distribution of leadership}
 \label{distribution-of-leadership}
 
-From {[}BGKR17{]}, the probability of stakeholder $U_i$
+From \cite{BGKR17}, the probability of stakeholder $U_i$
 with relative stake $\alpha_{i}$being chosen in any slot is:
 
 \begin{align*}
@@ -4601,13 +4601,13 @@ security, scalability and performance hazards:
   efficient location of distributed content) are not well-suited to the
   requirements of a blockchain. For example, the adoption of the
   Kademlia protocol in Ethereum facilitates low-resource Eclipse attacks
-  on the nodes of the blockchain {[}MHG15{]}.
+  on the nodes of the blockchain \cite{MHG15}.
 \item
   Protocols in a P2P framework are usually designed for a single
   environment, integrated into their original application, and hard to
   repurpose to different requirements. This exercise usually requires a
   redesign and re-implementation of the protocol from scratch, since the
-  protocol is not designed with adaptability in mind {[}S19{]}
+  protocol is not designed with adaptability in mind \cite{S19}
 \item
   P2P frameworks mostly focus on the construction and maintenance of the
   overlay structure and on routing application requests / disseminating
@@ -4631,7 +4631,7 @@ security, scalability and performance hazards:
   \end{itemize}
 \item
   Scalability of the overlay is achieved ad-hoc. Some P2P frameworks
-  introduce the concept of ``super-peers'' {[}M15{]}, but there is no
+  introduce the concept of ``super-peers'' \cite{M15}, but there is no
   formal means of creating hierarchies within the overlay framework.
 \item
   It is hard to reason about the correctness of a group of
@@ -4666,7 +4666,7 @@ relies on protocols such as TLS and/or DTLS.\tabularnewline
 \textbf{Routing and forwarding} & Most literature on P2P overlay
 frameworks is about efficient location of distributed content,
 leveraging DHT (Distributed Hash Table) technology to achieve consistent
-access this goal {[}M15{]}\tabularnewline
+access this goal \cite{M15}\tabularnewline
 \textbf{Support for multihoming} & Rely on limited definition of
 multihoming (load balancing only) provided by IP-based technologies
 (e.g. multipath TCP or SCTP) or implement specialized
@@ -4674,7 +4674,7 @@ protocols\tabularnewline
 \textbf{Support for node mobility (e.g. wallet nodes)} & Relies on home
 and foreign agents, tunnels, anchors, and specialized protocols to
 construct and maintain the overlay connectivity graph, which are
-use-case specific {[}MA13{]}\tabularnewline
+use-case specific \cite{MA13}\tabularnewline
 \textbf{Efficient operation over heterogeneous physical media (e.g.
 fibre, satellite, cellular, WiFi, etc.)} & Would require development of
 a specialized transport protocol within the overlay with support for
@@ -4682,18 +4682,18 @@ congestion management. Interconnection with other IP systems dependent
 on widespread adoption / specialist gateways. Not addressed by P2P
 overlay frameworks\tabularnewline
 \textbf{Support for QoS (traffic differentiation, routing)} & Multiple
-techniques and algorithms available in the literature {[}RS14{]}, but
+techniques and algorithms available in the literature \cite{RS14}, but
 these are hard (that is, not achieved end-to-end in practice after
 \textasciitilde{}50 years since first proposed) to integrate into a
 coherent solution\tabularnewline
 \textbf{Extensibility / adaptability} & Protocols designed for a single
 purpose, need to be redesigned for different environments
-{[}S19{]}\tabularnewline
+\cite{S19}\tabularnewline
 \textbf{Efficiency of the system specification and implementation} &
 Each ``control protocol'' specifies its own encoding format, information
 modelling and dissemination mechanisms.\tabularnewline
 \textbf{Structured / generic approach towards scalability} & No, ad-hoc
-extensions (e.g. ``super-peers'' {[}M15{]})\tabularnewline
+extensions (e.g. ``super-peers'' \cite{M15})\tabularnewline
 \textbf{Support for non-IP bearers?} & No, designed to be overlaid on
 top of IP networks\tabularnewline
 \textbf{Collaborative management of the overlay} & Hard to manage a
@@ -4708,7 +4708,7 @@ of commonality and of a consistent theory of operation\tabularnewline
 Ouroboros Praos (in common with the original `classic' version) assumes
 that the notion of a time-slot is unambiguous, which requires
 participating nodes to have adequately synchronised local clocks. The
-assumption is made in {[}BGKR17{]} that ``any discrepancies between
+assumption is made in \cite{BGKR17} that ``any discrepancies between
 parties' local clocks are insignificant in comparison with the length of
 time represented by a slot''. Since in reality there will be skew
 between the local clocks of participating nodes, this implicitly places
@@ -4722,7 +4722,7 @@ constraints; security concerns are in principle mitigated by the
 `secure' variant of the protocol, but few servers support this due to
 the computational cost of the cryptographic operations required. In
 terms of performance, there is little reliable research, but the
-consensus is (from {[}Mills12{]}):
+consensus is (from \cite{Mills12}):
 
 \begin{quote}
 As a rule of thumb, the accuracy over the Internet is proportional to
@@ -4741,7 +4741,7 @@ as \textless{} 5\%, this means the minimum slot time T\textsubscript{s}
 should not be less than 20 x 100ms = 2s, unless steps are taken to
 mitigate sources of NTP inaccuracy. Further research is advisable into
 the consequences of violating the clock-synchronisation assumption of
-{[}BGKR17{]}, since Cardano is otherwise potentially vulnerable to
+\cite{BGKR17}, since Cardano is otherwise potentially vulnerable to
 NTP-spoofing attacks.
 
 \subsubsection{Leap seconds}
@@ -4766,7 +4766,7 @@ been scheduled for either June 30 or December 31.
 Leap seconds do not pose a problem to Praos by themselves; however, the
 widespread ambivalence towards them and varied/patchy implementation of
 them does. Not all clocks implement leap seconds in the same manner as
-UTC {[}RFC7164{]}: leap seconds in Unix time are commonly implemented by
+UTC \cite{RFC7164}: leap seconds in Unix time are commonly implemented by
 repeating the last second of the day; Network Time Protocol freezes time
 during the leap second; other schemes such as those deployed by Google
 and Amazon in their public cloud infrastructure smear the lengths of
@@ -4784,14 +4784,14 @@ level of `adversarial' behavior that Praos can easily withstand.
 However, inconsistent implementations of leap second insertion make the
 problem much worse. For example, the NTP packet includes a leap second
 flag, which informs the user that a leap second is imminent. It has been
-reported {[}Malone16{]} that never, since the monitoring began in 2008
+reported \cite{Malone16} that never, since the monitoring began in 2008
 and whether or not a leap second should be inserted, have all NTP
 servers correctly set their flags on a potential leap second day. This
 is one reason many NTP servers broadcast the wrong time for up to a day
 after a leap second insertion. Detailed studies of the leap seconds of
 2015 and 2016 show that, even for the Stratum-1 servers which anchor the
 NTP server network, errors both in leap second flags and the server
-clocks themselves are widespread, and can be severe {[}CV18{]}.
+clocks themselves are widespread, and can be severe \cite{CV18}.
 
 Thus, even with all Cardano nodes using NTP, local variations in the
 propagation of a leap second could result in persistent differences in
@@ -5038,7 +5038,7 @@ to the normal efficient sequence operations.
 
 We wrote a simulation environment for the \emph{IO} monad (which is
 called \emph{SimM} or \emph{sim-io}). This is similar to the system that
-was used to test the Bitcoin backbone protocol is {[}MJ15{]}. This,
+was used to test the Bitcoin backbone protocol is \cite{MJ15}. This,
 unlike the other components, is very Haskell-specific, and thus its
 description below will use language which might be more familiar for
 Haskell developers. It is a pure monad (in the same sense as the
@@ -5153,124 +5153,8 @@ scenarios. We use this technique in the \emph{BlockFetch},
 cases it allowed us to catch subtle bugs early in the development
 process.
 
-\section{References}
-\label{references}
-
-{[}MM02{]} Maymounkov P., Mazières D. (2002) Kademlia: A Peer-to-Peer
-Information System Based on the XOR Metric. In: Druschel P., Kaashoek
-F., Rowstron A. (eds) Peer-to-Peer Systems. IPTPS 2002. Lecture Notes in
-Computer Science, vol 2429. Springer, Berlin, Heidelberg
-
-{[}JD08{]} John Day, Patterns in Network Architecture: A Return to
-Fundamentals, Prentice Hall 2008 ISBN:0132252422 9780132252423
-
-{[}MHG15{]} Y. Marcus, E. Heilman, S. Goldberg. ``Low-Resource Eclipse
-Attacks on Ethereum's Peer-to Peer Network''. 24th USENIX Security
-Symposium, 2015.
-
-{[}MJ15{]} Andrew Miller, Rob Jansen, Shadow-Bitcoin: Scalable
-Simulation via Direct Execution of Multi-threaded Applications, 8th
-Workshop on Cyber Security Experimentation and Test, 2015
-
-{[}BGKR17{]} David Bernado, Peter Gaži, Aggelos Kiayias, Alexander
-Russell. Ouroboros Praos: An adaptively-secure, semi-synchronous
-proof-of-stake blockchain
-
-{[}BGKRZ19{]} Christian Badertscher, Peter Gaži, Aggelos Kiayias,
-Alexander Russell, and Vassilis Zikas. Ouroboros Genesis: Composable
-Proof-of-Stake Blockchains with Dynamic Availability
-
-{[}SSVV12{]} Setty, Vinay \& van Steen, Maarten \& Vitenberg, Roman \&
-Voulgaris, Spyros. (2012). PolderCast: Fast, Robust, and Scalable
-Architecture for P2P Topic-Based Pub/Sub. 7662. 271-291.
-10.1007/978-3-642-35170-9\_14.
-
-{[}DW13{]} Christian Decker, Roger Wattenhofer, Information Propagation
-in the Bitcoin Network, 2013,
-\href{https://tik-old.ee.ethz.ch/file//49318d3f56c1d525aabf7fda78b23fc0/P2P2013_041.pdf}{{https://tik-old.ee.ethz.ch/file//49318d3f56c1d525aabf7fda78b23fc0/P2P2013\_041.pdf}}
-
-{[}VFV17{]} Shaileshh Bojja Venkatakrishnan, Giulia Fanti, Pramod
-Viswanath, Dandelion: Redesigning the Bitcoin Network for Anonymity
-SIGMETRICS'17, June 5-9, 2017
-
-{[}M15{]} A. Malatras. ``State of the art survey on P2P overlay networks
-in pervasive computing environments''. Elsevier Journal of Network and
-Computer Applications, Volume 55, September 2015, pages 1-23.
-
-{[}RS14{]} K. Ramalakshmi, P. K. Sasikumaar. ``Study on security and
-Quality of Service implementations in P2P Overlay Network for efficient
-content distribution''. International Journal of Research in Engineering
-and Technology, Volume 3, Issue 4, April 2014.
-
-{[}S19{]} Matthew Slippe, A Study of Libp2p and ETH2 2019
-(\href{https://docs.google.com/document/d/17OMi1MedOetF4Febijsc6KvGeNZdDQMb0yeC4QixOxw/edit\#}{{https://docs.google.com/document/d/17OMi1MedOetF4Febijsc6KvGeNZdDQMb0yeC4QixOxw/edit\#}})
-
-{[}MA13{]} A. Mohammadi, B. Akbari. ``Design a peer to peer overlay
-protocol for mobility management of mobile nodes using Bluetooth
-media''. International Conference on Computing, Communications and
-Networking Technologies (ICCNT 2013).
-
-{[}N18{]} Till Neudecker, Characterization of the Bitcoin Peer-to-Peer
-Network (2015-2018),
-\href{https://dsn.tm.kit.edu/bitcoin/publications/bitcoin_network_characterization.pdf}{{https://dsn.tm.kit.edu/bitcoin/publications/bitcoin\_network\_characterization.pdf}},
-associated data
-\href{https://dsn.tm.kit.edu/bitcoin/\#propagation}{{https://dsn.tm.kit.edu/bitcoin/\#propagation}},
-sampled only in Germany)
-
-{[}Mills12{]} David L. Mills. Executive Summary: Computer Network Time
-Synchronization, 2012. Accessed at:
-https://www.eecis.udel.edu/\textasciitilde{}mills/exec.html
-
-{[}RFC7164{]} K. Gross, R. van Brandenburg, RTP and Leap Seconds, 2014
-\href{https://tools.ietf.org/html/rfc7164}{{https://tools.ietf.org/html/rfc7164}}
-
-{[}Malone16{]} David Malone (2016). The Leap Second Behaviour of NTP
-Servers. Proc.Traffic Monitoring and Analysis workshop. 2016.
-(\href{https://web.archive.org/web/20161023201948/http://tma.ifip.org/2016/papers/tma2016-final27.pdf}{{Archived
-copy}})
-
-{[}CV18{]} Yi Cao, Darryl Veitch, 'Network Timing, Weathering the 2016
-Leap Second'. IEEE Infocom 2016, Honolulu, USA, April 15-19, 2018.
-
-{[}Watts99{]} Duncan J Watts, Small Worlds: The Dynamics of Networks
-between Order and Randomness, Princeton University Press, 1999
-
-{[}Marlow13{]} Simon Marlow: Parallel and Concurrent Programming in
-Haskell. 2013. ISBN: 978-1-449-33594-6.
-
-{[}H93{]} Kohei Honda (1993) Types for dyadic interaction. In: Best E.
-(eds) CONCUR'93. CONCUR 1993. Lecture Notes in Computer Science, vol
-715. Springer, Berlin, Heidelberg
-
-{[}THK94{]} Takeuchi K., Honda K., Kubo M. (1994) An interaction-based
-language and its typing system. In: Halatsis C., Maritsas D.,
-Philokyprou G., Theodoridis S. (eds) PARLE'94 Parallel Architectures and
-Languages Europe. PARLE 1994. Lecture Notes in Computer Science, vol
-817. Springer, Berlin, Heidelberg
-
-{[}HVK98{]} Honda K., Vasconcelos V.T., Kubo M. (1998) Language
-primitives and type discipline for structured communication-based
-programming. In: Hankin C. (eds) Programming Languages and Systems. ESOP
-1998. Lecture Notes in Computer Science, vol 1381. Springer, Berlin,
-Heidelberg
-
-{[}MV11{]} Mostrous D., Vasconcelos V.T. (2011) Session Typing for a
-Featherweight Erlang. In: De Meuter W., Roman GC. (eds) Coordination
-Models and Languages. COORDINATION 2011. Lecture Notes in Computer
-Science, vol 6721. Springer, Berlin, Heidelberg
-
-{[}MHG18{]} Yuval Marcus, Ethan Heilman, and Sharon Goldberg:
-Low-Resource Eclipse Attacks on Ethereum's Peer-to-Peer Network.
-\href{https://www.cs.bu.edu/~goldbe/projects/eclipseEth.pdf}{{https://www.cs.bu.edu/\textasciitilde{}goldbe/projects/eclipseEth.pdf}}
-
-{[}CBTBC19{]} Nakul Chawla, Hans Walter Behrens, Darren Tapp, Dragan
-Boscovic and K. Selcuk Candan: Velocity: Scalability Improvements in
-BlockPropagation Through Rateless Erasure Coding.
-\href{http://www.public.asu.edu/~hwbehren/papers/icbc-2019-velocity.pdf}{{http://www.public.asu.edu/\textasciitilde{}hwbehren/papers/icbc-2019-velocity.pdf}}
-
-{[}Comp20{]} Peter Thompson, Neil Davies: Towards a RINA-Based
-Architecture for Performance Management of Large-Scale Distributed
-Systems, Computers 2020, 9(2), 53;
-\href{https://doi.org/10.3390/computers9020053}{{https://doi.org/10.3390/computers9020053}}
+\addcontentsline{toc}{section}{References}
+\bibliographystyle{alpha}
+\bibliography{network-design}
 
 \end{document}
