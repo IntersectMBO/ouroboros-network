@@ -65,7 +65,7 @@ headings\tabularnewline
 \section{Executive Summary}
 \label{executive-summary}
 
-\emph{\textbf{Purpose of document.} }
+\paragraph{Purpose of document.}
 
 We explain the technical requirements and key constraints for the
 networking layer of the Cardano Shelley implementation of Ouroboros
@@ -82,18 +82,16 @@ We give design requirements, compare with existing protocols, and
 describe the rationale for the solution adopted by the IOHK Networking
 Team.
 
-\emph{\textbf{Who the original was for:. }}
-
-\todo[inline]{ND: Need Biz Level decision - is this still the avowed intended audience?}
-
+\paragraph{Who the original was for.}
+\todo{ND: Need Biz Level decision - is this still the avowed intended audience?}
 It was intended to provide a management-level overview of the Cardano
 Shelley networking layer to inform strategic decision making and to
 provide confidence in the proposed networking implementation,
 supplementing this with a detailed technical analysis explaining the
 design and implementation to the Engineering and Quality Assurance team.
 
-\emph{\textbf{Where does it fit in the overall documentation scheme
-(dependencies, technical/management etc)?}}
+\paragraph{Where does it fit in the overall documentation scheme
+(dependencies, technical/management etc)?}
 
 We build and expand on the design requirements from the Ouroboros Praos
 paper. It links with the Shelley Ledger specification.
@@ -105,7 +103,7 @@ the future \emph{testnet} implementations, as appropriate to ensure the
 necessary rapid deployment. The document will be used to derive
 information for subsequent testing and deployment.
 
-\emph{\textbf{Achievements and Status. }}
+\paragraph{Achievements and Status.}
 
 The business requirements necessitated a bespoke protocol design,
 compatible with hard real-time concerns, security concerns, and a
@@ -166,13 +164,13 @@ Distributed consensus algorithms fall into two main camps: proof-of-work
 
 \begin{itemize}
 \item
-  \textbf{Proof-of-work} algorithms, like Bitcoin's, are a race to
+  \emph{Proof-of-work} algorithms, like Bitcoin's, are a race to
   `mine' blocks. The winner gets to add a block on the blockchain, and
   collects rewards for doing so.\\
   Miners consume vast computational resources as they compete on a
   global scale.
 \item
-  \textbf{Proof-of-stake} algorithms take turns to produce blocks in
+  \emph{Proof-of-stake} algorithms take turns to produce blocks in
   proportions that are determined by the users' stakes in the system.\\
   Blocks can be produced efficiently and frequently, improving
   throughput and settling time\footnote{The amount of time that must
@@ -933,13 +931,13 @@ requirements on three areas:
 
 \begin{enumerate}
 \item
-  \emph{\textbf{chain sync}}: a requirement to support a stateful
+  \emph{chain sync}: a requirement to support a stateful
   application-level protocol for synchronising chains of headers;
 \item
-  \emph{\textbf{block fetch}}: a requirement for downloading block
+  \emph{block fetch}: a requirement for downloading block
   bodies; and
 \item
-  \emph{\textbf{tx submission}}: a requirement for transmitting new
+  \emph{tx submission}: a requirement for transmitting new
   transactions from the mempool in one node to that of another.
 \end{enumerate}
 
@@ -1031,8 +1029,8 @@ disagree. Maintenance costs are similar either way and both approaches
 allow future flexibility, but
 
 \begin{quote}
-\emph{\textbf{this design decision in the consensus layer cannot easily
-be changed later}}.
+\emph{this design decision in the consensus layer cannot easily
+be changed later}.
 \end{quote}
 
 The stateful chain sync pattern is relied upon in many parts of the
@@ -1789,14 +1787,14 @@ Each node maintains three sets of known peer nodes:
 
 \begin{itemize}
 \item
-  \textbf{cold peers} are peers that are known of but where there is no
+  \emph{cold peers} are peers that are known of but where there is no
   established network connection;
 \item
-  \textbf{warm peers} are peers where a bearer connection is established
+  \emph{warm peers} are peers where a bearer connection is established
   but it used only for network measurements and is not used for any
   application level consensus protocols;
 \item
-  \textbf{hot peers} are peers where the bearer connection is actively
+  \emph{hot peers} are peers where the bearer connection is actively
   used for the application level consensus protocols.
 \end{itemize}
 
@@ -2392,7 +2390,7 @@ The Cardano system consists of independently operating nodes that
 exchange information according to a specific protocol; the set of nodes
 that a particular node communicates with are called its `peers'.
 
-We define an \textbf{adversarial} peer to be one that does not correctly
+We define an \emph{adversarial} peer to be one that does not correctly
 implement the protocol (so by definition both inoperative and malicious
 peers are adversarial)\footnote{This is consistent with the use of the
   term in the Ouroboros papers, but applied to the network protocols
@@ -2423,7 +2421,7 @@ such as failing to forward blocks or transactions.
 \subsubsection{Eclipse attacks}
 \label{eclipse-attacks}
 
-A particular case of adversarial peers is the \textbf{eclipse attack},
+A particular case of adversarial peers is the \emph{eclipse attack},
 in which a high proportion of a node's peers are adversarial and
 collaborate to deliver false but consistent information to the eclipsed
 node.
@@ -2514,7 +2512,7 @@ Executing any consensus algorithm between a set of distributed nodes
 connected by the global IP network adds new threats from outside the
 system. In particular we must consider what can be done by `actors' who
 can observe/modify the traffic contents and/or arrival pattern to/from a
-node; we call these \textbf{tier-1 actors}\footnote{\href{https://en.wikipedia.org/wiki/Tier_1_network}{{https://en.wikipedia.org/wiki/Tier\_1\_network}}},
+node; we call these \emph{tier-1 actors}\footnote{\href{https://en.wikipedia.org/wiki/Tier_1_network}{{https://en.wikipedia.org/wiki/Tier\_1\_network}}},
 which include ISPs, datacenter operators and nation states.
 
 Clearly a tier-1 actor can prevent a given node within its domain from
@@ -2602,7 +2600,7 @@ In general:
   large, this is not a strong defence and certainly would invalidate our
   Ouroboros claims, based only on the Ouroboros assumptions\footnote{Our
     claim would essentially reduce to "assume 50\% of stake is
-    non-adversarial \textbf{and} assume that nobody bothers to create
+    non-adversarial \emph{and} assume that nobody bothers to create
     1000 adversarial network nodes (with 0 stake each)".}.
 \end{itemize}
 
@@ -3155,7 +3153,7 @@ adds detail to the interactions and creates \emph{new possibilities for
 adversarial behaviour} to subvert the algorithm\footnote{For instance
   the constraint that buffers for data need to be of a finite size
   creates the (frequently exploited) potential to overrun them.} (the
-\textbf{attack surface}).
+\emph{attack surface}).
 
 Ideally we would prove that even with the new ways that the adversary
 can interact with honest nodes, that the network information exchange
@@ -3396,7 +3394,7 @@ trusts only information that it can verify itself.
 \label{network-architecture}
 
 The approach to mitigation of bearer-level DoS attacks is to defend
-\textbf{core} nodes, meaning the top stake pools and the transitional
+\emph{core} nodes, meaning the top stake pools and the transitional
 block-producing nodes operated by IOHK, by surrounding them with
 sacrificial relays.
 
@@ -4815,24 +4813,24 @@ properly in the protocol.
 \subsection{Ouroboros Network Components}
 \label{ouroboros-network-components}
 
-The \textbf{Ouroboros Network} implementation consists of the following
+The \emph{Ouroboros Network} implementation consists of the following
 Haskell packages:
 
 \begin{enumerate}
 \item
-  \textbf{typed-protocols} -- a standalone session type framework, which
+  \texttt{typed-protocols} -- a standalone session type framework, which
   allows communication protocols to be expressed and enforced;
 \item
-  \textbf{typed-protocols-cbor} -- a small extension to provide codec
+  \texttt{typed-protocols-cbor} -- a small extension to provide codec
   support for the CBOR format;
 \item
-  \textbf{network-mux} -- a standalone multiplexing library;
+  \texttt{network-mux} -- a standalone multiplexing library;
 \item
-  \textbf{ouroboros-network-framework} -- a library which makes low
+  \texttt{ouroboros-network-framework} -- a library which makes low
   level choice for \emph{ouroboros-network} and implements low level
   network components / primitives, e.g. connection manager, server.
 \item
-  \textbf{ouroboros-network} -- a library which implements the consensus
+  \texttt{ouroboros-network} -- a library which implements the consensus
   application-level protocols to support \emph{node-to-node} as well as
   \emph{node-to-client} communication (each consists of a bundle of
   \emph{mini-protocols} expressed with \emph{typed-protocols} package),
@@ -4857,7 +4855,7 @@ etc.). Protocols are expressed using the session type framework.
 \label{typed-protocols}
 
 Typed protocols is a standalone library which implements a form of
-\textbf{session types}. It allows expression of both a server and a
+\emph{session types}. It allows expression of both a server and a
 client which stay dual to each other (i.e. being in the same state, and
 only one side having the agency to send a message) throughout the
 evolution of the protocol. In particular this also means that one cannot
@@ -4926,7 +4924,7 @@ library), and thus can be used for many different purposes.
 \subsubsection{Ouroboros-Network}
 \label{ouroboros-network}
 
-The \emph{ouroboros-network} library implements \textbf{mini-protocols}
+The \emph{ouroboros-network} library implements \emph{mini-protocols}
 for \emph{node-to-node} and \emph{node-to-client} communication using
 the typed-protocols package; it provides the means to run them over TCP
 sockets, unix sockets, Windows named pipes and can be easily extended to
@@ -4936,13 +4934,13 @@ A \emph{node-to-node} protocol consists of:
 
 \begin{itemize}
 \item
-  \textbf{chain-sync} mini-protocol -- a protocol which allows a node to
+  \emph{chain-sync} mini-protocol -- a protocol which allows a node to
   reconstruct a chain of an upstream node;
 \item
-  \textbf{block-fetch} mini-protocol -- a protocol which allows a node
+  \emph{block-fetch} mini-protocol -- a protocol which allows a node
   to download block bodies from various peers;
 \item
-  \textbf{tx-submission} mini-protocol -- a protocol which allows
+  \emph{tx-submission} mini-protocol -- a protocol which allows
   submission of transactions.
 \end{itemize}
 
@@ -4957,11 +4955,11 @@ The \emph{node-to-client} protocol consists of:
 
 \begin{itemize}
 \item
-  \textbf{chain-sync} mini-protocol
+  \emph{chain-sync} mini-protocol
 \item
-  \textbf{local-tx-submission} mini-protocol
+  \emph{local-tx-submission} mini-protocol
 \item
-  \textbf{local-state-query} mini-protocol
+  \emph{local-state-query} mini-protocol
 \end{itemize}
 
 From the networking perspective it is not important which flavour of
