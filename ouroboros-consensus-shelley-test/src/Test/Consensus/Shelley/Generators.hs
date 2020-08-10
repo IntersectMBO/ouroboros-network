@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -25,9 +26,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.History (LedgerViewHistory)
@@ -43,7 +41,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
 import           Test.Consensus.Shelley.MockCrypto
-import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
+import           Test.Shelley.Spec.Ledger.Serialisation.Generators (genPParams)
 
 {-------------------------------------------------------------------------------
   Generators
@@ -67,8 +65,7 @@ instance HashAlgorithm h => Arbitrary (GenTx (Block h)) where
 instance HashAlgorithm h => Arbitrary (GenTxId (Block h)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (ApplyTxError (TPraosMockCrypto h)) where
+instance HashAlgorithm h => Arbitrary (ApplyTxError (TPraosMockCrypto h)) where
   arbitrary = ApplyTxError <$> arbitrary
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
@@ -90,7 +87,7 @@ instance HashAlgorithm h => Arbitrary (SomeResult (Block h)) where
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
     , SomeResult <$> (GetNonMyopicMemberRewards <$> arbitrary) <*> arbitrary
-    , SomeResult GetCurrentPParams <$> arbitrary
+    , SomeResult GetCurrentPParams <$> genPParams (Proxy @(TPraosMockCrypto h))
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
     , SomeResult GetCurrentEpochState <$> arbitrary
@@ -189,8 +186,24 @@ instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
 
 instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
       => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
-  arbitrary = genericArbitraryU
-  shrink    = genericShrink
+  arbitrary = do
+      lvProtParams   <- genPParams (Proxy @(TPraosMockCrypto h))
+      lvOverlaySched <- arbitrary
+      lvPoolDistr    <- arbitrary
+      lvGenDelegs    <- arbitrary
+      pure SL.LedgerView{..}
+
+  shrink lv =
+      -- TODO shrink for lvProtParams
+      [ lv{SL.lvOverlaySched = x} | x <- shrink lvOverlaySched ] ++
+      [ lv{SL.lvPoolDistr    = x} | x <- shrink lvPoolDistr    ] ++
+      [ lv{SL.lvGenDelegs    = x} | x <- shrink lvGenDelegs    ]
+    where
+      SL.LedgerView
+        { lvOverlaySched
+        , lvPoolDistr
+        , lvGenDelegs
+        } = lv
 
 instance (HashAlgorithm h)
     => Arbitrary (SL.ChainDepState (TPraosMockCrypto h)) where

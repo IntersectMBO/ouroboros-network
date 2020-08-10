@@ -71,8 +71,6 @@ import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 

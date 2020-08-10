@@ -42,11 +42,11 @@ import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
 import           Cardano.Crypto.Hash.Class (hashWithSerialiser)
 import           Cardano.Crypto.KES.Class (KESAlgorithm, SignKeyKES,
-                     deriveVerKeyKES, genKeyKES, totalPeriodsKES)
+                     deriveVerKeyKES, genKeyKES, seedSizeKES, totalPeriodsKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
-                     genKeyVRF)
+                     genKeyVRF, seedSizeVRF)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -162,15 +162,15 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
     mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k) k
 
 genCoreNode
-  :: TPraosCrypto c
+  :: forall c. TPraosCrypto c
   => SL.KESPeriod
   -> Gen (CoreNode c)
 genCoreNode startKESPeriod = do
-    genKey <- genKeyDSIGN <$> genSeed 8
-    delKey <- genKeyDSIGN <$> genSeed 8
-    stkKey <- genKeyDSIGN <$> genSeed 8
-    vrfKey <- genKeyVRF   <$> genSeed 8
-    kesKey <- genKeyKES   <$> genSeed 8
+    genKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN c)))
+    delKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN c)))
+    stkKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN c)))
+    vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF (Proxy @(SL.VRF c)))
+    kesKey <- genKeyKES   <$> genSeed (seedSizeKES (Proxy @(SL.KES c)))
     let kesPub = deriveVerKeyKES kesKey
         sigma = signedDSIGN
           ()
@@ -193,9 +193,9 @@ genCoreNode startKESPeriod = do
   where
     certificateIssueNumber = 0
 
-    genSeed :: Int -> Gen Cardano.Crypto.Seed
+    genSeed :: Integral a => a -> Gen Cardano.Crypto.Seed
     genSeed nbBytes =
-      mkSeedFromBytes . BS.pack <$> vectorOf nbBytes arbitrary
+      mkSeedFromBytes . BS.pack <$> vectorOf (fromIntegral nbBytes) arbitrary
 
 mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
