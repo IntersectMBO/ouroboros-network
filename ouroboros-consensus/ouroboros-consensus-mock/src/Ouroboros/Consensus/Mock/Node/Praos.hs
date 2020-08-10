@@ -12,6 +12,8 @@ import           Data.Bifunctor (second)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
+import           Cardano.Prelude (Natural)
+
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
@@ -33,14 +35,15 @@ protocolInfoPraos :: IOLike m
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams
+                  -> Natural
                   -> ProtocolInfo m MockPraosBlock
-protocolInfoPraos numCoreNodes nid params eraParams =
+protocolInfoPraos numCoreNodes nid params eraParams eta0 =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PraosConfig {
                 praosParams       = params
               , praosSignKeyVRF   = signKeyVRF nid
-              , praosInitialEta   = 0
+              , praosInitialEta   = eta0
               , praosInitialStake = genesisStakeDist addrDist
               , praosVerKeys      = verKeys
               }
