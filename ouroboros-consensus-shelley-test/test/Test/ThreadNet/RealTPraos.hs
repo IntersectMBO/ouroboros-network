@@ -54,16 +54,20 @@ import           Test.ThreadNet.Util.Seed (runGen)
 type Crypto = TPraosMockCrypto ShortHash
 
 data TestSetup = TestSetup
-  { setupD          :: DecentralizationParam
-  , setupD2         :: DecentralizationParam
+  { setupD            :: DecentralizationParam
+  , setupD2           :: DecentralizationParam
     -- ^ scheduled value
     --
     -- If not equal to 'setupD', every node immediately (ie slot 0) issues a
     -- protocol update transaction that will change the @d@ protocol parameter
     -- accordingly.
-  , setupK          :: SecurityParam
-  , setupTestConfig :: TestConfig
-  , setupVersion    :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Crypto))
+  , setupInitialNonce :: SL.Nonce
+    -- ^ the initial Shelley 'SL.ticknStateEpochNonce'
+    --
+    -- This test varies it too ensure it explores different leader schedules.
+  , setupK            :: SecurityParam
+  , setupTestConfig   :: TestConfig
+  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Crypto))
   }
   deriving (Show)
 
@@ -78,6 +82,11 @@ instance Arbitrary TestSetup where
       setupD  <- arbitrary
       setupD2 <- arbitrary
 
+      setupInitialNonce <- frequency
+        [ (1, pure SL.NeutralNonce)
+        , (9, SL.mkNonceFromNumber <$> arbitrary)
+        ]
+
       setupK  <- SecurityParam <$> choose (minK, maxK)
 
       setupTestConfig <- arbitrary
@@ -87,6 +96,7 @@ instance Arbitrary TestSetup where
       pure TestSetup
         { setupD
         , setupD2
+        , setupInitialNonce
         , setupK
         , setupTestConfig
         , setupVersion
@@ -160,6 +170,7 @@ prop_simple_real_tpraos_convergence :: TestSetup -> Property
 prop_simple_real_tpraos_convergence TestSetup
   { setupD
   , setupD2
+  , setupInitialNonce
   , setupK
   , setupTestConfig
   , setupVersion
@@ -252,7 +263,7 @@ prop_simple_real_tpraos_convergence TestSetup
                   { tniProtocolInfo =
                       mkProtocolRealTPraos
                         genesisConfig
-                        SL.NeutralNonce
+                        setupInitialNonce
                         nextProtVer
                         (coreNodes !! fromIntegral nid)
                   , tniCrucialTxs =
