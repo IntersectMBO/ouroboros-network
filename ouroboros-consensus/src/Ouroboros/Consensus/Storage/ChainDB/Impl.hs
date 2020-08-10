@@ -133,6 +133,7 @@ openDBInternal args launchBgTasks = do
     varFutureBlocks <- newTVarM Map.empty
 
 
+    traceWith tracer $ TraceOpenEvent OpenedLgrDB
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
       volDB
@@ -147,7 +148,9 @@ openDBInternal args launchBgTasks = do
         ledger = VF.validatedLedger   chainAndLedger
         cfg    = Args.cdbTopLevelConfig args
 
+    traceWith tracer $ TraceOpenEvent OpenedLgrDB
     atomically $ LgrDB.setCurrent lgrDB ledger
+    traceWith tracer $ TraceOpenEvent OpenedLgrDB
     varChain           <- newTVarM chain
     varIterators       <- newTVarM Map.empty
     varReaders         <- newTVarM Map.empty
