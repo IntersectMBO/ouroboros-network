@@ -38,6 +38,7 @@
 \maketitle
 
 \tableofcontents
+\listoftables
 
 \section{Revision History}
 \label{revision-history}
@@ -2106,14 +2107,17 @@ if, e.g., a web page takes a long time to load, whereas failing to
 deliver blocks on time (whatever that time is chosen to be) has the
 potential to arm an adversary to disrupt Cardano.
 
-The following table gives a per-hop budget for ``data diffusion'', based
-on the business requirement of a 20s inter-block interval\footnote{This
-  is the exact interval for Ouroboros Classic, and the targeted average
-  interval for Praos.}. Note that each `hop' includes both reception and
-validation of the block. The next slot leader needs to receive the block
-in time to fully verify it and update its local mempool/UTxO before
+The table~\ref{table:data-diffusion-budgets} gives a per-hop budget for ``data
+diffusion'', based on the business requirement of a 20s inter-block
+interval\footnote{This is the exact interval for Ouroboros Classic, and the
+targeted average interval for Praos.}. Note that each `hop' includes both
+reception and validation of the block. The next slot leader needs to receive
+the block in time to fully verify it and update its local mempool/UTxO before
 creating the next block.
 
+\begin{table}
+  \caption{Data diffusion budgets}
+  \label{table:data-diffusion-budgets}
 \begin{longtable}[]{@{}llll@{}}
 \toprule
 & Threshold & Target & Stretch\tabularnewline
@@ -2127,6 +2131,7 @@ creating the next block.
 5 & 4.0s & 3.0s & 2.0s\tabularnewline
 \bottomrule
 \end{longtable}
+\end{table}
 
 The budget also needs to accommodate the potential clock skew between
 nodes (as discussed in \cref{time-synchronisation-constraints}),
@@ -2850,7 +2855,7 @@ denial-of-service attacks.
 \subsection{Summary of comparison}
 \label{summary-of-comparison}
 
-\begin{longtable}[]{@{}llll@{}}
+\begin{longtable}[]{p{3cm}p{4cm}p{4cm}p{4cm}}
 \toprule
 & \textbf{Dandelion} & \textbf{Kademlia} &
 \textbf{PolderCast}\tabularnewline
@@ -3044,16 +3049,20 @@ creates a series of fundamental tradeoffs that need to be managed:
   \end{itemize}
 \end{itemize}
 
-There follows a table showing the effect of transaction rate and block
-size\footnote{Assuming a 20s average block interval.} on the resulting
-average transaction size (in bytes).
+The table~\ref{table:transaction-size} showing the effect of
+transaction rate and block size\footnote{Assuming a 20s average block
+interval.} on the resulting average transaction size (in bytes).
 
-\begin{longtable}[]{@{}llllllll@{}}
+\begin{table}
+  \caption{Transaction size as a function of block size and transactions per
+  second}
+  \label{table:transaction-size}
+\begin{longtable}[]{r|rrrrrrr}
 \toprule
-& TPS & & & & & &\tabularnewline
+  & \multicolumn{7}{c}{\textit{transactions per second}}\tabularnewline
+\textit{Block size (MB)} & 2 & 5 & 10 & 20 & 50 & 100 & 200\tabularnewline
 \midrule
 \endhead
-Block size (MB) & 2 & 5 & 10 & 20 & 50 & 100 & 200\tabularnewline
 0.064 & 1661 & 665 & 332 & 166 & 66 & 33 & 17\tabularnewline
 0.128 & 3323 & 1329 & 665 & 332 & 133 & 66 & 33\tabularnewline
 0.256 & 6645 & 2658 & 1329 & 665 & 266 & 133 & 66\tabularnewline
@@ -3064,6 +3073,7 @@ Block size (MB) & 2 & 5 & 10 & 20 & 50 & 100 & 200\tabularnewline
 2.048 & 53163 & 21265 & 10633 & 5316 & 2127 & 1063 & 532\tabularnewline
 \bottomrule
 \end{longtable}
+\end{table}
 
 It can be seen that high transaction rates limit the transaction size,
 even with large blocks. Also there are combinations that are infeasible
@@ -3533,18 +3543,18 @@ tree approach, in which each node makes independent choices of which of
 its peers to download new data from. Each node maintains a local list of
 peers, divided into three sets:
 
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{lp{10cm}}
 \toprule
-\textbf{State} & \textbf{Definition}\tabularnewline
+  \textbf{State} & {\textbf{Definition}}\tabularnewline
 \midrule
 \endhead
-Cold & A `cold' peer is one which the node is aware of but has not yet
-connected with\tabularnewline
-Warm & A `warm' peer is one that the node has established a bearer
-connection with, and is following its chain, but is not currently using
-to obtain new blocks or transactions\tabularnewline
-Hot & A `hot' peer is one that the node is actively using to obtain
-blocks and/or transactions\tabularnewline
+  Cold & A `cold' peer is one which the node is aware of but has not yet
+  connected with\tabularnewline
+  Warm & A `warm' peer is one that the node has established a bearer
+  connection with, and is following its chain, but is not currently using
+  to obtain new blocks or transactions\tabularnewline
+  Hot & A `hot' peer is one that the node is actively using to obtain
+  blocks and/or transactfions\tabularnewline
 \bottomrule
 \end{longtable}
 
@@ -3731,14 +3741,14 @@ Here we summarise the responses to the threats discussed in
 \cref{high-level-threat-model} embodied in the
 Shelley network design.
 
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{p{4cm}p{10cm}}
 \toprule
 \textbf{Threat} & \textbf{Response}\tabularnewline
 \midrule
 \endhead
 Adversarial peers & Detect adversarial behaviour (including poor
 performance) and drop the connection to that peer\tabularnewline
-Resource exhaustion attacks & Structure protocols so as to strictly
+Resource exhaustion\newline attacks & Structure protocols so as to strictly
 bound the resources that any connected peer can consume (attempting to
 consume more than the protocol allows would be adversarial, see row
 above)\tabularnewline
@@ -4045,19 +4055,20 @@ that I know the state of my network connection.
 There are three (at least) the following three distinct modes that the
 network can be operating in: each one has a red, green, amber status.
 
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{p{4cm}p{8cm}}
 \toprule
-Initial block sync &\tabularnewline
-\midrule
+\textbf{Initial block sync} &\tabularnewline
 \endhead
 red & receiving \textless{} 1 blocks per 10s\tabularnewline
 amber & receiving \textless{} 10 blocks per 10s\tabularnewline
 green & otherwise\tabularnewline
-Recovery &\tabularnewline
+\midrule
+\textbf{Recovery} &\tabularnewline
 red & receiving \textless{} 1 block per 10s\tabularnewline
 amber & otherwise\tabularnewline
 green & (not applicable)\tabularnewline
-Block chain following &\tabularnewline
+\midrule
+\textbf{Block chain following} &\tabularnewline
 red & it has been more than 200s since a slot indication was
 received.\tabularnewline
 amber & it has been more than 60s since a slot indication was
@@ -4077,8 +4088,6 @@ The transaction per second of the system as a whole will be:
 \begin{longtable}[]{@{}ll@{}}
 \toprule
 \emph{Threshold} & 8 tps\tabularnewline
-\midrule
-\endhead
 \emph{Target} & 16 tps\tabularnewline
 \emph{Stretch} & 50 tps\tabularnewline
 \bottomrule
@@ -4268,14 +4277,15 @@ actual ``bandwidth-delay product'' dominates those (i.e. once the TCP
 window is fully open). The red `danger' colour shows block transfer
 times that risk missing the targets set in \cref{business-requirements}.
 
-\begin{longtable}[]{@{}lllllllllll@{}}
+\begin{table}
+\begin{longtable}[]{r|rrrrrrrrrr}
 \toprule
-Unrestricted Window Size & & & & & & & & & &\tabularnewline
+  \caption{Unrestricted Window Size}\tabularnewline
+\midrule
+                     & \multicolumn{10}{c}{File size (kb)}\tabularnewline
+  $\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 & 500 & 1000 & 2000\tabularnewline
 \midrule
 \endhead
-& File size (kb) & & & & & & & & &\tabularnewline
-$\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
-500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
 0.005 & 0.003 & 0.003 & 0.008 & 0.013 & 0.018 & 0.023 & 0.028 & 0.035 &
@@ -4298,20 +4308,23 @@ $\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 2.255 & 2.560\tabularnewline
 \bottomrule
 \end{longtable}
+\end{table}
 
-The next table represents the ``best credible case'' (between AWS
-instances before kernel parameters have to be changed) for a large
-window size that can be set from within a user program.
+The table~\ref{table:large-max-window-size} represents the ``best credible
+case'' (between AWS instances before kernel parameters have to be changed) for
+a large window size that can be set from within a user program.
 
-\begin{longtable}[]{@{}lllllllllll@{}}
+\begin{table}
+\begin{longtable}[]{r|rrrrrrrrrr}
 \toprule
-Large max window size (near default maximum) & & & & & & & & &
-&\tabularnewline
+  \caption{Large max window size (near default maximum)}
+  \label{table:large-max-window-size}
+  \tabularnewline
+\midrule
+                   & \multicolumn{10}{c}{File Size (ko)} \tabularnewline
+$\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 & 500 & 1000 & 2000\tabularnewline
 \midrule
 \endhead
-& File Size (ko) & & & & & & & & &\tabularnewline
-$\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
-500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
 0.005 & 0.003 & 0.003 & 0.008 & 0.013 & 0.018 & 0.023 & 0.028 & 0.035 &
@@ -4334,6 +4347,7 @@ $\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 2.552 & 3.454\tabularnewline
 \bottomrule
 \end{longtable}
+\end{table}
 
 Note a $\Delta{}Q|_{G,S}$ of (300ms, $8\times{}10^{-8}$ o/s) is not the
 absolute worst case -- the worst we've measured (in other work) is
@@ -4341,17 +4355,20 @@ $\Delta{}Q|_{G,S}$ of (188ms, $6.14\times{}10^{-5}$ o/s) \emph{one-way}
 between San Paulo and Singapore. This would give a time-to-complete of
 5.38s in the 2000 ko transfer case.
 
-The next table represents the default case -- i.e. no special action on
+The table~\ref{table:medium-max-window-size} represents the default case -- i.e. no special action on
 the code and hence acceptance of the contemporary window size default.
 
-\begin{longtable}[]{@{}lllllllllll@{}}
+\begin{table}
+\begin{longtable}[]{r|rrrrrrrrrr}
 \toprule
-Medium max window size (near default) & & & & & & & & & &\tabularnewline
+  \caption{Medium max window size (near default)}
+  \label{table:medium-max-window-size}
+  \tabularnewline
+\midrule
+                       & \multicolumn{10}{c}{File Size (ko)}\tabularnewline
+$\Delta{}Q|_{G,S}$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 & 500 & 1000 & 2000\tabularnewline
 \midrule
 \endhead
-& File Size (ko) & & & & & & & & &\tabularnewline
-$\Delta{}Q|_{G,S}$  (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
-500 & 1000 & 2000\tabularnewline
 0.002 & 0.001 & 0.001 & 0.003 & 0.005 & 0.007 & 0.010 & 0.012 & 0.017 &
 0.025 & 0.042\tabularnewline
 0.005 & 0.003 & 0.003 & 0.008 & 0.013 & 0.018 & 0.023 & 0.028 & 0.039 &
@@ -4374,6 +4391,7 @@ $\Delta{}Q|_{G,S}$  (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 &
 3.152 & 5.253\tabularnewline
 \bottomrule
 \end{longtable}
+\end{table}
 
 \subsubsection{Examples of TCP/IP window opening between London and Sydney}
 \label{examples-of-tcpip-window-opening-between-london-and-sydney}
@@ -4449,7 +4467,7 @@ refers to the colours}
 \subsection{Performance model of Ouroboros Praos}
 \label{performance-model-of-ouroboros-praos}
 
-\begin{longtable}[]{@{}lll@{}}
+\begin{longtable}[]{lp{8cm}l}
 \toprule
 \textbf{Parameter} & \textbf{Description} &
 \textbf{Notes}\tabularnewline
@@ -4536,14 +4554,14 @@ P_{m}^{\text{NL}} &\equiv P(m \text{ slots no leader}) \\
 
 This gives the following table:
 
-\begin{longtable}[]{@{}lllllllllll@{}}
+{\small
+\begin{longtable}[]{r|rrrrrrrrrr}
 \toprule
-& \textbf{Active slots fraction \emph{f}} & & & & & & & &
-&\tabularnewline
+  & \multicolumn{10}{c}{Active slots fraction \emph{f}}\tabularnewline
+m & 0.1 & 0.2 & 0.3 & 0.4 & 0.5 & 0.6 & 0.7 & 0.8 & 0.9 & 1\tabularnewline
 \midrule
 \endhead
-m & 0.1 & 0.2 & 0.3 & 0.4 & 0.5 & 0.6 & 0.7 & 0.8 & 0.9 &
-1\tabularnewline
+
 1 & 9.00E-01 & 8.00E-01 & 7.00E-01 & 6.00E-01 & 5.00E-01 & 4.00E-01 &
 3.00E-01 & 2.00E-01 & 1.00E-01 & 0.00E+00\tabularnewline
 3 & 7.29E-01 & 5.12E-01 & 3.43E-01 & 2.16E-01 & 1.25E-01 & 6.40E-02 &
@@ -4556,6 +4574,7 @@ m & 0.1 & 0.2 & 0.3 & 0.4 & 0.5 & 0.6 & 0.7 & 0.8 & 0.9 &
 5.15E-53 & 1.27E-70 & 1.00E-100 & 0.00E+00\tabularnewline
 \bottomrule
 \end{longtable}
+}
 
 We can convert slots into a time interval by multiplying by Ts.
 Conversely, if we want to know the probability that a certain time
@@ -4649,7 +4668,7 @@ development and maintenance resources. Instead, we need a consistent
 framework in which to define and describe issues and posit and refine
 solutions without piling up complexity and technical debt.
 
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{p{6cm}p{8cm}}
 \toprule
 Feature & Standard P2P overlay framework\tabularnewline
 \midrule
