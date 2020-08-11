@@ -175,17 +175,7 @@ instance Arbitrary (SL.PParams' SL.StrictMaybe) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance HashAlgorithm h
-      => Arbitrary (SL.ProposedPPUpdates (TPraosMockCrypto h)) where
-  arbitrary = genericArbitraryU
-  shrink    = genericShrink
-
-instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (SL.GenDelegs (TPraosMockCrypto h)) where
-  arbitrary = (SL.GenDelegs . fmap (uncurry SL.GenDelegPair)) <$> arbitrary
-
-instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
+instance HashAlgorithm h => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
   arbitrary = do
       lvProtParams   <- genPParams (Proxy @(TPraosMockCrypto h))
       lvOverlaySched <- arbitrary
