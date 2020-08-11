@@ -79,7 +79,7 @@ timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
     timeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
                       -> Maybe DiffTime
     timeLimitForState (ClientAgency TokClient) = waitForever
-    timeLimitForState (ServerAgency TokServer) = shortWait
+    timeLimitForState (ServerAgency TokServer) = Just 60 -- TODO: #2505 should be 10s.
 
 
 codecKeepAliveId
