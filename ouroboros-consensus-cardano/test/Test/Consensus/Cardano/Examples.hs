@@ -25,8 +25,6 @@ import           Data.Bifunctor (first)
 import           Data.Proxy (Proxy (..))
 import           Data.SOP.Strict
 
-import           Cardano.Crypto.Hash (ShortHash)
-
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
@@ -49,6 +47,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosStandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
@@ -60,7 +59,6 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 import qualified Test.Consensus.Byron.Examples as Byron
 
 import qualified Test.Consensus.Shelley.Examples as Shelley
-import           Test.Consensus.Shelley.MockCrypto
 
 import           Test.Consensus.Cardano.Generators (toTelescope')
 
@@ -68,7 +66,7 @@ import           Test.Consensus.Cardano.Generators (toTelescope')
   Setup
 -------------------------------------------------------------------------------}
 
-type Crypto = TPraosMockCrypto ShortHash
+type Crypto = TPraosStandardCrypto
 
 eraExamples :: NP Examples (CardanoEras Crypto)
 eraExamples = Byron.examples :* Shelley.examples :* Nil
