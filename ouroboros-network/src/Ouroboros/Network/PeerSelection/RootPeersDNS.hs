@@ -37,9 +37,10 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Void (Void)
 
 import           Control.Exception (IOException)
-import           Control.Monad (when, unless)
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -278,31 +279,27 @@ data TraceLocalRootPeers =
 
 -- |
 --
--- This action typically runs indefinitely, but can terminate successfully in
--- corner cases where there is nothing to do.
---
 localRootPeersProvider :: Tracer IO TraceLocalRootPeers
                        -> TimeoutFn IO
                        -> DNS.ResolvConf
                        -> StrictTVar IO (Map DomainAddress (Map Socket.SockAddr PeerAdvertise))
-                       -> [(DomainAddress, PeerAdvertise)]
-                       -> IO ()
+                       -> NonEmpty (DomainAddress, PeerAdvertise)
+                       -> IO Void
 localRootPeersProvider tracer timeout resolvConf rootPeersVar domains = do
-    traceWith tracer (TraceLocalRootDomains domains)
-    unless (null domains) $ do
+    traceWith tracer (TraceLocalRootDomains (NonEmpty.toList domains))
 #if !defined(mingw32_HOST_OS)
-      rr <- asyncResolverResource resolvConf
+    rr <- asyncResolverResource resolvConf
 #else
-      let rr = newResolverResource resolvConf
+    let rr = newResolverResource resolvConf
 #endif
-      withAsyncAll (map (monitorDomain rr) domains) $ \asyncs ->
-        waitAny asyncs >> return ()
+    withAsyncAll (map (monitorDomain rr) (NonEmpty.toList domains)) $ \asyncs ->
+      snd <$> waitAny asyncs
   where
-    monitorDomain :: Resource DNSorIOError DNS.Resolver -> (DomainAddress, PeerAdvertise) -> IO ()
+    monitorDomain :: Resource DNSorIOError DNS.Resolver -> (DomainAddress, PeerAdvertise) -> IO Void
     monitorDomain rr0 (domain@DomainAddress {daDomain, daPortNumber}, advertisePeer) =
         go rr0 0
       where
-        go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO ()
+        go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO Void
         go !rr !ttl = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
