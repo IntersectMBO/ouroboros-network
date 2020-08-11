@@ -1,13 +1,14 @@
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[margin=2.5cm]{geometry}
+\usepackage[dvipsnames]{xcolor}
 \usepackage{todonotes}
 \usepackage{microtype}
 \usepackage{amssymb,amsmath}
 \usepackage{mathpazo}
 \usepackage{longtable,booktabs}
+\usepackage{dcolumn}
 \usepackage{graphicx}
-
 \usepackage{hyperref}
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
 \hypersetup{
@@ -17,6 +18,8 @@
 }
 
 \begin{document}
+
+\listoftodos
 
 \title{Introduction to the design of the
        Data Diffusion and Networking for
@@ -80,11 +83,10 @@ describe the rationale for the solution adopted by the IOHK Networking
 Team.
 
 \paragraph{Who the original was for.}
-\todo{ND: Need Biz Level decision - is this still the avowed intended audience?}
-It was intended to provide a management-level overview of the Cardano
+It was intended to provide a semi-technical, high-level overview of the Cardano
 Shelley networking layer to inform strategic decision making and to
-provide confidence in the proposed networking implementation,
-supplementing this with a detailed technical analysis explaining the
+provide confidence in the proposed networking implementation.
+This is supplemented with a detailed technical analysis explaining the
 design and implementation to the Engineering and Quality Assurance team.
 
 \paragraph{Where does it fit in the overall documentation scheme
@@ -213,14 +215,11 @@ This document describes, for the Shelley implementation of Cardano:
 
 A note on terminology: while ``data diffusion'' and ``network'' mean
 slightly different things -- technically, data diffuses \emph{across} a
-network -- for simplicity we may use these terms synonymously in this
+network -- for simplicity we may use these terms interchangeably in this
 document.
 
 \subsection{Structure of the document}
 \label{structure-of-the-document}
-
-\todo[inline]{ND: May be missing "this is how the bits fit together" part of the story - this could be as diagram(s) or text.
-The aim would be to "tell them what we are going to tell them" to provide some hooks for the reader to attach ideas to as they are presented.}
 
 This document is structured as follows:
 
@@ -1610,8 +1609,8 @@ hops through the graph to get from one slot leader to the next. Since we
 are interested in the overall transmission time between slot leaders
 then we must be interested in both the number of hops and the
 transmission time on each hop. A useful technical graph metric here is
-one known as the characteristic path length (see
-\cref{characteristic-path-length}). Informally it can be thought of the
+one known as the characteristic path length \cite{Watts99}. 
+Informally it can be thought of the
 typical path length, taking into account both the number of hops and
 the hop transmission times.
 
@@ -1960,9 +1959,8 @@ releases without introducing significant compatibility problems.
 \subsection{Related work (decentralisation)}
 \label{related-work-decentralisation}
 
-\todo[inline]{Material on Kademlia etc has been integrated into the later section on alternative approaches}
-
-As discussed in \cref{decentralisation-design}, prior graph theory \cite{Watts99} tells us that we can construct
+As discussed in \cref{decentralisation-design}, prior graph theory 
+\cite{Watts99} tells us that we can construct
 large graphs with small hop counts from a range of starting graph types.
 To do so however requires a high enough mean and variance for the
 valency, well above 2-3. The results also demonstrate that using rings
@@ -2967,15 +2965,15 @@ blocks amongst peers in a timely fashion. Failure to deliver on time
 should be rare, even under adverse conditions. We are assuming that
 Ouroboros Praos will aim for the same rate of block production as
 Ouroboros Classic\footnote{We assume that relaxing these constraints
-  substantially -- which would lead to Shelley having much lower
-  transaction throughput and longer settling times -- is not acceptable
-  from a business/community acceptance perspective.} by aiming for a
+substantially -- which would lead to Shelley having much lower
+transaction throughput and longer settling times -- is not acceptable
+from a business/community acceptance perspective.} by aiming for a
 slot time of 1s and a slot occupancy of 5\%. Allowing the Praos $\Delta$
 parameter to be \textasciitilde{}20 gives the following thresholds and
 targets\footnote{Based on informal discussions with the research group.}
 for bloc distribution:
 
-\todo[inline]{Need to review the numbers above and below based on the choice
+\todo[inline]{Peter Gazi: Need to review the numbers above and below based on the choice
 of slot length, $f$ and praos $\Delta$ parameters.}
 
 \begin{itemize}
@@ -3079,7 +3077,7 @@ It can be seen that high transaction rates limit the transaction size,
 even with large blocks. Also there are combinations that are infeasible
 for different uses. A transaction\footnote{At least in the benchmarking
   environment -- which is using the simplest forms of transaction -
-  correct at time of writing..} has a {minimum size of 305 bytes}\todo{PT: is this still correct?} (single
+  correct at time of writing..} has a {minimum size of 305 bytes} (single
 input UTxO to single UTxO), a ``useful'' one (1 input to two output) 361
 bytes. Coin selection (for privacy enhancement) uses multiple inputs and
 multiple outputs. And exchanges look for large numbers (50+) and
@@ -3114,7 +3112,7 @@ an adversary. An adversary might exploit them when they occur, however.
 
 Assuming that stake pools exhibit rational behavior, we expect of our
 delegation design\footnote{https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/delegationDesignSpec/latest/download-by-type/doc-pdf/delegation\_design\_spec}
-that roughly {1000 peers}\todo{PT: still correct?} will hold at least 80\% of the total stake.
+that roughly {100 - 1000 peers} will hold at least 80\% of the total stake.
 
 \subsection{Graceful degradation}
 \label{graceful-degradation}
@@ -4409,59 +4407,73 @@ those packets that were at the end of the round trip time / window
 closing -- most ACKs would have been triggered by the ``two packet
 rule''; if an odd number of packets arrived just before a pause, its
 acknowledgement would be dependent on the ACK timeout
-(\textasciitilde{}40ms ?).
+(\textasciitilde{}40ms).
 
 \subsection{Model of network scaling}
 \label{model-of-network-scaling}
 
-Per-hop budget for ``data diffusion''
-
-\begin{longtable}[]{@{}llll@{}}
+Table \ref{tab:per-hop-budgets} below shows how the overall 
+data diffusion time budget 
+translates into a per-hop budget as a function of the depth of the 
+spanning tree.
+\begin{table}[h]
+\newcolumntype{.}{D{.}{.}{2}}
+\centering
+\begin{tabular}{@{}c|...@{}}
 \toprule
-& Threshold & Target & Stretch\tabularnewline
+ & \multicolumn{3}{c}{\textbf{Data diffusion time budget}}\tabularnewline
+ & \multicolumn{1}{r}{Threshold} 
+ & \multicolumn{1}{r}{Target} 
+ & \multicolumn{1}{r}{Stretch}\tabularnewline
+\multicolumn{1}{c|}{\textbf{Max hops}}
+ & \multicolumn{1}{c}{\textbf{20s}}
+ & \multicolumn{1}{c}{\textbf{15s}}
+ & \multicolumn{1}{c}{\textbf{10s}}\tabularnewline
 \midrule
-\endhead
-\textbf{Max hops} & \textbf{20s budget} & \textbf{15s budget} &
-\textbf{10s budget}\tabularnewline
 2 & 10.0s & 7.5s & 5.0s\tabularnewline
 3 & 6.6s & 5.0s & 3.3s\tabularnewline
 4 & 5.0s & 3.75s & 2.5s\tabularnewline
 5 & 4.0s & 3.0s & 2.0s\tabularnewline
 \bottomrule
-\end{longtable}
+\end{tabular}
+\caption{\label{tab:per-hop-budgets}Per-hop budget for data diffusion}
+\end{table}
 
 These budgets should be compared with the time-to-complete for
 delivering a block in \cref{time-to-transmit-a-block-of-given-size-across-given-latencies}.
 
-Size of spanning tree as a function of depth and node valency (assuming
-homogeneity):
-
-\begin{longtable}[]{@{}llllll@{}}
+\begin{table}[h]
+\centering
+\begin{tabular}{c|rrrrr}
 \toprule
-& Valency & & & &\tabularnewline
+& \multicolumn{5}{c}{\textbf{Valency}}\tabularnewline
 \midrule
-\endhead
-Depth & 2 & 3 & 4 & 5 & 6\tabularnewline
+\textbf{Depth} & 2 & 3 & 4 & 5 & 6\tabularnewline
 2 & 7 & 26 & 63 & 124 & 215\tabularnewline
-3 & 15 & 80 & \emph{\textbf{255}} & \emph{\textbf{624}} &
-1295\tabularnewline
-4 & 31 & 242 & \emph{\textbf{1023}} & \emph{\textbf{3124}} &
-7775\tabularnewline
-5 & 63 & 728 & \emph{\textbf{4095}} & \emph{\textbf{15624}} &
-46655\tabularnewline
-6 & 127 & 2186 & 16383 & 78124 & 279935\tabularnewline
+3 & 15 & 80 & 255 
+& \colorbox{GreenYellow}{\emph{\textbf{624}}} &
+\colorbox{GreenYellow}{1295}\tabularnewline
+4 & 31 & 242 & \colorbox{GreenYellow}{\emph{\textbf{1023}}} 
+& \colorbox{LimeGreen}{\emph{\textbf{3124}}} &
+\colorbox{OliveGreen}{7775}\tabularnewline
+5 & 63 & \colorbox{GreenYellow}{728} & \colorbox{LimeGreen}{\emph{\textbf{4095}}} 
+& \colorbox{OliveGreen}{\emph{\textbf{15624}}} &
+\colorbox{OliveGreen}{46655}\tabularnewline
+6 & 127 & \colorbox{LimeGreen}{2186} & \colorbox{OliveGreen}{16383} 
+& \colorbox{OliveGreen}{78124} & \colorbox{OliveGreen}{279935}\tabularnewline
 \bottomrule
-\end{longtable}
+\end{tabular}
+\caption{\label{tab:span-tree-size}Size of spanning tree as a function of depth and node valency}
+\end{table}
 
+Table \ref{tab:span-tree-size} above shows the size of a (homogeneous) spanning tree
+as a function of depth and valency. 
 The shading represents increasing `success' in reaching a large number
 of nodes. However, as discussed in \cref{decentralisation-constraints},
 a large depth is problematic
 because it reduces the per-hop time budget, and a large valency is
 problematic because it increases the resources required by a node. The
-figures in red represent reasonable compromises.
-
-\todo[inline]{previously we had colour in the tables, and the text
-refers to the colours}
+figures in bold italics represent reasonable compromises.
 
 \subsection{Performance model of Ouroboros Praos}
 \label{performance-model-of-ouroboros-praos}
@@ -4495,7 +4507,7 @@ p_{i} &= \phi_{f}(\alpha_{i}) \\
 
 We assume here that each of the N active nodes has an equal amount of
 stake\footnote{The incentive system is designed to encourage a uniform
-  distribution of stake between major nodes.},
+ distribution of stake between major nodes.},
 $\alpha_{i} = \frac{1}{N}$, and hence equal probability of being a
 leader in any particular slot. Then:
 
@@ -4553,7 +4565,7 @@ P_{m}^{\text{NL}} &\equiv P(m \text{ slots no leader}) \\
 
 This gives the following table:
 
-{\small
+{\footnotesize
 \begin{longtable}[]{r|rrrrrrrrrr}
 \toprule
   & \multicolumn{10}{c}{Active slots fraction \emph{f}}\tabularnewline
