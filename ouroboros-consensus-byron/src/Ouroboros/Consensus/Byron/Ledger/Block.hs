@@ -226,7 +226,7 @@ instance GetPrevHash ByronBlock where
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure
 
-fromByronPrevHash :: CodecConfig ByronBlock
+fromByronPrevHash :: BlockConfig ByronBlock
                   -> Maybe CC.HeaderHash -> ChainHash ByronBlock
 fromByronPrevHash _cfg = \case
     Nothing -> GenesisHash

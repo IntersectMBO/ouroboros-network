@@ -216,11 +216,11 @@ showEBBs cfg immDB rr = do
           Just _epoch ->
             putStrLn $ intercalate "\t" [
                 show (blockHash blk)
-              , show (blockPrevHash (configCodec cfg) blk)
+              , show (blockPrevHash (configBlock cfg) blk)
               , show (    Map.lookup
                             (blockHash blk)
                             (Analysis.knownEBBs (Proxy @blk))
-                       == Just (blockPrevHash (configCodec cfg) blk)
+                       == Just (blockPrevHash (configBlock cfg) blk)
                      )
               ]
           _otherwise ->

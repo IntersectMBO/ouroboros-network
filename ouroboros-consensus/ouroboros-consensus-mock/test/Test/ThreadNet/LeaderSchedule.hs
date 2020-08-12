@@ -90,7 +90,7 @@ prop_simple_leader_schedule_convergence TestSetup
   , setupLeaderSchedule = schedule
   , setupSlotLength     = slotLength
   } =
-    counterexample (tracesToDot (SimpleCodecConfig k) testOutputNodes) $
+    counterexample (tracesToDot (SimpleBlockConfig k) testOutputNodes) $
     prop_general PropGeneralArgs
       { pgaBlockProperty       = prop_validSimpleBlock
       , pgaCountTxs            = countSimpleGenTxs

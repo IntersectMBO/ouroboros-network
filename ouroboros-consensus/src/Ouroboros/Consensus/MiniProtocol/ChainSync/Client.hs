@@ -655,7 +655,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
           -- Validate header
           let expectPrevHash = castHash (AF.headHash theirFrag)
-              actualPrevHash = headerPrevHash (configCodec cfg) hdr
+              actualPrevHash = headerPrevHash (configBlock cfg) hdr
           when (actualPrevHash /= expectPrevHash) $
             disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
 

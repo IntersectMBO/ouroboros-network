@@ -114,9 +114,9 @@ class (HasHeader blk, GetHeader blk) => GetPrevHash blk where
   -- This gets its own abstraction, because it will be a key part of the path
   -- to getting rid of EBBs: when we have blocks @A - EBB - B@, the prev hash
   -- of @B@ will be reported as @A@.
-  headerPrevHash :: CodecConfig blk -> Header blk -> ChainHash blk
+  headerPrevHash :: BlockConfig blk -> Header blk -> ChainHash blk
 
-blockPrevHash :: GetPrevHash blk => CodecConfig blk -> blk -> ChainHash blk
+blockPrevHash :: GetPrevHash blk => BlockConfig blk -> blk -> ChainHash blk
 blockPrevHash cfg = castHash . headerPrevHash cfg . getHeader
 
 {-------------------------------------------------------------------------------

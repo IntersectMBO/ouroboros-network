@@ -60,7 +60,7 @@ deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 instance Typeable blk => ShowProxy (MockError blk) where
 
 updateMockState :: (GetPrevHash blk, HasMockTxs blk)
-                => CodecConfig blk
+                => BlockConfig blk
                 -> blk
                 -> MockState blk
                 -> Except (MockError blk) (MockState blk)
@@ -70,7 +70,7 @@ updateMockState cfg blk st = do
     updateMockUTxO (blockSlot hdr) blk st'
 
 updateMockTip :: GetPrevHash blk
-              => CodecConfig blk
+              => BlockConfig blk
               -> Header blk
               -> MockState blk
               -> Except (MockError blk) (MockState blk)

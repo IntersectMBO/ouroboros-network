@@ -300,14 +300,14 @@ instance IsLedger (LedgerState TestBlock) where
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock cfg tb@TestBlock{..} (TickedTestLedger TestLedger{..})
-    | blockPrevHash ccfg tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash ccfg tb)
+    | blockPrevHash bcfg tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash bcfg tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb)
     where
-      ccfg = blockConfigCodec cfg
+      bcfg = blockConfigBlock cfg
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 

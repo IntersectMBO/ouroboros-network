@@ -143,7 +143,8 @@ fromChainDbArgs :: ChainDbArgs m blk
                    )
 fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
-          immCodecConfig        = configCodec cdbTopLevelConfig
+          immBlockConfig        = configBlock cdbTopLevelConfig
+        , immCodecConfig        = configCodec cdbTopLevelConfig
         , immChunkInfo          = cdbChunkInfo
         , immValidation         = cdbImmValidation
         , immCheckIntegrity     = cdbCheckIntegrity
@@ -156,6 +157,7 @@ fromChainDbArgs ChainDbArgs{..} = (
           volHasFS              = cdbHasFSVolDb
         , volCheckIntegrity     = cdbCheckIntegrity
         , volBlocksPerFile      = cdbBlocksPerFile
+        , volBlockConfig        = configBlock cdbTopLevelConfig
         , volCodecConfig        = configCodec cdbTopLevelConfig
         , volValidation         = cdbVolValidation
         , volTracer             = contramap TraceVolDBEvent cdbTracer

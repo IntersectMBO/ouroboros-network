@@ -114,12 +114,14 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 -- module.
 data VolDB m blk = VolDB {
       volDB       :: !(VolatileDB (HeaderHash blk) m)
+    , blockConfig :: !(BlockConfig blk)
     , codecConfig :: !(CodecConfig blk)
     }
   deriving (Generic)
 
-deriving instance NoUnexpectedThunks (CodecConfig blk)
-               => NoUnexpectedThunks (VolDB m blk)
+deriving instance ( NoUnexpectedThunks (BlockConfig blk)
+                  , NoUnexpectedThunks (CodecConfig blk)
+                  ) => NoUnexpectedThunks (VolDB m blk)
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the VolDB.
 class ( EncodeDisk blk blk
@@ -141,6 +143,7 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
       volHasFS          :: HasFS m h
     , volCheckIntegrity :: blk -> Bool
     , volBlocksPerFile  :: BlocksPerFile
+    , volBlockConfig    :: BlockConfig blk
     , volCodecConfig    :: CodecConfig blk
     , volValidation     :: VolDB.BlockValidationPolicy
     , volTracer         :: Tracer m (TraceEvent blk)
@@ -152,6 +155,7 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 --
 -- * 'volCheckIntegrity'
 -- * 'volBlocksPerFile'
+-- * 'volBlockConfig'
 -- * 'volCodecConfig'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
@@ -161,6 +165,7 @@ defaultArgs fp = VolDbArgs {
       -- Fields without a default
     , volCheckIntegrity     = error "no default for volCheckIntegrity"
     , volBlocksPerFile      = error "no default for volBlocksPerFile"
+    , volBlockConfig        = error "no default for volBlockConfig"
     , volCodecConfig        = error "no default for volCodecConfig"
     , volValidation         = error "no default for volValidation"
     }
@@ -174,6 +179,7 @@ openDB args@VolDbArgs{..} = do
     volDB <- VolDB.openDB volatileDbArgs
     return VolDB
       { volDB              = volDB
+      , blockConfig        = volBlockConfig
       , codecConfig        = volCodecConfig
       }
   where
@@ -187,9 +193,10 @@ openDB args@VolDbArgs{..} = do
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
+        -> BlockConfig blk
         -> CodecConfig blk
         -> VolDB m blk
-mkVolDB volDB codecConfig = VolDB {..}
+mkVolDB volDB blockConfig codecConfig = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -221,7 +228,7 @@ putBlock
   :: (MonadCatch m, GetPrevHash blk, VolDbSerialiseConstraints blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo codecConfig b binaryBlockInfo) binaryBlob
+    VolDB.putBlock vol (extractInfo blockConfig b binaryBlockInfo) binaryBlob
   where
     binaryBlockInfo = getBinaryBlockInfo b
     binaryBlob      = CBOR.toBuilder $ encodeDisk codecConfig b
@@ -759,7 +766,7 @@ blockFileParser
        (HeaderHash blk)
 blockFileParser VolDbArgs{..} =
     blockFileParser'
-      volCodecConfig
+      volBlockConfig
       volHasFS
       decodeNestedCtxtAndBlock
       volCheckIntegrity
@@ -781,7 +788,7 @@ blockFileParser VolDbArgs{..} =
 -- the whole @VolDbArgs@.
 blockFileParser'
   :: forall m blk h. (IOLike m, GetPrevHash blk, HasBinaryBlockInfo blk)
-  => CodecConfig blk
+  => BlockConfig blk
   -> HasFS m h
   -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
   -> (blk -> Bool)
@@ -874,7 +881,7 @@ fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = NotOrigin hash
 
 extractInfo :: GetPrevHash blk
-            => CodecConfig blk
+            => BlockConfig blk
             -> blk
             -> BinaryBlockInfo
             -> VolDB.BlockInfo (HeaderHash blk)

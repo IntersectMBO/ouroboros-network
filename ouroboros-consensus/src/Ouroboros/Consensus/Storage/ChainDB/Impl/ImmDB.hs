@@ -142,7 +142,8 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
-      immCodecConfig    :: CodecConfig blk
+      immBlockConfig    :: BlockConfig blk
+    , immCodecConfig    :: CodecConfig blk
     , immChunkInfo      :: ChunkInfo
     , immValidation     :: ImmDB.ValidationPolicy
     , immCheckIntegrity :: blk -> Bool
@@ -156,6 +157,7 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 --
 -- The following fields must still be defined:
 --
+-- * 'immBlockConfig'
 -- * 'immCodecConfig'
 -- * 'immChunkInfo'
 -- * 'immValidation'
@@ -167,6 +169,7 @@ defaultArgs fp = ImmDbArgs{
     , immCacheConfig        = cacheConfig
     , immTracer             = nullTracer
       -- Fields without a default
+    , immBlockConfig        = error "no default for immBlockConfig"
     , immCodecConfig        = error "no default for immCodecConfig"
     , immChunkInfo          = error "no default for immChunkInfo"
     , immValidation         = error "no default for immValidation"
@@ -244,7 +247,7 @@ openDB ImmDbArgs {..} = do
       , prefixLen   = reconstructPrefixLen (Proxy @(Header blk))
       }
     parser = ImmDB.chunkFileParser
-               immCodecConfig
+               immBlockConfig
                immHasFS
                (decodeDisk immCodecConfig)
                immCheckIntegrity

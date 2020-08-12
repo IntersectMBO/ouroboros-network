@@ -110,10 +110,10 @@ instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
       . getOneEraHeader
       . getHardForkHeader
     where
-      cfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra cfg
+      cfgs = getPerEraBlockConfig $ hardForkBlockConfigPerEra cfg
 
       getOnePrev :: forall blk. SingleEraBlock blk
-                 => CodecConfig blk -> Header blk -> ChainHash (HardForkBlock xs)
+                 => BlockConfig blk -> Header blk -> ChainHash (HardForkBlock xs)
       getOnePrev cfg' hdr =
           case headerPrevHash cfg' hdr of
             GenesisHash -> GenesisHash

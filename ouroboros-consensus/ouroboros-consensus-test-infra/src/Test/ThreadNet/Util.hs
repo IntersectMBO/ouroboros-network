@@ -134,7 +134,7 @@ genesisBlockInfo = BlockInfo
 
 
 blockInfo :: (GetPrevHash b, HasCreator b)
-          => CodecConfig b -> b -> BlockInfo b
+          => BlockConfig b -> b -> BlockInfo b
 blockInfo cfg b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator b
@@ -173,7 +173,7 @@ instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
 tracesToDot :: forall b. (GetPrevHash b, HasCreator b)
-            => CodecConfig b
+            => BlockConfig b
             -> Map NodeId (NodeOutput b)
             -> String
 tracesToDot cfg traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph

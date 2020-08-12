@@ -496,7 +496,7 @@ addBlockPromise cfg blk m = (result, m')
 stream
   :: GetPrevHash blk
   => SecurityParam
-  -> CodecConfig blk
+  -> BlockConfig blk
   -> StreamFrom  blk
   -> StreamTo    blk
   -> Model       blk
@@ -790,7 +790,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
 
 
 chains :: forall blk. (GetPrevHash blk)
-       => CodecConfig blk
+       => BlockConfig blk
        -> Map (HeaderHash blk) blk -> [Chain blk]
 chains cfg bs = go Chain.Genesis
   where
@@ -835,7 +835,7 @@ validChains cfg m bs =
     -- over the equally preferable A->B as it will be the first in the list
     -- after a stable sort.
     sortChains $
-    chains (configCodec cfg) bs
+    chains (configBlock cfg) bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
@@ -848,7 +848,7 @@ validChains cfg m bs =
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. GetPrevHash blk
-           => CodecConfig blk
+           => BlockConfig blk
            -> [blk]
            -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
 successors cfg = Map.unionsWith Map.union . map single
@@ -859,7 +859,7 @@ successors cfg = Map.unionsWith Map.union . map single
 
 between :: forall blk. GetPrevHash blk
         => SecurityParam
-        -> CodecConfig blk
+        -> BlockConfig blk
         -> StreamFrom  blk
         -> StreamTo    blk
         -> Model       blk

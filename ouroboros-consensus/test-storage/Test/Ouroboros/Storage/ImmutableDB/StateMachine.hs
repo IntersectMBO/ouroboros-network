@@ -62,6 +62,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -772,8 +773,12 @@ mock model cmdErr = At <$> traverse (const genSym) resp
   where
     (resp, _dbm) = step model cmdErr
 
-precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
-precondition Model {..} (At (CmdErr { cmd })) =
+precondition ::
+     BlockConfig TestBlock
+  -> Model m Symbolic
+  -> At CmdErr m Symbolic
+  -> Logic
+precondition bcfg Model {..} (At (CmdErr { cmd })) =
    forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
       AppendBlock    _ _ b -> fitsOnTip b
@@ -791,7 +796,7 @@ precondition Model {..} (At (CmdErr { cmd })) =
       Just bPrev -> getPrevHash b .== BlockHash (blockHash bPrev)
 
     getPrevHash :: TestBlock -> ChainHash TestBlock
-    getPrevHash = blockPrevHash TestBlockCodecConfig
+    getPrevHash = blockPrevHash bcfg
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -891,13 +896,14 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
 
 -- | The state machine proper
 sm :: Eq h
-   => ImmutableDBEnv h
+   => BlockConfig TestBlock
+   -> ImmutableDBEnv h
    -> DBModel Hash
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm env dbm = StateMachine
+sm bcfg env dbm = StateMachine
   { initModel     = initModel dbm
   , transition    = transition
-  , precondition  = precondition
+  , precondition  = precondition bcfg
   , postcondition = postcondition
   , generator     = Just . generator
   , shrinker      = shrinker
@@ -1208,6 +1214,12 @@ instance ToExpr (Model m Concrete)
   Top-level tests
 -------------------------------------------------------------------------------}
 
+testBlockConfig :: ChunkInfo -> BlockConfig TestBlock
+testBlockConfig chunkInfo = TestBlockConfig {
+      testBlockEBBsAllowed  = chunkInfoSupportsEBBs chunkInfo
+    , testBlockNumCoreNodes = NumCoreNodes 1 -- unused in this test
+    }
+
 -- | The value for 'PrefixLen' used throughout this testsuite
 testPrefixLen :: PrefixLen
 testPrefixLen = PrefixLen 10
@@ -1236,7 +1248,8 @@ showLabelledExamples' mbReplay numTests focus chunkInfo = do
         collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
           property True
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
+    smUnused = sm (testBlockConfig chunkInfo) (unusedEnv @()) $
+                 initDBModel chunkInfo testPrefixLen
 
 showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
@@ -1249,7 +1262,8 @@ prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
         $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
         $ prop
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
+    smUnused = sm (testBlockConfig chunkInfo) (unusedEnv @()) $
+                 initDBModel chunkInfo testPrefixLen
 
 test :: Index.CacheConfig
      -> ChunkInfo
@@ -1264,7 +1278,7 @@ test cacheConfig chunkInfo cmds = do
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = chunkFileParser
-                   TestBlockCodecConfig
+                   bcfg
                    hasFS
                    (const <$> decode)
                    testBlockIsValid
@@ -1295,7 +1309,7 @@ test cacheConfig chunkInfo cmds = do
                 , varDB
                 , args
                 }
-              sm' = sm env (initDBModel chunkInfo testPrefixLen)
+              sm' = sm bcfg env (initDBModel chunkInfo testPrefixLen)
 
           (hist, model, res) <- QSM.runCommands' sm' cmds
 
@@ -1313,6 +1327,8 @@ test cacheConfig chunkInfo cmds = do
 
       return (hist, prop)
   where
+    bcfg = testBlockConfig chunkInfo
+
     openHandlesProp fs model
         | openHandles <= maxExpectedOpenHandles
         = property True

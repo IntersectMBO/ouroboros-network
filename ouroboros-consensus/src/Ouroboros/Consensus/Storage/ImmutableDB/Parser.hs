@@ -71,7 +71,7 @@ chunkFileParser
      , hash ~ HeaderHash blk
      , HasBinaryBlockInfo blk
      )
-  => CodecConfig blk
+  => BlockConfig blk
   -> HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
   -> (blk -> Bool)        -- ^ Check integrity of the block. 'False' = corrupt.

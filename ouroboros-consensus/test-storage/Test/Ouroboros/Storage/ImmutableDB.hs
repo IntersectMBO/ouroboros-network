@@ -9,6 +9,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -42,6 +43,12 @@ tests = testGroup "ImmutableDB"
 fixedChunkInfo :: ChunkInfo
 fixedChunkInfo = simpleChunkInfo 10
 
+testBlockConfig :: BlockConfig TestBlock
+testBlockConfig = TestBlockConfig {
+      testBlockEBBsAllowed  = chunkInfoSupportsEBBs fixedChunkInfo
+    , testBlockNumCoreNodes = NumCoreNodes 1 -- unused in this test
+    }
+
 type Hash = TestHeaderHash
 
 -- Shorthand
@@ -63,7 +70,7 @@ openTestDB registry hasFS =
       }
   where
     parser = chunkFileParser
-               TestBlockCodecConfig
+               testBlockConfig
                hasFS
                (const <$> S.decode)
                testBlockIsValid

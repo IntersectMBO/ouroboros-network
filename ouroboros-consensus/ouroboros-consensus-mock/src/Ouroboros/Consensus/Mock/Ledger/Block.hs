@@ -346,7 +346,7 @@ instance MockProtocolSpecific c ext
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
   applyLedgerBlock cfg =
-      updateSimpleLedgerState (blockConfigCodec cfg)
+      updateSimpleLedgerState (blockConfigBlock cfg)
 
   reapplyLedgerBlock cfg =
       (mustSucceed . runExcept) .: applyLedgerBlock cfg
@@ -370,7 +370,7 @@ newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerSt
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
-                        => CodecConfig (SimpleBlock c ext)
+                        => BlockConfig (SimpleBlock c ext)
                         -> SimpleBlock c ext
                         -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))

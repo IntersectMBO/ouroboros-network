@@ -42,6 +42,7 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Network.Block (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -594,7 +595,7 @@ test cmds = do
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser'
-          TestBlockCodecConfig
+          testBlockConfig
           hasFS
           ((\blk bytes -> (takePrefix testPrefixLen bytes, blk)) <$> decode)
           testBlockIsValid
@@ -632,6 +633,13 @@ test cmds = do
 
 testMaxBlocksPerFile :: BlocksPerFile
 testMaxBlocksPerFile = mkBlocksPerFile 3
+
+-- | Values don't matter
+testBlockConfig :: BlockConfig TestBlock
+testBlockConfig = TestBlockConfig {
+      testBlockEBBsAllowed  = True
+    , testBlockNumCoreNodes = NumCoreNodes 1
+    }
 
 testPrefixLen :: PrefixLen
 testPrefixLen = PrefixLen 10

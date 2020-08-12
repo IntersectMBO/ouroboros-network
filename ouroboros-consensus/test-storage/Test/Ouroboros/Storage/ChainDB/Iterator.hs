@@ -23,6 +23,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -390,14 +391,14 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB TestBlockCodecConfig
+        return $ mkVolDB volDB testBlockConfig TestBlockCodecConfig
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
       { VolDB.bbid          = blockHash tb
       , VolDB.bslot         = blockSlot tb
       , VolDB.bbno          = blockNo   tb
-      , VolDB.bpreBid       = case blockPrevHash TestBlockCodecConfig tb of
+      , VolDB.bpreBid       = case blockPrevHash testBlockConfig tb of
           GenesisHash -> Origin
           BlockHash h -> NotOrigin h
       , VolDB.bisEBB        = testBlockIsEBB tb
@@ -425,3 +426,10 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         return $ mkImmDB immDB TestBlockCodecConfig chunkInfo
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
+
+    -- | Values don't matter
+    testBlockConfig :: BlockConfig TestBlock
+    testBlockConfig = TestBlockConfig {
+          testBlockEBBsAllowed  = True
+        , testBlockNumCoreNodes = NumCoreNodes 1
+        }
