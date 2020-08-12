@@ -170,7 +170,7 @@ prop_keepAlive_convergenceM (NetworkDelay nd) seed = do
     void $ wait s_aid
 
     -- XXX Must be larger than the KeepAliveInterval timeout or we leak threads in the SIM
-    threadDelay (keepAliveInterval + 1)
+    threadDelay (keepAliveInterval + 128)
     case M.lookup clientId dqLive of
          Nothing  -> return $ property False
          Just gsv -> do
