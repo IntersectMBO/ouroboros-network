@@ -117,7 +117,7 @@ defaultMiniProtocolLimit = 3000000
 testProtocols2 :: RunMiniProtocol appType bytes m a b
                -> OuroborosApplication appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -341,7 +341,7 @@ prop_socket_recv_error f rerr =
                           localAddress = Socket.addrAddress muxAddress,
                           remoteAddress
                         }
-                  Mx.muxStart nullTracer (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
+                  Mx.muxStart nullTracer (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app) bearer
           )
           $ \muxAsync -> do
 
