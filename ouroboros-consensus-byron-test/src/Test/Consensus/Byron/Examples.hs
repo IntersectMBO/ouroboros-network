@@ -8,6 +8,7 @@ module Test.Consensus.Byron.Examples (
   , CC.dummyConfig
   , cfg
   , codecConfig
+  , diskConfig
   , leaderCredentials
     -- * Examples
   , examples
@@ -84,11 +85,15 @@ cfg = ByronConfig {
 codecConfig :: CodecConfig ByronBlock
 codecConfig = mkByronCodecConfig CC.dummyConfig
 
+diskConfig :: DiskConfig ByronBlock
+diskConfig = mkByronDiskConfig CC.dummyConfig
+
 fullBlockConfig :: FullBlockConfig (LedgerState ByronBlock) ByronBlock
 fullBlockConfig = FullBlockConfig {
       blockConfigLedger = CC.dummyConfig
     , blockConfigBlock  = cfg
     , blockConfigCodec  = codecConfig
+    , blockConfigDisk  = diskConfig
     }
 
 leaderCredentials :: ByronLeaderCredentials

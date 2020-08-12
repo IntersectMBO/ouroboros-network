@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Block.Abstract (
     -- * Configuration
   , BlockConfig
   , CodecConfig
+  , DiskConfig
     -- * Previous hash
   , GetPrevHash(..)
   , blockPrevHash
@@ -98,11 +99,17 @@ type family BlockProtocol blk :: *
 -- | Static configuration required to work with this type of blocks
 data family BlockConfig blk :: *
 
--- | Static configuration required for serialisation and deserialisation of
--- types pertaining to this type of block.
+-- | Static configuration required for (de)serialising types pertaining to
+-- this type of block when sending/receiving them across the network.
 --
 -- Data family instead of type family to get better type inference.
 data family CodecConfig blk :: *
+
+-- | Static configuration required for (de)serialising types pertaining to
+-- this type of block from/to disk.
+--
+-- Data family instead of type family to get better type inference.
+data family DiskConfig blk :: *
 
 {-------------------------------------------------------------------------------
   Get hash of previous block

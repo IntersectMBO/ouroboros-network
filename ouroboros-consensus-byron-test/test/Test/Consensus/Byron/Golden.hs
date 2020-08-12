@@ -13,7 +13,7 @@ import           Test.Util.Serialisation.Golden
 import           Test.Consensus.Byron.Examples
 
 tests :: TestTree
-tests = goldenTest_all codecConfig $(getGoldenDir) examples
+tests = goldenTest_all diskConfig codecConfig $(getGoldenDir) examples
 
 instance ToGoldenDirectory ByronNodeToNodeVersion
   -- Use defaults

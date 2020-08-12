@@ -133,8 +133,8 @@ after f g x y z = f x y (g z)
 
 instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (HardForkBlock xs) where
-  encodeNodeToClient ccfg _ = wrapCBORinCBOR   (encodeDiskHfcBlock ccfg)
-  decodeNodeToClient ccfg _ = unwrapCBORinCBOR (decodeDiskHfcBlock ccfg)
+  encodeNodeToClient ccfg _ = wrapCBORinCBOR   (encodeDiskHfcBlock (undefined ccfg))
+  decodeNodeToClient ccfg _ = unwrapCBORinCBOR (decodeDiskHfcBlock (undefined ccfg))
 
 {-------------------------------------------------------------------------------
   Serialised blocks

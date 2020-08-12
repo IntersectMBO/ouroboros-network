@@ -251,24 +251,24 @@ class ( CanHardFork xs
       , All HasBinaryBlockInfo xs
       ) => SerialiseHFC xs where
 
-  encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
+  encodeDiskHfcBlock :: DiskConfig (HardForkBlock xs)
                      -> HardForkBlock xs -> Encoding
   encodeDiskHfcBlock cfg =
         encodeNS (hcmap pSHFC (fn . mapIK . encodeDisk) cfgs)
       . (getOneEraBlock . getHardForkBlock)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
-  decodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
+  decodeDiskHfcBlock :: DiskConfig (HardForkBlock xs)
                      -> forall s. Decoder s (Lazy.ByteString -> HardForkBlock xs)
   decodeDiskHfcBlock cfg =
         fmap (\f -> HardForkBlock . OneEraBlock . f)
       $ decodeAnnNS (hcmap pSHFC aux cfgs)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
       aux :: SerialiseDiskConstraints blk
-          => CodecConfig blk -> AnnDecoder I blk
+          => DiskConfig blk -> AnnDecoder I blk
       aux cfg' = AnnDecoder $ (\f -> I . f) <$> decodeDisk cfg'
 
   -- | Used as the implementation of 'reconstructPrefixLen' for
@@ -453,15 +453,15 @@ decodeAnnNS ds = do
 -------------------------------------------------------------------------------}
 
 encodeNested :: All (EncodeDiskDep (NestedCtxt f)) xs
-             => CodecConfig (HardForkBlock xs)
+             => DiskConfig (HardForkBlock xs)
              -> NestedCtxt f (HardForkBlock xs) a
              -> a
              -> Encoding
-encodeNested = \ccfg (NestedCtxt ctxt) a ->
-    go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg)) ctxt a
+encodeNested = \dcfg (NestedCtxt ctxt) a ->
+    go (getPerEraDiskConfig (hardForkDiskConfigPerEra dcfg)) ctxt a
   where
     go :: All (EncodeDiskDep (NestedCtxt f)) xs'
-       => NP CodecConfig xs'
+       => NP DiskConfig xs'
        -> NestedCtxt_ (HardForkBlock xs') f a
        -> a -> Encoding
     go Nil       ctxt       = case ctxt of {}
@@ -469,14 +469,14 @@ encodeNested = \ccfg (NestedCtxt ctxt) a ->
     go (_ :* cs) (NCS ctxt) = go cs ctxt
 
 decodeNested :: All (DecodeDiskDep (NestedCtxt f)) xs
-             => CodecConfig (HardForkBlock xs)
+             => DiskConfig (HardForkBlock xs)
              -> NestedCtxt f (HardForkBlock xs) a
              -> forall s. Decoder s (Lazy.ByteString -> a)
-decodeNested = \ccfg (NestedCtxt ctxt) ->
-    go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg)) ctxt
+decodeNested = \dcfg (NestedCtxt ctxt) ->
+    go (getPerEraDiskConfig (hardForkDiskConfigPerEra dcfg)) ctxt
   where
     go :: All (DecodeDiskDep (NestedCtxt f)) xs'
-       => NP CodecConfig xs'
+       => NP DiskConfig xs'
        -> NestedCtxt_ (HardForkBlock xs') f a
        -> Decoder s (Lazy.ByteString -> a)
     go Nil       ctxt       = case ctxt of {}
@@ -484,16 +484,16 @@ decodeNested = \ccfg (NestedCtxt ctxt) ->
     go (_ :* cs) (NCS ctxt) = go cs ctxt
 
 encodeNestedCtxt :: All (EncodeDiskDepIx (NestedCtxt f)) xs
-                 => CodecConfig (HardForkBlock xs)
+                 => DiskConfig (HardForkBlock xs)
                  -> SomeBlock (NestedCtxt f) (HardForkBlock xs)
                  -> Encoding
-encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
-    go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg))
+encodeNestedCtxt = \dcfg (SomeBlock ctxt) ->
+    go (getPerEraDiskConfig (hardForkDiskConfigPerEra dcfg))
        npWithIndices
        (flipNestedCtxt ctxt)
   where
     go :: All (EncodeDiskDepIx (NestedCtxt f)) xs'
-       => NP CodecConfig xs'
+       => NP DiskConfig xs'
        -> NP (K Word8) xs'
        -> NestedCtxt_ (HardForkBlock xs') f a
        -> Encoding
@@ -506,18 +506,18 @@ encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
         ]
 
 decodeNestedCtxt :: All (DecodeDiskDepIx (NestedCtxt f)) xs
-                 => CodecConfig (HardForkBlock xs)
+                 => DiskConfig (HardForkBlock xs)
                  -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs))
-decodeNestedCtxt = \ccfg -> do
+decodeNestedCtxt = \dcfg -> do
     enforceSize "decodeNestedCtxt" 2
     tag <- Serialise.decode
     case nsFromIndex tag of
       Nothing -> fail $ "decodeNestedCtxt: invalid tag " ++ show tag
       Just ns ->
-        go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg)) ns
+        go (getPerEraDiskConfig (hardForkDiskConfigPerEra dcfg)) ns
   where
     go :: All (DecodeDiskDepIx (NestedCtxt f)) xs'
-       => NP CodecConfig xs'
+       => NP DiskConfig xs'
        -> NS (K ()) xs'
        -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs'))
     go Nil       i     = case i of {}

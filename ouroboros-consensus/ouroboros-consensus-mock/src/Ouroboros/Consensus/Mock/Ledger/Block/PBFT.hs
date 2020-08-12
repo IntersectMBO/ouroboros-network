@@ -185,4 +185,4 @@ instance Serialise (PBftVerKeyHash c')
 
 instance (Serialise (PBftVerKeyHash c'), PBftCrypto c')
       => DecodeDisk (SimplePBftBlock c c') (S.PBftState c') where
-  decodeDisk (SimpleCodecConfig k) = S.decodePBftState k (pbftWindowSize k)
+  decodeDisk (SimpleDiskConfig k) = S.decodePBftState k (pbftWindowSize k)

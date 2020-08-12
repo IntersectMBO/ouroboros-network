@@ -60,14 +60,14 @@ instance SerialiseDiskConstraints  DualByronBlock
 instance EncodeDisk DualByronBlock DualByronBlock where
   encodeDisk _ = encodeDualBlock encodeByronBlock
 instance DecodeDisk DualByronBlock (Lazy.ByteString -> DualByronBlock) where
-  decodeDisk ccfg = decodeDualBlock (decodeByronBlock epochSlots)
+  decodeDisk dcfg = decodeDualBlock (decodeByronBlock epochSlots)
     where
-      epochSlots = extractEpochSlots ccfg
+      epochSlots = diskExtractEpochSlots dcfg
 
 instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
-  decodeDiskDep (DualCodecConfig ccfg ByronSpecCodecConfig)
+  decodeDiskDep (DualDiskConfig dcfg ByronSpecDiskConfig)
                 (NestedCtxt (CtxtDual ctxt)) =
-      decodeDiskDep ccfg (NestedCtxt ctxt)
+      decodeDiskDep dcfg (NestedCtxt ctxt)
 
 instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
@@ -79,16 +79,16 @@ instance EncodeDisk DualByronBlock (PBftState PBftByronCrypto) where
   encodeDisk _ = encodeByronChainDepState
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
 instance DecodeDisk DualByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronChainDepState k
+  decodeDisk dcfg = decodeByronChainDepState k
     where
-      k = getByronSecurityParam $ dualCodecConfigMain ccfg
+      k = byronDiskConfigSecurityParam $ dualDiskConfigMain dcfg
 
 instance EncodeDisk DualByronBlock (AnnTip DualByronBlock) where
-  encodeDisk ccfg = encodeDisk (dualCodecConfigMain ccfg)
+  encodeDisk dcfg = encodeDisk (dualDiskConfigMain dcfg)
                   . (castAnnTip :: AnnTip DualByronBlock -> AnnTip ByronBlock)
 instance DecodeDisk DualByronBlock (AnnTip DualByronBlock) where
-  decodeDisk ccfg = (castAnnTip :: AnnTip ByronBlock -> AnnTip DualByronBlock)
-                <$> decodeDisk (dualCodecConfigMain ccfg)
+  decodeDisk dcfg = (castAnnTip :: AnnTip ByronBlock -> AnnTip DualByronBlock)
+                <$> decodeDisk (dualDiskConfigMain dcfg)
 
 {-------------------------------------------------------------------------------
   SerialiseNodeToNode
@@ -102,7 +102,7 @@ instance SerialiseNodeToNode DualByronBlock DualByronBlock where
   encodeNodeToNode _    _ = wrapCBORinCBOR   (encodeDualBlock  encodeByronBlock)
   decodeNodeToNode ccfg _ = unwrapCBORinCBOR (decodeDualBlock (decodeByronBlock epochSlots))
     where
-      epochSlots = extractEpochSlots ccfg
+      epochSlots = codecExtractEpochSlots ccfg
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
@@ -147,7 +147,7 @@ instance SerialiseNodeToClient DualByronBlock DualByronBlock where
   encodeNodeToClient _    _ = wrapCBORinCBOR   (encodeDualBlock  encodeByronBlock)
   decodeNodeToClient ccfg _ = unwrapCBORinCBOR (decodeDualBlock (decodeByronBlock epochSlots))
     where
-      epochSlots = extractEpochSlots ccfg
+      epochSlots = codecExtractEpochSlots ccfg
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
@@ -175,8 +175,11 @@ instance SerialiseResult DualByronBlock (Query DualByronBlock) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-extractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
-extractEpochSlots = getByronEpochSlots . dualCodecConfigMain
+codecExtractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
+codecExtractEpochSlots = byronCodecConfigEpochSlots . dualCodecConfigMain
+
+diskExtractEpochSlots :: DiskConfig DualByronBlock -> EpochSlots
+diskExtractEpochSlots = byronDiskConfigEpochSlots . dualDiskConfigMain
 
 -- | The headers for 'DualByronBlock' and 'ByronBlock' are identical, so we
 -- can safely cast the serialised forms.

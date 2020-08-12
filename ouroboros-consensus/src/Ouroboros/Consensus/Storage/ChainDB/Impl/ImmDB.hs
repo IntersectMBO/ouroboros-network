@@ -113,13 +113,13 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
-      immDB       :: !(ImmutableDB (HeaderHash blk) m)
-    , codecConfig :: !(CodecConfig blk)
-    , chunkInfo   :: !ChunkInfo
+      immDB      :: !(ImmutableDB (HeaderHash blk) m)
+    , diskConfig :: !(DiskConfig blk)
+    , chunkInfo  :: !ChunkInfo
     }
   deriving (Generic)
 
-deriving instance NoUnexpectedThunks (CodecConfig blk)
+deriving instance NoUnexpectedThunks (DiskConfig blk)
                => NoUnexpectedThunks (ImmDB m blk)
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmDB.
@@ -143,7 +143,7 @@ type TraceEvent blk =
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
       immBlockConfig    :: BlockConfig blk
-    , immCodecConfig    :: CodecConfig blk
+    , immDiskConfig     :: DiskConfig blk
     , immChunkInfo      :: ChunkInfo
     , immValidation     :: ImmDB.ValidationPolicy
     , immCheckIntegrity :: blk -> Bool
@@ -158,23 +158,23 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- The following fields must still be defined:
 --
 -- * 'immBlockConfig'
--- * 'immCodecConfig'
+-- * 'immDiskConfig'
 -- * 'immChunkInfo'
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
 -- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immHasFS              = ioHasFS $ MountPoint (fp </> "immutable")
-    , immCacheConfig        = cacheConfig
-    , immTracer             = nullTracer
+      immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig    = cacheConfig
+    , immTracer         = nullTracer
       -- Fields without a default
-    , immBlockConfig        = error "no default for immBlockConfig"
-    , immCodecConfig        = error "no default for immCodecConfig"
-    , immChunkInfo          = error "no default for immChunkInfo"
-    , immValidation         = error "no default for immValidation"
-    , immCheckIntegrity     = error "no default for immCheckIntegrity"
-    , immRegistry           = error "no default for immRegistry"
+    , immBlockConfig    = error "no default for immBlockConfig"
+    , immDiskConfig     = error "no default for immDiskConfig"
+    , immChunkInfo      = error "no default for immChunkInfo"
+    , immValidation     = error "no default for immValidation"
+    , immCheckIntegrity = error "no default for immCheckIntegrity"
+    , immRegistry       = error "no default for immRegistry"
     }
   where
     -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
@@ -230,9 +230,9 @@ openDB ImmDbArgs {..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
-      { immDB              = immDB
-      , codecConfig        = immCodecConfig
-      , chunkInfo          = immChunkInfo
+      { immDB      = immDB
+      , diskConfig = immDiskConfig
+      , chunkInfo  = immChunkInfo
       }
   where
     args = ImmDB.ImmutableDbArgs
@@ -249,15 +249,15 @@ openDB ImmDbArgs {..} = do
     parser = ImmDB.chunkFileParser
                immBlockConfig
                immHasFS
-               (decodeDisk immCodecConfig)
+               (decodeDisk immDiskConfig)
                immCheckIntegrity
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
-        -> CodecConfig blk
+        -> DiskConfig blk
         -> ChunkInfo
         -> ImmDB m blk
-mkImmDB immDB codecConfig chunkInfo = ImmDB {..}
+mkImmDB immDB diskConfig chunkInfo = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -269,7 +269,7 @@ translateBlockComponent
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk)                  b
   -> BlockComponent (ImmutableDB (HeaderHash blk) m) b
-translateBlockComponent ImmDB { codecConfig } = translateToRawDB codecConfig
+translateBlockComponent ImmDB { diskConfig } = translateToRawDB diskConfig
 
 -- | Return 'True' when the given point is in the ImmutableDB.
 --
@@ -420,7 +420,7 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
     hash            = blockHash b
     slotNo          = blockSlot b
     blockNr         = blockNo   b
-    builder         = CBOR.toBuilder $ encodeDisk codecConfig b
+    builder         = CBOR.toBuilder $ encodeDisk diskConfig b
     binaryBlockInfo = getBinaryBlockInfo b
 
 {-------------------------------------------------------------------------------

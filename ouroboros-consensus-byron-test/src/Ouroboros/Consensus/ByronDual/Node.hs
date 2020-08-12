@@ -103,6 +103,10 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                     dualCodecConfigMain = mkByronCodecConfig concreteGenesis
                   , dualCodecConfigAux  = ByronSpecCodecConfig
                   }
+              , blockConfigDisk = DualDiskConfig {
+                    dualDiskConfigMain = mkByronDiskConfig concreteGenesis
+                  , dualDiskConfigAux  = ByronSpecDiskConfig
+                  }
               }
           }
       , pInfoInitLedger = ExtLedgerState {

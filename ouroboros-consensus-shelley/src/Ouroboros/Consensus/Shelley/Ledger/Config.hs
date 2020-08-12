@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
   , BlockConfig (..)
   , mkShelleyBlockConfig
   , CodecConfig (..)
+  , DiskConfig (..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -72,4 +73,12 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKey = ShelleyConfig {
 
 -- | No particular codec configuration is needed for Shelley
 data instance CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
+  Disk config
+-------------------------------------------------------------------------------}
+
+-- | No particular disk configuration is needed for Shelley
+data instance DiskConfig (ShelleyBlock c) = ShelleyDiskConfig
   deriving (Generic, NoUnexpectedThunks)

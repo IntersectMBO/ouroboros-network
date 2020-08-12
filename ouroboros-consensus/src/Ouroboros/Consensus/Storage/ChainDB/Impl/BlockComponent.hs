@@ -37,16 +37,16 @@ translateToRawDB
      , DecodeDiskDep (NestedCtxt Header) blk
      , MonadThrow m
      )
-  => CodecConfig blk
+  => DiskConfig blk
   -> BlockComponent (ChainDB m blk) b
   -> BlockComponent db b
-translateToRawDB ccfg = go
+translateToRawDB dcfg = go
   where
     go :: forall b'. BlockComponent (ChainDB m blk) b' -> BlockComponent db b'
     go = \case
-      GetBlock      -> parseBlock ccfg <$> getBlockRef <*> GetRawBlock
+      GetBlock      -> parseBlock dcfg <$> getBlockRef <*> GetRawBlock
       GetRawBlock   -> GetRawBlock
-      GetHeader     -> parseHeader ccfg
+      GetHeader     -> parseHeader dcfg
                          <$> getBlockRef
                          <*> GetNestedCtxt
                          <*> GetBlockSize
@@ -73,12 +73,12 @@ parseBlock
      , DecodeDisk blk (Lazy.ByteString -> blk)
      , MonadThrow m
      )
-  => CodecConfig blk
+  => DiskConfig blk
   -> BlockRef blk
   -> Lazy.ByteString
   -> m blk
-parseBlock ccfg blockRef bytes = throwParseErrors blockRef bytes $
-      CBOR.deserialiseFromBytes (decodeDisk ccfg) bytes
+parseBlock dcfg blockRef bytes = throwParseErrors blockRef bytes $
+      CBOR.deserialiseFromBytes (decodeDisk dcfg) bytes
 
 parseHeader
   :: forall m blk.
@@ -87,20 +87,20 @@ parseHeader
      , DecodeDiskDep (NestedCtxt Header) blk
      , MonadThrow m
      )
-  => CodecConfig blk
+  => DiskConfig blk
   -> BlockRef blk
   -> ShortByteString
   -> SizeInBytes
   -> Lazy.ByteString
   -> m (Header blk)
-parseHeader ccfg blockRef prefix blockSize bytes =
+parseHeader dcfg blockRef prefix blockSize bytes =
     case reconstructNestedCtxt (Proxy @(Header blk)) prefix blockSize of
       SomeBlock ctxt ->
         throwParseErrors blockRef bytes $
           CBOR.deserialiseFromBytes (parser ctxt) bytes
   where
     parser :: NestedCtxt Header blk a -> Decoder s (Lazy.ByteString -> Header blk)
-    parser ctxt = (\f -> nest . DepPair ctxt . f) <$> decodeDiskDep ccfg ctxt
+    parser ctxt = (\f -> nest . DepPair ctxt . f) <$> decodeDiskDep dcfg ctxt
 
 throwParseErrors
   :: (HasHeader blk, MonadThrow m)

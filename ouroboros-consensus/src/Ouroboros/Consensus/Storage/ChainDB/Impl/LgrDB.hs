@@ -272,13 +272,13 @@ initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
         (streamAPI immDB)
     return (db, replayed)
   where
-    ccfg = configCodec lgrTopLevelConfig
+    dcfg = configDisk lgrTopLevelConfig
 
     decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
     decodeExtLedgerState' = decodeExtLedgerState
-                              (decodeDisk ccfg)
-                              (decodeDisk ccfg)
-                              (decodeDisk ccfg)
+                              (decodeDisk dcfg)
+                              (decodeDisk dcfg)
+                              (decodeDisk dcfg)
 
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB blk)
@@ -352,13 +352,13 @@ takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
       (encodeRealPoint encode)
       ledgerDB
   where
-    ccfg = configCodec lgrTopLevelConfig
+    dcfg = configDisk lgrTopLevelConfig
 
     encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg)
+                              (encodeDisk dcfg)
+                              (encodeDisk dcfg)
+                              (encodeDisk dcfg)
 
 trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = LgrDbArgs{..} } = wrapFailure $

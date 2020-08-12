@@ -53,7 +53,7 @@ instance SerialiseDiskConstraints  ByronBlock
 instance EncodeDisk ByronBlock ByronBlock where
   encodeDisk _ = encodeByronBlock
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
-  decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
+  decodeDisk dcfg = decodeByronBlock (error "getByronEpochSlots" dcfg)
 
 instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
   encodeDisk _ = encodeByronLedgerState
@@ -65,7 +65,7 @@ instance EncodeDisk ByronBlock (PBftState PBftByronCrypto) where
   encodeDisk _ = encodeByronChainDepState
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@
 instance DecodeDisk ByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronChainDepState (getByronSecurityParam ccfg)
+  decodeDisk dcfg = decodeByronChainDepState (byronDiskConfigSecurityParam dcfg)
 
 instance EncodeDisk ByronBlock (AnnTip ByronBlock) where
   encodeDisk _ = encodeByronAnnTip
@@ -84,7 +84,7 @@ instance SerialiseNodeToNode ByronBlock ByronBlock where
   encodeNodeToNode _    _ = wrapCBORinCBOR    encodeByronBlock
   decodeNodeToNode ccfg _ = unwrapCBORinCBOR (decodeByronBlock epochSlots)
     where
-      epochSlots = getByronEpochSlots ccfg
+      epochSlots = byronCodecConfigEpochSlots ccfg
 
 instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
   encodeNodeToNode ccfg = \case
@@ -92,7 +92,7 @@ instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
         wrapCBORinCBOR $
           encodeUnsizedHeader . fst . splitSizeHint
       ByronNodeToNodeVersion2 ->
-        encodeDisk ccfg . unnest
+        encodeDisk (undefined ccfg :: DiskConfig ByronBlock) . unnest
 
   decodeNodeToNode ccfg = \case
       ByronNodeToNodeVersion1 ->
@@ -100,9 +100,9 @@ instance SerialiseNodeToNode ByronBlock (Header ByronBlock) where
               (flip joinSizeHint fakeByronBlockSizeHint .)
           <$> decodeUnsizedHeader epochSlots
       ByronNodeToNodeVersion2 ->
-        nest <$> decodeDisk ccfg
+        nest <$> decodeDisk (undefined ccfg :: DiskConfig ByronBlock)
     where
-      epochSlots = getByronEpochSlots ccfg
+      epochSlots = byronCodecConfigEpochSlots ccfg
 
 -- | 'Serialised' uses CBOR-in-CBOR by default.
 instance SerialiseNodeToNode ByronBlock (Serialised ByronBlock)
@@ -122,7 +122,7 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
               -> (SomeBlock f blk, Lazy.ByteString)
           aux (GenDepPair ix (Serialised bytes)) = (SomeBlock ix, bytes)
 
-      ByronNodeToNodeVersion2 -> encodeDisk ccfg
+      ByronNodeToNodeVersion2 -> encodeDisk (undefined ccfg :: DiskConfig ByronBlock)
 
   decodeNodeToNode ccfg version = case version of
       ByronNodeToNodeVersion1 -> do
@@ -134,7 +134,7 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
               -> GenDepPair Serialised (f blk)
           aux (SomeBlock ix, bytes) = GenDepPair ix (Serialised bytes)
 
-      ByronNodeToNodeVersion2 -> decodeDisk ccfg
+      ByronNodeToNodeVersion2 -> decodeDisk (undefined ccfg :: DiskConfig ByronBlock)
 
 -- | No CBOR-in-CBOR, because we check for canonical encodings, which means we
 -- can use the recomputed encoding for the annotation.
@@ -158,7 +158,7 @@ instance SerialiseNodeToClient ByronBlock ByronBlock where
   encodeNodeToClient _    _ = wrapCBORinCBOR    encodeByronBlock
   decodeNodeToClient ccfg _ = unwrapCBORinCBOR (decodeByronBlock epochSlots)
     where
-      epochSlots = getByronEpochSlots ccfg
+      epochSlots = byronCodecConfigEpochSlots ccfg
 
 -- | 'Serialised' uses CBOR-in-CBOR by default.
 instance SerialiseNodeToClient ByronBlock (Serialised ByronBlock)
@@ -198,7 +198,7 @@ instance ReconstructNestedCtxt Header ByronBlock where
         _ -> error $ "invalid ByronBlock with prefix: " <> show prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
-  encodeDiskDepIx ByronCodecConfig{..} (SomeBlock (NestedCtxt ctxt)) = mconcat [
+  encodeDiskDepIx ByronDiskConfig{..} (SomeBlock (NestedCtxt ctxt)) = mconcat [
         CBOR.encodeListLen 2
       , case ctxt of
           CtxtByronBoundary size -> mconcat [
@@ -212,7 +212,7 @@ instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
       ]
 
 instance EncodeDiskDep (NestedCtxt Header) ByronBlock where
-  encodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) h =
+  encodeDiskDep ByronDiskConfig{..} (NestedCtxt ctxt) h =
       case ctxt of
         CtxtByronRegular _size ->
           encodeByronRegularHeader h
@@ -223,7 +223,7 @@ instance EncodeDiskDep (NestedCtxt Header) ByronBlock where
           encodeByronBoundaryHeader (snd h)
 
 instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
-  decodeDiskDepIx _ccfg = do
+  decodeDiskDepIx _dcfg = do
       enforceSize "decodeDiskDepIx ByronBlock" 2
       CBOR.decodeWord8 >>= \case
         0 -> SomeBlock . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
@@ -231,10 +231,10 @@ instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
         t -> cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
 
 instance DecodeDiskDep (NestedCtxt Header) ByronBlock where
-  decodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) =
+  decodeDiskDep ByronDiskConfig{..} (NestedCtxt ctxt) =
       case ctxt of
         CtxtByronRegular _size ->
-          decodeByronRegularHeader getByronEpochSlots
+          decodeByronRegularHeader byronDiskConfigEpochSlots
         CtxtByronBoundary _size ->
           auxBoundary <$> decodeByronBoundaryHeader
     where
@@ -248,4 +248,4 @@ instance DecodeDiskDep (NestedCtxt Header) ByronBlock where
 
           slotNo :: SlotNo
           slotNo = fromByronSlotNo $
-              CC.boundaryBlockSlot getByronEpochSlots (CC.boundaryEpoch hdr)
+              CC.boundaryBlockSlot byronDiskConfigEpochSlots (CC.boundaryEpoch hdr)

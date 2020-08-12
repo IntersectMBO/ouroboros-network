@@ -352,9 +352,9 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO blk
     args = (defaultArgs fp) {
-          immCodecConfig        = configCodec cfg
-        , immChunkInfo          = chunkInfo
-        , immValidation         = ValidateMostRecentChunk
-        , immCheckIntegrity     = nodeCheckIntegrity cfg
-        , immRegistry           = registry
+          immDiskConfig     = configDisk cfg
+        , immChunkInfo      = chunkInfo
+        , immValidation     = ValidateMostRecentChunk
+        , immCheckIntegrity = nodeCheckIntegrity cfg
+        , immRegistry       = registry
         }

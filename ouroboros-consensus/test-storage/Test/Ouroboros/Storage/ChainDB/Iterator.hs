@@ -391,7 +391,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB testBlockConfig TestBlockCodecConfig
+        return $ mkVolDB volDB testBlockConfig TestBlockDiskConfig
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -423,7 +423,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           Just epoch -> ImmDB.appendEBB immDB
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder (encode block)) (getBinaryBlockInfo block)
-        return $ mkImmDB immDB TestBlockCodecConfig chunkInfo
+        return $ mkImmDB immDB TestBlockDiskConfig chunkInfo
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
 

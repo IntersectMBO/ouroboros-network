@@ -165,6 +165,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
                 blockConfigLedger = genesisConfig
               , blockConfigBlock  = mkByronConfig genesisConfig pVer sVer
               , blockConfigCodec  = mkByronCodecConfig genesisConfig
+              , blockConfigDisk   = mkByronDiskConfig  genesisConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -175,14 +176,11 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
           return . byronBlockForging <$> mLeader
       }
 
-protocolClientInfoByron :: EpochSlots
-                        -> SecurityParam
-                        -> ProtocolClientInfo ByronBlock
-protocolClientInfoByron epochSlots securityParam  =
+protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
+protocolClientInfoByron epochSlots  =
     ProtocolClientInfo {
       pClientInfoCodecConfig = ByronCodecConfig {
-          getByronEpochSlots    = epochSlots
-        , getByronSecurityParam = securityParam
+          byronCodecConfigEpochSlots = epochSlots
         }
     }
 

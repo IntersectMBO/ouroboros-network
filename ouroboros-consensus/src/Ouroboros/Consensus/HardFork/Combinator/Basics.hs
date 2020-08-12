@@ -22,6 +22,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , ConsensusConfig(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , DiskConfig(..)
   , HardForkLedgerConfig(..)
     -- ** Functions on config
   , completeLedgerConfig'
@@ -51,6 +52,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -122,6 +124,15 @@ newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
   deriving newtype (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
+  Disk config
+-------------------------------------------------------------------------------}
+
+newtype instance DiskConfig (HardForkBlock xs) = HardForkDiskConfig {
+      hardForkDiskConfigPerEra :: PerEraDiskConfig xs
+    }
+  deriving newtype (NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
   Ledger config
 -------------------------------------------------------------------------------}
 
@@ -184,11 +195,12 @@ distribFullBlockConfig :: CanHardFork xs
                        -> NP WrapFullBlockConfig xs
 distribFullBlockConfig ei cfg =
     hcpure proxySingle
-      (fn_3 (\cfgLedger cfgBlock cfgCodec -> WrapFullBlockConfig $
+      (fn_4 (\cfgLedger cfgBlock cfgCodec cfgDisk -> WrapFullBlockConfig $
            FullBlockConfig {
                blockConfigLedger = completeLedgerConfig' ei cfgLedger
              , blockConfigBlock  = cfgBlock
              , blockConfigCodec  = cfgCodec
+             , blockConfigDisk   = cfgDisk
              }))
     `hap`
       (getPerEraLedgerConfig $
@@ -199,6 +211,9 @@ distribFullBlockConfig ei cfg =
     `hap`
       (getPerEraCodecConfig $
          hardForkCodecConfigPerEra (blockConfigCodec cfg))
+    `hap`
+      (getPerEraDiskConfig $
+         hardForkDiskConfigPerEra (blockConfigDisk cfg))
 
 distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity
@@ -206,12 +221,13 @@ distribTopLevelConfig :: CanHardFork xs
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei tlc =
     hcpure proxySingle
-      (fn_4 (\cfgConsensus cfgLedger cfgBlock cfgCodec ->
+      (fn_5 (\cfgConsensus cfgLedger cfgBlock cfgCodec cfgDisk ->
            mkTopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
              (completeLedgerConfig'    ei cfgLedger)
              cfgBlock
-             cfgCodec))
+             cfgCodec
+             cfgDisk))
     `hap`
       (getPerEraConsensusConfig $
          hardForkConsensusConfigPerEra (configConsensus tlc))
@@ -224,3 +240,6 @@ distribTopLevelConfig ei tlc =
     `hap`
       (getPerEraCodecConfig $
          hardForkCodecConfigPerEra (configCodec tlc))
+    `hap`
+      (getPerEraDiskConfig $
+         hardForkDiskConfigPerEra (configDisk tlc))

@@ -25,6 +25,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , PerEraLedgerConfig(..)
   , PerEraBlockConfig(..)
   , PerEraCodecConfig(..)
+  , PerEraDiskConfig(..)
   , PerEraForgeStateInfo(..)
   , PerEraForgeStateUpdateError(..)
     -- * Value for /one/ era
@@ -92,6 +93,7 @@ newtype PerEraChainSelConfig  xs = PerEraChainSelConfig  { getPerEraChainSelConf
 newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
 newtype PerEraBlockConfig     xs = PerEraBlockConfig     { getPerEraBlockConfig     :: NP BlockConfig                xs }
 newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig     :: NP CodecConfig                xs }
+newtype PerEraDiskConfig      xs = PerEraDiskConfig      { getPerEraDiskConfig      :: NP DiskConfig                 xs }
 
 -- | We might not be a leader, but /when/ we need the 'ForgeStateInfo', e.g.,
 -- in 'checkIsLeader', then 'ForgeStateInfo' will be non-empty.
@@ -233,6 +235,9 @@ deriving via LiftNamedNP "PerEraBlockConfig" BlockConfig xs
 
 deriving via LiftNamedNP "PerEraCodecConfig" CodecConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraCodecConfig xs)
+
+deriving via LiftNamedNP "PerEraDiskConfig" DiskConfig xs
+         instance CanHardFork xs => NoUnexpectedThunks (PerEraDiskConfig xs)
 
 deriving via LiftNamedNP "PerEraConsensusConfig" WrapPartialConsensusConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraConsensusConfig xs)

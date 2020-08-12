@@ -399,6 +399,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
             blockConfigLedger = eraParams
           , blockConfigBlock  = TestBlockConfig numCoreNodes
           , blockConfigCodec  = TestBlockCodecConfig
+          , blockConfigDisk   = TestBlockDiskConfig
           }
       }
 

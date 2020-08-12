@@ -23,6 +23,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , Query (DegenQuery)
   , Either (DegenQueryResult)
   , CodecConfig (DegenCodecConfig)
+  , DiskConfig (DegenDiskConfig)
   , BlockConfig (DegenBlockConfig)
   , ConsensusConfig (DegenConsensusConfig)
   , HardForkLedgerConfig (DegenLedgerConfig)
@@ -84,6 +85,7 @@ instance ( RunNode b
 {-# COMPLETE DegenBlock                    #-}
 {-# COMPLETE DegenBlockConfig              #-}
 {-# COMPLETE DegenCodecConfig              #-}
+{-# COMPLETE DegenDiskConfig               #-}
 {-# COMPLETE DegenGenTx                    #-}
 {-# COMPLETE DegenGenTxId                  #-}
 {-# COMPLETE DegenHeader                   #-}
@@ -181,6 +183,14 @@ pattern DegenCodecConfig ::
 pattern DegenCodecConfig x <- (project -> x)
   where
     DegenCodecConfig x = inject x
+
+pattern DegenDiskConfig ::
+     NoHardForks b
+  => DiskConfig b
+  -> DiskConfig (HardForkBlock '[b])
+pattern DegenDiskConfig x <- (project -> x)
+  where
+    DegenDiskConfig x = inject x
 
 pattern DegenBlockConfig ::
      NoHardForks b

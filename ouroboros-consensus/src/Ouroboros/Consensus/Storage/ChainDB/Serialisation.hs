@@ -91,14 +91,14 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 -- instances can still decide to perform versioning internally to maintain
 -- compatibility.
 class EncodeDisk blk a where
-  encodeDisk :: CodecConfig blk -> a -> Encoding
+  encodeDisk :: DiskConfig blk -> a -> Encoding
 
   -- When the config is not needed, we provide a default implementation using
   -- 'Serialise'
   default encodeDisk
     :: Serialise a
-    => CodecConfig blk -> a -> Encoding
-  encodeDisk _ccfg = encode
+    => DiskConfig blk -> a -> Encoding
+  encodeDisk _dcfg = encode
 
 -- | Decode a type @a@ read from disk, i.e., by the ChainDB.
 --
@@ -106,14 +106,14 @@ class EncodeDisk blk a where
 -- instances can still decide to perform versioning internally to maintain
 -- compatibility.
 class DecodeDisk blk a where
-  decodeDisk :: CodecConfig blk -> forall s. Decoder s a
+  decodeDisk :: DiskConfig blk -> forall s. Decoder s a
 
   -- When the config is not needed, we provide a default implementation using
   -- 'Serialise'
   default decodeDisk
     :: Serialise a
-    => CodecConfig blk -> forall s. Decoder s a
-  decodeDisk _ccfg = decode
+    => DiskConfig blk -> forall s. Decoder s a
+  decodeDisk _dcfg = decode
 
 {-------------------------------------------------------------------------------
   Dependent pairs
@@ -121,84 +121,84 @@ class DecodeDisk blk a where
 
 -- | Encode dependent index
 class EncodeDiskDepIx f blk where
-  encodeDiskDepIx :: CodecConfig blk -> SomeBlock f blk -> Encoding
+  encodeDiskDepIx :: DiskConfig blk -> SomeBlock f blk -> Encoding
 
   default encodeDiskDepIx
     :: TrivialDependency (f blk)
-    => CodecConfig blk -> SomeBlock f blk -> Encoding
+    => DiskConfig blk -> SomeBlock f blk -> Encoding
   encodeDiskDepIx _ _ = encode ()
     where
       _ = keepRedundantConstraint (Proxy @(TrivialDependency (f blk)))
 
 -- | Encode a dependent value
 class EncodeDiskDep f blk where
-  encodeDiskDep :: CodecConfig blk -> f blk a -> a -> Encoding
+  encodeDiskDep :: DiskConfig blk -> f blk a -> a -> Encoding
 
   default encodeDiskDep
     :: ( TrivialDependency (f blk)
        , EncodeDisk blk (TrivialIndex (f blk))
        )
-    => CodecConfig blk -> f blk a -> a -> Encoding
+    => DiskConfig blk -> f blk a -> a -> Encoding
   encodeDiskDep cfg ctxt = encodeDisk cfg . fromTrivialDependency ctxt
 
 -- | Decode dependent index
 class DecodeDiskDepIx f blk where
-  decodeDiskDepIx :: CodecConfig blk -> Decoder s (SomeBlock f blk)
+  decodeDiskDepIx :: DiskConfig blk -> Decoder s (SomeBlock f blk)
 
   default decodeDiskDepIx
     :: TrivialDependency (f blk)
-    => CodecConfig blk -> Decoder s (SomeBlock f blk)
+    => DiskConfig blk -> Decoder s (SomeBlock f blk)
   decodeDiskDepIx _ = (\() -> SomeBlock indexIsTrivial) <$> decode
 
 -- | Decode a dependent value
 --
 -- Typical usage: @f = NestedCtxt Header@.
 class DecodeDiskDep f blk where
-  decodeDiskDep :: CodecConfig blk -> f blk a -> forall s. Decoder s (Lazy.ByteString -> a)
+  decodeDiskDep :: DiskConfig blk -> f blk a -> forall s. Decoder s (Lazy.ByteString -> a)
 
   default decodeDiskDep
     :: ( TrivialDependency (f blk)
        , DecodeDisk blk (Lazy.ByteString -> TrivialIndex (f blk))
        )
-    => CodecConfig blk -> f blk a -> forall s. Decoder s (Lazy.ByteString -> a)
+    => DiskConfig blk -> f blk a -> forall s. Decoder s (Lazy.ByteString -> a)
   decodeDiskDep cfg ctxt =
       (\f -> toTrivialDependency ctxt . f) <$> decodeDisk cfg
 
 instance (EncodeDiskDepIx f blk, EncodeDiskDep f blk)
        => EncodeDisk blk (DepPair (f blk)) where
-  encodeDisk ccfg = encodeDisk ccfg . encodeDepPair ccfg
+  encodeDisk dcfg = encodeDisk dcfg . encodeDepPair dcfg
 
 instance (DecodeDiskDepIx f blk, DecodeDiskDep f blk)
        => DecodeDisk blk (DepPair (f blk)) where
-  decodeDisk ccfg = decodeDisk ccfg >>= decodeDepPair ccfg
+  decodeDisk dcfg = decodeDisk dcfg >>= decodeDepPair dcfg
 
 {-------------------------------------------------------------------------------
   Internal: support for serialisation of dependent pairs
 -------------------------------------------------------------------------------}
 
 encodeDepPair :: EncodeDiskDep f blk
-              => CodecConfig blk
+              => DiskConfig blk
               -> DepPair (f blk) -> GenDepPair Serialised (f blk)
-encodeDepPair ccfg (DepPair fa a) =
-    GenDepPair fa (mkSerialised (encodeDiskDep ccfg fa) a)
+encodeDepPair dcfg (DepPair fa a) =
+    GenDepPair fa (mkSerialised (encodeDiskDep dcfg fa) a)
 
 decodeDepPair :: DecodeDiskDep f blk
-              => CodecConfig blk
+              => DiskConfig blk
               -> GenDepPair Serialised (f blk) -> Decoder s (DepPair (f blk))
-decodeDepPair ccfg (GenDepPair fa serialised) =
-    DepPair fa <$> fromSerialised (decodeDiskDep ccfg fa) serialised
+decodeDepPair dcfg (GenDepPair fa serialised) =
+    DepPair fa <$> fromSerialised (decodeDiskDep dcfg fa) serialised
 
 instance EncodeDiskDepIx f blk => EncodeDisk blk (GenDepPair Serialised (f blk)) where
-  encodeDisk ccfg (GenDepPair fa serialised) = mconcat [
+  encodeDisk dcfg (GenDepPair fa serialised) = mconcat [
         CBOR.encodeListLen 2
-      , encodeDiskDepIx ccfg (SomeBlock fa)
+      , encodeDiskDepIx dcfg (SomeBlock fa)
       , encode serialised
       ]
 
 instance DecodeDiskDepIx f blk => DecodeDisk blk (GenDepPair Serialised (f blk)) where
-  decodeDisk ccfg = do
+  decodeDisk dcfg = do
       enforceSize "DecodeDisk GenDepPair" 2
-      SomeBlock fa <- decodeDiskDepIx ccfg
+      SomeBlock fa <- decodeDiskDepIx dcfg
       serialised   <- decode
       return $ GenDepPair fa serialised
 
@@ -250,11 +250,11 @@ castSerialisedHeader f =
 
 instance EncodeDiskDepIx (NestedCtxt Header) blk
       => EncodeDisk blk (SerialisedHeader blk) where
-  encodeDisk ccfg = encodeDisk ccfg . serialisedHeaderToDepPair
+  encodeDisk dcfg = encodeDisk dcfg . serialisedHeaderToDepPair
 
 instance DecodeDiskDepIx (NestedCtxt Header) blk
       => DecodeDisk blk (SerialisedHeader blk) where
-  decodeDisk ccfg = SerialisedHeaderFromDepPair <$> decodeDisk ccfg
+  decodeDisk dcfg = SerialisedHeaderFromDepPair <$> decodeDisk dcfg
 
 -- | Encode the header without the 'NestedCtxt'
 --

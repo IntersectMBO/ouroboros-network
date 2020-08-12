@@ -276,8 +276,8 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
   where
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
-    codecConfig :: CodecConfig blk
-    codecConfig = configCodec cdbTopLevelConfig
+    diskConfig :: DiskConfig blk
+    diskConfig = configDisk cdbTopLevelConfig
 
     headerUpdateToBlockComponentUpdate
       :: f (ChainUpdate blk (Header blk)) -> m (f (ChainUpdate blk b))
@@ -321,7 +321,7 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
         rawHdr :: Lazy.ByteString
         rawHdr = case unnest hdr of
           DepPair ctxt h ->
-            toLazyByteString $ encodeDiskDep codecConfig ctxt h
+            toLazyByteString $ encodeDiskDep diskConfig ctxt h
 
     next
       :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)

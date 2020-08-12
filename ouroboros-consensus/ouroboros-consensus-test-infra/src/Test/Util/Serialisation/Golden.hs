@@ -47,8 +47,8 @@ import           Cardano.Prelude (forceElemsToWHNF)
 
 import           Ouroboros.Network.Block (Serialised)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SomeBlock)
+import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig,
+                     DiskConfig, Header, HeaderHash, SomeBlock)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
@@ -301,15 +301,16 @@ goldenTest_all ::
 
      , HasCallStack
      )
-  => CodecConfig blk
+  => DiskConfig blk
+  -> CodecConfig blk
   -> FilePath
      -- ^ Path relative to the root of the repository that contains the golden
      -- files
   -> Examples blk
   -> TestTree
-goldenTest_all codecConfig goldenDir examples =
+goldenTest_all diskConfig codecConfig goldenDir examples =
     testGroup "Golden tests" [
-        goldenTest_SerialiseDisk         codecConfig goldenDir examples
+        goldenTest_SerialiseDisk         diskConfig  goldenDir examples
       , goldenTest_SerialiseNodeToNode   codecConfig goldenDir examples
       , goldenTest_SerialiseNodeToClient codecConfig goldenDir examples
       ]
@@ -318,17 +319,17 @@ goldenTest_all codecConfig goldenDir examples =
 -- 'SerialiseDiskConstraints'?
 goldenTest_SerialiseDisk ::
      forall blk. (SerialiseDiskConstraints blk, HasCallStack)
-  => CodecConfig blk
+  => DiskConfig blk
   -> FilePath
   -> Examples blk
   -> TestTree
-goldenTest_SerialiseDisk codecConfig goldenDir Examples {..} =
+goldenTest_SerialiseDisk diskConfig goldenDir Examples {..} =
     testGroup "SerialiseDisk" [
-        test "Block"          exampleBlock         (encodeDisk codecConfig)
+        test "Block"          exampleBlock         (encodeDisk diskConfig)
       , test "HeaderHash"     exampleHeaderHash     encode
-      , test "LedgerState"    exampleLedgerState   (encodeDisk codecConfig)
-      , test "AnnTip"         exampleAnnTip        (encodeDisk codecConfig)
-      , test "ChainDepState"  exampleChainDepState (encodeDisk codecConfig)
+      , test "LedgerState"    exampleLedgerState   (encodeDisk diskConfig)
+      , test "AnnTip"         exampleAnnTip        (encodeDisk diskConfig)
+      , test "ChainDepState"  exampleChainDepState (encodeDisk diskConfig)
       , test "ExtLedgerState" exampleExtLedgerState encodeExt
       ]
   where
@@ -342,9 +343,9 @@ goldenTest_SerialiseDisk codecConfig goldenDir Examples {..} =
 
     encodeExt =
         encodeExtLedgerState
-          (encodeDisk codecConfig)
-          (encodeDisk codecConfig)
-          (encodeDisk codecConfig)
+          (encodeDisk diskConfig)
+          (encodeDisk diskConfig)
+          (encodeDisk diskConfig)
 
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseNodeToNodeConstraints'?

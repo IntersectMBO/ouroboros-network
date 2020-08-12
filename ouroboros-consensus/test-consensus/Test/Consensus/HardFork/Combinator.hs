@@ -287,6 +287,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                     :* CCfgB
                     :* Nil
                 }
+            , blockConfigDisk = HardForkDiskConfig {
+                  hardForkDiskConfigPerEra = PerEraDiskConfig $
+                       DCfgA
+                    :* DCfgB
+                    :* Nil
+                }
             }
         }
 

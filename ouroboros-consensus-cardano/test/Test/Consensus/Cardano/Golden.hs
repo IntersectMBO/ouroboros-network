@@ -17,7 +17,7 @@ import           Test.Util.Serialisation.Golden
 import           Test.Consensus.Cardano.Examples
 
 tests :: TestTree
-tests = goldenTest_all codecConfig $(getGoldenDir) examples
+tests = goldenTest_all diskConfig codecConfig $(getGoldenDir) examples
 
 instance TPraosCrypto sc => ToGoldenDirectory (HardForkNodeToNodeVersion (CardanoEras sc)) where
   toGoldenDirectory v = case v of

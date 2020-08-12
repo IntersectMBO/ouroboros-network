@@ -56,6 +56,9 @@ module Ouroboros.Consensus.Cardano.Block (
     -- * CodecConfig
   , CardanoCodecConfig
   , CodecConfig (CardanoCodecConfig)
+    -- * DiskConfig
+  , CardanoDiskConfig
+  , DiskConfig (CardanoDiskConfig)
     -- * BlockConfig
   , CardanoBlockConfig
   , BlockConfig (CardanoBlockConfig)
@@ -389,6 +392,25 @@ pattern CardanoCodecConfig cfgByron cfgShelley =
     HardForkCodecConfig (PerEraCodecConfig (cfgByron :* cfgShelley :* Nil))
 
 {-# COMPLETE CardanoCodecConfig #-}
+
+{-------------------------------------------------------------------------------
+  DiskConfig
+-------------------------------------------------------------------------------}
+
+-- | The 'DiskConfig' for 'CardanoBlock'.
+--
+-- Thanks to the pattern synonyms, you can treat this as the product of
+-- the Byron and Shelley 'DiskConfig'.
+type CardanoDiskConfig sc = DiskConfig (CardanoBlock sc)
+
+pattern CardanoDiskConfig
+  :: DiskConfig ByronBlock
+  -> DiskConfig (ShelleyBlock sc)
+  -> CardanoDiskConfig sc
+pattern CardanoDiskConfig cfgByron cfgShelley =
+    HardForkDiskConfig (PerEraDiskConfig (cfgByron :* cfgShelley :* Nil))
+
+{-# COMPLETE CardanoDiskConfig #-}
 
 {-------------------------------------------------------------------------------
   BlockConfig

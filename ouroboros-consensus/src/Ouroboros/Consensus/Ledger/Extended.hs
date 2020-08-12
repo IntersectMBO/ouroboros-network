@@ -115,6 +115,7 @@ extLedgerCfgToTopLevel FullBlockConfig{..} = TopLevelConfig {
           blockConfigLedger = extLedgerCfgLedger
         , blockConfigBlock  = blockConfigBlock
         , blockConfigCodec  = blockConfigCodec
+        , blockConfigDisk   = blockConfigDisk
         }
     }
   where
@@ -129,6 +130,7 @@ extLedgerCfgFromTopLevel tlc = FullBlockConfig {
         }
     , blockConfigBlock  = configBlock tlc
     , blockConfigCodec  = configCodec tlc
+    , blockConfigDisk   = configDisk tlc
     }
 
 type instance HeaderHash (ExtLedgerState blk) = HeaderHash (LedgerState blk)

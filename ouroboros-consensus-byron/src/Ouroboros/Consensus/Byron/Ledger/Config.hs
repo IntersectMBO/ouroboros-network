@@ -16,6 +16,9 @@ module Ouroboros.Consensus.Byron.Ledger.Config (
     -- * Codec config
   , CodecConfig(..)
   , mkByronCodecConfig
+    -- * Disk config
+  , DiskConfig(..)
+  , mkByronDiskConfig
   ) where
 
 import           GHC.Generics (Generic)
@@ -72,14 +75,28 @@ byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig
   Codec config
 -------------------------------------------------------------------------------}
 
-data instance CodecConfig ByronBlock = ByronCodecConfig {
-      getByronEpochSlots    :: !CC.Slot.EpochSlots
-    , getByronSecurityParam :: !SecurityParam
+newtype instance CodecConfig ByronBlock = ByronCodecConfig {
+      byronCodecConfigEpochSlots :: CC.Slot.EpochSlots
     }
   deriving (Generic, NoUnexpectedThunks)
 
 mkByronCodecConfig :: CC.Genesis.Config -> CodecConfig ByronBlock
 mkByronCodecConfig cfg = ByronCodecConfig {
-      getByronEpochSlots    = CC.Genesis.configEpochSlots cfg
-    , getByronSecurityParam = genesisSecurityParam cfg
+      byronCodecConfigEpochSlots = CC.Genesis.configEpochSlots cfg
+    }
+
+{-------------------------------------------------------------------------------
+  Disk config
+-------------------------------------------------------------------------------}
+
+data instance DiskConfig ByronBlock = ByronDiskConfig {
+      byronDiskConfigEpochSlots    :: !CC.Slot.EpochSlots
+    , byronDiskConfigSecurityParam :: !SecurityParam
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+mkByronDiskConfig :: CC.Genesis.Config -> DiskConfig ByronBlock
+mkByronDiskConfig cfg = ByronDiskConfig {
+      byronDiskConfigEpochSlots    = CC.Genesis.configEpochSlots cfg
+    , byronDiskConfigSecurityParam = genesisSecurityParam        cfg
     }

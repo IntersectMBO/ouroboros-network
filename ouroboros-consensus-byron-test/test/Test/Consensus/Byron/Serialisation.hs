@@ -46,7 +46,7 @@ import           Test.Consensus.Byron.Generators
 
 tests :: TestTree
 tests = testGroup "Byron"
-    [ roundtrip_all testCodecCfg dictNestedHdr
+    [ roundtrip_all testDiskCfg testCodecCfg dictNestedHdr
 
     , testProperty "hashSize" $ prop_hashSize (Proxy @ByronBlock)
 
@@ -115,3 +115,7 @@ testCfg = pInfoConfig protocolInfo
 -- | Matches the values used for the generators.
 testCodecCfg :: CodecConfig ByronBlock
 testCodecCfg = configCodec testCfg
+
+-- | Matches the values used for the generators.
+testDiskCfg :: DiskConfig ByronBlock
+testDiskCfg = configDisk testCfg

@@ -37,6 +37,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , DiskConfig(..)
   , LedgerState(..)
   , GenTx(..)
   , TxId(..)
@@ -180,6 +181,7 @@ dualFullBlockConfigMain FullBlockConfig{..} = FullBlockConfig{
       blockConfigLedger = dualLedgerConfigMain blockConfigLedger
     , blockConfigBlock  = dualBlockConfigMain  blockConfigBlock
     , blockConfigCodec  = dualCodecConfigMain  blockConfigCodec
+    , blockConfigDisk   = dualDiskConfigMain   blockConfigDisk
     }
 
 dualFullBlockConfigAux ::
@@ -189,6 +191,7 @@ dualFullBlockConfigAux FullBlockConfig{..} = FullBlockConfig{
       blockConfigLedger = dualLedgerConfigAux blockConfigLedger
     , blockConfigBlock  = dualBlockConfigAux  blockConfigBlock
     , blockConfigCodec  = dualCodecConfigAux  blockConfigCodec
+    , blockConfigDisk   = dualDiskConfigAux   blockConfigDisk
     }
 
 -- | This is only used for block production
@@ -211,6 +214,21 @@ data instance CodecConfig (DualBlock m a) = DualCodecConfig {
 instance ( NoUnexpectedThunks (CodecConfig m)
          , NoUnexpectedThunks (CodecConfig a)
          ) => NoUnexpectedThunks (CodecConfig (DualBlock m a))
+  -- Use generic instance
+
+{-------------------------------------------------------------------------------
+  DiskConfig
+-------------------------------------------------------------------------------}
+
+data instance DiskConfig (DualBlock m a) = DualDiskConfig {
+      dualDiskConfigMain :: DiskConfig m
+    , dualDiskConfigAux  :: DiskConfig a
+    }
+  deriving (Generic)
+
+instance ( NoUnexpectedThunks (DiskConfig m)
+         , NoUnexpectedThunks (DiskConfig a)
+         ) => NoUnexpectedThunks (DiskConfig (DualBlock m a))
   -- Use generic instance
 
 {-------------------------------------------------------------------------------
@@ -238,6 +256,7 @@ class (
       , Show (ApplyTxErr      a)
       , NoUnexpectedThunks (LedgerConfig a)
       , NoUnexpectedThunks (CodecConfig a)
+      , NoUnexpectedThunks (DiskConfig a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)
@@ -647,16 +666,16 @@ instance ReconstructNestedCtxt Header m
 
 instance EncodeDiskDepIx (NestedCtxt Header) m
       => EncodeDiskDepIx (NestedCtxt Header) (DualBlock m a) where
-  encodeDiskDepIx ccfg (SomeBlock ctxt) =
+  encodeDiskDepIx dcfg (SomeBlock ctxt) =
       encodeDiskDepIx
-        (dualCodecConfigMain ccfg)
+        (dualDiskConfigMain dcfg)
         (SomeBlock (mapNestedCtxt ctxtDualMain ctxt))
 
 instance EncodeDiskDep (NestedCtxt Header) m
       => EncodeDiskDep (NestedCtxt Header) (DualBlock m a) where
-  encodeDiskDep ccfg ctxt =
+  encodeDiskDep dcfg ctxt =
       encodeDiskDep
-        (dualCodecConfigMain ccfg)
+        (dualDiskConfigMain dcfg)
         (mapNestedCtxt ctxtDualMain ctxt)
 
 {-------------------------------------------------------------------------------

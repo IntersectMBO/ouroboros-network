@@ -39,6 +39,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * Configuration
   , BlockConfig(..)
   , CodecConfig(..)
+  , DiskConfig(..)
   , SimpleLedgerConfig(..)
     -- * Protocol-specific part
   , MockProtocolSpecific(..)
@@ -289,8 +290,17 @@ newtype instance BlockConfig (SimpleBlock c ext) =
   Codec config
 -------------------------------------------------------------------------------}
 
+-- | Nothing is needed simple blocks
+data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
+  deriving stock    (Generic)
+  deriving anyclass (NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
+  Disk config
+-------------------------------------------------------------------------------}
+
 -- | Only the 'SecurityParam' is required for simple blocks
-newtype instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
+newtype instance DiskConfig (SimpleBlock c ext) = SimpleDiskConfig SecurityParam
   deriving newtype (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 module Test.Consensus.Cardano.Examples (
     -- * Setup
     codecConfig
+  , diskConfig
     -- * Examples
   , examples
   , exampleEraMismatchByron
@@ -182,6 +183,9 @@ eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock Crypto))
 
 codecConfig :: CardanoCodecConfig Crypto
 codecConfig = CardanoCodecConfig Byron.codecConfig Shelley.codecConfig
+
+diskConfig :: CardanoDiskConfig Crypto
+diskConfig = CardanoDiskConfig Byron.diskConfig Shelley.diskConfig
 
 {-------------------------------------------------------------------------------
   Additional injections

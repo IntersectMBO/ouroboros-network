@@ -29,6 +29,7 @@ module Test.Consensus.HardFork.Combinator.A (
     -- * Type family instances
   , BlockConfig(..)
   , CodecConfig(..)
+  , DiskConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -148,6 +149,9 @@ type instance BlockProtocol BlockA = ProtocolA
 type instance HeaderHash    BlockA = Strict.ByteString
 
 data instance CodecConfig BlockA = CCfgA
+  deriving (Generic, NoUnexpectedThunks)
+
+data instance DiskConfig BlockA = DCfgA
   deriving (Generic, NoUnexpectedThunks)
 
 instance ConfigSupportsNode BlockA where

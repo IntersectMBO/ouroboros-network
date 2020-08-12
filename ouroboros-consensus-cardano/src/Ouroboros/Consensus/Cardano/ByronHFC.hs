@@ -68,10 +68,10 @@ instance SupportedNetworkProtocolVersion ByronBlockHFC where
 -- wrapper around blocks on disk. This makes sure we're compatible with the
 -- existing Byron blocks.
 instance SerialiseHFC '[ByronBlock] where
-  encodeDiskHfcBlock (DegenCodecConfig ccfg) (DegenBlock b) =
-      encodeDisk ccfg b
-  decodeDiskHfcBlock (DegenCodecConfig ccfg) =
-      fmap DegenBlock <$> decodeDisk ccfg
+  encodeDiskHfcBlock (DegenDiskConfig dcfg) (DegenBlock b) =
+      encodeDisk dcfg b
+  decodeDiskHfcBlock (DegenDiskConfig dcfg) =
+      fmap DegenBlock <$> decodeDisk dcfg
   reconstructHfcPrefixLen _ =
       reconstructPrefixLen (Proxy @(Header ByronBlock))
   reconstructHfcNestedCtxt _ prefix blockSize =

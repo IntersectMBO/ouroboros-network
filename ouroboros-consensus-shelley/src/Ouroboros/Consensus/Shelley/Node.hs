@@ -186,6 +186,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
             blockConfigLedger = ledgerConfig
           , blockConfigBlock  = blockConfig
           , blockConfigCodec  = ShelleyCodecConfig
+          , blockConfigDisk   = ShelleyDiskConfig
           }
       }
 

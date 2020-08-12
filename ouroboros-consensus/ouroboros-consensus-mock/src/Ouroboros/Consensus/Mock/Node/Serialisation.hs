@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -80,13 +81,13 @@ instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (MockBlock ext) wh
   decodeNodeToNode _ _ = defaultDecodeCBORinCBOR
 
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (Header (MockBlock ext)) where
-  encodeNodeToNode ccfg _ = encodeDisk ccfg . unnest
-  decodeNodeToNode ccfg _ = nest <$> decodeDisk ccfg
+  encodeNodeToNode ccfg _ = encodeDisk (undefined ccfg :: DiskConfig (MockBlock ext)) . unnest
+  decodeNodeToNode ccfg _ = nest <$> decodeDisk (undefined ccfg :: DiskConfig (MockBlock ext))
 
 instance SerialiseNodeToNode (MockBlock ext) (Serialised (MockBlock ext))
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (SerialisedHeader (MockBlock ext)) where
-  encodeNodeToNode ccfg _ = encodeDisk ccfg
-  decodeNodeToNode ccfg _ = decodeDisk ccfg
+  encodeNodeToNode ccfg _ = encodeDisk (undefined ccfg :: DiskConfig (MockBlock ext))
+  decodeNodeToNode ccfg _ = decodeDisk (undefined ccfg :: DiskConfig (MockBlock ext))
 instance SerialiseNodeToNode (MockBlock ext) (GenTx (MockBlock ext))
 instance SerialiseNodeToNode (MockBlock ext) (GenTxId (MockBlock ext))
 

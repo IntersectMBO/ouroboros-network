@@ -42,7 +42,7 @@ import           Test.Consensus.Cardano.Generators (epochSlots, k)
 
 tests :: TestTree
 tests = testGroup "Cardano"
-    [ roundtrip_all testCodecCfg dictNestedHdr
+    [ roundtrip_all testDiskCfg testCodecCfg dictNestedHdr
 
       -- Note: the above roundtrip tests use 'TPraosMockCrypto' (because we
       -- most generators only work with mock crypto, not with real crypto).
@@ -65,7 +65,11 @@ tests = testGroup "Cardano"
 
 testCodecCfg :: CardanoCodecConfig (TPraosMockCrypto ShortHash)
 testCodecCfg =
-  CardanoCodecConfig (ByronCodecConfig epochSlots k) ShelleyCodecConfig
+  CardanoCodecConfig (ByronCodecConfig epochSlots) ShelleyCodecConfig
+
+testDiskCfg :: CardanoDiskConfig (TPraosMockCrypto ShortHash)
+testDiskCfg =
+  CardanoDiskConfig (ByronDiskConfig epochSlots k) ShelleyDiskConfig
 
 dictNestedHdr
   :: forall a.
@@ -92,8 +96,8 @@ prop_CardanoBinaryBlockInfo blk =
     extractedHeader =
         Lazy.take (fromIntegral headerSize)   $
         Lazy.drop (fromIntegral headerOffset) $
-        CBOR.toLazyByteString (encodeDisk testCodecCfg blk)
+        CBOR.toLazyByteString (encodeDisk testDiskCfg blk)
 
     encodedNestedHeader :: Lazy.ByteString
-    encodedNestedHeader = case encodeDepPair testCodecCfg (unnest (getHeader blk)) of
+    encodedNestedHeader = case encodeDepPair testDiskCfg (unnest (getHeader blk)) of
         GenDepPair _ (Serialised bytes) -> bytes

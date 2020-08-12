@@ -11,6 +11,7 @@ module Test.Consensus.Shelley.Examples (
     testEpochInfo
   , testShelleyGenesis
   , codecConfig
+  , diskConfig
   , mkDummyHash
     -- * Examples
   , examples
@@ -130,6 +131,9 @@ testShelleyGenesis = SL.ShelleyGenesis {
 
 codecConfig :: CodecConfig (ShelleyBlock TPraosStandardCrypto)
 codecConfig = ShelleyCodecConfig
+
+diskConfig :: DiskConfig (ShelleyBlock TPraosStandardCrypto)
+diskConfig = ShelleyDiskConfig
 
 mkDummyHash :: forall h a. HashAlgorithm h => Proxy h -> Int -> Hash.Hash h a
 mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR

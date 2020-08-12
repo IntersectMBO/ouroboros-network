@@ -282,6 +282,7 @@ csBlockConfig' dbParams = FullBlockConfig {
       blockConfigLedger = HardFork.defaultEraParams k slotLength
     , blockConfigBlock  = TestBlockConfig (NumCoreNodes 1) -- Ledger DB doesn't care
     , blockConfigCodec  = TestBlockCodecConfig
+    , blockConfigDisk   = TestBlockDiskConfig
     }
   where
     k          = ledgerDbSecurityParam dbParams

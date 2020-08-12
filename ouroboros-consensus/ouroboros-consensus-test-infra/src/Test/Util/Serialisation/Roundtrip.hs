@@ -127,14 +127,15 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeBlock Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
-  => CodecConfig blk
+  => DiskConfig blk
+  -> CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
   -> TestTree
-roundtrip_all ccfg dictNestedHdr =
+roundtrip_all dcfg ccfg dictNestedHdr =
     testGroup "Roundtrip" [
-        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         ccfg dictNestedHdr
-      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   ccfg
-      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient ccfg
+        testGroup "SerialiseDisk"         $ roundtrip_SerialiseDisk         dcfg dictNestedHdr
+      , testGroup "SerialiseNodeToNode"   $ roundtrip_SerialiseNodeToNode   ccfg dcfg
+      , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient ccfg dcfg
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
       , testProperty "nodeBlockFetchSize" $ prop_nodeBlockFetchSize         ccfg
@@ -152,19 +153,19 @@ roundtrip_SerialiseDisk
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
      )
-  => CodecConfig blk
+  => DiskConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
   -> [TestTree]
-roundtrip_SerialiseDisk ccfg dictNestedHdr =
+roundtrip_SerialiseDisk dcfg dictNestedHdr =
     [ testProperty "roundtrip block" $
-        roundtrip' @blk (encodeDisk ccfg) (decodeDisk ccfg)
+        roundtrip' @blk (encodeDisk dcfg) (decodeDisk dcfg)
     , testProperty "roundtrip Header" $ \hdr ->
         case unnest hdr of
           DepPair ctxt nestedHdr -> case dictNestedHdr (flipNestedCtxt ctxt) of
             Dict ->
               roundtrip'
-                (encodeDiskDep ccfg ctxt)
-                (decodeDiskDep ccfg ctxt)
+                (encodeDiskDep dcfg ctxt)
+                (decodeDiskDep dcfg ctxt)
                 nestedHdr
       -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
@@ -179,8 +180,8 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
     rt _ name =
       testProperty ("roundtrip " <> name) $
         roundtrip @a
-          (encodeDisk ccfg)
-          (decodeDisk ccfg)
+          (encodeDisk dcfg)
+          (decodeDisk dcfg)
 
 -- | Used to generate arbitrary values for the serialisation roundtrip tests.
 -- As the serialisation format can change with the version, not all arbitrary
@@ -218,8 +219,9 @@ roundtrip_SerialiseNodeToNode
      , DecodeDiskDep (NestedCtxt Header) blk
      )
   => CodecConfig blk
+  -> DiskConfig blk
   -> [TestTree]
-roundtrip_SerialiseNodeToNode ccfg =
+roundtrip_SerialiseNodeToNode ccfg dcfg =
     [ rt (Proxy @blk)              "blk"
     , rt (Proxy @(Header blk))     "Header"
     , rt (Proxy @(GenTx blk))      "GenTx"
@@ -233,22 +235,22 @@ roundtrip_SerialiseNodeToNode ccfg =
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
           roundtrip @blk
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
-            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            (encodeThroughSerialised (encodeDisk dcfg) (enc version))
+            (decodeThroughSerialised (decodeDisk dcfg) (dec version))
             blk
       -- Same as above but for 'Header'
     , testProperty "roundtrip Serialised Header" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (enc version . SerialisedHeaderFromDepPair . encodeDepPair ccfg . unnest)
-            (nest <$> (decodeDepPair ccfg . serialisedHeaderToDepPair =<< dec version))
+            (enc version . SerialisedHeaderFromDepPair . encodeDepPair dcfg . unnest)
+            (nest <$> (decodeDepPair dcfg . serialisedHeaderToDepPair =<< dec version))
             hdr
       -- Check the compatibility between 'encodeNodeToNode' for @'Serialised'
       -- blk@ and 'decodeNodeToNode' for @blk@.
     , testProperty "roundtrip Serialised blk compat 1" $
         \(WithVersion version blk) ->
           roundtrip @blk
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (encodeThroughSerialised (encodeDisk dcfg) (enc version))
             (dec version)
             blk
       -- Check the compatibility between 'encodeNodeToNode' for @blk@ and
@@ -257,20 +259,20 @@ roundtrip_SerialiseNodeToNode ccfg =
         \(WithVersion version blk) ->
           roundtrip @blk
             (enc version)
-            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            (decodeThroughSerialised (decodeDisk dcfg) (dec version))
             blk
       -- Same as above but for 'Header'
     , testProperty "roundtrip Serialised Header compat 1" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
-            (enc version . SerialisedHeaderFromDepPair . encodeDepPair ccfg . unnest)
+            (enc version . SerialisedHeaderFromDepPair . encodeDepPair dcfg . unnest)
             (dec version)
             hdr
     , testProperty "roundtrip Serialised Header compat 2" $
         \(WithVersion version hdr) ->
           roundtrip @(Header blk)
             (enc version)
-            (nest <$> (decodeDepPair ccfg . serialisedHeaderToDepPair =<< dec version))
+            (nest <$> (decodeDepPair dcfg . serialisedHeaderToDepPair =<< dec version))
             hdr
     ]
   where
@@ -311,8 +313,9 @@ roundtrip_SerialiseNodeToClient
      , DecodeDisk blk (Lazy.ByteString -> blk)
      )
   => CodecConfig blk
+  -> DiskConfig blk
   -> [TestTree]
-roundtrip_SerialiseNodeToClient ccfg =
+roundtrip_SerialiseNodeToClient ccfg dcfg =
     [ rt (Proxy @blk)                   "blk"
     , rt (Proxy @(GenTx blk))           "GenTx"
     , rt (Proxy @(ApplyTxErr blk))      "ApplyTxErr"
@@ -321,14 +324,14 @@ roundtrip_SerialiseNodeToClient ccfg =
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
           roundtrip @blk
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
-            (decodeThroughSerialised (decodeDisk ccfg) (dec version))
+            (encodeThroughSerialised (encodeDisk dcfg) (enc version))
+            (decodeThroughSerialised (decodeDisk dcfg) (dec version))
             blk
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk compat" $
         \(WithVersion version blk) ->
           roundtrip @blk
-            (encodeThroughSerialised (encodeDisk ccfg) (enc version))
+            (encodeThroughSerialised (encodeDisk dcfg) (enc version))
             (dec version)
             blk
     , testProperty "roundtrip Result" $

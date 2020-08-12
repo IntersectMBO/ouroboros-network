@@ -89,7 +89,7 @@ instance SerialiseHFC xs
         encodeNS (hcmap pSHFC (fn . (K .: encodeDisk)) cfgs)
       . distribAnnTip
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
 instance SerialiseHFC xs
       => DecodeDisk (HardForkBlock xs) (AnnTip (HardForkBlock xs)) where
@@ -97,17 +97,17 @@ instance SerialiseHFC xs
         fmap undistribAnnTip
       $ decodeNS (hcmap pSHFC (Comp . decodeDisk) cfgs)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
 instance SerialiseHFC xs
       => EncodeDisk (HardForkBlock xs) (HardForkChainDepState xs) where
   encodeDisk cfg =
       encodeTelescope (hcmap pSHFC (fn . aux) cfgs)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
       aux :: SerialiseDiskConstraints blk
-          => CodecConfig blk -> WrapChainDepState blk -> K Encoding blk
+          => DiskConfig blk -> WrapChainDepState blk -> K Encoding blk
       aux cfg' (WrapChainDepState st) = K $ encodeDisk cfg' st
 
 instance SerialiseHFC xs
@@ -115,7 +115,7 @@ instance SerialiseHFC xs
   decodeDisk cfg =
       decodeTelescope (hcmap pSHFC (Comp . fmap WrapChainDepState . decodeDisk) cfgs)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
 instance SerialiseHFC xs
       => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) )where
@@ -123,7 +123,7 @@ instance SerialiseHFC xs
         encodeTelescope (hcmap pSHFC (fn . (K .: encodeDisk)) cfgs)
       . hardForkLedgerStatePerEra
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)
 
 instance SerialiseHFC xs
       => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs)) where
@@ -131,4 +131,4 @@ instance SerialiseHFC xs
         fmap HardForkLedgerState
       $ decodeTelescope (hcmap pSHFC (Comp . decodeDisk) cfgs)
     where
-      cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
+      cfgs = getPerEraDiskConfig (hardForkDiskConfigPerEra cfg)

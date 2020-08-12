@@ -42,7 +42,8 @@ import           Ouroboros.Consensus.Byron.Node ()
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
-import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (..))
+import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (..),
+                     DiskConfig (..))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -63,22 +64,30 @@ tests = adjustOption reduceTests $
         testGroup "Byron to Cardano" [
               testProperty "roundtrip block" $
                 roundtrip' @ByronToCardano
-                  (encodeDisk byronToCardanoCodeConfig)
-                  (decodeDisk byronToCardanoCodeConfig)
+                  (encodeDisk byronToCardanoDiskConfig)
+                  (decodeDisk byronToCardanoDiskConfig)
             , testGroup "SerialiseNodeToNode" $
-                roundtrip_SerialiseNodeToNode   byronToCardanoCodeConfig
+                roundtrip_SerialiseNodeToNode
+                  byronToCardanoCodecConfig
+                  byronToCardanoDiskConfig
             , testGroup "SerialiseNodeToClient" $
-                roundtrip_SerialiseNodeToClient byronToCardanoCodeConfig
+                roundtrip_SerialiseNodeToClient
+                  byronToCardanoCodecConfig
+                  byronToCardanoDiskConfig
             ]
       , testGroup "Cardano to Byron" [
               testProperty "roundtrip block" $
                 roundtrip' @CardanoToByron
-                  (encodeDisk cardanoToByronCodeConfig)
-                  (decodeDisk cardanoToByronCodeConfig)
+                  (encodeDisk cardanoToByronDiskConfig)
+                  (decodeDisk cardanoToByronDiskConfig)
             , testGroup "SerialiseNodeToNode" $
-                roundtrip_SerialiseNodeToNode   cardanoToByronCodeConfig
+                roundtrip_SerialiseNodeToNode
+                  cardanoToByronCodecConfig
+                  cardanoToByronDiskConfig
             , testGroup "SerialiseNodeToClient" $
-                roundtrip_SerialiseNodeToClient cardanoToByronCodeConfig
+                roundtrip_SerialiseNodeToClient
+                  cardanoToByronCodecConfig
+                  cardanoToByronDiskConfig
             ]
       ]
   where
@@ -88,13 +97,22 @@ tests = adjustOption reduceTests $
     reduceTests (QuickCheckTests n) = QuickCheckTests (1 `max` (div n 10))
 
 byronCodecConfig :: CodecConfig ByronBlock
-byronCodecConfig = ByronCodecConfig epochSlots k
+byronCodecConfig = ByronCodecConfig epochSlots
 
-byronToCardanoCodeConfig :: CodecConfig ByronToCardano
-byronToCardanoCodeConfig = CodecConfigB2C byronCodecConfig
+byronDiskConfig :: DiskConfig ByronBlock
+byronDiskConfig = ByronDiskConfig epochSlots k
 
-cardanoToByronCodeConfig :: CodecConfig CardanoToByron
-cardanoToByronCodeConfig = CodecConfigC2B byronCodecConfig
+byronToCardanoCodecConfig :: CodecConfig ByronToCardano
+byronToCardanoCodecConfig = CodecConfigB2C byronCodecConfig
+
+byronToCardanoDiskConfig :: DiskConfig ByronToCardano
+byronToCardanoDiskConfig = DiskConfigB2C byronDiskConfig
+
+cardanoToByronCodecConfig :: CodecConfig CardanoToByron
+cardanoToByronCodecConfig = CodecConfigC2B byronCodecConfig
+
+cardanoToByronDiskConfig :: DiskConfig CardanoToByron
+cardanoToByronDiskConfig = DiskConfigC2B byronDiskConfig
 
 {------------------------------------------------------------------------------
   Common setup
@@ -124,6 +142,12 @@ toCardanoCodecConfig ::
   -> CodecConfig (CardanoBlock Crypto)
 toCardanoCodecConfig codecConfigByron =
     CardanoCodecConfig codecConfigByron ShelleyCodecConfig
+
+toCardanoDiskConfig ::
+     DiskConfig ByronBlock
+  -> DiskConfig (CardanoBlock Crypto)
+toCardanoDiskConfig diskConfigByron =
+    CardanoDiskConfig diskConfigByron ShelleyDiskConfig
 
 {------------------------------------------------------------------------------
   Byron to Cardano
@@ -162,7 +186,9 @@ instance ConvertRawHash ByronToCardano where
   fromShortRawHash _ = fromShortRawHash pb
   hashSize         _ = hashSize         pb
 
-data instance CodecConfig ByronToCardano = CodecConfigB2C (CodecConfig ByronBlock)
+newtype instance CodecConfig ByronToCardano = CodecConfigB2C (CodecConfig ByronBlock)
+
+newtype instance DiskConfig ByronToCardano = DiskConfigB2C (DiskConfig ByronBlock)
 
 instance SameDepIndex (NestedCtxt_ ByronToCardano Header) where
   sameDepIndex (NestedCtxt_B2C ctxt1) (NestedCtxt_B2C ctxt2) =
@@ -191,11 +217,11 @@ encodeDiskB2C ::
      )
   => Proxy f
   -> (b2c -> byron)
-  -> CodecConfig ByronToCardano
+  -> DiskConfig ByronToCardano
   -> b2c
   -> Encoding
-encodeDiskB2C _ toByron (CodecConfigB2C ccfg) x =
-    encodeDisk ccfg (toByron' x)
+encodeDiskB2C _ toByron (DiskConfigB2C dcfg) x =
+    encodeDisk dcfg (toByron' x)
   where
     toByron' :: b2c -> f ByronBlock
     toByron' = coerce . toByron
@@ -207,10 +233,10 @@ decodeDiskB2C ::
      )
   => Proxy f
   -> (cardano -> b2c)
-  -> CodecConfig ByronToCardano
+  -> DiskConfig ByronToCardano
   -> forall s. Decoder s b2c
-decodeDiskB2C _ fromCardano (CodecConfigB2C ccfg) =
-    fromCardano' <$> decodeDisk (toCardanoCodecConfig ccfg)
+decodeDiskB2C _ fromCardano (DiskConfigB2C dcfg) =
+    fromCardano' <$> decodeDisk (toCardanoDiskConfig dcfg)
   where
     fromCardano' :: f (CardanoBlock Crypto) -> b2c
     fromCardano' = fromCardano . coerce
@@ -224,12 +250,12 @@ instance DecodeDisk ByronToCardano (Lazy.ByteString -> ByronToCardano) where
                  (fmap (\(BlockByron blk) -> B2C blk))
 
 instance EncodeDiskDep (NestedCtxt Header) ByronToCardano where
-  encodeDiskDep (CodecConfigB2C ccfg) =
-      encodeDiskDep ccfg . mapNestedCtxt unNestedCtxt_B2C
+  encodeDiskDep (DiskConfigB2C dcfg) =
+      encodeDiskDep dcfg . mapNestedCtxt unNestedCtxt_B2C
 
 instance DecodeDiskDep (NestedCtxt Header) ByronToCardano where
-  decodeDiskDep (CodecConfigB2C ccfg) =
-      decodeDiskDep (toCardanoCodecConfig ccfg) . mapNestedCtxt (NCZ . unNestedCtxt_B2C)
+  decodeDiskDep (DiskConfigB2C dcfg) =
+      decodeDiskDep (toCardanoDiskConfig dcfg) . mapNestedCtxt (NCZ . unNestedCtxt_B2C)
 
 {------------------------------------------------------------------------------
   Byron to Cardano: NodeToNode
@@ -442,7 +468,9 @@ instance ConvertRawHash CardanoToByron where
   fromShortRawHash _ = fromShortRawHash pb
   hashSize         _ = hashSize         pb
 
-data instance CodecConfig CardanoToByron = CodecConfigC2B (CodecConfig ByronBlock)
+newtype instance CodecConfig CardanoToByron = CodecConfigC2B (CodecConfig ByronBlock)
+
+newtype instance DiskConfig CardanoToByron = DiskConfigC2B (DiskConfig ByronBlock)
 
 instance SameDepIndex (NestedCtxt_ CardanoToByron Header) where
   sameDepIndex (NestedCtxt_C2B ctxt1) (NestedCtxt_C2B ctxt2) =
@@ -471,11 +499,11 @@ encodeDiskC2B ::
      )
   => Proxy f
   -> (c2b -> cardano)
-  -> CodecConfig CardanoToByron
+  -> DiskConfig CardanoToByron
   -> c2b
   -> Encoding
-encodeDiskC2B _ toCardano (CodecConfigC2B ccfg) x =
-    encodeDisk (toCardanoCodecConfig ccfg) (toCardano' x)
+encodeDiskC2B _ toCardano (DiskConfigC2B dcfg) x =
+    encodeDisk (toCardanoDiskConfig dcfg) (toCardano' x)
   where
     toCardano' :: c2b -> f (CardanoBlock Crypto)
     toCardano' = coerce . toCardano
@@ -487,10 +515,10 @@ decodeDiskC2B ::
      )
   => Proxy f
   -> (byron -> c2b)
-  -> CodecConfig CardanoToByron
+  -> DiskConfig CardanoToByron
   -> forall s. Decoder s c2b
-decodeDiskC2B _ fromByron (CodecConfigC2B ccfg) =
-    fromByron' <$> decodeDisk ccfg
+decodeDiskC2B _ fromByron (DiskConfigC2B dcfg) =
+    fromByron' <$> decodeDisk dcfg
   where
     fromByron' :: f ByronBlock -> c2b
     fromByron' = fromByron . coerce
@@ -502,12 +530,12 @@ instance DecodeDisk CardanoToByron (Lazy.ByteString -> CardanoToByron) where
   decodeDisk = decodeDiskC2B (Proxy @((->) Lazy.ByteString)) (fmap C2B)
 
 instance EncodeDiskDep (NestedCtxt Header) CardanoToByron where
-  encodeDiskDep (CodecConfigC2B ccfg) =
-      encodeDiskDep (toCardanoCodecConfig ccfg) . mapNestedCtxt (NCZ . unNestedCtxt_C2B)
+  encodeDiskDep (DiskConfigC2B dcfg) =
+      encodeDiskDep (toCardanoDiskConfig dcfg) . mapNestedCtxt (NCZ . unNestedCtxt_C2B)
 
 instance DecodeDiskDep (NestedCtxt Header) CardanoToByron where
-  decodeDiskDep (CodecConfigC2B ccfg) =
-      decodeDiskDep ccfg . mapNestedCtxt unNestedCtxt_C2B
+  decodeDiskDep (DiskConfigC2B dcfg) =
+      decodeDiskDep dcfg . mapNestedCtxt unNestedCtxt_C2B
 
 {------------------------------------------------------------------------------
   Cardano to Byron: NodeToNode

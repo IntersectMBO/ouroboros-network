@@ -22,6 +22,7 @@ class ( GetHeader blk
       , NoUnexpectedThunks (Header blk)
       , NoUnexpectedThunks (BlockConfig blk)
       , NoUnexpectedThunks (CodecConfig blk)
+      , NoUnexpectedThunks (DiskConfig blk)
       ) => BlockSupportsProtocol blk where
   validateView :: BlockConfig blk
                -> Header blk

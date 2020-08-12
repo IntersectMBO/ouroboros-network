@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Config (
   , configLedger
   , configBlock
   , configCodec
+  , configDisk
     -- ** Additional convenience functions
   , configSecurityParam
     -- * Block config
@@ -50,6 +51,7 @@ instance ( ConsensusProtocol (BlockProtocol blk)
          , NoUnexpectedThunks (LedgerConfig blk)
          , NoUnexpectedThunks (BlockConfig  blk)
          , NoUnexpectedThunks (CodecConfig  blk)
+         , NoUnexpectedThunks (DiskConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
 -- | Convenience constructor for 'TopLevelConfig'
@@ -57,11 +59,13 @@ mkTopLevelConfig :: ConsensusConfig (BlockProtocol blk)
                  -> LedgerConfig blk
                  -> BlockConfig  blk
                  -> CodecConfig  blk
+                 -> DiskConfig   blk
                  -> TopLevelConfig blk
 mkTopLevelConfig configProtocol
                  blockConfigLedger
                  blockConfigBlock
-                 blockConfigCodec =
+                 blockConfigCodec
+                 blockConfigDisk =
     TopLevelConfig {
         topLevelConfigProtocol = configProtocol
       , topLevelConfigBlock    = FullBlockConfig{..}
@@ -79,6 +83,9 @@ configBlock = blockConfigBlock . topLevelConfigBlock
 configCodec  :: TopLevelConfig blk -> CodecConfig  blk
 configCodec = blockConfigCodec . topLevelConfigBlock
 
+configDisk  :: TopLevelConfig blk -> DiskConfig  blk
+configDisk = blockConfigDisk . topLevelConfigBlock
+
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
 configSecurityParam = protocolSecurityParam . configConsensus
@@ -89,6 +96,7 @@ castTopLevelConfig ::
      , LedgerConfig blk ~ LedgerConfig blk'
      , Coercible (BlockConfig blk) (BlockConfig blk')
      , Coercible (CodecConfig blk) (CodecConfig blk')
+     , Coercible (DiskConfig  blk) (DiskConfig  blk')
      )
   => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
@@ -104,28 +112,33 @@ data FullBlockConfig l blk = FullBlockConfig {
       blockConfigLedger :: !(LedgerCfg l)
     , blockConfigBlock  :: !(BlockConfig blk)
     , blockConfigCodec  :: !(CodecConfig blk)
+    , blockConfigDisk   :: !(DiskConfig blk)
     }
   deriving (Generic)
 
 instance ( NoUnexpectedThunks (LedgerCfg l)
          , NoUnexpectedThunks (BlockConfig blk)
          , NoUnexpectedThunks (CodecConfig blk)
+         , NoUnexpectedThunks (DiskConfig blk)
          ) => NoUnexpectedThunks (FullBlockConfig l blk)
 deriving instance ( Show (LedgerCfg l)
                   , Show (BlockConfig blk)
                   , Show (CodecConfig blk)
+                  , Show (DiskConfig blk)
                   ) => Show (FullBlockConfig l blk)
 
 castFullBlockConfig ::
      ( LedgerCfg l ~ LedgerCfg l'
      , Coercible (BlockConfig blk) (BlockConfig blk')
      , Coercible (CodecConfig blk) (CodecConfig blk')
+     , Coercible (DiskConfig  blk) (DiskConfig  blk')
      )
   => FullBlockConfig l blk -> FullBlockConfig l' blk'
 castFullBlockConfig FullBlockConfig{..} = FullBlockConfig{
       blockConfigLedger = blockConfigLedger
     , blockConfigBlock  = coerce blockConfigBlock
     , blockConfigCodec  = coerce blockConfigCodec
+    , blockConfigDisk   = coerce blockConfigDisk
     }
 
 mapLedgerCfg :: (LedgerCfg l -> LedgerCfg l')
@@ -134,4 +147,5 @@ mapLedgerCfg f FullBlockConfig{..} = FullBlockConfig {
       blockConfigLedger = f blockConfigLedger
     , blockConfigBlock  = blockConfigBlock
     , blockConfigCodec  = blockConfigCodec
+    , blockConfigDisk   = blockConfigDisk
     }

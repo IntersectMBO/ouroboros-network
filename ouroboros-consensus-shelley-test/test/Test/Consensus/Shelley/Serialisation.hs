@@ -31,7 +31,7 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 tests :: TestTree
 tests = testGroup "Shelley"
-    [ roundtrip_all testCodecCfg dictNestedHdr
+    [ roundtrip_all testDiskCfg testCodecCfg dictNestedHdr
 
       -- 'roundtrip_ConvertRawHash' for mock crypto is included in
       -- 'roundtrip_all', but 'prop_hashSize' is not
@@ -56,6 +56,9 @@ tests = testGroup "Shelley"
 
     pReal :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
     pReal = Proxy
+
+    testDiskCfg :: DiskConfig (ShelleyBlock (TPraosMockCrypto ShortHash))
+    testDiskCfg = ShelleyDiskConfig
 
     testCodecCfg :: CodecConfig (ShelleyBlock (TPraosMockCrypto ShortHash))
     testCodecCfg = ShelleyCodecConfig

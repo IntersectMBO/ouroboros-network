@@ -28,6 +28,7 @@ module Test.Util.TestBlock (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , DiskConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -246,6 +247,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
 data instance CodecConfig TestBlock = TestBlockCodecConfig
   deriving (Show, Generic, NoUnexpectedThunks)
 
+-- | The 'TestBlock' does not need any disk config
+data instance DiskConfig TestBlock = TestBlockDiskConfig
+  deriving (Show, Generic, NoUnexpectedThunks)
+
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
 
@@ -394,6 +399,7 @@ singleNodeTestConfig = TopLevelConfig {
           blockConfigLedger = eraParams
         , blockConfigBlock  = TestBlockConfig numCoreNodes
         , blockConfigCodec  = TestBlockCodecConfig
+        , blockConfigDisk   = TestBlockDiskConfig
         }
     }
   where

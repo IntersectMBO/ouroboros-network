@@ -111,23 +111,23 @@ instance TPraosCrypto sc => SerialiseConstraintsHFC (ShelleyBlock sc)
 -- For more details, see:
 -- <https://github.com/input-output-hk/ouroboros-network/pull/1175#issuecomment-558147194>
 instance TPraosCrypto sc => SerialiseHFC (CardanoEras sc) where
-  encodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley) = \case
+  encodeDiskHfcBlock (CardanoDiskConfig dcfgByron dcfgShelley) = \case
       -- We are backwards compatible with Byron and thus use the exact same
       -- encoding.
-      BlockByron   blockByron   ->                encodeDisk ccfgByron blockByron
+      BlockByron   blockByron   ->                encodeDisk dcfgByron blockByron
       -- For Shelley, we need to prepend the hard fork envelope.
-      BlockShelley blockShelley -> prependTag 2 $ encodeDisk ccfgShelley blockShelley
-  decodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley) = do
+      BlockShelley blockShelley -> prependTag 2 $ encodeDisk dcfgShelley blockShelley
+  decodeDiskHfcBlock (CardanoDiskConfig dcfgByron dcfgShelley) = do
       enforceSize "CardanoBlock" 2
       CBOR.decodeWord >>= \case
         0 -> fmap BlockByron   <$> Byron.decodeByronBoundaryBlock epochSlots
         1 -> fmap BlockByron   <$> Byron.decodeByronRegularBlock  epochSlots
         -- We don't have to drop the first two bytes from the 'ByteString'
         -- passed to the decoder as slicing already takes care of this.
-        2 -> fmap BlockShelley <$> decodeDisk ccfgShelley
+        2 -> fmap BlockShelley <$> decodeDisk dcfgShelley
         t -> cborError $ DecoderErrorUnknownTag "CardanoBlock" (fromIntegral t)
     where
-      epochSlots = Byron.getByronEpochSlots ccfgByron
+      epochSlots = Byron.byronDiskConfigEpochSlots dcfgByron
 
   reconstructHfcPrefixLen _ = PrefixLen 2
 
@@ -389,6 +389,10 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               CardanoCodecConfig
                 (Byron.mkByronCodecConfig genesisByron)
                 Shelley.ShelleyCodecConfig
+          , blockConfigDisk =
+              CardanoDiskConfig
+                (Byron.mkByronDiskConfig genesisByron)
+                Shelley.ShelleyDiskConfig
           }
       }
 
@@ -423,12 +427,11 @@ protocolClientInfoCardano
   :: forall sc.
      -- Byron
      EpochSlots
-  -> SecurityParam
   -> ProtocolClientInfo (CardanoBlock sc)
-protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
+protocolClientInfoCardano epochSlots = ProtocolClientInfo {
       pClientInfoCodecConfig =
         CardanoCodecConfig
-          (pClientInfoCodecConfig (protocolClientInfoByron epochSlots secParam))
+          (pClientInfoCodecConfig (protocolClientInfoByron epochSlots))
           (pClientInfoCodecConfig protocolClientInfoShelley)
     }
 
@@ -451,6 +454,7 @@ projByronTopLevelConfig cfg = byronCfg
             blockConfigBlock  = CardanoBlockConfig  byronBlockCfg  _
           , blockConfigLedger = CardanoLedgerConfig byronLedgerCfg _
           , blockConfigCodec  = CardanoCodecConfig  byronCodecCfg  _
+          , blockConfigDisk   = CardanoDiskConfig   byronDiskCfg   _
           }
       } = cfg
 
@@ -461,5 +465,6 @@ projByronTopLevelConfig cfg = byronCfg
             blockConfigBlock  = byronBlockCfg
           , blockConfigLedger = byronLedgerConfig byronLedgerCfg
           , blockConfigCodec  = byronCodecCfg
+          , blockConfigDisk   = byronDiskCfg
           }
       }

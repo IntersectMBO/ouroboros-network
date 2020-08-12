@@ -224,6 +224,7 @@ testCfg securityParam = TopLevelConfig {
           blockConfigLedger = eraParams
         , blockConfigBlock  = TestBlockConfig numCoreNodes
         , blockConfigCodec  = TestBlockCodecConfig
+        , blockConfigDisk   = TestBlockDiskConfig
         }
     }
   where
