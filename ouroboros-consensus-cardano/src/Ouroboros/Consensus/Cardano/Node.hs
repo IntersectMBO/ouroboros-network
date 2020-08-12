@@ -275,7 +275,7 @@ protocolInfoCardano
   -> ProtocolInfo m (CardanoBlock sc)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
-                    mbLowerBound triggerHardFork =
+                    mbLowerBound byronTriggerHardFork =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig = cfg
@@ -311,8 +311,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig = ledgerConfigByron
-        , triggerHardFork   = triggerHardFork
+          byronLedgerConfig    = ledgerConfigByron
+        , byronTriggerHardFork = byronTriggerHardFork
         }
 
     kByron :: SecurityParam
@@ -334,13 +334,16 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialConsensusConfigShelley = tpraosParams
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock sc)
-    partialLedgerConfigShelley = ShelleyPartialLedgerConfig $
-        Shelley.mkShelleyLedgerConfig
-          genesisShelley
-          -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
-          -- in the partial ledger config with the correct one.
-          History.dummyEpochInfo
-          maxMajorPV
+    partialLedgerConfigShelley = ShelleyPartialLedgerConfig {
+          shelleyLedgerConfig =
+            Shelley.mkShelleyLedgerConfig
+              genesisShelley
+              -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
+              -- in the partial ledger config with the correct one.
+              History.dummyEpochInfo
+              maxMajorPV
+        , shelleyTriggerHardFork = TriggerHardForkNever
+        }
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley

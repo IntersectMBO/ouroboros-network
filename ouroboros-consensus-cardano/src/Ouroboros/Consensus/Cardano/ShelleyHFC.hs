@@ -37,7 +37,10 @@ type ShelleyBlockHFC c = HardForkBlock '[ShelleyBlock c]
 instance TPraosCrypto c => NoHardForks (ShelleyBlock c) where
   getEraParams            cfg = shelleyLedgerEraParams (configLedger cfg)
   toPartialConsensusConfig _  = tpraosParams
-  toPartialLedgerConfig    _  = ShelleyPartialLedgerConfig
+  toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
+        shelleyLedgerConfig    = cfg
+      , shelleyTriggerHardFork = TriggerHardForkNever
+      }
 
 {-------------------------------------------------------------------------------
   SupportedNetworkProtocolVersion instance

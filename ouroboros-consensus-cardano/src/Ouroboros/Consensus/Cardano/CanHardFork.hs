@@ -142,12 +142,23 @@ byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion =
     latest []         = Nothing
 
 {-------------------------------------------------------------------------------
+  Figure out the transition point for Shelley
+-------------------------------------------------------------------------------}
+
+shelleyTransition ::
+     PartialLedgerConfig (ShelleyBlock sc)
+  -> Word16   -- ^ Next era's major protocol version
+  -> LedgerState (ShelleyBlock sc)
+  -> Maybe EpochNo
+shelleyTransition = undefined
+
+{-------------------------------------------------------------------------------
   SingleEraBlock Byron
 -------------------------------------------------------------------------------}
 
 instance SingleEraBlock ByronBlock where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
-      case triggerHardFork pcfg of
+      case byronTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
         TriggerHardForkAtVersion shelleyMajorVersion ->
@@ -181,8 +192,8 @@ data TriggerHardFork =
 -- condition for the hard fork to Shelley, as we don't have to modify the
 -- ledger config for standalone Byron.
 data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
-      byronLedgerConfig :: !(LedgerConfig ByronBlock)
-    , triggerHardFork   :: !TriggerHardFork
+      byronLedgerConfig    :: !(LedgerConfig ByronBlock)
+    , byronTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -197,8 +208,15 @@ instance HasPartialLedgerConfig ByronBlock where
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto sc => SingleEraBlock (ShelleyBlock sc) where
-  -- No transition from Shelley to Goguen yet
-  singleEraTransition _cfg _eraParams _eraStart _st = Nothing
+  singleEraTransition pcfg _eraParams _eraStart ledgerState =
+      case shelleyTriggerHardFork pcfg of
+        TriggerHardForkNever                         -> Nothing
+        TriggerHardForkAtEpoch   epoch               -> Just epoch
+        TriggerHardForkAtVersion shelleyMajorVersion ->
+            shelleyTransition
+              pcfg
+              shelleyMajorVersion
+              ledgerState
 
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Shelley"
@@ -212,7 +230,7 @@ instance TPraosCrypto sc => HasPartialConsensusConfig (TPraos sc) where
   -- 'ChainSelConfig' is ()
   partialChainSelConfig _ _ = ()
 
-newtype ShelleyPartialLedgerConfig sc = ShelleyPartialLedgerConfig {
+data ShelleyPartialLedgerConfig sc = ShelleyPartialLedgerConfig {
       -- | We cache the non-partial ledger config containing a dummy
       -- 'EpochInfo' that needs to be replaced with the correct one.
       --
@@ -220,7 +238,8 @@ newtype ShelleyPartialLedgerConfig sc = ShelleyPartialLedgerConfig {
       -- 'completeLedgerConfig' is called, as 'mkShelleyLedgerConfig' does
       -- some rather expensive computations that shouldn't be repeated too
       -- often (e.g., 'sgActiveSlotCoeff').
-      getShelleyPartialLedgerConfig :: ShelleyLedgerConfig sc
+      shelleyLedgerConfig    :: !(ShelleyLedgerConfig sc)
+    , shelleyTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -228,7 +247,7 @@ instance TPraosCrypto sc => HasPartialLedgerConfig (ShelleyBlock sc) where
   type PartialLedgerConfig (ShelleyBlock sc) = ShelleyPartialLedgerConfig sc
 
   -- Replace the dummy 'EpochInfo' with the real one
-  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg) =
+  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
               SL.epochInfo = epochInfo

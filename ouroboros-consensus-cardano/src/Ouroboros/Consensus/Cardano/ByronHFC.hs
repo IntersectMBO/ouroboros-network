@@ -40,8 +40,8 @@ instance NoHardForks ByronBlock where
       byronEraParamsNeverHardForks (byronGenesisConfig (configBlock cfg))
   toPartialConsensusConfig _ = id
   toPartialLedgerConfig _ cfg = ByronPartialLedgerConfig {
-        byronLedgerConfig = cfg
-      , triggerHardFork   = TriggerHardForkNever
+        byronLedgerConfig    = cfg
+      , byronTriggerHardFork = TriggerHardForkNever
       }
 
 {-------------------------------------------------------------------------------
