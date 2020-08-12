@@ -18,9 +18,9 @@ import           Control.Monad.Class.MonadTime (DiffTime)
 
 import           Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord)
+import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord, encodeWord16)
 import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord)
+import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord, decodeWord16)
 
 import           Network.TypedProtocol.Core
 
@@ -40,9 +40,9 @@ codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
                   PeerHasAgency pr st
                -> Message KeepAlive st st'
                -> CBOR.Encoding
-     encodeMsg (ClientAgency TokClient) MsgKeepAlive         = CBOR.encodeWord 0
-     encodeMsg (ServerAgency TokServer) MsgKeepAliveResponse = CBOR.encodeWord 1
-     encodeMsg (ClientAgency TokClient) MsgDone              = CBOR.encodeWord 2
+     encodeMsg (ClientAgency TokClient) (MsgKeepAlive (Cookie c))         = CBOR.encodeWord 0 <> CBOR.encodeWord16 c
+     encodeMsg (ServerAgency TokServer) (MsgKeepAliveResponse (Cookie c)) = CBOR.encodeWord 1 <> CBOR.encodeWord16 c
+     encodeMsg (ClientAgency TokClient) MsgDone                           = CBOR.encodeWord 2
 
      decodeMsg :: forall (pr :: PeerRole) s (st :: KeepAlive).
                   PeerHasAgency pr st
@@ -50,8 +50,12 @@ codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
      decodeMsg stok = do
        key <- CBOR.decodeWord
        case (stok, key) of
-         (ClientAgency TokClient, 0) -> pure (SomeMessage MsgKeepAlive)
-         (ServerAgency TokServer, 1) -> pure (SomeMessage MsgKeepAliveResponse)
+         (ClientAgency TokClient, 0) -> do
+             cookie <- CBOR.decodeWord16
+             return (SomeMessage $ MsgKeepAlive $ Cookie cookie)
+         (ServerAgency TokServer, 1) -> do
+             cookie <- CBOR.decodeWord16
+             return (SomeMessage $ MsgKeepAliveResponse $ Cookie cookie)
          (ClientAgency TokClient, 2) -> pure (SomeMessage MsgDone)
 
          (ClientAgency TokClient, _) ->
@@ -75,7 +79,7 @@ timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
     timeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
                       -> Maybe DiffTime
     timeLimitForState (ClientAgency TokClient) = waitForever
-    timeLimitForState (ServerAgency TokServer) = shortWait
+    timeLimitForState (ServerAgency TokServer) = Just 60 -- TODO: #2505 should be 10s.
 
 
 codecKeepAliveId
@@ -97,9 +101,9 @@ codecKeepAliveId = Codec encodeMsg decodeMsg
                           CodecFailure m (SomeMessage st))
      decodeMsg stok = return $ DecodePartial $ \bytes -> return $
        case (stok, bytes) of
-         (ClientAgency TokClient, Just (AnyMessage msg@(MsgKeepAlive)))
+         (ClientAgency TokClient, Just (AnyMessage msg@(MsgKeepAlive {})))
              -> DecodeDone (SomeMessage msg) Nothing
-         (ServerAgency TokServer, Just (AnyMessage msg@(MsgKeepAliveResponse)))
+         (ServerAgency TokServer, Just (AnyMessage msg@(MsgKeepAliveResponse {})))
              -> DecodeDone (SomeMessage msg) Nothing
          (ClientAgency TokClient, Just (AnyMessage msg@(MsgDone)))
              -> DecodeDone (SomeMessage msg) Nothing

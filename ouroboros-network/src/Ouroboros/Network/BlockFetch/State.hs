@@ -17,6 +17,7 @@ module Ouroboros.Network.BlockFetch.State (
   ) where
 
 import           Data.Functor.Contravariant (contramap)
+import           Data.Hashable (Hashable)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
@@ -62,6 +63,7 @@ fetchLogicIterations
      , MonadMonotonicTime m
      , MonadSTM m
      , Ord peer
+     , Hashable peer
      )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
@@ -107,7 +109,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * deciding for each peer if we will initiate a new fetch request
 --
 fetchLogicIteration
-  :: (MonadSTM m, Ord peer,
+  :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
@@ -148,7 +150,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- Trace the batch of fetch decisions
     traceWith decisionTracer
       [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
-      | (decision, (_, _, _, (_, peer))) <- decisions ]
+      | (decision, (_, _, _, peer, _)) <- decisions ]
 
     -- Tell the fetch clients to act on our decisions
     statusUpdates <- fetchLogicIterationAct clientStateTracer
@@ -159,7 +161,7 @@ fetchLogicIteration decisionTracer clientStateTracer
 
     return stateFingerprint''
   where
-    swizzleReqVar (d,(_,_,g,(rq,p))) = (d,g,rq,p)
+    swizzleReqVar (d,(_,_,g,_,(rq,p))) = (d,g,rq,p)
 
     fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
     fetchRequestPoints (FetchRequest headerss) =
@@ -174,11 +176,12 @@ fetchLogicIteration decisionTracer clientStateTracer
 fetchDecisionsForStateSnapshot
   :: (HasHeader header,
       HeaderHash header ~ HeaderHash block,
-      Ord peer)
+      Ord peer,
+      Hashable peer)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
-        PeerInfo header (FetchClientStateVars m header, peer)
+        PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
 
 fetchDecisionsForStateSnapshot
@@ -195,8 +198,8 @@ fetchDecisionsForStateSnapshot
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
-    assert (Map.keysSet fetchStatePeerStates
-         == Map.keysSet fetchStatePeerGSVs) $
+    assert (                 Map.keysSet fetchStatePeerStates
+            `Set.isSubsetOf` Map.keysSet fetchStatePeerGSVs) $
 
     fetchDecisions
       fetchDecisionPolicy
@@ -213,7 +216,7 @@ fetchDecisionsForStateSnapshot
         fetchStatePeerGSVs
 
     swizzle (peer, ((chain, (status, inflight, vars)), gsvs)) =
-      (chain, (status, inflight, gsvs, (vars, peer)))
+      (chain, (status, inflight, gsvs, peer, (vars, peer)))
 
 
 -- | Act on decisions to send new requests. In fact all we do here is update

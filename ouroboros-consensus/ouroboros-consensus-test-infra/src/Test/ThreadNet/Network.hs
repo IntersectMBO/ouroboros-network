@@ -54,6 +54,7 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
+import           System.Random (mkStdGen)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -911,6 +912,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
                  (ledgerState <$>
                     ChainDB.getCurrentLedger chainDB)
 
+      let kaRng = case seed of
+                    Seed s -> mkStdGen s
       let nodeArgs = NodeArgs
             { tracers
             , registry
@@ -922,6 +925,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , blockFetchSize          = nodeBlockFetchSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+            , keepAliveRng            = kaRng
             , miniProtocolParameters  = MiniProtocolParameters {
                   chainSyncPipeliningHighMark = 4,
                   chainSyncPipeliningLowMark  = 2,
@@ -935,6 +939,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 , bfcDecisionLoopInterval   = 0.0 -- Mock testsuite can use sub-second slot
                                                   -- interval which doesn't play nice with
                                                   -- blockfetch descision interval.
+                , bfcSalt                   = 0
                 }
             }
 

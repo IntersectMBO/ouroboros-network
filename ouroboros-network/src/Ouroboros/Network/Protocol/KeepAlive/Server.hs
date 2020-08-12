@@ -27,10 +27,10 @@ keepAliveServerPeer KeepAliveServer { recvMsgKeepAlive, recvMsgDone } =
       case msg of
         MsgDone -> Effect $ Done TokDone <$> recvMsgDone
 
-        MsgKeepAlive ->
+        MsgKeepAlive cookie ->
           Effect $
             fmap (\server ->
                     Yield (ServerAgency TokServer)
-                          MsgKeepAliveResponse
+                          (MsgKeepAliveResponse cookie)
                           (keepAliveServerPeer server))
                  recvMsgKeepAlive

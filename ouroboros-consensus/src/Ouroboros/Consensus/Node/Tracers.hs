@@ -18,6 +18,7 @@ import           Control.Tracer (Tracer, nullTracer, showTracing)
 
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
@@ -56,6 +57,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
+  , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
 
     -- | Used to trace the 'ForgeStateInfo' whenever it is updated
   , forgeStateInfoTracer         :: f (ForgeStateInfo blk)
@@ -77,6 +79,7 @@ instance (forall a. Semigroup (f a))
       , forgeTracer                   = f forgeTracer
       , blockchainTimeTracer          = f blockchainTimeTracer
       , forgeStateInfoTracer          = f forgeStateInfoTracer
+      , keepAliveClientTracer         = f keepAliveClientTracer
       }
     where
       f :: forall a. Semigroup a
@@ -103,6 +106,7 @@ nullTracers = Tracers
     , forgeTracer                   = nullTracer
     , blockchainTimeTracer          = nullTracer
     , forgeStateInfoTracer          = nullTracer
+    , keepAliveClientTracer         = nullTracer
     }
 
 showTracers :: ( Show blk
@@ -131,6 +135,7 @@ showTracers tr = Tracers
     , forgeTracer                   = showTracing tr
     , blockchainTimeTracer          = showTracing tr
     , forgeStateInfoTracer          = showTracing tr
+    , keepAliveClientTracer         = showTracing tr
     }
 
 {-------------------------------------------------------------------------------

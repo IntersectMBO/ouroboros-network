@@ -15,7 +15,6 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
 import qualified Codec.CBOR.Read  as CBOR
-import           Data.Functor.Identity (Identity (..))
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 
@@ -67,7 +66,7 @@ tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
 
 prop_direct :: (Int -> Int) -> NonNegative Int -> Property
 prop_direct f (NonNegative n) =
-      runIdentity
+      runSimOrThrow
         (direct
           keepAliveServerCount
           (keepAliveClientApply f 0 n))
@@ -82,7 +81,7 @@ prop_connect :: (Int -> Int)
              -> NonNegative Int
              -> Bool
 prop_connect f (NonNegative n) =
-   case runIdentity
+   case runSimOrThrow
           (connect
             (keepAliveServerPeer   keepAliveServerCount)
             (keepAliveClientPeer $ keepAliveClientApply f 0 n))
@@ -130,19 +129,21 @@ prop_channel_IO f (NonNegative n) =
 --
 
 instance Arbitrary (AnyMessageAndAgency KeepAlive) where
-  arbitrary = oneof
-    [ pure $ AnyMessageAndAgency (ClientAgency TokClient) MsgKeepAlive
-    , pure $ AnyMessageAndAgency (ServerAgency TokServer) MsgKeepAliveResponse
-    , pure $ AnyMessageAndAgency (ClientAgency TokClient) MsgDone
-    ]
+  arbitrary = do
+    c <- arbitrary
+    oneof
+      [ pure $ AnyMessageAndAgency (ClientAgency TokClient) (MsgKeepAlive $ Cookie c)
+      , pure $ AnyMessageAndAgency (ServerAgency TokServer) (MsgKeepAliveResponse $ Cookie c)
+      , pure $ AnyMessageAndAgency (ClientAgency TokClient) MsgDone
+      ]
 
 instance Show (AnyMessageAndAgency KeepAlive) where
     show (AnyMessageAndAgency _ msg) = show msg
 
 instance Eq (AnyMessage KeepAlive) where
-    AnyMessage MsgKeepAlive           == AnyMessage MsgKeepAlive           = True
-    AnyMessage (MsgKeepAliveResponse) == AnyMessage (MsgKeepAliveResponse) = True
-    AnyMessage MsgDone                == AnyMessage MsgDone                = True
+    AnyMessage (MsgKeepAlive cookieA)         == AnyMessage (MsgKeepAlive cookieB)         = cookieA == cookieB
+    AnyMessage (MsgKeepAliveResponse cookieA) == AnyMessage (MsgKeepAliveResponse cookieB) = cookieA == cookieB
+    AnyMessage MsgDone                        == AnyMessage MsgDone                        = True
     _ == _ = False
 
 prop_codec :: AnyMessageAndAgency KeepAlive -> Bool

@@ -13,7 +13,7 @@ direct KeepAliveServer { recvMsgDone }
        (SendMsgDone mdone) =
     (,) <$> recvMsgDone <*> mdone
 direct KeepAliveServer { recvMsgKeepAlive }
-       (SendMsgKeepAlive mclient) = do
+       (SendMsgKeepAlive _cookie mclient) = do
     server <- recvMsgKeepAlive
     client <- mclient
     direct server client

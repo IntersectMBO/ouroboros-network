@@ -32,8 +32,11 @@ module Ouroboros.Network.DeltaQ (
     -- and 'DeltaQ' primitives.
     PeerGSV(..),
     gsvRequestResponseDuration,
+    defaultGSV,
+    fromSample
   ) where
 
+import           Control.Monad.Class.MonadTime (Time (..), diffTime)
 import           Data.Semigroup ((<>))
 import           Data.Time.Clock (DiffTime)
 import           Data.Word (Word32)
@@ -181,6 +184,10 @@ instance Semigroup GSV where
   GSV g1 s1 v1 <> GSV g2 s2 v2 = GSV (g1+g2) (\sz -> s1 sz + s2 sz) (v1 <> v2)
 
 
+instance Show GSV where
+    show (GSV g s (DegenerateDistribution v)) =
+        "GSV g " ++ show g ++ " s " ++ show (s 1) ++ " v " ++ show v
+
 -- | The case of ballistic packet transmission where the /S/ is directly
 -- proportional to the packet size.
 --
@@ -235,9 +242,49 @@ gsvTrailingEdgeArrive (GSV g s v) bytes =
 -- | The 'GSV' for both directions with a peer, outbound and inbound.
 --
 data PeerGSV = PeerGSV {
+                 sampleTime  :: !Time,
                  outboundGSV :: !GSV,
                  inboundGSV  :: !GSV
                }
+               deriving Show
+
+-- | The current tracking model is based on an EWMA
+--  (https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average).
+--  Typically implementations of EWMA assume a regular update, but EWMA is based
+--  on Exponential Smoothing
+--  (https://en.wikipedia.org/wiki/Exponential_smoothing). Such smoothing has a
+--  time constant, which captures the time for a unit impulse to decay to 1 -
+--  1/e (~ 63.2%), the &#x1D6FC (smoothing factor) is a function of relative
+--  frequency of the sample interval and this time constant.
+--
+-- The approach being taken here is one that does not assume a fixed sample
+-- interval (and hence a fixed &#x1D6FC), instead we calculate, given the
+-- interval from when the last sample was taken, the &#x1D6FC needed to ensure
+-- that the old value has sufficiently decayed.
+--
+-- The exact calcuation involves exponentiation, however where the number of
+-- samples within the time constant is sufficiently large a simple ratio of the
+-- sample's interval over the time constant will suffice. The relative error of
+-- this numerical approximation is, for our use case, small. Eg 1/50 (20s
+-- between samples with a 1000s time constant) has a relative error of 1%. The
+-- expected typical range of this relative error is between 5% (ratio of 1/10),
+-- to 0.5% (1/100).
+--
+-- Given the inherent measurement noise in this measurement, the use of the
+-- approximation is well justified. We choose (reaonably aribtarily) 1000s as
+-- the time constant, it is unclear if this should be a configuration variable
+-- or not.
+-- Note that this semigroup is  is non-commutative. The new value must come first.
+instance Semigroup PeerGSV where
+  (<>) a b = let timeConstant = 1000 :: DiffTime
+                 sampleInterval = sampleTime b `diffTime` sampleTime a
+                 alpha = (sampleInterval / timeConstant) `min` 1
+                 updateG (GSV g0 s v) (GSV g1 _ _)
+                   = GSV (g0 + alpha * (g1 - g0)) s v
+             in PeerGSV { sampleTime  = sampleTime a
+                        , outboundGSV = updateG (outboundGSV a) (outboundGSV b)
+                        , inboundGSV  = updateG (inboundGSV  a) (inboundGSV  b)
+                        }
 
 -- | This is an example derived operation using the other 'GSV' and 'DeltaQ'
 -- primitives.
@@ -269,3 +316,22 @@ gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
         gsvTrailingEdgeArrive outboundGSV reqSize
      <> gsvTrailingEdgeArrive inboundGSV respSize
 
+
+defaultGSV :: PeerGSV
+defaultGSV = PeerGSV {sampleTime, outboundGSV, inboundGSV }
+  where
+    default_g = 500e-3 -- Old hardcoded default value. Only available value when running without KeepAlive.
+    default_s = 2e-6 -- 4Mbps.
+    inboundGSV  = ballisticGSV default_g default_s (degenerateDistribution 0)
+    outboundGSV = inboundGSV
+    sampleTime  = Time 0
+
+fromSample :: Time -> Time -> SizeInBytes -> PeerGSV
+fromSample t@(Time start) (Time end) _size =
+    PeerGSV  {sampleTime, outboundGSV, inboundGSV }
+  where
+    g =  (end - start) / 2
+
+    sampleTime = t
+    inboundGSV = ballisticGSV g 2e-6 (degenerateDistribution 0)
+    outboundGSV  = inboundGSV

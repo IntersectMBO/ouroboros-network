@@ -23,9 +23,18 @@
 --
 module Ouroboros.Network.Protocol.KeepAlive.Type where
 
+import Control.Monad.Class.MonadThrow (Exception)
+import Data.Word (Word16)
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
+-- | A 16bit value used to match responses to requests.
+newtype Cookie = Cookie {unCookie :: Word16 } deriving (Eq, Show)
+
+data KeepAliveProtocolFailure =
+       KeepAliveCookieMissmatch Cookie Cookie deriving (Eq, Show)
+
+instance Exception KeepAliveProtocolFailure
 
 -- | A kind to identify our protocol, and the types of the states in the state
 -- transition diagram of the protocol.
@@ -57,12 +66,14 @@ instance Protocol KeepAlive where
       -- | Send a keep alive message.
       --
       MsgKeepAlive
-        :: Message KeepAlive StClient StServer
+        :: Cookie
+        -> Message KeepAlive StClient StServer
 
       -- | Keep alive response.
       --
       MsgKeepAliveResponse
-        :: Message KeepAlive StServer StClient
+        :: Cookie
+        -> Message KeepAlive StServer StClient
 
       -- | The client side terminating message of the protocol.
       --
@@ -84,9 +95,9 @@ instance Protocol KeepAlive where
 
 
 instance Show (Message KeepAlive from to) where
-    show MsgKeepAlive         = "MsgKeepAlive"
-    show MsgKeepAliveResponse = "MsgKeepAliveResponse"
-    show MsgDone              = "MsgDone"
+    show (MsgKeepAlive cookie)         = "MsgKeepAlive " ++ show cookie
+    show (MsgKeepAliveResponse cookie) = "MsgKeepAliveResponse " ++ show cookie
+    show MsgDone                       = "MsgDone"
 
 instance Show (ClientHasAgency (st :: KeepAlive)) where
     show TokClient = "TokClient"

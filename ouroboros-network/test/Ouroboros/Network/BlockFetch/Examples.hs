@@ -103,8 +103,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     -- fetch thread before the peer threads.
     _ <- waitAnyCancel $ [ fetchAsync, driverAsync ]
                       ++ [ peerAsync
-                         | (client, server, sync) <- peerAsyncs
-                         , peerAsync <- [client, server, sync] ]
+                         | (client, server, sync, ks) <- peerAsyncs
+                         , peerAsync <- [client, server, sync, ks] ]
     return ()
 
   where
@@ -132,7 +132,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01
+            bfcDecisionLoopInterval   = 0.01,
+            bfcSalt                   = 0
           })
         >> return ()
 
@@ -185,10 +186,11 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
 --
 exampleFixedPeerGSVs :: PeerGSV
 exampleFixedPeerGSVs =
-    PeerGSV{outboundGSV, inboundGSV}
+    PeerGSV{sampleTime, outboundGSV, inboundGSV}
   where
     inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
     outboundGSV = inboundGSV
+    sampleTime  = Time 0
 
 
 --
@@ -245,7 +247,7 @@ runFetchClientAndServerAsync
                 -> (  FetchClientContext header block m
                    -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
                 -> BlockFetchServer block m b
-                -> m (Async m a, Async m b, Async m ())
+                -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
@@ -265,8 +267,11 @@ runFetchClientAndServerAsync clientTracer serverTracer
     syncClientAsync <- async $ bracketSyncWithFetchClient
                                  registry peerid
                                  (forever (threadDelay 1000) >> return ())
+    keepAliveAsync <- async $ bracketKeepAliveClient
+                                 registry peerid
+                                 (\_ -> forever (threadDelay 1000) >> return ())
 
-    return (clientAsync, serverAsync, syncClientAsync)
+    return (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
 
 
 --

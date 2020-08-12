@@ -26,6 +26,7 @@ import qualified Data.Set as Set
 
 import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Function (on)
+import           Data.Hashable
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 
@@ -47,6 +48,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), SizeInBytes
                    , PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits
+                   , comparePeerGSV
                    , estimateResponseDeadlineProbability
                    , estimateExpectedResponseDuration )
 
@@ -57,6 +59,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
        decisionLoopInterval    :: DiffTime,
+       peerSalt                :: Int,
 
        plausibleCandidateChain :: AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
@@ -93,10 +96,11 @@ data FetchMode =
   deriving (Eq, Show)
 
 
-type PeerInfo header extra =
+type PeerInfo header peer extra =
        ( PeerFetchStatus header,
          PeerFetchInFlight header,
          PeerGSV,
+         peer,
          extra
        )
 
@@ -144,15 +148,17 @@ type CandidateFragments header = (ChainSuffix header, [AnchoredFragment header])
 
 
 fetchDecisions
-  :: (HasHeader header,
+  :: (Ord peer,
+      Hashable peer,
+      HasHeader header,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
-  -> [(AnchoredFragment header, PeerInfo header extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
+  -> [(AnchoredFragment header, PeerInfo header peer extra)]
+  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
@@ -200,10 +206,10 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
       currentChain
   where
     -- Data swizzling functions to get the right info into each stage.
-    swizzleI   (c, p@(_,     inflight,_,   _)) = (c,         inflight,       p)
-    swizzleIG  (c, p@(_,     inflight,gsvs,_)) = (c,         inflight, gsvs, p)
-    swizzleSI  (c, p@(status,inflight,_,   _)) = (c, status, inflight,       p)
-    swizzleSIG (c, p@(status,inflight,gsvs,_)) = (c, status, inflight, gsvs, p)
+    swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
+    swizzleIG  (c, p@(_,     inflight,gsvs,_,   _)) = (c,         inflight, gsvs, p)
+    swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
+    swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
@@ -774,15 +780,20 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: forall header peer. HasHeader header
+  :: forall extra header peer.
+      ( Hashable peer
+      , HasHeader header
+      , Ord peer
+      )
   => FetchDecisionPolicy header
   -> FetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
       , PeerGSV
-      , peer )]
-  -> [(FetchDecision (FetchRequest header),  peer)]
+      , peer
+      , extra)]
+  -> [(FetchDecision (FetchRequest header), extra)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
@@ -790,20 +801,22 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
        -> Set (Point header)
        -> MaxSlotNo
        -> [(Either FetchDecline [AnchoredFragment header],
-            PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, b)]
-       -> [(FetchDecision (FetchRequest header), b)]
+            PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, peer, extra)]
+       -> [(FetchDecision (FetchRequest header), extra)]
     go !_ !_ !_ [] = []
     go !nConcurrentFetchPeers !blocksFetchedThisRound !maxSlotNoFetchedThisRound
-       ((mchainfragments, status, inflight, gsvs, peer) : cps) =
+       ((mchainfragments, status, inflight, gsvs, peer, extra) : cps) =
 
-        (decision, peer)
+        (decision, extra)
       : go nConcurrentFetchPeers' blocksFetchedThisRound'
            maxSlotNoFetchedThisRound' cps
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
                      fetchMode
-                     nConcurrentFetchPeers
+                     -- Permitt the prefered peers to by pass any concurrency limits.
+                     (if elem peer nPreferedPeers then 0
+                                                  else nConcurrentFetchPeers)
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
@@ -852,13 +865,37 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                     | fragment <- fragments
                     , header   <- AF.toOldestFirst fragment ]
 
-    nConcurrentFetchPeers0 =
-        fromIntegral
-      . length
-      . filter (> 0)
-      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, _) ->
-                       peerFetchReqsInFlight)
+    nConcurrentFetchPeers0 = fromIntegral $ Set.size nActivePeers
+
+    -- Set of peers with outstanding bytes.
+    nActivePeers :: Set peer
+    nActivePeers =
+        Set.fromList
+      . map snd
+      . filter (\(inFlight, _) -> inFlight > 0)
+      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, p, _) ->
+                       (peerFetchReqsInFlight, p))
       $ chains
+
+    -- Order the peers based on current PeerGSV. The top performing peers will be
+    -- permitted to go active even if we're above the desired maxConcurrentFetchPeers
+    -- which will cause us to switch smoothly from a slower to faster peers.
+    -- When switching from slow to faster peers we will be over the configured limit, but
+    -- PeerGSV is expected to be updated rather infrequently so the set of prefered peers should
+    -- be stable during 10s of second.
+    nPreferedPeers :: [peer]
+    nPreferedPeers =
+        map snd
+      . take (fromIntegral maxConcurrentFetchPeers)
+      . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
+      . map (\(_, _, _, gsv, p, _) -> (gsv, p))
+      $ chains
+
+    maxConcurrentFetchPeers :: Word
+    maxConcurrentFetchPeers =
+      case fetchMode of
+           FetchModeBulkSync -> maxConcurrencyBulkSync fetchDecisionPolicy
+           FetchModeDeadline -> maxConcurrencyDeadline fetchDecisionPolicy
 
 
 fetchRequestDecision
@@ -919,11 +956,20 @@ fetchRequestDecision FetchDecisionPolicy {
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
 
+    -- Refuse any blockrequest if we're above the concurrency limit.
+  | let maxConcurrentFetchPeers = case fetchMode of
+                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeDeadline -> maxConcurrencyDeadline
+  , nConcurrentFetchPeers > maxConcurrentFetchPeers
+  = Left $ FetchDeclineConcurrencyLimit
+             fetchMode maxConcurrentFetchPeers
+
+    -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
   , let maxConcurrentFetchPeers = case fetchMode of
                                     FetchModeBulkSync -> maxConcurrencyBulkSync
                                     FetchModeDeadline -> maxConcurrencyDeadline
-  , nConcurrentFetchPeers >= maxConcurrentFetchPeers
+  , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
              fetchMode maxConcurrentFetchPeers
 
