@@ -136,7 +136,6 @@ executable mux-demo
                        directory,
                        network-mux,
                        io-sim-classes,
-                       io-sim,
                        contra-tracer,
                        stm,
 
