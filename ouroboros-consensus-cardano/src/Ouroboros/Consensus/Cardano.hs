@@ -184,7 +184,6 @@ runProtocol ProtocolCardano{} = Dict
 data ProtocolClient blk p where
   ProtocolClientByron
     :: EpochSlots
-    -> SecurityParam
     -> ProtocolClient
          ByronBlockHFC
          ProtocolByron
@@ -196,7 +195,6 @@ data ProtocolClient blk p where
 
   ProtocolClientCardano
     :: EpochSlots
-    -> SecurityParam
     -> ProtocolClient
          (CardanoBlock TPraosStandardCrypto)
          ProtocolCardano
@@ -215,11 +213,11 @@ runProtocolClient ProtocolClientCardano{} = Dict
 
 -- | Data required by clients of a node running the specified protocol.
 protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
-protocolClientInfo (ProtocolClientByron epochSlots secParam) =
-    inject $ protocolClientInfoByron epochSlots secParam
+protocolClientInfo (ProtocolClientByron epochSlots) =
+    inject $ protocolClientInfoByron epochSlots
 
 protocolClientInfo ProtocolClientShelley =
     inject $ protocolClientInfoShelley
 
-protocolClientInfo (ProtocolClientCardano epochSlots secParam) =
-    protocolClientInfoCardano epochSlots secParam
+protocolClientInfo (ProtocolClientCardano epochSlots) =
+    protocolClientInfoCardano epochSlots

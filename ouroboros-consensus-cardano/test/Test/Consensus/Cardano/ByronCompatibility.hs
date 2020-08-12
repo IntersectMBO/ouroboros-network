@@ -53,7 +53,7 @@ import           Test.Consensus.Byron.Generators ()
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 
-import           Test.Consensus.Cardano.Generators (epochSlots, k)
+import           Test.Consensus.Cardano.Generators (epochSlots)
 
 tests :: TestTree
 tests = adjustOption reduceTests $
@@ -86,7 +86,7 @@ tests = adjustOption reduceTests $
     reduceTests (QuickCheckTests n) = QuickCheckTests (1 `max` (div n 10))
 
 byronCodecConfig :: CodecConfig ByronBlock
-byronCodecConfig = ByronCodecConfig epochSlots k
+byronCodecConfig = ByronCodecConfig epochSlots
 
 byronToCardanoCodeConfig :: CodecConfig ByronToCardano
 byronToCardanoCodeConfig = CodecConfigB2C byronCodecConfig
