@@ -79,9 +79,7 @@ instance EncodeDisk DualByronBlock (PBftState PBftByronCrypto) where
   encodeDisk _ = encodeByronChainDepState
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
 instance DecodeDisk DualByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronChainDepState k
-    where
-      k = getByronSecurityParam $ dualCodecConfigMain ccfg
+  decodeDisk _ = decodeByronChainDepState
 
 instance EncodeDisk DualByronBlock (AnnTip DualByronBlock) where
   encodeDisk ccfg = encodeDisk (dualCodecConfigMain ccfg)

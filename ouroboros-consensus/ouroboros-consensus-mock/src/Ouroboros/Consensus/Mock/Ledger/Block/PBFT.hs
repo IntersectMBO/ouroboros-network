@@ -179,10 +179,10 @@ instance SimpleCrypto c => SignableRepresentation (SignedSimplePBft c c') where
 instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimplePBft c c') where
   toCBOR = encode
 
-instance Serialise (PBftVerKeyHash c')
+instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
       => EncodeDisk (SimplePBftBlock c c') (S.PBftState c') where
-  encodeDisk = const S.encodePBftState
+  encodeDisk _ = S.encodePBftState
 
-instance (Serialise (PBftVerKeyHash c'), PBftCrypto c')
+instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
       => DecodeDisk (SimplePBftBlock c c') (S.PBftState c') where
-  decodeDisk (SimpleCodecConfig k) = S.decodePBftState k (pbftWindowSize k)
+  decodeDisk _ = S.decodePBftState

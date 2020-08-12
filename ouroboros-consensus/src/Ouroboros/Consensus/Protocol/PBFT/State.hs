@@ -10,8 +10,10 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 -- | PBFT chain state
 --
@@ -50,6 +52,7 @@ import qualified Codec.Serialise.Encoding as Serialise
 import qualified Control.Exception as Exn
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
+import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty), (|>))
@@ -67,7 +70,6 @@ import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Types
@@ -577,44 +579,98 @@ fromList k n (anchor, signers, ebbs) =
   Serialization
 -------------------------------------------------------------------------------}
 
-serializationFormatVersion0 :: VersionNumber
-serializationFormatVersion0 = 0
+toCompactFormat ::
+     forall c. PBftCrypto c
+  => PBftState c
+  -> ( Map (PBftVerKeyHash c) ([SlotNo], [SlotNo], [SlotNo], [SlotNo])
+       -- For each signer, the slots in 'preAnchor', 'postAnchor',
+       -- 'preWindow', and 'inWindow'.
+     , MaybeEbbInfo
+     )
+toCompactFormat PBftState{..} = (signerSlots, ebbs)
+  where
+    toSlots :: StrictSeq (PBftSigner c) -> Map (PBftVerKeyHash c) [SlotNo]
+    toSlots =
+        Foldable.foldl'
+          (\acc (PBftSigner slot key) -> Map.insertWith (<>) key [slot] acc)
+          Map.empty
 
-encodePBftState :: Serialise (PBftVerKeyHash c)
+    anchorSlots :: Map (PBftVerKeyHash c) ([SlotNo], [SlotNo])
+    anchorSlots =
+        Map.mergeWithKey
+          (\_key preA postA -> Just (preA, postA))
+          (Map.map (,[]))
+          (Map.map ([],))
+          (toSlots preAnchor)
+          (toSlots postAnchor)
+
+    windowSlots :: Map (PBftVerKeyHash c) ([SlotNo], [SlotNo])
+    windowSlots =
+        Map.mergeWithKey
+          (\_key preW inW -> Just (preW, inW))
+          (Map.map (,[]))
+          (Map.map ([],))
+          (toSlots preWindow)
+          (toSlots inWindow)
+
+    signerSlots :: Map (PBftVerKeyHash c) ([SlotNo], [SlotNo], [SlotNo], [SlotNo])
+    signerSlots =
+        Map.mergeWithKey
+          (\_key (preA, postA) (preW, inW) -> Just (preA, postA, preW, inW))
+          (Map.map (\(preA, postA) -> (preA, postA, [],   [])))
+          (Map.map (\(preW, inW)   -> ([],   [],    preW, inW)))
+          anchorSlots
+          windowSlots
+
+fromCompactFormat ::
+     forall c. PBftCrypto c
+  => ( Map (PBftVerKeyHash c) ([SlotNo], [SlotNo], [SlotNo], [SlotNo])
+     , MaybeEbbInfo
+     )
+  -> PBftState c
+fromCompactFormat (signerSlots, ebbs) = PBftState {..}
+  where
+    -- We use difference list for more efficient appends.
+    dlPreA, dlPostA, dlPreW, dlInW :: [PBftSigner c] -> [PBftSigner c]
+    (dlPreA, dlPostA, dlPreW, dlInW) =
+        Map.foldlWithKey'
+          (\(dlPreA', dlPostA', dlPreW', dlInW')
+            key
+            (preA, postA, preW, inW) ->
+              ( (<> map (`PBftSigner` key) preA)  . dlPreA'
+              , (<> map (`PBftSigner` key) postA) . dlPostA'
+              , (<> map (`PBftSigner` key) preW)  . dlPreW'
+              , (<> map (`PBftSigner` key) inW)   . dlInW'
+              ))
+          (id, id, id, id)
+          signerSlots
+
+    dlToSeq :: ([PBftSigner c] -> [PBftSigner c]) -> StrictSeq (PBftSigner c)
+    dlToSeq = Seq.fromList . sortOn pbftSignerSlotNo . ($ [])
+
+    preAnchor  = dlToSeq dlPreA
+    postAnchor = dlToSeq dlPostA
+    preWindow  = dlToSeq dlPreW
+    inWindow   = dlToSeq dlInW
+
+    counts = computeCounts inWindow
+
+encodePBftState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
                 => PBftState c -> Encoding
-encodePBftState st =
-    encodeVersion serializationFormatVersion0 $ mconcat [
-        Serialise.encodeListLen 3
-      , encode (withOriginToMaybe anchor)
-      , encode signers
-      , encode ebbs'
+encodePBftState (toCompactFormat -> (signerSlots, ebbs)) =
+    mconcat [
+        Serialise.encodeListLen 2
+      , encode signerSlots
+      , encode ebbs
       ]
-  where
-    (anchor, signers, ebbs') = toList st
 
-decodePBftState :: forall c. (PBftCrypto c, Serialise (PBftVerKeyHash c))
-                => SecurityParam
-                -> WindowSize
-                -> forall s. Decoder s (PBftState c)
-decodePBftState k n = decodeVersion
-    [(serializationFormatVersion0, Decode decodePBftState0)]
-  where
-    decodePBftState0 :: forall s. Decoder s (PBftState c)
-    decodePBftState0 = do
-      enforceSize "PBftState" 3
-      anchor  <- withOriginFromMaybe <$> decode
-      signers <- decode
-      ebbs'   <- decode
-      return $ fromList k n (anchor, signers, ebbs')
-
-instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
-  encode = encode . toPair
-    where
-      toPair (PBftSigner{..}) = (pbftSignerSlotNo, pbftSignerGenesisKey)
-
-  decode = fromPair <$> decode
-    where
-      fromPair (slotNo, genesisKey) = PBftSigner slotNo genesisKey
+decodePBftState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+                => forall s. Decoder s (PBftState c)
+decodePBftState = do
+    enforceSize "PBftState" 2
+    signerSlots <- decode
+    ebbs'       <- decode
+    return $ fromCompactFormat (signerSlots, ebbs')
 
 {-------------------------------------------------------------------------------
   EBB Map

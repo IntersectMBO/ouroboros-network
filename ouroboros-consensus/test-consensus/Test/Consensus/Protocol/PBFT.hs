@@ -549,8 +549,8 @@ prop_appendOldStateRestoresPreWindow TestPBftState{..} =
 prop_serialisation_roundtrip :: TestPBftState -> Property
 prop_serialisation_roundtrip TestPBftState{..} =
     roundtrip
-      (S.encodePBftState)
-      (S.decodePBftState testPBftStateK testPBftStateN)
+      S.encodePBftState
+      S.decodePBftState
       testPBftState
 
 {-------------------------------------------------------------------------------
