@@ -58,15 +58,11 @@ instance Arbitrary TestSetup where
 
 tests :: TestTree
 tests = testGroup "BFT" $
-    [ roundtrip_all testCodecCfg dictNestedHdr
+    [ roundtrip_all SimpleCodecConfig dictNestedHdr
     , testProperty "simple convergence" $ \setup ->
         prop_simple_bft_convergence setup
     ]
   where
-    -- We pick a single value for @k@ for the serialisation tests
-    testCodecCfg :: CodecConfig MockBftBlock
-    testCodecCfg = SimpleCodecConfig (SecurityParam 4)
-
     dictNestedHdr :: forall a. NestedCtxt_ MockBftBlock Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtMock = Dict
 

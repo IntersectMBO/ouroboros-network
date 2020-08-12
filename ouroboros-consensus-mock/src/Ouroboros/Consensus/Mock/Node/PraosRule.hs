@@ -49,8 +49,8 @@ protocolInfoPraosRule numCoreNodes
             , wlsConfigNodeId   = nid
             }
         , topLevelConfigLedger = SimpleLedgerConfig () eraParams
-        , topLevelConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
-        , topLevelConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+        , topLevelConfigBlock  = SimpleBlockConfig
+        , topLevelConfigCodec  = SimpleCodecConfig
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist
