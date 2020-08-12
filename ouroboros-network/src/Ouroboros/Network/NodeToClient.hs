@@ -161,12 +161,12 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 -- wireshark plugins.
 --
 nodeToClientProtocols
-  :: (ConnectionId addr -> STM m RunOrStop -> NodeToClientProtocols appType bytes m a b)
+  :: (ConnectionId addr -> STM m ControlMessage -> NodeToClientProtocols appType bytes m a b)
   -> NodeToClientVersion
   -> OuroborosApplication appType addr bytes m a b
 nodeToClientProtocols protocols version =
-    OuroborosApplication $ \connectionId shouldStopSTM ->
-      case protocols connectionId shouldStopSTM of
+    OuroborosApplication $ \connectionId controlMessageSTM ->
+      case protocols connectionId controlMessageSTM of
         NodeToClientProtocols {
             localChainSyncProtocol,
             localTxSubmissionProtocol,
@@ -215,7 +215,7 @@ nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
 versionedNodeToClientProtocols
     :: NodeToClientVersion
     -> NodeToClientVersionData
-    -> (ConnectionId LocalAddress -> STM m RunOrStop -> NodeToClientProtocols appType bytes m a b)
+    -> (ConnectionId LocalAddress -> STM m ControlMessage -> NodeToClientProtocols appType bytes m a b)
     -> Versions NodeToClientVersion
                 DictVersion
                 (OuroborosApplication appType LocalAddress bytes m a b)

@@ -15,9 +15,9 @@ module Ouroboros.Network.Mux
   , RunMiniProtocol (..)
   , MuxPeer (..)
   , toApplication
-  , RunOrStop (..)
-  , ScheduledStop
-  , neverStop
+  , ControlMessage (..)
+  , ControlMessageSTM
+  , continueForever
 
     -- * Re-exports
     -- | from "Network.Mux"
@@ -52,17 +52,33 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
-data RunOrStop = Run | Stop
+-- | Control signal sent to a mini-protocol.  expected to exit, on 'Continue' it
+-- should continue its operation
+--
+data ControlMessage =
+    -- | Continue operation.
+      Continue
 
--- |  'ScheduleStop' should depend on `muxMode` (we only need to shedule stop
--- for intiator side).  This is not done only because this would break tests,
--- bue once the old api is removed it should be possible.
-type ScheduledStop m = STM m RunOrStop
+    -- | Hold on, e.g. do not sent messages until resumed.  This is not used for
+    -- any hot protocol.
+    --
+    | Quiesce
 
-neverStop :: Applicative (STM m)
+    -- | The client is expected to terminate as soon as possible.
+    --
+    | Terminate
+  deriving (Eq, Show)
+
+-- |  'ControlMessageSTM' should depend on `muxMode` (we only need to shedule
+-- stop for intiator side).  This is not done only because this would break
+-- tests, but once the old api is removed it should be possible.
+--
+type ControlMessageSTM m = STM m ControlMessage
+
+continueForever :: Applicative (STM m)
           => proxy m
-          -> ScheduledStop m
-neverStop _ = pure Run
+          -> ControlMessageSTM m
+continueForever _ = pure Continue
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
@@ -70,9 +86,7 @@ neverStop _ = pure Run
 --
 newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
         OuroborosApplication
-          (ConnectionId addr
-            -> STM m RunOrStop
-            -> [MiniProtocol mode bytes m a b])
+          (ConnectionId addr -> ControlMessageSTM m -> [MiniProtocol mode bytes m a b])
 
 data MiniProtocol (mode :: MuxMode) bytes m a b =
      MiniProtocol {
@@ -129,18 +143,17 @@ data MuxPeer bytes m a where
 
 toApplication :: (MonadCatch m, MonadAsync m)
               => ConnectionId addr
-              -> ScheduledStop m
+              -> ControlMessageSTM m
               -> OuroborosApplication mode addr LBS.ByteString m a b
               -> Mux.MuxApplication mode m a b
-toApplication connectionId scheduleStop (OuroborosApplication ptcls) =
+toApplication connectionId controlMessageSTM (OuroborosApplication ptcls) =
   Mux.MuxApplication
     [ Mux.MuxMiniProtocol {
         Mux.miniProtocolNum    = miniProtocolNum ptcl,
         Mux.miniProtocolLimits = miniProtocolLimits ptcl,
         Mux.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
       }
-    | ptcl <- ptcls connectionId scheduleStop ]
-  where
+    | ptcl <- ptcls connectionId controlMessageSTM ]
 
 toMuxRunMiniProtocol :: forall mode m a b.
                         (MonadCatch m, MonadAsync m)

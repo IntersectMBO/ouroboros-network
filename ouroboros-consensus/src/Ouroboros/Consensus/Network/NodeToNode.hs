@@ -135,7 +135,7 @@ data Handlers m peer blk = Handlers {
 
     , hKeepAliveClient
         :: NodeToNodeVersion
-        -> ScheduledStop m
+        -> ControlMessageSTM m
         -> peer
         -> StrictTVar m (Map peer PeerGSV)
         -> KeepAliveInterval
@@ -539,7 +539,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer
-                         $ hKeepAliveClient version (neverStop (Proxy :: Proxy m)) them dqCtx
+                         $ hKeepAliveClient version (continueForever (Proxy :: Proxy m)) them dqCtx
                              (KeepAliveInterval 10)
 
       bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
