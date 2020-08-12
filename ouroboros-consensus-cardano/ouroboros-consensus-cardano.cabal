@@ -166,3 +166,4 @@ executable db-analyser
                        -Wmissing-export-lists
                        -threaded
                        -rtsopts
+                       "-with-rtsopts=-T -I0 -N2 -A16m"
