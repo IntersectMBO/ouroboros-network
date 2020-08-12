@@ -425,12 +425,11 @@ protocolClientInfoCardano
   :: forall c.
      -- Byron
      EpochSlots
-  -> SecurityParam
   -> ProtocolClientInfo (CardanoBlock c)
-protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
+protocolClientInfoCardano epochSlots = ProtocolClientInfo {
       pClientInfoCodecConfig =
         CardanoCodecConfig
-          (pClientInfoCodecConfig (protocolClientInfoByron epochSlots secParam))
+          (pClientInfoCodecConfig (protocolClientInfoByron epochSlots))
           (pClientInfoCodecConfig protocolClientInfoShelley)
     }
 

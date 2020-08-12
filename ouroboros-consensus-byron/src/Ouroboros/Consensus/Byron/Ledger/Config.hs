@@ -31,10 +31,8 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
 
 {-------------------------------------------------------------------------------
   Block config
@@ -75,16 +73,14 @@ byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig
   Codec config
 -------------------------------------------------------------------------------}
 
-data instance CodecConfig ByronBlock = ByronCodecConfig {
-      getByronEpochSlots    :: !CC.Slot.EpochSlots
-    , getByronSecurityParam :: !SecurityParam
+newtype instance CodecConfig ByronBlock = ByronCodecConfig {
+      getByronEpochSlots :: CC.Slot.EpochSlots
     }
   deriving (Generic, NoUnexpectedThunks)
 
 mkByronCodecConfig :: CC.Genesis.Config -> CodecConfig ByronBlock
 mkByronCodecConfig cfg = ByronCodecConfig {
-      getByronEpochSlots    = CC.Genesis.configEpochSlots cfg
-    , getByronSecurityParam = genesisSecurityParam cfg
+      getByronEpochSlots = CC.Genesis.configEpochSlots cfg
     }
 
 {-------------------------------------------------------------------------------
