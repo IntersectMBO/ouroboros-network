@@ -260,16 +260,14 @@ applyHelper f cfg blk
     newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
 
     let history'
-          -- TODO how expensive is this check?
-          | SL.currentLedgerView oldShelleyState ==
-            SL.currentLedgerView newShelleyState
-          = history
-          | otherwise
+          | ledgerViewChanged oldShelleyState newShelleyState
           = History.snapOld
               (SL.securityParameter globals)
               (blockSlot blk)
               (SL.currentLedgerView oldShelleyState)
               history
+          | otherwise
+          = history
 
     return ShelleyLedgerState {
         ledgerTip    = blockPoint blk
@@ -278,6 +276,21 @@ applyHelper f cfg blk
       }
   where
     globals = shelleyLedgerGlobals (blockConfigLedger cfg)
+
+    -- | The overlay schedule, the pool distribution, and optionally the
+    -- protocol parameters change at the epoch boundary. By checking whether
+    -- the epoch changed, we can avoid checking the equality of the huge
+    -- overlay schedule.
+    --
+    -- The genesis delegates can change within an epoch, so we must check them
+    -- each time.
+    ledgerViewChanged :: SL.ShelleyState c -> SL.ShelleyState c -> Bool
+    ledgerViewChanged old new =
+           SL.nesEL old /= SL.nesEL new
+        || SL.lvGenDelegs oldLedgerView /= SL.lvGenDelegs newLedgerView
+      where
+        oldLedgerView = SL.currentLedgerView old
+        newLedgerView = SL.currentLedgerView new
 
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = TickedPraosLedgerView
