@@ -50,7 +50,7 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = SimpleLedgerConfig addrDist eraParams
               , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
-              , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+              , blockConfigCodec  = SimpleCodecConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {

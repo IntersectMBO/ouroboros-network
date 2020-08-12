@@ -51,7 +51,7 @@ protocolInfoPraosRule numCoreNodes
         , topLevelConfigBlock = FullBlockConfig {
               blockConfigLedger = SimpleLedgerConfig () eraParams
             , blockConfigBlock  = SimpleBlockConfig (praosSecurityParam params)
-            , blockConfigCodec  = SimpleCodecConfig (praosSecurityParam params)
+            , blockConfigCodec  = SimpleCodecConfig
             }
         }
     , pInfoInitLedger = ExtLedgerState

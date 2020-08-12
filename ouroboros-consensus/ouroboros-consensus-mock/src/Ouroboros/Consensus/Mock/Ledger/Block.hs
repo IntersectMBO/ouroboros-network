@@ -289,9 +289,9 @@ newtype instance BlockConfig (SimpleBlock c ext) =
   Codec config
 -------------------------------------------------------------------------------}
 
--- | Only the 'SecurityParam' is required for simple blocks
-newtype instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
-  deriving newtype (NoUnexpectedThunks)
+data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
+  deriving stock    (Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Hard fork history
