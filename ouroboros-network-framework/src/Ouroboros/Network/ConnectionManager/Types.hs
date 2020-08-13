@@ -9,7 +9,72 @@
 -- not redundant at all!  It limits case analysis.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
--- Connection manager core types.
+-- | Connection manager core types.
+--
+-- Connection manager is responsible for managing uni- or bi-directional
+-- connections and threads which are running network applications.  In
+-- particular it is responsible for:
+--
+-- * opening new connection / reusing connections (for bidirectional
+--   connections)
+-- * running handshake negotation, starting the multiplexer
+-- * error handling for connection threads
+--
+-- First and last tasks are implemented directly in
+-- 'Ouroboros.Network.ConnectionManager.  Core' using the type interface
+-- provided in this module.  The second task is delegated to
+-- 'ConnectionHandler' (see
+-- 'Ouroboros.Network.ConnectionManager.ConnectionHandler.makeConnectionHandler').
+--
+-- When a connection is included by either 'includeOutboundConnection' or
+-- 'includeOutboundConnection', the connection manager returns an @STM@ action
+-- which allows to await until the connection is ready (handshake negotation is
+-- done and mux is started).  The @STM@ action returns
+-- @'Promise' ('Ouroboros.Network.ConnectionManager.ConnectionHandler.MuxPromise' ...)@.
+-- It gives access to 'Network.Mux.Mux' as well as 'ConnectionId',
+-- negotiated application version and 'Ouroboros.Network.Mux.ControlMessage'
+-- 'TVar's: all that is needed to manage all mini-protocols by either
+-- "Ouroboros.Network.ConnectionManager.Server" or peer-2-peer governor
+-- (see @withPeerStateActions@ in @ouroboros-network@ package).
+--
+-- To support bi-directional connections we need to be able to (on-demand)
+-- start responder sides of mini-protocols on incoming connections.  The
+-- interface to give control over bi-directional outbound connection to the
+-- server is using an @STM@ queue (see 'ControlChannel') over which messages
+-- are passed to the server.  The server runs a single thread which accepts
+-- them and acts on them.
+--
+-- >   ┌────────────────────────────────┐                                          ┌───────────────────┐
+-- >   │                                │                                          │                   │
+-- >   │  includeInboundConnection      ├─────────────────────────────────────────▶│  PeerStateActions │
+-- >   │   / includeOutboundConnection  │                                 ┏━━━━━━━▶│                   │
+-- >   │                                ├──┐                              ┃        └───────────────────┘
+-- >   └───────────────┬────────────────┘  │                              ┃
+-- >                   │                   │                              ┃
+-- >                   │                   │                              ┃
+-- >                   │                   │                              ┃
+-- >                   │                   │                              ┃
+-- >                   ▼                   │                              ┃
+-- >   ┌────────────────────────────────┐  │                              ┃
+-- >   │                                │  │     ┏━━━━━━━━━━━━━━━━━━━━━━━━┻━┓
+-- >   │      ConnectionHandler         │  │     ┃                          ┃
+-- >   │                                ┝━━┿━━━━▶┃   'Promise' muxPromise   ┃
+-- >   │     inbound / outbound         │  │     ┃                          ┃
+-- >   │                 ┃              │  │     ┗━┳━━━━━━━━━━━━━━━━━━━━━━━━┛
+-- >   └─────────────────╂──────────────┘  │       ┃
+-- >                     ┃                 │       ┃
+-- >                     ▼                 │       ┃
+-- >              ┏━━━━━━━━━━━━━━━━━┓      │       ┃
+-- >              ┃ Control Channel ┃      │       ┃
+-- >              ┗━━━━━━┳━━━━━━━━━━┛      │       ┃
+-- >                     ┃                 │       ┃
+-- >                     ┃                 │       ┃
+-- >                     ▼                 │       ┃
+-- >   ┌────────────────────────────────┐  │       ┃
+-- >   │                                │◀─┘       ┃
+-- >   │            Server              │          ┃
+-- >   │                                │◀━━━━━━━━━┛
+-- >   └────────────────────────────────┘
 --
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types
