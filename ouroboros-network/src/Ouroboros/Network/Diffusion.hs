@@ -1,12 +1,15 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE BangPatterns   #-}
+{-# LANGUAGE CPP            #-}
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
+  , nullTracers
   , DiffusionArguments (..)
   , AcceptedConnectionsLimit (..)
   , DiffusionApplications (..)
@@ -14,23 +17,41 @@ module Ouroboros.Network.Diffusion
   , runDataDiffusion
     -- * re-exports
   , simpleSingletonVersions
-  , IPSubscriptionTarget (..)
-  , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+    -- ** tracers
   , DiffusionInitializationTracer(..)
+  , TraceLocalRootPeers (..)
+  , TracePublicRootPeers (..)
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  , PeerSelectionActionsTrace (..)
+  , ConnectionManagerTrace (..)
+  , ConnectionHandlerTrace (..)
+  , ServerTrace (..)
   )
   where
 
-import qualified Control.Concurrent.Async as Async
+import qualified Control.Monad.Class.MonadAsync as Async
+import           Control.Monad.Class.MonadFork
 import           Control.Exception
-import           Control.Tracer (Tracer, traceWith)
-import           Data.Functor (void)
-import           Data.Maybe (maybeToList)
+import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Map as Map
+import           Data.Maybe (catMaybes, maybeToList)
+import qualified Data.Set as Set
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
-import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
-import           Network.Socket (AddrInfo, SockAddr)
+import qualified Data.IP as IP
+import           Network.Mux ( MiniProtocolBundle (..)
+                             , MiniProtocolInfo (..)
+                             , MiniProtocolDirection (..)
+                             , MuxTrace (..)
+                             , WithMuxBearer (..)
+                             )
+import           Network.Mux.Timeout (withTimeoutSerial)
+import           Network.Socket (SockAddr (..), AddrInfo)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Snocket ( FileDescriptor
@@ -42,73 +63,162 @@ import           Ouroboros.Network.Snocket ( FileDescriptor
                                            )
 import qualified Ouroboros.Network.Snocket as Snocket
 
+import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Codec
 
-import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.ConnectionManager.Core
+import           Ouroboros.Network.ConnectionManager.Server ( ServerArguments (..)
+                                                            , ServerTrace (..)
+                                                            )
+import qualified Ouroboros.Network.ConnectionManager.Server as Server
+import qualified Ouroboros.Network.ConnectionManager.Server.ControlChannel as Server
+import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.HasIPAddress
+import           Ouroboros.Network.RethrowPolicy
+import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
+import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAddress)
+import qualified Ouroboros.Network.PeerSelection.Governor as Governor
+import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
+                                                                , DebugPeerSelection (..)
+                                                                )
+import           Ouroboros.Network.PeerSelection.PeerStateActions ( PeerSelectionActionsTrace (..)
+                                                                  , PeerStateActionsArguments (..)
+                                                                  , PeerConnectionHandle
+                                                                  , withPeerStateActions
+                                                                  )
+import           Ouroboros.Network.PeerSelection.Simple
+import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
-                                                , NodeToClientVersionData )
+                                                , NodeToClientVersionData)
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
-                                              , NodeToNodeVersionData
+import           Ouroboros.Network.NodeToNode ( ConnectionId (..)
+                                              , MiniProtocolParameters (..)
+                                              , NodeToNodeVersion (..)
+                                              , NodeToNodeVersionData (..)
                                               , AcceptedConnectionsLimit (..)
-                                              , AcceptConnectionsPolicyTrace (..)
                                               , DiffusionMode (..)
                                               , RemoteAddress
+                                              , chainSyncProtocolLimits
+                                              , blockFetchProtocolLimits
+                                              , txSubmissionProtocolLimits
+                                              , keepAliveProtocolLimits
+                                              , nodeToNodeHandshakeCodec
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
-import           Ouroboros.Network.Socket ( ConnectionId (..)
-                                          , NetworkMutableState
-                                          , newNetworkMutableState
-                                          , cleanNetworkMutableState
-                                          , NetworkServerTracers (..)
-                                          )
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.Tracers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS ( TraceLocalRootPeers (..)
+                                                              , TracePublicRootPeers (..)
+                                                              )
 
+
+-- TODO: use LocalAddress where appropriate rather than 'path'.
+--
 data DiffusionInitializationTracer
-  = RunServer !SockAddr
+  = RunServer !(NonEmpty SockAddr)
   | RunLocalServer !LocalAddress
   | UsingSystemdSocket !FilePath
+  -- Rename as 'CreateLocalSocket'
   | CreateSystemdSocketForSnocketPath !FilePath
   | CreatedLocalSocket !FilePath
   | ConfiguringLocalSocket !FilePath !FileDescriptor
   | ListeningLocalSocket !FilePath !FileDescriptor
   | LocalSocketUp  !FilePath !FileDescriptor
+  -- Rename as 'CreateServerSocket'
   | CreatingServerSocket !SockAddr
   | ConfiguringServerSocket !SockAddr
   | ListeningServerSocket !SockAddr
   | ServerSocketUp !SockAddr
+  -- Rename as 'UnsupportedLocalSocketType'
   | UnsupportedLocalSystemdSocket !SockAddr
+  -- Remove (this is impossible case), there's no systemd on Windows
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException
     deriving Show
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer   :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
-      -- ^ IP subscription tracer
-    , dtDnsSubscriptionTracer  :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr))
-      -- ^ DNS subscription tracer
-    , dtDnsResolverTracer      :: Tracer IO (WithDomainName DnsTrace)
-      -- ^ DNS resolver tracer
-    , dtMuxTracer              :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
-      -- ^ Mux tracer
-    , dtMuxLocalTracer         :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-      -- ^ Mux tracer for local clients
-    , dtHandshakeTracer        :: Tracer IO NodeToNode.HandshakeTr
-      -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer   :: Tracer IO NodeToClient.HandshakeTr
-      -- ^ Handshake protocol tracer for local clients
-    , dtErrorPolicyTracer      :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
-    , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
-    , dtAcceptPolicyTracer     :: Tracer IO AcceptConnectionsPolicyTrace
-      -- ^ Trace rate limiting of accepted connections
-    , dtDiffusionInitializationTracer :: Tracer IO DiffusionInitializationTracer
+      dtMuxTracer
+        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+
+      -- | Handshake protocol tracer
+    , dtHandshakeTracer
+        :: Tracer IO NodeToNode.HandshakeTr
+
+    , dtTraceLocalRootPeersTracer
+        :: Tracer IO TraceLocalRootPeers
+
+    , dtTracePublicRootPeersTracer
+        :: Tracer IO TracePublicRootPeers
+
+    , dtTracePeerSelectionTracer
+        :: Tracer IO (TracePeerSelection SockAddr)
+
+    , dtDebugPeerSelectionTracer
+        :: Tracer IO (DebugPeerSelection
+                       SockAddr
+                         (PeerConnectionHandle
+                          InitiatorResponderMode
+                          SockAddr
+                          ByteString
+                          IO () ()))
+
+    , dtPeerSelectionActionsTracer
+        :: Tracer IO (PeerSelectionActionsTrace SockAddr)
+
+    , dtConnectionManagerTracer
+        :: Tracer IO (ConnectionManagerTrace
+                       SockAddr
+                       (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData))
+
+    , dtServerTracer
+        :: Tracer IO (ServerTrace SockAddr)
+
+      --
+      -- NodeToClient tracers
+      --
+
+      -- | Mux tracer for local clients
+    , dtLocalMuxTracer
+        :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
+
+      -- | Handshake protocol tracer for local clients
+    , dtLocalHandshakeTracer
+        :: Tracer IO NodeToClient.HandshakeTr
+
+      -- | Connection manager tracer for local clients
+    , dtLocalConnectionManagerTracer
+        :: Tracer IO (ConnectionManagerTrace
+                       LocalAddress
+                       (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData))
+
+      -- | Server tracer for local clients
+    , dtLocalServerTracer
+        :: Tracer IO (ServerTrace LocalAddress)
+
+      -- | Diffusion initialisation tracer
+    , dtDiffusionInitializationTracer
+        :: Tracer IO DiffusionInitializationTracer
     }
 
+
+nullTracers :: DiffusionTracers
+nullTracers = DiffusionTracers {
+        dtMuxTracer                     = nullTracer
+      , dtHandshakeTracer               = nullTracer
+      , dtTraceLocalRootPeersTracer     = nullTracer
+      , dtTracePublicRootPeersTracer    = nullTracer
+      , dtTracePeerSelectionTracer      = nullTracer
+      , dtDebugPeerSelectionTracer      = nullTracer
+      , dtPeerSelectionActionsTracer    = nullTracer
+      , dtConnectionManagerTracer       = nullTracer
+      , dtServerTracer                  = nullTracer
+      , dtLocalMuxTracer                = nullTracer
+      , dtLocalHandshakeTracer          = nullTracer
+      , dtLocalConnectionManagerTracer  = nullTracer
+      , dtLocalServerTracer             = nullTracer
+      , dtDiffusionInitializationTracer = nullTracer
+  }
 
 -- | Network Node argumets
 --
@@ -119,52 +229,74 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ IPV4 socket ready to accept connections or diffusion addresses
     , daLocalAddress :: Either Socket.Socket FilePath
       -- ^ AF_UNIX socket ready to accept connections or address for local clients
-    , daIpProducers   :: IPSubscriptionTarget
-      -- ^ ip subscription addresses
-    , daDnsProducers  :: [DnsSubscriptionTarget]
-      -- ^ list of domain names to subscribe to
+    , daPeerSelectionTargets :: PeerSelectionTargets
+      -- ^ selection targets for the peer governor
+
+    , daStaticLocalRootPeers :: [(Socket.SockAddr, PeerAdvertise)]
+    , daLocalRootPeers       :: [(DomainAddress, PeerAdvertise)]
+    , daPublicRootPeers      :: [DomainAddress]
+
     , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
       -- ^ parameters for limiting number of accepted connections
     , daDiffusionMode :: DiffusionMode
       -- ^ run in initiator only mode
     }
 
-data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m = DiffusionApplications {
 
-      daResponderApplication      :: Versions
-                                       NodeToNodeVersion
-                                       ntnVersionData
-                                       (OuroborosApplication
-                                         ResponderMode ntnAddr
-                                         ByteString m Void ())
-      -- ^ NodeToNode reposnder application (server role)
+-- TODO: we need initiator only mode for Deadalus, there's no reason why it
+-- should run a node-to-node server side.
+--
+data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
+    DiffusionApplications {
 
-    , daInitiatorApplication      :: Versions
-                                       NodeToNodeVersion
-                                       ntnVersionData
-                                       (OuroborosApplication
-                                         InitiatorMode ntnAddr
-                                         ByteString m () Void)
-      -- ^ NodeToNode initiator application (client role)
+      -- | NodeToNode reposnder and initiator applications for hot peers
+      --
+      daApplication
+        :: Versions NodeToNodeVersion
+                    ntnVersionData
+                    (OuroborosBundle
+                      InitiatorResponderMode ntnAddr
+                      ByteString m () ())
 
-    , daLocalResponderApplication :: Versions
-                                       NodeToClientVersion
-                                       ntcVersionData
-                                       (OuroborosApplication
-                                         ResponderMode ntcAddr
-                                         ByteString m Void ())
-      -- ^ NodeToClient responder applicaton (server role)
+    -- | NodeToClient responder applicaton (server role)
+    --
+    , daLocalResponderApplication
+        :: Versions NodeToClientVersion
+                    ntcVersionData
+                    (OuroborosApplication
+                      ResponderMode ntcAddr
+                      ByteString m Void ())
+    -- | configuration of mini-protocol parameters; they inpact size limits of
+    -- mux ingress queues.
+    --
+    , daMiniProtocolParameters :: MiniProtocolParameters
 
-    , daErrorPolicies :: ErrorPolicies
-      -- ^ error policies
+    -- | node-to-node rethrow policy
+    --
+    , daRethrowPolicy      :: RethrowPolicy
+
+    -- | node-to-client rethrow policy
+    , daLocalRethrowPolicy :: RethrowPolicy
     }
 
+-- TODO: add a tracer for these misconfigurations
 data DiffusionFailure = UnsupportedLocalSocketType
                       | UnsupportedReadySocket -- Windows only
+                      | UnexpectedIPv4Address
+                      | UnexpectedIPv6Address
+                      | UnexpectedUnixAddress
+                      | NoSocket
   deriving (Eq, Show)
 
 instance Exception DiffusionFailure
 
+
+-- | Run data diffusion service.  It allows to connect to upstream peers,
+-- accept connection from downstream peers (if run in
+-- 'InitiatorAndResponderDiffusionMode').  It also runs a local service which
+-- allows to use node-to-client protocol to obtain information from the running
+-- system.  This is used by 'cardano-cli' and a like services.
+--
 runDataDiffusion
     :: DiffusionTracers
     -> DiffusionArguments
@@ -172,317 +304,507 @@ runDataDiffusion
          RemoteAddress LocalAddress
          NodeToNodeVersionData NodeToClientVersionData
          IO
-    -> IO ()
+    -> IO Void
 runDataDiffusion tracers
                  DiffusionArguments { daIPv4Address
                                     , daIPv6Address
                                     , daLocalAddress
-                                    , daIpProducers
-                                    , daDnsProducers
+                                    , daPeerSelectionTargets
+                                    , daStaticLocalRootPeers
+                                    , daLocalRootPeers
+                                    , daPublicRootPeers
                                     , daAcceptedConnectionsLimit
                                     , daDiffusionMode
                                     }
-                 applications@DiffusionApplications { daErrorPolicies } =
-  traceException . withIOManager $ \iocp -> do
+                 DiffusionApplications { daApplication
+                                       , daLocalResponderApplication
+                                       , daRethrowPolicy
+                                       , daMiniProtocolParameters
+                                       , daLocalRethrowPolicy
+                                       } =
+    -- We run two services: for /node-to-node/ and /node-to-client/.  The
+    -- nameing convenstion is that we use /local/ prefix for /node-to-client/
+    -- related terms, as this is a local only service running over a unix
+    -- socket / windows named pipe.
+    handle (\e -> traceWith tracer (DiffusionErrored e)
+               >> throwIO e) $
+    withIOManager $ \iocp ->
+    withTimeoutSerial $ \timeout -> do
+
+    -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
+    mainThreadId <- myThreadId
+
+    cmIPv4Address
+      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
+                  daIPv4Address
+    case cmIPv4Address of
+      Just SockAddrInet  {} -> pure ()
+      Just SockAddrInet6 {} -> throwIO UnexpectedIPv6Address
+      Just SockAddrUnix  {} -> throwIO UnexpectedUnixAddress
+      Nothing               -> pure ()
+
+    cmIPv6Address
+      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
+                  daIPv6Address
+    case cmIPv6Address of
+      Just SockAddrInet {}  -> throwIO UnexpectedIPv4Address
+      Just SockAddrInet6 {} -> pure ()
+      Just SockAddrUnix {}  -> throwIO UnexpectedUnixAddress
+      Nothing               -> pure ()
+
+    -- Maybe with a useful context to run the server
+    mbServerControlChannel
+      <- case daDiffusionMode of
+          InitiatorOnlyDiffusionMode ->
+            -- action which we pass to connection handler
+            pure Nothing
+          InitiatorAndResponderDiffusionMode -> do
+            -- we pass 'Server.newOutboundConnection serverControlChannel' to
+            -- connection handler
+            Just <$> Server.newControlChannel
+
+    serverStateVar            <- Server.newStateVarIO
+    localServerStateVar       <- Server.newStateVarIO
+    localServerControlChannel <- Server.newControlChannel
+
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
-        addresses = maybeToList daIPv4Address
-                 ++ maybeToList daIPv6Address
 
-    -- networking mutable state
-    networkState <- newNetworkMutableState
-    networkLocalState <- newNetworkMutableState
-
-    lias <- getInitiatorLocalAddresses snocket
-
-    void $
-      -- clean state thread
-      Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
-
-        -- clean local state thread
-        Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
-
-          -- fork server for local clients
-          Async.withAsync (runLocalServer iocp networkLocalState) $ \localServerThread ->
-
-              -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \ipSubThread ->
-
-                -- fork dns subscriptions
-                withAsyncs (runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers) $ \dnsSubThreads ->
-
-                  case daDiffusionMode of
-                    InitiatorAndResponderDiffusionMode ->
-                      -- fork servers for remote peers
-                      withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \serverThreads -> do
-                        void $ Async.waitAnyCancel $
-                            [ cleanNetworkStateThread
-                            , cleanLocalNetworkStateThread
-                            , localServerThread
-                            , ipSubThread
-                            ] ++ dnsSubThreads ++ serverThreads
-
-                    InitiatorOnlyDiffusionMode ->
-                      void $ Async.waitAnyCancel $
-                            [ cleanNetworkStateThread
-                            , cleanLocalNetworkStateThread
-                            , localServerThread
-                            , ipSubThread
-                            ] ++ dnsSubThreads
-
-  where
-    traceException :: IO a -> IO a
-    traceException f = catch f $ \(e :: SomeException) -> do
-      traceWith dtDiffusionInitializationTracer (DiffusionErrored e) 
-      throwIO e
-
-    DiffusionTracers { dtIpSubscriptionTracer
-                     , dtDnsSubscriptionTracer
-                     , dtDnsResolverTracer
-                     , dtMuxTracer
-                     , dtMuxLocalTracer
-                     , dtHandshakeTracer
-                     , dtHandshakeLocalTracer
-                     , dtErrorPolicyTracer
-                     , dtLocalErrorPolicyTracer
-                     , dtAcceptPolicyTracer
-                     , dtDiffusionInitializationTracer
-                     } = tracers
+        localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
     --
-    -- We can't share portnumber with our server since we run separate
-    -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
-    -- applications instead of a 'MuxInitiatorAndResponderApplication'.
-    -- This means we don't utilise full duplex connection.
-    getInitiatorLocalAddresses :: SocketSnocket -> IO (LocalAddresses SockAddr)
-    getInitiatorLocalAddresses sn = do
-        localIpv4 <-
-          case daIPv4Address of
-              Just (Right ipv4) -> do
-                return LocalAddresses
-                  { laIpv4 = anyIPv4Addr (Socket.addrAddress ipv4)
-                  , laIpv6 = Nothing
-                  , laUnix = Nothing
+    -- local connection manager
+    --
+    withLocalSocket iocp tracer daLocalAddress $ \localSnocket localSocket -> do
+      let localConnectionHandler
+            :: MuxConnectionHandler
+                 ResponderMode
+                 LocalAddress
+                 NodeToClientVersion
+                 NodeToClientVersionData
+                 ByteString IO Void ()
+          localConnectionHandler =
+            makeConnectionHandler
+              dtLocalMuxTracer
+              SResponderMode
+              localMiniProtocolBundle
+              HandshakeArguments {
+                  haHandshakeTracer = dtLocalHandshakeTracer,
+                  haHandshakeCodec = NodeToClient.nodeToClientHandshakeCodec,
+                  haVersionDataCodec = cborTermVersionDataCodec NodeToClient.nodeToClientCodecCBORTerm,
+                  haVersions =
+                        (\(OuroborosApplication apps)
+                          -> Bundle
+                              (WithHot apps)
+                              (WithWarm (\_ _ -> []))
+                              (WithEstablished (\_ _ -> [])))
+                    <$> daLocalResponderApplication,
+                  haAcceptVersion = acceptableVersion
+                }
+              localDataFlow
+              (Server.newOutboundConnection localServerControlChannel)
+              (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+
+          localConnectionManagerArguments
+            :: ConnectionManagerArguments
+                 ResponderMode
+                 (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData)
+                 LocalSocket LocalAddress
+                 Void -- IP addresses are not used by the node-to-client server.
+                 (Handle ResponderMode
+                         LocalAddress
+                         ByteString
+                         IO Void ())
+                  (HandleError ResponderMode
+                               NodeToClientVersion)
+                 (NodeToClientVersion, NodeToClientVersionData)
+                 IO
+          localConnectionManagerArguments =
+            ConnectionManagerArguments {
+                cmTracer              = dtLocalConnectionManagerTracer,
+                cmMuxTracer           = dtLocalMuxTracer,
+                cmIPv4Address         = Nothing,
+                cmIPv6Address         = Nothing,
+                cmSnocket             = localSnocket,
+                cmHasIPAddress        = WithResponderMode (),
+                connectionHandler     = localConnectionHandler,
+                connectionDataFlow    = uncurry localDataFlow,
+                cmPrunePolicy         = Server.randomPrunePolicy localServerStateVar,
+                cmConnectionsLimits   = localConnectionLimits,
+                cmClassifyHandleError = classifyHandleError,
+                cmLocalIPs            = return Set.empty
+              }
+
+      withConnectionManager localConnectionManagerArguments $ \localConnectionManager -> do
+
+        --
+        -- run local server
+        --
+
+        traceWith tracer . RunLocalServer
+          =<< Snocket.getLocalAddr localSnocket localSocket
+
+        Async.withAsync
+          (Server.run
+            ServerArguments {
+                serverSockets           = localSocket :| [],
+                serverSnocket           = localSnocket,
+                serverTracer            = dtLocalServerTracer,
+                serverControlChannel    = localServerControlChannel,
+                serverConnectionLimits  = localConnectionLimits,
+                serverConnectionManager = localConnectionManager,
+                serverStateVar          = localServerStateVar
+              }) $ \localServerThread -> do
+
+
+          --
+          -- remote connection manager
+          --
+
+          let connectionHandler
+                :: MuxConnectionHandler
+                     InitiatorResponderMode
+                     SockAddr
+                     NodeToNodeVersion
+                     NodeToNodeVersionData
+                     ByteString IO () ()
+              connectionHandler =
+                makeConnectionHandler
+                  dtMuxTracer
+                  SInitiatorResponderMode
+                  miniProtocolBundle
+                  HandshakeArguments {
+                      haHandshakeTracer = dtHandshakeTracer,
+                      haHandshakeCodec = nodeToNodeHandshakeCodec,
+                      haVersionDataCodec = cborTermVersionDataCodec NodeToNode.nodeToNodeCodecCBORTerm,
+                      haVersions = daApplication,
+                      haAcceptVersion = acceptableVersion
+                    }
+                  nodeDataFlow
+                  (maybe (\_ _ -> pure ()) Server.newOutboundConnection mbServerControlChannel)
+                  (mainThreadId, rethrowPolicy <> daRethrowPolicy)
+
+              connectionManagerArguments
+                :: ConnectionManagerArguments
+                     InitiatorResponderMode
+                     (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData)
+                     Socket.Socket SockAddr
+                     IP.IP
+                     (Handle InitiatorResponderMode
+                             SockAddr
+                             ByteString
+                             IO () ())
+                     (HandleError InitiatorResponderMode
+                                  NodeToNodeVersion)
+                     (NodeToNodeVersion, NodeToNodeVersionData)
+                     IO
+              connectionManagerArguments =
+                ConnectionManagerArguments {
+                    cmTracer              = dtConnectionManagerTracer,
+                    cmMuxTracer           = dtMuxTracer,
+                    cmIPv4Address,
+                    cmIPv6Address,
+                    cmSnocket             = snocket,
+                    cmHasIPAddress        = WithInitiatorResponderMode sockAddrHasIPAddress (),
+                    connectionHandler,
+                    connectionDataFlow    = uncurry nodeDataFlow,
+                    cmPrunePolicy         = Server.randomPrunePolicy serverStateVar,
+                    cmConnectionsLimits   = daAcceptedConnectionsLimit,
+                    cmClassifyHandleError = classifyHandleError,
+                    -- TODO: pass local IPs!
+                    cmLocalIPs            = return Set.empty
                   }
 
-              Just (Left ipv4Sock) -> do
-                 ipv4Addrs <- Snocket.getLocalAddr sn ipv4Sock
-                 return LocalAddresses
-                   { laIpv4 = anyIPv4Addr ipv4Addrs
-                   , laIpv6 = Nothing
-                   , laUnix = Nothing
-                   }
+          withConnectionManager connectionManagerArguments $ \connectionManager -> do
+              
+              --
+              -- peer state actions
+              --
+              -- Peer state actions run a job pool in the background which
+              -- tracks threads forked by 'PeerStateActions'
+              --
 
-              Nothing -> do
-                 return LocalAddresses
-                   { laIpv4 = Nothing
-                   , laIpv6 = Nothing
-                   , laUnix = Nothing
-                   }
-
-        localIpv6 <-
-          case daIPv6Address of
-            Just (Right ipv6) -> do
-              return LocalAddresses
-                { laIpv4 = Nothing
-                , laIpv6 = anyIPv6Addr (Socket.addrAddress ipv6)
-                , laUnix = Nothing
-                }
-
-            Just (Left ipv6Sock) -> do
-              ipv6Addrs <- Snocket.getLocalAddr sn ipv6Sock
-              return LocalAddresses
-                { laIpv4 = Nothing
-                , laIpv6 = anyIPv6Addr ipv6Addrs
-                , laUnix = Nothing
-                }
-
-            Nothing -> do
-              return LocalAddresses
-                { laIpv4 = Nothing
-                , laIpv6 = Nothing
-                , laUnix = Nothing
+              withPeerStateActions
+                timeout
+                PeerStateActionsArguments {
+                    spsTracer = dtPeerSelectionActionsTracer,
+                    spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
+                    spsCloseConnectionTimeout = Diffusion.Policies.closeConnectionTimeout,
+                    spsConnectionManager = connectionManager
                   }
+                $ \peerStateActions ->
 
-        return (localIpv4 <> localIpv6)
-      where
-        -- Return an IPv4 address with an emphemeral portnumber if we use IPv4
-        anyIPv4Addr :: SockAddr -> Maybe SockAddr
-        anyIPv4Addr (Socket.SockAddrInet _ _) = Just (Socket.SockAddrInet 0 0)
-        anyIPv4Addr _ = Nothing
+                --
+                -- Run peer selection (p2p governor)
+                --
 
-        -- Return an IPv6 address with an emphemeral portnumber if we use IPv6
-        anyIPv6Addr :: SockAddr -> Maybe SockAddr
-        anyIPv6Addr (Socket.SockAddrInet6 _ _ _ _ ) = Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-        anyIPv6Addr _ = Nothing
+                withPeerSelectionActions
+                  dtTraceLocalRootPeersTracer
+                  dtTracePublicRootPeersTracer
+                  timeout
+                  daPeerSelectionTargets
+                  (Map.fromList daStaticLocalRootPeers)
+                  daLocalRootPeers
+                  daPublicRootPeers
+                  peerStateActions
+                  $ \mbLocalPeerRootProviderThread peerSelectionActions ->
 
-    remoteErrorPolicy, localErrorPolicy :: ErrorPolicies
-    remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
-    localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
+                  Async.withAsync
+                    (Governor.peerSelectionGovernor
+                      dtTracePeerSelectionTracer
+                      dtDebugPeerSelectionTracer
+                      peerSelectionActions
+                      Diffusion.Policies.simplePeerSelectionPolicy)
+                    $ \governorThread ->
 
-    runLocalServer :: IOManager
-                   -> NetworkMutableState LocalAddress
-                   -> IO ()
-    runLocalServer iocp networkLocalState =
-      bracket
-        localServerInit
-        localServerCleanup
-        localServerBody
-      where
-        localServerInit :: IO (LocalSocket, LocalSnocket)
-        localServerInit =
-          case daLocalAddress of
-#if defined(mingw32_HOST_OS)
-               -- Windows uses named pipes so can't take advantage of existing sockets
-               Left _ -> do
-                   traceWith dtDiffusionInitializationTracer UnsupportedReadySocketCase
-                   throwIO UnsupportedReadySocket
-#else
-               Left sd -> do
-                   a <- Socket.getSocketName sd
-                   case a of
-                        (Socket.SockAddrUnix path) -> do
-                          traceWith dtDiffusionInitializationTracer $ UsingSystemdSocket path
-                          return (LocalSocket sd, Snocket.localSnocket iocp path)
-                        unsupportedAddr -> do
-                          traceWith dtDiffusionInitializationTracer $ UnsupportedLocalSystemdSocket unsupportedAddr
-                          throwIO UnsupportedLocalSocketType
-#endif
-               Right addr -> do
-                   let sn = Snocket.localSnocket iocp addr
-                   traceWith dtDiffusionInitializationTracer $ CreateSystemdSocketForSnocketPath addr
-                   sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath addr)
-                   traceWith dtDiffusionInitializationTracer $ CreatedLocalSocket addr
-                   return (sd, sn)
+                    case mbServerControlChannel of
+                      -- 'InitiatorOnlyDiffusionMode'
+                      Nothing ->
 
-        -- We close the socket here, even if it was provided for us.
-        localServerCleanup :: (LocalSocket, LocalSnocket) -> IO ()
-        localServerCleanup (sd, sn) = Snocket.close sn sd
+                        -- wait for any thread to fail
+                        snd <$> Async.waitAny
+                          (maybeToList mbLocalPeerRootProviderThread
+                          ++ [ localServerThread
+                             , governorThread
+                             ])
 
-        localServerBody :: (LocalSocket, LocalSnocket) -> IO ()
-        localServerBody (sd, sn) = do
-          case daLocalAddress of
-               -- If a socket was provided it should be ready to accept
-               Left _ -> pure ()
-               Right path -> do
-                 traceWith dtDiffusionInitializationTracer . ConfiguringLocalSocket path
-                    =<< localSocketFileDescriptor sd
+                      -- InitiatorAndResponderDiffusionMode
+                      Just serverControlChannel -> do
+                        let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
+                            mkAddr addr = (Socket.addrFamily addr, Socket.addrAddress addr)
 
-                 Snocket.bind sn sd $ Snocket.localAddressFromPath path
+                        withSockets tracer snocket
+                                    (catMaybes
+                                      [ fmap (fmap mkAddr) daIPv4Address
+                                      , fmap (fmap mkAddr) daIPv6Address
+                                      ])
+                                    $ \sockets addresses -> do
+                          --
+                          -- Run server
+                          --
+                          traceWith tracer (RunServer addresses)
+                          Async.withAsync
+                            (Server.run
+                              ServerArguments {
+                                  serverSockets = sockets,
+                                  serverSnocket = snocket,
+                                  serverTracer  = dtServerTracer,
+                                  serverControlChannel,
+                                  serverConnectionLimits = daAcceptedConnectionsLimit,
+                                  serverConnectionManager = connectionManager,
+                                  serverStateVar = serverStateVar
+                                })
+                                $ \serverThread ->
 
-                 traceWith dtDiffusionInitializationTracer . ListeningLocalSocket path
-                    =<< localSocketFileDescriptor sd
-
-                 Snocket.listen sn sd
-
-                 traceWith dtDiffusionInitializationTracer . LocalSocketUp path
-                    =<< localSocketFileDescriptor sd
-
-          traceWith dtDiffusionInitializationTracer . RunLocalServer =<< Snocket.getLocalAddr sn sd
-
-          void $ NodeToClient.withServer
-            sn
-            (NetworkServerTracers
-              dtMuxLocalTracer
-              dtHandshakeLocalTracer
-              dtLocalErrorPolicyTracer
-              dtAcceptPolicyTracer)
-            networkLocalState
-            sd
-            (daLocalResponderApplication applications)
-            localErrorPolicy
-
-    runServer :: SocketSnocket -> NetworkMutableState SockAddr -> Either Socket.Socket SockAddr -> IO ()
-    runServer sn networkState address =
-      bracket
-        (
-          case address of
-               Left sd -> return sd
-               Right addr -> do
-                 traceWith dtDiffusionInitializationTracer $ CreatingServerSocket addr
-                 Snocket.open sn (Snocket.addrFamily sn addr)
-        )
-        (Snocket.close sn) -- We close the socket here, even if it was provided for us.
-        (\sd -> do
-
-          addr <- case address of
-               -- If a socket was provided it should be ready to accept
-               Left _ -> Snocket.getLocalAddr sn sd
-               Right addr -> do
-                 traceWith dtDiffusionInitializationTracer $ ConfiguringServerSocket addr
-                 Snocket.bind sn sd addr
-                 traceWith dtDiffusionInitializationTracer $ ListeningServerSocket addr
-                 Snocket.listen sn sd
-                 traceWith dtDiffusionInitializationTracer $ ServerSocketUp addr
-                 return addr
-
-          traceWith dtDiffusionInitializationTracer $ RunServer addr
-
-          void $ NodeToNode.withServer
-            sn
-            (NetworkServerTracers
-              dtMuxTracer
-              dtHandshakeTracer
-              dtErrorPolicyTracer
-              dtAcceptPolicyTracer)
-            networkState
-            daAcceptedConnectionsLimit
-            sd
-            (daResponderApplication applications)
-            remoteErrorPolicy
-        )
-    runIpSubscriptionWorker :: SocketSnocket
-                            -> NetworkMutableState SockAddr
-                            -> LocalAddresses SockAddr
-                            -> IO ()
-    runIpSubscriptionWorker sn networkState la = void $ NodeToNode.ipSubscriptionWorker
-      sn
-      (NetworkSubscriptionTracers
-        dtMuxTracer
-        dtHandshakeTracer
-        dtErrorPolicyTracer
-        dtIpSubscriptionTracer)
-      networkState
-      SubscriptionParams
-        { spLocalAddresses         = la
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
-        , spSubscriptionTarget     = daIpProducers
-        }
-      (daInitiatorApplication applications)
-
-    runDnsSubscriptionWorker :: SocketSnocket
-                             -> NetworkMutableState SockAddr
-                             -> LocalAddresses SockAddr
-                             -> DnsSubscriptionTarget
-                             -> IO ()
-    runDnsSubscriptionWorker sn networkState la dnsProducer = void $ NodeToNode.dnsSubscriptionWorker
-      sn
-      (NetworkDNSSubscriptionTracers
-        dtMuxTracer
-        dtHandshakeTracer
-        dtErrorPolicyTracer
-        dtDnsSubscriptionTracer
-        dtDnsResolverTracer)
-      networkState
-      SubscriptionParams
-        { spLocalAddresses         = la
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
-        , spSubscriptionTarget     = dnsProducer
-        }
-      (daInitiatorApplication applications)
-
-
---
--- Auxilary functions
---
-
--- | Structural fold using 'Async.withAsync'.
---
-withAsyncs :: [IO a] -> ([Async.Async a] -> IO b) -> IO b
-withAsyncs as0 k = go [] as0
+                                  -- wait for any thread to fail
+                                  snd <$> Async.waitAny
+                                    (maybeToList mbLocalPeerRootProviderThread
+                                    ++ [ localServerThread
+                                       , serverThread
+                                       , governorThread
+                                       ])
   where
-    go threads []       = k threads
-    go threads (a : as) = Async.withAsync a $ \thread -> go (thread : threads) as
+    DiffusionTracers { dtMuxTracer
+                     , dtHandshakeTracer
+                     , dtTracePeerSelectionTracer
+                     , dtDebugPeerSelectionTracer
+                     , dtPeerSelectionActionsTracer
+                     , dtTraceLocalRootPeersTracer
+                     , dtTracePublicRootPeersTracer
+                     , dtConnectionManagerTracer
+                     , dtServerTracer
+                     , dtLocalMuxTracer
+                     , dtLocalHandshakeTracer
+                     , dtLocalConnectionManagerTracer
+                     , dtLocalServerTracer
+                     -- the tracer
+                     , dtDiffusionInitializationTracer = tracer
+                     } = tracers
+
+
+    miniProtocolBundle :: MiniProtocolBundle InitiatorResponderMode
+    miniProtocolBundle = MiniProtocolBundle
+      [ MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 2,
+          miniProtocolDir    = InitiatorDirection,
+          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 2,
+          miniProtocolDir    = ResponderDirection,
+          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 3,
+          miniProtocolDir    = InitiatorDirection,
+          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 3,
+          miniProtocolDir    = ResponderDirection,
+          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 4,
+          miniProtocolDir    = InitiatorDirection,
+          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 4,
+          miniProtocolDir    = ResponderDirection,
+          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 8,
+          miniProtocolDir    = InitiatorDirection,
+          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
+        }
+      , MiniProtocolInfo {
+          miniProtocolNum    = MiniProtocolNum 8,
+          miniProtocolDir    = ResponderDirection,
+          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
+        }
+      -- TODO: `tip-sample` protocol
+      ]
+
+    localMiniProtocolBundle :: MiniProtocolBundle ResponderMode
+    localMiniProtocolBundle = MiniProtocolBundle
+        [ MiniProtocolInfo {
+            miniProtocolNum    = MiniProtocolNum 5,
+            miniProtocolDir    = ResponderDirectionOnly,
+            miniProtocolLimits = maximumMiniProtocolLimits
+          }
+        , MiniProtocolInfo {
+            miniProtocolNum    = MiniProtocolNum 6,
+            miniProtocolDir    = ResponderDirectionOnly,
+            miniProtocolLimits = maximumMiniProtocolLimits
+          }
+        , MiniProtocolInfo {
+            miniProtocolNum    = MiniProtocolNum 7,
+            miniProtocolDir    = ResponderDirectionOnly,
+            miniProtocolLimits = maximumMiniProtocolLimits
+          }
+        ]
+      where
+        maximumMiniProtocolLimits :: MiniProtocolLimits
+        maximumMiniProtocolLimits =
+            MiniProtocolLimits {
+              maximumIngressQueue = 0xffffffff
+            }
+
+    -- Only the 'IOManagerError's are fatal, all the other exceptions in the
+    -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
+    -- this is so).
+    rethrowPolicy =
+      RethrowPolicy $ \_ctx err ->
+        case fromException err of
+          Just (_ :: IOManagerError) -> ShutdownNode
+          Nothing                    -> mempty
+
+
+nodeDataFlow :: NodeToNodeVersion
+             -> NodeToNodeVersionData
+             -> DataFlow
+nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
+           | v >= NodeToNodeV_6
+           = Duplex
+nodeDataFlow _ _ = Unidirectional
+
+
+localDataFlow :: NodeToClientVersion
+              -> NodeToClientVersionData
+              -> DataFlow
+localDataFlow _ _ = Unidirectional
+
+
+withSockets :: Tracer IO DiffusionInitializationTracer
+            -> SocketSnocket
+            -> [Either Socket.Socket (Socket.Family, SockAddr)]
+            -> (NonEmpty Socket.Socket -> NonEmpty Socket.SockAddr -> IO a)
+            -> IO a
+withSockets tracer sn addresses k = go [] addresses
+  where
+    go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
+    go []   []       = throw NoSocket
+    go !acc []       =
+      let acc' = NonEmpty.fromList (reverse acc)
+      in (k $! (fst <$> acc')) $! (snd <$> acc')
+
+    withSocket :: Either Socket.Socket (Socket.Family, SockAddr)
+               -> ((Socket.Socket, Socket.SockAddr) -> IO a)
+               -> IO a
+    withSocket (Left sock) f =
+      bracket
+        (pure sock)
+        (Snocket.close sn)
+        $ \_sock -> do
+          !addr <- Socket.getSocketName sock
+          f (sock, addr)
+    withSocket (Right (fam, !addr)) f =
+      bracket
+        (do traceWith tracer (CreatingServerSocket addr)
+            Snocket.open sn (Snocket.SocketFamily fam))
+        (Snocket.close sn)
+        $ \sock -> do
+          traceWith tracer $ ConfiguringServerSocket addr
+          Snocket.bind sn sock addr
+          traceWith tracer $ ListeningServerSocket addr
+          Snocket.listen sn sock
+          traceWith tracer $ ServerSocketUp addr
+          f (sock, addr)
+
+
+withLocalSocket :: IOManager
+                -> Tracer IO DiffusionInitializationTracer
+                -> Either Socket.Socket FilePath
+                -> (LocalSnocket -> LocalSocket -> IO a)
+                -> IO a
+withLocalSocket iocp tracer localAddress k =
+  bracket
+    (
+      case localAddress of
+#if defined(mingw32_HOST_OS)
+         -- Windows uses named pipes so can't take advantage of existing sockets
+         Left _ -> traceWith tracer UnsupportedReadySocketCase
+                >> throwIO UnsupportedReadySocket
+#else
+         Left sd -> do
+             addr <- Socket.getSocketName sd
+             case addr of
+                  (Socket.SockAddrUnix path) -> do
+                    traceWith tracer (UsingSystemdSocket path)
+                    return (Left ( Snocket.localSnocket iocp path
+                                 , (LocalSocket sd)
+                                 ))
+                  _  -> do
+                    traceWith tracer $ UnsupportedLocalSystemdSocket addr
+                    throwIO UnsupportedLocalSocketType
+#endif
+         Right addr -> do
+             let sn :: LocalSnocket
+                 sn = Snocket.localSnocket iocp addr
+             traceWith tracer $ CreateSystemdSocketForSnocketPath addr
+             sd <- Snocket.open sn Snocket.LocalFamily
+             traceWith tracer $ CreatedLocalSocket addr
+             return (Right (sn, sd, addr))
+    )
+    -- We close the socket here, even if it was provided to us.
+    (\case
+      Left  (sn, sd)    -> Snocket.close sn sd 
+      Right (sn, sd, _) -> Snocket.close sn sd)
+    $ \case 
+      -- unconfigured socket
+      Right (sn, sd, addr) -> do
+        traceWith tracer . ConfiguringLocalSocket addr
+           =<< localSocketFileDescriptor sd
+        Snocket.bind sn sd (NodeToClient.LocalAddress addr)
+        traceWith tracer . ListeningLocalSocket addr
+           =<< localSocketFileDescriptor sd
+        Snocket.listen sn sd
+        traceWith tracer . LocalSocketUp addr
+           =<< localSocketFileDescriptor sd
+        k sn sd
+
+      -- pre-configured systemd socket
+      Left (sn, sd) -> k sn sd
