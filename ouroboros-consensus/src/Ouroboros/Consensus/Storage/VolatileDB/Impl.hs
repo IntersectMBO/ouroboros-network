@@ -294,7 +294,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer, prefixLen }
             currentWriteOffset = currentWriteOffset + bytesWritten
           , currentMap         = currentMap'
           , currentRevMap      = currentRevMap'
-          , currentSuccMap     = insertMapSet currentSuccMap (bbid, bpreBid)
+          , currentSuccMap     = insertMapSet bpreBid bbid currentSuccMap
           , currentMaxSlotNo   = currentMaxSlotNo `max` MaxSlotNo bslot
           }
 
@@ -385,10 +385,12 @@ garbageCollectFile hasFS (fileId, fileInfo) = do
 
     let bids            = FileInfo.blockIds fileInfo
         currentRevMap'  = Map.withoutKeys currentRevMap bids
-        deletedPairs    = mapMaybe
-          (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
-          (Set.toList bids)
-        currentSuccMap' = foldl' deleteMapSet currentSuccMap deletedPairs
+        deletedPairs    =
+          mapMaybe
+            (\b -> (, b) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
+            (Set.toList bids)
+        currentSuccMap' =
+          foldl' (flip (uncurry deleteMapSet)) currentSuccMap deletedPairs
 
     put st {
         currentMap     = Index.delete fileId currentMap
