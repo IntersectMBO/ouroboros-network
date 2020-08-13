@@ -384,7 +384,7 @@ mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files = do
           currentMap'     = Index.insert fd fileInfo currentMap
           currentSuccMap' = foldl'
             (\succMap ParsedBlockInfo { pbiBlockInfo } ->
-              insertMapSet succMap (bbid pbiBlockInfo, bpreBid pbiBlockInfo))
+              insertMapSet (bpreBid pbiBlockInfo) (bbid pbiBlockInfo) succMap)
             currentSuccMap
             acceptedBlocks
 
