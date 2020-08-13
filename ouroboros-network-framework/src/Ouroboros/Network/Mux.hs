@@ -108,7 +108,8 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 -- |  There are three kinds of applications: warm, hot and established (ones
 -- that run in for both warm and hot peers).
 --
-data ProtocolTemperature = Hot | Warm | Established
+data ProtocolTemperature = Established | Warm | Hot
+  deriving (Eq, Ord, Show)
 
 
 -- | Singletons for 'AppKind'
