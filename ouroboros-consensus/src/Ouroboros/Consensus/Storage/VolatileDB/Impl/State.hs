@@ -90,7 +90,7 @@ data OpenState blockId h = OpenState {
       -- ^ Highest stored SlotNo.
       --
       -- INVARIANT: this is the cached value of:
-      -- > FileInfo.maxSlotInFiles (Index.elems (currentMap st))
+      -- > FileInfo.maxSlotNoInFiles (Index.elems (currentMap st))
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -364,8 +364,7 @@ mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files = do
       , currentMap         = currentMap''
       , currentRevMap      = currentRevMap'
       , currentSuccMap     = currentSuccMap'
-      , currentMaxSlotNo   = FileInfo.maxSlotInFiles
-                                (Index.elems currentMap')
+      , currentMaxSlotNo   = FileInfo.maxSlotNoInFiles (Index.elems currentMap')
       }
   where
     validateFile :: Indices blockId -> (FileId, FsPath) -> m (Indices blockId)

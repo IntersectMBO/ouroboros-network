@@ -280,8 +280,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer, prefixLen }
             (error $ "VolatileDB invariant violation:"
                     ++ "Current write file not found in Index.")
             (Index.lookup currentWriteId currentMap)
-        fileBlockInfo = FileInfo.mkFileBlockInfo (BlockSize bytesWritten) bbid
-        fileInfo' = FileInfo.addBlock bslot currentWriteOffset fileBlockInfo fileInfo
+        fileInfo' = FileInfo.addBlock bslot bbid fileInfo
         currentMap' = Index.insert currentWriteId fileInfo' currentMap
         internalBlockInfo' = InternalBlockInfo {
             ibFile         = currentWritePath
@@ -343,8 +342,8 @@ garbageCollectImpl env slot = do
         -- (when we GC everything), because a GC can only delete blocks < a
         -- slot.
         modify $ \st -> st {
-            currentMaxSlotNo = FileInfo.maxSlotInFiles
-              (Index.elems (currentMap st))
+            currentMaxSlotNo = FileInfo.maxSlotNoInFiles
+                                 (Index.elems (currentMap st))
           }
         lift $ lift $ traceEventM "STOP garbage collection"
   where
@@ -385,10 +384,10 @@ garbageCollectFile hasFS (fileId, fileInfo) = do
     st@OpenState { currentMap, currentRevMap, currentSuccMap } <- get
 
     let bids            = FileInfo.blockIds fileInfo
-        currentRevMap'  = Map.withoutKeys currentRevMap (Set.fromList bids)
+        currentRevMap'  = Map.withoutKeys currentRevMap bids
         deletedPairs    = mapMaybe
           (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
-          bids
+          (Set.toList bids)
         currentSuccMap' = foldl' deleteMapSet currentSuccMap deletedPairs
 
     put st {
