@@ -40,6 +40,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB hiding
                      (iteratorNext)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB hiding
                      (stream)
+
 import           HasAnalysis (HasAnalysis)
 import qualified HasAnalysis
 

@@ -14,6 +14,7 @@ module Block.Cardano (
 
 import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
+import           Options.Applicative
 
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
@@ -47,6 +48,7 @@ instance HasAnalysis (CardanoBlock TPraosStandardCrypto) where
         byronArgs   :: Args ByronBlock
       , shelleyArgs :: Args (ShelleyBlock TPraosStandardCrypto)
       }
+  argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
     let ByronBlockArgs {..}   = byronArgs
     let ShelleyBlockArgs {..} = shelleyArgs
@@ -67,6 +69,11 @@ instance HasAnalysis (CardanoBlock TPraosStandardCrypto) where
     knownEBBs (Proxy @ByronBlock)
 
 type CardanoBlockArgs = Args (CardanoBlock TPraosStandardCrypto)
+
+parseCardanoArgs :: Parser CardanoBlockArgs
+parseCardanoArgs = CardanoBlockArgs
+    <$> argsParser Proxy
+    <*> argsParser Proxy
 
 mkCardanoProtocolInfo :: forall c. TPraosCrypto c
                       => Genesis.Config

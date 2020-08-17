@@ -29,10 +29,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
 
-import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..))
-
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..))
-
 import           Analysis
 import           Block.Byron (ByronBlockArgs)
 import           Block.Cardano (Args (..), CardanoBlockArgs)
@@ -74,11 +70,11 @@ parseCmdLine = CmdLine
           , help "Path to the Chain DB"
           , metavar "PATH"
           ])
-    <*> flag False True (mconcat [
+    <*> switch (mconcat [
             long "verbose"
           , help "Enable verbose logging"
           ])
-    <*> flag False True (mconcat [
+    <*> switch (mconcat [
             long "onlyImmDB"
           , help "Validate only the Immutable DB (e.g. do not do ledger validation)"
           ])
@@ -134,58 +130,13 @@ blockTypeParser = subparser $ mconcat
   ]
 
 parseByronType :: Parser BlockType
-parseByronType = ByronBlock <$> parseByronArgs
-
-parseByronArgs :: Parser ByronBlockArgs
-parseByronArgs = ByronBlockArgs
-    <$> strOption (mconcat [
-            long "configByron"
-          , help "Path to config file"
-          , metavar "PATH"
-          ])
-    <*> flag False True (mconcat [
-            long "testnet"
-          , help "The DB contains blocks from testnet rather than mainnet"
-          ])
-    <*> parseMaybe (option auto (mconcat [
-            long "genesisHash"
-          , help "Expected genesis hash"
-          , metavar "HASH"
-          ]))
-    <*> parseMaybe (PBftSignatureThreshold <$> thresholdParser)
-  where
-    thresholdParser = option auto (mconcat [
-            long "threshold"
-          , help "PBftSignatureThreshold"
-          , metavar "THRESHOLD"
-          ])
+parseByronType = ByronBlock <$> argsParser Proxy
 
 parseShelleyType :: Parser BlockType
-parseShelleyType = ShelleyBlock <$> parseShelleyArgs
-
-parseShelleyArgs :: Parser ShelleyBlockArgs
-parseShelleyArgs = ShelleyBlockArgs
-    <$> strOption (mconcat [
-            long "configShelley"
-          , help "Path to config file."
-          , metavar "PATH"
-          ])
-    <*> asum [ Nonce  <$> parseNonce
-             , pure NeutralNonce]
-  where
-    parseNonce = strOption (mconcat [
-            long "nonce"
-          , help "initial nonce"
-          , metavar "NONCE"
-          ])
+parseShelleyType = ShelleyBlock <$> argsParser Proxy
 
 parseCardanoType :: Parser BlockType
-parseCardanoType = CardanoBlock <$> parseCardanoArgs
-
-parseCardanoArgs :: Parser CardanoBlockArgs
-parseCardanoArgs = CardanoBlockArgs
-    <$> parseByronArgs
-    <*> parseShelleyArgs
+parseCardanoType = CardanoBlock <$> argsParser Proxy
 
 parseMaybe ::  Parser a -> Parser (Maybe a)
 parseMaybe parser = asum [Just <$> parser, pure Nothing]
@@ -223,12 +174,12 @@ analyse CmdLine {..} args =
         ImmDB.withImmDB immDbArgs $ \immDB -> do
           runAnalysis analysis cfg (Left immDB) registry
           immDbTipPoint <- ImmDB.getPointAtTip immDB
-          putStrLn $ "DB tip: " ++ show immDbTipPoint
+          putStrLn $ "ImmDB tip: " ++ show immDbTipPoint
       else
         ChainDB.withDB chainDbArgs $ \chainDB -> do
           runAnalysis analysis cfg (Right chainDB) registry
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
-          putStrLn $ "DB tip: " ++ show chainDbTipPoint
+          putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
   where
     tracer
       | verbose   = contramap show debugTracer

@@ -17,7 +17,9 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import           Data.Foldable (asum)
 import           GHC.Natural (Natural)
+import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
 import qualified Cardano.Crypto as Crypto
@@ -32,7 +34,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold,
+import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..),
                      protocolInfoByron)
 
 import           HasAnalysis
@@ -45,6 +47,7 @@ instance HasAnalysis ByronBlock where
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
+    argsParser _ = parseByronArgs
     mkProtocolInfo ByronBlockArgs {..} = do
       config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
       return $ mkByronProtocolInfo config threshold
@@ -55,6 +58,33 @@ instance HasAnalysis ByronBlock where
     knownEBBs = const Byron.knownEBBs
 
 type ByronBlockArgs = Args ByronBlock
+
+parseByronArgs :: Parser ByronBlockArgs
+parseByronArgs = ByronBlockArgs
+    <$> strOption (mconcat [
+            long "configByron"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
+    <*> switch (mconcat [
+            long "testnet"
+          , help "The DB contains blocks from testnet rather than mainnet"
+          ])
+    <*> parseMaybe (option auto (mconcat [
+            long "genesisHash"
+          , help "Expected genesis hash"
+          , metavar "HASH"
+          ]))
+    <*> parseMaybe (PBftSignatureThreshold <$> thresholdParser)
+  where
+    thresholdParser = option auto (mconcat [
+            long "threshold"
+          , help "PBftSignatureThreshold"
+          , metavar "THRESHOLD"
+          ])
+
+parseMaybe ::  Parser a -> Parser (Maybe a)
+parseMaybe parser = asum [Just <$> parser, pure Nothing]
 
 -- | Equivalent of 'either' for 'ABlockOrBoundary'.
 aBlockOrBoundary :: (Chain.ABoundaryBlock ByteString -> a)

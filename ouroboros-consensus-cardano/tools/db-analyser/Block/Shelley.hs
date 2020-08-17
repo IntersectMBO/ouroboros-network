@@ -13,8 +13,9 @@ module Block.Shelley (
 
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (toList)
+import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
+import           Options.Applicative
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
@@ -36,6 +37,7 @@ instance HasAnalysis (ShelleyBlock TPraosStandardCrypto) where
           configFileShelley :: FilePath
         , initialNonce      :: Nonce
         } deriving Show
+    argsParser _ = parseShelleyArgs
     mkProtocolInfo ShelleyBlockArgs {..}  = do
       config <- either (error . show) return =<<
         Aeson.eitherDecodeFileStrict' configFileShelley
@@ -65,3 +67,19 @@ mkShelleyProtocolInfo genesis initialNonce =
 
 countOutputs :: Shelley.Crypto c => SL.Tx c -> Int
 countOutputs tx = length $ SL._outputs $ SL._body tx
+
+parseShelleyArgs :: Parser ShelleyBlockArgs
+parseShelleyArgs = ShelleyBlockArgs
+    <$> strOption (mconcat [
+            long "configShelley"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
+    <*> asum [ Nonce  <$> parseNonce
+             , pure NeutralNonce]
+  where
+    parseNonce = strOption (mconcat [
+            long "nonce"
+          , help "Initial nonce, i.e., hash of the genesis config file"
+          , metavar "NONCE"
+          ])
