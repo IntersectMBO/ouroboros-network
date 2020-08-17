@@ -137,29 +137,12 @@ computePath ::
   -> Maybe (Path blk)
 computePath lookupBlockInfo from to =
     case computeReversePath lookupBlockInfo (realPointHash endPt) of
-      Nothing
-        -> Just $ NotInVolatileDB endPt
-      Just volPath
-        | exclUpperBound
-        -- When there's an exclusive upper bound, we must exclude the first
-        -- point of the reverse path from the returned 'Path'. We simply drop
-        -- it from the path before starting the main loop (@go@).
-        -> case volPath of
-             volPath' ::> _   -> go [] volPath'
-             -- If we're immediately stopped, the accumulator will be empty,
-             -- so no need to drop the last element. Reuse the termination
-             -- logic of @go@.
-             StoppedAt {}     -> go [] volPath
-             -- The exclusive end bound cannot be genesis, as it must be a
-             -- 'RealPoint', so the reverse path cannot start with
-             -- 'StoppedAtGenesis'.
-             StoppedAtGenesis -> error "exclusive end bound cannot be genesis"
-        | otherwise
-        -> go [] volPath
+      Nothing      -> Just $ NotInVolatileDB endPt
+      Just volPath -> go [] volPath
   where
-    (endPt, exclUpperBound) = case to of
-        StreamToInclusive pt -> (pt, False)
-        StreamToExclusive pt -> (pt, True)
+    endPt :: RealPoint blk
+    endPt = case to of
+        StreamToInclusive pt -> pt
 
     fieldsToRealPoint :: HeaderFields blk -> RealPoint blk
     fieldsToRealPoint flds =
@@ -223,8 +206,8 @@ computePath lookupBlockInfo from to =
 -- will fit onto each other.
 data Path blk =
     NotInVolatileDB (RealPoint blk)
-    -- ^ The @end@ point (@'StreamToInclusive' end@ or @'StreamToExclusive'
-    -- end@) was not part of the VolatileDB.
+    -- ^ The @end@ point (@'StreamToInclusive' end@) was not part of the
+    -- VolatileDB.
   | CompletelyInVolatileDB [RealPoint blk]
     -- ^ A complete path, from start point to end point was constructed from
     -- the VolatileDB. The list contains the points from oldest to newest.
@@ -236,8 +219,6 @@ data Path blk =
     --
     -- * If the upper bound was @'StreamToInclusive' pt@, then @pt@ will be
     --   the last element of the list.
-    -- * If the upper bound was @'StreamToExclusive' pt@, then the last
-    --   element of the list will correspond to the first block before @pt@.
   | PartiallyInVolatileDB (HeaderHash blk) [RealPoint blk]
     -- ^ Only a partial path could be constructed from the VolatileDB. The
     -- missing predecessor could still be in the ImmutableDB. The list

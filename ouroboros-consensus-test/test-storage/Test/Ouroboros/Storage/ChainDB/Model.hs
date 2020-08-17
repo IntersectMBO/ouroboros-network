@@ -851,7 +851,6 @@ between k from to m = do
       -- found on any chain
       let err = MissingBlock $ case to of
             StreamToInclusive p -> p
-            StreamToExclusive p -> p
       -- Note that any chain that contained @to@, must have an identical
       -- prefix because the hashes of the blocks enforce this. So we can just
       -- pick any fork.
@@ -870,20 +869,14 @@ between k from to m = do
     anyFork (Left  _ : fs) e = anyFork fs e
     anyFork []             e = Left e
 
-    -- If @to@ is on the fragment, remove all blocks after it, including @to@
-    -- itself in case of 'StreamToExclusive'. If it is not on the fragment,
-    -- return a 'MissingBlock' error.
+    -- If @to@ is on the fragment, remove all blocks after it. If it is not on
+    -- the fragment, return a 'MissingBlock' error.
     cutOffAfterTo :: AnchoredFragment blk
                   -> Either (UnknownRange blk) (AnchoredFragment blk)
     cutOffAfterTo frag = case to of
       StreamToInclusive p
         | Just frag' <- fst <$> Fragment.splitAfterPoint frag (realPointToPoint p)
         -> return frag'
-        | otherwise
-        -> Left $ MissingBlock p
-      StreamToExclusive p
-        | Just frag' <- fst <$> Fragment.splitAfterPoint frag (realPointToPoint p)
-        -> return $ Fragment.dropNewest 1 frag'
         | otherwise
         -> Left $ MissingBlock p
 

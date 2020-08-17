@@ -911,7 +911,7 @@ generator genBlock m@Model {..} = At <$> frequency
               case inEx of
                 Left  inc -> inc <$> genRealPoint
                 Right exc -> exc <$> genPoint)
-      <*> (genToInEx <*> genRealPoint)
+      <*> (StreamToInclusive <$> genRealPoint)
 
     genFromInEx :: Gen (Either (RealPoint blk -> StreamFrom blk)
                                (Point     blk -> StreamFrom blk))
@@ -919,9 +919,6 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genFromInEx' :: Gen (RealPoint blk -> StreamFrom blk)
     genFromInEx' = either id (. realPointToPoint) <$> genFromInEx
-
-    genToInEx :: Gen (RealPoint blk -> StreamTo blk)
-    genToInEx = elements [StreamToInclusive, StreamToExclusive]
 
     -- Generate bounds that correspond to existing blocks in the DB. Make sure
     -- that the start bound is older than the end bound.
@@ -932,7 +929,7 @@ generator genBlock m@Model {..} = At <$> frequency
       end   <- elements pointsInDB `suchThat` ((>= realPointSlot start) .
                                                realPointSlot)
       (,) <$> (genFromInEx' <*> return start)
-          <*> (genToInEx    <*> return end)
+          <*> (return $ StreamToInclusive end)
 
     genIteratorClose = IteratorClose <$> elements iterators
     genIteratorNext  = do
@@ -1048,16 +1045,11 @@ precondition Model {..} (At cmd) =
     -- TODO #871
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
-        case Model.between secParam from to' dbModel of
+        case Model.between secParam from to dbModel of
           Left  _    -> Bot
           -- All blocks must be valid
           Right blks -> forall blks $ \blk -> Boolean $
             Map.notMember (blockHash blk) $ Model.invalid dbModel
-      where
-        -- Include the exclusive bound in the check, as it must be valid too
-        to' = case to of
-          StreamToExclusive pt -> StreamToInclusive pt
-          StreamToInclusive pt -> StreamToInclusive pt
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)
            => Model   blk m r

@@ -491,9 +491,6 @@ stream db registry blockComponent from to = runExceptT $ do
     slotNoAtTip <- lift $ getSlotNoAtTip db
 
     end <- case to of
-      StreamToExclusive pt@(RealPoint slot hash) -> do
-        when (NotOrigin slot > slotNoAtTip) $ throwError $ MissingBlock pt
-        return $ Just (slot, hash)
       StreamToInclusive pt@(RealPoint slot hash) -> do
         when (NotOrigin slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
@@ -519,8 +516,7 @@ stream db registry blockComponent from to = runExceptT $ do
                  (ImmDB.Iterator (HeaderHash blk) m b)
     openStream start end = ExceptT $
         fmap (first toUnknownRange) $
-        traverse (stopAt to) =<<
-        openIterator db registry blockComponent start end
+          openIterator db registry blockComponent start end
       where
         toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
         toUnknownRange e
@@ -537,41 +533,6 @@ stream db registry blockComponent from to = runExceptT $ do
         wrongBoundErrorSlotNo = \case
           ImmDB.EmptySlotError slot     -> slot
           ImmDB.WrongHashError slot _ _ -> slot
-
-    -- | The ImmutableDB doesn't support an exclusive end bound, so we take
-    -- care of that here. We are given an iterator that uses the point of the
-    -- exclusive end bound as its inclusive end bound. We convert the iterator
-    -- into one obeying the exclusive end bound by always looking at the hash
-    -- of the next block to stream (which is cheap).
-    --
-    -- No-op if the end bound is inclusive.
-    stopAt :: StreamTo blk
-           -> ImmDB.Iterator (HeaderHash blk) m b
-           -> m (ImmDB.Iterator (HeaderHash blk) m b)
-    stopAt = \case
-      StreamToInclusive _     -> return
-      StreamToExclusive endPt -> \it -> do
-          -- Whenever the iterator is moved to the next block, we check
-          -- whether the next block (cheap with 'ImmDB.iteratorHasNext') is
-          -- the end bound, in which case we close the iterator. All other
-          -- operations on the iterator can remain the same.
-          --
-          -- We must do the check immediately, because the very first block
-          -- might be the exclusive upper bound.
-          closeWhenEndIsNext it
-          return it
-            { ImmDB.iteratorNext =
-                ImmDB.iteratorNext it <* closeWhenEndIsNext it
-            }
-        where
-          closeWhenEndIsNext it = ImmDB.iteratorHasNext it >>= \case
-            Nothing
-              -> return ()
-            Just (_epochOrSlot, hash)
-              | realPointHash endPt == hash
-              -> ImmDB.iteratorClose it
-              | otherwise
-              -> return ()
 
 -- | Stream headers/blocks after the given point
 --

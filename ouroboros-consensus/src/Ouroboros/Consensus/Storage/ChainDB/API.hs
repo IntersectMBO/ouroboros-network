@@ -518,9 +518,8 @@ data StreamFrom blk =
   | StreamFromExclusive !(Point     blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
-data StreamTo blk =
-    StreamToInclusive !(RealPoint blk)
-  | StreamToExclusive !(RealPoint blk)
+newtype StreamTo blk =
+    StreamToInclusive (RealPoint blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data Iterator m blk b = Iterator {
@@ -576,17 +575,11 @@ data UnknownRange blk =
 -- FIXME StreamFrom and StreamTo can be refined to not admit origin points
 -- in cases where it doesn't make sense.
 validBounds :: StreamFrom blk -> StreamTo blk -> Bool
-validBounds from to = case from of
-
-  StreamFromExclusive GenesisPoint -> True
-
-  StreamFromInclusive (RealPoint sfrom _) -> case to of
-    StreamToInclusive (RealPoint sto _) -> sfrom <= sto
-    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
-
-  StreamFromExclusive (BlockPoint sfrom _) -> case to of
-    StreamToInclusive (RealPoint sto _) -> sfrom <  sto
-    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
+validBounds from (StreamToInclusive (RealPoint sto _)) =
+    case from of
+      StreamFromExclusive GenesisPoint         -> True
+      StreamFromInclusive (RealPoint sfrom _)  -> sfrom <= sto
+      StreamFromExclusive (BlockPoint sfrom _) -> sfrom <  sto
 
 -- | Stream all blocks from the current chain.
 --

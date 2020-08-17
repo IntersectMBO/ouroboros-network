@@ -268,7 +268,6 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     endPoint :: RealPoint blk
     endPoint = case to of
       StreamToInclusive pt -> pt
-      StreamToExclusive pt -> pt
 
     -- | Use the tip of the ImmutableDB to determine whether to look directly
     -- in the ImmutableDB (the range is <= the tip) or first try the
