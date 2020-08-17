@@ -34,6 +34,7 @@ import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy (..))
+import           Data.Ratio ((%))
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
@@ -72,6 +73,7 @@ import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.MetaData as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
@@ -79,7 +81,6 @@ import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 import qualified Shelley.Spec.Ledger.Tx as SL
-import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as SL
                      (AllIssuerKeys (..), genesisId, mkOCert)
@@ -398,10 +399,7 @@ exampleNewEpochState = SL.NewEpochState {
     , nesEs     = epochState
     , nesRu     = SJust rewardUpdate
     , nesPd     = examplePoolDistr
-    , nesOsched = Map.fromList [
-          (SlotNo 0, SL.NonActiveSlot)
-        , (SlotNo 1, SL.ActiveSlot (mkKeyHash 1))
-        ]
+    , nesOsched = overlaySchedule
     }
   where
     epochState :: SL.EpochState c
@@ -446,6 +444,15 @@ exampleNewEpochState = SL.NewEpochState {
 
     nonMyopic :: SL.NonMyopic c
     nonMyopic = SL.emptyNonMyopic
+
+    overlaySchedule :: SL.OverlaySchedule c
+    overlaySchedule =
+        SL.overlayScheduleHelper
+          (EpochSize 2)
+          (SlotNo 0)
+          (Set.fromList [mkKeyHash 1, mkKeyHash 2])
+          (SL.truncateUnitInterval (9 % 10))
+          (SL.mkActiveSlotCoeff (SL.truncateUnitInterval (5 % 100)))
 
 exampleLedgerState :: LedgerState (ShelleyBlock TPraosStandardCrypto)
 exampleLedgerState = ShelleyLedgerState {

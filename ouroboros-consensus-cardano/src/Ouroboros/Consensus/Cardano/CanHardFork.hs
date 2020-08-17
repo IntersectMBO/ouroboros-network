@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   ) where
 
 import           Control.Monad.Reader (runReader)
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy
@@ -67,6 +66,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as SL
@@ -391,7 +391,7 @@ translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
       translatePointByronToShelley $
       ledgerTipPoint (Proxy @ByronBlock) ledgerByron
 
-    overlaySchedule :: Map SlotNo (SL.OBftSlot sc)
+    overlaySchedule :: SL.OverlaySchedule sc
     overlaySchedule =
       flip runReader (shelleyLedgerGlobals cfgShelley) $
         SL.overlaySchedule
@@ -464,7 +464,7 @@ translateLedgerViewByronToShelley shelleyCfg epochNo = TickedPraosLedgerView $
       , shelleyLedgerGlobals
       } = shelleyCfg
 
-    overlaySchedule :: Map SlotNo (SL.OBftSlot sc)
+    overlaySchedule :: SL.OverlaySchedule sc
     overlaySchedule =
       flip runReader shelleyLedgerGlobals $
         SL.overlaySchedule
