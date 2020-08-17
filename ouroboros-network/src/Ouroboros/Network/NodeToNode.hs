@@ -232,40 +232,48 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> (ConnectionId addr -> STM m ControlMessage -> NodeToNodeProtocols appType bytes m a b)
+  -> (ConnectionId addr -> STM m ControlMessage -> NodeToNodeProtocols muxMode bytes m a b)
   -> NodeToNodeVersion
-  -> OuroborosApplication appType addr bytes m a b
+  -> OuroborosBundle muxMode addr bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols _version =
-  OuroborosApplication $ \connectionId controlMessageSTM ->
-    case protocols connectionId controlMessageSTM of
-      NodeToNodeProtocols {
-          chainSyncProtocol,
-          blockFetchProtocol,
-          txSubmissionProtocol,
-          keepAliveProtocol
-        } ->
-        [
-          MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 2,
-            miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
-            miniProtocolRun    = chainSyncProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 3,
-            miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
-            miniProtocolRun    = blockFetchProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 4,
-            miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
-            miniProtocolRun    = txSubmissionProtocol
-          }
-        , MiniProtocol {
-            miniProtocolNum    = MiniProtocolNum 8,
-            miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
-            miniProtocolRun    = keepAliveProtocol
-          }
-        ]
+    Bundle
+      -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
+      (WithHot $ \connectionId controlMessageSTM ->
+        case protocols connectionId controlMessageSTM of
+          NodeToNodeProtocols { chainSyncProtocol,
+                                blockFetchProtocol,
+                                txSubmissionProtocol
+                              } ->
+            [ MiniProtocol {
+                miniProtocolNum    = MiniProtocolNum 2,
+                miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = chainSyncProtocol
+              }
+            , MiniProtocol {
+                miniProtocolNum    = MiniProtocolNum 3,
+                miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = blockFetchProtocol
+              }
+            , MiniProtocol {
+                miniProtocolNum    = MiniProtocolNum 4,
+                miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = txSubmissionProtocol
+              }
+            ])
+
+      -- Warm protocols: reserved for 'tip-sample'.
+      (WithWarm $ \_connectionId _controlMessageSTM -> [])
+
+      -- Established protocols: 'keep-alive'.
+      (WithEstablished $ \connectionId controlMessageSTM ->
+        case protocols connectionId controlMessageSTM of
+          NodeToNodeProtocols { keepAliveProtocol } ->
+            [ MiniProtocol {
+                miniProtocolNum    = MiniProtocolNum 8,
+                miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = keepAliveProtocol
+              }
+            ])
 
 addSafetyMargin :: Int -> Int
 addSafetyMargin x = x + x `div` 10

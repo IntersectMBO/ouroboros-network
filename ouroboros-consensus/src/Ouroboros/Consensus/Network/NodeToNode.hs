@@ -23,9 +23,8 @@ module Ouroboros.Consensus.Network.NodeToNode (
     -- * Applications
   , Apps (..)
   , mkApps
-    -- ** Projections
-  , initiator
-  , responder
+    -- ** 'OuroborosBundle'
+  , initiatorAndResponder
     -- * Re-exports
   , ChainSyncTimeout (..)
   ) where
@@ -135,7 +134,7 @@ data Handlers m peer blk = Handlers {
 
     , hKeepAliveClient
         :: NodeToNodeVersion
-        -> ScheduledStop m
+        -> ControlMessageSTM m
         -> peer
         -> StrictTVar m (Map peer PeerGSV)
         -> KeepAliveInterval
@@ -539,7 +538,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer
-                         $ hKeepAliveClient version (neverStop (Proxy :: Proxy m)) them dqCtx
+                         $ hKeepAliveClient version (continueForever (Proxy :: Proxy m)) them dqCtx
                              (KeepAliveInterval 10)
 
       bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
@@ -564,18 +563,17 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
   Projections from 'Apps'
 -------------------------------------------------------------------------------}
 
--- | A projection from 'NetworkApplication' to a client-side
--- 'OuroborosApplication' for the node-to-node protocols.
+-- | A bi-directional network applicaiton.
 --
 -- Implementation note: network currently doesn't enable protocols conditional
 -- on the protocol version, but it eventually may; this is why @_version@ is
 -- currently unused.
-initiator
+initiatorAndResponder
   :: MiniProtocolParameters
   -> NodeToNodeVersion
   -> Apps m (ConnectionId peer) b b b b a
-  -> OuroborosApplication 'InitiatorMode peer b m a Void
-initiator miniProtocolParameters version Apps {..} =
+  -> OuroborosBundle 'InitiatorResponderMode peer b m a a
+initiatorAndResponder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
       -- TODO: currently consensus is using 'ConnectionId' for its 'peer' type.
@@ -584,38 +582,22 @@ initiator miniProtocolParameters version Apps {..} =
       -- p2p-governor & connection-manager.  Then consenus can use peer's ip
       -- address & port number, rather than 'ConnectionId' (which is
       -- a quadruple uniquely determinaing a connection).
-      (\them _shouldStopSTM -> NodeToNodeProtocols {
+      (\them _controlMessageSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aChainSyncClient version them))
+              (MuxPeerRaw (aChainSyncServer version them))),
           blockFetchProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aBlockFetchClient version them))
+              (MuxPeerRaw (aBlockFetchServer version them))),
           txSubmissionProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aTxSubmissionClient version them))
+              (MuxPeerRaw (aTxSubmissionServer version them))),
           keepAliveProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version them)))
-        })
-      version
-
--- | A projection from 'NetworkApplication' to a server-side
--- 'OuroborosApplication' for the node-to-node protocols.
---
--- See 'initiatorNetworkApplication' for rationale for the @_version@ arg.
-responder
-  :: MiniProtocolParameters
-  -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b a
-  -> OuroborosApplication 'ResponderMode peer b m Void a
-responder miniProtocolParameters version Apps {..} =
-    nodeToNodeProtocols
-      miniProtocolParameters
-      (\them _shouldStopSTM -> NodeToNodeProtocols {
-          chainSyncProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
-          blockFetchProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
-          txSubmissionProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them))),
-          keepAliveProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aKeepAliveClient version them))
+              (MuxPeerRaw (aKeepAliveServer version them)))
         })
       version

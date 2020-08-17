@@ -23,8 +23,6 @@ module Ouroboros.Consensus.Node
   , NodeKernel (..)
   , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
-  , IPSubscriptionTarget (..)
-  , DnsSubscriptionTarget (..)
   , ConnectionId (..)
   , RemoteConnectionId
     -- * Internal helpers
@@ -40,6 +38,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Void (Void)
 import           System.Random (newStdGen, randomIO, randomRIO)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -66,10 +65,10 @@ import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
+import           Ouroboros.Consensus.Node.RethrowPolicy
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
@@ -152,7 +151,7 @@ data RunNodeArgs blk = RunNodeArgs {
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-run :: forall blk. RunNode blk => RunNodeArgs blk -> IO ()
+run :: forall blk. RunNode blk => RunNodeArgs blk -> IO Void
 run runargs@RunNodeArgs{..} =
 
     withDBChecks runargs $ \lastShutDownWasClean ->
@@ -297,22 +296,14 @@ run runargs@RunNodeArgs{..} =
       -> DiffusionApplications
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
-          daResponderApplication = combineVersions [
-              simpleSingletonVersions
-                version
-                nodeToNodeVersionData
-                (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
-            ]
-        , daInitiatorApplication = combineVersions [
-              simpleSingletonVersions
-                version
-                nodeToNodeVersionData
-                (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
-            ]
+            daApplication = combineVersions
+             [ simpleSingletonVersions
+                 version
+                 nodeToNodeVersionData
+                 (DictVersion nodeToNodeCodecCBORTerm)
+                 (NTN.initiatorAndResponder miniProtocolParams version $ ntnApps blockVersion)
+             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
+             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
@@ -321,7 +312,9 @@ run runargs@RunNodeArgs{..} =
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]
-        , daErrorPolicies = consensusErrorPolicy
+        , daMiniProtocolParameters = miniProtocolParams
+        , daRethrowPolicy = consensusRethrowPolicy
+        , daLocalRethrowPolicy = mempty
         }
 
 -- | Check the DB marker, lock the DB and look for the clean shutdown marker.
