@@ -29,7 +29,6 @@ module Ouroboros.Consensus.Shelley.Node (
 import           Control.Monad.Reader (runReader)
 import           Data.Bifunctor (first)
 import           Data.Functor.Identity (Identity)
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 
@@ -60,9 +59,9 @@ import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
@@ -258,7 +257,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     runShelleyBase :: SL.ShelleyBase a -> a
     runShelleyBase sb = runReader sb (shelleyLedgerGlobals ledgerConfig)
 
-    oSched :: Map SlotNo (SL.OBftSlot c)
+    oSched :: SL.OverlaySchedule c
     oSched = runShelleyBase $
       SL.overlaySchedule
         initialEpochNo

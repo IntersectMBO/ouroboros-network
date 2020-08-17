@@ -72,6 +72,7 @@ import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
@@ -341,7 +342,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   checkIsLeader cfg@TPraosConfig{..} TPraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
-      case Map.lookup slot (SL.lvOverlaySched lv) of
+      case SL.lookupInOverlaySchedule slot (SL.lvOverlaySched lv) of
         -- Slot isn't in the overlay schedule, so we're in Praos
         Nothing
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
