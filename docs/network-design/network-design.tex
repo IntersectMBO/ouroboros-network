@@ -19,7 +19,7 @@
 
 \begin{document}
 
-\listoftodos
+%\listoftodos
 
 \title{Introduction to the design of the
        Data Diffusion and Networking for
@@ -2957,7 +2957,7 @@ It should be executable without consuming excessive\footnote{We take a
   Storage
 \end{itemize}
 
-\subsection{Thresholds and targets}
+\subsection{Data diffusion targets}
 \label{thresholds-and-targets}
 
 The fundamental task of the data diffusion function is to distribute
@@ -2969,35 +2969,34 @@ substantially -- which would lead to Shelley having much lower
 transaction throughput and longer settling times -- is not acceptable
 from a business/community acceptance perspective.} by aiming for a
 slot time of 1s and a slot occupancy of 5\%. Allowing the Praos $\Delta$
-parameter to be \textasciitilde{}20 gives the following thresholds and
-targets\footnote{Based on informal discussions with the research group.}
-for bloc distribution:
+parameter to be \textasciitilde{}5 gives a target for block 
+distribution of X\% of peers reached within 5s. For well-connected
+core nodes, the business requirements of \ref{business-requirements}
+provide the following targets:
 
-\todo[inline]{Peter Gazi: Need to review the numbers above and below based on the choice
-of slot length, $f$ and praos $\Delta$ parameters.}
-
-\begin{itemize}
-\item
-  Threshold: 95\% of peers reached within 20s
-\item
-  Target: 95\% of peers reached within 15s
-\item
-  Stretch: 95\% of peers reached within 10s
-\end{itemize}
+\begin{longtable}[]{@{}ll@{}}
+  \toprule
+  Threshold & \textgreater{} 95\%\tabularnewline
+  \endhead
+  Target & \textgreater{} 98\%\tabularnewline
+  Stretch & \textgreater{} 99\%\tabularnewline
+  \bottomrule
+\end{longtable}
 
 This should be achieved even when blocks are all `full', as constrained
 by the on-chain parameter. The hazard that arises otherwise is that
 there will be a turning point in the performance curve, which could lead
-to throughput collapse and excessive forking of the chain.
+to throughput collapse and excessive forking of the chain. Note that 
+this implies a bandwidth\footnote{Note that this is required for \emph{any}
+node (even a wallet) to keep up with the maximum rate of chain growth.} 
+of 100kb/s, which is roughly 1Mbit/s, even in the `super-stretch'
+scenario where 2Mb blocks emerge (on average) every 20s.
 
 The network component is also responsible for diffusing transactions so
 that they can be incorporated into blocks. There is no benefit in
 transporting more transactions than can be incorporated into the chain,
-so the maximum rate that needs to be sustained\footnote{Note that this
-  also represents the absolute minimum bandwidth required for \emph{any}
-  node (even a wallet) to keep up with the maximum rate of chain growth.}
-is only 100kb/s, which is roughly 1Mbit/s, even in the `super-stretch'
-scenario where 2Mb blocks emerge (on average) every 20s.
+so the maximum bandwidth that needs to be sustained is the same as for 
+diffusing blocks.
 
 \subsection{Fundamental tradeoffs}
 \label{fundamental-tradeoffs}
@@ -3008,7 +3007,7 @@ creates a series of fundamental tradeoffs that need to be managed:
 
 \begin{itemize}
 \item
-  Between geographic spread and minimum slot time / $\Delta$;
+  Between geographic spread and minimum slot time and $\Delta$;
 
   \begin{itemize}
   \item
@@ -3017,7 +3016,8 @@ creates a series of fundamental tradeoffs that need to be managed:
     in exchanging information;
   \end{itemize}
 \item
-  Between transaction size (50 bytes - 10's kbytes) and rate\footnote{Transaction
+  Between transaction size (50 bytes - 10's kbytes) and transaction
+  rate\footnote{Transaction
     bytes per second might be a better measure than transaction rate.};
 
   \begin{itemize}
@@ -3026,30 +3026,31 @@ creates a series of fundamental tradeoffs that need to be managed:
     can be incorporated in any given slot;
   \end{itemize}
 \item
-  Between node valency\footnote{Increasing average node valency has
-    diminishing returns, such that values beyond 20 are probably not
-    justified. What is more significant (from the characteristic path
-    length point of view) is the variance of node valency - i.e. some
-    nodes have substantially higher number of chain-following
-    subscribers in the hundreds.}, path length and network capacity;
+  Between node valency, path length and network capacity;
 
   \begin{itemize}
   \item
     A higher valency (more connected peers) reduces the number of hops
     that information must travel, but increases the consumption of
-    available network capacity at a node;
+    available network capacity at a node\footnote{Increasing average 
+    node valency has
+    diminishing returns, such that values beyond 20 are probably not
+    justified. What is more significant for the characteristic path
+    length is the variance of node valency - i.e. some
+    nodes have substantially more chain-following
+    subscribers, e.g. in the hundreds.};
   \item
     A larger number of hops reduces the time that any individual hop can
-    be allowed to take and hence demands more of the network capacity to
+    be allowed to take and hence demands more network capacity to
     deliver the information quickly to the next node;
   \item
     Both of these drive up the peak capacity requirement at a node.
   \end{itemize}
 \end{itemize}
 
-The table~\ref{table:transaction-size} showing the effect of
-transaction rate and block size\footnote{Assuming a 20s average block
-interval.} on the resulting average transaction size (in bytes).
+Table~\ref{table:transaction-size} shows the effect of
+transaction rate and block size on the resulting average 
+transaction size (in bytes), assuming a 20s average block interval.
 
 \begin{table}
   \caption{Transaction size as a function of block size and transactions per
@@ -3075,12 +3076,13 @@ interval.} on the resulting average transaction size (in bytes).
 
 It can be seen that high transaction rates limit the transaction size,
 even with large blocks. Also there are combinations that are infeasible
-for different uses. A transaction\footnote{At least in the benchmarking
-  environment -- which is using the simplest forms of transaction -
-  correct at time of writing..} has a {minimum size of 305 bytes} (single
-input UTxO to single UTxO), a ``useful'' one (1 input to two output) 361
+for different uses. A transaction has a absolute minimum size of 305 
+bytes\footnote{At least in the benchmarking
+environment, which is using the simplest forms of transaction 
+(correct at time of writing).} (single
+input UTxO to single UTxO), a ``useful'' one (1 input to two outputs) 361
 bytes. Coin selection (for privacy enhancement) uses multiple inputs and
-multiple outputs. And exchanges look for large numbers (50+) and
+multiple outputs, and exchanges look for large numbers (50+) and
 transactions sizes in the 8k+ range. Envisaged future uses (Plutus /
 Marlow) will bring with them their own characteristic transaction size
 distributions.
