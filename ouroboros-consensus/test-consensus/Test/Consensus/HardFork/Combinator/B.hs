@@ -105,9 +105,10 @@ instance ConsensusProtocol ProtocolB where
 
   protocolSecurityParam = cfgB_k
 
-  tickChainDepState   _ _ _ _ = TickedTrivial
-  updateChainDepState _ _ _ _ = return ()
-  rewindChainDepState _ _ _ _ = Just ()
+  tickChainDepState     _ _ _ _ = TickedTrivial
+  updateChainDepState   _ _ _ _ = return ()
+  reupdateChainDepState _ _ _ _ = ()
+  rewindChainDepState   _ _ _ _ = Just ()
 
 data BlockB = BlkB {
       blkB_header :: Header BlockB

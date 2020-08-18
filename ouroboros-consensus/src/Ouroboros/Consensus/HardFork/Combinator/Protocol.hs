@@ -106,6 +106,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   tickChainDepState     = tick
   checkIsLeader         = check
   updateChainDepState   = update
+  reupdateChainDepState = reupdate
   rewindChainDepState _ = rewind
 
   --
@@ -340,6 +341,45 @@ updateEra ei slot cfg injectErr
           (unwrapValidateView view)
           slot
           (unwrapTickedChainDepState chainDepState)
+
+reupdate :: forall xs. CanHardFork xs
+         => ConsensusConfig (HardForkProtocol xs)
+         -> OneEraValidateView xs
+         -> SlotNo
+         -> Ticked (HardForkChainDepState xs)
+         -> HardForkChainDepState xs
+reupdate HardForkConsensusConfig{..}
+         (OneEraValidateView view)
+         slot
+         (TickedHardForkChainDepState chainDepState ei) =
+    case State.match view chainDepState of
+      Left mismatch ->
+        error $ show . HardForkValidationErrWrongEra . MismatchEraInfo $
+          Match.bihcmap
+            proxySingle
+            singleEraInfo
+            (LedgerEraInfo . chainDepStateInfo . State.currentState)
+            mismatch
+      Right matched ->
+           State.tickAllPast hardForkConsensusConfigK
+         . hczipWith proxySingle (reupdateEra ei slot) cfgs
+         $ matched
+  where
+    cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
+
+reupdateEra :: SingleEraBlock blk
+            => EpochInfo Identity
+            -> SlotNo
+            -> WrapPartialConsensusConfig blk
+            -> Product WrapValidateView (Ticked :.: WrapChainDepState) blk
+            -> WrapChainDepState blk
+reupdateEra ei slot cfg (Pair view (Comp chainDepState)) =
+    WrapChainDepState $
+      reupdateChainDepState
+        (completeConsensusConfig' ei cfg)
+        (unwrapValidateView view)
+        slot
+        (unwrapTickedChainDepState chainDepState)
 
 {-------------------------------------------------------------------------------
   Auxiliary

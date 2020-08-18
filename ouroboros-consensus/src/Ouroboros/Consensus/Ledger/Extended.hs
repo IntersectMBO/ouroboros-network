@@ -185,24 +185,13 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
                (mapLedgerCfg extLedgerCfgLedger cfg)
                blk
                tickedLedgerState
-      , headerState = cantBeError $
-             validateHeader
+      , headerState =
+             revalidateHeader
                (extLedgerCfgToTopLevel cfg)
                tickedLedgerView
                (getHeader blk)
                tickedHeaderState
       }
-    where
-      cantBeError :: Show e => Except e a -> a
-      cantBeError =
-            either
-              (\e ->
-                  error $
-                    "reapplyLedgerBlock " <>
-                    show (blockPoint blk) <>
-                    ": " <> show e)
-              id
-          . runExcept
 
 {-------------------------------------------------------------------------------
   Serialisation
