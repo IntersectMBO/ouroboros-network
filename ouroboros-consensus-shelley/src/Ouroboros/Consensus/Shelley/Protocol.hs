@@ -411,6 +411,15 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
       lv = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
 
+  reupdateChainDepState TPraosConfig{..} b slot cs =
+      let newCS = SL.reupdateChainDepState shelleyGlobals lv b (tickedPraosStateTicked cs)
+      in State.prune (fromIntegral k) $
+         State.append slot newCS (tickedPraosStateOrig cs)
+    where
+      SecurityParam k = tpraosSecurityParam tpraosParams
+      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
+      lv = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
+
   -- Rewind the chain state
   --
   -- We don't roll back to the exact slot since that slot might not have been

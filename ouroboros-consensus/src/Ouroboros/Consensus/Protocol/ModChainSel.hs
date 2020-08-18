@@ -51,6 +51,7 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     checkIsLeader         = checkIsLeader         . mcsConfigP
     tickChainDepState     = tickChainDepState     . mcsConfigP
     updateChainDepState   = updateChainDepState   . mcsConfigP
+    reupdateChainDepState = reupdateChainDepState . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP
 
     rewindChainDepState _proxy = rewindChainDepState (Proxy @p)

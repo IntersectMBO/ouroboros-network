@@ -207,6 +207,24 @@ class ( Show (ChainDepState   p)
                       -> Ticked (ChainDepState p)
                       -> Except (ValidationErr p) (ChainDepState p)
 
+  -- | Re-apply a header to the same 'ChainDepState' we have been able to
+  -- successfully apply to before.
+  --
+  -- Since a header can only be applied to a single, specific,
+  -- 'ChainDepState', if we apply a previously applied header again it will be
+  -- applied in the very same 'ChainDepState', and therefore can't possibly
+  -- fail.
+  --
+  -- It is worth noting that since we already know that the header is valid
+  -- w.r.t. the provided 'ChainDepState', no validation checks should be
+  -- performed.
+  reupdateChainDepState :: HasCallStack
+                        => ConsensusConfig       p
+                        -> ValidateView          p
+                        -> SlotNo
+                        -> Ticked (ChainDepState p)
+                        -> ChainDepState         p
+
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: ConsensusConfig p -> SecurityParam
 

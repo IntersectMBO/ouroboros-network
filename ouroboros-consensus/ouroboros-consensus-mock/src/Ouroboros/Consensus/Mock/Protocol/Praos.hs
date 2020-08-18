@@ -370,6 +370,18 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
 
     return $ PraosChainDepState $ bi : praosHistory cds
 
+  reupdateChainDepState _
+                        (PraosValidateView PraosFields{..} _)
+                        slot
+                        (TickedPraosChainDepState (TickedStakeDist sd) cds) =
+    let PraosExtraFields{..} = praosExtraFields
+        !bi = BlockInfo
+            { biSlot  = slot
+            , biRho   = praosRho
+            , biStake = StakeDist sd
+            }
+    in PraosChainDepState $ bi : praosHistory cds
+
   -- Rewind the chain state
   --
   -- The mock implementation of Praos keeps the full history of the chain state

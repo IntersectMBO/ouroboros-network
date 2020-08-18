@@ -343,6 +343,27 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
     where
       params = pbftWindowParams cfg
 
+  reupdateChainDepState cfg@PBftConfig{..}
+                        toValidate
+                        slot
+                        (TickedPBftState (TickedPBftLedgerView dms) state) =
+      case toValidate of
+        PBftValidateBoundary hash ->
+          appendEBB cfg params slot hash state
+        PBftValidateRegular PBftFields{pbftIssuer} _ _ ->
+          case Bimap.lookupR (hashVerKey pbftIssuer) dms of
+            Nothing ->
+              error $ show $ PBftNotGenesisDelegate
+                               (hashVerKey pbftIssuer)
+                               (PBftLedgerView dms)
+            Just gk -> do
+              let state' = append cfg params (slot, gk) state
+              case pbftWindowExceedsThreshold params state' gk of
+                Left n   -> error $ show $ PBftExceededSignThreshold gk n
+                Right () -> state'
+    where
+      params = pbftWindowParams cfg
+
   rewindChainDepState _proxy = rewind
 
 {-------------------------------------------------------------------------------

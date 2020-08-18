@@ -17,6 +17,7 @@
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
   , validateHeader'
+  , revalidateHeader
     -- * Annotated tips
   , AnnTip(..)
   , annTipHash
@@ -64,6 +65,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -72,6 +74,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util.Assert
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
 {-------------------------------------------------------------------------------
@@ -510,6 +513,44 @@ validateHeader' cfg ledgerView hdr hdrState =
          ledgerView
          (blockSlot hdr)
          hdrState)
+
+-- | Header revalidation
+--
+-- Same as 'validateHeader' but used when the header has been validated before
+-- w.r.t. the same exact 'HeaderState'.
+--
+-- Expensive validation checks are skipped ('reupdateChainDepState' vs.
+-- 'updateChainDepState').
+revalidateHeader ::
+     forall blk. (BlockSupportsProtocol blk, ValidateEnvelope blk, HasCallStack)
+  => TopLevelConfig blk
+  -> Ticked (LedgerView (BlockProtocol blk))
+  -> Header blk
+  -> Ticked (HeaderState blk)
+  -> HeaderState blk
+revalidateHeader cfg ledgerView hdr st =
+    assertWithMsg envelopeCheck $
+      headerStatePush
+        (configSecurityParam cfg)
+        chainDepState'
+        (getAnnTip hdr)
+        st
+  where
+    chainDepState' :: ChainDepState (BlockProtocol blk)
+    chainDepState' =
+        reupdateChainDepState
+          (configConsensus cfg)
+          (validateView (configBlock cfg) hdr)
+          (blockSlot hdr)
+          (tickedHeaderStateConsensus st)
+
+    envelopeCheck :: Either String ()
+    envelopeCheck = runExcept $ withExcept show $
+        validateEnvelope
+          cfg
+          ledgerView
+          (headerStateTip st)
+          hdr
 
 {-------------------------------------------------------------------------------
   TipInfoIsEBB
