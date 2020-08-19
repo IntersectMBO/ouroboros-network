@@ -1,307 +1,97 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
+-- | Database analyse tool.
 module Main (main) where
 
-import           Control.Monad.Except
-import qualified Data.ByteString as BS
-import           Data.Either (fromRight)
 import           Data.Foldable (asum)
-import           Data.IORef
-import           Data.List (intercalate)
-import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
-import qualified Data.Text as Text
 import           Options.Applicative
-import           System.FilePath ((</>))
 
-import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
-                     genesisPoint)
-import           Ouroboros.Network.Magic
+import           Control.Tracer (contramap, debugTracer, nullTracer)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import qualified Ouroboros.Consensus.Node as Node
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
+import           Ouroboros.Consensus.Util.IOLike (atomically)
+import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     StreamFrom (..), StreamTo (..))
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB hiding
-                     (withImmDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-                     (withImmDB)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import           Ouroboros.Consensus.Cardano.Block (CardanoBlock)
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock (..))
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-                     (TPraosStandardCrypto)
-
-import           Analysis (HasAnalysis)
-import qualified Analysis
+import           Analysis
+import           Block.Byron (ByronBlockArgs)
+import           Block.Cardano (Args (..), CardanoBlockArgs)
+import           Block.Shelley (ShelleyBlockArgs)
+import           HasAnalysis
 
 main :: IO ()
 main = do
-    cmdLine@CmdLine{..} <- getCmdLine
-    case clBlockType of
-      Just Byron   -> analyse cmdLine (Proxy @ByronBlock)
-      Just Shelley -> analyse cmdLine (Proxy @(ShelleyBlock TPraosStandardCrypto))
-      Just Cardano -> analyse cmdLine (Proxy @(CardanoBlock TPraosStandardCrypto))
-      Nothing -> do
-        -- check the dbmarker of the db if the block type is not specified.
-        networkMagic <- readDBMarker clImmDB
-        case unNetworkMagic networkMagic of
-          764824073  -> analyse cmdLine (Proxy @ByronBlock)
-          1097911063 -> analyse cmdLine (Proxy @ByronBlock)
-          42         -> analyse cmdLine (Proxy @(ShelleyBlock TPraosStandardCrypto))
-          _          -> error $ "unsupported networkMagic: " ++ show networkMagic
-
-readDBMarker :: FilePath -> IO NetworkMagic
-readDBMarker dbPath = do
-    bs <- BS.readFile markerPath
-    networkMagic <- runExceptT $ dbMarkerParse markerPath bs
-    return $ fromRight
-      (error "failed to parse networkMagic from db Marker file")
-      networkMagic
-  where
-    markerPath = dbPath </> Text.unpack dbMarkerFile
-
-
-analyse :: forall blk. (RunNode blk, HasAnalysis blk)
-        => CmdLine -> Proxy blk -> IO ()
-analyse CmdLine{..} _ = do
-    cfg :: TopLevelConfig blk <- Analysis.mkTopLevelConfig clConfig clIsMainNet
-    withRegistry $ \registry ->
-      withImmDB clImmDB cfg (nodeImmDbChunkInfo cfg) registry $ \immDB -> do
-        runAnalysis clAnalysis cfg immDB registry
-        putStrLn "Done"
-
-{-------------------------------------------------------------------------------
-  Run the requested analysis
--------------------------------------------------------------------------------}
-
-data AnalysisName =
-    ShowSlotBlockNo
-  | CountTxOutputs
-  | ShowBlockHeaderSize
-  | ShowBlockTxsSize
-  | ShowEBBs
-  deriving Show
-
-type Analysis blk = TopLevelConfig blk
-                 -> ImmDB IO blk
-                 -> ResourceRegistry IO
-                 -> IO ()
-
-runAnalysis :: (HasAnalysis blk, RunNode blk)
-            => AnalysisName -> Analysis blk
-runAnalysis ShowSlotBlockNo     = showSlotBlockNo
-runAnalysis CountTxOutputs      = countTxOutputs
-runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
-runAnalysis ShowBlockTxsSize    = showBlockTxsSize
-runAnalysis ShowEBBs            = showEBBs
-
-{-------------------------------------------------------------------------------
-  Analysis: show block and slot number for all blocks
--------------------------------------------------------------------------------}
-
-showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-                => Analysis blk
-showSlotBlockNo _cfg immDB rr =
-    processAll immDB rr go
-  where
-    go :: blk -> IO ()
-    go blk = putStrLn $ intercalate "\t" [
-        show (blockNo   blk)
-      , show (blockSlot blk)
-      ]
-
-{-------------------------------------------------------------------------------
-  Analysis: show total number of tx outputs per block
--------------------------------------------------------------------------------}
-
-countTxOutputs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-countTxOutputs _cfg immDB rr = do
-    cumulative <- newIORef 0
-    processAll immDB rr (go cumulative)
-  where
-    go :: IORef Int -> blk -> IO ()
-    go cumulative blk = do
-        countCum  <- atomicModifyIORef cumulative $ \c ->
-                       let c' = c + count in (c', c')
-        putStrLn $ intercalate "\t" [
-            show slotNo
-          , show count
-          , show countCum
-          ]
-      where
-        count = Analysis.countTxOutputs blk
-        slotNo = blockSlot blk
-
-{-------------------------------------------------------------------------------
-  Analysis: show the block header size in bytes for all blocks
--------------------------------------------------------------------------------}
-
-showBlockHeaderSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockHeaderSize _cfg immDB rr = do
-    maxBlockHeaderSizeRef <- newIORef 0
-    processAll immDB rr (go maxBlockHeaderSizeRef)
-    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
-    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
-  where
-    go :: IORef SizeInBytes -> blk -> IO ()
-    go maxBlockHeaderSizeRef blk = do
-        void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
-        putStrLn $ intercalate "\t" [
-            show slotNo
-          , "Block header size = " <> show blockHdrSz
-          ]
-      where
-        slotNo = blockSlot blk
-        blockHdrSz = Analysis.blockHeaderSize blk
-{-------------------------------------------------------------------------------
-  Analysis: show the total transaction sizes in bytes per block
--------------------------------------------------------------------------------}
-
-showBlockTxsSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockTxsSize _cfg immDB rr = processAll immDB rr process
-  where
-    process :: blk -> IO ()
-    process blk = putStrLn $ intercalate "\t" [
-          show slotNo
-        , "Num txs in block = " <> show numBlockTxs
-        , "Total size of txs in block = " <> show blockTxsSize
-        ]
-      where
-        txSizes :: [SizeInBytes]
-        txSizes = Analysis.blockTxSizes blk
-
-        numBlockTxs :: Int
-        numBlockTxs = length txSizes
-
-        blockTxsSize :: SizeInBytes
-        blockTxsSize = sum txSizes
-
-        slotNo = blockSlot blk
-
-{-------------------------------------------------------------------------------
-  Analysis: show EBBs and their predecessors
--------------------------------------------------------------------------------}
-
-showEBBs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showEBBs cfg immDB rr = do
-    putStrLn "EBB\tPrev\tKnown"
-    processAll immDB rr processIfEBB
-  where
-    processIfEBB :: blk -> IO ()
-    processIfEBB blk =
-        case blockIsEBB blk of
-          Just _epoch ->
-            putStrLn $ intercalate "\t" [
-                show (blockHash blk)
-              , show (blockPrevHash (configCodec cfg) blk)
-              , show (    Map.lookup
-                            (blockHash blk)
-                            (Analysis.knownEBBs (Proxy @blk))
-                       == Just (blockPrevHash (configCodec cfg) blk)
-                     )
-              ]
-          _otherwise ->
-            return () -- Skip regular blocks
-
-{-------------------------------------------------------------------------------
-  Auxiliary: processing all blocks in the imm DB
--------------------------------------------------------------------------------}
-
-processAll :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-           => ImmDB IO blk
-           -> ResourceRegistry IO
-           -> (blk -> IO ())
-           -> IO ()
-processAll immDB rr callback = do
-    tipPoint <- getPointAtTip immDB
-    case pointToWithOriginRealPoint tipPoint of
-      Origin -> return ()
-      At tip -> do
-        Right itr <- stream immDB rr GetBlock
-          (StreamFromExclusive genesisPoint)
-          (StreamToInclusive tip)
-        go itr
-  where
-    go :: Iterator (HeaderHash blk) IO (IO blk) -> IO ()
-    go itr = do
-        itrResult <- ImmDB.iteratorNext itr
-        case itrResult of
-          IteratorExhausted   -> return ()
-          IteratorResult mblk -> mblk >>= \blk -> callback blk >> go itr
-
-{-------------------------------------------------------------------------------
-  Command line args
--------------------------------------------------------------------------------}
+    cmdLine <- getCmdLine
+    case blockType cmdLine of
+      ByronBlock   args -> analyse cmdLine args
+      ShelleyBlock args -> analyse cmdLine args
+      CardanoBlock args -> analyse cmdLine args
 
 data CmdLine = CmdLine {
-      clConfig    :: [FilePath]
-    , clIsMainNet :: Bool
-    , clImmDB     :: FilePath
-    , clBlockType :: Maybe BlockType
-    , clAnalysis  :: AnalysisName
-    } deriving Show
+    dbDir      :: FilePath
+  , verbose    :: Bool
+  , onlyImmDB  :: Bool
+  , validation :: Maybe ValidateBlocks
+  , blockType  :: BlockType
+  , analysis   :: AnalysisName
+  }
 
-data BlockType = Byron | Shelley | Cardano
-  deriving Show
+data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
+
+data BlockType =
+    ByronBlock   ByronBlockArgs
+  | ShelleyBlock ShelleyBlockArgs
+  | CardanoBlock CardanoBlockArgs
+
+{-------------------------------------------------------------------------------
+  Parsing
+-------------------------------------------------------------------------------}
 
 parseCmdLine :: Parser CmdLine
 parseCmdLine = CmdLine
-    <$> many (strOption (mconcat [
-            long "config"
-          , help "Path to config file or files. Multiple occurences of the\
-                 \option can be used"
-          , metavar "PATH"
-          ]))
-    <*> flag True False (mconcat [
-            long "testnet"
-          , help "The DB contains blocks from testnet rather than mainnet"
-          ])
-    <*> strOption (mconcat [
+    <$> strOption (mconcat [
             long "db"
-          , help "Path to the chain DB (parent of \"immutable\" directory)"
+          , help "Path to the Chain DB"
           , metavar "PATH"
           ])
-    <*> parseBlockType
+    <*> switch (mconcat [
+            long "verbose"
+          , help "Enable verbose logging"
+          ])
+    <*> switch (mconcat [
+            long "onlyImmDB"
+          , help "Validate only the Immutable DB (e.g. do not do ledger validation)"
+          ])
+    <*> parseValidationPolicy
+    <*> blockTypeParser
     <*> parseAnalysis
 
-parseBlockType :: Parser (Maybe BlockType)
-parseBlockType = asum [
-      flag' (Just Byron) $ mconcat [
-          long "byron"
-        , help "A Byron network"
+parseValidationPolicy :: Parser (Maybe ValidateBlocks)
+parseValidationPolicy = parseMaybe $ asum [
+      flag' ValidateAllBlocks $ mconcat [
+          long "validate-all-blocks"
+        , help "Validate all blocks of the Volatile and Immutable DB"
         ]
-    , flag' (Just Shelley) $ mconcat [
-          long "shelley"
-        , help "A Shelley network"
+    , flag' MinimumBlockValidation $ mconcat [
+          long "minimum-block-validation"
+        , help "Validate a minimum part of the Volatile and Immutable DB"
         ]
-    , flag' (Just Cardano) $ mconcat [
-          long "cardano"
-        , help "A Byron-to-Shelley network"
-        ]
-    , pure Nothing
     ]
 
 parseAnalysis :: Parser AnalysisName
@@ -326,35 +116,83 @@ parseAnalysis = asum [
           long "show-ebbs"
         , help "Show all EBBs and their predecessors"
         ]
+    , pure OnlyValidation
     ]
+
+blockTypeParser :: Parser BlockType
+blockTypeParser = subparser $ mconcat
+  [ command "byron"
+      (info (parseByronType   <**> helper) (progDesc "Analyse a Byron-only DB"))
+  , command "shelley"
+      (info (parseShelleyType <**> helper) (progDesc "Analyse a Shelley-only DB"))
+  , command "cardano"
+      (info (parseCardanoType <**> helper) (progDesc "Analyse a Cardano DB"))
+  ]
+
+parseByronType :: Parser BlockType
+parseByronType = ByronBlock <$> argsParser Proxy
+
+parseShelleyType :: Parser BlockType
+parseShelleyType = ShelleyBlock <$> argsParser Proxy
+
+parseCardanoType :: Parser BlockType
+parseCardanoType = CardanoBlock <$> argsParser Proxy
+
+parseMaybe ::  Parser a -> Parser (Maybe a)
+parseMaybe parser = asum [Just <$> parser, pure Nothing]
 
 getCmdLine :: IO CmdLine
 getCmdLine = execParser opts
   where
     opts = info (parseCmdLine <**> helper) (mconcat [
           fullDesc
-        , progDesc "Simple framework for running analysis over the immutable DB"
+        , progDesc "Simple framework used to analyse a Chain DB"
         ])
 
 {-------------------------------------------------------------------------------
-  Interface with the ImmDB
+  Analyse
 -------------------------------------------------------------------------------}
 
-withImmDB :: forall blk a.
-             RunNode blk
-          => FilePath
-          -> TopLevelConfig blk
-          -> ChunkInfo
-          -> ResourceRegistry IO
-          -> (ImmDB IO blk -> IO a)
-          -> IO a
-withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
+analyse
+  :: (Node.RunNode blk, Show (Header blk), HasAnalysis blk)
+  => CmdLine
+  -> Args blk
+  -> IO ()
+analyse CmdLine {..} args =
+    withRegistry $ \registry -> do
+      ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
+        mkProtocolInfo args
+      let chunkInfo  = Node.nodeImmDbChunkInfo cfg
+          args' = Node.mkChainDbArgs tracer registry InFuture.dontCheck
+                    dbDir cfg initLedger chunkInfo
+          chainDbArgs = args' {
+              ChainDB.cdbImmValidation = immValidationPolicy
+            , ChainDB.cdbVolValidation = volValidationPolicy
+            }
+          (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+      if onlyImmDB then
+        ImmDB.withImmDB immDbArgs $ \immDB -> do
+          runAnalysis analysis cfg (Left immDB) registry
+          immDbTipPoint <- ImmDB.getPointAtTip immDB
+          putStrLn $ "ImmDB tip: " ++ show immDbTipPoint
+      else
+        ChainDB.withDB chainDbArgs $ \chainDB -> do
+          runAnalysis analysis cfg (Right chainDB) registry
+          chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
+          putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
   where
-    args :: ImmDbArgs IO blk
-    args = (defaultArgs fp) {
-          immCodecConfig        = configCodec cfg
-        , immChunkInfo          = chunkInfo
-        , immValidation         = ValidateMostRecentChunk
-        , immCheckIntegrity     = nodeCheckIntegrity cfg
-        , immRegistry           = registry
-        }
+    tracer
+      | verbose   = contramap show debugTracer
+      | otherwise = nullTracer
+
+    immValidationPolicy = case (analysis, validation) of
+      (_, Just ValidateAllBlocks)      -> ImmDB.ValidateAllChunks
+      (_, Just MinimumBlockValidation) -> ImmDB.ValidateMostRecentChunk
+      (OnlyValidation, _ )             -> ImmDB.ValidateAllChunks
+      _                                -> ImmDB.ValidateMostRecentChunk
+
+    volValidationPolicy = case (analysis, validation) of
+      (_, Just ValidateAllBlocks)      -> VolDB.ValidateAll
+      (_, Just MinimumBlockValidation) -> VolDB.NoValidation
+      (OnlyValidation, _ )             -> VolDB.ValidateAll
+      _                                -> VolDB.NoValidation

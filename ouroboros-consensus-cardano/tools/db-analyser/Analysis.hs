@@ -1,232 +1,250 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
-module Analysis (HasAnalysis (..), mkTopLevelConfig) where
+module Analysis (
+    AnalysisName (..)
+  , runAnalysis
+  ) where
 
 import           Control.Monad.Except
-import qualified Data.Aeson as Aeson
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (toList)
-import           Data.Map.Strict (Map)
+import           Data.IORef
+import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           GHC.Natural (Natural)
+import           Data.Proxy (Proxy (..))
 
-import           Cardano.Binary (unAnnotated)
-import qualified Cardano.Crypto as Crypto
+import           Cardano.Slotting.Slot
 
-import qualified Cardano.Chain.Block as Chain
-import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Chain.UTxO as Chain
-
-import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Tx as SL
+import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
+                     genesisPoint)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config hiding (mkTopLevelConfig)
-import           Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
-import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import           Ouroboros.Consensus.Byron.Node (protocolInfoByron)
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
+                     ChainDB (..), StreamFrom (..), StreamTo (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB hiding
+                     (iteratorNext)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB hiding
+                     (stream)
 
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
-import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis,
-                     protocolInfoShelley)
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-
-import           Ouroboros.Consensus.Cardano.Block (CardanoBlock)
-import qualified Ouroboros.Consensus.Cardano.Block as Cardano
-import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
-                     protocolInfoCardano)
-
-{-------------------------------------------------------------------------------
-  HasAnalysis
--------------------------------------------------------------------------------}
-
-class GetPrevHash blk => HasAnalysis blk where
-    countTxOutputs   :: blk -> Int
-    blockHeaderSize  :: blk -> SizeInBytes
-    blockTxSizes     :: blk -> [SizeInBytes]
-    knownEBBs        :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
-    protocolInfo     :: [FilePath] -- Genesis file or files.
-                     -> Bool       -- is it mainnet?
-                     -> IO (ProtocolInfo IO blk)
-
-mkTopLevelConfig :: forall blk. HasAnalysis blk
-                 => [FilePath] -- Genesis file or files.
-                 -> Bool       -- is it mainnet?
-                 -> IO (TopLevelConfig blk)
-mkTopLevelConfig fps onMainNet = pInfoConfig <$> protocolInfo @blk fps onMainNet
+import           HasAnalysis (HasAnalysis)
+import qualified HasAnalysis
 
 {-------------------------------------------------------------------------------
-  ByronBlock instance
+  Run the requested analysis
 -------------------------------------------------------------------------------}
 
-instance HasAnalysis ByronBlock where
-    countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
-    blockHeaderSize = fromIntegral .
-      aBlockOrBoundary blockBoundaryHeaderSize blockHeaderSizeByron
-    blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
-    knownEBBs = const Byron.knownEBBs
-    protocolInfo [configFile] onMainNet = do
-      genesisConfig <- openGenesisByron configFile onMainNet
-      return $ mkByronProtocolInfo genesisConfig
-    protocolInfo ls _onMainNet =
-      error $
-        "a single genesis file is needed for pure Byron. Given " ++ show ls
+data AnalysisName =
+    ShowSlotBlockNo
+  | CountTxOutputs
+  | ShowBlockHeaderSize
+  | ShowBlockTxsSize
+  | ShowEBBs
+  | OnlyValidation
+  deriving Show
 
--- | Equivalent of 'either' for 'ABlockOrBoundary'.
-aBlockOrBoundary :: (Chain.ABoundaryBlock ByteString -> a)
-                 -> (Chain.ABlock ByteString -> a)
-                 -> ByronBlock -> a
-aBlockOrBoundary fromBoundary fromRegular blk = case blk of
-    Byron.ByronBlock (Chain.ABOBBoundary boundaryBlock) _ _
-      -> fromBoundary boundaryBlock
-    Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _
-      -> fromRegular regularBlk
+type Analysis blk = TopLevelConfig blk
+                 -> Either (ImmDB IO blk) (ChainDB IO blk)
+                 -> ResourceRegistry IO
+                 -> IO ()
 
-countTxOutputsByron :: Chain.ABlock ByteString -> Int
-countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
+emptyAnalysis :: Analysis blk
+emptyAnalysis _ _ _ = return ()
+
+runAnalysis :: (HasAnalysis blk, RunNode blk)
+            => AnalysisName -> Analysis blk
+runAnalysis ShowSlotBlockNo     = showSlotBlockNo
+runAnalysis CountTxOutputs      = countTxOutputs
+runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
+runAnalysis ShowBlockTxsSize    = showBlockTxsSize
+runAnalysis ShowEBBs            = showEBBs
+runAnalysis OnlyValidation      = emptyAnalysis
+
+{-------------------------------------------------------------------------------
+  Analysis: show block and slot number for all blocks
+-------------------------------------------------------------------------------}
+
+showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+                => Analysis blk
+showSlotBlockNo _cfg immDB rr =
+    processAll immDB rr go
   where
-    Chain.AHeader{..} = blockHeader
-    Chain.ABody{..}   = blockBody
+    go :: blk -> IO ()
+    go blk = putStrLn $ intercalate "\t" [
+        show (blockNo   blk)
+      , show (blockSlot blk)
+      ]
 
-    countTxPayload :: Chain.ATxPayload a -> Int
-    countTxPayload = sum
-                   . map (countTx . unAnnotated . Chain.aTaTx)
-                   . Chain.aUnTxPayload
+{-------------------------------------------------------------------------------
+  Analysis: show total number of tx outputs per block
+-------------------------------------------------------------------------------}
 
-    countTx :: Chain.Tx -> Int
-    countTx = length . Chain.txOutputs
-
-blockBoundaryHeaderSize ::  Chain.ABoundaryBlock ByteString -> Natural
-blockBoundaryHeaderSize =
-    fromIntegral . BS.length . Chain.boundaryHeaderAnnotation . Chain.boundaryHeader
-
-blockHeaderSizeByron ::  Chain.ABlock ByteString -> Natural
-blockHeaderSizeByron = Chain.headerLength . Chain.blockHeader
-
-blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
-blockTxSizesByron block =
-    map (fromIntegral . BL.length . BL.fromStrict . Chain.aTaAnnotation) blockTxAuxs
+countTxOutputs
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  => Analysis blk
+countTxOutputs _cfg immDB rr = do
+    cumulative <- newIORef 0
+    processAll immDB rr (go cumulative)
   where
-    Chain.ABlock{ blockBody } = block
-    Chain.ABody{ bodyTxPayload } = blockBody
-    Chain.ATxPayload{ aUnTxPayload = blockTxAuxs } = bodyTxPayload
-
-openGenesisByron :: FilePath -> Bool -> IO Genesis.Config
-openGenesisByron configFile onMainNet = do
-    genesisHash <- either (error . show) return =<< runExceptT
-      (snd <$> Genesis.readGenesisData configFile)
-    genesisConfig <- either (error . show) return =<< runExceptT
-      (Genesis.mkConfigFromFile
-        (if onMainNet -- transactions on testnet include magic number
-          then Crypto.RequiresNoMagic
-          else Crypto.RequiresMagic)
-        configFile
-        (Genesis.unGenesisHash genesisHash))
-    return genesisConfig
-
-mkByronProtocolInfo :: Genesis.Config -> ProtocolInfo IO ByronBlock
-mkByronProtocolInfo genesisConfig =
-    protocolInfoByron
-      genesisConfig
-      Nothing
-      (Update.ProtocolVersion 1 0 0)
-      (Update.SoftwareVersion (Update.ApplicationName "db-analyse") 2)
-      Nothing
+    go :: IORef Int -> blk -> IO ()
+    go cumulative blk = do
+        countCum  <- atomicModifyIORef cumulative $ \c ->
+                       let c' = c + count in (c', c')
+        putStrLn $ intercalate "\t" [
+            show slotNo
+          , show count
+          , show countCum
+          ]
+      where
+        count = HasAnalysis.countTxOutputs blk
+        slotNo = blockSlot blk
 
 {-------------------------------------------------------------------------------
-  ShelleyBlock instance
+  Analysis: show the block header size in bytes for all blocks
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => HasAnalysis (ShelleyBlock c) where
-    countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
-      SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
-    blockHeaderSize =
-      fromIntegral . SL.bHeaderSize . SL.bheader . Shelley.shelleyBlockRaw
-    blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
-      SL.Block _ (SL.TxSeq txs) ->
-        toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
-    knownEBBs = const Map.empty
-    protocolInfo [configFile] _onMainNet = do
-      genesis  <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' configFile
-      return $ mkShelleyProtocolInfo genesis
-    protocolInfo ls _onMainNet =
-      error $
-        "A single genesis file is needed for pure Shelley. Given " ++ show ls
-
-mkShelleyProtocolInfo :: forall c. TPraosCrypto c
-                      => ShelleyGenesis c
-                      -> ProtocolInfo IO (ShelleyBlock c)
-mkShelleyProtocolInfo genesis =
-    protocolInfoShelley
-      genesis
-      NeutralNonce -- TODO
-      2000
-      (SL.ProtVer 0 0)
-      Nothing
-
-countOutputs :: Shelley.Crypto c => SL.Tx c -> Int
-countOutputs tx  = length $ SL._outputs $ SL._body tx
+showBlockHeaderSize
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  => Analysis blk
+showBlockHeaderSize _cfg immDB rr = do
+    maxBlockHeaderSizeRef <- newIORef 0
+    processAll immDB rr (go maxBlockHeaderSizeRef)
+    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
+    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
+  where
+    go :: IORef SizeInBytes -> blk -> IO ()
+    go maxBlockHeaderSizeRef blk = do
+        void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
+        putStrLn $ intercalate "\t" [
+            show slotNo
+          , "Block header size = " <> show blockHdrSz
+          ]
+      where
+        slotNo = blockSlot blk
+        blockHdrSz = HasAnalysis.blockHeaderSize blk
 
 {-------------------------------------------------------------------------------
-  CardanoBlock instance
+  Analysis: show the total transaction sizes in bytes per block
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => HasAnalysis (CardanoBlock c) where
-  countTxOutputs blk = case blk of
-    Cardano.BlockByron b    -> countTxOutputs b
-    Cardano.BlockShelley sh -> countTxOutputs sh
-  blockHeaderSize blk = case blk of
-    Cardano.BlockByron b    -> blockHeaderSize b
-    Cardano.BlockShelley sh -> blockHeaderSize sh
-  blockTxSizes blk = case blk of
-    Cardano.BlockByron b    -> blockTxSizes b
-    Cardano.BlockShelley sh -> blockTxSizes sh
-  knownEBBs _ = Map.mapKeys castHeaderHash . Map.map castChainHash $
-    knownEBBs (Proxy @ByronBlock)
-  protocolInfo [byronGenesis, shelleyGenesis] onMainNet = do
-    byronConfig <- openGenesisByron byronGenesis onMainNet
-    shelleyConfig <- either (error . show) return =<< Aeson.eitherDecodeFileStrict' shelleyGenesis
-    return $ mkCardanoProtocolInfo byronConfig shelleyConfig
-  protocolInfo ls _onMainNet =
-    error $
-      "Two genesis files are needed for Cardano. Given " ++ show ls
+showBlockTxsSize
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  => Analysis blk
+showBlockTxsSize _cfg immDB rr = processAll immDB rr process
+  where
+    process :: blk -> IO ()
+    process blk = putStrLn $ intercalate "\t" [
+          show slotNo
+        , "Num txs in block = " <> show numBlockTxs
+        , "Total size of txs in block = " <> show blockTxsSize
+        ]
+      where
+        txSizes :: [SizeInBytes]
+        txSizes = HasAnalysis.blockTxSizes blk
 
-mkCardanoProtocolInfo :: forall c. TPraosCrypto c
-                      => Genesis.Config
-                      -> ShelleyGenesis c
-                      -> ProtocolInfo IO (CardanoBlock c)
-mkCardanoProtocolInfo byronConfig shelleyConfig =
-    protocolInfoCardano
-      byronConfig
-      Nothing
-      (Update.ProtocolVersion 1 0 0)
-      (Update.SoftwareVersion (Update.ApplicationName "db-analyse") 2)
-      Nothing
-      shelleyConfig
-      NeutralNonce -- TODO
-      (SL.ProtVer 2 0)
-      2000
-      Nothing
-      Nothing
-      (TriggerHardForkAtVersion 2)
+        numBlockTxs :: Int
+        numBlockTxs = length txSizes
 
-castHeaderHash :: HeaderHash ByronBlock -> HeaderHash (CardanoBlock c)
-castHeaderHash = OneEraHash . toShortRawHash (Proxy @ByronBlock)
+        blockTxsSize :: SizeInBytes
+        blockTxsSize = sum txSizes
 
-castChainHash :: ChainHash ByronBlock -> ChainHash (CardanoBlock c)
-castChainHash GenesisHash   = GenesisHash
-castChainHash (BlockHash h) = BlockHash $ castHeaderHash h
+        slotNo = blockSlot blk
+
+{-------------------------------------------------------------------------------
+  Analysis: show EBBs and their predecessors
+-------------------------------------------------------------------------------}
+
+showEBBs
+  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
+  => Analysis blk
+showEBBs cfg immDB rr = do
+    putStrLn "EBB\tPrev\tKnown"
+    processAll immDB rr processIfEBB
+  where
+    processIfEBB :: blk -> IO ()
+    processIfEBB blk =
+        case blockIsEBB blk of
+          Just _epoch ->
+            putStrLn $ intercalate "\t" [
+                show (blockHash blk)
+              , show (blockPrevHash (configCodec cfg) blk)
+              , show (    Map.lookup
+                            (blockHash blk)
+                            (HasAnalysis.knownEBBs (Proxy @blk))
+                       == Just (blockPrevHash (configCodec cfg) blk)
+                     )
+              ]
+          _otherwise ->
+            return () -- Skip regular blocks
+
+{-------------------------------------------------------------------------------
+  Auxiliary: processing all blocks in the DB
+-------------------------------------------------------------------------------}
+
+processAll :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+           => Either (ImmDB IO blk) (ChainDB IO blk)
+           -> ResourceRegistry IO
+           -> (blk -> IO ())
+           -> IO ()
+processAll db rr callback = case db of
+  Left  immDB   -> processAllImmDB immDB rr callback
+  Right chainDB -> processAllChainDB chainDB rr callback
+
+processAllChainDB :: forall blk. StandardHash blk
+                  => ChainDB IO blk
+                  -> ResourceRegistry IO
+                  -> (blk -> IO ())
+                  -> IO ()
+processAllChainDB chainDB rr callback = do
+    tipPoint <- atomically $ ChainDB.getTipPoint chainDB
+    case pointToWithOriginRealPoint tipPoint of
+      Origin -> return ()
+      At tip -> do
+        Right itr <- ChainDB.stream chainDB rr GetBlock
+          (StreamFromExclusive genesisPoint)
+          (StreamToInclusive tip)
+        go itr
+  where
+    go :: ChainDB.Iterator IO blk (IO blk) -> IO ()
+    go itr = do
+      itrResult <- ChainDB.iteratorNext itr
+      case itrResult of
+        ChainDB.IteratorExhausted     -> return ()
+        ChainDB.IteratorResult mblk   -> mblk >>= \blk -> callback blk >> go itr
+        ChainDB.IteratorBlockGCed pnt -> error $ "block gced " ++ show pnt
+
+processAllImmDB :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+                => ImmDB IO blk
+                -> ResourceRegistry IO
+                -> (blk -> IO ())
+                -> IO ()
+processAllImmDB immDB rr callback = do
+    tipPoint <- getPointAtTip immDB
+    case pointToWithOriginRealPoint tipPoint of
+      Origin -> return ()
+      At tip -> do
+        Right itr <- ImmDB.stream immDB rr GetBlock
+          (StreamFromExclusive genesisPoint)
+          (StreamToInclusive tip)
+        go itr
+  where
+    go :: Iterator (HeaderHash blk) IO (IO blk) -> IO ()
+    go itr = do
+        itrResult <- ImmDB.iteratorNext itr
+        case itrResult of
+          IteratorExhausted   -> return ()
+          IteratorResult mblk -> mblk >>= \blk -> callback blk >> go itr
