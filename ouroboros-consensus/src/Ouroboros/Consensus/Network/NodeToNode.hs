@@ -101,7 +101,7 @@ data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
         -> StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
+        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the

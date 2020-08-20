@@ -98,12 +98,8 @@ consensusErrorPolicy = ErrorPolicies {
           -- because we have diverged too much.
         , ErrorPolicy $ \(e :: ChainSyncClientException) ->
             case e of
-              ForkTooDeep{}         -> Just distantPeer
               HeaderError{}         -> Just theyBuggyOrEvil
-              InvalidRollForward{}  -> Just distantPeer
-              InvalidRollBack{}     -> Just theyBuggyOrEvil
               InvalidIntersection{} -> Just theyBuggyOrEvil
-              NoMoreIntersection{}  -> Just distantPeer
               DoesntFit{}           -> Just theyBuggyOrEvil
               -- A block so far in the future that it exceeds the max clock
               -- skew is also considered to be invalid
