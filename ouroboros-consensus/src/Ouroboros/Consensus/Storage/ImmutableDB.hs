@@ -1,9 +1,8 @@
-module Ouroboros.Consensus.Storage.ImmutableDB
-  ( module Ouroboros.Consensus.Storage.ImmutableDB.API
-  , module Ouroboros.Consensus.Storage.ImmutableDB.Impl
-  , module Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+module Ouroboros.Consensus.Storage.ImmutableDB (
+    module X
   ) where
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.API
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl
+import           Ouroboros.Consensus.Storage.ImmutableDB.API as X
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as X
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error as X
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl as X

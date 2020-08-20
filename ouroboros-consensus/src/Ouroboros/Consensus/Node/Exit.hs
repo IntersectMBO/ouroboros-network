@@ -18,9 +18,9 @@ import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..),
                      FsErrorType (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
                      (ImmutableDBError)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Types as ImmDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Error as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Error (VolatileDBError)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Error as VolatileDB
 
@@ -112,7 +112,6 @@ toExitReason e
     = WrongDatabase
     | Just (e' :: ChainDbFailure) <- fromException e
     = case e' of
-        ImmDbFailure ue -> immDbUnexpectedError ue
         LgrDbFailure fe -> fsError fe
         _               -> DatabaseCorruption
 
@@ -124,18 +123,18 @@ toExitReason e
     -- 'ChainDbFailure', but we include them just in case.
     | Just (e' :: ImmutableDBError) <- fromException e
     = case e' of
-        ImmDB.UnexpectedError ue -> immDbUnexpectedError ue
-        _                        -> Other
+        ImmutableDB.UnexpectedError ue -> immutableDbUnexpectedError ue
+        _                              -> Other
     | Just (e' :: FsError) <- fromException e
     = fsError e'
 
     | otherwise
     = Other
   where
-    immDbUnexpectedError :: ImmDB.UnexpectedError -> ExitReason
-    immDbUnexpectedError = \case
-      ImmDB.FileSystemError fe -> fsError fe
-      _                        -> DatabaseCorruption
+    immutableDbUnexpectedError :: ImmutableDB.UnexpectedError -> ExitReason
+    immutableDbUnexpectedError = \case
+      ImmutableDB.FileSystemError fe -> fsError fe
+      _                              -> DatabaseCorruption
 
     volatileDbUnexpectedError :: VolatileDB.UnexpectedError -> ExitReason
     volatileDbUnexpectedError = \case

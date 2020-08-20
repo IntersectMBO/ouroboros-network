@@ -6,61 +6,68 @@ module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
-import           Ouroboros.Consensus.Util ((....:), (...:), (..:), (.:))
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util ((...:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent, PrefixLen)
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Common (BlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
-openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
-            => ChunkInfo
-            -> PrefixLen
-            -> m (DBModel hash, ImmutableDB hash m)
-openDBMock chunkInfo prefixLen = do
+openDBMock ::
+     forall m blk.
+     ( HasHeader blk
+     , GetHeader blk
+     , EncodeDisk blk blk
+     , HasNestedContent Header blk
+     , EncodeDiskDep (NestedCtxt Header) blk
+     , IOLike m
+     )
+  => ChunkInfo
+  -> CodecConfig blk
+  -> m (DBModel blk, ImmutableDB m blk)
+openDBMock chunkInfo ccfg = do
     dbVar <- uncheckedNewTVarM dbModel
-    return (dbModel, immDB dbVar)
+    return (dbModel, immutableDB dbVar)
   where
-    dbModel = initDBModel chunkInfo prefixLen
+    dbModel = initDBModel chunkInfo ccfg
 
-    immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
-    immDB dbVar = ImmutableDB
-        { closeDB_                = return ()
-        , getTip_                 = query        $ getTipModel
+    immutableDB :: StrictTVar m (DBModel blk) -> ImmutableDB m blk
+    immutableDB dbVar = ImmutableDB {
+          closeDB_                = return ()
+        , getTip_                 = querySTM     $ getTipModel
         , getBlockComponent_      = queryE      .: getBlockComponentModel
-        , getEBBComponent_        = queryE      .: getEBBComponentModel
-        , getBlockOrEBBComponent_ = queryE     ..: getBlockOrEBBComponentModel
-        , appendBlock_            = updateE_ ....: appendBlockModel
-        , appendEBB_              = updateE_ ....: appendEBBModel
+        , appendBlock_            = updateE_     . appendBlockModel
         , stream_                 = updateEE  ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         }
       where
-        iterator :: BlockComponent (ImmutableDB hash m) b
-                 -> IteratorId
-                 -> Iterator hash m b
+        iterator :: BlockComponent blk b -> IteratorId -> Iterator m blk b
         iterator blockComponent itId = Iterator
-          { iteratorNext    = update  $ iteratorNextModel    itId blockComponent
-          , iteratorHasNext = query   $ iteratorHasNextModel itId
-          , iteratorClose   = update_ $ iteratorCloseModel   itId
+          { iteratorNext    = update   $ iteratorNextModel    itId blockComponent
+          , iteratorHasNext = querySTM $ iteratorHasNextModel itId
+          , iteratorClose   = update_  $ iteratorCloseModel   itId
           }
 
-        update_ :: (DBModel hash -> DBModel hash) -> m ()
+        update_ :: (DBModel blk -> DBModel blk) -> m ()
         update_ f = atomically $ modifyTVar dbVar f
 
-        update :: (DBModel hash -> (a, DBModel hash)) -> m a
+        update :: (DBModel blk -> (a, DBModel blk)) -> m a
         update f = atomically $ updateTVar dbVar (swap . f)
 
-        updateE_ :: (DBModel hash -> Either ImmutableDBError (DBModel hash)) -> m ()
+        updateE_ :: (DBModel blk -> Either ImmutableDBError (DBModel blk)) -> m ()
         updateE_ f = atomically $ do
           db <- readTVar dbVar
           case f db of
             Left  e   -> throwM e
             Right db' -> writeTVar dbVar db'
 
-        updateEE :: (DBModel hash -> Either ImmutableDBError (Either e (a, DBModel hash)))
-                 -> m (Either e a)
+        updateEE ::
+             (DBModel blk -> Either ImmutableDBError (Either e (a, DBModel blk)))
+          -> m (Either e a)
         updateEE f = atomically $ do
           db <- readTVar dbVar
           case f db of
@@ -68,10 +75,13 @@ openDBMock chunkInfo prefixLen = do
             Right (Left e)         -> return (Left e)
             Right (Right (a, db')) -> writeTVar dbVar db' >> return (Right a)
 
-        query :: (DBModel hash -> a) -> m a
+        query :: (DBModel blk -> a) -> m a
         query f = fmap f $ atomically $ readTVar dbVar
 
-        queryE :: (DBModel hash -> Either ImmutableDBError a) -> m a
+        querySTM :: (DBModel blk -> a) -> STM m a
+        querySTM f = fmap f $ readTVar dbVar
+
+        queryE :: (DBModel blk -> Either ImmutableDBError a) -> m a
         queryE f = query f >>= \case
           Left  e -> throwM e
           Right a -> return a

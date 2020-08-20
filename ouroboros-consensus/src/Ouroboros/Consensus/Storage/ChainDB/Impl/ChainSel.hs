@@ -66,8 +66,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
@@ -75,6 +73,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Paths as Paths
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -86,7 +86,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
   :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
-  => ImmDB m blk
+  => ImmutableDB m blk
   -> VolatileDB m blk
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
@@ -95,16 +95,17 @@ initialChainSelection
   -> StrictTVar m (FutureBlocks blk)
   -> CheckInFuture m blk
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volatileDB lgrDB tracer cfg varInvalid varFutureBlocks
-                      futureCheck = do
+initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
+                      varFutureBlocks futureCheck = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
-    i :: Anchor blk <- ImmDB.getAnchorForTip immDB
-    (succsOf, ledger) <- atomically $ do
+    (i :: Anchor blk, succsOf, ledger) <- atomically $ do
       invalid <- forgetFingerprint <$> readTVar varInvalid
-      (,) <$> (ignoreInvalidSuc volatileDB invalid <$>
-                  VolatileDB.filterByPredecessor volatileDB)
-          <*> LgrDB.getCurrent lgrDB
+      (,,)
+        <$> ImmutableDB.getTipAnchor immutableDB
+        <*> (ignoreInvalidSuc volatileDB invalid <$>
+              VolatileDB.filterByPredecessor volatileDB)
+        <*> LgrDB.getCurrent lgrDB
 
     chains <- constructChains i succsOf
 

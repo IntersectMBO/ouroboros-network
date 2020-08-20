@@ -23,20 +23,18 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine
 
 import           Prelude hiding (elem, notElem)
 
-import           Codec.Serialise (decode)
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.ByteString.Short (ShortByteString)
 import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.List (delete, sortBy)
+import           Data.List (delete, partition, sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, isNothing, listToMaybe)
+import           Data.Maybe (listToMaybe)
 import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
@@ -63,28 +61,22 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath,
                      mkFsPath)
-import           Ouroboros.Consensus.Storage.ImmutableDB hiding
-                     (BlockOrEBB (..))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB hiding (streamAll)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-import           Ouroboros.Consensus.Storage.ImmutableDB.Parser (ChunkFileError,
-                     chunkFileParser)
 
 import           Test.Util.ChunkInfo
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck (collects)
@@ -110,20 +102,18 @@ import           Test.Ouroboros.Storage.TestBlock
 --
 -- Where @m@ can be 'PureM', 'RealM', or 'RealErrM', and @r@ can be 'Symbolic'
 -- or 'Concrete'.
-data Cmd it
-  = GetBlockComponent      SlotNo
-  | GetEBBComponent        EpochNo
-  | GetBlockOrEBBComponent SlotNo  Hash
-  | AppendBlock            SlotNo  Hash TestBlock
-  | AppendEBB              EpochNo Hash TestBlock
-  | Stream                 (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
+data Cmd it =
+    GetTip
+  | GetBlockComponent      (RealPoint TestBlock)
+  | AppendBlock            TestBlock
+  | Stream                 (StreamFrom TestBlock) (StreamTo TestBlock)
   | StreamAll
   | IteratorNext           it
   | IteratorHasNext        it
   | IteratorClose          it
   | Reopen                 ValidationPolicy
   | Migrate                ValidationPolicy
-  | DeleteAfter            (ImmTipWithInfo Hash)
+  | DeleteAfter            (WithOrigin (Tip TestBlock))
   | Corruption             Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
@@ -139,29 +129,27 @@ newtype Corruption = MkCorruption { getCorruptions :: Corruptions }
 -- When executing the 'Cmd', these 'Errors' are passed to 'SimErrorFS' to
 -- simulate file system errors thrown at the 'HasFS' level. When 'Nothing', no
 -- errors will be thrown.
-data CmdErr it = CmdErr
-  { cmdErr :: Maybe Errors
-  , cmd    :: Cmd it
-  } deriving (Show, Generic, Functor, Foldable, Traversable)
-
-type Hash = TestHeaderHash
+data CmdErr it = CmdErr {
+      cmdErr :: Maybe Errors
+    , cmd    :: Cmd it
+    }
+  deriving (Show, Generic, Functor, Foldable, Traversable)
 
 -- | Return type for successful database operations.
-data Success it
-  = Unit            ()
-  | MbAllComponents (Maybe AllComponents)
-  | EpochNo         EpochNo
-  | Iter            (Either (WrongBoundError Hash) it)
-  | IterResult      (IteratorResult AllComponents)
-  | IterHasNext     (Maybe (Either EpochNo SlotNo, Hash))
-  | IterResults     [AllComponents]
-  | Tip             (ImmTipWithInfo Hash)
+data Success it =
+    Unit            ()
+  | ErAllComponents (Either (MissingBlock TestBlock) (AllComponents TestBlock))
+  | Iter            (Either (MissingBlock TestBlock) it)
+  | IterResult      (IteratorResult (AllComponents TestBlock))
+  | IterHasNext     (Maybe (RealPoint TestBlock))
+  | IterResults     [AllComponents TestBlock]
+  | ImmTip          (WithOrigin (Tip TestBlock))
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Product of all 'BlockComponent's. As this is a GADT, generating random
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
-allComponents :: BlockComponent (ImmutableDB Hash m) AllComponents
+allComponents :: BlockComponent blk (AllComponents blk)
 allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetRawBlock
@@ -175,31 +163,28 @@ allComponents = (,,,,,,,,,)
     <*> GetNestedCtxt
 
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
-type AllComponents =
-  ( ()
+type AllComponents blk =
+  ( blk
   , ByteString
-  , ()
+  , Header blk
   , ByteString
-  , Hash
+  , HeaderHash blk
   , SlotNo
   , IsEBB
   , Word32
   , Word16
-  , ShortByteString
+  , SomeBlock (NestedCtxt Header) blk
   )
 
 -- | Short-hand
-type TestIterator m = WithEq (Iterator Hash m AllComponents)
+type TestIterator m = WithEq (Iterator m TestBlock (AllComponents TestBlock))
 
 closeOpenIterators :: StrictTVar IO [TestIterator IO] -> IO ()
 closeOpenIterators varIters = do
     its <- atomically $ readTVar varIters <* writeTVar varIters []
     mapM_ iteratorClose (unWithEq <$> its)
 
-open
-  :: Eq h
-  => ImmutableDbArgs IO h Hash (ChunkFileError Hash)
-  -> IO ImmutableDBState
+open :: ImmutableDbArgs IO TestBlock -> IO ImmutableDBState
 open args = do
     (db, internal) <- openDBInternal args
     return ImmutableDBState { db, internal }
@@ -207,57 +192,65 @@ open args = do
 -- | Opens a new ImmutableDB and stores it in 'varDB'.
 --
 -- Does not close the current VolatileDB stored in 'varDB'.
-reopen :: Eq h => ImmutableDBEnv h -> ValidationPolicy -> IO ()
+reopen :: ImmutableDBEnv -> ValidationPolicy -> IO ()
 reopen ImmutableDBEnv { varDB, args } valPol = do
-    immutableDbState <- open args { valPol = valPol }
+    immutableDbState <- open args { immValidationPolicy = valPol }
     void $ swapMVar varDB immutableDbState
 
 -- | Run the command against the given database.
-run :: (Eq h, HasCallStack)
-    => ImmutableDBEnv h
-    -> Cmd (TestIterator IO)
-    -> IO (Success (TestIterator IO))
-run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
+run ::
+     HasCallStack
+  => ImmutableDBEnv
+  -> Cmd (TestIterator IO)
+  -> IO (Success (TestIterator IO))
+run env@ImmutableDBEnv {
+        varDB
+      , varNextId
+      , varIters
+      , args = ImmutableDbArgs {
+            immRegistry = registry
+          , immHasFS = SomeHasFS hasFS
+          }
+      } cmd =
     readMVar varDB >>= \ImmutableDBState { db, internal } -> case cmd of
-      GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
-      GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
-      GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
-      AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b)
-      AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b)
-      Stream              s e    -> iter            =<< stream                 db registry allComponents s e
-      StreamAll                  -> IterResults     <$> streamAll              db
-      IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
-      IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        (unWithEq it)
-      IteratorClose       it     -> Unit            <$> iteratorClose'         it
-      DeleteAfter tip            -> do
+      GetTip               -> ImmTip          <$> atomically (getTip            db)
+      GetBlockComponent pt -> ErAllComponents <$>             getBlockComponent db allComponents pt
+      AppendBlock blk      -> Unit            <$>             appendBlock       db blk
+      Stream f t           -> iter            =<<             stream            db registry allComponents f t
+      StreamAll            -> IterResults     <$>             streamAll         db
+      IteratorNext    it   -> IterResult      <$>             iteratorNext      (unWithEq it)
+      IteratorHasNext it   -> IterHasNext     <$> atomically (iteratorHasNext   (unWithEq it))
+      IteratorClose   it   -> Unit            <$>             iteratorClose'              it
+      DeleteAfter tip -> do
         closeOpenIterators varIters
         Unit <$> deleteAfter internal tip
-      Reopen valPol              -> do
+      Reopen valPol -> do
         closeOpenIterators varIters
         closeDB db
         reopen env valPol
-        db' <- getImmDB env
-        Tip <$> getTip db'
+        db' <- getImmutableDB env
+        ImmTip <$> atomically (getTip db')
       Migrate valPol -> do
         closeOpenIterators varIters
         closeDB db
         unmigrate hasFS
         reopen env valPol
-        db' <- getImmDB env
-        Tip <$> getTip db'
+        db' <- getImmutableDB env
+        ImmTip <$> atomically (getTip db')
       Corruption (MkCorruption corrs) -> do
         closeOpenIterators varIters
         closeDB db
         forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
         reopen env ValidateAllChunks
-        db' <- getImmDB env
-        Tip <$> getTip db'
+        db' <- getImmutableDB env
+        ImmTip <$> atomically (getTip db')
   where
-    ImmutableDbArgs { registry, hasFS } = args
-
     -- Store the iterator in 'varIters'
-    iter :: Either (WrongBoundError Hash) (Iterator Hash IO AllComponents)
-         -> IO (Success (TestIterator IO))
+    iter ::
+         Either
+           (MissingBlock TestBlock)
+           (Iterator IO TestBlock (AllComponents TestBlock))
+      -> IO (Success (TestIterator IO))
     iter (Left e)   = return (Iter (Left e))
     iter (Right it) = do
       it' <- giveWithEq it
@@ -274,16 +267,12 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
 
-    streamAll :: ImmutableDB Hash IO -> IO [AllComponents]
+    streamAll :: ImmutableDB IO TestBlock -> IO [AllComponents TestBlock]
     streamAll db =
       bracket
-        (noWrongBoundError <$> stream db registry allComponents Nothing Nothing)
+        (ImmutableDB.streamAll db registry allComponents)
         iteratorClose
         iteratorToList
-
-    noWrongBoundError :: Either (WrongBoundError Hash) a -> a
-    noWrongBoundError (Left e)  = error ("impossible: " <> show e)
-    noWrongBoundError (Right a) = a
 
 -- | To test migration from "XXXXX.epoch" to "XXXXX.chunk" do the opposite
 -- renaming, i.e., /unmigrate/ while the database is closed. When the database
@@ -309,24 +298,23 @@ instance Eq it => Eq (Resp it) where
   _              == _               = False
 
 -- | Run the pure command against the given database.
-runPure :: Cmd IteratorId
-        -> DBModel Hash
-        -> (Resp IteratorId, DBModel Hash)
+runPure ::
+     Cmd IteratorId
+  -> DBModel TestBlock
+  -> (Resp IteratorId, DBModel TestBlock)
 runPure = \case
-    GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
-    GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
-    GetBlockOrEBBComponent s h -> ok MbAllComponents $ queryE   (getBlockOrEBBComponentModel allComponents s h)
-    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b))
-    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (testBlockToBuilder b) (getBinaryBlockInfo b))
-    Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
-    StreamAll                  -> ok IterResults     $ query    (streamAllModel allComponents)
-    IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
-    IteratorHasNext     it     -> ok IterHasNext     $ query    (iteratorHasNextModel it)
-    IteratorClose       it     -> ok Unit            $ update_  (iteratorCloseModel it)
-    DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
-    Corruption corr            -> ok Tip             $ update   (simulateCorruptions (getCorruptions corr))
-    Reopen _                   -> ok Tip             $ update    reopenModel
-    Migrate _                  -> ok Tip             $ update    reopenModel
+    GetTip               -> ok ImmTip          $ query     getTipModel
+    GetBlockComponent pt -> ok ErAllComponents $ queryE   (getBlockComponentModel allComponents pt)
+    AppendBlock blk      -> ok Unit            $ updateE_ (appendBlockModel blk)
+    Stream f t           -> ok Iter            $ updateEE (streamModel f t)
+    StreamAll            -> ok IterResults     $ query    (streamAllModel allComponents)
+    IteratorNext    it   -> ok IterResult      $ update   (iteratorNextModel it allComponents)
+    IteratorHasNext it   -> ok IterHasNext     $ query    (iteratorHasNextModel it)
+    IteratorClose   it   -> ok Unit            $ update_  (iteratorCloseModel it)
+    DeleteAfter tip      -> ok Unit            $ update_  (deleteAfterModel tip)
+    Corruption corr      -> ok ImmTip          $ update   (simulateCorruptions (getCorruptions corr))
+    Reopen _             -> ok ImmTip          $ update    reopenModel
+    Migrate _            -> ok ImmTip          $ update    reopenModel
   where
     query  f m = (Right (f m), m)
     queryE f m = (f m, m)
@@ -336,24 +324,26 @@ runPure = \case
     updateE_ f m = case f m of
       Left  e  -> (Left e, m)
       Right m' -> (Right (), m')
-    updateEE :: (DBModel Hash -> Either ImmutableDBError (Either e (a, DBModel Hash)))
-             -> DBModel Hash
-             -> (Either ImmutableDBError (Either e a), DBModel Hash)
+    updateEE ::
+         (DBModel TestBlock -> Either ImmutableDBError (Either e (a, DBModel TestBlock)))
+      -> DBModel TestBlock
+      -> (Either ImmutableDBError (Either e a), DBModel TestBlock)
     updateEE f m = case f m of
       Left e                -> (Left e, m)
       Right (Left e)        -> (Right (Left e), m)
       Right (Right (a, m')) -> (Right (Right a), m')
 
-    ok :: (a -> Success IteratorId)
-       -> (DBModel Hash -> (Either ImmutableDBError a, DBModel Hash))
-       -> DBModel Hash
-       -> (Resp IteratorId, DBModel Hash)
+    ok ::
+         (a -> Success IteratorId)
+      -> (DBModel TestBlock -> (Either ImmutableDBError a, DBModel TestBlock))
+      -> DBModel TestBlock
+      -> (Resp IteratorId, DBModel TestBlock)
     ok toSuccess f m = first (Resp . fmap toSuccess) $ f m
 
 -- | Run a command against the pure model
-runPureErr :: DBModel Hash
+runPureErr :: DBModel TestBlock
            -> CmdErr IteratorId
-           -> (Resp IteratorId, DBModel Hash)
+           -> (Resp IteratorId, DBModel TestBlock)
 runPureErr dbm (CmdErr mbErrors cmd) =
     case (mbErrors, runPure cmd dbm) of
       -- No simulated errors, just step
@@ -371,7 +361,7 @@ runPureErr dbm (CmdErr mbErrors cmd) =
         let dbm'' = closeAllIterators $ case cmd of
               DeleteAfter _ -> dbm'
               _             -> dbm
-        in (Resp $ Right $ Tip $ dbmTip dbm'', dbm'')
+        in (Resp $ Right $ ImmTip $ dbmTip dbm'', dbm'')
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -394,7 +384,7 @@ type KnownIters m = RefEnv (Opaque (TestIterator m))
 
 -- | Execution model
 data Model m r = Model
-  { dbModel    :: DBModel Hash
+  { dbModel    :: DBModel TestBlock
     -- ^ A model of the database, used as state for the 'HasImmutableDB'
     -- instance of 'ModelDB'.
   , knownIters :: KnownIters m r
@@ -405,7 +395,7 @@ nbOpenIterators :: Model m r -> Int
 nbOpenIterators model = length (RE.toList (knownIters model))
 
 -- | Initial model
-initModel :: DBModel Hash -> Model m r
+initModel :: DBModel TestBlock -> Model m r
 initModel dbModel = Model { knownIters  = RE.empty, dbModel }
 
 -- | Key property of the model is that we can go from real to mock responses
@@ -417,7 +407,7 @@ toMock Model {..} (At t) = fmap (knownIters RE.!) t
 step :: Eq1 r
      => Model m r
      -> At CmdErr m r
-     -> (Resp IteratorId, DBModel Hash)
+     -> (Resp IteratorId, DBModel TestBlock)
 step model@Model{..} cmdErr = runPureErr dbModel (toMock model cmdErr)
 
 {-------------------------------------------------------------------------------
@@ -496,13 +486,15 @@ lockstep model@Model {..} cmdErr (At resp) = Event
 generator :: Model m Symbolic -> Gen (At CmdErr m Symbolic)
 generator m = do
     cmd    <- unAt <$> generateCmd m
-    cmdErr <- if errorFor cmd
-       then frequency
-          -- We want to make some progress
-          [ (4, return Nothing)
+    cmdErr <-
+      if errorFor cmd then
+        frequency [
+            -- We want to make some progress
+            (4, return Nothing)
           , (1, Just <$> arbitrary)
           ]
-       else return Nothing
+       else
+         return Nothing
     return $ At CmdErr {..}
   where
     -- Don't simulate an error during corruption, because we don't want an
@@ -511,93 +503,27 @@ generator m = do
     errorFor _             = True
 
 -- | Generate a 'Cmd'.
-generateCmd :: Model m Symbolic -> Gen (At Cmd m Symbolic)
+generateCmd :: forall m. Model m Symbolic -> Gen (At Cmd m Symbolic)
 generateCmd Model {..} = At <$> frequency
     [ -- Block
-      (1, GetBlockComponent <$> genGetBlockSlot)
-      -- EBB
-    , (if modelSupportsEBBs then 1 else 0, GetEBBComponent <$> genGetEBB)
-    , (1, uncurry GetBlockOrEBBComponent <$> genSlotAndHash)
-    , (3, do
-            let mbPrevBlock = dbmTipBlock dbModel
-            slotNo  <- frequency
-              [ -- Slot in the past -> invalid
-                (1, chooseSlot (0, lastSlot))
-                -- If the previous block is an EBB, make a regular block in
-                -- the same slot number. The slot can still be empty, though.
-              , (if maybe False (fromIsEBB . testBlockIsEBB) mbPrevBlock
-                 then 7 else 0,
-                 return lastSlot)
-                -- Slots not too far in the future
-              , (4, chooseSlot (lastSlot, lastSlot + 10))
-                -- Slots in some future epoch
-              , (1, chooseSlot (inLaterChunk 1 lastSlot,
-                                inLaterChunk 4 lastSlot))
-              ]
-            let block = (maybe firstBlock mkNextBlock mbPrevBlock)
-                          slotNo
-                          (TestBody 0 True)
-            return $ AppendBlock slotNo (blockHash block) block)
-    , (if modelSupportsEBBs then 1 else 0, do
-            (epoch, ebb) <- case dbmTipBlock dbModel of
-              Nothing        -> return (0, firstEBB canContainEBB (TestBody 0 True))
-              Just prevBlock -> do
-                epoch <- frequency
-                -- Epoch in the past -> invalid
-                  [ (1, chooseEpoch (0, currentEpoch))
-                  , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
-                  ]
-                let slotNo = slotNoOfEBB dbmChunkInfo epoch
-                return (epoch, mkNextEBB canContainEBB prevBlock slotNo epoch (TestBody 0 True))
-            return $ AppendEBB epoch (blockHash ebb) ebb)
-    , (4, return StreamAll)
-    , (4, frequency
-            -- An iterator with a random and likely invalid range,
-            [ (1, Stream
-                    <$> (Just <$> genRandomBound)
-                    <*> (Just <$> genRandomBound))
-            -- A valid iterator
-            , (if empty then 0 else 2, do
-                 start <- genBound
-                 let startSlot = maybe 0 fst start
-                 end   <- genBound `suchThat` \case
-                     -- NOTE: say @start@ refers to the only block in the DB,
-                     -- which is the EBB of the current epoch, then there is
-                     -- no regular block >= @start@, only the EBB itself (=
-                     -- @start@). So we must make sure that we can generate a
-                     -- slot that refers to this EBB for @end@, otherwise we
-                     -- may end up in an infinite loop if we're only
-                     -- generating slots referring to regular blocks.
-                     Nothing           -> True
-                     Just (endSlot, _) -> endSlot >= startSlot
-
-                 return $ Stream start end)
-            ])
-      -- Only if there are iterators can we generate commands that manipulate
-      -- them.
-    , (if Map.null dbmIterators then 0 else 8, do
-         iter <- elements $ RE.keys knownIters
-         frequency [ (4, return $ IteratorNext    iter)
-                   , (4, return $ IteratorHasNext iter)
-                   , (1, return $ IteratorClose   iter) ])
+      (1, GetBlockComponent <$> genGetBlock)
+    , (5, AppendBlock <$> genAppendRegularBlock)
+    , (if modelSupportsEBBs then 2 else 0, AppendBlock <$> genAppendEBB)
+    , (if empty then 1 else 4, return StreamAll)
+    , (if empty then 1 else 4, uncurry Stream <$> genBounds)
+    , (if noIters then 0 else 5, IteratorNext    <$> pickIter)
+    , (if noIters then 0 else 5, IteratorHasNext <$> pickIter)
+    , (if noIters then 0 else 1, IteratorClose   <$> pickIter)
     , (1, Reopen <$> genValPol)
-
     , (1, Migrate <$> genValPol)
-
-    , (4, DeleteAfter <$> genTip)
-
-      -- Only if there are files on disk can we generate commands that corrupt
-      -- them.
-    , (if null dbFiles then 0 else 2, Corruption <$> genCorruption)
+    , (1, DeleteAfter <$> genTip)
+    , (if null dbFiles then 0 else 1, Corruption <$> genCorruption)
     ]
   where
     DBModel {..} = dbModel
     modelSupportsEBBs = chunkInfoSupportsEBBs dbmChunkInfo
     currentEpoch      = unsafeChunkNoToEpochNo $ dbmCurrentChunk dbModel
     canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
-
-    lastSlot :: SlotNo
-    lastSlot = fromIntegral $ length (dbmRegular dbModel)
 
     -- Construct a 'SlotNo' @n@ chunks later
     inLaterChunk :: Word -> SlotNo -> SlotNo
@@ -608,24 +534,140 @@ generateCmd Model {..} = At <$> frequency
         chunk = chunkIndexOfSlot dbmChunkInfo s
         size  = getChunkSize     dbmChunkInfo chunk
 
-    empty = dbmTip dbModel == Origin
+    lastBlock :: WithOrigin TestBlock
+    lastBlock = dbmTipBlock dbModel
 
-    noBlocks = all isNothing (dbmRegular dbModel)
+    lastSlot :: SlotNo
+    lastSlot = withOrigin (SlotNo 0) blockSlot lastBlock
 
-    noEBBs = Map.null (dbmEBBs dbModel)
+    lastBlockIsEBB :: Bool
+    lastBlockIsEBB = withOrigin False (fromIsEBB . testBlockIsEBB) lastBlock
 
-    genGetBlockSlot :: Gen SlotNo
-    genGetBlockSlot = frequency
-      [ (if empty then 0 else 10, genSlotInThePast)
-      , (1,  genSlotInTheFuture)
-      , (1,  genSmallSlotNo) ]
+    dbFiles :: [FsPath]
+    dbFiles = getDBFiles dbModel
 
-    genGetEBB :: Gen EpochNo
-    genGetEBB = frequency
-      [ (if noEBBs then 0 else 5,
-           elements $ map unsafeChunkNoToEpochNo $ Map.keys (dbmEBBs dbModel))
-      , (1, chooseEpoch (0, 5))
-      ]
+    blocks :: [TestBlock]
+    blocks = dbmBlocks dbModel
+
+    ebbs, regularBlocks :: [TestBlock]
+    (ebbs, regularBlocks) = partition (fromIsEBB . blockToIsEBB) blocks
+
+    empty, noRegularBlocks, noEBBs :: Bool
+    empty           = null blocks
+    noRegularBlocks = null regularBlocks
+    noEBBs          = null ebbs
+
+    noIters :: Bool
+    noIters = Map.null dbmIterators
+
+    -- Randomly pick one of the open iterators
+    --
+    -- PRECONDITION: there is at least one open iterator
+    pickIter :: Gen (IterRef m Symbolic)
+    pickIter = elements (RE.keys knownIters)
+
+    genRandomPoint :: Gen (RealPoint TestBlock)
+    genRandomPoint =
+        RealPoint
+          <$> arbitrary
+          <*> (TestHeaderHash <$> arbitrary)
+
+    genGetBlock :: Gen (RealPoint TestBlock)
+    genGetBlock = frequency [
+          (if noRegularBlocks then 0 else 4, elements (map blockRealPoint regularBlocks))
+        , (if noEBBs          then 0 else 2, elements (map blockRealPoint ebbs))
+        , (1, genRandomPoint)
+        ]
+
+    genAppendRegularBlock :: Gen TestBlock
+    genAppendRegularBlock = do
+        slotNo <- frequency [
+            -- Slot in the past -> invalid
+            (1, chooseSlot (0, lastSlot))
+            -- If the previous block is an EBB, make a regular block in
+            -- the same slot number. The slot can still be empty, though.
+          , (if lastBlockIsEBB then 7 else 0, return lastSlot)
+            -- Slots not too far in the future
+          , (4, chooseSlot (lastSlot, lastSlot + 10))
+            -- Slots in some future chunk
+          , (1, chooseSlot (inLaterChunk 1 lastSlot,
+                            inLaterChunk 4 lastSlot))
+          ]
+        return $
+          (withOrigin firstBlock mkNextBlock lastBlock)
+            slotNo
+            (TestBody 0 True)
+
+    genAppendEBB :: Gen TestBlock
+    genAppendEBB = case lastBlock of
+        Origin              -> return $ firstEBB canContainEBB (TestBody 0 True)
+        NotOrigin prevBlock -> do
+          epoch <- frequency
+          -- Epoch in the past -> invalid
+            [ (1, chooseEpoch (0, currentEpoch))
+            , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
+            ]
+          let slotNo = slotNoOfEBB dbmChunkInfo epoch
+          return $ mkNextEBB canContainEBB prevBlock slotNo epoch (TestBody 0 True)
+
+    -- Both random points and existing points
+    genRandomOrExisting :: Gen (RealPoint TestBlock)
+    genRandomOrExisting = frequency [
+          (1, genRandomPoint)
+        , (if empty then 0 else 1, elements (map blockRealPoint blocks))
+        ]
+
+    genStreamFromWith :: Gen (RealPoint blk) -> Gen (StreamFrom blk)
+    genStreamFromWith genPoint = oneof [
+          StreamFromExclusive <$> frequency [
+              (1, return GenesisPoint)
+            , (4, realPointToPoint <$> genPoint)
+            ]
+        , StreamFromInclusive <$> genPoint
+        ]
+
+    genRandomOrExistingStreamFrom :: Gen (StreamFrom TestBlock)
+    genRandomOrExistingStreamFrom = genStreamFromWith genRandomOrExisting
+
+    genRandomOrExistingStreamTo :: Gen (StreamTo TestBlock)
+    genRandomOrExistingStreamTo =
+        StreamToInclusive <$> genRandomOrExisting
+
+    -- PRECONDITION: not empty
+    genStreamFrom :: Gen (StreamFrom TestBlock)
+    genStreamFrom = genStreamFromWith (elements (map blockRealPoint blocks))
+
+    -- Tries to generate an upper bound /after/ the lower bound. This can fail,
+    -- i.e., when the lower bound is an exclusive bound corresponding to the
+    -- last block. In that case, we give up and use the same block as the upper
+    -- bound, resulting in invalid bounds.
+    --
+    -- PRECONDITION: not empty and the given block exists
+    genStreamTo :: StreamFrom TestBlock -> Gen (StreamTo TestBlock)
+    genStreamTo = fmap StreamToInclusive . \case
+        StreamFromExclusive pt -> case pointToWithOriginRealPoint pt of
+          Origin        -> elements (map blockRealPoint blocks)
+          NotOrigin pt' -> genPointAfter pt'
+        StreamFromInclusive pt -> genPointAfter pt
+      where
+        -- Can generate the given point itself
+        genPointAfter :: RealPoint TestBlock -> Gen (RealPoint TestBlock)
+        genPointAfter pt =
+              elements
+            . dropWhile (/= pt)
+            . map blockRealPoint
+            $ blocks
+
+    genBounds :: Gen (StreamFrom TestBlock, StreamTo TestBlock)
+    genBounds = frequency [
+        -- Likely an invalid range
+          (1, (,) <$> genRandomOrExistingStreamFrom <*> genRandomOrExistingStreamTo)
+        -- A valid iterator
+        , (if empty then 0 else 3, do
+             from <- genStreamFrom
+             to   <- genStreamTo from
+             return (from, to))
+        ]
 
     chooseWord64 :: Coercible a Word64 => (a, a) -> Gen a
     chooseWord64 (start, end) = coerce $ choose @Word64 (coerce start, coerce end)
@@ -636,59 +678,18 @@ generateCmd Model {..} = At <$> frequency
     chooseEpoch :: (EpochNo, EpochNo) -> Gen EpochNo
     chooseEpoch = chooseWord64
 
-    genSlotInThePast :: Gen SlotNo
-    genSlotInThePast = chooseSlot (0, lastSlot)
-
-    genSlotInTheFuture :: Gen SlotNo
-    genSlotInTheFuture = chooseSlot (succ lastSlot, maxBound)
-
-    genSlotAndHash :: Gen (SlotNo, Hash)
-    genSlotAndHash = frequency
-      [ (if noBlocks then 0 else 5,
-         (\b -> (blockSlot b, blockHash b)) <$> genBlockInThePast)
-      , (if noEBBs then 0 else 5,
-         (\b -> (blockSlot b, blockHash b)) <$> genEBBInThePast)
-      , (1, genRandomBound)
-      ]
-
-    -- Generates random hashes, will seldomly correspond to real blocks. Used
-    -- to test error handling.
-    genRandomBound :: Gen (SlotNo, Hash)
-    genRandomBound = (,) <$> arbitrary <*> (TestHeaderHash <$> arbitrary)
-
-    genBlockInThePast :: Gen TestBlock
-    genBlockInThePast = elements
-        [ testBlockFromLazyByteString bytes
-        | (_, bytes, _) <- catMaybes (dbmRegular dbModel)
-        ]
-
-    genEBBInThePast :: Gen TestBlock
-    genEBBInThePast = elements
-        [ testBlockFromLazyByteString bytes
-        | (_, bytes, _) <- Map.elems (dbmEBBs dbModel)
-        ]
-
-    genBound = frequency
-      [ (1,
-         return Nothing)
-      , (if noBlocks then 0 else 1,
-         (\b   -> Just (blockSlot b,   blockHash b))   <$> genBlockInThePast)
-      , (if noEBBs then 0 else 1,
-         (\ebb -> Just (blockSlot ebb, blockHash ebb)) <$> genEBBInThePast)
-      ]
-
+    genCorruption :: Gen Corruption
     genCorruption = MkCorruption <$> generateCorruptions (NE.fromList dbFiles)
 
-    dbFiles = getDBFiles dbModel
-
+    genValPol :: Gen ValidationPolicy
     genValPol = elements [ValidateMostRecentChunk, ValidateAllChunks]
 
-    genTip :: Gen (ImmTipWithInfo Hash)
+    genTip :: Gen (WithOrigin (Tip TestBlock))
     genTip = elements $ NE.toList $ tips dbModel
 
 -- | Return the files that the database with the given model would have
 -- created. For each epoch an epoch, primary index, and secondary index file.
-getDBFiles :: DBModel Hash -> [FsPath]
+getDBFiles :: DBModel TestBlock -> [FsPath]
 getDBFiles dbm =
     [ file
     | chunk <- chunksBetween firstChunkNo (dbmCurrentChunk dbm)
@@ -712,42 +713,13 @@ shrinker m (At (CmdErr mbErrors cmd)) = fmap At $
 -- | Shrink a 'Cmd'.
 shrinkCmd :: Model m Symbolic -> At Cmd m Symbolic -> [At Cmd m Symbolic]
 shrinkCmd _ (At cmd) = fmap At $ case cmd of
-    AppendBlock _slot  _hash _b        -> []
-    AppendEBB   _epoch _hash _ebb      -> []
-    Stream  _mbStart _mbEnd            -> []
-    StreamAll                          -> []
-    GetBlockComponent slot             ->
-      [GetBlockComponent slot' | slot' <- shrink slot]
-    GetEBBComponent epoch              ->
-      [GetEBBComponent epoch' | epoch' <- shrink epoch]
-    GetBlockOrEBBComponent _slot _hash -> []
-    IteratorNext    {}                 -> []
-    IteratorHasNext {}                 -> []
-    IteratorClose   {}                 -> []
-    DeleteAfter tip                    ->
-      [DeleteAfter tip' | tip' <- shrinkTip tip]
-    Reopen {}                          -> []
-    Migrate {}                         -> []
-    Corruption corr                    ->
-      [Corruption corr' | corr' <- shrinkCorruption corr]
+    Corruption corr -> [Corruption corr' | corr' <- shrinkCorruption corr]
+    _otherwise      -> []
   where
     shrinkCorruption (MkCorruption corrs) =
-      [ MkCorruption corrs'
-      | corrs' <- shrinkCorruptions corrs]
-
-    -- Return tips that are closer to the current tip. If the tip is after the
-    -- current tip, return the tips between the current tip and the tip. If
-    -- the tip is before the current tip, return the tips between the tip and
-    -- the current tip.
-    --
-    -- For simplicity, we only shrink to TipEBBs if the tip is an TipEBB,
-    -- similarly for TipBlock. Otherwise we have to check whether a TipEBB is
-    -- before or after a TipBlock.
-    --
-    -- TODO: Re-enable shrinker
-    -- We could shrink the tip by asking for `tips` and selecting some.
-    shrinkTip :: ImmTipWithInfo Hash -> [ImmTipWithInfo Hash]
-    shrinkTip _ = []
+        [ MkCorruption corrs'
+        | corrs' <- shrinkCorruptions corrs
+        ]
 
 {-------------------------------------------------------------------------------
   The final state machine
@@ -770,9 +742,8 @@ precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
 precondition Model {..} (At (CmdErr { cmd })) =
    forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
-      AppendBlock    _ _ b -> fitsOnTip b
-      AppendEBB      _ _ b -> fitsOnTip b
-      DeleteAfter tip      -> tip `member` NE.toList (tips dbModel)
+      AppendBlock blk -> fitsOnTip blk
+      DeleteAfter tip -> tip `member` NE.toList (tips dbModel)
       Corruption corr ->
         forall
           (corruptionFiles (getCorruptions corr))
@@ -781,8 +752,8 @@ precondition Model {..} (At (CmdErr { cmd })) =
   where
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
-      Nothing    -> blockPrevHash b .== GenesisHash
-      Just bPrev -> blockPrevHash b .== BlockHash (blockHash bPrev)
+      Origin          -> blockPrevHash b .== GenesisHash
+      NotOrigin bPrev -> blockPrevHash b .== BlockHash (blockHash bPrev)
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -797,45 +768,45 @@ postcondition model cmdErr resp =
   where
     ev = lockstep model cmdErr resp
 
-data ImmutableDBState = ImmutableDBState
-    { db       :: ImmutableDB    Hash IO
-    , internal :: ImmDB.Internal Hash IO
+data ImmutableDBState = ImmutableDBState {
+      db       :: ImmutableDB          IO TestBlock
+    , internal :: ImmutableDB.Internal IO TestBlock
     }
   deriving NoUnexpectedThunks via AllowThunk ImmutableDBState
 
 -- | Environment to run commands against the real ImmutableDB implementation.
-data ImmutableDBEnv h = ImmutableDBEnv
-  { varErrors :: StrictTVar IO Errors
-  , varNextId :: StrictTVar IO Id
-  , varIters  :: StrictTVar IO [TestIterator IO]
-    -- ^ A list of all open iterators. For some commands, e.g., corrupting the
-    -- database or simulating errors, we need to close and reopen the
-    -- database, which almost always requires truncation of the database.
-    -- During truncation we might need to delete a file that is still opened
-    -- by an iterator. As this is not allowed by the MockFS implementation, we
-    -- first close all open iterators in these cases.
-  , varDB     :: StrictMVar IO ImmutableDBState
-  , args      :: ImmutableDbArgs IO h Hash (ChunkFileError Hash)
-  }
+data ImmutableDBEnv = ImmutableDBEnv {
+      varErrors :: StrictTVar IO Errors
+    , varNextId :: StrictTVar IO Id
+    , varIters  :: StrictTVar IO [TestIterator IO]
+      -- ^ A list of all open iterators. For some commands, e.g., corrupting the
+      -- database or simulating errors, we need to close and reopen the
+      -- database, which almost always requires truncation of the database.
+      -- During truncation we might need to delete a file that is still opened
+      -- by an iterator. As this is not allowed by the MockFS implementation, we
+      -- first close all open iterators in these cases.
+    , varDB     :: StrictMVar IO ImmutableDBState
+    , args      :: ImmutableDbArgs IO TestBlock
+    }
 
-getImmDB :: ImmutableDBEnv h -> IO (ImmutableDB Hash IO)
-getImmDB = fmap db . readMVar . varDB
+getImmutableDB :: ImmutableDBEnv -> IO (ImmutableDB IO TestBlock)
+getImmutableDB = fmap db . readMVar . varDB
 
-getInternal :: ImmutableDBEnv h -> IO (ImmDB.Internal Hash IO)
+getInternal :: ImmutableDBEnv -> IO (ImmutableDB.Internal IO TestBlock)
 getInternal = fmap internal . readMVar . varDB
 
-semantics :: Eq h
-          => ImmutableDBEnv h
-          -> At CmdErr IO Concrete
-          -> IO (At Resp IO Concrete)
+semantics ::
+     ImmutableDBEnv
+  -> At CmdErr IO Concrete
+  -> IO (At Resp IO Concrete)
 semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd -> tryImmDB $ run env cmd
+      CmdErr Nothing       cmd -> tryImmutableDB $ run env cmd
 
       CmdErr (Just errors) cmd -> do
-        tipBefore <- getImmDB env >>= getTip
-        res       <- withErrors varErrors errors $ tryImmDB $ run env cmd
+        tipBefore <- getImmutableDB env >>= atomically . getTip
+        res       <- withErrors varErrors errors $ tryImmutableDB $ run env cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -859,16 +830,16 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    ImmutableDbArgs { registry } = args
+    ImmutableDbArgs { immRegistry } = args
 
-    truncateAndReopen cmd tipBefore = tryImmDB $ do
+    truncateAndReopen cmd tipBefore = tryImmutableDB $ do
       -- Close all open iterators as we will perform truncation
       closeOpenIterators varIters
       -- Close the database in case no errors occurred and it wasn't
       -- closed already. This is idempotent anyway.
-      getImmDB env >>= closeDB
+      getImmutableDB env >>= closeDB
       -- Release any handles that weren't closed because of a simulated error.
-      releaseAll registry
+      releaseAll immRegistry
       reopen env ValidateAllChunks
       getInternal env >>= flip deleteAfter tipBefore
       -- If the cmd deleted things, we must do it here to have a deterministic
@@ -878,52 +849,46 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
       case cmd of
         DeleteAfter tip -> getInternal env >>= flip deleteAfter tip
         _               -> return ()
-      Tip <$> (getImmDB env >>= getTip)
+      ImmTip <$> (getImmutableDB env >>= atomically . getTip)
 
 -- | The state machine proper
-sm :: Eq h
-   => ImmutableDBEnv h
-   -> DBModel Hash
-   -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm env dbm = StateMachine
-  { initModel     = initModel dbm
-  , transition    = transition
-  , precondition  = precondition
-  , postcondition = postcondition
-  , generator     = Just . generator
-  , shrinker      = shrinker
-  , semantics     = semantics env
-  , mock          = mock
-  , invariant     = Nothing
-  , cleanup       = noCleanup
-  }
+sm ::
+     ImmutableDBEnv
+  -> DBModel TestBlock
+  -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
+sm env dbm = StateMachine {
+      initModel     = initModel dbm
+    , transition    = transition
+    , precondition  = precondition
+    , postcondition = postcondition
+    , generator     = Just . generator
+    , shrinker      = shrinker
+    , semantics     = semantics env
+    , mock          = mock
+    , invariant     = Nothing
+    , cleanup       = noCleanup
+    }
 
 {-------------------------------------------------------------------------------
   Labelling
 -------------------------------------------------------------------------------}
 
-data Tag
-  = TagGetBlockComponentJust
+data Tag =
+    TagGetBlockComponentFound
 
-  | TagGetBlockComponentNothing
+  | TagGetBlockComponentFoundEBB
 
-  | TagGetEBBComponentJust
+  | TagGetBlockComponentEmptySlot
 
-  | TagGetEBBComponentNothing
+  | TagGetBlockComponentWrongHash
 
-  | TagGetBlockOrEBBComponentJust
+  | TagAppendBlockNotNewerThanTipError
 
-  | TagGetBlockOrEBBComponentNothing
-
-  | TagAppendToSlotInThePastError
-
-  | TagReadFutureSlotError
+  | TagReadBlockNewerThanTipError
 
   | TagInvalidIteratorRangeError
 
   | TagIteratorStreamedN Int
-
-  | TagIteratorWithoutBounds
 
   | TagCorruption
 
@@ -931,13 +896,7 @@ data Tag
 
   | TagErrorDuringAppendBlock
 
-  | TagErrorDuringAppendEBB
-
   | TagErrorDuringGetBlockComponent
-
-  | TagErrorDuringGetEBBComponent
-
-  | TagErrorDuringGetBlockOrEBBComponent
 
   | TagErrorDuringStream
 
@@ -997,27 +956,20 @@ simulatedError f = C.predicate $ \ev ->
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
 tag :: forall m. [Event m Symbolic] -> [Tag]
 tag = C.classify
-    [ tagGetBlockComponentJust
-    , tagGetBlockComponentNothing
-    , tagGetEBBComponentJust
-    , tagGetEBBComponentNothing
-    , tagGetBlockOrEBBComponentJust
-    , tagGetBlockOrEBBComponentNothing
-    , tagAppendToSlotInThePastError
-    , tagReadFutureSlotError
+    [ tagGetBlockComponentFound
+    , tagGetBlockComponentFoundEBB
+    , tagGetBlockComponentEmptySlot
+    , tagGetBlockComponentWrongHash
+    , tagAppendBlockNotNewerThanTipError
+    , tagReadBlockNewerThanTipError
     , tagInvalidIteratorRangeError
     , tagIteratorStreamedN Map.empty
-    , tagIteratorWithoutBounds
     , tagCorruption
     , tagMigrate
     , tagErrorDuring TagErrorDuringAppendBlock $ \case
       { At (AppendBlock {}) -> True; _ -> False }
-    , tagErrorDuring TagErrorDuringAppendEBB $ \case
-      { At (AppendEBB {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringGetBlockComponent $ \case
       { At (GetBlockComponent {}) -> True; _ -> False }
-    , tagErrorDuring TagErrorDuringGetEBBComponent $ \case
-      { At (GetEBBComponent {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringStream $ \case
       { At (Stream {}) -> True ; _ -> False }
     , tagErrorDuring TagErrorDuringIteratorNext $ \case
@@ -1026,51 +978,40 @@ tag = C.classify
        { At (IteratorClose {}) -> True; _ -> False }
     ]
   where
-    tagGetBlockComponentJust :: EventPred m
-    tagGetBlockComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetBlockComponentJust
-      _ -> Right tagGetBlockComponentJust
+    tagGetBlockComponentFound :: EventPred m
+    tagGetBlockComponentFound = successful $ \ev r -> case r of
+      ErAllComponents (Right _) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
+        Left TagGetBlockComponentFound
+      _ -> Right tagGetBlockComponentFound
 
-    tagGetBlockComponentNothing :: EventPred m
-    tagGetBlockComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetBlockComponentNothing
-      _ -> Right tagGetBlockComponentNothing
+    tagGetBlockComponentFoundEBB :: EventPred m
+    tagGetBlockComponentFoundEBB = successful $ \ev r -> case r of
+      ErAllComponents (Right (_, _, _, _, _, _, IsEBB, _, _, _))
+        | GetBlockComponent {} <- unAt $ eventCmdNoErr ev
+        -> Left TagGetBlockComponentFoundEBB
+      _ -> Right tagGetBlockComponentFoundEBB
 
-    tagGetEBBComponentJust :: EventPred m
-    tagGetEBBComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetEBBComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetEBBComponentJust
-      _ -> Right tagGetEBBComponentJust
+    tagGetBlockComponentEmptySlot :: EventPred m
+    tagGetBlockComponentEmptySlot = successful $ \ev r -> case r of
+      ErAllComponents (Left (EmptySlot {})) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
+        Left TagGetBlockComponentEmptySlot
+      _ -> Right tagGetBlockComponentEmptySlot
 
-    tagGetEBBComponentNothing :: EventPred m
-    tagGetEBBComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetEBBComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetEBBComponentNothing
-      _ -> Right tagGetEBBComponentNothing
+    tagGetBlockComponentWrongHash :: EventPred m
+    tagGetBlockComponentWrongHash = successful $ \ev r -> case r of
+      ErAllComponents (Left (WrongHash {})) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
+        Left TagGetBlockComponentWrongHash
+      _ -> Right tagGetBlockComponentWrongHash
 
-    tagGetBlockOrEBBComponentJust :: EventPred m
-    tagGetBlockOrEBBComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetBlockOrEBBComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetBlockOrEBBComponentJust
-      _ -> Right tagGetBlockOrEBBComponentJust
+    tagAppendBlockNotNewerThanTipError :: EventPred m
+    tagAppendBlockNotNewerThanTipError = failedUserError $ \_ e -> case e of
+      AppendBlockNotNewerThanTipError {} -> Left TagAppendBlockNotNewerThanTipError
+      _                                  -> Right tagAppendBlockNotNewerThanTipError
 
-    tagGetBlockOrEBBComponentNothing :: EventPred m
-    tagGetBlockOrEBBComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetBlockOrEBBComponent {} <- unAt $ eventCmdNoErr ev ->
-        Left TagGetBlockOrEBBComponentNothing
-      _ -> Right tagGetBlockOrEBBComponentNothing
-
-    tagAppendToSlotInThePastError :: EventPred m
-    tagAppendToSlotInThePastError = failedUserError $ \_ e -> case e of
-      AppendToSlotInThePastError {} -> Left TagAppendToSlotInThePastError
-      _                             -> Right tagAppendToSlotInThePastError
-
-    tagReadFutureSlotError :: EventPred m
-    tagReadFutureSlotError = failedUserError $ \_ e -> case e of
-      ReadFutureSlotError {} -> Left TagReadFutureSlotError
-      _                      -> Right tagReadFutureSlotError
+    tagReadBlockNewerThanTipError :: EventPred m
+    tagReadBlockNewerThanTipError = failedUserError $ \_ e -> case e of
+      ReadBlockNewerThanTipError {} -> Left TagReadBlockNewerThanTipError
+      _                             -> Right tagReadBlockNewerThanTipError
 
     tagInvalidIteratorRangeError :: EventPred m
     tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of
@@ -1088,16 +1029,10 @@ tag = C.classify
           _ -> Right $ tagIteratorStreamedN streamedPerIterator
       , C.predFinish = do
           -- Find the entry with the highest value, i.e. the iterator that has
-          -- streamed the most blocks/headers
           (_, longestStream) <- listToMaybe $ sortBy (flip compare `on` snd) $
             Map.toList streamedPerIterator
           return $ TagIteratorStreamedN longestStream
       }
-
-    tagIteratorWithoutBounds :: EventPred m
-    tagIteratorWithoutBounds = successful $ \ev _ -> case eventCmdNoErr ev of
-      At (Stream Nothing Nothing) -> Left TagIteratorWithoutBounds
-      _                           -> Right tagIteratorWithoutBounds
 
     tagCorruption :: EventPred m
     tagCorruption = C.Predicate
@@ -1169,23 +1104,20 @@ instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
       [ toExpr a, toExpr b, toExpr c, toExpr d, toExpr e, toExpr f, toExpr g
       , toExpr h, toExpr i, toExpr j
       ]
-instance ToExpr (IteratorResult AllComponents)
-instance ToExpr (IteratorModel Hash)
-instance ToExpr (HeaderHash h) => ToExpr (ChainHash h)
+instance ToExpr (IteratorModel TestBlock)
 instance ToExpr EBB
 instance ToExpr IsEBB
 instance ToExpr ChainLength
 instance ToExpr TestHeaderHash
 instance ToExpr TestBodyHash
+instance ToExpr (ChainHash TestHeader)
 instance ToExpr TestHeader
 instance ToExpr TestBody
 instance ToExpr TestBlock
-instance ToExpr ImmDB.BlockOrEBB
-instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
-instance ToExpr BinaryBlockInfo
-instance ToExpr hash => ToExpr (InSlot hash)
-instance ToExpr PrefixLen
-instance ToExpr (DBModel Hash)
+instance ToExpr (Tip TestBlock)
+instance ToExpr (InSlot TestBlock)
+instance ToExpr (CodecConfig TestBlock)
+instance ToExpr (DBModel TestBlock)
 
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
@@ -1198,10 +1130,6 @@ instance ToExpr (Model m Concrete)
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
-
--- | The value for 'PrefixLen' used throughout this testsuite
-testPrefixLen :: PrefixLen
-testPrefixLen = PrefixLen 10
 
 -- | Show minimal examples for each of the generated tags
 showLabelledExamples'
@@ -1227,7 +1155,7 @@ showLabelledExamples' mbReplay numTests focus chunkInfo = do
         collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
           property True
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
+    smUnused = sm unusedEnv $ initDBModel chunkInfo TestBlockCodecConfig
 
 showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
@@ -1240,7 +1168,7 @@ prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
         $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
         $ prop
   where
-    smUnused = sm (unusedEnv @()) $ initDBModel chunkInfo testPrefixLen
+    smUnused = sm unusedEnv $ initDBModel chunkInfo TestBlockCodecConfig
 
 test :: Index.CacheConfig
      -> ChunkInfo
@@ -1253,22 +1181,17 @@ test cacheConfig chunkInfo cmds = do
     varIters           <- uncheckedNewTVarM []
     (tracer, getTrace) <- recordingTracerIORef
 
-    let hasFS  = mkSimErrorHasFS fsVar varErrors
-        parser = chunkFileParser
-                   hasFS
-                   (const <$> decode)
-                   testBlockIsValid
     withRegistry $ \registry -> do
-      let args = ImmutableDbArgs
-            { registry
-            , hasFS
-            , chunkInfo
-            , hashInfo = testHashInfo
-            , tracer
-            , cacheConfig
-            , valPol   = ValidateMostRecentChunk
-            , parser
-            , prefixLen = testPrefixLen
+      let hasFS = mkSimErrorHasFS fsVar varErrors
+          args  = ImmutableDbArgs {
+              immCacheConfig      = cacheConfig
+            , immCheckIntegrity   = testBlockIsValid
+            , immChunkInfo        = chunkInfo
+            , immCodecConfig      = TestBlockCodecConfig
+            , immHasFS            = SomeHasFS hasFS
+            , immRegistry         = registry
+            , immTracer           = tracer
+            , immValidationPolicy = ValidateMostRecentChunk
             }
 
       (hist, model, res, trace) <- bracket
@@ -1285,7 +1208,7 @@ test cacheConfig chunkInfo cmds = do
                 , varDB
                 , args
                 }
-              sm' = sm env (initDBModel chunkInfo testPrefixLen)
+              sm' = sm env (initDBModel chunkInfo TestBlockCodecConfig)
 
           (hist, model, res) <- QSM.runCommands' sm' cmds
 
@@ -1326,7 +1249,7 @@ tests = testGroup "ImmutableDB q-s-m"
     [ testProperty "sequential" prop_sequential
     ]
 
-unusedEnv :: ImmutableDBEnv h
+unusedEnv :: ImmutableDBEnv
 unusedEnv = error "ImmutableDBEnv used during command generation"
 
 instance Arbitrary Index.CacheConfig where

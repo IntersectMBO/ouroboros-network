@@ -181,10 +181,10 @@ run runargs@RunNodeArgs{..} =
               -- override the default value /and/ the user-customised value of
               -- the 'ChainDB.cdbImmValidation' and the
               -- 'ChainDB.cdbVolValidation' fields.
-            = (rnCustomiseChainDbArgs args)
-              { ChainDB.cdbImmValidation = ValidateAllChunks
-              , ChainDB.cdbVolatileDbValidation = ValidateAll
-              }
+            = (rnCustomiseChainDbArgs args) {
+                  ChainDB.cdbImmutableDbValidation = ValidateAllChunks
+                , ChainDB.cdbVolatileDbValidation  = ValidateAll
+                }
 
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
@@ -383,7 +383,7 @@ openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
     args :: ChainDbArgs IO blk
     args = customiseArgs $
              mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-             (nodeImmDbChunkInfo cfg)
+             (nodeImmutableDbChunkInfo cfg)
 
 mkChainDbArgs
   :: forall blk. RunNode blk
@@ -399,18 +399,18 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
               chunkInfo = (ChainDB.defaultArgs dbPath) {
-      ChainDB.cdbMaxBlocksPerFile     = mkBlocksPerFile 1000
-    , ChainDB.cdbChunkInfo            = chunkInfo
-    , ChainDB.cdbGenesis              = return initLedger
-    , ChainDB.cdbDiskPolicy           = defaultDiskPolicy k
-    , ChainDB.cdbCheckIntegrity       = nodeCheckIntegrity cfg
-    , ChainDB.cdbParamsLgrDB          = ledgerDbDefaultParams k
-    , ChainDB.cdbTopLevelConfig       = cfg
-    , ChainDB.cdbRegistry             = registry
-    , ChainDB.cdbTracer               = tracer
-    , ChainDB.cdbImmValidation        = ValidateMostRecentChunk
-    , ChainDB.cdbVolatileDbValidation = NoValidation
-    , ChainDB.cdbCheckInFuture        = inFuture
+      ChainDB.cdbMaxBlocksPerFile      = mkBlocksPerFile 1000
+    , ChainDB.cdbChunkInfo             = chunkInfo
+    , ChainDB.cdbGenesis               = return initLedger
+    , ChainDB.cdbDiskPolicy            = defaultDiskPolicy k
+    , ChainDB.cdbCheckIntegrity        = nodeCheckIntegrity cfg
+    , ChainDB.cdbParamsLgrDB           = ledgerDbDefaultParams k
+    , ChainDB.cdbTopLevelConfig        = cfg
+    , ChainDB.cdbRegistry              = registry
+    , ChainDB.cdbTracer                = tracer
+    , ChainDB.cdbImmutableDbValidation = ValidateMostRecentChunk
+    , ChainDB.cdbVolatileDbValidation  = NoValidation
+    , ChainDB.cdbCheckInFuture         = inFuture
     }
   where
     k = configSecurityParam cfg

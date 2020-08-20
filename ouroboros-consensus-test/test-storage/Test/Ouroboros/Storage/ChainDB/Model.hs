@@ -65,14 +65,14 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , between
   , blocks
   , volatileDbBlocks
-  , immDbChain
+  , immutableDbChain
   , validChains
   , initLedger
   , garbageCollectable
   , garbageCollectablePoint
   , garbageCollectableIteratorNext
   , garbageCollect
-  , copyToImmDB
+  , copyToImmutableDB
   , closeDB
   , reopen
   , wipeVolatileDB
@@ -85,7 +85,6 @@ import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
-import           Data.Functor.Identity (Identity (..))
 import           Data.List (isInfixOf, isPrefixOf, sortBy)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -118,7 +117,7 @@ import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
-                     BlockComponent (..), ChainDB, ChainDbError (..),
+                     BlockComponent (..), ChainDbError (..),
                      InvalidBlockReason (..), IteratorResult (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
@@ -130,7 +129,7 @@ type IteratorId = Int
 data Model blk = Model {
       volatileDbBlocks :: Map (HeaderHash blk) blk
       -- ^ The VolatileDB
-    , immDbChain       :: Chain blk
+    , immutableDbChain :: Chain blk
       -- ^ The ImmutableDB
     , cps              :: CPS.ChainProducerState blk
     , currentLedger    :: ExtLedgerState blk
@@ -159,14 +158,14 @@ deriving instance
   Queries
 -------------------------------------------------------------------------------}
 
-immDbBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
-immDbBlocks Model { immDbChain } = Map.fromList $
+immutableDbBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
+immutableDbBlocks Model { immutableDbChain } = Map.fromList $
     [ (blockHash blk, blk)
-    | blk <- Chain.toOldestFirst immDbChain
+    | blk <- Chain.toOldestFirst immutableDbChain
     ]
 
 blocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
-blocks m = volatileDbBlocks m <> immDbBlocks m
+blocks m = volatileDbBlocks m <> immutableDbBlocks m
 
 futureBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
 futureBlocks m =
@@ -186,9 +185,9 @@ getBlockByPoint :: HasHeader blk
                 -> Maybe blk
 getBlockByPoint (RealPoint _ hash) = getBlock hash
 
-getBlockComponentByPoint
-  :: forall m blk b. (ModelSupportsBlock blk, Monad m)
-  => BlockComponent (ChainDB m blk) b
+getBlockComponentByPoint ::
+     ModelSupportsBlock blk
+  => BlockComponent blk b
   -> RealPoint blk -> Model blk
   -> Either ChainDbError (Maybe b) -- Just to satify the API
 getBlockComponentByPoint blockComponent pt m = Right $
@@ -245,7 +244,7 @@ maxActualRollback k m =
 -- This is the longest of the given two chains:
 --
 -- 1. The current chain with the last @k@ blocks dropped.
--- 2. The chain formed by the blocks in 'immDbChain', i.e., the
+-- 2. The chain formed by the blocks in 'immutableDbChain', i.e., the
 --    \"ImmutableDB\". We need to take this case in consideration because the
 --    VolatileDB might have been wiped.
 --
@@ -261,7 +260,7 @@ immutableChain (SecurityParam k) m =
     maxBy
       Chain.length
       (Chain.drop (fromIntegral k) (currentChain m))
-      (immDbChain m)
+      (immutableDbChain m)
   where
     maxBy f a b
       | f a >= f b = a
@@ -274,8 +273,8 @@ immutableChain (SecurityParam k) m =
 -- This is the shortest of the given two chain fragments:
 --
 -- 1. The last @k@ blocks of the current chain.
--- 2. The suffix of the current chain not part of the 'immDbChain', i.e., the
---    \"ImmutableDB\".
+-- 2. The suffix of the current chain not part of the 'immutableDbChain', i.e.,
+--    the \"ImmutableDB\".
 volatileChain
     :: (HasHeader a, HasHeader blk)
     => SecurityParam
@@ -384,7 +383,7 @@ empty
   -> Model blk
 empty initLedger maxClockSkew = Model {
       volatileDbBlocks = Map.empty
-    , immDbChain       = Chain.Genesis
+    , immutableDbChain = Chain.Genesis
     , cps              = CPS.initChainProducerState Chain.Genesis
     , currentLedger    = initLedger
     , initLedger       = initLedger
@@ -408,7 +407,7 @@ addBlock :: forall blk. LedgerSupportsProtocol blk
          -> Model blk -> Model blk
 addBlock cfg blk m = Model {
       volatileDbBlocks = volatileDbBlocks'
-    , immDbChain       = immDbChain m
+    , immutableDbChain = immutableDbChain m
     , cps              = CPS.switchFork newChain (cps m)
     , currentLedger    = newLedger
     , initLedger       = initLedger m
@@ -443,7 +442,8 @@ addBlock cfg blk m = Model {
     -- @invalid@, see 'validChains', thus no need to union.
     invalid'   :: InvalidBlocks blk
     candidates :: [(Chain blk, ExtLedgerState blk)]
-    (invalid', candidates) = validChains cfg m (immDbBlocks m <> volatileDbBlocks')
+    (invalid', candidates) =
+        validChains cfg m (immutableDbBlocks m <> volatileDbBlocks')
 
     immutableChainHashes =
         map blockHash
@@ -514,10 +514,10 @@ stream securityParam from to m = do
     itrId :: IteratorId
     itrId = Map.size (iterators m) -- we never delete iterators
 
-iteratorNext
-  :: forall m blk b. (ModelSupportsBlock blk, Monad m)
+iteratorNext ::
+     ModelSupportsBlock blk
   => IteratorId
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> Model blk
   -> (IteratorResult blk b, Model blk)
 iteratorNext itrId blockComponent m =
@@ -531,13 +531,13 @@ iteratorNext itrId blockComponent m =
       Nothing      -> error "iteratorNext: unknown iterator ID"
 
 getBlockComponent
-  :: forall m blk b. (ModelSupportsBlock blk, Monad m)
-  => blk -> BlockComponent (ChainDB m blk) b -> b
+  :: forall blk b. ModelSupportsBlock blk
+  => blk -> BlockComponent blk b -> b
 getBlockComponent blk = \case
-    GetBlock      -> return blk
+    GetBlock      -> blk
     GetRawBlock   -> serialise blk
 
-    GetHeader     -> return $ getHeader blk
+    GetHeader     -> getHeader blk
     GetRawHeader  -> serialise $ getHeader blk
 
     GetHash       -> blockHash blk
@@ -577,9 +577,9 @@ newReader m = (rdrId, m { cps = cps' })
     (cps', rdrId) = CPS.initReader GenesisPoint (cps m)
 
 readerInstruction
-  :: forall m blk b. (ModelSupportsBlock blk, Monad m)
+  :: forall blk b. ModelSupportsBlock blk
   => CPS.ReaderId
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> Model blk
   -> Either ChainDbError
             (Maybe (ChainUpdate blk b), Model blk)
@@ -933,10 +933,10 @@ garbageCollectableIteratorNext
   :: forall blk. ModelSupportsBlock blk
   => SecurityParam -> Model blk -> IteratorId -> Bool
 garbageCollectableIteratorNext secParam m itId =
-    case fst (iteratorNext @Identity itId GetBlock m) of
-      IteratorExhausted             -> True -- TODO
-      IteratorBlockGCed {}          -> error "model doesn't return IteratorBlockGCed"
-      IteratorResult (Identity blk) -> garbageCollectable secParam m blk
+    case fst (iteratorNext itId GetBlock m) of
+      IteratorExhausted    -> True -- TODO
+      IteratorBlockGCed {} -> error "model doesn't return IteratorBlockGCed"
+      IteratorResult blk   -> garbageCollectable secParam m blk
 
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
@@ -949,11 +949,13 @@ garbageCollect secParam m@Model{..} = m {
     collectable = garbageCollectable secParam m
 
 -- | Copy all blocks on the current chain older than @k@ to the \"mock
--- ImmutableDB\" ('immDbChain').
+-- ImmutableDB\" ('immutableDbChain').
 --
 -- Idempotent.
-copyToImmDB :: SecurityParam -> Model blk -> Model blk
-copyToImmDB secParam m = m { immDbChain = immutableChain secParam m }
+copyToImmutableDB :: SecurityParam -> Model blk -> Model blk
+copyToImmutableDB secParam m = m {
+      immutableDbChain = immutableChain secParam m
+    }
 
 closeDB :: Model blk -> Model blk
 closeDB m@Model{..} = m {
@@ -985,23 +987,23 @@ wipeVolatileDB cfg m =
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) =
-        isSameAsImmDbChain
+        isSameAsImmutableDbChain
       $ selectChain
           (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
           (chainSelConfig (configConsensus cfg))
           Chain.genesis
       $ snd
-      $ validChains cfg m (immDbBlocks m)
+      $ validChains cfg m (immutableDbBlocks m)
 
-    isSameAsImmDbChain = \case
+    isSameAsImmutableDbChain = \case
       Nothing
-        | Chain.null (immDbChain m)
+        | Chain.null (immutableDbChain m)
         -> (Chain.Genesis, initLedger m)
         | otherwise
         -> error "Did not select any chain"
       Just res@(chain, _ledger)
-        | toHashes chain == toHashes (immDbChain m)
+        | toHashes chain == toHashes (immutableDbChain m)
         -> res
         | otherwise
         -> error "Did not select the ImmutableDB's chain"

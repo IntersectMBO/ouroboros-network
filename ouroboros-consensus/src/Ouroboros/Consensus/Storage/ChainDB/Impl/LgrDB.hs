@@ -96,10 +96,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
-                     ImmDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
@@ -185,7 +184,6 @@ openDB :: forall m blk.
           ( IOLike m
           , LedgerSupportsProtocol blk
           , LgrDbSerialiseConstraints blk
-          , ImmDbSerialiseConstraints blk
           , HasCallStack
           )
        => LgrDbArgs m blk
@@ -193,7 +191,7 @@ openDB :: forall m blk.
        -> Tracer m (TraceReplayEvent (RealPoint blk) ())
        -- ^ Used to trace the progress while replaying blocks against the
        -- ledger.
-       -> ImmDB m blk
+       -> ImmutableDB m blk
        -- ^ Reference to the immutable DB
        --
        -- After reading a snapshot from disk, the ledger DB will be brought
@@ -206,9 +204,9 @@ openDB :: forall m blk.
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
        -> m (LgrDB m blk, Word64)
-openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immDB getBlock = do
+openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
-    (db, replayed) <- initFromDisk args replayTracer immDB
+    (db, replayed) <- initFromDisk args replayTracer immutableDB
     (varDB, varPrevApplied) <-
       (,) <$> newTVarM db <*> newTVarM Set.empty
     return (
@@ -229,14 +227,13 @@ initFromDisk
      ( IOLike m
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
-     , ImmDbSerialiseConstraints blk
      , HasCallStack
      )
   => LgrDbArgs m blk
   -> Tracer m (TraceReplayEvent (RealPoint blk) ())
-  -> ImmDB     m blk
+  -> ImmutableDB m blk
   -> m (LedgerDB blk, Word64)
-initFromDisk LgrDbArgs { lgrHasFS = SomeHasFS hasFS, .. } replayTracer immDB = wrapFailure $ do
+initFromDisk LgrDbArgs { lgrHasFS = SomeHasFS hasFS, .. } replayTracer immutableDB = wrapFailure $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
@@ -247,7 +244,7 @@ initFromDisk LgrDbArgs { lgrHasFS = SomeHasFS hasFS, .. } replayTracer immDB = w
         lgrParams
         (ExtLedgerCfg lgrTopLevelConfig)
         lgrGenesis
-        (streamAPI immDB)
+        (streamAPI immutableDB)
     return (db, replayed)
   where
     ccfg = configCodec lgrTopLevelConfig
@@ -440,35 +437,44 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
   Stream API to the immutable DB
 -------------------------------------------------------------------------------}
 
-streamAPI
-  :: forall m blk.
-     (IOLike m, HasHeader blk, ImmDbSerialiseConstraints blk)
-  => ImmDB m blk -> StreamAPI m (RealPoint blk) blk
-streamAPI immDB = StreamAPI streamAfter
+streamAPI ::
+     forall m blk.
+     (IOLike m, HasHeader blk)
+  => ImmutableDB m blk -> StreamAPI m (RealPoint blk) blk
+streamAPI immutableDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack
                 => WithOrigin (RealPoint blk)
                 -> (Maybe (m (NextBlock (RealPoint blk) blk)) -> m a)
                 -> m a
     streamAfter tip k = do
-      slotNoAtTip <- ImmDB.getSlotNoAtTip immDB
-      if pointSlot tip' > slotNoAtTip
-        then k Nothing
-        else withRegistry $ \registry -> do
-          mItr <- ImmDB.streamAfter immDB registry GetBlock tip'
-          case mItr of
-            Left _err ->
-              k Nothing
-            Right itr ->
-              k . Just . getNext $ itr
+      immTipSlot <- atomically $ ImmutableDB.getTipSlot immutableDB
+      if pointSlot tip' > immTipSlot then
+        -- If we don't handle this, we might get a 'ReadBlockNewerThanTipError'
+        k snapshotTooRecent
+      else
+        withRegistry $ \registry -> do
+          eItr <-
+            ImmutableDB.streamAfterPoint
+              immutableDB
+              registry
+              GetBlock
+              tip'
+          case eItr of
+            Left _err -> k snapshotTooRecent
+            Right itr -> k $ streamUsing itr
       where
         tip' = withOriginRealPointToPoint tip
 
-    getNext :: ImmDB.Iterator (HeaderHash blk) m (m blk)
-            -> m (NextBlock (RealPoint blk) blk)
-    getNext itr = ImmDB.iteratorNext immDB itr >>= \case
-      ImmDB.IteratorExhausted   -> return NoMoreBlocks
-      ImmDB.IteratorResult mblk -> (\blk -> NextBlock (blockRealPoint blk, blk)) <$> mblk
+    snapshotTooRecent :: Maybe (m (NextBlock (RealPoint blk) blk))
+    snapshotTooRecent = Nothing
+
+    streamUsing ::
+         ImmutableDB.Iterator m blk blk
+      -> Maybe (m (NextBlock (RealPoint blk) blk))
+    streamUsing itr = Just $ ImmutableDB.iteratorNext itr >>= \case
+      ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
+      ImmutableDB.IteratorResult blk -> return $ NextBlock (blockRealPoint blk, blk)
 
 {-------------------------------------------------------------------------------
   Previously applied blocks

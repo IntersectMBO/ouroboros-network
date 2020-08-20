@@ -1,26 +1,29 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
 
 -- | Immutable on-disk database of binary blobs
 --
 -- = Internal format
 --
 -- The API of the ImmutableDB uses 'SlotNo' to indicate a location in the
--- chain\/immutable database. The contents of the database are not stored in
--- one big file that is appended to in eternity, but a separate file is
--- created for each 'ChunkNo'.
+-- chain\/immutable database. To distinguish EBBs from regular blocks, the hash
+-- is used (together they form a 'RealPoint'). The contents of the database are
+-- not stored in one big file that is appended to in eternity, but a separate
+-- file is created for each 'ChunkNo'.
 --
 -- Within each 'ChunkNo', the entries are numbered by 'RelativeSlot's. Each
--- 'SlotNo' can be converted to a combination of an 'ChunkNo' and a 'RelativeSlot'
--- (= 'ChunkSlot') and vice versa. This conversion depends on the size of the
--- chunks: 'ChunkSize'. This size may not be the same for each chunk. When
--- opening the database, the user must give a 'ChunkInfo' that will be used to
--- find out the size of each chunk.
+-- 'SlotNo' can be converted to a combination of an 'ChunkNo' and a
+-- 'RelativeSlot' (= 'ChunkSlot') and vice versa. This conversion depends on the
+-- size of the chunks: 'ChunkSize'. This size may not be the same for each
+-- chunk. When opening the database, the user must give a 'ChunkInfo' that will
+-- be used to find out the size of each chunk.
 --
 -- For example:
 --
@@ -36,18 +39,15 @@
 --
 -- = Errors
 --
--- Whenever an 'Ouroboros.Consensus.Storage.ImmutableDB.Types.UnexpectedError'
--- is thrown during an operation, e.g., 'appendBinaryBlob', the database will be
--- automatically closed because we can not guarantee a consistent state in the
--- face of file system errors. See the 'reopen' operation and the paragraph
--- below about reopening the database for more information.
+-- Whenever an 'UnexpectedError' is thrown during an operation, e.g.,
+-- 'appendBlock', the database will be automatically closed because we can not
+-- guarantee a consistent state in the face of file system errors.
 --
--- = (Re)opening the database
+-- = Opening the database
 --
--- The database can be closed and reopened. In case the database was closed
--- because of an unexpected error, the same database can be reopened again
--- with 'reopen' using a 'ValidationPolicy', which will truncate invalid data
--- from the database until a valid prefix is recovered.
+-- The database can be closed and opened again. In case the database was closed
+-- because of an unexpected error. When the database is opened again, invalid
+-- data will be truncated from the database until a valid prefix is recovered.
 --
 -- = Concurrency
 --
@@ -62,46 +62,52 @@
 -- The database is structured on disk as follows:
 --
 -- > /
--- >   00000.epoch
+-- >   00000.chunk
 -- >   00000.primary
 -- >   00000.secondary
 -- >   ..
--- >   00008.epoch
+-- >   00008.chunk
 -- >   00008.primary
 -- >   00008.secondary
 --
 -- For each chunk, there are three files on disk:
 --
---   * A \"chunk file\" that stores the actual binary blobs. But nothing
---     more, so nothing is stored for empty slots.
+--   * A \"chunk file\" that stores the actual blocks. But nothing more, so
+--     nothing is stored for empty slots.
 --
---   * A \"secondary index file\" that stores information about each block:
---     its hash, the slot number or epoch number in case of an EBB, a checksum
---     of the block, the offset of the block in the chunk file, and more. This
+--   * A \"secondary index file\" that stores information about each block: its
+--     hash, the slot number or epoch number in case of an EBB, a checksum of
+--     the block, the offset of the block in the chunk file, and more. This
 --     index is sparse to save space.
 --
 --   * A \"primary index file\" that maps slots to offsets in the secondary
 --     index file.
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl
-  ( withDB
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl (
+    -- * Opening the databse
+    openDB
   , ImmutableDbArgs (..)
+  , defaultArgs
+  , ImmutableDbSerialiseConstraints
+    -- * Re-exported
+  , ValidationPolicy (..)
+  , ChunkFileError (..)
+  , TraceEvent (..)
+  , Index.CacheConfig (..)
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
   , deleteAfter
   ) where
 
-import           Prelude hiding (truncate)
-
-import           Control.Monad (replicateM_, when)
+import qualified Codec.CBOR.Write as CBOR
+import           Control.Monad (replicateM_, unless, when)
 import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (get, lift, modify, put)
 import           Control.Tracer (Tracer, traceWith)
-import           Data.ByteString.Builder (Builder)
+import           Control.Tracer (nullTracer)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Short as Short
-import           Data.Functor (($>))
 import           GHC.Stack (HasCallStack)
+import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -109,152 +115,170 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      runWithTempRegistry)
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
 import           Ouroboros.Consensus.Storage.FS.CRC
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (unsafeEpochNoToChunkNo)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
-                     (BlockOffset (..), BlockSize, HeaderOffset (..),
-                     HeaderSize (..))
+                     (BlockOffset (..), HeaderOffset (..), HeaderSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                     (BlockSummary (..))
 
 {------------------------------------------------------------------------------
-  ImmutableDB API
+  Opening the database
 ------------------------------------------------------------------------------}
 
--- | Open the database, creating it from scratch if necessary or reopening an
--- existing one using the given 'ValidationPolicy'.
---
--- See 'ValidationPolicy' for more details on the different validation
--- policies.
---
--- An 'ChunkFileParser' must be passed in order to reconstruct indices from
--- chunk files. The 'Word' that the 'ChunkFileParser' must return for each
--- 'SlotNo' is the size (in bytes) occupied by the (non-empty) block
--- corresponding to the 'SlotNo'. The only reason we need to know the size of
--- the blocks is to compute the offset of the end of the last block, so we can
--- know where to truncate the file to in case of invalid trailing data. For
--- all other blocks, we can derive this from the offset of the next block, but
--- there is of course no block after the last one.
---
--- __Note__: To be used in conjunction with 'withDB'.
-withDB
-  :: forall m h hash e a.
-     (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash, Eq h)
-  => ImmutableDbArgs m h hash e
-  -> (ImmutableDB hash m -> m a)
-  -> m a
-withDB args = bracket open closeDB
-  where
-    open = fst <$> openDBInternal args
-
-{------------------------------------------------------------------------------
-  ImmutableDB arguments
-------------------------------------------------------------------------------}
-
-data ImmutableDbArgs m h hash e = ImmutableDbArgs
-    { registry    :: ResourceRegistry m
-    , hasFS       :: HasFS m h
-    , chunkInfo   :: ChunkInfo
-    , hashInfo    :: HashInfo hash
-    , tracer      :: Tracer m (TraceEvent e hash)
-    , cacheConfig :: Index.CacheConfig
-    , valPol      :: ValidationPolicy
-    , parser      :: ChunkFileParser e m (BlockSummary hash) hash
-    , prefixLen   :: PrefixLen
+data ImmutableDbArgs m blk = ImmutableDbArgs {
+      immCacheConfig      :: Index.CacheConfig
+    , immCheckIntegrity   :: blk -> Bool
+    , immChunkInfo        :: ChunkInfo
+    , immCodecConfig      :: CodecConfig blk
+    , immHasFS            :: SomeHasFS m
+    , immRegistry         :: ResourceRegistry m
+    , immTracer           :: Tracer m (TraceEvent blk)
+    , immValidationPolicy :: ValidationPolicy
     }
+
+-- | Default arguments when using the 'IO' monad
+--
+-- The following fields must still be defined:
+--
+-- * 'immCheckIntegrity'
+-- * 'immChunkInfo'
+-- * 'immCodecConfig'
+-- * 'immRegistry'
+defaultArgs :: FilePath -> ImmutableDbArgs IO blk
+defaultArgs fp = ImmutableDbArgs {
+      immHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig      = cacheConfig
+    , immTracer           = nullTracer
+    , immValidationPolicy = ValidateMostRecentChunk
+      -- Fields without a default
+    , immCheckIntegrity   = error "no default for immCheckIntegrity"
+    , immChunkInfo        = error "no default for immChunkInfo"
+    , immCodecConfig      = error "no default for immCodecConfig"
+    , immRegistry         = error "no default for immRegistry"
+    }
+  where
+    -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
+    -- At the time of writing (1/2020), there are 166 epochs, and we store one
+    -- epoch per chunk, so even one year from now, we will be able to cache all
+    -- chunks' indices in the chain.
+    --
+    -- If this number were too low, i.e., less than the number of chunks that
+    -- that clients are requesting blocks from, we would constantly evict and
+    -- reparse indices, causing a much higher CPU load.
+    cacheConfig = Index.CacheConfig {
+          pastChunksToCache = 250
+        , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
+        }
+
+-- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmutableDB.
+type ImmutableDbSerialiseConstraints blk =
+  ( EncodeDisk blk blk
+  , DecodeDisk blk (Lazy.ByteString -> blk)
+  , DecodeDiskDep (NestedCtxt Header) blk
+  , ReconstructNestedCtxt Header blk
+  , HasBinaryBlockInfo blk
+  )
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
 ------------------------------------------------------------------------------}
 
-data Internal hash m = Internal
-  { -- | Delete everything in the database after the specified tip.
+data Internal m blk = Internal {
+    -- | Delete everything in the database after the specified tip.
     --
-    -- PRECONDITION: The tip must correspond to an existing block (unless it
-    -- is 'TipGen').
+    -- PRECONDITION: The tip must correspond to an existing block or genesis.
     --
     -- The correctness of open iterators is not guaranteed, they should be
     -- closed before calling this operation.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-    deleteAfter_
-      :: HasCallStack => ImmTipWithInfo hash -> m ()
+    deleteAfter_ :: HasCallStack => WithOrigin (Tip blk) -> m ()
   }
 
 -- | Wrapper around 'deleteAfter_' to ensure 'HasCallStack' constraint
 --
 -- See documentation of 'deleteAfter_'.
-deleteAfter :: HasCallStack => Internal hash m -> ImmTipWithInfo hash -> m ()
+deleteAfter :: HasCallStack => Internal m blk -> WithOrigin (Tip blk) -> m ()
 deleteAfter = deleteAfter_
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-mkDBRecord :: (IOLike m, Eq hash, NoUnexpectedThunks hash)
-           => ImmutableDBEnv m hash -> ImmutableDB hash m
-mkDBRecord dbEnv = ImmutableDB
-    { closeDB_                = closeDBImpl                dbEnv
-    , getTip_                 = getTipImpl                 dbEnv
-    , getBlockComponent_      = getBlockComponentImpl      dbEnv
-    , getEBBComponent_        = getEBBComponentImpl        dbEnv
-    , getBlockOrEBBComponent_ = getBlockOrEBBComponentImpl dbEnv
-    , appendBlock_            = appendBlockImpl            dbEnv
-    , appendEBB_              = appendEBBImpl              dbEnv
-    , stream_                 = streamImpl                 dbEnv
-    }
+openDB ::
+     forall m blk.
+     ( IOLike m
+     , GetPrevHash blk
+     , ConvertRawHash blk
+     , ImmutableDbSerialiseConstraints blk
+     , HasCallStack
+     )
+  => ImmutableDbArgs m blk
+  -> m (ImmutableDB m blk)
+openDB args = fst <$> openDBInternal args
 
--- | For testing purposes:
+-- | For testing purposes: exposes internals via 'Internal'
 --
--- * Exposes internal via 'Internal'
--- * Non-bracketed, as @quickcheck-state-machine@ doesn't support that.
-openDBInternal
-  :: forall m h hash e.
-     (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash, Eq h)
-  => ImmutableDbArgs m h hash e
-  -> m (ImmutableDB hash m, Internal hash m)
-openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
-    let validateEnv = ValidateEnv
-          { hasFS
-          , chunkInfo
-          , hashInfo
-          , parser
-          , tracer
-          , cacheConfig
+--
+openDBInternal ::
+     forall m blk.
+     ( IOLike m
+     , GetPrevHash blk
+     , ConvertRawHash blk
+     , ImmutableDbSerialiseConstraints blk
+     , HasCallStack
+     )
+  => ImmutableDbArgs m blk
+  -> m (ImmutableDB m blk, Internal m blk)
+openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $ do
+    lift $ createDirectoryIfMissing hasFS True (mkFsPath [])
+    let validateEnv = ValidateEnv {
+            hasFS          = hasFS
+          , chunkInfo      = immChunkInfo
+          , tracer         = immTracer
+          , cacheConfig    = immCacheConfig
+          , codecConfig    = immCodecConfig
+          , checkIntegrity = immCheckIntegrity
           }
-    ost <- validateAndReopen validateEnv registry valPol
+    ost <- validateAndReopen validateEnv immRegistry immValidationPolicy
 
     stVar <- lift $ newMVar (DbOpen ost)
 
-    let dbEnv = ImmutableDBEnv
-          { hasFS            = hasFS
+    let dbEnv = ImmutableDBEnv {
+            hasFS            = hasFS
           , varInternalState = stVar
-          , chunkFileParser  = parser
-          , chunkInfo        = chunkInfo
-          , hashInfo         = hashInfo
-          , tracer           = tracer
-          , registry         = registry
-          , cacheConfig      = cacheConfig
-          , prefixLen        = prefixLen
+          , chunkInfo        = immChunkInfo
+          , tracer           = immTracer
+          , registry         = immRegistry
+          , cacheConfig      = immCacheConfig
+          , codecConfig      = immCodecConfig
           }
-        db = mkDBRecord dbEnv
-        internal = Internal
-          { deleteAfter_ = deleteAfterImpl dbEnv
+        db = ImmutableDB {
+            closeDB_           = closeDBImpl           dbEnv
+          , getTip_            = getTipImpl            dbEnv
+          , getBlockComponent_ = getBlockComponentImpl dbEnv
+          , appendBlock_       = appendBlockImpl       dbEnv
+          , stream_            = streamImpl            dbEnv
+          }
+        internal = Internal {
+            deleteAfter_ = deleteAfterImpl dbEnv
           }
     -- TODO move 'withTempResourceRegistry' outside of this function?
     --
@@ -263,9 +287,9 @@ openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
     -- use a 'ResourceRegistry'.
     return ((db, internal), ost)
 
-closeDBImpl
-  :: forall m hash. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
+closeDBImpl ::
+     forall m blk. (HasCallStack, IOLike m)
+  => ImmutableDBEnv m blk
   -> m ()
 closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
     internalState <- takeMVar varInternalState
@@ -281,49 +305,48 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
         cleanUp hasFS openState
         traceWith tracer DBClosed
 
-deleteAfterImpl
-  :: forall m hash. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> ImmTipWithInfo hash
+deleteAfterImpl ::
+     forall m blk. (HasCallStack, ConvertRawHash blk, IOLike m)
+  => ImmutableDBEnv m blk
+  -> WithOrigin (Tip blk)
   -> m ()
-deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
+deleteAfterImpl dbEnv@ImmutableDBEnv { tracer, chunkInfo } newTip =
   -- We're not using 'Index' in this function but truncating the index files
   -- directly.
   modifyOpenState dbEnv $ \hasFS -> do
     st@OpenState { currentIndex, currentTip } <- get
-    let currentTipChunkSlot = (chunkSlotFor . forgetTipInfo) <$> currentTip
-        newTipChunkSlot     = (chunkSlotFor . forgetTipInfo) <$> newTip
 
-    when (newTipChunkSlot < currentTipChunkSlot) $ do
-      ost <- lift $ do
-        lift $ traceWith tracer $ DeletingAfter newTip
+    when ((CompareTip <$> newTip) < (CompareTip <$> currentTip)) $ do
+      lift $ lift $ do
+        traceWith tracer $ DeletingAfter newTip
         -- Release the open handles, as we might have to remove files that are
         -- currently opened.
-        lift $ cleanUp hasFS st
-        newTipWithHash <- lift $ truncateTo hasFS st newTipChunkSlot
-        let (newChunk, allowExisting) = case newTipChunkSlot of
-              Origin                        -> (firstChunkNo, MustBeNew)
-              NotOrigin (ChunkSlot chunk _) -> (chunk, AllowExisting)
+        cleanUp hasFS st
+        truncateTo hasFS st newTipChunkSlot
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past chunks.
-        lift $ Index.restart currentIndex newChunk
-        mkOpenState hasFS currentIndex newChunk newTipWithHash
-          allowExisting
+        Index.restart currentIndex newChunk
+
+      ost <- lift $ mkOpenState hasFS currentIndex newChunk newTip allowExisting
       put ost
   where
-    ImmutableDBEnv { chunkInfo, hashInfo } = dbEnv
+    newTipChunkSlot :: WithOrigin ChunkSlot
+    newTipChunkSlot = chunkSlotForTip chunkInfo <$> newTip
 
-    chunkSlotFor :: BlockOrEBB -> ChunkSlot
-    chunkSlotFor = chunkSlotForBlockOrEBB chunkInfo
+    newChunk :: ChunkNo
+    allowExisting :: AllowExisting
+    (newChunk, allowExisting) = case newTipChunkSlot of
+      Origin                        -> (firstChunkNo, MustBeNew)
+      NotOrigin (ChunkSlot chunk _) -> (chunk, AllowExisting)
 
-    truncateTo
-      :: HasFS m h
-      -> OpenState m hash h
+    truncateTo ::
+         HasFS m h
+      -> OpenState m blk h
       -> WithOrigin ChunkSlot
-      -> m (ImmTipWithInfo hash)
+      -> m ()
     truncateTo hasFS OpenState {} = \case
       Origin                       ->
-        removeFilesStartingFrom hasFS firstChunkNo $> Origin
+        removeFilesStartingFrom hasFS firstChunkNo
       NotOrigin (ChunkSlot chunk relSlot) -> do
         removeFilesStartingFrom hasFS (nextChunkNo chunk)
 
@@ -336,9 +359,9 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
 
         -- Retrieve the needed info from the secondary index file and then
         -- truncate it.
-        (entry, blockSize) <- Secondary.readEntry hasFS hashInfo
-          chunk isEBB lastSecondaryOffset
-        Secondary.truncateToEntry hasFS hashInfo chunk lastSecondaryOffset
+        (entry :: Secondary.Entry blk, blockSize) <-
+          Secondary.readEntry hasFS chunk isEBB lastSecondaryOffset
+        Secondary.truncateToEntry (Proxy @blk) hasFS chunk lastSecondaryOffset
 
         -- Truncate the chunk file.
         case blockSize of
@@ -353,384 +376,199 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
               offset    = unBlockOffset (Secondary.blockOffset entry)
                         + fromIntegral size
 
-        return newTip
-
-getTipImpl
-  :: forall m hash. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> m (ImmTipWithInfo hash)
+getTipImpl ::
+     forall m blk. (HasCallStack, IOLike m)
+  => ImmutableDBEnv m blk
+  -> STM m (WithOrigin (Tip blk))
 getTipImpl dbEnv = do
     SomePair _hasFS OpenState { currentTip } <- getOpenState dbEnv
     return currentTip
 
-getBlockComponentImpl
-  :: forall m hash b. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> BlockComponent (ImmutableDB hash m) b
-  -> SlotNo
-  -> m (Maybe b)
-getBlockComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent slot =
-    withOpenState dbEnv $ \hasFS OpenState{..} -> do
-      let inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin                       -> True
-            NotOrigin (Block lastSlot')  -> slot > lastSlot'
-            -- The slot (that's pointing to a regular block) corresponding to this
-            -- EBB will be empty, as the EBB is the last thing in the database. So
-            -- if @slot@ is equal to this slot, it is also referring to the future.
-            NotOrigin (EBB lastEBBEpoch) -> slot >= slotNoOfEBB chunkInfo lastEBBEpoch
-
-      when inTheFuture $
-        throwUserError $
-          ReadFutureSlotError slot (forgetTipInfo <$> currentTip)
-
-      let curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
-          chunkSlot    = chunkSlotForRegularBlock chunkInfo slot
-      getChunkSlot hasFS chunkInfo prefixLen currentIndex curChunkInfo
-        blockComponent chunkSlot
-
-getEBBComponentImpl
-  :: forall m hash b. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> BlockComponent (ImmutableDB hash m) b
-  -> EpochNo
-  -> m (Maybe b)
-getEBBComponentImpl dbEnv@ImmutableDBEnv { chunkInfo, prefixLen } blockComponent epoch =
-    withOpenState dbEnv $ \hasFS OpenState{..} -> do
-      let chunk       = unsafeEpochNoToChunkNo epoch
-          inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin              -> True
-            NotOrigin (Block _) -> chunk > currentChunk
-            NotOrigin (EBB _)   -> chunk > currentChunk
-
-      when inTheFuture $
-        throwUserError $ ReadFutureEBBError epoch currentChunk
-
-      let curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
-      getChunkSlot hasFS chunkInfo prefixLen currentIndex curChunkInfo
-        blockComponent (chunkSlotForBoundaryBlock chunkInfo epoch)
-
-extractBlockComponent
-  :: forall m h hash b. (HasCallStack, IOLike m)
-  => HasFS m h
-  -> ChunkInfo
-  -> PrefixLen
-  -> ChunkNo
-  -- ^ Most recent chunk file (used to determine size of final block)
-  -> CurrentChunkInfo
-  -> (Secondary.Entry hash, BlockSize)
-  -> BlockComponent (ImmutableDB hash m) b
-  -> m b
-extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo (entry, blockSize) = \case
-    GetHash  -> return headerHash
-    GetSlot  -> return $ slotNoOfBlockOrEBB chunkInfo blockOrEBB
-    GetIsEBB -> return $ case blockOrEBB of
-      Block _ -> IsNotEBB
-      EBB   _ -> IsEBB
-
-    GetBlockSize -> case blockSize of
-      Secondary.BlockSize size
-        -> return size
-      -- See the 'GetBlock' case for more info about 'Secondary.LastEntry'.
-      Secondary.LastEntry
-        | chunk == curChunk
-        -> return $ fromIntegral $ curChunkOffset - blockOffset
-        | otherwise
-        -> do
-          -- With cached indices, we'll never hit this case.
-          offsetAfterLastBlock <- withFile hasFS chunkFile ReadMode $ \eHnd ->
-            hGetSize hasFS eHnd
-          return $ fromIntegral $ offsetAfterLastBlock - unBlockOffset blockOffset
-
-    GetHeaderSize -> return $ fromIntegral $ unHeaderSize headerSize
-
-    GetPure a -> return a
-
-    GetApply f bc ->
-      extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
-        (entry, blockSize) f <*>
-      extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
-        (entry, blockSize) bc
-
-    -- In case the requested chunk is the current chunk, we will be reading
-    -- from the chunk file while we're also writing to it. Are we guaranteed
-    -- to read what have written? Duncan says: this is guaranteed at the OS
-    -- level (POSIX), but not for Haskell handles, which might perform other
-    -- buffering. However, the 'HasFS' implementation we're using uses POSIX
-    -- file handles ("Ouroboros.Consensus.Storage.IO") so we're safe (other
-    -- implementations of the 'HasFS' API guarantee this too).
-
-    GetRawBlock -> do
-      -- Get the whole block
-      let offset = AbsOffset $ unBlockOffset blockOffset
-      (bl, checksum') <- withFile hasFS chunkFile ReadMode $ \eHnd ->
-        case blockSize of
-          -- It is the last entry in the file, so we don't know the size
-          -- of the block.
-          Secondary.LastEntry
-            | chunk == curChunk
-              -- Even though it was the last block in the secondary
-              -- index file (and thus in the chunk file) when we read
-              -- the secondary index file, it is possible that more
-              -- blocks have been appended in the meantime. For this
-              -- reason, we cannot simply read the until the end of the
-              -- chunk file, because we would read the newly appended
-              -- blocks too.
-              --
-              -- Instead, we derive the size of the block from
-              -- @curChunkOffset@, which corresponds to the qoffset at
-              -- the end of that block /at the time we read the state/.
-              -- Note that we don't allow reading a block newer than the
-              -- tip, which we obtained from the /same state/.
-            -> let size = curChunkOffset - blockOffset in
-               hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-            | otherwise
-              -- If it is in an chunk in the past, it is immutable,
-              -- so no blocks can have been appended since we retrieved
-              -- the entry. We can simply read all remaining bytes, as
-              -- it is the last block in the file.
-            -> hGetAllAtCRC     hasFS eHnd                     offset
-          Secondary.BlockSize size
-            -> hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-      checkChecksum chunkFile blockOrEBB checksum checksum'
-      return bl
-
-    GetRawHeader ->
-        -- Get just the header
-        withFile hasFS chunkFile ReadMode $ \eHnd ->
-          -- We cannot check the checksum in this case, as we're not reading
-          -- the whole block
-          hGetExactlyAt hasFS eHnd size offset
-      where
-        size   = fromIntegral $ unHeaderSize headerSize
-        offset = AbsOffset $
-          unBlockOffset blockOffset +
-          fromIntegral (unHeaderOffset headerOffset)
-    GetNestedCtxt ->
-        withFile hasFS chunkFile ReadMode $ \eHnd -> do
-          bytes <- hGetExactlyAt hasFS eHnd size offset
-          return $ Short.toShort $ Lazy.toStrict bytes
-      where
-        size   = fromIntegral $ getPrefixLen prefixLen
-        offset = AbsOffset $ unBlockOffset blockOffset
-    GetBlock  -> return ()
-    GetHeader -> return ()
-  where
-    Secondary.Entry
-      { blockOffset, headerOffset, headerSize, headerHash, checksum
-      , blockOrEBB
-      } = entry
-    CurrentChunkInfo curChunk curChunkOffset = curChunkInfo
-    chunkFile = fsPathChunkFile chunk
-
-getBlockOrEBBComponentImpl
-  :: forall m hash b. (HasCallStack, IOLike m, Eq hash)
-  => ImmutableDBEnv m hash
-  -> BlockComponent (ImmutableDB hash m) b
-  -> SlotNo
-  -> hash
-  -> m (Maybe b)
-getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
+getBlockComponentImpl ::
+     forall m blk b.
+     ( HasHeader blk
+     , ReconstructNestedCtxt Header blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , DecodeDiskDep (NestedCtxt Header) blk
+     , IOLike m
+     )
+  => ImmutableDBEnv m blk
+  -> BlockComponent blk b
+  -> RealPoint blk
+  -> m (Either (MissingBlock blk) b)
+getBlockComponentImpl dbEnv blockComponent pt =
     withOpenState dbEnv $ \hasFS OpenState{..} -> do
 
-      let inTheFuture = case forgetTipInfo <$> currentTip of
-            Origin      -> True
-            NotOrigin b -> slot > slotNoOfBlockOrEBB chunkInfo b
+      when (NotOrigin (realPointSlot pt) > (tipSlotNo <$> currentTip)) $
+        throwUserError $ ReadBlockNewerThanTipError pt (tipToPoint currentTip)
 
-      when inTheFuture $
-        throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> currentTip)
+      runExceptT $ do
+        slotInfo <- getSlotInfo chunkInfo currentIndex pt
+        let (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) = slotInfo
+            chunkFile = fsPathChunkFile chunk
+            Secondary.Entry { blockOffset } = entry
 
-      let curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
+        -- TODO don't open the 'chunkFile' unless we need to. In practice,
+        -- we only use this to read (raw) blocks or (raw) headers, which
+        -- does require opening the 'chunkFile'. Related: #2227.
+        lift $ withFile hasFS chunkFile ReadMode $ \eHnd -> do
 
-      errOrRes <- runExceptT $
-        getSlotInfo chunkInfo currentIndex (slot, hash)
-      case errOrRes of
-        Left _ ->
-          return Nothing
-        Right (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) ->
-          Just <$>
-            extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
-              (entry, blockSize) blockComponent
+          actualBlockSize <- case blockSize of
+            Secondary.BlockSize size
+              -> return size
+            -- See the 'GetBlock' case for more info about
+            -- 'Secondary.LastEntry'.
+            Secondary.LastEntry
+              | chunk == currentChunk
+              -> return $ fromIntegral $ currentChunkOffset - blockOffset
+              | otherwise
+              -> do
+                -- With cached indices, we'll never hit this case.
+                offsetAfterLastBlock <- hGetSize hasFS eHnd
+                return $ fromIntegral $
+                  offsetAfterLastBlock - unBlockOffset blockOffset
+
+          extractBlockComponent
+            hasFS
+            chunkInfo
+            chunk
+            codecConfig
+            eHnd
+            (WithBlockSize actualBlockSize entry)
+            blockComponent
   where
-    ImmutableDBEnv { chunkInfo, prefixLen } = dbEnv
+    ImmutableDBEnv { chunkInfo, codecConfig } = dbEnv
 
--- | Get the block component corresponding to the given 'ChunkSlot'.
---
--- Preconditions: the given 'ChunkSlot' is in the past.
-getChunkSlot
-  :: forall m h hash b. (HasCallStack, IOLike m)
-  => HasFS m h
-  -> ChunkInfo
-  -> PrefixLen
-  -> Index m hash h
-  -> CurrentChunkInfo
-  -> BlockComponent (ImmutableDB hash m) b
-  -> ChunkSlot
-  -> m (Maybe b)
-getChunkSlot hasFS chunkInfo prefixLen index curChunkInfo blockComponent chunkSlot =
-    -- Check the primary index first
-    Index.readOffset index chunk relativeSlot >>= \case
-      -- Empty slot
-      Nothing              -> return Nothing
-      -- Filled slot; read the corresponding entry from the sparse secondary
-      -- index
-      Just secondaryOffset -> do
-        -- TODO only read the hash in case of 'GetHash'?
-        (entry, blockSize) <- Index.readEntry index chunk isEBB secondaryOffset
-        Just <$>
-          extractBlockComponent hasFS chunkInfo prefixLen chunk curChunkInfo
-            (entry, blockSize) blockComponent
-  where
-    ChunkSlot chunk relativeSlot = chunkSlot
-    isEBB = relativeSlotIsEBB relativeSlot
-
-appendBlockImpl
-  :: forall m hash. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> SlotNo
-  -> BlockNo
-  -> hash
-  -> Builder
-  -> BinaryBlockInfo
+appendBlockImpl ::
+     forall m blk.
+     ( HasHeader blk
+     , GetHeader blk
+     , EncodeDisk blk blk
+     , HasBinaryBlockInfo blk
+     , IOLike m
+     , HasCallStack
+     )
+  => ImmutableDBEnv m blk
+  -> blk
   -> m ()
-appendBlockImpl dbEnv slot blockNumber headerHash builder binaryBlockInfo =
+appendBlockImpl dbEnv blk =
     modifyOpenState dbEnv $ \hasFS -> do
-      OpenState { currentTip, currentIndex } <- get
-
-      let chunkSlot@(ChunkSlot chunk _) =
-            chunkSlotForRegularBlock chunkInfo slot
+      OpenState {
+          currentTip   = initialTip
+        , currentIndex = index
+        , currentChunk = initialChunk
+        } <- get
 
       -- Check that we're not appending to the past
-      let inThePast = case forgetTipInfo <$> currentTip of
-            NotOrigin (Block lastSlot)   -> slot  <= lastSlot
-            NotOrigin (EBB lastEBBEpoch) -> chunk <  unsafeEpochNoToChunkNo lastEBBEpoch
-            Origin                       -> False
+      let blockAfterTip =
+            NotOrigin (CompareTip blockTip) > (CompareTip <$> initialTip)
 
-      when inThePast $ lift $
+      unless blockAfterTip $ lift $
         throwUserError $
-          AppendToSlotInThePastError slot (forgetTipInfo <$> currentTip)
+          AppendBlockNotNewerThanTipError
+            (blockRealPoint blk)
+            (tipToPoint initialTip)
 
-      appendChunkSlot hasFS chunkInfo currentIndex chunkSlot
-        blockNumber (Block slot) headerHash builder binaryBlockInfo
+      -- If the slot is in a chunk > the current one, we have to finalise the
+      -- current one and start a new chunk file, possibly skipping some chunks.
+      when (chunk > initialChunk) $ do
+        let newChunksToStart :: Int
+            newChunksToStart = fromIntegral $ countChunks chunk initialChunk
+        replicateM_ newChunksToStart $
+          startNewChunk hasFS index chunkInfo initialChunk
+
+      -- We may have updated the state with 'startNewChunk', so get the
+      -- (possibly) updated state.
+      OpenState {
+          currentTip
+        , currentChunkHandle
+        , currentChunkOffset
+        , currentSecondaryHandle
+        , currentSecondaryOffset
+        , currentPrimaryHandle
+        } <- get
+
+      -- Compute the next empty slot @m@, if we need to write to slot @n@, we
+      -- will need to backfill @n - m@ slots.
+      let nextFreeRelSlot :: RelativeSlot
+          nextFreeRelSlot =
+            if chunk > initialChunk
+              -- If we had to start a new chunk, we start with slot 0. Note that
+              -- in this case the 'currentTip' will refer to something in a
+              -- chunk before 'currentChunk'.
+              then firstBlockOrEBB chunkInfo chunk
+              else case currentTip of
+                Origin        -> firstBlockOrEBB chunkInfo firstChunkNo
+                -- Invariant: the currently open chunk is never full
+                NotOrigin tip -> unsafeNextRelativeSlot . chunkRelative $
+                                   chunkSlotForTip chunkInfo tip
+
+      -- Append to the end of the chunk file.
+      (blockSize, entrySize) <- lift $ lift $ do
+
+          -- Write to the chunk file
+          let bytes = CBOR.toLazyByteString $ encodeDisk codecConfig blk
+          (blockSize, crc) <- hPutAllCRC hasFS currentChunkHandle bytes
+
+          -- Write to the secondary index file
+          let entry = Secondary.Entry {
+                  blockOffset  = currentChunkOffset
+                , headerOffset = HeaderOffset headerOffset
+                , headerSize   = HeaderSize headerSize
+                , checksum     = crc
+                , headerHash   = tipHash blockTip
+                , blockOrEBB   = blockOrEBB
+                }
+          entrySize <-
+            fromIntegral <$>
+              Index.appendEntry
+                index
+                chunk
+                currentSecondaryHandle
+                (WithBlockSize (fromIntegral blockSize) entry)
+
+          -- Write to the primary index file
+          let backfillOffsets =
+                Primary.backfill
+                  relSlot
+                  nextFreeRelSlot
+                  currentSecondaryOffset
+              offsets = backfillOffsets <> [currentSecondaryOffset + entrySize]
+          Index.appendOffsets index currentPrimaryHandle offsets
+
+          return (blockSize, entrySize)
+
+      modify $ \st -> st
+        { currentChunkOffset     = currentChunkOffset + fromIntegral blockSize
+        , currentSecondaryOffset = currentSecondaryOffset + entrySize
+        , currentTip             = NotOrigin blockTip
+        }
   where
-    ImmutableDBEnv { chunkInfo } = dbEnv
+    ImmutableDBEnv { chunkInfo, codecConfig } = dbEnv
 
-appendEBBImpl
-  :: forall m hash. (HasCallStack, IOLike m)
-  => ImmutableDBEnv m hash
-  -> EpochNo
-  -> BlockNo
-  -> hash
-  -> Builder
-  -> BinaryBlockInfo
-  -> m ()
-appendEBBImpl dbEnv epoch blockNumber headerHash builder binaryBlockInfo =
-    modifyOpenState dbEnv $ \hasFS -> do
-      OpenState { currentChunk, currentTip, currentIndex } <- get
+    newBlockIsEBB :: Maybe EpochNo
+    newBlockIsEBB = blockIsEBB blk
 
-      -- Check that we're not appending to the past
-      let chunk     = unsafeEpochNoToChunkNo epoch
-          inThePast = case forgetTipInfo <$> currentTip of
-            -- There is already a block in this chunk, so the EBB can no
-            -- longer be appended in this chunk
-            NotOrigin (Block _) -> chunk <= currentChunk
-            -- There is already an EBB in this chunk
-            NotOrigin (EBB _)   -> chunk <= currentChunk
-            Origin              -> False
+    blockOrEBB :: BlockOrEBB
+    blockOrEBB = case newBlockIsEBB of
+        Just epochNo -> EBB epochNo
+        Nothing      -> Block (blockSlot blk)
 
-      when inThePast $ lift $ throwUserError $
-        AppendToEBBInThePastError epoch currentChunk
+    ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo blockOrEBB
 
-      appendChunkSlot hasFS chunkInfo currentIndex
-        (chunkSlotForBoundaryBlock chunkInfo epoch) blockNumber (EBB epoch)
-        headerHash builder binaryBlockInfo
-  where
-    ImmutableDBEnv { chunkInfo } = dbEnv
+    blockTip :: Tip blk
+    blockTip = blockToTip blk
 
-appendChunkSlot
-  :: forall m h hash. (HasCallStack, IOLike m, Eq h)
+    BinaryBlockInfo {..} = getBinaryBlockInfo blk
+
+startNewChunk ::
+     forall m h blk. (HasCallStack, IOLike m, Eq h)
   => HasFS m h
+  -> Index m blk h
   -> ChunkInfo
-  -> Index m hash h
-  -> ChunkSlot  -- ^ The 'ChunkSlot' of the new block or EBB
-  -> BlockNo    -- ^ The block number of the new block
-  -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
-                -- new tip
-  -> hash
-  -> Builder
-  -> BinaryBlockInfo
-  -> ModifyOpenState m hash h ()
-appendChunkSlot hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHash
-                builder BinaryBlockInfo { headerOffset, headerSize } = do
-    OpenState { currentChunk = initialChunk } <- get
-
-    -- If the slot is in an chunk > the current one, we have to finalise the
-    -- current one and start a new chunk file, possibly skipping some
-    -- chunks.
-    when (chunk > initialChunk) $ do
-      let newChunksToStart :: Int
-          newChunksToStart = fromIntegral $ countChunks chunk initialChunk
-      replicateM_ newChunksToStart $ startNewChunk hasFS index chunkInfo
-
-    -- We may have updated the state with 'startNewChunk', so get the
-    -- (possibly) updated state, but first remember the current chunk
-    OpenState {..} <- get
-
-    -- Compute the next empty slot @m@, if we need to write to slot @n@, we
-    -- will need to backfill @n - m@ slots.
-    let nextFreeRelSlot :: RelativeSlot
-        nextFreeRelSlot =
-          if chunk > initialChunk
-            -- If we had to start a new chunk, we start with slot 0. Note that
-            -- in this case the currentTip will refer to something in an chunk
-            -- before currentChunk.
-            then firstBlockOrEBB chunkInfo chunk
-            else case forgetTipInfo <$> currentTip of
-              Origin      -> firstBlockOrEBB chunkInfo firstChunkNo
-              -- Invariant: the currently open chunk is never full
-              NotOrigin b -> unsafeNextRelativeSlot . chunkRelative $
-                               chunkSlotForBlockOrEBB chunkInfo b
-
-    -- Append to the end of the chunk file.
-    (blockSize, entrySize) <- lift $ lift $ do
-
-        -- Write to the chunk file
-        (blockSize, crc) <- hPutCRC hasFS currentChunkHandle builder
-
-        -- Write to the secondary index file
-        let entry = Secondary.Entry
-              { blockOffset  = currentChunkOffset
-              , headerOffset = HeaderOffset headerOffset
-              , headerSize   = HeaderSize headerSize
-              , checksum     = crc
-              , headerHash   = headerHash
-              , blockOrEBB   = blockOrEBB
-              }
-        entrySize <- fromIntegral <$> Index.appendEntry index chunk
-          currentSecondaryHandle (WithBlockSize (fromIntegral blockSize) entry)
-
-        -- Write to the primary index file
-        let backfillOffsets = Primary.backfill
-              relSlot nextFreeRelSlot currentSecondaryOffset
-            offsets = backfillOffsets <> [currentSecondaryOffset + entrySize]
-        Index.appendOffsets index currentPrimaryHandle offsets
-
-        return (blockSize, entrySize)
-
-    modify $ \st -> st
-      { currentChunkOffset     = currentChunkOffset + fromIntegral blockSize
-      , currentSecondaryOffset = currentSecondaryOffset + entrySize
-      , currentTip             = NotOrigin (TipInfo headerHash blockOrEBB blockNumber)
-      }
-  where
-    ChunkSlot chunk relSlot = chunkSlot
-
-startNewChunk
-  :: forall m h hash. (HasCallStack, IOLike m, Eq h)
-  => HasFS m h
-  -> Index m hash h
-  -> ChunkInfo
-  -> ModifyOpenState m hash h ()
-startNewChunk hasFS index chunkInfo = do
+  -> ChunkNo  -- ^ Chunk containing the tip
+  -> ModifyOpenState m blk h ()
+startNewChunk hasFS index chunkInfo tipChunk = do
     st@OpenState {..} <- get
 
     -- We have to take care when starting multiple new chunks in a row. In the
@@ -741,15 +579,15 @@ startNewChunk hasFS index chunkInfo = do
     -- the current (empty) chunk is not the chunk containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
     let nextFreeRelSlot :: NextRelativeSlot
-        nextFreeRelSlot = case forgetTipInfo <$> currentTip of
+        nextFreeRelSlot = case currentTip of
           Origin ->
             NextRelativeSlot $ firstBlockOrEBB chunkInfo firstChunkNo
-          NotOrigin b ->
-            if chunk == currentChunk
-              then nextRelativeSlot relSlot
-              else NextRelativeSlot $ firstBlockOrEBB chunkInfo currentChunk
-            where
-              ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
+          NotOrigin tip ->
+            if tipChunk == currentChunk then
+              let ChunkSlot _ relSlot = chunkSlotForTip chunkInfo tip
+              in nextRelativeSlot relSlot
+            else
+              NextRelativeSlot $ firstBlockOrEBB chunkInfo currentChunk
 
     let backfillOffsets = Primary.backfillChunk
                             chunkInfo

@@ -5,7 +5,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
   ( Entry (..)
   , entrySize
@@ -33,7 +36,7 @@ import           Foreign.Storable (Storable (sizeOf))
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Consensus.Block hiding (hashSize, headerHash)
+import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
@@ -43,16 +46,14 @@ import           Ouroboros.Consensus.Storage.FS.CRC
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
+                     (BlockOrEBB (..), WithBlockSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathSecondaryIndexFile, runGet, runGetWithUnconsumed)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..),
-                     HashInfo (..), WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Types
 ------------------------------------------------------------------------------}
-
--- TODO best place for these?
 
 newtype BlockOffset = BlockOffset { unBlockOffset :: Word64 }
   deriving stock   (Show)
@@ -91,46 +92,56 @@ putBlockOrEBB blockOrEBB = Put.putWord64be $ case blockOrEBB of
   Entry
 ------------------------------------------------------------------------------}
 
-data Entry hash = Entry
-  { blockOffset  :: !BlockOffset
-  , headerOffset :: !HeaderOffset
-  , headerSize   :: !HeaderSize
-  , checksum     :: !CRC
-  , headerHash   :: !hash
-  , blockOrEBB   :: !BlockOrEBB
-  } deriving (Eq, Show, Functor, Generic, NoUnexpectedThunks)
+data Entry blk = Entry {
+      blockOffset  :: !BlockOffset
+    , headerOffset :: !HeaderOffset
+    , headerSize   :: !HeaderSize
+    , checksum     :: !CRC
+    , headerHash   :: !(HeaderHash blk)
+    , blockOrEBB   :: !BlockOrEBB
+    }
+  deriving (Generic)
 
-getEntry :: IsEBB -> Get hash -> Get (Entry hash)
-getEntry isEBB getHash = do
+deriving instance StandardHash blk => Eq                 (Entry blk)
+deriving instance StandardHash blk => Show               (Entry blk)
+deriving instance StandardHash blk => NoUnexpectedThunks (Entry blk)
+
+getEntry :: forall blk. ConvertRawHash blk => IsEBB -> Get (Entry blk)
+getEntry isEBB = do
     blockOffset  <- get
     headerOffset <- get
     headerSize   <- get
     checksum     <- CRC <$> Get.getWord32be
-    headerHash   <- getHash
+    headerHash   <- getHash pb
     blockOrEBB   <- getBlockOrEBB isEBB
-    return Entry { blockOffset, headerOffset, headerSize, checksum, headerHash, blockOrEBB }
+    return Entry {..}
+  where
+    pb :: Proxy blk
+    pb = Proxy
 
-putEntry :: (hash -> Put) -> Entry hash -> Put
-putEntry putHash Entry { blockOffset, headerOffset, headerSize, checksum = CRC crc, headerHash, blockOrEBB } =
-    put     blockOffset
- <> put     headerOffset
- <> put     headerSize
- <> Put.putWord32be crc
- <> putHash headerHash
- <> putBlockOrEBB blockOrEBB
+putEntry :: forall blk. ConvertRawHash blk => Entry blk -> Put
+putEntry Entry {..} = mconcat [
+      put                blockOffset
+    , put                headerOffset
+    , put                headerSize
+    , Put.putWord32be    (getCRC checksum)
+    , putHash         pb headerHash
+    , putBlockOrEBB      blockOrEBB
+    ]
+  where
+    pb :: Proxy blk
+    pb = Proxy
 
-entrySize
-  :: Word32 -- ^ Hash size in bytes
-  -> Word32
-entrySize hashSize =
+entrySize :: ConvertRawHash blk => Proxy blk -> Word32
+entrySize pb =
     size 8 "blockOffset"  blockOffset
   + size 2 "headerOffset" headerOffset
   + size 2 "headerSize"   headerSize
   + size 4 "checksum"     checksum
-  + hashSize
+  + hashSize pb
   + 8 -- blockOrEBB
   where
-    size :: Storable a => Word32 -> String -> (Entry hash -> a) -> Word32
+    size :: Storable a => Word32 -> String -> (Entry blk -> a) -> Word32
     size expected name field = assert (expected == actual) actual
       where
         actual = fromIntegral (sizeOf (field (error name)))
@@ -145,15 +156,14 @@ data BlockSize
 -- | Read the entry at the given 'SecondaryOffset'. Interpret it as an EBB
 -- depending on the given 'IsEBB'.
 readEntry
-  :: forall m hash h. (HasCallStack, MonadThrow m)
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
   => HasFS m h
-  -> HashInfo hash
   -> ChunkNo
   -> IsEBB
   -> SecondaryOffset
-  -> m (Entry hash, BlockSize)
-readEntry hasFS hashInfo chunk isEBB slotOffset = runIdentity <$>
-    readEntries hasFS hashInfo chunk (Identity (isEBB, slotOffset))
+  -> m (Entry blk, BlockSize)
+readEntry hasFS chunk isEBB slotOffset = runIdentity <$>
+    readEntries hasFS chunk (Identity (isEBB, slotOffset))
 
 -- | Same as 'readEntry', but for multiple entries.
 --
@@ -161,13 +171,13 @@ readEntry hasFS hashInfo chunk isEBB slotOffset = runIdentity <$>
 -- entry. Use 'readAllEntries' if you want to read all entries in the
 -- secondary index file.
 readEntries
-  :: forall m hash h t. (HasCallStack, MonadThrow m, Traversable t)
+  :: forall m blk h t.
+     (HasCallStack, ConvertRawHash blk, MonadThrow m, Traversable t)
   => HasFS m h
-  -> HashInfo hash
   -> ChunkNo
   -> t (IsEBB, SecondaryOffset)
-  -> m (t (Entry hash, BlockSize))
-readEntries hasFS HashInfo { hashSize, getHash } chunk toRead =
+  -> m (t (Entry blk, BlockSize))
+readEntries hasFS chunk toRead =
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       -- TODO can we avoid this call to 'hGetSize'?
       size <- hGetSize sHnd
@@ -182,18 +192,18 @@ readEntries hasFS HashInfo { hashSize, getHash } chunk toRead =
           (entry, nextBlockOffset) <-
             hGetExactlyAt hasFS sHnd (nbBytes + nbBlockOffsetBytes) offset >>=
             runGet secondaryIndexFile
-              ((,) <$> getEntry isEBB getHash <*> get)
+              ((,) <$> getEntry isEBB <*> get)
           let blockSize = fromIntegral $
                 unBlockOffset nextBlockOffset -
                 unBlockOffset (blockOffset entry)
           return (entry, BlockSize blockSize)
         else do
           entry <- hGetExactlyAt hasFS sHnd nbBytes offset >>=
-            runGet secondaryIndexFile (getEntry isEBB getHash)
+            runGet secondaryIndexFile (getEntry isEBB)
           return (entry, LastEntry)
   where
     secondaryIndexFile = fsPathSecondaryIndexFile chunk
-    nbBytes            = fromIntegral $ entrySize hashSize
+    nbBytes            = fromIntegral $ entrySize (Proxy @blk)
     nbBlockOffsetBytes = fromIntegral (sizeOf (blockOffset (error "blockOffset")))
     HasFS { hGetSize } = hasFS
 
@@ -202,18 +212,16 @@ readEntries hasFS HashInfo { hashSize, getHash } chunk toRead =
 -- file is reached. The entry for which the stop condition is true will be the
 -- last in the returned list of entries.
 readAllEntries
-  :: forall m hash h. (HasCallStack, MonadThrow m)
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
   => HasFS m h
-  -> HashInfo hash
-  -> SecondaryOffset       -- ^ Start from this offset
+  -> SecondaryOffset      -- ^ Start from this offset
   -> ChunkNo
-  -> (Entry hash -> Bool)  -- ^ Stop condition: stop after this entry
-  -> Word64                -- ^ The size of the chunk file, used to compute
-                           -- the size of the last block.
-  -> IsEBB                 -- ^ Is the first entry to read an EBB?
-  -> m [WithBlockSize (Entry hash)]
-readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
-               chunkFileSize = \isEBB ->
+  -> (Entry blk -> Bool)  -- ^ Stop condition: stop after this entry
+  -> Word64               -- ^ The size of the chunk file, used to compute
+                          -- the size of the last block.
+  -> IsEBB                -- ^ Is the first entry to read an EBB?
+  -> m [WithBlockSize (Entry blk)]
+readAllEntries hasFS secondaryOffset chunk stopAfter chunkFileSize = \isEBB ->
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
       go isEBB bl [] Nothing
@@ -222,18 +230,18 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
 
     go :: IsEBB  -- ^ Interpret the next entry as an EBB?
        -> Lazy.ByteString
-       -> [WithBlockSize (Entry hash)]  -- ^ Accumulator
-       -> Maybe (Entry hash)
+       -> [WithBlockSize (Entry blk)]  -- ^ Accumulator
+       -> Maybe (Entry blk)
           -- ^ The previous entry we read. We can only add it to the
           -- accumulator when we know its block size, which we compute based
           -- on the next entry's offset.
-       -> m [WithBlockSize (Entry hash)]
+       -> m [WithBlockSize (Entry blk)]
     go isEBB bl acc mbPrevEntry
       | Lazy.null bl = return $ reverse $
         (addBlockSize chunkFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
-        (remaining, entry) <- runGetWithUnconsumed secondaryIndexFile
-          (getEntry isEBB getHash) bl
+        (remaining, entry) <-
+          runGetWithUnconsumed secondaryIndexFile (getEntry isEBB) bl
         let offsetAfterPrevBlock = unBlockOffset (blockOffset entry)
             acc' = (addBlockSize offsetAfterPrevBlock <$> mbPrevEntry)
               `consMaybe` acc
@@ -260,7 +268,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
     -- | Add the block size to an entry, it is computed by subtracting the
     -- entry's block offset from the offset after the entry's block, i.e.,
     -- where the next block starts.
-    addBlockSize :: Word64 -> Entry hash -> WithBlockSize (Entry hash)
+    addBlockSize :: Word64 -> Entry blk -> WithBlockSize (Entry blk)
     addBlockSize offsetAfter entry = WithBlockSize size entry
       where
         size = fromIntegral $ offsetAfter - unBlockOffset (blockOffset entry)
@@ -269,48 +277,58 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
     consMaybe = maybe id (:)
 
 appendEntry
-  :: forall m hash h. (HasCallStack, MonadThrow m)
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
   => HasFS m h
-  -> HashInfo hash
   -> Handle h
-  -> Entry hash
+  -> Entry blk
   -> m Word64
      -- ^ The number of bytes written
-appendEntry hasFS HashInfo { putHash, hashSize } sHnd entry = do
-    bytesWritten <- hPut hasFS sHnd $ Put.execPut $ putEntry putHash entry
+appendEntry hasFS sHnd entry = do
+    bytesWritten <- hPut hasFS sHnd $ Put.execPut $ putEntry entry
     return $
-      assert (bytesWritten == fromIntegral (entrySize hashSize)) bytesWritten
+      assert (bytesWritten == fromIntegral (entrySize (Proxy @blk))) bytesWritten
 
 -- | Remove all entries after the entry at the given 'SecondaryOffset'. That
 -- entry will now be the last entry in the secondary index file.
 truncateToEntry
-  :: forall m hash h. (HasCallStack, MonadThrow m)
-  => HasFS m h
-  -> HashInfo hash
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkNo
   -> SecondaryOffset
   -> m ()
-truncateToEntry hasFS HashInfo { hashSize } chunk secondaryOffset =
+truncateToEntry pb hasFS chunk secondaryOffset =
     withFile hasFS secondaryIndexFile (AppendMode AllowExisting) $ \sHnd ->
       hTruncate sHnd offset
   where
     secondaryIndexFile  = fsPathSecondaryIndexFile chunk
     HasFS { hTruncate } = hasFS
-    offset              = fromIntegral (secondaryOffset + entrySize hashSize)
+    offset              = fromIntegral (secondaryOffset + entrySize pb)
 
 writeAllEntries
-  :: forall m hash h. (HasCallStack, MonadThrow m)
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
   => HasFS m h
-  -> HashInfo hash
   -> ChunkNo
-  -> [Entry hash]
+  -> [Entry blk]
   -> m ()
-writeAllEntries hasFS hashInfo chunk entries =
+writeAllEntries hasFS chunk entries =
     withFile hasFS secondaryIndexFile (AppendMode AllowExisting) $ \sHnd -> do
       -- First truncate the file, otherwise we might leave some old contents
       -- at the end if the new contents are smaller than the previous contents
       hTruncate sHnd 0
-      mapM_ (appendEntry hasFS hashInfo sHnd) entries
+      mapM_ (appendEntry hasFS sHnd) entries
   where
     secondaryIndexFile  = fsPathSecondaryIndexFile chunk
     HasFS { hTruncate } = hasFS
+
+{------------------------------------------------------------------------------
+  Binary functions
+------------------------------------------------------------------------------}
+
+getHash :: ConvertRawHash blk => Proxy blk -> Get (HeaderHash blk)
+getHash pb = do
+    bytes <- Get.getByteString (fromIntegral (hashSize pb))
+    return $! fromRawHash pb bytes
+
+putHash :: ConvertRawHash blk => Proxy blk -> HeaderHash blk -> Put
+putHash pb = Put.putShortByteString . toShortRawHash pb

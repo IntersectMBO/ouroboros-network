@@ -181,7 +181,8 @@ data TraceForgeEvent blk
     -- We record the current slot number.
   = TraceStartLeadershipCheck SlotNo
 
-    -- | Leadership check failed: the tip of the ImmDB inhabits the current slot
+    -- | Leadership check failed: the tip of the ImmutableDB inhabits the
+    -- current slot
     --
     -- This might happen in two cases.
     --
@@ -193,7 +194,8 @@ data TraceForgeEvent blk
     --  2. k = 0 and we already adopted a block from another leader of the same
     --     slot.
     --
-    -- We record both the current slot number as well as the tip of the ImmDB.
+    -- We record both the current slot number as well as the tip of the
+    -- ImmutableDB.
     --
     -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
   | TraceSlotIsImmutable SlotNo (Point blk) BlockNo

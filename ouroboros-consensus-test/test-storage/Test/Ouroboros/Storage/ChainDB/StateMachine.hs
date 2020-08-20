@@ -33,7 +33,6 @@ import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.Functor.Identity (Identity (..))
 import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -92,7 +91,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllChunks))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -223,7 +222,7 @@ data Success blk it rdr
 -- | Product of all 'BlockComponent's. As this is a GADT, generating random
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
-allComponents :: BlockComponent (ChainDB m blk) (AllComponentsM m blk)
+allComponents :: BlockComponent blk (AllComponents blk)
 allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetHeader
@@ -236,13 +235,10 @@ allComponents = (,,,,,,,,,)
     <*> GetHeaderSize
     <*> GetNestedCtxt
 
--- | 'AllComponentsM' instantiated to 'Identity'.
-type AllComponents blk = AllComponentsM Identity blk
-
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
-type AllComponentsM m blk =
-  ( m blk
-  , m (Header blk)
+type AllComponents blk =
+  ( blk
+  , Header blk
   , ByteString
   , ByteString
   , HeaderHash blk
@@ -252,13 +248,6 @@ type AllComponentsM m blk =
   , Word16
   , SomeBlock (NestedCtxt Header) blk
   )
-
--- | Convert @'AllComponentsM m'@ to 'AllComponents'
-runAllComponentsM :: IOLike m => AllComponentsM m blk -> m (AllComponents blk)
-runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g, h) = do
-    blk <- mblk
-    hdr <- mhdr
-    return (Identity blk, Identity hdr, a, b, c, d, e, f, g, h)
 
 type TestConstraints blk =
   ( ConsensusProtocol  (BlockProtocol blk)
@@ -350,8 +339,8 @@ run env@ChainDBEnv { varDB, .. } cmd =
       GetTipBlock              -> MbBlock             <$> getTipBlock
       GetTipHeader             -> MbHeader            <$> getTipHeader
       GetTipPoint              -> Point               <$> atomically getTipPoint
-      GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
-      GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
+      GetBlockComponent pt     -> MbAllComponents     <$> getBlockComponent allComponents pt
+      GetGCedBlockComponent pt -> mbGCedAllComponents <$> getBlockComponent allComponents pt
       GetIsValid pt            -> isValidResult       <$> ($ pt) <$> atomically getIsValid
       GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
       Stream from to           -> iter                =<< stream registry allComponents from to
@@ -367,12 +356,11 @@ run env@ChainDBEnv { varDB, .. } cmd =
       RunBgTasks               -> ignore              <$> runBgTasks internal
       WipeVolatileDB           -> Point               <$> wipeVolatileDB st
   where
-    mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
-    mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
+    mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock True
     isValidResult = IsValid . IsValidResult True
     iterResultGCed = IterResultGCed . IteratorResultGCed True
-    iter = either (return . UnknownRange) (fmap Iter . giveWithEq . traverseIterator runAllComponentsM)
-    reader = fmap Rdr . giveWithEq . traverseReader runAllComponentsM
+    iter = either (return . UnknownRange) (fmap Iter . giveWithEq)
+    reader = fmap Rdr . giveWithEq
     ignore _ = Unit ()
 
     advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
@@ -394,7 +382,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
 
 runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
 runBgTasks ChainDB.Internal{..} = do
-    mSlotNo <- intCopyToImmDB
+    mSlotNo <- intCopyToImmutableDB
     case mSlotNo of
       Origin           -> pure ()
       NotOrigin slotNo -> intGarbageCollect slotNo
@@ -405,8 +393,8 @@ runBgTasks ChainDB.Internal{..} = do
 -- and not part of the current chain, it might have been garbage collected.
 --
 -- The first source of non-determinism is whether or not the background thread
--- that performs garbage collection has been run yet. We disable this thread
--- in the state machine tests and instead generate the 'CopyToImmDBAndGC'
+-- that performs garbage collection has been run yet. We disable this thread in
+-- the state machine tests and instead generate the 'CopyToImmutableDBAndGC'
 -- command that triggers the garbage collection explicitly. So this source of
 -- non-determinism is not a problem in the tests.
 --
@@ -568,19 +556,19 @@ runPure cfg = \case
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
-    GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
-    GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
+    GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint allComponents pt)
+    GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.getMaxSlotNo
     GetIsValid pt            -> ok  isValidResult       $ query   (Model.isValid cfg pt)
     Stream from to           -> err iter                $ updateE (Model.stream k from to)
-    IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext @Identity it allComponents)
-    IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext @Identity it allComponents)
+    IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext it allComponents)
+    IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext it allComponents)
     IteratorClose it         -> ok  Unit                $ update_ (Model.iteratorClose it)
     NewReader                -> ok  Rdr                 $ update   Model.newReader
-    ReaderInstruction rdr    -> err MbChainUpdate       $ updateE (Model.readerInstruction @Identity rdr allComponents)
+    ReaderInstruction rdr    -> err MbChainUpdate       $ updateE (Model.readerInstruction rdr allComponents)
     ReaderForward rdr pts    -> err MbPoint             $ updateE (Model.readerForward rdr pts)
     ReaderClose rdr          -> ok  Unit                $ update_ (Model.readerClose rdr)
-    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmDB k)
+    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmutableDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
     WipeVolatileDB           -> ok  Point               $ update  (Model.wipeVolatileDB cfg)
@@ -1224,8 +1212,8 @@ deriving instance SOP.Generic         (TraceAddBlockEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceAddBlockEvent blk)
 deriving instance SOP.Generic         (ChainDB.TraceReaderEvent blk)
 deriving instance SOP.HasDatatypeInfo (ChainDB.TraceReaderEvent blk)
-deriving instance SOP.Generic         (TraceCopyToImmDBEvent blk)
-deriving instance SOP.HasDatatypeInfo (TraceCopyToImmDBEvent blk)
+deriving instance SOP.Generic         (TraceCopyToImmutableDBEvent blk)
+deriving instance SOP.HasDatatypeInfo (TraceCopyToImmutableDBEvent blk)
 deriving instance SOP.Generic         (TraceValidationEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceValidationEvent blk)
 deriving instance SOP.Generic         (TraceInitChainSelEvent blk)
@@ -1240,8 +1228,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceEvent r)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceEvent r)
 deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo)
-deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
-deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
+deriving instance SOP.Generic         (ImmutableDB.TraceEvent blk)
+deriving instance SOP.HasDatatypeInfo (ImmutableDB.TraceEvent blk)
 deriving instance SOP.Generic         (VolatileDB.TraceEvent blk)
 deriving instance SOP.HasDatatypeInfo (VolatileDB.TraceEvent blk)
 
@@ -1315,7 +1303,7 @@ instance ModelSupportsBlock TestBlock
 -- ChainDB, blocks are added /out of order/, while in the ImmutableDB, they
 -- must be added /in order/. This generator can thus not be reused for the
 -- ImmutableDB.
-genBlk :: ImmDB.ChunkInfo -> BlockGen Blk m
+genBlk :: ImmutableDB.ChunkInfo -> BlockGen Blk m
 genBlk chunkInfo Model{..} = frequency
     [ (if empty then 0 else 1, genAlreadyInChain)
     , (5,                      genAppendToCurrentChain)
@@ -1324,7 +1312,7 @@ genBlk chunkInfo Model{..} = frequency
     ]
   where
     blocksInChainDB   = Model.blocks dbModel
-    modelSupportsEBBs = ImmDB.chunkInfoSupportsEBBs chunkInfo
+    modelSupportsEBBs = ImmutableDB.chunkInfoSupportsEBBs chunkInfo
     canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
 
     empty :: Bool
@@ -1400,18 +1388,18 @@ genBlk chunkInfo Model{..} = frequency
         -- the block before it.
         , (if fromIsEBB (testBlockIsEBB b) || not modelSupportsEBBs then 0 else 1, do
              let prevSlotNo    = blockSlot b
-                 prevChunk     = ImmDB.chunkIndexOfSlot
+                 prevChunk     = ImmutableDB.chunkIndexOfSlot
                                    chunkInfo
                                    prevSlotNo
                  prevEpoch     = unsafeChunkNoToEpochNo prevChunk
-                 nextEBB       = ImmDB.chunkSlotForBoundaryBlock
+                 nextEBB       = ImmutableDB.chunkSlotForBoundaryBlock
                                    chunkInfo
                                    (prevEpoch + 1)
-                 nextNextEBB   = ImmDB.chunkSlotForBoundaryBlock
+                 nextNextEBB   = ImmutableDB.chunkSlotForBoundaryBlock
                                    chunkInfo
                                    (prevEpoch + 2)
              (slotNo, epoch) <-
-               first (ImmDB.chunkSlotToSlot chunkInfo) <$> frequency
+               first (ImmutableDB.chunkSlotToSlot chunkInfo) <$> frequency
                  [ (7, return (nextEBB, prevEpoch + 1))
                  , (1, return (nextNextEBB, prevEpoch + 2))
                  ]
@@ -1424,15 +1412,15 @@ genBlk chunkInfo Model{..} = frequency
   Top-level tests
 -------------------------------------------------------------------------------}
 
-mkTestCfg :: ImmDB.ChunkInfo -> TopLevelConfig TestBlock
-mkTestCfg (ImmDB.UniformChunkSize chunkSize) =
+mkTestCfg :: ImmutableDB.ChunkInfo -> TopLevelConfig TestBlock
+mkTestCfg (ImmutableDB.UniformChunkSize chunkSize) =
     mkTestConfig (SecurityParam 2) chunkSize
 
 envUnused :: ChainDBEnv m blk
 envUnused = error "ChainDBEnv used during command generation"
 
 smUnused :: MaxClockSkew
-         -> ImmDB.ChunkInfo
+         -> ImmutableDB.ChunkInfo
          -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
 smUnused maxClockSkew chunkInfo =
     sm
@@ -1509,14 +1497,14 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       closeRegistry iteratorRegistry
 
       -- Read the final MockFS of each database
-      let (immDbFsVar, volatileDbFsVar, lgrDbFsVar) = fsVars
+      let (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = fsVars
       fses <- atomically $ (,,)
-        <$> readTVar immDbFsVar
+        <$> readTVar immutableDbFsVar
         <*> readTVar volatileDbFsVar
         <*> readTVar lgrDbFsVar
 
       let modelChain = Model.currentChain $ dbModel model
-          (immDbFs, volatileDbFs, lgrDbFs) = fses
+          (immutableDbFs, volatileDbFs, lgrDbFs) = fses
           prop =
             counterexample ("Model chain: " <> condense modelChain)      $
             counterexample ("TraceEvents: " <> unlines (map show trace)) $
@@ -1525,7 +1513,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
             res === Ok .&&.
             prop_trace trace .&&.
             counterexample "ImmutableDB is leaking file handles"
-                           (Mock.numOpenHandles immDbFs === 0) .&&.
+                           (Mock.numOpenHandles immutableDbFs === 0) .&&.
             counterexample "VolatileDB is leaking file handles"
                            (Mock.numOpenHandles volatileDbFs === 0) .&&.
             counterexample "LedgerDB is leaking file handles"
@@ -1578,25 +1566,25 @@ whenOccurs evs occurs k = go evs
 
 traceEventName :: TraceEvent blk -> String
 traceEventName = \case
-    TraceAddBlockEvent       ev    -> "AddBlock."     <> case ev of
-      AddBlockValidation     ev' -> constrName ev'
-      _                          -> constrName ev
-    TraceReaderEvent         ev    -> "Reader."       <> constrName ev
-    TraceCopyToImmDBEvent    ev    -> "CopyToImmDB."  <> constrName ev
-    TraceInitChainSelEvent   ev    -> "InitChainSel." <> case ev of
-      InitChainSelValidation ev'   -> constrName ev'
-    TraceOpenEvent           ev    -> "Open."         <> constrName ev
-    TraceGCEvent             ev    -> "GC."           <> constrName ev
-    TraceIteratorEvent       ev    -> "Iterator."     <> constrName ev
-    TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
-    TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
-    TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
-    TraceVolatileDBEvent     ev    -> "VolatileDB."   <> constrName ev
+    TraceAddBlockEvent          ev    -> "AddBlock."          <> case ev of
+      AddBlockValidation        ev' -> constrName ev'
+      _                             -> constrName ev
+    TraceReaderEvent            ev    -> "Reader."            <> constrName ev
+    TraceCopyToImmutableDBEvent ev    -> "CopyToImmutableDB." <> constrName ev
+    TraceInitChainSelEvent      ev    -> "InitChainSel."      <> case ev of
+      InitChainSelValidation    ev'   -> constrName ev'
+    TraceOpenEvent              ev    -> "Open."              <> constrName ev
+    TraceGCEvent                ev    -> "GC."                <> constrName ev
+    TraceIteratorEvent          ev    -> "Iterator."          <> constrName ev
+    TraceLedgerEvent            ev    -> "Ledger."            <> constrName ev
+    TraceLedgerReplayEvent      ev    -> "LedgerReplay."      <> constrName ev
+    TraceImmutableDBEvent       ev    -> "ImmutableDB."       <> constrName ev
+    TraceVolatileDBEvent        ev    -> "VolatileDB."        <> constrName ev
 
 mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> MaxClockSkew
-       -> ImmDB.ChunkInfo
+       -> ImmutableDB.ChunkInfo
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
@@ -1605,39 +1593,39 @@ mkArgs :: IOLike m
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
-       (immDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
+       (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- HasFS instances
-      cdbHasFSImmDb           = SomeHasFS $ simHasFS immDbFsVar
-    , cdbHasFSVolatileDB      = SomeHasFS $ simHasFS volatileDbFsVar
-    , cdbHasFSLgrDB           = SomeHasFS $ simHasFS lgrDbFsVar
+      cdbHasFSImmutableDB      = SomeHasFS $ simHasFS immutableDbFsVar
+    , cdbHasFSVolatileDB       = SomeHasFS $ simHasFS volatileDbFsVar
+    , cdbHasFSLgrDB            = SomeHasFS $ simHasFS lgrDbFsVar
 
       -- Policy
-    , cdbImmValidation        = ValidateAllChunks
-    , cdbVolatileDbValidation = VolatileDB.ValidateAll
-    , cdbMaxBlocksPerFile     = VolatileDB.mkBlocksPerFile 4
-    , cdbParamsLgrDB          = LedgerDbParams {
-                                    ledgerDbSecurityParam = configSecurityParam cfg
-                                  }
-    , cdbDiskPolicy           = defaultDiskPolicy (configSecurityParam cfg)
+    , cdbImmutableDbValidation  = ValidateAllChunks
+    , cdbVolatileDbValidation   = VolatileDB.ValidateAll
+    , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
+    , cdbParamsLgrDB            = LedgerDbParams {
+                                      ledgerDbSecurityParam = configSecurityParam cfg
+                                    }
+    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
-    , cdbTopLevelConfig       = cfg
-    , cdbChunkInfo            = chunkInfo
-    , cdbCheckIntegrity       = testBlockIsValid
-    , cdbGenesis              = return initLedger
-    , cdbCheckInFuture        = InFuture.miracle
-                                  (readTVar varCurSlot)
-                                  maxClockSkew
-    , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
+    , cdbTopLevelConfig         = cfg
+    , cdbChunkInfo              = chunkInfo
+    , cdbCheckIntegrity         = testBlockIsValid
+    , cdbGenesis                = return initLedger
+    , cdbCheckInFuture          = InFuture.miracle
+                                    (readTVar varCurSlot)
+                                    maxClockSkew
+    , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc
-    , cdbTracer               = tracer
-    , cdbTraceLedger          = nullTracer
-    , cdbRegistry             = registry
-    , cdbBlocksToAddSize      = 2
+    , cdbTracer                 = tracer
+    , cdbTraceLedger            = nullTracer
+    , cdbRegistry               = registry
+    , cdbBlocksToAddSize        = 2
       -- We don't run the background threads, so these are not used
-    , cdbGcDelay              = 1
-    , cdbGcInterval           = 1
+    , cdbGcDelay                = 1
+    , cdbGcInterval             = 1
     }
 
 tests :: TestTree

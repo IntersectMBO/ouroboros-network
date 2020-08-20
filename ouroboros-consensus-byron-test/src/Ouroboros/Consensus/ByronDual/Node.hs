@@ -228,7 +228,7 @@ instance RunNode DualByronBlock where
                    GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
+  nodeImmutableDbChunkInfo = nodeImmutableDbChunkInfo  . dualTopLevelConfigMain
 
   -- For now the size of the block is just an estimate, and so we just reuse
   -- the estimate from the concrete header.

@@ -1,10 +1,11 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
 module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
 
-import           Data.Binary (get, put)
 import           Data.Functor ((<&>))
 import           Data.Maybe (fromJust)
+import           Data.Proxy (Proxy (..))
 import           Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
 
@@ -12,6 +13,9 @@ import           Test.QuickCheck
 import           Test.QuickCheck.Monadic (monadicIO, run)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Ouroboros.Consensus.Block (ConvertRawHash (..))
+import           Ouroboros.Consensus.Util.IOLike (try)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -22,12 +26,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (BlockOrEBB)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB,
-                     HashInfo (..))
-
-import           Test.Ouroboros.Storage.Util (tryFS)
 
 import           Test.Util.FS.Sim.MockFS (HandleMock)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -112,6 +113,16 @@ prop_readFirstFilledSlot_load_firstFilledSlot (TestPrimaryIndex chunkInfo chunk 
   reconstructPrimaryIndex
 ------------------------------------------------------------------------------}
 
+-- | DummyBlock to define an instance of 'ConvertRawHash' with a fixed hash
+-- size.
+data DummyBlock
+
+-- | Only 'hashSize' is used.
+instance ConvertRawHash DummyBlock where
+  hashSize    _ = 32
+  toRawHash   _ = error "not used in the tests"
+  fromRawHash _ = error "not used in the tests"
+
 prop_reconstructPrimaryIndex :: TestPrimaryIndex -> Property
 prop_reconstructPrimaryIndex (TestPrimaryIndex chunkInfo chunk primaryIndex _slot) =
     counterexample ("filledSlots  : " <> show filledSlots)                      $
@@ -122,8 +133,12 @@ prop_reconstructPrimaryIndex (TestPrimaryIndex chunkInfo chunk primaryIndex _slo
   where
     reconstructedPrimaryIndex :: PrimaryIndex
     reconstructedPrimaryIndex =
-      reconstructPrimaryIndex chunkInfo hashInfo ShouldNotBeFinalised
-                              chunk blockOrEBBs
+      reconstructPrimaryIndex
+        (Proxy @DummyBlock)
+        chunkInfo
+        ShouldNotBeFinalised
+        chunk
+        blockOrEBBs
 
     -- Remove empty trailing slots because we don't reconstruct them
     primaryIndex' :: PrimaryIndex
@@ -142,15 +157,6 @@ prop_reconstructPrimaryIndex (TestPrimaryIndex chunkInfo chunk primaryIndex _slo
       | relSlot <- filledSlots
       ]
 
-    -- Only 'hashSize' is used. Note that 32 matches the hard-coded value in
-    -- the 'TestPrimaryIndex' generator we use.
-    hashInfo :: HashInfo ()
-    hashInfo = HashInfo
-      { hashSize = 32
-      , getHash  = get
-      , putHash  = put
-      }
-
     -- This emulates what 'reconstructPrimaryIndex' does internally
     toRelativeSlot :: BlockOrEBB -> RelativeSlot
     toRelativeSlot = chunkRelative . chunkSlotForBlockOrEBB chunkInfo
@@ -160,7 +166,7 @@ prop_reconstructPrimaryIndex (TestPrimaryIndex chunkInfo chunk primaryIndex _slo
 ------------------------------------------------------------------------------}
 
 runFS :: (HasFS IO HandleMock -> IO Property) -> IO Property
-runFS m = tryFS (Sim.runSimFS Mock.empty m) >>= \case
+runFS m = try (Sim.runSimFS Mock.empty m) >>= \case
     Left  e           -> fail (prettyFsError e)
     Right (p, mockFS) -> return $ counterexample (Mock.pretty mockFS) p
 
@@ -199,7 +205,7 @@ instance Arbitrary TestPrimaryIndex where
       return $ TestPrimaryIndex chunkInfo chunk offsets slot
     where
       -- All entries in the secondary index will have the same size
-      offsetSize = Secondary.entrySize 32
+      offsetSize = Secondary.entrySize (Proxy @DummyBlock)
 
       go :: Int -> SecondaryOffset -> [SecondaryOffset]
          -> Gen [SecondaryOffset]

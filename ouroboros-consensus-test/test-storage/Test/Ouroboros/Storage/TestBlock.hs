@@ -39,7 +39,6 @@ module Test.Ouroboros.Storage.TestBlock (
   , testBlockIsEBB
   , testBlockChainLength
     -- ** Serialisation
-  , testHashInfo
   , testBlockToBuilder
   , testBlockFromLazyByteString
   , testBlockToLazyByteString
@@ -112,7 +111,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.SignableRepresentation ()
@@ -252,13 +250,6 @@ hashBody = TestBodyHash . hash
 
 hashHeader :: TestHeader -> TestHeaderHash
 hashHeader (TestHeader _ a b c d e f) = TestHeaderHash (hash (a, b, c, d, e, f))
-
-testHashInfo :: HashInfo TestHeaderHash
-testHashInfo = HashInfo
-    { hashSize = 8
-    , getHash  = Binary.get
-    , putHash  = Binary.put
-    }
 
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = headerToIsEBB . getHeader
@@ -722,7 +713,6 @@ instance HasBinaryBlockInfo TestBlock where
       , headerSize   = testBlockHeaderSize tb
       }
 
-instance ImmDbSerialiseConstraints TestBlock
 instance LgrDbSerialiseConstraints TestBlock
 instance SerialiseDiskConstraints  TestBlock
 

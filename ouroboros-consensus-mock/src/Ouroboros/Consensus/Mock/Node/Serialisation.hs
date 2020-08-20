@@ -44,7 +44,6 @@ type MockBlock ext = SimpleBlock SimpleMockCrypto ext
 instance (Serialise ext, Typeable ext) => HasBinaryBlockInfo (MockBlock ext) where
   getBinaryBlockInfo = simpleBlockBinaryBlockInfo
 
-instance (Serialise ext, Typeable ext) => ImmDbSerialiseConstraints (MockBlock ext)
 instance RunMockBlock SimpleMockCrypto ext => LgrDbSerialiseConstraints (MockBlock ext)
 instance (Serialise ext, RunMockBlock SimpleMockCrypto ext)
       => SerialiseDiskConstraints  (MockBlock ext)

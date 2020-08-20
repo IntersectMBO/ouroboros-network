@@ -228,18 +228,17 @@ extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeBlockFetchSize        = byronHeaderBlockSizeHint
+  nodeBlockFetchSize = byronHeaderBlockSizeHint
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeImmDbChunkInfo        = \cfg ->
-                                  simpleChunkInfo
-                                . (coerce :: EpochSlots -> EpochSize)
-                                . kEpochSlots
-                                . Genesis.gdK
-                                . extractGenesisData
-                                . configBlock
-                                $ cfg
+  nodeImmutableDbChunkInfo =
+        simpleChunkInfo
+      . (coerce :: EpochSlots -> EpochSize)
+      . kEpochSlots
+      . Genesis.gdK
+      . extractGenesisData
+      . configBlock
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.

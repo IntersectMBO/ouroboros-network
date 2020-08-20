@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 
@@ -30,6 +31,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , chunkSlotForRegularBlock
   , chunkSlotForBoundaryBlock
   , chunkSlotForBlockOrEBB
+  , chunkSlotForTip
+  , chunkSlotForRelativeSlot
     -- ** Translation /from/ 'ChunkSlot'
   , chunkSlotToSlot
   , chunkSlotToBlockOrEBB
@@ -46,7 +49,10 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..))
+
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (Tip (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
+                     (BlockOrEBB (..))
 
 -- Most types in the Chunks interface are opaque in the public API, since their
 -- interpretation is subject to layout decisions. In this module we /make/ those
@@ -203,6 +209,21 @@ chunkSlotForBlockOrEBB :: ChunkInfo -> BlockOrEBB -> ChunkSlot
 chunkSlotForBlockOrEBB ci = \case
     Block slot  -> chunkSlotForRegularBlock  ci slot
     EBB   epoch -> chunkSlotForBoundaryBlock ci epoch
+
+-- | Chunk slot for 'Tip'
+chunkSlotForTip :: ChunkInfo -> Tip blk -> ChunkSlot
+chunkSlotForTip ci Tip { tipSlotNo, tipIsEBB } = case tipIsEBB of
+    IsNotEBB -> chunkSlotForRegularBlock ci tipSlotNo
+    IsEBB    -> assertChunkCanContainEBB chunkIndex relativeSlotChunkSize $
+                 UnsafeChunkSlot chunkIndex $ firstBlockOrEBB ci chunkIndex
+  where
+    UnsafeChunkSlot{..} = chunkSlotForRegularBlock ci tipSlotNo
+    RelativeSlot{..}    = chunkRelative
+
+chunkSlotForRelativeSlot :: ChunkNo -> RelativeSlot -> ChunkSlot
+chunkSlotForRelativeSlot chunk relSlot =
+    assertSameChunk (relativeSlotChunkNo relSlot) chunk $
+      UnsafeChunkSlot chunk relSlot
 
 {-------------------------------------------------------------------------------
   Translation /from/ 'ChunkSlot'

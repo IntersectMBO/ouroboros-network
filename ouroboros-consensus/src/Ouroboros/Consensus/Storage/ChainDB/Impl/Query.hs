@@ -25,11 +25,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
   , getAnyKnownBlock
   , getAnyKnownBlockComponent
   , getAnyBlockComponent
-    -- * Auxiliary
-  , projVolatileDbBlockComponent
   ) where
 
-import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable
@@ -43,16 +40,16 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (rightToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDB, ChainDbFailure (..), InvalidBlockReason)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
-                     ImmDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
+                     ChainDbFailure (..), InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -102,7 +99,6 @@ getTipBlock
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , ImmDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> m (Maybe blk)
@@ -110,14 +106,13 @@ getTipBlock cdb@CDB{..} = do
     tipPoint <- atomically $ getTipPoint cdb
     case pointToWithOriginRealPoint tipPoint of
       Origin      -> return Nothing
-      NotOrigin p -> Just <$> getAnyKnownBlock cdbImmDB cdbVolatileDB p
+      NotOrigin p -> Just <$> getAnyKnownBlock cdbImmutableDB cdbVolatileDB p
 
 getTipHeader
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , ImmDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> m (Maybe (Header blk))
@@ -135,12 +130,7 @@ getTipHeader CDB{..} = do
 
             -- Note that we can't use 'getBlockAtTip' because a block might have
             -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
-            fmap Just . anchorMustBeThere =<<
-              ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader p
-  where
-    anchorMustBeThere :: Maybe a -> a
-    anchorMustBeThere Nothing  = error "block at tip of ImmutableDB missing"
-    anchorMustBeThere (Just a) = a
+            Just <$> ImmutableDB.getKnownBlockComponent cdbImmutableDB GetHeader p
 
 getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
@@ -148,19 +138,15 @@ getTipPoint
 getTipPoint CDB{..} =
     (castPoint . AF.headPoint) <$> readTVar cdbChain
 
-getBlockComponent
-  :: forall m blk b.
-     ( MonadCatch m
-     , HasHeader blk
-     , ImmDbSerialiseConstraints blk
-     )
+getBlockComponent ::
+     forall m blk b. IOLike m
   => ChainDbEnv m blk
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> RealPoint blk -> m (Maybe b)
-getBlockComponent CDB{..} = getAnyBlockComponent cdbImmDB cdbVolatileDB
+getBlockComponent CDB{..} = getAnyBlockComponent cdbImmutableDB cdbVolatileDB
 
-getIsFetched
-  :: forall m blk. IOLike m
+getIsFetched ::
+     forall m blk. IOLike m
   => ChainDbEnv m blk -> STM m (Point blk -> Bool)
 getIsFetched CDB{..} = basedOnHash <$> VolatileDB.getIsMember cdbVolatileDB
   where
@@ -173,15 +159,15 @@ getIsFetched CDB{..} = basedOnHash <$> VolatileDB.getIsMember cdbVolatileDB
           BlockHash hash -> f hash
           GenesisHash    -> False
 
-getIsInvalidBlock
-  :: forall m blk. (IOLike m, HasHeader blk)
+getIsInvalidBlock ::
+     forall m blk. (IOLike m, HasHeader blk)
   => ChainDbEnv m blk
   -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 getIsInvalidBlock CDB{..} =
   fmap (fmap (fmap invalidBlockReason) . flip Map.lookup) <$> readTVar cdbInvalid
 
-getIsValid
-  :: forall m blk. (IOLike m, HasHeader blk)
+getIsValid ::
+     forall m blk. (IOLike m, HasHeader blk)
   => ChainDbEnv m blk
   -> STM m (RealPoint blk -> Maybe Bool)
 getIsValid CDB{..} = do
@@ -196,8 +182,8 @@ getIsValid CDB{..} = do
          | Set.member pt prevApplied -> Just True
          | otherwise                 -> Nothing
 
-getMaxSlotNo
-  :: forall m blk. (IOLike m, HasHeader (Header blk))
+getMaxSlotNo ::
+     forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m MaxSlotNo
 getMaxSlotNo CDB{..} = do
     -- Note that we need to look at both the current chain and the VolatileDB
@@ -220,35 +206,35 @@ getMaxSlotNo CDB{..} = do
 -------------------------------------------------------------------------------}
 
 -- | Variant of 'getAnyBlockComponent' instantiated with 'GetBlock'.
-getAnyKnownBlock
-  :: forall m blk.
-     ( MonadCatch m
+getAnyKnownBlock ::
+     forall m blk.
+     ( IOLike m
      , HasHeader blk
-     , ImmDbSerialiseConstraints blk
      )
-  => ImmDB m blk
+  => ImmutableDB m blk
   -> VolatileDB m blk
   -> RealPoint blk
   -> m blk
-getAnyKnownBlock immDB volatileDB =
-    join . getAnyKnownBlockComponent immDB volatileDB GetBlock
+getAnyKnownBlock immutableDB volatileDB =
+    getAnyKnownBlockComponent immutableDB volatileDB GetBlock
 
 -- | Wrapper around 'getAnyBlockComponent' for blocks we know should exist.
 --
 -- If the block does not exist, this indicates disk failure.
-getAnyKnownBlockComponent
-  :: forall m blk b.
-     ( MonadCatch m
+getAnyKnownBlockComponent ::
+     forall m blk b.
+     ( IOLike m
      , HasHeader blk
-     , ImmDbSerialiseConstraints blk
      )
-  => ImmDB m blk
+  => ImmutableDB m blk
   -> VolatileDB m blk
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> RealPoint blk
   -> m b
-getAnyKnownBlockComponent immDB volatileDB blockComponent p = do
-    mBlock <- mustExist p <$> getAnyBlockComponent immDB volatileDB blockComponent p
+getAnyKnownBlockComponent immutableDB volatileDB blockComponent p = do
+    mBlock <-
+      mustExist p <$>
+        getAnyBlockComponent immutableDB volatileDB blockComponent p
     case mBlock of
       Right b  -> return b
       Left err -> throwM err
@@ -257,18 +243,14 @@ getAnyKnownBlockComponent immDB volatileDB blockComponent p = do
 --
 -- Returns 'Nothing' if the 'Point' is unknown.
 -- Throws 'NoGenesisBlockException' if the 'Point' refers to the genesis block.
-getAnyBlockComponent
-  :: forall m blk b.
-     ( MonadCatch m
-     , HasHeader blk
-     , ImmDbSerialiseConstraints blk
-     )
-  => ImmDB m blk
+getAnyBlockComponent ::
+     forall m blk b. IOLike m
+  => ImmutableDB m blk
   -> VolatileDB m blk
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> RealPoint blk
   -> m (Maybe b)
-getAnyBlockComponent immDB volatileDB blockComponent p = do
+getAnyBlockComponent immutableDB volatileDB blockComponent p = do
     -- Note: to determine whether a block is in the ImmutableDB, we can
     -- look at the slot of its tip, which we'll call @immTipSlot@. If the
     -- slot of the requested point > @immTipSlot@, then the block will not
@@ -285,53 +267,22 @@ getAnyBlockComponent immDB volatileDB blockComponent p = do
     -- ImmutableDB (no race condition here).
     mbVolatileB <- VolatileDB.getBlockComponent
                      volatileDB
-                     (projVolatileDbBlockComponent blockComponent)
+                     blockComponent
                      hash
     case mbVolatileB of
       Just b -> return $ Just b
       Nothing    -> do
-        -- ImmDB will throw an exception if we ask for a block past the tip
-        immTipSlot <- ImmDB.getSlotNoAtTip immDB
-        if NotOrigin (realPointSlot p) > immTipSlot
+        -- ImmutableDB will throw an exception if we ask for a block past the tip
+        immTipSlot <- atomically $ ImmutableDB.getTipSlot immutableDB
+        if NotOrigin (realPointSlot p) > immTipSlot then
           -- It's not supposed to be in the ImmutableDB and the VolatileDB
           -- didn't contain it, so return 'Nothing'.
-          then return Nothing
-          else ImmDB.getBlockComponentWithPoint immDB blockComponent p
+          return Nothing
+        else
+          rightToMaybe <$>
+            ImmutableDB.getBlockComponent immutableDB blockComponent p
   where
     hash = realPointHash p
-
--- TODO will be gone when #2264 is done
-projVolatileDbBlockComponent ::
-     forall m blk b. Monad m
-  => BlockComponent (ChainDB    m blk) b
-  -> BlockComponent (VolatileDB m blk) b
-projVolatileDbBlockComponent = go
-  where
-    go ::
-         BlockComponent (ChainDB    m blk) b'
-      -> BlockComponent (VolatileDB m blk) b'
-    go = \case
-      GetRawBlock   -> GetRawBlock
-      GetRawHeader  -> GetRawHeader
-      GetHash       -> GetHash
-      GetSlot       -> GetSlot
-      GetIsEBB      -> GetIsEBB
-      GetBlockSize  -> GetBlockSize
-      GetHeaderSize -> GetHeaderSize
-      GetNestedCtxt -> GetNestedCtxt
-      GetPure a     -> GetPure a
-      GetApply f bc -> GetApply (go f) (go bc)
-      -- The ImmutableDB isn't aware of the @blk@ type and thus the ChainDB
-      -- must decode the blocks when translating from a ChainDB
-      -- 'BlockComponent' to an ImmutableDB 'BlockComponent'. As decoding can
-      -- fail, the return type of these two constructors is monadic. The
-      -- VolatileDB /is/ aware of the @blk@ type and can decode them when
-      -- getting the 'BlockComponent', so no decoding needs to be done in the
-      -- translation, this means that these return types are not monadic.
-      -- Hence the need to make them monadic here. This will be gone when
-      -- #2264 is done.
-      GetBlock      -> return <$> GetBlock
-      GetHeader     -> return <$> GetHeader
 
 mustExist :: (Typeable blk, StandardHash blk)
           => RealPoint blk -> Maybe b -> Either ChainDbFailure b

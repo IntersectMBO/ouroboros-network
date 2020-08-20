@@ -6,7 +6,7 @@
 module Ouroboros.Consensus.Node.Run (
     -- * SerialiseDisk
     SerialiseDiskConstraints
-  , ImmDbSerialiseConstraints
+  , ImmutableDbSerialiseConstraints
   , LgrDbSerialiseConstraints
   , VolatileDbSerialiseConstraints
     -- * SerialiseNodeToNode
@@ -33,7 +33,8 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints,
+import           Ouroboros.Consensus.Storage.ChainDB
+                     (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
@@ -94,9 +95,9 @@ class ( LedgerSupportsProtocol           blk
   -- The block fetch client uses this to estimate how bytes will be in flight.
   -- This is also used to limit the number of bytes accepted when downloading
   -- a block.
-  nodeBlockFetchSize      :: Header blk -> SizeInBytes
+  nodeBlockFetchSize :: Header blk -> SizeInBytes
 
-  nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
+  nodeImmutableDbChunkInfo :: TopLevelConfig blk -> ChunkInfo
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.

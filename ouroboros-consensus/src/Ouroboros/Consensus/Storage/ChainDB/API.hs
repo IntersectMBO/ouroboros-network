@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , StreamTo(..)
   , Iterator(..)
   , IteratorResult(..)
+  , emptyIterator
   , traverseIterator
   , UnknownRange(..)
   , validBounds
@@ -62,9 +63,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , ChainDbError(..)
   ) where
 
-import qualified Codec.CBOR.Read as CBOR
 import           Control.Monad (void)
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -87,7 +86,6 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 
 -- Support for tests
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
@@ -200,7 +198,7 @@ data ChainDB m blk = ChainDB {
 
       -- | Get the given component(s) of the block at the specified point. If
       -- there is no block at the given point, 'Nothing' is returned.
-    , getBlockComponent  :: forall b. BlockComponent (ChainDB m blk) b
+    , getBlockComponent  :: forall b. BlockComponent blk b
                          -> RealPoint blk -> m (Maybe b)
 
       -- | Return membership check function for recent blocks
@@ -284,7 +282,7 @@ data ChainDB m blk = ChainDB {
     , stream
         :: forall b.
            ResourceRegistry m
-        -> BlockComponent (ChainDB m blk) b
+        -> BlockComponent blk b
         -> StreamFrom blk -> StreamTo blk
         -> m (Either (UnknownRange blk) (Iterator m blk b))
 
@@ -309,7 +307,7 @@ data ChainDB m blk = ChainDB {
     , newReader
         :: forall b.
            ResourceRegistry m
-        -> BlockComponent (ChainDB m blk) b
+        -> BlockComponent blk b
         -> m (Reader m blk b)
 
       -- | Function to check whether a block is known to be invalid.
@@ -348,14 +346,6 @@ getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
 getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (WithOrigin BlockNo)
 getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
-
-instance DB (ChainDB m blk) where
-  -- Returning a block or header requires parsing. In case of failure, a
-  -- 'ChainDbFailure' exception is thrown
-  type DBBlock      (ChainDB m blk) = m blk
-  type DBHeader     (ChainDB m blk) = m (Header blk)
-  type DBHeaderHash (ChainDB m blk) = HeaderHash blk
-  type DBNestedCtxt (ChainDB m blk) = SomeBlock (NestedCtxt Header) blk
 
 {-------------------------------------------------------------------------------
   Adding a block
@@ -420,27 +410,22 @@ addBlock_  = void .: addBlock
 -- BlockComponent.
 
 -- | Get block at the specified point (if it exists).
-getBlock :: Monad m => ChainDB m blk -> RealPoint blk -> m (Maybe blk)
-getBlock ChainDB { getBlockComponent } pt =
-    sequence =<< getBlockComponent GetBlock pt
+getBlock :: ChainDB m blk -> RealPoint blk -> m (Maybe blk)
+getBlock ChainDB { getBlockComponent } pt = getBlockComponent GetBlock pt
 
-streamBlocks
-  :: Monad m
-  => ChainDB m blk
+streamBlocks ::
+     ChainDB m blk
   -> ResourceRegistry m
   -> StreamFrom blk
   -> StreamTo blk
   -> m (Either (UnknownRange blk) (Iterator m blk blk))
-streamBlocks ChainDB { stream } rr from to =
-    fmap (traverseIterator id) <$> stream rr GetBlock from to
+streamBlocks ChainDB { stream } rr = stream rr GetBlock
 
-newBlockReader
-  :: Monad m
-  => ChainDB m blk
+newBlockReader ::
+     ChainDB m blk
   -> ResourceRegistry m
   -> m (Reader m blk blk)
-newBlockReader ChainDB { newReader } rr =
-    traverseReader id <$> newReader rr GetBlock
+newBlockReader ChainDB { newReader } rr = newReader rr GetBlock
 
 {-------------------------------------------------------------------------------
   Serialised block/header with its point
@@ -459,22 +444,22 @@ data WithPoint blk b = WithPoint
 type instance HeaderHash (WithPoint blk b) = HeaderHash blk
 instance StandardHash blk => StandardHash (WithPoint blk b)
 
-getPoint :: BlockComponent (ChainDB m blk) (Point blk)
+getPoint :: BlockComponent blk (Point blk)
 getPoint = BlockPoint <$> GetSlot <*> GetHash
 
 getSerialisedBlockWithPoint
-  :: BlockComponent (ChainDB m blk) (WithPoint blk (Serialised blk))
+  :: BlockComponent blk (WithPoint blk (Serialised blk))
 getSerialisedBlockWithPoint =
     WithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
 
-getSerialisedHeader :: BlockComponent (ChainDB m blk) (SerialisedHeader blk)
+getSerialisedHeader :: BlockComponent blk (SerialisedHeader blk)
 getSerialisedHeader =
     curry serialisedHeaderFromPair
       <$> GetNestedCtxt
       <*> GetRawHeader
 
 getSerialisedHeaderWithPoint ::
-     BlockComponent (ChainDB m blk) (WithPoint blk (SerialisedHeader blk))
+     BlockComponent blk (WithPoint blk (SerialisedHeader blk))
 getSerialisedHeaderWithPoint =
     WithPoint <$> getSerialisedHeader <*> getPoint
 
@@ -482,10 +467,11 @@ getSerialisedHeaderWithPoint =
   Support for tests
 -------------------------------------------------------------------------------}
 
-toChain :: forall m blk. (HasCallStack, IOLike m, HasHeader blk)
-        => ChainDB m blk -> m (Chain blk)
+toChain ::
+     forall m blk. (HasCallStack, IOLike m, HasHeader blk)
+  => ChainDB m blk -> m (Chain blk)
 toChain chainDB = withRegistry $ \registry ->
-    streamAll chainDB registry >>= maybe (return Genesis) (go Genesis)
+    streamAll chainDB registry GetBlock >>= go Genesis
   where
     go :: Chain blk -> Iterator m blk blk -> m (Chain blk)
     go chain it = do
@@ -496,10 +482,11 @@ toChain chainDB = withRegistry $ \registry ->
         IteratorBlockGCed _ ->
           error "block on the current chain was garbage-collected"
 
-fromChain :: forall m blk. IOLike m
-          => m (ChainDB m blk)
-          -> Chain blk
-          -> m (ChainDB m blk)
+fromChain ::
+     forall m blk. IOLike m
+  => m (ChainDB m blk)
+  -> Chain blk
+  -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
     mapM_ (addBlock_ chainDB) $ Chain.toOldestFirst chain
@@ -509,19 +496,6 @@ fromChain openDB chain = do
   Iterator API
 -------------------------------------------------------------------------------}
 
--- | The lower bound for a ChainDB iterator.
---
--- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
--- Genesis.
-data StreamFrom blk =
-    StreamFromInclusive !(RealPoint blk)
-  | StreamFromExclusive !(Point     blk)
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
-
-newtype StreamTo blk =
-    StreamToInclusive (RealPoint blk)
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
-
 data Iterator m blk b = Iterator {
       iteratorNext  :: m (IteratorResult blk b)
     , iteratorClose :: m ()
@@ -529,7 +503,15 @@ data Iterator m blk b = Iterator {
       -- 'Iterator', the resulting iterator will still refer to and use the
       -- original one. This means that when either of them is closed, both
       -- will be closed in practice.
-    } deriving (Functor, Foldable, Traversable)
+    }
+  deriving (Functor, Foldable, Traversable)
+
+-- | An iterator that is immediately exhausted.
+emptyIterator :: Monad m => Iterator m blk b
+emptyIterator = Iterator {
+      iteratorNext  = return IteratorExhausted
+    , iteratorClose = return ()
+    }
 
 -- | Variant of 'traverse' instantiated to @'Iterator' m blk@ that executes
 -- the monadic function when calling 'iteratorNext'.
@@ -565,22 +547,6 @@ data UnknownRange blk =
   | ForkTooOld (StreamFrom blk)
   deriving (Eq, Show)
 
--- | Check whether the bounds make sense
---
--- An example of bounds that don't make sense:
---
--- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
--- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
---
--- FIXME StreamFrom and StreamTo can be refined to not admit origin points
--- in cases where it doesn't make sense.
-validBounds :: StreamFrom blk -> StreamTo blk -> Bool
-validBounds from (StreamToInclusive (RealPoint sto _)) =
-    case from of
-      StreamFromExclusive GenesisPoint         -> True
-      StreamFromInclusive (RealPoint sfrom _)  -> sfrom <= sto
-      StreamFromExclusive (BlockPoint sfrom _) -> sfrom <  sto
-
 -- | Stream all blocks from the current chain.
 --
 -- To stream all blocks from the current chain from the ChainDB, one would use
@@ -594,26 +560,26 @@ validBounds from (StreamToInclusive (RealPoint sto _)) =
 --
 -- Note that this is not a 'Reader', so the stream will not include blocks
 -- that are added to the current chain after starting the stream.
-streamAll :: (IOLike m, StandardHash blk)
-          => ChainDB m blk
-          -> ResourceRegistry m
-          -> m (Maybe (Iterator m blk blk))
-streamAll chainDB registry = do
-    tip <- atomically $ getTipPoint chainDB
+streamAll ::
+     (MonadSTM m, HasHeader blk, HasCallStack)
+  => ChainDB m blk
+  -> ResourceRegistry m
+  -> BlockComponent blk b
+  -> m (Iterator m blk b)
+streamAll db registry blockComponent = do
+    tip <- atomically $ getTipPoint db
     case pointToWithOriginRealPoint tip of
-      Origin         -> return Nothing
+      Origin         -> return emptyIterator
       NotOrigin tip' -> do
-        errIt <- streamBlocks
-                   chainDB
+        errIt <- stream
+                   db
                    registry
+                   blockComponent
                    (StreamFromExclusive GenesisPoint)
                    (StreamToInclusive tip')
         case errIt of
-          -- TODO this is theoretically possible if the current chain has
-          -- changed significantly between getting the tip and asking for the
-          -- stream.
-          Left  e  -> error (show e)
-          Right it -> return $ Just it
+          Right it -> return it
+          Left  e  -> error $ "failed to stream from genesis to tip: " <> show e
 
 {-------------------------------------------------------------------------------
   Invalid block reason
@@ -717,51 +683,12 @@ data BlockRef blk = BlockRef
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
 data ChainDbFailure =
-    -- | A block in the immutable or volatile DB failed to parse
-    forall blk. (Typeable blk, StandardHash blk) =>
-      ChainDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
-
-    -- | When parsing a block from the immutable or volatile DB we got some trailing data
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ChainDbTrailingData (BlockRef blk) Lazy.ByteString
-
-    -- | Block missing from the immutable DB
-    --
-    -- This exception gets thrown when a block that we /know/ should exist in
-    -- the DB (for example, because we have its successor) nonetheless was
-    -- not found
-  | ImmDbMissingBlock (Either EpochNo SlotNo)
-
-    -- | Block missing from the immutable DB
-    --
-    -- Same as 'ImmDbMissingBlock', but we only know the 'Point' of the block.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbMissingBlockPoint
-        (Point blk)
-        (ImmDB.WrongBoundError (HeaderHash blk))
-        CallStack
-
-    -- | We requested an iterator that was immediately exhausted
-    --
-    -- When we ask the immutable DB for an iterator with a particular start
-    -- position but no stop position, the resulting iterator cannot be
-    -- exhausted immediately: the start position is inclusive, the DB would
-    -- throw an exception if the slot number is beyond the last written block,
-    -- and the DB does not contain any trailing empty slots.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbUnexpectedIteratorExhausted (Point blk)
-
-    -- | The immutable DB threw an "unexpected error"
-    --
-    -- These are errors indicative of a disk failure (as opposed to API misuse)
-  | ImmDbFailure ImmDB.UnexpectedError
-
     -- | A block got corrupted in the volatile DB
     --
     -- This exception gets thrown when, while copying blocks from the volatile
     -- DB to the immutable DB, a block doesn't pass the integrity check
     -- (hash/signature check).
-  | forall blk. (Typeable blk, StandardHash blk) =>
+    forall blk. (Typeable blk, StandardHash blk) =>
       VolatileDbCorruptBlock (BlockRef blk)
 
     -- | The ledger DB threw a file-system error
@@ -778,19 +705,9 @@ deriving instance Show ChainDbFailure
 
 instance Exception ChainDbFailure where
   displayException = \case
-      ChainDbParseFailure {}              -> corruption
-      ChainDbTrailingData {}              -> corruption
-      ImmDbMissingBlock {}                -> corruption
-      ImmDbMissingBlockPoint {}           -> corruption
-      ImmDbUnexpectedIteratorExhausted {} -> corruption
-      ImmDbFailure e -> case e of
-        ImmDB.FileSystemError fse      -> fsError fse
-        ImmDB.InvalidFileError {}      -> corruption
-        ImmDB.MissingFileError {}      -> corruption
-        ImmDB.ChecksumMismatchError {} -> corruption
-      VolatileDbCorruptBlock {}           -> corruption
-      LgrDbFailure fse                    -> fsError fse
-      ChainDbMissingBlock {}              -> corruption
+      VolatileDbCorruptBlock {} -> corruption
+      LgrDbFailure fse          -> fsError fse
+      ChainDbMissingBlock {}    -> corruption
     where
       corruption =
         "The database got corrupted, full validation will be enabled for the next startup"
@@ -800,36 +717,6 @@ instance Exception ChainDbFailure where
       fsError = displayException
 
 instance Eq ChainDbFailure where
-  ChainDbParseFailure (a1 :: BlockRef blk) b1 == ChainDbParseFailure (a2 :: BlockRef blk') b2 =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2 && b1 == b2
-  ChainDbParseFailure {} == _ = False
-
-  ChainDbTrailingData (a1 :: BlockRef blk) b1 == ChainDbTrailingData (a2 :: BlockRef blk') b2 =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2 && b1 == b2
-  ChainDbTrailingData {} == _ = False
-
-  ImmDbMissingBlock a1 == ImmDbMissingBlock a2 = a1 == a2
-  ImmDbMissingBlock {} == _ = False
-
-  ImmDbMissingBlockPoint (a1 :: Point blk) b1 _cs1 == ImmDbMissingBlockPoint (a2 :: Point blk') b2 _cs2 =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2 && b1 == b2
-  ImmDbMissingBlockPoint {} == _ = False
-
-  ImmDbUnexpectedIteratorExhausted (a1 :: Point blk) == ImmDbUnexpectedIteratorExhausted (a2 :: Point blk') =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2
-  ImmDbUnexpectedIteratorExhausted {} == _ = False
-
-  ImmDbFailure a1 == ImmDbFailure a2 = ImmDB.sameUnexpectedError a1 a2
-  ImmDbFailure {} == _               = False
-
   VolatileDbCorruptBlock (a1 :: BlockRef blk) == VolatileDbCorruptBlock (a2 :: BlockRef blk') =
     case eqT @blk @blk' of
       Nothing   -> False

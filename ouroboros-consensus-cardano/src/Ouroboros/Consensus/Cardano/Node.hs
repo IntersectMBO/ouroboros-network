@@ -226,12 +226,13 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
   -- Shelley chunks will be 10x smaller, as the slot density is 10x smaller.
   --
   -- TODO update when a non-uniform chunk size is supported
-  nodeImmDbChunkInfo = simpleChunkInfo
-                     . History.eraEpochSize
-                     . unK . hd
-                     . History.getShape
-                     . hardForkLedgerConfigShape
-                     . configLedger
+  nodeImmutableDbChunkInfo =
+        simpleChunkInfo
+      . History.eraEpochSize
+      . unK . hd
+      . History.getShape
+      . hardForkLedgerConfigShape
+      . configLedger
 
   -- Call Byron's intialisation, as the chain starts with Byron
   nodeInitChainDB cfg initChainDB =

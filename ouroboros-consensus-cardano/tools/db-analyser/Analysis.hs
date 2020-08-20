@@ -1,13 +1,5 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 
 module Analysis (
     AnalysisName (..)
@@ -19,23 +11,16 @@ import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
-import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDB (..), StreamFrom (..), StreamTo (..))
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB hiding
-                     (iteratorNext)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB hiding
-                     (stream)
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 
 import           HasAnalysis (HasAnalysis)
 import qualified HasAnalysis
@@ -54,15 +39,14 @@ data AnalysisName =
   deriving Show
 
 type Analysis blk = TopLevelConfig blk
-                 -> Either (ImmDB IO blk) (ChainDB IO blk)
+                 -> Either (ImmutableDB IO blk) (ChainDB IO blk)
                  -> ResourceRegistry IO
                  -> IO ()
 
 emptyAnalysis :: Analysis blk
 emptyAnalysis _ _ _ = return ()
 
-runAnalysis :: (HasAnalysis blk, RunNode blk)
-            => AnalysisName -> Analysis blk
+runAnalysis :: HasAnalysis blk => AnalysisName -> Analysis blk
 runAnalysis ShowSlotBlockNo     = showSlotBlockNo
 runAnalysis CountTxOutputs      = countTxOutputs
 runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
@@ -74,10 +58,8 @@ runAnalysis OnlyValidation      = emptyAnalysis
   Analysis: show block and slot number for all blocks
 -------------------------------------------------------------------------------}
 
-showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-                => Analysis blk
-showSlotBlockNo _cfg immDB rr =
-    processAll immDB rr go
+showSlotBlockNo :: forall blk. HasHeader blk => Analysis blk
+showSlotBlockNo _cfg db rr = processAll db rr go
   where
     go :: blk -> IO ()
     go blk = putStrLn $ intercalate "\t" [
@@ -89,12 +71,10 @@ showSlotBlockNo _cfg immDB rr =
   Analysis: show total number of tx outputs per block
 -------------------------------------------------------------------------------}
 
-countTxOutputs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-countTxOutputs _cfg immDB rr = do
+countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
+countTxOutputs _cfg db rr = do
     cumulative <- newIORef 0
-    processAll immDB rr (go cumulative)
+    processAll db rr (go cumulative)
   where
     go :: IORef Int -> blk -> IO ()
     go cumulative blk = do
@@ -113,12 +93,10 @@ countTxOutputs _cfg immDB rr = do
   Analysis: show the block header size in bytes for all blocks
 -------------------------------------------------------------------------------}
 
-showBlockHeaderSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockHeaderSize _cfg immDB rr = do
+showBlockHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
+showBlockHeaderSize _cfg db rr = do
     maxBlockHeaderSizeRef <- newIORef 0
-    processAll immDB rr (go maxBlockHeaderSizeRef)
+    processAll db rr (go maxBlockHeaderSizeRef)
     maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
     putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
   where
@@ -137,10 +115,8 @@ showBlockHeaderSize _cfg immDB rr = do
   Analysis: show the total transaction sizes in bytes per block
 -------------------------------------------------------------------------------}
 
-showBlockTxsSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockTxsSize _cfg immDB rr = processAll immDB rr process
+showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
+showBlockTxsSize _cfg db rr = processAll db rr process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -164,12 +140,10 @@ showBlockTxsSize _cfg immDB rr = processAll immDB rr process
   Analysis: show EBBs and their predecessors
 -------------------------------------------------------------------------------}
 
-showEBBs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showEBBs _cfg immDB rr = do
+showEBBs :: forall blk. HasAnalysis blk => Analysis blk
+showEBBs _cfg db rr = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll immDB rr processIfEBB
+    processAll db rr processIfEBB
   where
     processIfEBB :: blk -> IO ()
     processIfEBB blk =
@@ -191,56 +165,43 @@ showEBBs _cfg immDB rr = do
   Auxiliary: processing all blocks in the DB
 -------------------------------------------------------------------------------}
 
-processAll :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-           => Either (ImmDB IO blk) (ChainDB IO blk)
-           -> ResourceRegistry IO
-           -> (blk -> IO ())
-           -> IO ()
-processAll db rr callback = case db of
-  Left  immDB   -> processAllImmDB immDB rr callback
-  Right chainDB -> processAllChainDB chainDB rr callback
+processAll ::
+     forall blk. HasHeader blk
+  => Either (ImmutableDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> (blk -> IO ())
+  -> IO ()
+processAll = either processAllImmutableDB processAllChainDB
 
-processAllChainDB :: forall blk. StandardHash blk
-                  => ChainDB IO blk
-                  -> ResourceRegistry IO
-                  -> (blk -> IO ())
-                  -> IO ()
-processAllChainDB chainDB rr callback = do
-    tipPoint <- atomically $ ChainDB.getTipPoint chainDB
-    case pointToWithOriginRealPoint tipPoint of
-      Origin -> return ()
-      At tip -> do
-        Right itr <- ChainDB.stream chainDB rr GetBlock
-          (StreamFromExclusive GenesisPoint)
-          (StreamToInclusive tip)
-        go itr
+processAllChainDB ::
+     forall blk. HasHeader blk
+  => ChainDB IO blk
+  -> ResourceRegistry IO
+  -> (blk -> IO ())
+  -> IO ()
+processAllChainDB chainDB rr callback =
+    ChainDB.streamAll chainDB rr GetBlock >>= go
   where
-    go :: ChainDB.Iterator IO blk (IO blk) -> IO ()
+    go :: ChainDB.Iterator IO blk blk -> IO ()
     go itr = do
-      itrResult <- ChainDB.iteratorNext itr
-      case itrResult of
-        ChainDB.IteratorExhausted     -> return ()
-        ChainDB.IteratorResult mblk   -> mblk >>= \blk -> callback blk >> go itr
-        ChainDB.IteratorBlockGCed pnt -> error $ "block gced " ++ show pnt
-
-processAllImmDB :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-                => ImmDB IO blk
-                -> ResourceRegistry IO
-                -> (blk -> IO ())
-                -> IO ()
-processAllImmDB immDB rr callback = do
-    tipPoint <- getPointAtTip immDB
-    case pointToWithOriginRealPoint tipPoint of
-      Origin -> return ()
-      At tip -> do
-        Right itr <- ImmDB.stream immDB rr GetBlock
-          (StreamFromExclusive GenesisPoint)
-          (StreamToInclusive tip)
-        go itr
-  where
-    go :: Iterator (HeaderHash blk) IO (IO blk) -> IO ()
-    go itr = do
-        itrResult <- ImmDB.iteratorNext itr
+        itrResult <- ChainDB.iteratorNext itr
         case itrResult of
-          IteratorExhausted   -> return ()
-          IteratorResult mblk -> mblk >>= \blk -> callback blk >> go itr
+          ChainDB.IteratorExhausted    -> return ()
+          ChainDB.IteratorResult blk   -> callback blk >> go itr
+          ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " ++ show pt
+
+processAllImmutableDB ::
+     forall blk. HasHeader blk
+  => ImmutableDB IO blk
+  -> ResourceRegistry IO
+  -> (blk -> IO ())
+  -> IO ()
+processAllImmutableDB immutableDB rr callback = do
+    ImmutableDB.streamAll immutableDB rr GetBlock >>= go
+  where
+    go :: ImmutableDB.Iterator IO blk blk -> IO ()
+    go itr = do
+        itrResult <- ImmutableDB.iteratorNext itr
+        case itrResult of
+          ImmutableDB.IteratorExhausted  -> return ()
+          ImmutableDB.IteratorResult blk -> callback blk >> go itr

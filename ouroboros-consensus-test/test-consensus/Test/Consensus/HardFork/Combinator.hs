@@ -394,14 +394,15 @@ instance SerialiseHFC '[BlockA, BlockB]
   -- Use defaults
 
 instance RunNode TestBlock where
-  nodeBlockFetchSize     = const 0
-  nodeCheckIntegrity     = \_ _ -> True
-  nodeImmDbChunkInfo     = simpleChunkInfo
-                         . eraEpochSize
-                         . unK . hd
-                         . History.getShape
-                         . hardForkLedgerConfigShape
-                         . configLedger
+  nodeBlockFetchSize = const 0
+  nodeCheckIntegrity = \_ _ -> True
+  nodeImmutableDbChunkInfo =
+        simpleChunkInfo
+      . eraEpochSize
+      . unK . hd
+      . History.getShape
+      . hardForkLedgerConfigShape
+      . configLedger
 
 {-------------------------------------------------------------------------------
   Translation

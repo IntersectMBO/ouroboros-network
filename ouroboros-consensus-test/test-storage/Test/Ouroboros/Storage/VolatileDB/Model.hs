@@ -250,14 +250,14 @@ reOpenModel dbm
     = restoreInvariants $ dbm { open = True }
 
 getBlockComponentModel ::
-     forall m blk b.
+     forall blk b.
      ( HasHeader blk
      , GetHeader blk
      , HasBinaryBlockInfo blk
      , EncodeDisk blk blk
      , HasNestedContent Header blk
      )
-  => BlockComponent (VolatileDB m blk) b
+  => BlockComponent blk b
   -> HeaderHash blk
   -> DBModel blk
   -> Either VolatileDBError (Maybe b)
@@ -266,7 +266,7 @@ getBlockComponentModel blockComponent hash dbm@DBModel { codecConfig } =
       flip go blockComponent <$>
         Map.lookup hash (blockIndex dbm)
   where
-    go :: forall b'. blk -> BlockComponent (VolatileDB m blk) b' -> b'
+    go :: forall b'. blk -> BlockComponent blk b' -> b'
     go blk = \case
         GetBlock      -> blk
         GetRawBlock   -> blockBytes

@@ -1,11 +1,11 @@
 { pkgs
 , byron-db-converter
 , db-analyser
-, onlyImmDB ? true
+, onlyImmutableDB ? true
 }:
 
 let
-  immDBStr = if onlyImmDB then "--onlyImmDB" else "";
+  immutableDBStr = if onlyImmutableDB then "--onlyImmutableDB" else "";
   cardano-mainnet-config = pkgs.fetchurl {
     url = https://raw.githubusercontent.com/input-output-hk/cardano-node/114ee7f3b1cb55d384f928552c6b0871d4ca27ff/configuration/mainnet-genesis.json;
     sha256 = "1ahkdhqh07096law629r1d5jf6jz795rcw6c4vpgdi5j6ysb6a2g";
@@ -37,5 +37,5 @@ in
       --genesisHash 5f20df933584822601f9e3f8c024eb5eb252fe8cefb24d1317dc3d432e940ebb \
       --configByron ${cardano-mainnet-config} \
       --threshold 0.22 \
-      ${immDBStr}
+      ${immutableDBStr}
     ''

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
   ( validateAndReopen
   , ValidateEnv (..)
@@ -18,6 +20,7 @@ import           Control.Exception (assert)
 import           Control.Monad (forM_, unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
 import           Control.Tracer (Tracer, contramap, traceWith)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Set as Set
@@ -34,10 +37,13 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+                     (DecodeDisk (..), HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unChunkNo, unsafeEpochNoToChunkNo)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -45,45 +51,47 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
+                     (BlockSummary (..), parseChunkFile)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                     (BlockSummary (..))
 
 -- | Bundle of arguments used most validation functions.
 --
 -- Note that we don't use "Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index"
 -- because we are reading and manipulating index files in different ways, e.g.,
 -- truncating them.
-data ValidateEnv m hash h e = ValidateEnv
-  { hasFS       :: !(HasFS m h)
-  , chunkInfo   :: !ChunkInfo
-  , hashInfo    :: !(HashInfo hash)
-  , parser      :: !(ChunkFileParser e m (BlockSummary hash) hash)
-  , tracer      :: !(Tracer m (TraceEvent e hash))
-  , cacheConfig :: !Index.CacheConfig
-  }
+data ValidateEnv m blk h = ValidateEnv {
+      hasFS          :: !(HasFS m h)
+    , chunkInfo      :: !ChunkInfo
+    , tracer         :: !(Tracer m (TraceEvent blk))
+    , cacheConfig    :: !Index.CacheConfig
+    , codecConfig    :: !(CodecConfig blk)
+    , checkIntegrity :: !(blk -> Bool)
+    }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome using 'mkOpenState'.
-validateAndReopen
-  :: forall m hash h e.
+validateAndReopen ::
+     forall m blk h.
      ( IOLike m
-     , Eq hash
-     , NoUnexpectedThunks hash
+     , GetPrevHash blk
+     , HasBinaryBlockInfo blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , ConvertRawHash blk
      , Eq h
      , HasCallStack
      )
-  => ValidateEnv m hash h e
+  => ValidateEnv m blk h
   -> ResourceRegistry m
      -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
-  -> WithTempRegistry (OpenState m hash h) m (OpenState m hash h)
+  -> WithTempRegistry (OpenState m blk h) m (OpenState m blk h)
 validateAndReopen validateEnv registry valPol = wrapFsError $ do
     (chunk, tip) <- lift $ validate validateEnv valPol
     index        <- lift $ cachedIndex
                       hasFS
-                      hashInfo
                       registry
                       cacheTracer
                       cacheConfig
@@ -93,16 +101,11 @@ validateAndReopen validateEnv registry valPol = wrapFsError $ do
       Origin -> assert (chunk == firstChunkNo) $ do
         lift $ traceWith tracer NoValidLastLocation
         mkOpenState hasFS index chunk Origin MustBeNew
-      _      -> do
-        lift $ traceWith tracer $ ValidatedLastLocation chunk (forgetTipInfo <$> tip)
-        mkOpenState hasFS index chunk tip    AllowExisting
+      NotOrigin tip' -> do
+        lift $ traceWith tracer $ ValidatedLastLocation chunk tip'
+        mkOpenState hasFS index chunk tip AllowExisting
   where
-    ValidateEnv { hasFS
-                , hashInfo
-                , tracer
-                , cacheConfig
-                , chunkInfo
-                } = validateEnv
+    ValidateEnv { hasFS, tracer, cacheConfig, chunkInfo } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
@@ -114,11 +117,18 @@ validateAndReopen validateEnv registry valPol = wrapFsError $ do
 -- database hasn't even been opened and the node will shut down. In which case
 -- we don't have to worry about leaking handles, they will be closed when the
 -- process terminates.
-validate
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
-  => ValidateEnv m hash h e
+validate ::
+     forall m blk h.
+     ( IOLike m
+     , GetPrevHash blk
+     , HasBinaryBlockInfo blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , ConvertRawHash blk
+     , HasCallStack
+     )
+  => ValidateEnv m blk h
   -> ValidationPolicy
-  -> m (ChunkNo, ImmTipWithInfo hash)
+  -> m (ChunkNo, WithOrigin (Tip blk))
 validate validateEnv@ValidateEnv{ hasFS } valPol = do
 
     -- First migrate any old files before validating them
@@ -145,21 +155,28 @@ validate validateEnv@ValidateEnv{ hasFS } valPol = do
 -- on disk. During this validation, keep track of the last valid block we
 -- encountered. If at the end, that block is not in the last chunk on disk,
 -- remove the chunk and index files after that chunk.
-validateAllChunks
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
-  => ValidateEnv m hash h e
+validateAllChunks ::
+     forall m blk h.
+     ( IOLike m
+     , GetPrevHash blk
+     , HasBinaryBlockInfo blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , ConvertRawHash blk
+     , HasCallStack
+     )
+  => ValidateEnv m blk h
   -> ChunkNo
      -- ^ Most recent chunk on disk
-  -> m (ChunkNo, ImmTipWithInfo hash)
+  -> m (ChunkNo, WithOrigin (Tip blk))
 validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
-    go (firstChunkNo, Origin) firstChunkNo Origin
+    go (firstChunkNo, Origin) firstChunkNo GenesisHash
   where
-    go
-      :: (ChunkNo, ImmTipWithInfo hash)  -- ^ The last valid chunk and tip
-      -> ChunkNo                         -- ^ The chunk to validate now
-      -> WithOrigin hash                 -- ^ The hash of the last block of
-                                         -- the previous chunk
-      -> m (ChunkNo, ImmTipWithInfo hash)
+    go ::
+         (ChunkNo, WithOrigin (Tip blk))  -- ^ The last valid chunk and tip
+      -> ChunkNo                          -- ^ The chunk to validate now
+      -> ChainHash blk                    -- ^ The hash of the last block of
+                                          -- the previous chunk
+      -> m (ChunkNo, WithOrigin (Tip blk))
     go lastValid chunk prevHash = do
       let shouldBeFinalised =
             if chunk == lastChunk
@@ -171,17 +188,17 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
           Right Nothing         -> continueOrStop lastValid                   chunk prevHash
           Right (Just validBlk) -> continueOrStop (chunk, NotOrigin validBlk) chunk prevHash'
             where
-              prevHash' = NotOrigin (tipInfoHash validBlk)
+              prevHash' = BlockHash (tipHash validBlk)
 
     -- | Validate the next chunk, unless the chunk just validated is the last
     -- chunk to validate. Cleanup files corresponding to chunks after the
     -- chunk in which we found the last valid block. Return that chunk and the
     -- tip corresponding to that block.
-    continueOrStop
-      :: (ChunkNo, ImmTipWithInfo hash)
-      -> ChunkNo         -- ^ The chunk just validated
-      -> WithOrigin hash -- ^ The hash of the last block of the previous chunk
-      -> m (ChunkNo, ImmTipWithInfo hash)
+    continueOrStop ::
+         (ChunkNo, WithOrigin (Tip blk))
+      -> ChunkNo        -- ^ The chunk just validated
+      -> ChainHash blk  -- ^ The hash of the last block of the previous chunk
+      -> m (ChunkNo, WithOrigin (Tip blk))
     continueOrStop lastValid chunk prevHash
       | chunk < lastChunk
       = go lastValid (nextChunkNo chunk) prevHash
@@ -193,8 +210,8 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
 
     -- | Remove left over files from chunks newer than the last chunk
     -- containing a valid file. Also unfinalise it if necessary.
-    cleanup
-      :: (ChunkNo, ImmTipWithInfo hash)  -- ^ The last valid chunk and tip
+    cleanup ::
+         (ChunkNo, WithOrigin (Tip blk))  -- ^ The last valid chunk and tip
       -> ChunkNo  -- ^ The last validated chunk, could have been invalid or
                   -- empty
       -> m ()
@@ -210,15 +227,22 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
 -- block, try the chunk before it, and so on. Stop as soon as an chunk with a
 -- valid block is found, returning that chunk and the tip corresponding to
 -- that block. If no valid blocks are found, chunk 0 and 'TipGen' is returned.
-validateMostRecentChunk
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
-  => ValidateEnv m hash h e
+validateMostRecentChunk ::
+     forall m blk h.
+     ( IOLike m
+     , GetPrevHash blk
+     , HasBinaryBlockInfo blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , ConvertRawHash blk
+     , HasCallStack
+     )
+  => ValidateEnv m blk h
   -> ChunkNo
      -- ^ Most recent chunk on disk, the chunk to validate
-  -> m (ChunkNo, ImmTipWithInfo hash)
+  -> m (ChunkNo, WithOrigin (Tip blk))
 validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
   where
-    go :: ChunkNo -> m (ChunkNo, ImmTipWithInfo hash)
+    go :: ChunkNo -> m (ChunkNo, WithOrigin (Tip blk))
     go chunk = runExceptT
       (validateChunk validateEnv ShouldNotBeFinalised chunk Nothing) >>= \case
         Right (Just validBlk) -> do
@@ -239,8 +263,8 @@ validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
 -- With finalising, we mean: if there are one or more empty slots at the end
 -- of the chunk, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
-data ShouldBeFinalised
-  = ShouldBeFinalised
+data ShouldBeFinalised =
+    ShouldBeFinalised
   | ShouldNotBeFinalised
   deriving (Show)
 
@@ -278,21 +302,27 @@ data ShouldBeFinalised
 -- * All but the most recent chunk in the database should be finalised, i.e.
 --   padded to the size of the chunk.
 --
-validateChunk
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
-  => ValidateEnv m hash h e
+validateChunk ::
+     forall m blk h.
+     ( IOLike m
+     , GetPrevHash blk
+     , HasBinaryBlockInfo blk
+     , DecodeDisk blk (Lazy.ByteString -> blk)
+     , ConvertRawHash blk
+     , HasCallStack
+     )
+  => ValidateEnv m blk h
   -> ShouldBeFinalised
   -> ChunkNo
-  -> Maybe (WithOrigin hash)
+  -> Maybe (ChainHash blk)
      -- ^ The hash of the last block of the previous chunk. 'Nothing' if
      -- unknown. When this is the first chunk, it should be 'Just Origin'.
-  -> ExceptT () m (Maybe (TipInfo hash BlockOrEBB))
-     -- ^ When non-empty, return the 'BlockOrEBB' and @hash@ of the last valid
-     -- block in the chunk.
+  -> ExceptT () m (Maybe (Tip blk))
+     -- ^ When non-empty, the 'Tip' corresponds to the last valid block in the
+     -- chunk.
      --
-     -- When the chunk file is missing or when we should truncate starting
-     -- from this chunk because it doesn't fit onto the previous one, @()@ is
-     -- thrown.
+     -- When the chunk file is missing or when we should truncate starting from
+     -- this chunk because it doesn't fit onto the previous one, @()@ is thrown.
      --
      -- Note that when an invalid block is detected, we don't throw, but we
      -- truncate the chunk file. When validating the chunk file after it, we
@@ -311,8 +341,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
         -- Note the 'maxBound': it is used to calculate the block size for
         -- each entry, but we don't care about block sizes here, so we use
         -- some dummy value.
-        (Secondary.readAllEntries hasFS hashInfo 0 chunk (const False)
-           maxBound IsEBB) >>= \case
+        (Secondary.readAllEntries hasFS 0 chunk (const False) maxBound IsEBB) >>= \case
           Left _                -> do
             traceWith tracer $ InvalidSecondaryIndex chunk
             return []
@@ -327,8 +356,13 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     -- expensive integrity check of a block.
     let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
-        runChunkFileParser parser chunkFile expectedChecksums $ \entries ->
-          (\(es :> mbErr) -> (es, mbErr)) <$> S.toList entries
+        parseChunkFile
+          codecConfig
+          hasFS
+          checkIntegrity
+          chunkFile
+          expectedChecksums
+          (\entries -> (\(es :> mbErr) -> (es, mbErr)) <$> S.toList entries)
 
     -- Check whether the first block of this chunk fits onto the last block of
     -- the previous chunk.
@@ -363,7 +397,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
         traceWith tracer $ RewriteSecondaryIndex chunk
-        Secondary.writeAllEntries hasFS hashInfo chunk entries
+        Secondary.writeAllEntries hasFS chunk entries
 
       -- Reconstruct the primary index from the 'Secondary.Entry's.
       --
@@ -371,8 +405,8 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       -- does not match the reconstructed primary index, overwrite it using
       -- the reconstructed index (truncate first).
       let primaryIndex = reconstructPrimaryIndex
+                           (Proxy @blk)
                            chunkInfo
-                           hashInfo
                            shouldBeFinalised
                            chunk
                            (map Secondary.blockOrEBB entries)
@@ -401,9 +435,13 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
     trace = lift . traceWith tracer
 
-    summaryToTipInfo :: BlockSummary hash -> TipInfo hash BlockOrEBB
-    summaryToTipInfo (BlockSummary entry bno) =
-      TipInfo (Secondary.headerHash entry) (Secondary.blockOrEBB entry) bno
+    summaryToTipInfo :: BlockSummary blk -> Tip blk
+    summaryToTipInfo BlockSummary {..} = Tip {
+          tipSlotNo  = summarySlotNo
+        , tipIsEBB   = isBlockOrEBB $ Secondary.blockOrEBB summaryEntry
+        , tipBlockNo = summaryBlockNo
+        , tipHash    = Secondary.headerHash summaryEntry
+        }
 
     -- | 'InvalidFileError' is the only error that can be thrown while loading
     -- a primary or a secondary index file
@@ -449,7 +487,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     --
     -- So the only thing that wouldn't go according to plan is that we will
     -- needlessly overwrite the secondary index file.
-    fixupEBB :: [Secondary.Entry hash] -> [Secondary.Entry hash]
+    fixupEBB :: forall hash. [Secondary.Entry hash] -> [Secondary.Entry hash]
     fixupEBB = \case
       entry@Secondary.Entry { blockOrEBB = EBB epoch' }:rest
         | let chunk' = unsafeEpochNoToChunkNo epoch'
@@ -458,16 +496,15 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       entries -> entries
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
-reconstructPrimaryIndex
-  :: forall hash. HasCallStack
-  => ChunkInfo
-  -> HashInfo hash
+reconstructPrimaryIndex ::
+     forall blk. (ConvertRawHash blk, HasCallStack)
+  => Proxy blk
+  -> ChunkInfo
   -> ShouldBeFinalised
   -> ChunkNo
   -> [BlockOrEBB]
   -> PrimaryIndex
-reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
-                        chunk blockOrEBBs =
+reconstructPrimaryIndex pb chunkInfo shouldBeFinalised chunk blockOrEBBs =
     fromMaybe (error nonIncreasing) $
       Primary.mk chunk . (0:) $
         go (NextRelativeSlot (firstBlockOrEBB chunkInfo chunk)) 0 $
@@ -503,7 +540,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                                       nextExpectedRelSlot
                                       lastSecondaryOffset
                   secondaryOffset = lastSecondaryOffset
-                                  + Secondary.entrySize hashSize
+                                  + Secondary.entrySize pb
               in backfilled ++ secondaryOffset
                : go (nextRelativeSlot relSlot) secondaryOffset relSlots'
 
@@ -551,7 +588,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
 --
 -- Implementation note: as currently the sole migration we need to be able to
 -- perform only requires renaming files, we keep it simple for now.
-migrate :: (IOLike m, HasCallStack) => ValidateEnv m hash h e -> m ()
+migrate :: (IOLike m, HasCallStack) => ValidateEnv m blk h -> m ()
 migrate ValidateEnv { hasFS, tracer } = do
     filesInDBFolder <- listDirectory (mkFsPath [])
     -- Any old "XXXXX.epoch" files

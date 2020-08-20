@@ -70,9 +70,11 @@ instance ( RunNode b
          , NoHardForks b
          ) => RunNode (HardForkBlock '[b]) where
 
-  nodeImmDbChunkInfo cfg                 = nodeImmDbChunkInfo (project cfg)
-  nodeCheckIntegrity cfg (DegenBlock  b) = nodeCheckIntegrity (project cfg) b
-  nodeBlockFetchSize     (DegenHeader h) = nodeBlockFetchSize               h
+  nodeImmutableDbChunkInfo cfg = nodeImmutableDbChunkInfo (project cfg)
+
+  nodeCheckIntegrity cfg (DegenBlock b) = nodeCheckIntegrity (project cfg) b
+
+  nodeBlockFetchSize (DegenHeader h) = nodeBlockFetchSize h
 
   nodeInitChainDB cfg = nodeInitChainDB (project cfg) . contramap DegenBlock
 

@@ -52,7 +52,6 @@ instance SupportedNetworkProtocolVersion DualByronBlock where
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
 
-instance ImmDbSerialiseConstraints DualByronBlock
 instance LgrDbSerialiseConstraints DualByronBlock
 instance SerialiseDiskConstraints  DualByronBlock
 

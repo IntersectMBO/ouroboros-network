@@ -11,7 +11,7 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
                      (ImmutableDBError)
 import           Ouroboros.Consensus.Storage.VolatileDB.Error (VolatileDBError)
 

@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-
+{-# LANGUAGE TypeFamilies #-}
 module HasAnalysis (
     HasAnalysis (..)
   ) where

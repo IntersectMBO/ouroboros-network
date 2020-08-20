@@ -180,7 +180,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Background
                        Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
                        Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
@@ -201,17 +200,18 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+                       Ouroboros.Consensus.Storage.ImmutableDB.Error
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-                       Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                       Ouroboros.Consensus.Storage.ImmutableDB.Types
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk

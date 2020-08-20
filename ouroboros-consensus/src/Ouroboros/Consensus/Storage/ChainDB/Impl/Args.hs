@@ -21,11 +21,11 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ChunkInfo)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -35,32 +35,32 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 data ChainDbArgs m blk = ChainDbArgs {
 
       -- HasFS instances
-      cdbHasFSImmDb           :: SomeHasFS m
-    , cdbHasFSVolatileDB      :: SomeHasFS m
-    , cdbHasFSLgrDB           :: SomeHasFS m
+      cdbHasFSImmutableDB       :: SomeHasFS m
+    , cdbHasFSVolatileDB        :: SomeHasFS m
+    , cdbHasFSLgrDB             :: SomeHasFS m
 
       -- Policy
-    , cdbImmValidation        :: ImmDB.ValidationPolicy
-    , cdbVolatileDbValidation :: VolatileDB.BlockValidationPolicy
-    , cdbMaxBlocksPerFile     :: VolatileDB.BlocksPerFile
-    , cdbParamsLgrDB          :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy           :: LgrDB.DiskPolicy
+    , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
+    , cdbVolatileDbValidation   :: VolatileDB.BlockValidationPolicy
+    , cdbMaxBlocksPerFile       :: VolatileDB.BlocksPerFile
+    , cdbParamsLgrDB            :: LgrDB.LedgerDbParams
+    , cdbDiskPolicy             :: LgrDB.DiskPolicy
 
       -- Integration
-    , cdbTopLevelConfig       :: TopLevelConfig blk
-    , cdbChunkInfo            :: ChunkInfo
-    , cdbCheckIntegrity       :: blk -> Bool
-    , cdbGenesis              :: m (ExtLedgerState blk)
-    , cdbCheckInFuture        :: CheckInFuture m blk
-    , cdbImmDbCacheConfig     :: ImmDB.CacheConfig
+    , cdbTopLevelConfig         :: TopLevelConfig blk
+    , cdbChunkInfo              :: ChunkInfo
+    , cdbCheckIntegrity         :: blk -> Bool
+    , cdbGenesis                :: m (ExtLedgerState blk)
+    , cdbCheckInFuture          :: CheckInFuture m blk
+    , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
       -- Misc
-    , cdbTracer               :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger          :: Tracer m (LgrDB.LedgerDB blk)
-    , cdbRegistry             :: ResourceRegistry m
-    , cdbGcDelay              :: DiffTime
-    , cdbGcInterval           :: DiffTime
-    , cdbBlocksToAddSize      :: Word
+    , cdbTracer                 :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger            :: Tracer m (LgrDB.LedgerDB blk)
+    , cdbRegistry               :: ResourceRegistry m
+    , cdbGcDelay                :: DiffTime
+    , cdbGcInterval             :: DiffTime
+    , cdbBlocksToAddSize        :: Word
       -- ^ Size of the queue used to store asynchronously added blocks. This
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
@@ -123,35 +123,35 @@ defaultSpecificArgs = ChainDbSpecificArgs{
 
 -- | Default arguments for use within IO
 --
--- See 'ImmDB.defaultArgs', 'VolatileDB.defaultArgs', 'LgrDB.defaultArgs', and
--- 'defaultSpecificArgs' for a list of which fields are not given a default
+-- See 'ImmutableDB.defaultArgs', 'VolatileDB.defaultArgs', 'LgrDB.defaultArgs',
+-- and 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
 defaultArgs :: FilePath -> ChainDbArgs IO blk
-defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs      fp)
-                               (VolatileDB.defaultArgs fp)
-                               (LgrDB.defaultArgs      fp)
+defaultArgs fp = toChainDbArgs (ImmutableDB.defaultArgs fp)
+                               (VolatileDB.defaultArgs  fp)
+                               (LgrDB.defaultArgs       fp)
                                defaultSpecificArgs
 
 
--- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolatileDbArgs,
+-- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
 fromChainDbArgs ::
      ChainDbArgs m blk
-  -> ( ImmDB.ImmDbArgs           m blk
-     , VolatileDB.VolatileDbArgs m blk
-     , LgrDB.LgrDbArgs           m blk
-     , ChainDbSpecificArgs       m blk
+  -> ( ImmutableDB.ImmutableDbArgs m blk
+     , VolatileDB.VolatileDbArgs   m blk
+     , LgrDB.LgrDbArgs             m blk
+     , ChainDbSpecificArgs         m blk
      )
 fromChainDbArgs ChainDbArgs{..} = (
-      ImmDB.ImmDbArgs {
-          immCodecConfig        = configCodec cdbTopLevelConfig
-        , immChunkInfo          = cdbChunkInfo
-        , immValidation         = cdbImmValidation
-        , immCheckIntegrity     = cdbCheckIntegrity
-        , immHasFS              = cdbHasFSImmDb
-        , immTracer             = contramap TraceImmDBEvent cdbTracer
-        , immCacheConfig        = cdbImmDbCacheConfig
-        , immRegistry           = cdbRegistry
+      ImmutableDB.ImmutableDbArgs {
+          immCacheConfig      = cdbImmutableDbCacheConfig
+        , immCheckIntegrity   = cdbCheckIntegrity
+        , immChunkInfo        = cdbChunkInfo
+        , immCodecConfig      = configCodec cdbTopLevelConfig
+        , immHasFS            = cdbHasFSImmutableDB
+        , immRegistry         = cdbRegistry
+        , immTracer           = contramap TraceImmutableDBEvent cdbTracer
+        , immValidationPolicy = cdbImmutableDbValidation
         }
     , VolatileDB.VolatileDbArgs {
           volCheckIntegrity   = cdbCheckIntegrity
@@ -180,42 +180,42 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     )
 
--- | Internal: construct 'ChainDbArgs' from 'ImmDbArgs', 'VolatileDbArgs,
+-- | Internal: construct 'ChainDbArgs' from 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
 --
 -- Useful in 'defaultArgs'
 toChainDbArgs ::
-     ImmDB.ImmDbArgs           m blk
-  -> VolatileDB.VolatileDbArgs m blk
-  -> LgrDB.LgrDbArgs           m blk
-  -> ChainDbSpecificArgs       m blk
-  -> ChainDbArgs               m blk
-toChainDbArgs ImmDB.ImmDbArgs{..}
-              VolatileDB.VolatileDbArgs{..}
-              LgrDB.LgrDbArgs{..}
-              ChainDbSpecificArgs{..} = ChainDbArgs{
+     ImmutableDB.ImmutableDbArgs m blk
+  -> VolatileDB.VolatileDbArgs   m blk
+  -> LgrDB.LgrDbArgs             m blk
+  -> ChainDbSpecificArgs         m blk
+  -> ChainDbArgs                 m blk
+toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
+              VolatileDB.VolatileDbArgs {..}
+              LgrDB.LgrDbArgs {..}
+              ChainDbSpecificArgs {..} = ChainDbArgs{
       -- HasFS instances
-      cdbHasFSImmDb           = immHasFS
-    , cdbHasFSVolatileDB      = volHasFS
-    , cdbHasFSLgrDB           = lgrHasFS
+      cdbHasFSImmutableDB       = immHasFS
+    , cdbHasFSVolatileDB        = volHasFS
+    , cdbHasFSLgrDB             = lgrHasFS
       -- Policy
-    , cdbImmValidation        = immValidation
-    , cdbVolatileDbValidation = volValidationPolicy
-    , cdbMaxBlocksPerFile     = volMaxBlocksPerFile
-    , cdbParamsLgrDB          = lgrParams
-    , cdbDiskPolicy           = lgrDiskPolicy
+    , cdbImmutableDbValidation  = immValidationPolicy
+    , cdbVolatileDbValidation   = volValidationPolicy
+    , cdbMaxBlocksPerFile       = volMaxBlocksPerFile
+    , cdbParamsLgrDB            = lgrParams
+    , cdbDiskPolicy             = lgrDiskPolicy
       -- Integration
-    , cdbTopLevelConfig       = lgrTopLevelConfig
-    , cdbChunkInfo            = immChunkInfo
-    , cdbCheckIntegrity       = immCheckIntegrity
-    , cdbGenesis              = lgrGenesis
-    , cdbCheckInFuture        = cdbsCheckInFuture
-    , cdbImmDbCacheConfig     = immCacheConfig
+    , cdbTopLevelConfig         = lgrTopLevelConfig
+    , cdbChunkInfo              = immChunkInfo
+    , cdbCheckIntegrity         = immCheckIntegrity
+    , cdbGenesis                = lgrGenesis
+    , cdbCheckInFuture          = cdbsCheckInFuture
+    , cdbImmutableDbCacheConfig = immCacheConfig
       -- Misc
-    , cdbTracer               = cdbsTracer
-    , cdbTraceLedger          = lgrTraceLedger
-    , cdbRegistry             = immRegistry
-    , cdbGcDelay              = cdbsGcDelay
-    , cdbGcInterval           = cdbsGcInterval
-    , cdbBlocksToAddSize      = cdbsBlocksToAddSize
+    , cdbTracer                 = cdbsTracer
+    , cdbTraceLedger            = lgrTraceLedger
+    , cdbRegistry               = immRegistry
+    , cdbGcDelay                = cdbsGcDelay
+    , cdbGcInterval             = cdbsGcInterval
+    , cdbBlocksToAddSize        = cdbsBlocksToAddSize
     }

@@ -22,7 +22,6 @@ import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
-instance SerialiseHFC xs => ImmDbSerialiseConstraints (HardForkBlock xs)
 instance SerialiseHFC xs => LgrDbSerialiseConstraints (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------

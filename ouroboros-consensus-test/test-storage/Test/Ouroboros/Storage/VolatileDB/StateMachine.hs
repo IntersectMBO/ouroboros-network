@@ -82,7 +82,7 @@ type (:@) t r = At t r
 -- | Product of all 'BlockComponent's. As this is a GADT, generating random
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
-allComponents :: BlockComponent (VolatileDB m blk) (AllComponents blk)
+allComponents :: BlockComponent blk (AllComponents blk)
 allComponents = (,,,,,,,,,)
     <$> GetBlock
     <*> GetRawBlock

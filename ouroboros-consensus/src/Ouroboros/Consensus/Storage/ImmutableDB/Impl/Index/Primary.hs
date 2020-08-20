@@ -68,10 +68,10 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+import           Ouroboros.Consensus.Storage.ImmutableDB.Error
+                     (ImmutableDBError (..), UnexpectedError (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathPrimaryIndexFile, runGet)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-                     (ImmutableDBError (..), UnexpectedError (..))
 
 {------------------------------------------------------------------------------
   SecondaryOffset

@@ -35,8 +35,7 @@ import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     DB (..))
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 
 import           Ouroboros.Consensus.Storage.VolatileDB.Error
 
@@ -55,7 +54,7 @@ data VolatileDB m blk = VolatileDB {
       -- | Return the request block component for the block with the given
       -- hash. When not in the VolatileDB, 'Nothing' is returned.
     , getBlockComponent   :: forall b. HasCallStack
-                          => BlockComponent (VolatileDB m blk) b
+                          => BlockComponent blk b
                           -> HeaderHash blk
                           -> m (Maybe b)
       -- | Store the given block in the VolatileDB.
@@ -139,16 +138,6 @@ data VolatileDB m blk = VolatileDB {
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB m blk)
 
-{-------------------------------------------------------------------------------
-  Parameterisation
--------------------------------------------------------------------------------}
-
-instance DB (VolatileDB m blk) where
-  type DBBlock      (VolatileDB m blk) = blk
-  type DBHeader     (VolatileDB m blk) = Header blk
-  type DBHeaderHash (VolatileDB m blk) = HeaderHash blk
-  type DBNestedCtxt (VolatileDB m blk) = SomeBlock (NestedCtxt Header) blk
-
 {------------------------------------------------------------------------------
   Types
 ------------------------------------------------------------------------------}
@@ -196,7 +185,7 @@ getPredecessor = fmap (fmap biPrevHash .) . getBlockInfo
 getKnownBlockComponent ::
      (MonadThrow m, HasHeader blk)
   => VolatileDB m blk
-  -> BlockComponent (VolatileDB m blk) b
+  -> BlockComponent blk b
   -> HeaderHash blk
   -> m b
 getKnownBlockComponent db blockComponent hash = do

@@ -256,7 +256,7 @@ getBlockComponentImpl ::
      , HasCallStack
      )
   => VolatileDBEnv m blk
-  -> BlockComponent (VolatileDB m blk) b
+  -> BlockComponent blk b
   -> HeaderHash blk
   -> m (Maybe b)
 getBlockComponentImpl env@VolatileDBEnv { codecConfig } blockComponent hash =
@@ -269,7 +269,7 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig } blockComponent hash =
     getBlockComponent ::
          forall b' h. HasFS m h
       -> InternalBlockInfo blk
-      -> BlockComponent (VolatileDB m blk) b'
+      -> BlockComponent blk b'
       -> m b'
     getBlockComponent hasFS ibi = \case
         GetHash       -> return hash
