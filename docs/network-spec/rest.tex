@@ -1,0 +1,328 @@
+\hide{
+\chapter{Peer Discovery and Peer Selection}
+\wip{
+  Peer discovery and peer selection are relatively independent for the core components of a node.
+  In a first iteration, it may be enough to specify what data is going from
+  the peer selection algorithm to
+  the core components and what data is going from the core components to the peer selection.
+  Also peer discovery and peer selection are relatively independent from each other.
+  }
+
+\chapter{Infrastructure}
+\label{infrastructure}
+\wip{
+  WIP: Specific assumptions about the infrastructure that are relevant for the discussion.
+}
+
+\section{Internet}
+\section{Network Topology}
+\section{DNS,NTP}
+\section{Topographical distribution of block creating nodes}
+\section{TCP}
+\section{IP}
+MTU
+\section{Operating Systems}
+\section{Firewall}
+\section{Nodes and Hosting}
+}
+
+\hide{
+\chapter{Haskell}
+While the network protocol itself can be implemented in many programming languages,
+it has been developed in parallel with a Haskell reference implementation.
+In addition to the language agnostic protocol description in the other parts of this document,
+this section discusses key aspects of the Haskell implementation.
+This section is most useful for people who work with the Haskell reference implementation and
+may give some extra insights for anybody who is interested in implementing the
+network component.
+For understanding the protocol, it is save to skip this section.
+\section{Constant Memory Consumption}
+\section{The State Machine Framework}
+\label{Haskell-state-machine}
+}
+
+\hide{
+\chapter{Discussion}
+\section{Related Work}
+\subsection{Other Crypto Currencies}
+\subsubsection{PoW Systems}
+\subsubsection{PoS Systems}
+\subsection{Generic Peer to Peer Systems}
+\subsection{Formal Correctness}
+}
+\wip{
+  The correctness of distributed and concurrent systems has been studied intensively for decades.
+\begin{description}
+\item [Safety properties]
+  Prove that a bad thing will never happen.
+  \begin{itemize}
+  \item Coins cannot be stolen
+  \item Preservation of Money
+  \item Nodes will not run out of Memory
+  \item (Property: Current state is valid) will always hold / never fail
+  \end{itemize}
+\item[Liveness properties]
+  Prove that a desired event will happen.
+  \begin{itemize}
+  \item Message will be delivered
+  \item Consensus will be reached
+  \item Transaction will be confirmed
+  \item Fairness : the desired event will happen in time. One does not have to wait forever
+  \item Starvation
+  \item Deadlocks
+  \end{itemize}
+\item[Temporal logic]
+  Tailor made logic for analysing concurrent systems.
+  \begin{itemize}
+  \item Argue about the temporal order of events in transition systems.
+  \item Express safety properties.
+  \item Express liveness properties.
+  \item Express Fairness.
+  \item Prove with model checkers.
+  \item Refinement properties.
+  \item CTL computation tree logic (safety)
+  \item LTL linear time logic (fairness)
+  \end{itemize}
+\item[Time]
+  How does a concurrent system deal with time ?
+  \begin{itemize}
+  \item Physical clocks / Wall clock time
+  \item Logical clocks / Vector clocks / order of events
+  \item Order of events : Before , Concurrent, After
+  \item Hybrid approaches, Ouroboros, slot-times
+  \end{itemize}
+\item[Session Types]
+     Model protocols and transition systems in a type system.
+\item[Pi-calculus]
+\item[Process algebras]
+\end{description}
+}
+\hide{
+\wip{WIP: Poldercast,etc}
+\section{Overview}
+}
+\section{Design Discussion}
+\subsubsection{Why distinguish between node to node and node-to-consumer IPC}
+\label{why_distinguish_protocols}
+We use two different sets of protocols for these two use cases.
+
+\begin{description}
+\item[node-to-node] IPC between nodes that are engaged in the high level Ouroboros
+      blockchain consensus protocol.
+\item[node-to-consumer] IPC between a Cardano node and a `chain consumer' component such as a
+      wallet, explorer or other custom application.
+\end{description}
+
+This section describes the differences between those two variants of IPC and why they use
+different protocols.
+
+The node-to-node protocol is conducted in a P2P environment
+with very limited trust between peers. The node-to-node protocol utilises
+store-and-forward over selected \emph{bearers} which form the underlying
+connectivity graph. A concern in this setting is asymmetric resource
+consumption attacks. Ease of implementation is desirable, but is
+subordinate to the other hard constraints.
+
+A node-to-consumer protocol is intended to support blockchain applications
+like wallets and explorers, or Cardano-specific caches or proxies. The setting
+here is that a consumer trusts a node (a `chain producer') and just wants to
+catch up and keep up with the blockchain of that producer. It is assumed that
+a consumer only consumes from one producer (or one of a related set of
+producers), so unlike in the node-to-node protocol there is no need to choose
+between different available chains. The producer may still not fully trust the
+consumer and does not want to be subject to asymmetric resource
+consumption attacks. In this use case, because of the wider range of
+applications that wish to consume the blockchain, having some options that are
+easy to implement is more important, even if this involves a trade-off with
+performance. That said, there are also use cases where tight integration is
+possible and making the most efficient use of resources is more desirable.
+
+There are a number of applications that simply want to consume the blockchain,
+but are able to rely on an upstream trusted or semi-trusted Cardano consensus
+node. These applications do not need to engage in the full consensus protocol,
+and may be happy to delegate the necessary chain validation.
+
+Examples include 3rd party applications that want to observe the blockchain,
+examples being business processes triggered by transactions or analytics.  It
+may also include certain kinds of light client that wish to follow the
+blockchain but not do full validation.
+
+Once one considers a node-to-consumer protocol as a first class citizen then it
+opens up opportunities for different system architecture choices.
+The architecture of the original Cardano Mainnet release was entirely homogeneous:
+every node behaved the same, each trusted nothing but itself and paid the full
+networking and processing cost of engaging in the consensus protocol.  In
+particular everything was integrated into a single process: the consensus
+algorithm itself, serving data to other peers and components such as the wallet
+or explorer. If we were to have a robust and efficient node-to-consumer protocol
+then we can make many other choices.
+
+With an efficient \emph{local} IPC protocol we can have applications
+like wallets and explorers as separate processes. Even for tightly
+integrated components it can make sense to run them in separate OS
+processes and using associated OS management tools. Not only are the
+timing constraints for a consensus node much easier to manage when
+it does not have to share CPU resources with chain consumers,
+but it enables sophisticated end-users to use operating system features
+to have finer control over resource consumption.
+There have been cases in production where a highly loaded wallet component takes
+more than its allowed allocation of CPU resources and causes the local
+node to miss its deadlines.  By giving a consensus node a dedicated
+CPU core it becomes easier to provide the necessary hard real
+time guarantees. In addition, scaling on multi-core machines is
+significantly easier with multiple OS processes than with a
+multi-threaded OS process with a shared-heap. This could allow
+larger capacity Cardano relay deployments where there are multiple
+network facing proxy processes that all get their chain from a single
+local consensus node.
+
+With an efficient \emph{network} IPC protocol we can do similar things
+but extend it across multiple machines. This permits: large
+organisations to achieve better alignment with their security
+policies; clusters of relays operated by a single organisation to use
+the more efficient (less resource costly) node-to-consumer protocol
+instead of the node-to-node protocol; and wallet
+or explorer-like applications that need to scale out, and are able to
+make use of a trusted node.
+
+\hide{
+\section{Requirements}
+\section{Threat Vectors}
+\wip{
+\begin{description}
+\item [Generic Attacks against IP networks]
+\item [Attacks against a specific implementation of the protocol]
+\item [Attacks against a specific configuration of the system]
+\item [Attacks against the network protocol itself]
+\item [Attacks against Ouroboros]
+\item [Clever combinations of the above]
+\end{description}
+}
+\subsubsection{Asymptotic Resource Consumption}
+\section{Results from Simulations}
+\section{Pub Sub}
+\section{Of the Shelf Protocols}
+\section{Congestion Control}
+\subsection{DeltaQ and Back-pressure}
+\label{deltaq-discussion}
+\wip{WIP: discuss DeltaQ and Back-pressure}
+
+\section{Meta Requirements}
+\subparagraph{Work in Progress}
+This document is evolved in parallel with the work on the protocol design and
+the reference implementation.
+
+\subparagraph{The Document should be Comprehensive}
+\begin{itemize}
+\item Top down approach.
+\item Provide the big picture.
+\item Usable as a reference point for a broader discussion.
+\item Cover every aspect that is related to network connections.
+\item Every aspect should at least have a place in the table of contents.
+  If there are holes and parts that are not covered the document should say what is missing.
+\item Stand alone readable with links to where missing pieces can be found.
+\end{itemize}
+
+\subparagraph{Detailed}
+\begin{itemize}
+\item Sufficient details to allow for new independent implementations that are compatible with
+the reference implementation
+\item Language agnostic (it is save to skip the Haskell specific parts)
+\item Design discussions
+\end{itemize}
+\subparagraph{Structured}
+\begin{itemize}
+\item Parts of the document should be in a logical connection
+\end{itemize}
+\subparagraph{Workflow}
+}
+
+\appendix
+\chapter{CDDL Specification of the Protocol Messages}
+\label{CBOR-section}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/PingPong/Codec.hs}
+\label{included-cddl}
+This Sections contains the CDDL\cite{cddl} specification
+of the binary serialisation format of the network protocol messages.
+
+To keep this Section in close sync with the actual Haskell implementation
+the names of the Haskell identifiers have been reused for the corresponding
+CBOR types (with the first letter converted to lower case).
+Note, that, for readability, the previous Sections used simplified message identifiers,
+for example {\tt RequestNext} instead of {\tt msgRequestNext}, etc.
+Both identifiers refer to the same message format.
+
+All transmitted messages satisfy the shown CDDL specification.
+However, CDDL, by design, also permits variants in the encoding that are not valid in the protocol.
+In particular, the notation ${\tt [} ... {\tt ]}$ in CDDL can be used for both fixed-length
+and variable-length CBOR-list, while only one of the two encodings is valid in the protocol.
+We add comments in specification to make clear which encoding must be used.
+
+Note that, in the case of the request-response mini protocol (Section~ref{request-response-protocol})
+there in only ever one possible kind of message in each state.
+This means that there is no need to tag messages at all
+and the protocol can directly transmit the plain request and response data.
+
+\wip{TODO: test that haskell(message) => cddl(message) }
+\lstinputlisting{messages.cddl}
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\hide{
+\chapter{Key Figures of the Protocol and the P2P Network}
+This section list some key figures of the network protocol.
+There is a variety of figures that quantify some aspects of the protocol, for example:
+\begin{itemize}
+\item Configuration parameters that are explicitly set in the protocol.
+\item Requirements and performance targets.
+\item Implicit assumptions about about network bandwidths, etc.
+\item Estimates from simulations and game theoretic results.
+\end{itemize}
+These figures can be a fixed value, a possible interval, a distribution of values,
+or just a rough estimate and typically these figures depend on each other.
+The figures in this section are not set in stone, but they should help to give a baseline that helps
+to understand the protocol design.
+
+Block chain parameters:\\
+\begin{tabular}{p{4cm}p{1cm}p{6cm}p{1cm}} \hline
+  maximum block size   & = & 2 M Bytes                                    &  \\ \hline
+  slot time            & = & 20s                                          &  \\ \hline
+  epoch length         & = & 22600 slots $\simeq$ 5 days                  &  \\ \hline
+  intrinsic probability of a fork & = &                                   &  \\ \hline
+  K parameter (maximal roll back) & = &                                   &  \\ \hline
+\end{tabular}\\
+
+Transaction:\\
+\begin{tabular}{p{4cm}p{1cm}p{6cm}p{1cm}} \hline
+  size of a transaction                & = &  some K Bytes               &  \\ \hline
+  through-put transactions per second   & = &  15                        &  \\ \hline
+\end{tabular}\\
+
+Network topology:\\
+\begin{tabular}{p{4cm}p{1cm}p{6cm}p{1cm}} \hline
+  maximum hops                         & $\le$ &  5                         &  \\ \hline
+  maximum number of neighbours          & = &  5                         &  \\ \hline
+\end{tabular}
+
+\begin{tabular}{p{4cm}p{1cm}p{6cm}p{1cm}} \hline
+  bandwidth stake pool                             & = &  > 100Mbit/s             &  \\ \hline
+  bandwidth small stake holder                    & = &  ~ 100Mbit/s             &  \\ \hline
+  bandwidth none staking chain consumer          & = &  5                       &  \\ \hline
+  latency  between stake pool nodes                & <10 ms                       &  \\ \hline
+\end{tabular}\\
+
+
+\chapter{Nomenclature}
+\begin{description}
+\item[Adversary / Adversarial Action]
+  acting in way to subvert the correct (or performant) operation of the distributed protocol.
+  Note that non-performance of certain functions at appropriate times can
+  fall into this category.
+\item[Core DIF]
+  The set of end points that belong to the (major)
+  stakepools; (the term DIF taken from RINA\ref{RINA} where it denotes
+  a (potentially closed) set of potential participants.
+\item[egress,ingress]
+\item[head of line blocking]
+\end{description}
+}

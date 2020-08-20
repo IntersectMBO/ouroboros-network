@@ -1,0 +1,135 @@
+\documentclass{report}
+\usepackage{etoolbox}
+\newbool{isRelease}
+\IfFileExists{.isRelease}{\booltrue{isRelease}}{\boolfalse{isRelease}}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amssymb, latexsym, mathtools}
+\usepackage{times}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{natbib}
+\usepackage{framed}
+\ifbool{isRelease}
+    {\usepackage[disable]{todonotes}}
+    {\usepackage{todonotes}}
+
+\usepackage{tikz}
+\usetikzlibrary{automata, positioning, arrows}
+\tikzset{
+    state/.style={
+           rectangle,
+           rounded corners,
+           draw=black, very thick,
+           minimum height=2em,
+           inner sep=2pt,
+           text centered,
+           },
+}
+
+
+\usepackage{microtype}
+\usepackage{graphicx,color}
+
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor={blue},
+  citecolor={blue},
+  urlcolor={blue},
+  linkbordercolor={},
+  citebordercolor={},
+  urlbordercolor={}
+}
+\usepackage[capitalise,noabbrev,nameinlink]{cleveref}
+
+\usetikzlibrary{arrows}
+
+\newcommand{\coot}[1]{\textcolor{violet}{\emph{#1}}}
+\newcommand{\njd}[1]{\textcolor{purple}{\emph{#1}}}
+\newcommand{\avieth}[1]{\textcolor{blue}{\emph{#1}}}
+\newcommand{\dcoutts}[1]{\textcolor{orange}{\emph{#1}}}
+\addtolength{\marginparwidth}{-0.1\marginparwidth}
+
+\newcommand{\var}[1]{\mathit{#1}}
+\newcommand{\type}[1]{\mathsf{#1}}
+\newcommand{\powerset}[1]{\mathbb{P}(#1)}
+\newcommand{\order}[1]{\mathcal{O}\left(#1\right)}
+\newcommand{\restrictdom}{\lhd}
+\newcommand{\subtractdom}{\mathbin{\slashed{\restrictdom}}}
+\newcommand{\restrictrange}{\rhd}
+
+\ifbool{isRelease}
+       {
+         \newcommand{\hsref}[1]{}
+         \newcommand{\wip}[1]{}
+         \newcommand{\hide}[1]{}
+       }
+       {
+         \newcommand{\hsref}[1]
+                    {\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}
+                      {\emph{Haskell source: #1}}}
+         \newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
+         \newcommand{\hide}[1]{}
+       }
+\newcommand{\trans}[1]{\texttt{#1}}
+\newcommand{\state}[1]{\texttt{#1}}
+\newcommand{\msg}[1]{\texttt{#1}}
+\newcommand{\Idle}{\state{Idle}}
+\newcommand{\Busy}{\state{Busy}}
+\newcommand{\Done}{\state{Done}}
+\newcommand{\MsgDone}{\msg{MsgDone}}
+
+% TODO: the document is using `\langle` and `\rangle` to denote lists, maybe
+% it's better to use Haskell notation, will it be more in sync with other docs
+% produced by the formal method team?
+\renewcommand{\langle}{[}
+\renewcommand{\rangle}{]}
+
+\DeclareMathOperator{\dom}{dom}
+\DeclareMathOperator{\range}{range}
+\DeclareMathOperator*{\argmin}{arg\,min} % thin space, limits underneath in displays
+\DeclareMathOperator*{\minimum}{min}
+\DeclareMathOperator*{\maximum}{max}
+
+\raggedbottom
+
+\begin{document}
+
+\title{The Shelley Networking Protocol \\
+  {\small (Version 1.0.0 , Revision \input{revisioncount})} \\
+  {\large \sc An IOHK technical report}}
+\author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
+                         {\small \texttt{duncan.coutts@iohk.io}}
+   \and Alex Vieth \\ {\small \texttt{alex@well-typed.com}}
+   \and Neil Davies \\ {\small \texttt{neil.davies@pnsol.com}} \\
+                       {\small \texttt{neil.davies@iohk.io}}
+   \and Marcin Szamotulski \\ {\small \texttt{marcin.szamotulski@iohk.io}}
+   \and Karl Knutsson \\ {\small \texttt{karl.knutsson@iohk.io}}
+   \and Marc Fontaine \\ {\small \texttt{marc.fontaine@iohk.io}}
+   }
+\date{\today}
+
+\maketitle
+
+\begin{abstract}
+  This document describes .....
+\end{abstract}
+
+\tableofcontents
+
+\section*{Version history}
+
+\begin{description}
+\item[Version 1.0.0 Nov 2019, State machines and wire format for Ouroboros-Network-1.0.0.]
+\end{description}
+% \include{intro}
+\include{architecture}
+\include{miniprotocols}
+\include{mux}
+% \include{rest}
+\appendix
+\include{cddl}
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}
