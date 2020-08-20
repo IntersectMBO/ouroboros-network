@@ -106,14 +106,16 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
         decisionJobs  = [],
         decisionState = st {
                           activePeers       = activePeers
-                                                Set.\\ Map.keysSet demotedToWarm,
+                                                Set.\\ Map.keysSet demotions,
                           establishedPeers  = establishedPeers
                                                 Map.\\ demotedToCold,
 
                           -- Note that we do not use establishedStatus' which
                           -- has the synchronous ones that are supposed to be
                           -- handled elsewhere. We just update the async ones:
-                          establishedStatus = establishedStatus <> demotions
+                          establishedStatus = demotedToWarm
+                                                <> establishedStatus
+                                                Map.\\ demotedToCold
                         }
       }
   where
