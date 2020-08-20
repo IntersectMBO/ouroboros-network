@@ -6,6 +6,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -24,6 +25,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
     Consensus
   , chainSyncClient
   , bracketChainSyncClient
+  , ChainSyncClientResult (..)
   , ChainSyncClientException (..)
   , ChainDbView (..)
   , defaultChainDbView
@@ -42,7 +44,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -77,7 +78,7 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
-   client (Header blk) (Tip blk) m Void
+   client (Header blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView
@@ -365,10 +366,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- intersect, disconnect by throwing the exception obtained by calling the
     -- passed function.
     findIntersection
-      :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientException)
+      :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientResult)
          -- ^ Exception to throw when no intersection is found.
       -> Stateful m blk () (ClientPipelinedStIdle 'Z)
-    findIntersection mkEx = Stateful $ \() -> do
+    findIntersection mkResult = Stateful $ \() -> do
       (ourFrag, ourHeaderState, ourTip) <- atomically $ (,,)
         <$> getCurrentChain
         <*> (headerState <$> getCurrentLedger)
@@ -390,8 +391,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
         { recvMsgIntersectFound = \i theirTip' ->
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
-        , recvMsgIntersectNotFound = \theirTip' -> traceException $
-            disconnect $ mkEx ourTip (Their theirTip')
+        , recvMsgIntersectNotFound = \theirTip' ->
+            return $ terminate $ mkResult ourTip (Their theirTip')
         }
 
     -- | One of the points we sent intersected our chain. This intersection
@@ -624,27 +625,35 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
-      mbKisAndLedgerView <- atomically $ do
+      intersectCheck <- atomically $ do
         -- Before obtaining a 'LedgerView', we must find the most recent
         -- intersection with the current chain. Note that this is cheap when
         -- the chain and candidate haven't changed.
         mKis' <- intersectsWithCurrentChain kis
         case mKis' of
-          Nothing -> return Nothing
-          Just kis'@KnownIntersectionState { ourTip, mostRecentIntersection } -> do
-            ledgerView <-
-              getLedgerView hdr mostRecentIntersection ourTip theirTip
-            return $ Just (kis', ledgerView)
+          Nothing -> return NoLongerIntersects
+          Just kis'@KnownIntersectionState { ourTip, mostRecentIntersection } ->
+            getLedgerView hdr mostRecentIntersection ourTip theirTip >>= \case
+              Left  result     -> return $ Uninteresting result
+              Right ledgerView -> return $ Intersects kis' ledgerView
 
-      case mbKisAndLedgerView of
-        Nothing ->
+      case intersectCheck of
+        NoLongerIntersects ->
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
           -- first drain the pipe.
           continueWithState ()
             $ drainThePipe n
             $ findIntersection NoMoreIntersection
-        Just (kis', ledgerView) -> do
+
+        Uninteresting result ->
+          -- The upstream chain is no longer interesting to us, gracefully
+          -- terminate with the given result
+          continueWithState ()
+            $ drainThePipe n
+            $ Stateful $ const $ return $ terminate result
+
+        Intersects kis' ledgerView -> do
           -- Our chain still intersects with the candidate fragment and we
           -- have obtained a 'LedgerView' that we can use to validate @hdr@.
 
@@ -700,11 +709,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- outdated) view of our chain, i.e. 'ourFrag', we /only/ use
     -- @curLedger@ to validate /their/ header, even in the special case
     -- discussed below.
-    getLedgerView :: Header blk
-                  -> Point blk   -- ^ Intersection between our and their chain
-                  -> Our (Tip blk)       -- ^ Only to produce an error message
-                  -> Their (Tip blk)     -- ^ Only to produce an error message
-                  -> STM m (Ticked (LedgerView (BlockProtocol blk)))
+    getLedgerView ::
+         Header blk
+      -> Point blk        -- ^ Intersection between our and their chain
+      -> Our (Tip blk)    -- ^ Only to produce an error message
+      -> Their (Tip blk)  -- ^ Only to produce an error message
+      -> STM m (Either ChainSyncClientResult
+                       (Ticked (LedgerView (BlockProtocol blk))))
     getLedgerView hdr intersection ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
 
@@ -721,14 +732,14 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                curLedger
                (pointSlot intersection) of
           Nothing -> -- Case (2)
-            disconnect $
+            return $ Left $
               InvalidRollForward (realPointToPoint hdrPoint) ourTip theirTip
           Just forecast ->
             case runExcept $ forecastFor forecast (realPointSlot hdrPoint) of
               Left OutsideForecastRange{} -> -- Case (1)
                 retry
               Right lv ->
-                return lv
+                return $ Right lv
       where
         hdrPoint = headerRealPoint hdr
 
@@ -798,6 +809,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
       atomically $ writeTVar varCandidate theirFrag'
 
       continueWithState kis' $ nextStep mkPipelineDecision n theirTip
+
+    -- | Gracefully terminate the connection with the upstream node with the
+    -- given result.
+    terminate :: ChainSyncClientResult -> Consensus (ClientPipelinedStIdle 'Z) blk m
+    terminate = SendMsgDone
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
@@ -905,6 +921,21 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       traceWith tracer $ TraceException ex
       throwM ex
 
+-- | Auxiliary data type used as an intermediary result in 'rollForward'.
+data IntersectCheck blk =
+    -- | The upstream chain no longer intersects with our current chain because
+    -- our current chain changed in the background.
+    NoLongerIntersects
+    -- | The upstream chain still interects with our current chain, but is no
+    -- longer interesting. Gracefully terminate with the given result.
+  | Uninteresting ChainSyncClientResult
+    -- | The upstream chain still intersects with our chain, return the
+    -- resulting 'KnownIntersectionState' and the 'LedgerView' corresponding to
+    -- the header 'rollForward' received.
+  | Intersects
+      (KnownIntersectionState blk)
+      (Ticked (LedgerView (BlockProtocol blk)))
+
 {-------------------------------------------------------------------------------
   Explicit state
 -------------------------------------------------------------------------------}
@@ -925,22 +956,25 @@ continueWithState !s (Stateful f) =
     checkInvariant (unsafeNoUnexpectedThunks s) $ f s
 
 {-------------------------------------------------------------------------------
-  Exception
+  Return value
 -------------------------------------------------------------------------------}
 
-data ChainSyncClientException =
+-- | The Chain sync client only _gracefully_ terminates when the upstream node's
+-- chain is not interesting (e.g., forked off too far in the past). By
+-- gracefully terminating, the network layer can keep the other mini-protocols
+-- connect to the same upstream node running.
+--
+-- For example, a relay node will often receive connections from nodes syncing
+-- from scratch or an old chain. Since these nodes have a chain that is shorter
+-- than the relay node's chain, it's useless for the relay node to run the
+-- client-side of the chain sync protocol. However, the other direction of the
+-- protocol, and, e.g., the transaction submission protocol, should keep
+-- running.
+data ChainSyncClientResult =
       -- | The server we're connecting to forked more than @k@ blocks ago.
       forall blk. BlockSupportsProtocol blk =>
         ForkTooDeep
           (Point blk)  -- ^ Intersection
-          (Our   (Tip blk))
-          (Their (Tip blk))
-
-      -- | Header validation threw an error.
-    | forall blk. (BlockSupportsProtocol blk, ValidateEnvelope blk) =>
-        HeaderError
-          (Point blk)  -- ^ Invalid header
-          (HeaderError blk)
           (Our   (Tip blk))
           (Their (Tip blk))
 
@@ -955,6 +989,52 @@ data ChainSyncClientException =
     | forall blk. BlockSupportsProtocol blk =>
         InvalidRollForward
           (Point blk)  -- ^ Roll forward to this header
+          (Our   (Tip blk))
+          (Their (Tip blk))
+
+      -- | Our chain changed such that it no longer intersects with the
+      -- candidate's fragment, and asking for a new intersection did not yield
+      -- one.
+    | forall blk. BlockSupportsProtocol blk =>
+        NoMoreIntersection
+          (Our   (Tip blk))
+          (Their (Tip blk))
+
+deriving instance Show ChainSyncClientResult
+
+instance Eq ChainSyncClientResult where
+  ForkTooDeep (a :: Point blk) b c == ForkTooDeep (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  ForkTooDeep{} == _ = False
+
+  InvalidRollForward (a :: Point blk) b c == InvalidRollForward (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  InvalidRollForward{} == _ = False
+
+  NoMoreIntersection (a :: Our (Tip blk)) b == NoMoreIntersection (a' :: Our (Tip blk')) b' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b) == (a', b')
+  NoMoreIntersection{} == _ = False
+
+{-------------------------------------------------------------------------------
+  Exception
+-------------------------------------------------------------------------------}
+
+-- | When the upstream node violates the protocol or exhibits malicious
+-- behaviour, e.g., serving an invalid header or a header corresponding to a
+-- known invalid block, we throw an exception to disconnect. This will bring
+-- down all miniprotocols in both directions with that node.
+data ChainSyncClientException =
+      -- | Header validation threw an error.
+      forall blk. (BlockSupportsProtocol blk, ValidateEnvelope blk) =>
+        HeaderError
+          (Point blk)  -- ^ Invalid header
+          (HeaderError blk)
           (Our   (Tip blk))
           (Their (Tip blk))
 
@@ -973,14 +1053,6 @@ data ChainSyncClientException =
     | forall blk. BlockSupportsProtocol blk =>
         InvalidIntersection
           (Point blk)  -- ^ Intersection
-          (Our   (Tip blk))
-          (Their (Tip blk))
-
-      -- | Our chain changed such that it no longer intersects with the
-      -- candidate's fragment, and asking for a new intersection did not yield
-      -- one.
-    | forall blk. BlockSupportsProtocol blk =>
-        NoMoreIntersection
           (Our   (Tip blk))
           (Their (Tip blk))
 
@@ -1005,23 +1077,11 @@ data ChainSyncClientException =
 deriving instance Show ChainSyncClientException
 
 instance Eq ChainSyncClientException where
-  ForkTooDeep (a :: Point blk) b c == ForkTooDeep (a' :: Point blk') b' c' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> (a, b, c) == (a', b', c')
-  ForkTooDeep{} == _ = False
-
   HeaderError (a :: Point blk) b c d == HeaderError (a' :: Point blk') b' c' d' =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> (a, b, c, d) == (a', b', c', d')
   HeaderError{} == _ = False
-
-  InvalidRollForward (a :: Point blk) b c == InvalidRollForward (a' :: Point blk') b' c' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> (a, b, c) == (a', b', c')
-  InvalidRollForward{} == _ = False
 
   InvalidRollBack (a :: Point blk) b c == InvalidRollBack (a' :: Point blk') b' c' =
     case eqT @blk @blk' of
@@ -1034,12 +1094,6 @@ instance Eq ChainSyncClientException where
       Nothing   -> False
       Just Refl -> (a, b, c) == (a', b', c')
   InvalidIntersection{} == _ = False
-
-  NoMoreIntersection (a :: Our (Tip blk)) b == NoMoreIntersection (a' :: Our (Tip blk')) b' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> (a, b) == (a', b')
-  NoMoreIntersection{} == _ = False
 
   DoesntFit (a :: ChainHash blk) b c d == DoesntFit (a' :: ChainHash blk') b' c' d' =
     case eqT @blk @blk' of

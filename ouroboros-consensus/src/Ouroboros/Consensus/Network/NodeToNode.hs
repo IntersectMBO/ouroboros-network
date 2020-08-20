@@ -38,7 +38,6 @@ import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import           Data.Proxy (Proxy (..))
-import           Data.Void (Void)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
@@ -101,7 +100,7 @@ data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
         -> StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
+        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the

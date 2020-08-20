@@ -25,6 +25,20 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException,
                      TempRegistryException)
 
+-- Exception raised during interaction with the peer
+--
+-- The list below should contain an entry for every type declared as an
+-- instance of 'Exception' within ouroboros-consensus.
+--
+-- If a particular exception is not handled by any policy, a default
+-- kicks in, which currently means logging the exception and disconnecting
+-- from the peer (in both directions), but allowing an immediate
+-- reconnect. This is fine for exceptions that only affect that peer.
+-- It is however essential that we handle exceptions here that /must/
+-- shut down the node (mainly storage layer errors).
+--
+-- TODO: Talk to devops about what they should do when the node does
+-- terminate with a storage layer exception (restart with full recovery).
 consensusRethrowPolicy :: RethrowPolicy
 consensusRethrowPolicy =
        mkRethrowPolicy (\_ctx (_ :: DbMarkerError) -> shutdownNode)
@@ -78,12 +92,9 @@ consensusRethrowPolicy =
        -- because we have diverged too much.
     <> mkRethrowPolicy (\_ctx e ->
           case e of
-            ForkTooDeep{}         -> distantPeer
             HeaderError{}         -> theyBuggyOrEvil
-            InvalidRollForward{}  -> distantPeer
             InvalidRollBack{}     -> theyBuggyOrEvil
             InvalidIntersection{} -> theyBuggyOrEvil
-            NoMoreIntersection{}  -> distantPeer
             DoesntFit{}           -> theyBuggyOrEvil
             -- A block so far in the future that it exceeds the max clock
             -- skew is also considered to be invalid
