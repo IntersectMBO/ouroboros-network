@@ -9,7 +9,7 @@ module Ouroboros.Network.KeepAlive
   , keepAliveClient
   , keepAliveServer
 
-  , TraceKeepAliveClient
+  , TraceKeepAliveClient (..)
   ) where
 
 import           Control.Exception (assert)
