@@ -57,10 +57,8 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
-  , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
-
-    -- | Used to trace the 'ForgeStateInfo' whenever it is updated
   , forgeStateInfoTracer         :: f (ForgeStateInfo blk)
+  , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
   }
 
 instance (forall a. Semigroup (f a))
