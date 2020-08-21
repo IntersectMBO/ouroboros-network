@@ -67,6 +67,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
@@ -1180,6 +1181,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
              -- ^ protocol name
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
+             -> ControlMessageSTM m
              -> NodeId
              -> Channel m msg
              -> m ((), trailingBytes)
@@ -1187,6 +1189,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
+             -> ControlMessageSTM m
              -> NodeId
              -> Channel m msg
              -> m ((), trailingBytes)
@@ -1198,8 +1201,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( fst <$> client app1 version (fromCoreNodeId node2) chan
-             , fst <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( fst <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
+             , fst <$> server app2 version (return Continue) (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests
@@ -1239,10 +1242,10 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
     wrapMPEE ::
          Exception e
       => (e -> MiniProtocolExpectedException)
-      -> (app -> version -> peer -> chan -> m a)
-      -> (app -> version -> peer -> chan -> m a)
-    wrapMPEE f m = \app ver them chan ->
-        catch (m app ver them chan) $ throwM . f
+      -> (app -> version -> controlMsg -> peer -> chan -> m a)
+      -> (app -> version -> controlMsg -> peer -> chan -> m a)
+    wrapMPEE f m = \app ver controlMsg them chan ->
+        catch (m app ver controlMsg them chan) $ throwM . f
 
     -- terminates when the vertex starts 'VFalling'
     --
