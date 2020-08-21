@@ -87,7 +87,8 @@ data BlockForging m blk = BlockForging {
       -- When the node can be a leader, this will be called at the start of
       -- each slot, right before calling 'checkCanForge'.
       --
-      -- When 'Updated' is returned, we trace the changed 'ForgeStateInfo'.
+      -- When 'Updated' or 'Unchanged' is returned, we trace the
+      -- 'ForgeStateInfo'.
       --
       -- When 'UpdateFailed' is returned, we trace the 'ForgeStateUpdateError'
       -- and don't call 'checkCanForge'.
@@ -168,19 +169,18 @@ checkShouldForge ::
   -> Ticked (ChainDepState (BlockProtocol blk))
   -> m (ShouldForge blk)
 checkShouldForge BlockForging{..}
-               forgeStateInfoTracer
-               cfg
-               slot
-               tickedChainDepState = do
+                 forgeStateInfoTracer
+                 cfg
+                 slot
+                 tickedChainDepState = do
     eForgeStateInfo <-
       updateForgeState slot >>= \updateInfo ->
         case getForgeStateUpdateInfo updateInfo of
           Updated info -> do
             traceWith forgeStateInfoTracer info
             return $ Right info
-          Unchanged info ->
-            -- We intentionally do no trace the 'ForgeStateInfo' when it did not
-            -- change.
+          Unchanged info -> do
+            traceWith forgeStateInfoTracer info
             return $ Right info
           UpdateFailed err ->
             return $ Left err
