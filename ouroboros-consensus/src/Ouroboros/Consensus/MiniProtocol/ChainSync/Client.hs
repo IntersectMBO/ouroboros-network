@@ -55,6 +55,7 @@ import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Tip, getTipBlockNo, getTipPoint)
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
@@ -342,6 +343,7 @@ chainSyncClient
     -> TopLevelConfig blk
     -> ChainDbView m blk
     -> NodeToNodeVersion
+    -> ControlMessageSTM m
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
@@ -351,8 +353,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 , getOurTip
                 , getIsInvalidBlock
                 }
-                 _version
-                 varCandidate = ChainSyncClientPipelined $
+                _version
+                controlMessageSTM
+                varCandidate = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
@@ -516,6 +519,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- This is the main place we check whether our current chain has changed.
     -- We also check it in 'rollForward' to make sure we have an up-to-date
     -- intersection before calling 'getLedgerView'.
+    --
+    -- This is also the place where we checked whether we're asked to terminate
+    -- by the mux layer.
     nextStep :: MkPipelineDecision
              -> Nat n
              -> Their (Tip blk)
@@ -523,22 +529,28 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   (KnownIntersectionState blk)
                   (ClientPipelinedStIdle n)
     nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
-      mKis' <- atomically $ intersectsWithCurrentChain kis
-      case mKis' of
-        Just kis'@KnownIntersectionState { theirFrag } -> do
-          -- Our chain (tip) didn't change or if it did, it still intersects
-          -- with the candidate fragment, so we can continue requesting the
-          -- next block.
-          atomically $ writeTVar varCandidate theirFrag
-          let candTipBlockNo = AF.headBlockNo theirFrag
-          return $ requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
-        Nothing ->
-          -- Our chain (tip) has changed and it no longer intersects with the
-          -- candidate fragment, so we have to find a new intersection, but
-          -- first drain the pipe.
-          continueWithState ()
-            $ drainThePipe n
-            $ findIntersection NoMoreIntersection
+      atomically controlMessageSTM >>= \case
+        -- We have been asked to terminate the client
+        Terminate ->
+          terminateAfterDrain n $ AskedToTerminate
+        _continue -> do
+          mKis' <- atomically $ intersectsWithCurrentChain kis
+          case mKis' of
+            Just kis'@KnownIntersectionState { theirFrag } -> do
+              -- Our chain (tip) didn't change or if it did, it still intersects
+              -- with the candidate fragment, so we can continue requesting the
+              -- next block.
+              atomically $ writeTVar varCandidate theirFrag
+              let candTipBlockNo = AF.headBlockNo theirFrag
+              return $
+                requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
+            Nothing ->
+              -- Our chain (tip) has changed and it no longer intersects with
+              -- the candidate fragment, so we have to find a new intersection,
+              -- but first drain the pipe.
+              continueWithState ()
+                $ drainThePipe n
+                $ findIntersection NoMoreIntersection
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
@@ -1015,6 +1027,9 @@ data ChainSyncClientResult =
           (Our   (Tip blk))
           (Their (Tip blk))
 
+      -- | We were asked to terminate via the 'ControlMessageSTM'
+    | AskedToTerminate
+
 deriving instance Show ChainSyncClientResult
 
 instance Eq ChainSyncClientResult where
@@ -1041,6 +1056,9 @@ instance Eq ChainSyncClientResult where
       Nothing   -> False
       Just Refl -> (a, b, c) == (a', b', c')
   RolledBackPastIntersection{} == _ = False
+
+  AskedToTerminate == AskedToTerminate = True
+  AskedToTerminate == _ = False
 
 {-------------------------------------------------------------------------------
   Exception

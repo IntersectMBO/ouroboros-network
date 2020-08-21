@@ -101,6 +101,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
+        -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
@@ -421,7 +422,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       -> remotePeer
       -> Channel m bCS
       -> m ((), Maybe bCS)
-    aChainSyncClient version _controlMessageSTM them channel = do
+    aChainSyncClient version controlMessageSTM them channel = do
       labelThisThread "ChainSyncClient"
       -- Note that it is crucial that we sync with the fetch client "outside"
       -- of registering the state for the sync client. This is needed to
@@ -444,7 +445,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version varCandidate
+                  $ hChainSyncClient version controlMessageSTM varCandidate
               return ((), trailing)
 
     aChainSyncServer

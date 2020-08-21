@@ -27,10 +27,9 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto.DSIGN.Mock
 
-import           Ouroboros.Network.Block (getTipPoint)
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (getTipPoint)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
@@ -38,6 +37,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (chainState,
                      initChainProducerState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.Mux (ControlMessage (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -292,6 +292,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                    nodeCfg
                    chainDbView
                    maxBound
+                   (return Continue)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
