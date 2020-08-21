@@ -63,6 +63,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
@@ -1171,6 +1172,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           -> (String -> a -> RestartCause)
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
+             -> ControlMessageSTM m
              -> NodeId
              -> Channel m msg
              -> m (a, trailingBytes)
@@ -1178,6 +1180,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
+             -> ControlMessageSTM m
              -> NodeId
              -> Channel m msg
              -> m (a, trailingBytes)
@@ -1189,8 +1192,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( (ret (proto <> ".client") . fst) <$> client app1 version (fromCoreNodeId node2) chan
-             , (ret (proto <> ".server") . fst) <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( (ret (proto <> ".client") . fst) <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
+             , (ret (proto <> ".server") . fst) <$> server app2 version (return Continue) (fromCoreNodeId node1) dualChan
              )
 
     (>>= withAsyncsWaitAny) $
