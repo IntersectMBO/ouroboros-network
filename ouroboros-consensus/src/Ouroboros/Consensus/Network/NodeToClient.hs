@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Network.NodeToClient (
   , nullTracers
   , showTracers
     -- * Applications
+  , App
   , Apps (..)
   , mkApps
     -- ** Projections
@@ -296,18 +297,21 @@ showTracers tr = Tracers {
   Applications
 -------------------------------------------------------------------------------}
 
+-- | A node-to-client application
+type App m peer bytes a = peer -> Channel m bytes -> m (a, Maybe bytes)
+
 -- | Applications for the node-to-client (i.e., local) protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
 data Apps m peer bCS bTX bSQ a = Apps {
       -- | Start a local chain sync server.
-      aChainSyncServer    :: peer -> Channel m bCS -> m (a, Maybe bCS)
+      aChainSyncServer    :: App m peer bCS a
 
       -- | Start a local transaction submission server.
-    , aTxSubmissionServer :: peer -> Channel m bTX -> m (a, Maybe bTX)
+    , aTxSubmissionServer :: App m peer bTX a
 
       -- | Start a local state query server.
-    , aStateQueryServer   :: peer -> Channel m bSQ -> m (a, Maybe bSQ)
+    , aStateQueryServer   :: App m peer bSQ a
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols

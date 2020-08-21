@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , nullTracers
   , showTracers
     -- * Applications
+  , App
   , Apps (..)
   , mkApps
     -- ** Projections
@@ -352,36 +353,40 @@ showTracers tr = Tracers {
   Applications
 -------------------------------------------------------------------------------}
 
+-- | A node-to-node application
+type App m peer bytes a =
+  NodeToNodeVersion -> peer -> Channel m bytes -> m (a, Maybe bytes)
+
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
 data Apps m peer bCS bBF bTX bKA a = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      aChainSyncClient    :: NodeToNodeVersion -> peer -> Channel m bCS -> m (a, Maybe bCS)
+      aChainSyncClient    :: App m peer bCS a
 
       -- | Start a chain sync server.
-    , aChainSyncServer    :: NodeToNodeVersion -> peer -> Channel m bCS -> m (a, Maybe bCS)
+    , aChainSyncServer    :: App m peer bCS a
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , aBlockFetchClient   :: NodeToNodeVersion -> peer -> Channel m bBF -> m (a, Maybe bBF)
+    , aBlockFetchClient   :: App m peer bBF a
 
       -- | Start a block fetch server.
-    , aBlockFetchServer   :: NodeToNodeVersion -> peer -> Channel m bBF -> m (a, Maybe bBF)
+    , aBlockFetchServer   :: App m peer bBF a
 
       -- | Start a transaction submission client that communicates with the
       -- given upstream node.
-    , aTxSubmissionClient :: NodeToNodeVersion -> peer -> Channel m bTX -> m (a, Maybe bTX)
+    , aTxSubmissionClient :: App m peer bTX a
 
       -- | Start a transaction submission server.
-    , aTxSubmissionServer :: NodeToNodeVersion -> peer -> Channel m bTX -> m (a, Maybe bTX)
+    , aTxSubmissionServer :: App m peer bTX a
 
       -- | Start a keep-alive client.
-    , aKeepAliveClient :: NodeToNodeVersion -> peer -> Channel m bKA -> m (a, Maybe bKA)
+    , aKeepAliveClient    :: App m peer bKA a
 
       -- | Start a keep-alive server.
-    , aKeepAliveServer :: NodeToNodeVersion -> peer -> Channel m bKA -> m (a, Maybe bKA)
+    , aKeepAliveServer    :: App m peer bKA a
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
