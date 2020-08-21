@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -19,6 +20,7 @@ module Ouroboros.Consensus.Storage.FS.API (
     , hPutAllStrict
     , withFile
     , hClose'
+    , SomeHasFS(..)
     ) where
 
 import           Control.Monad (foldM)
@@ -290,3 +292,16 @@ hPut :: forall m h
      -> Builder
      -> m Word64
 hPut hasFS g = hPutAll hasFS g . BS.toLazyByteString
+
+{-------------------------------------------------------------------------------
+  SomeHasFS
+-------------------------------------------------------------------------------}
+
+-- | It is often inconvenient to have to parameterise over @h@. One often makes
+-- it existenial, losing the ability to use derive 'Generic' and
+-- 'NoUnexpectedThunks'. This data type hides an existential @h@ parameter of a
+-- 'HasFS' and provides a 'NoUnexpectedThunks' thunks instance.
+data SomeHasFS m where
+  SomeHasFS :: Eq h => HasFS m h -> SomeHasFS m
+
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SomeHasFS" (SomeHasFS m)

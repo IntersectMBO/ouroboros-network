@@ -90,6 +90,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceReaderEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllChunks))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
@@ -1609,9 +1610,9 @@ mkArgs :: IOLike m
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- HasFS instances
-      cdbHasFSImmDb           = simHasFS immDbFsVar
-    , cdbHasFSVolDb           = simHasFS volDbFsVar
-    , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
+      cdbHasFSImmDb           = SomeHasFS $ simHasFS immDbFsVar
+    , cdbHasFSVolDb           = SomeHasFS $ simHasFS volDbFsVar
+    , cdbHasFSLgrDB           = SomeHasFS $ simHasFS lgrDbFsVar
 
       -- Policy
     , cdbImmValidation        = ValidateAllChunks

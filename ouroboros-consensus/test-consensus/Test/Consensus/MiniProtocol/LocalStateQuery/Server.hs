@@ -39,7 +39,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as Ledger
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.FS.API (HasFS)
+import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
 
@@ -202,7 +202,7 @@ initLgrDB k chain = do
 
     args = LgrDbArgs
       { lgrTopLevelConfig       = cfg
-      , lgrHasFS                = error "lgrHasFS" :: HasFS m ()
+      , lgrHasFS                = SomeHasFS (error "lgrHasFS" :: HasFS m ())
       , lgrParams               = params
       , lgrDiskPolicy           = error "lgrDiskPolicy"
       , lgrGenesis              = return testInitExtLedger

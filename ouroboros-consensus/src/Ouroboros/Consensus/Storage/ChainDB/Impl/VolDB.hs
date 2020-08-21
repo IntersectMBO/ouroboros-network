@@ -1,19 +1,18 @@
-{-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE PatternSynonyms           #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Thin wrapper around the VolatileDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
@@ -92,7 +91,7 @@ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS,
+import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..),
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
@@ -137,8 +136,8 @@ type TraceEvent blk =
   Initialization
 -------------------------------------------------------------------------------}
 
-data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
-      volHasFS          :: HasFS m h
+data VolDbArgs m blk = VolDbArgs {
+      volHasFS          :: SomeHasFS m
     , volCheckIntegrity :: blk -> Bool
     , volBlocksPerFile  :: BlocksPerFile
     , volCodecConfig    :: CodecConfig blk
@@ -156,7 +155,7 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
-      volHasFS              = ioHasFS $ MountPoint (fp </> "volatile")
+      volHasFS              = SomeHasFS $ ioHasFS $ MountPoint (fp </> "volatile")
     , volTracer             = nullTracer
       -- Fields without a default
     , volCheckIntegrity     = error "no default for volCheckIntegrity"
@@ -169,8 +168,8 @@ openDB
   :: forall m blk.
      (IOLike m, GetPrevHash blk, VolDbSerialiseConstraints blk)
   => VolDbArgs m blk -> m (VolDB m blk)
-openDB args@VolDbArgs{..} = do
-    createDirectoryIfMissing volHasFS True (mkFsPath [])
+openDB args@VolDbArgs{ volHasFS = SomeHasFS hasFS, ..} = do
+    createDirectoryIfMissing hasFS True (mkFsPath [])
     volDB <- VolDB.openDB volatileDbArgs
     return VolDB
       { volDB              = volDB
@@ -178,7 +177,7 @@ openDB args@VolDbArgs{..} = do
       }
   where
     volatileDbArgs = VolDB.VolatileDbArgs
-      { hasFS            = volHasFS
+      { hasFS            = hasFS
       , maxBlocksPerFile = volBlocksPerFile
       , tracer           = volTracer
       , parser           = blockFileParser args
@@ -757,10 +756,10 @@ blockFileParser
        Util.CBOR.ReadIncrementalErr
        m
        (HeaderHash blk)
-blockFileParser VolDbArgs{..} =
+blockFileParser VolDbArgs{ volHasFS = SomeHasFS hasFS, .. } =
     blockFileParser'
       volCodecConfig
-      volHasFS
+      hasFS
       decodeNestedCtxtAndBlock
       volCheckIntegrity
       volValidation
