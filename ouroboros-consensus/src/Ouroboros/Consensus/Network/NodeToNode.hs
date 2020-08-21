@@ -354,7 +354,11 @@ showTracers tr = Tracers {
 
 -- | A node-to-node application
 type App m peer bytes a =
-  NodeToNodeVersion -> peer -> Channel m bytes -> m (a, Maybe bytes)
+     NodeToNodeVersion
+  -> ControlMessageSTM m
+  -> peer
+  -> Channel m bytes
+  -> m (a, Maybe bytes)
 
 -- | Applications for the node-to-node protocols
 --
@@ -412,10 +416,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
   where
     aChainSyncClient
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bCS
       -> m ((), Maybe bCS)
-    aChainSyncClient version them channel = do
+    aChainSyncClient version _controlMessageSTM them channel = do
       labelThisThread "ChainSyncClient"
       -- Note that it is crucial that we sync with the fetch client "outside"
       -- of registering the state for the sync client. This is needed to
@@ -443,10 +448,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aChainSyncServer
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bCS
       -> m ((), Maybe bCS)
-    aChainSyncServer version them channel = do
+    aChainSyncServer version _controlMessageSTM them channel = do
       labelThisThread "ChainSyncServer"
       withRegistry $ \registry -> do
         chainSyncTimeout <- genChainSyncTimeout
@@ -461,10 +467,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aBlockFetchClient
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bBF
       -> m ((), Maybe bBF)
-    aBlockFetchClient version them channel = do
+    aBlockFetchClient version _controlMessageSTM them channel = do
       labelThisThread "BlockFetchClient"
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeerWithLimits
@@ -477,10 +484,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aBlockFetchServer
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bBF
       -> m ((), Maybe bBF)
-    aBlockFetchServer version them channel = do
+    aBlockFetchServer version _controlMessageSTM them channel = do
       labelThisThread "BlockFetchServer"
       withRegistry $ \registry ->
         runPeerWithLimits
@@ -494,10 +502,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aTxSubmissionClient
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bTX
       -> m ((), Maybe bTX)
-    aTxSubmissionClient version them channel = do
+    aTxSubmissionClient version _controlMessageSTM them channel = do
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
@@ -509,10 +518,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aTxSubmissionServer
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bTX
       -> m ((), Maybe bTX)
-    aTxSubmissionServer version them channel = do
+    aTxSubmissionServer version _controlMessageSTM them channel = do
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
@@ -524,10 +534,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aKeepAliveClient
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bKA
       -> m ((), Maybe bKA)
-    aKeepAliveClient version them channel = do
+    aKeepAliveClient version _controlMessageSTM them channel = do
       labelThisThread "KeepAliveClient"
       let kacApp = case version of
                      -- Version 1 doesn't support keep alive protocol but Blockfetch
@@ -549,10 +560,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 
     aKeepAliveServer
       :: NodeToNodeVersion
+      -> ControlMessageSTM m
       -> remotePeer
       -> Channel m bKA
       -> m ((), Maybe bKA)
-    aKeepAliveServer _version _them channel = do
+    aKeepAliveServer _version _controlMessageSTM _them channel = do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
         nullTracer
@@ -586,22 +598,22 @@ initiatorAndResponder miniProtocolParameters version Apps {..} =
       -- p2p-governor & connection-manager.  Then consenus can use peer's ip
       -- address & port number, rather than 'ConnectionId' (which is
       -- a quadruple uniquely determinaing a connection).
-      (\them _controlMessageSTM -> NodeToNodeProtocols {
+      (\them controlMessageSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
             (InitiatorAndResponderProtocol
-              (MuxPeerRaw (aChainSyncClient version them))
-              (MuxPeerRaw (aChainSyncServer version them))),
+              (MuxPeerRaw (aChainSyncClient version controlMessageSTM them))
+              (MuxPeerRaw (aChainSyncServer version controlMessageSTM them))),
           blockFetchProtocol =
             (InitiatorAndResponderProtocol
-              (MuxPeerRaw (aBlockFetchClient version them))
-              (MuxPeerRaw (aBlockFetchServer version them))),
+              (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them))
+              (MuxPeerRaw (aBlockFetchServer version controlMessageSTM them))),
           txSubmissionProtocol =
             (InitiatorAndResponderProtocol
-              (MuxPeerRaw (aTxSubmissionClient version them))
-              (MuxPeerRaw (aTxSubmissionServer version them))),
+              (MuxPeerRaw (aTxSubmissionClient version controlMessageSTM them))
+              (MuxPeerRaw (aTxSubmissionServer version controlMessageSTM them))),
           keepAliveProtocol =
             (InitiatorAndResponderProtocol
-              (MuxPeerRaw (aKeepAliveClient version them))
-              (MuxPeerRaw (aKeepAliveServer version them)))
+              (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))
+              (MuxPeerRaw (aKeepAliveServer version controlMessageSTM them)))
         })
       version
