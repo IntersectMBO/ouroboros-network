@@ -612,6 +612,11 @@ prune db@LedgerDB{..} =
     toPrune :: Int
     toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
 
+ -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
+ -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
+ -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
+{-# INLINE prune #-}
+
 -- | Push an updated ledger state
 pushLedgerState :: l  -- ^ Updated ledger state
                 -> r  -- ^ Reference to the applied block
