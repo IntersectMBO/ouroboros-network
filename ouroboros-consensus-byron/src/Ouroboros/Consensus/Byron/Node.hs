@@ -159,21 +159,26 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PBftConfig {
-                pbftParams = byronPBftParams genesisConfig mSigThresh
+                pbftParams = byronPBftParams compactedGenesisConfig mSigThresh
               }
           , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = genesisConfig
-              , blockConfigBlock  = mkByronConfig genesisConfig pVer sVer
-              , blockConfigCodec  = mkByronCodecConfig genesisConfig
+                blockConfigLedger = compactedGenesisConfig
+              , blockConfigBlock  = mkByronConfig compactedGenesisConfig pVer sVer
+              , blockConfigCodec  = mkByronCodecConfig compactedGenesisConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {
+            -- Important: don't pass the compacted genesis config to
+            -- 'initByronLedgerState', it needs the full one, including the AVVM
+            -- balances.
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
       , pInfoBlockForging =
           return . byronBlockForging <$> mLeader
       }
+  where
+    compactedGenesisConfig = compactGenesisConfig genesisConfig
 
 protocolClientInfoByron :: EpochSlots
                         -> SecurityParam
