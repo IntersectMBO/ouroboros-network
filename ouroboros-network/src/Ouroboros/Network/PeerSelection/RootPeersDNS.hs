@@ -24,6 +24,9 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     DNS.Domain,
     DNS.TTL,
     IPv4,
+
+    -- * Socket type re-exports
+    Socket.PortNumber,
   ) where
 
 import           Data.Word (Word32)

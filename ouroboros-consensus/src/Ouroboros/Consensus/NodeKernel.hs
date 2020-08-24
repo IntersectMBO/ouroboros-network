@@ -20,11 +20,15 @@ module Ouroboros.Consensus.NodeKernel (
   , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
+  , getPeersFromCurrentLedger
+  , getPeersFromCurrentLedgerAfterSlot
   ) where
 
 import           Control.Monad
 import           Control.Monad.Except
+import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
@@ -57,6 +61,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
@@ -665,3 +670,55 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
         map (txId . fst) . filter (isMempoolTxAdded . snd) <$>
         addTxs mempool txs
     }
+
+{-------------------------------------------------------------------------------
+  PeerSelection integration
+-------------------------------------------------------------------------------}
+
+-- | Retrieve the peers registered in the current chain/ledger state by
+-- descending stake.
+--
+-- For example, for Shelley, this will return the stake pool relays ordered by
+-- descending stake.
+--
+-- Only returns a 'Just' when the given predicate returns 'True'. This predicate
+-- can for example check whether the slot of the ledger state is older or newer
+-- than some slot number.
+--
+-- We don't use the ledger state at the tip of the chain, but the ledger state
+-- @k@ blocks back, i.e., at the tip of the immutable chain, because any stake
+-- pools registered in that ledger state are guaranteed to be stable. This
+-- justifies merging the future and current stake pools.
+getPeersFromCurrentLedger ::
+     (IOLike m, LedgerSupportsPeerSelection blk)
+  => NodeKernel m remotePeer localPeer blk
+  -> (LedgerState blk -> Bool)
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+getPeersFromCurrentLedger kernel p = do
+    immutableLedger <-
+      ledgerState <$> ChainDB.getImmutableLedger (getChainDB kernel)
+    return $ do
+      guard (p immutableLedger)
+      return
+        $ map (second (fmap stakePoolRelayAddress))
+        $ getPeers immutableLedger
+
+-- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\"
+-- condition.
+getPeersFromCurrentLedgerAfterSlot ::
+     forall m blk localPeer remotePeer.
+     ( IOLike m
+     , LedgerSupportsPeerSelection blk
+     , UpdateLedger blk
+     )
+  => NodeKernel m remotePeer localPeer blk
+  -> SlotNo
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+getPeersFromCurrentLedgerAfterSlot kernel slotNo =
+    getPeersFromCurrentLedger kernel afterSlotNo
+  where
+    afterSlotNo :: LedgerState blk -> Bool
+    afterSlotNo st =
+      case ledgerTipSlot st of
+        Origin        -> False
+        NotOrigin tip -> tip > slotNo
