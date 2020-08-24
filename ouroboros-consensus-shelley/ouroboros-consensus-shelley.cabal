@@ -37,6 +37,7 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.Mempool
                        Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                        Ouroboros.Consensus.Shelley.Ledger.Query
+                       Ouroboros.Consensus.Shelley.Ledger.PeerSelection
                        Ouroboros.Consensus.Shelley.Ledger.TPraos
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Serialisation

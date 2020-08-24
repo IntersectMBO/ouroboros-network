@@ -82,6 +82,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
@@ -693,6 +694,15 @@ instance InspectLedger m => InspectLedger (DualBlock m a) where
         (dualTopLevelConfigMain cfg)
         (dualLedgerStateMain    before)
         (dualLedgerStateMain    after)
+
+
+{-------------------------------------------------------------------------------
+  PeerSelection
+-------------------------------------------------------------------------------}
+
+instance LedgerSupportsPeerSelection m
+      => LedgerSupportsPeerSelection (DualBlock m a) where
+  getPeers = getPeers . dualLedgerStateMain
 
 {-------------------------------------------------------------------------------
   Forging
