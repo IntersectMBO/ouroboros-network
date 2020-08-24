@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , getEnv1
   , getEnv2
   , getEnvSTM
+  , getEnvSTM1
   , ChainDbState (..)
   , ChainDbEnv (..)
     -- * Exposed internals for testing purposes
@@ -141,6 +142,16 @@ getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
+    ChainDbClosed   -> throwM $ ClosedDBError callStack
+
+-- | Variant of 'getEnv1' that works in 'STM'.
+getEnvSTM1 ::
+     (IOLike m, HasCallStack)
+  => ChainDbHandle m blk
+  -> (ChainDbEnv m blk -> a -> STM m r)
+  -> a -> STM m r
+getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
+    ChainDbOpen env -> f env a
     ChainDbClosed   -> throwM $ ClosedDBError callStack
 
 data ChainDbState m blk

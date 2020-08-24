@@ -338,12 +338,12 @@ run :: forall m blk.
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
 run env@ChainDBEnv { varDB, .. } cmd =
-    readMVar varDB >>= \st@ChainDBState { chainDB = chainDB@ChainDB{..}, internal } -> case cmd of
+    readMVar varDB >>= \st@ChainDBState { chainDB = ChainDB{..}, internal } -> case cmd of
       AddBlock blk             -> Point               <$> (advanceAndAdd st (blockSlot blk) blk)
       AddFutureBlock blk s     -> Point               <$> (advanceAndAdd st s               blk)
       GetCurrentChain          -> Chain               <$> atomically getCurrentChain
       GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
-      GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
+      GetPastLedger pt         -> MbLedger            <$> atomically (getPastLedger pt)
       GetTipBlock              -> MbBlock             <$> getTipBlock
       GetTipHeader             -> MbHeader            <$> getTipHeader
       GetTipPoint              -> Point               <$> atomically getTipPoint

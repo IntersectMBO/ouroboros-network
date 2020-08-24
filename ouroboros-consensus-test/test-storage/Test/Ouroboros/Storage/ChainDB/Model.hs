@@ -20,7 +20,6 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     Model -- opaque
   , IteratorId
   , CPS.ReaderId
-  , LedgerCursorId
     -- * Construction
   , empty
   , addBlock
@@ -59,10 +58,6 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , readerInstruction
   , readerForward
   , readerClose
-    -- * Ledger Cursors
-  , getLedgerCursor
-  , ledgerCursorState
-  , ledgerCursorMove
     -- * ModelSupportsBlock
   , ModelSupportsBlock (..)
     -- * Exported for testing purposes
@@ -121,16 +116,14 @@ import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      BlockComponent (..), ChainDB, ChainDbError (..),
                      InvalidBlockReason (..), IteratorResult (..),
-                     LedgerCursorFailure (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), validBounds)
+                     StreamFrom (..), StreamTo (..), UnknownRange (..),
+                     validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
                      (ReconstructNestedCtxt (..))
 import           Ouroboros.Consensus.Storage.Common (PrefixLen (..), takePrefix)
 
 type IteratorId = Int
-
-type LedgerCursorId = Int
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -142,7 +135,6 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , ledgerCursors :: Map LedgerCursorId (ExtLedgerState blk)
     , invalid       :: InvalidBlocks blk
     , currentSlot   :: SlotNo
     , maxClockSkew  :: Word64
@@ -385,7 +377,6 @@ empty initLedger maxClockSkew = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
-    , ledgerCursors = Map.empty
     , invalid       = Map.empty
     , currentSlot   = 0
     , maxClockSkew  = maxClockSkew
@@ -410,7 +401,6 @@ addBlock cfg blk m = Model {
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
-    , ledgerCursors = ledgerCursors m
     , invalid       = invalid'
     , currentSlot   = currentSlot  m
     , maxClockSkew  = maxClockSkew m
@@ -616,40 +606,6 @@ readerClose rdrId m
     = m { cps = CPS.deleteReader rdrId (cps m) }
     | otherwise
     = m
-
-
-{-------------------------------------------------------------------------------
-  Ledger Cursors
--------------------------------------------------------------------------------}
-
-getLedgerCursor :: Model blk -> (LedgerCursorId, Model blk)
-getLedgerCursor m@Model { ledgerCursors = lcs, currentLedger } =
-    (lcId, m { ledgerCursors = Map.insert lcId currentLedger lcs })
-  where
-    lcId :: LedgerCursorId
-    lcId = Map.size lcs -- we never delete ledger cursors
-
-ledgerCursorState :: LedgerCursorId -> Model blk -> ExtLedgerState blk
-ledgerCursorState lcId m
-    | Just ledgerState <- Map.lookup lcId (ledgerCursors m)
-    = ledgerState
-    | otherwise
-    = error $ "unknown ledgerCursor: " <> show lcId
-
-ledgerCursorMove
-  :: forall blk. LedgerSupportsProtocol blk
-  => TopLevelConfig blk
-  -> LedgerCursorId
-  -> Point blk
-  -> Model blk
-  -> (Either LedgerCursorFailure (ExtLedgerState blk), Model blk)
-ledgerCursorMove cfg lcId pt m@Model { ledgerCursors = lcs }
-    | Just ledgerState <- getPastLedger cfg pt m
-    = (Right ledgerState, m { ledgerCursors = Map.insert lcId ledgerState lcs })
-    | pointSlot pt < immutableSlotNo (configSecurityParam cfg) m
-    = (Left PointTooOld, m)
-    | otherwise
-    = (Left PointNotOnChain, m)
 
 {-------------------------------------------------------------------------------
   ModelSupportsBlock
@@ -1009,11 +965,10 @@ copyToImmDB :: SecurityParam -> Model blk -> Model blk
 copyToImmDB secParam m = m { immDbChain = immutableChain secParam m }
 
 closeDB :: Model blk -> Model blk
-closeDB m@Model{..} = m
-    { isOpen        = False
+closeDB m@Model{..} = m {
+      isOpen        = False
     , cps           = cps { CPS.chainReaders = Map.empty }
     , iterators     = Map.empty
-    , ledgerCursors = Map.empty
     }
 
 reopen :: Model blk -> Model blk
