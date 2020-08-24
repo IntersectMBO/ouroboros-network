@@ -303,9 +303,9 @@ getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
 getPastState :: (IOLike m, HasHeader blk)
-             => LgrDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
+             => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
-    db <- atomically $ readTVar varDB
+    db <- readTVar varDB
     return $ LedgerDB.ledgerDbPast (pointToWithOriginRealPoint p) db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
