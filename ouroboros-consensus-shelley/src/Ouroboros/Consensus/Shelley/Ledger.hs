@@ -9,4 +9,5 @@ import           Ouroboros.Consensus.Shelley.Ledger.Integrity as X
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger as X
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool as X
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion as X
+import           Ouroboros.Consensus.Shelley.Ledger.PeerSelection as X ()
 import           Ouroboros.Consensus.Shelley.Ledger.Query as X

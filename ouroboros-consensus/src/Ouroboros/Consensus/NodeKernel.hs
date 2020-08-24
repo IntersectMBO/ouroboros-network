@@ -20,11 +20,13 @@ module Ouroboros.Consensus.NodeKernel (
   , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
+  , getPeersFromCurrentLedger
   ) where
 
 import           Control.Monad
 import           Control.Monad.Except
 import           Data.Hashable (Hashable)
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
@@ -56,6 +58,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
@@ -664,3 +667,19 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
         map (txId . fst) . filter (isMempoolTxAdded . snd) <$>
         addTxs mempool txs
     }
+
+{-------------------------------------------------------------------------------
+  PeerSelection integration
+-------------------------------------------------------------------------------}
+
+-- | Retrieve the peers registered in the current chain/ledger state by
+-- descending stake.
+--
+-- For example, for Shelley, this will return the stake pool relays ordered by
+-- descending stake.
+getPeersFromCurrentLedger ::
+     (IOLike m, LedgerSupportsPeerSelection blk)
+  => NodeKernel m remotePeer localPeer blk
+  -> STM m [(PoolStake, NonEmpty DomainAddress)]
+getPeersFromCurrentLedger kernel =
+    getPeers . ledgerState <$> ChainDB.getCurrentLedger (getChainDB kernel)
