@@ -73,6 +73,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.InjectTxs
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
+                       Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
                        Ouroboros.Consensus.HardFork.Combinator.Node
@@ -114,6 +115,7 @@ library
                        Ouroboros.Consensus.Ledger.Inspect
                        Ouroboros.Consensus.Ledger.Query
                        Ouroboros.Consensus.Ledger.SupportsMempool
+                       Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
