@@ -61,7 +61,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Backgrou
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel as ChainSel
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator as Iterator
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reader as Reader
@@ -185,6 +184,7 @@ openDBInternal args launchBgTasks = do
           { addBlockAsync      = getEnv1    h ChainSel.addBlockAsync
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
+          , getPastLedger      = getEnvSTM1 h Query.getPastLedger
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
@@ -194,10 +194,6 @@ openDBInternal args launchBgTasks = do
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , stream             = Iterator.stream  h
           , newReader          = Reader.newReader h
-          , newLedgerCursor    = getEnv     h $ \env' ->
-              LedgerCursor.newLedgerCursor
-                (cdbLgrDB env')
-                (castPoint . AF.anchorPoint <$> Query.getCurrentChain env')
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = closeDB h
           , isOpen             = isOpen  h

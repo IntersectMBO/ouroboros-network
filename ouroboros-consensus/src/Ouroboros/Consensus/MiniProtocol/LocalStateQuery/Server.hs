@@ -1,11 +1,8 @@
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
   ( localStateQueryServer
   ) where
-
-import           Data.Functor ((<&>))
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -16,59 +13,49 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB (LedgerCursor (..),
-                     LedgerCursorFailure (..))
-
-localStateQueryServer
-  :: forall m blk. (IOLike m, QueryLedger blk)
+localStateQueryServer ::
+     forall m blk. (IOLike m, QueryLedger blk)
   => LedgerConfig blk
-  -> m (LedgerCursor m blk)
+  -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
+     -- ^ Get a past ledger
+  -> STM m (Point blk)
+     -- ^ Get the immutable point
   -> LocalStateQueryServer blk (Query blk) m ()
-localStateQueryServer cfg newLedgerCursor =
-    LocalStateQueryServer $ idle <$> newLedgerCursor
+localStateQueryServer cfg getPastLedger getImmutablePoint =
+    LocalStateQueryServer $ return idle
   where
-    idle
-      :: LedgerCursor m blk
-      -> ServerStIdle blk (Query blk) m ()
-    idle ledgerCursor = ServerStIdle
-      { recvMsgAcquire = handleAcquire ledgerCursor
-      , recvMsgDone    = return ()
-      }
+    idle :: ServerStIdle blk (Query blk) m ()
+    idle = ServerStIdle {
+          recvMsgAcquire = handleAcquire
+        , recvMsgDone    = return ()
+        }
 
-    handleAcquire
-      :: LedgerCursor m blk
-      -> Point blk
-      -> m (ServerStAcquiring blk (Query blk) m ())
-    handleAcquire ledgerCursor pt =
-      ledgerCursorMove ledgerCursor pt <&> \case
-        Left failure ->
-          SendMsgFailure (translateFailure failure) (idle ledgerCursor)
-        Right ExtLedgerState { ledgerState } ->
-          SendMsgAcquired (acquired ledgerState ledgerCursor)
+    handleAcquire :: Point blk -> m (ServerStAcquiring blk (Query blk) m ())
+    handleAcquire pt = do
+        (mPastLedger, immutablePoint) <-
+          atomically $ (,) <$> getPastLedger pt <*> getImmutablePoint
 
-    acquired
-      :: LedgerState blk
-      -> LedgerCursor m blk
-      -> ServerStAcquired blk (Query blk) m ()
-    acquired ledgerState ledgerCursor = ServerStAcquired
-      { recvMsgQuery     = handleQuery ledgerState ledgerCursor
-      , recvMsgReAcquire = handleAcquire ledgerCursor
-      , recvMsgRelease   = return $ idle ledgerCursor
-      }
+        return $ case mPastLedger of
+          Just pastLedger
+            -> SendMsgAcquired $ acquired (ledgerState pastLedger)
+          Nothing
+            | pointSlot pt < pointSlot immutablePoint
+            -> SendMsgFailure AcquireFailurePointTooOld idle
+            | otherwise
+            -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    handleQuery
-      :: LedgerState blk
-      -> LedgerCursor m blk
+    acquired :: LedgerState blk -> ServerStAcquired blk (Query blk) m ()
+    acquired ledgerState = ServerStAcquired {
+          recvMsgQuery     = handleQuery ledgerState
+        , recvMsgReAcquire = handleAcquire
+        , recvMsgRelease   = return idle
+        }
+
+    handleQuery ::
+         LedgerState blk
       -> Query blk result
       -> m (ServerStQuerying blk (Query blk) m () result)
-    handleQuery ledgerState ledgerCursor query = return $
-      SendMsgResult
-        (answerQuery cfg query ledgerState)
-        (acquired ledgerState ledgerCursor)
-
-    translateFailure
-      :: LedgerCursorFailure
-      -> AcquireFailure
-    translateFailure = \case
-      PointTooOld     -> AcquireFailurePointTooOld
-      PointNotOnChain -> AcquireFailurePointNotOnChain
+    handleQuery ledgerState query = return $
+        SendMsgResult
+          (answerQuery cfg query ledgerState)
+          (acquired ledgerState)
