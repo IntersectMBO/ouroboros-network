@@ -13,7 +13,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Error
                      (ImmutableDBError)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Error as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Error (VolatileDBError)
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Error as VolatileDB
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
@@ -58,11 +60,15 @@ consensusErrorPolicy = ErrorPolicies {
           ErrorPolicy $ \(_ :: DbMarkerError)    -> Just shutdownNode
         , ErrorPolicy $ \(_ :: DbLocked)         -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ChainDbFailure)   -> Just shutdownNode
-          -- The three exceptions below will always be wrapped in a
-          -- 'ChainDbFailure', but we include them in the policy just in case.
-        , ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
+        , ErrorPolicy $ \(e :: VolatileDBError)  ->
+            case e of
+              VolatileDB.UserError{}       -> Just ourBug
+              VolatileDB.UnexpectedError{} -> Just shutdownNode
+        , ErrorPolicy $ \(e :: ImmutableDBError) ->
+            case e of
+              ImmutableDB.UserError{}       -> Just ourBug
+              ImmutableDB.UnexpectedError{} -> Just shutdownNode
         , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
-        , ErrorPolicy $ \(_ :: ImmutableDBError) -> Just shutdownNode
 
           -- When the system clock moved back, we have to restart the node,
           -- because the ImmutableDB validation might have to truncate some
