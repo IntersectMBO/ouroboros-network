@@ -13,6 +13,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId)
 
 {-------------------------------------------------------------------------------
   TxGen class
@@ -31,7 +32,8 @@ class TxGen blk where
   --
   -- Note: this function returns a list so that an empty list can be returned
   -- in case we are unable to generate transactions for a @blk@.
-  testGenTxs :: NumCoreNodes
+  testGenTxs :: CoreNodeId
+             -> NumCoreNodes
              -> SlotNo
              -> TopLevelConfig blk
              -> TxGenExtra blk

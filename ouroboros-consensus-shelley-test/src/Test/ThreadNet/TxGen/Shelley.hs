@@ -49,7 +49,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraosMockCrypto h)) where
 
   type TxGenExtra (ShelleyBlock (TPraosMockCrypto h)) = ShelleyTxGenExtra h
 
-  testGenTxs _numCoreNodes curSlotNo cfg extra lst
+  testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg extra lst
       | stgeStartAt > curSlotNo = pure []
       | otherwise               = do
       n <- choose (0, 20)

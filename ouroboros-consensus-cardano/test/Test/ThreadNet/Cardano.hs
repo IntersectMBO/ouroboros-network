@@ -13,9 +13,15 @@ module Test.ThreadNet.Cardano (
 
 import           Control.Exception (assert)
 import           Control.Monad (guard, replicateM)
+import           Control.Monad.Identity (runIdentity)
+import           Control.Monad.Reader (runReaderT)
+import           Data.Functor ((<&>))
 import           Data.List ((!!))
 import qualified Data.Map as Map
+import           Data.Maybe (isJust, maybeToList)
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
@@ -24,11 +30,11 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Slotting.Slot (EpochNo, EpochSize (..), SlotNo (..))
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
+                     SlotNo (..))
 
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
-
-import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -43,7 +49,10 @@ import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
+import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Genesis as CC.Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (unEpochSlots)
 import qualified Cardano.Chain.Update as CC.Update
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
@@ -53,8 +62,10 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
+import           Ouroboros.Consensus.Shelley.Ledger (mkShelleyGlobals)
 import           Ouroboros.Consensus.Shelley.Node
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES, TPraosCrypto)
@@ -63,13 +74,13 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.Consensus.Cardano.MockCrypto (TPraosMockCryptoCompatByron)
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Network (CalcMessageDelay (..), NodeOutput (..),
                      TestNodeInitialization (..))
-import           Test.ThreadNet.TxGen.Cardano ()
+import           Test.ThreadNet.TxGen.Cardano (CardanoTxGenExtra (..))
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..))
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
@@ -81,7 +92,9 @@ import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
-type Crypto = TPraosMockCrypto Blake2b_256
+-- | Use 'TPraosMockCryptoCompatByron' so that bootstrap addresses and
+-- bootstrap witnesses are supported.
+type Crypto = TPraosMockCryptoCompatByron Blake2b_256
 
 -- | When and for how long the nodes are partitioned
 --
@@ -92,7 +105,8 @@ data Partition = Partition SlotNo NumSlots
   deriving (Show)
 
 partitionExclusiveUpperBound :: Partition -> SlotNo
-partitionExclusiveUpperBound (Partition s (NumSlots d)) = Util.addSlots d s
+partitionExclusiveUpperBound (Partition s (NumSlots dur)) =
+    Util.addSlots dur s
 
 -- | The varying data of this test
 --
@@ -105,6 +119,10 @@ data TestSetup = TestSetup
   , setupD                 :: Shelley.DecentralizationParam
   , setupHardFork          :: Bool
     -- ^ whether the proposal should trigger a hard fork or not
+  , setupInitialNonce      :: SL.Nonce
+    -- ^ the initial Shelley 'SL.ticknStateEpochNonce'
+    --
+    -- We vary it to ensure we explore different leader schedules.
   , setupK                 :: SecurityParam
   , setupPartition         :: Partition
   , setupSlotLengthByron   :: SlotLength
@@ -117,9 +135,18 @@ data TestSetup = TestSetup
 instance Arbitrary TestSetup where
   arbitrary = do
     setupD <- arbitrary
-                -- TODO Issue 2388 prevents `d=0` in this test.
+                -- The decentralization parameter cannot be 0 in the first
+                -- Shelley epoch, since stake pools can only be created and
+                -- delegated to via Shelley transactions.
                 `suchThat` ((/= 0) . Shelley.decentralizationParamToRational)
-    setupK <- SecurityParam <$> choose (2, 6)
+    setupK <- SecurityParam <$> choose (4, 6)
+                -- If k < 4, common prefix violations become too likely in
+                -- Praos mode.
+
+    setupInitialNonce <- frequency
+      [ (1, pure SL.NeutralNonce)
+      , (9, SL.mkNonceFromNumber <$> arbitrary)
+      ]
 
     setupSlotLengthByron   <- arbitrary
     setupSlotLengthShelley <- arbitrary
@@ -128,7 +155,7 @@ instance Arbitrary TestSetup where
     let TestConfig{numCoreNodes, numSlots} = setupTestConfig
 
     setupByronLowerBound <- arbitrary
-    setupHardFork        <- frequency [(9, pure True), (1, pure False)]
+    setupHardFork        <- frequency [(49, pure True), (1, pure False)]
     setupPartition       <- genPartition numCoreNodes numSlots setupK
 
     setupVersion         <- genVersionFiltered
@@ -139,6 +166,7 @@ instance Arbitrary TestSetup where
       { setupByronLowerBound
       , setupD
       , setupHardFork
+      , setupInitialNonce
       , setupK
       , setupPartition
       , setupSlotLengthByron
@@ -154,12 +182,23 @@ genTestConfig :: SecurityParam -> Gen TestConfig
 genTestConfig k = do
     initSeed <- arbitrary
 
-    -- Ensure there are almost always sufficient slots for multiple eras.
     numSlots <- do
-      t <- choose (5, 50)
-      pure $ NumSlots $
-        min 150 $
-        numByronEpochs * 9 * maxRollbacks k + t
+      let byronE   = byronEpochSize k
+          shelleyE = shelleyEpochSize k
+          wiggle   = min byronE (2 * maxRollbacks k)
+
+          approachShelleyEra     =
+              choose (0, wiggle)   <&> \t -> byronE + t - wiggle
+          reachShelleyEra        =
+              choose (1, shelleyE) <&> \t -> byronE + t
+          reachThirdShelleyEpoch =
+              choose (1, shelleyE) <&> \t -> byronE + 2 * shelleyE + t
+
+      fmap NumSlots $ frequency $
+        [ (05, approachShelleyEra)
+        , (64, reachShelleyEra)
+        , (31, reachThirdShelleyEpoch)
+        ]
 
     -- This test has more slots than most, so we de-emphasize the relatively
     -- expensive n=5 case. For example:
@@ -281,7 +320,8 @@ genPartition (NumCoreNodes n) (NumSlots t) (SecurityParam k) = do
           , (1,  Just $ 2 * k + 1 + quorum)
           , (1,  Just $ 4 * k + 1)
           , (1,  Just $ 4 * k + 1 + quorum)
-          , (20, assert (numByronEpochs == (1 :: Int)) $ Just $ 10 * k)
+          , (20, assert (numByronEpochs == (1 :: Int)) $
+                 Just $ byronEpochSize (SecurityParam k))
           ]
 
     -- Position the partition so that it at least abuts the focus slot.
@@ -298,10 +338,10 @@ genPartition (NumCoreNodes n) (NumSlots t) (SecurityParam k) = do
         firstSlotAfter :: Word64
         firstSlotAfter = crop $ firstSlotIn + w
 
-        d :: Word64
-        d = Util.countSlots (SlotNo firstSlotAfter) (SlotNo firstSlotIn)
+        dur :: Word64
+        dur = Util.countSlots (SlotNo firstSlotAfter) (SlotNo firstSlotIn)
 
-    pure $ Partition (SlotNo firstSlotIn) (NumSlots d)
+    pure $ Partition (SlotNo firstSlotIn) (NumSlots dur)
 
 tests :: TestTree
 tests = testGroup "Cardano ThreadNet" $
@@ -314,6 +354,7 @@ prop_simple_cardano_convergence TestSetup
   { setupByronLowerBound
   , setupD
   , setupHardFork
+  , setupInitialNonce
   , setupK
   , setupPartition
   , setupSlotLengthByron
@@ -322,6 +363,8 @@ prop_simple_cardano_convergence TestSetup
   , setupVersion
   } =
     tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
+    tabulate "Observed forge during a non-overlay Shelley slot"
+      [label_hadActiveNonOverlaySlots] $
     tabulatePartitionDuration $
     tabulateFinalIntersectionDepth $
     tabulatePartitionPosition $
@@ -365,7 +408,13 @@ prop_simple_cardano_convergence TestSetup
       , messageDelay = mkMessageDelay setupPartition
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
-      , txGenExtra   = ()
+      , txGenExtra   = CardanoTxGenExtra
+        { ctgeByronGenesisKeys = generatedSecrets
+        , ctgeNetworkMagic     =
+            CC.Common.makeNetworkMagic $
+            CC.Genesis.configProtocolMagic genesisByron
+        , ctgeShelleyCoreNodes = coreNodes
+        }
       , version      = setupVersion
       }
 
@@ -380,7 +429,7 @@ prop_simple_cardano_convergence TestSetup
                   generatedSecrets
                   propPV
                   genesisShelley
-                  SL.NeutralNonce
+                  setupInitialNonce
                   (coreNodes !! fromIntegral nid)
                   (guard setupByronLowerBound *> Just numByronEpochs)
                   (TriggerHardForkAtVersion shelleyMajorVersion)
@@ -407,9 +456,9 @@ prop_simple_cardano_convergence TestSetup
           div partitionDuration 2 + mod partitionDuration 2
 
     partitionDuration :: Word64
-    partitionDuration = d
+    partitionDuration = dur
       where
-        Partition _ (NumSlots d) = setupPartition
+        Partition _ (NumSlots dur) = setupPartition
 
     -- Byron
 
@@ -504,16 +553,16 @@ prop_simple_cardano_convergence TestSetup
           or $
           [ isShelley blk
           | (_nid, no) <- Map.toList testOutputNodes
-          , let NodeOutput{nodeOutputFinalChain} = no
-          , blk <- MockChain.chainToList nodeOutputFinalChain
+          , let NodeOutput{nodeOutputForges} = no
+          , (blk, _m) <- maybeToList $ Map.maxView nodeOutputForges
+                -- the last block the node forged
           ]
       , rsShelleySlots  =
           assert (w >= k) $
           BoolProps.requiredIf $
-          t > numByronSlots + ceiling (logBase (1-f) oneBillionth)
-            -- We only require a Shelley block if there are enough Shelley
-            -- slots that the chance of them all being inactive slots is at
-            -- most 1 in a billion.
+          -- The active slots in the first two Shelley epochs are all overlay
+          -- slots, so the first Shelley block will arise from one of those.
+          not $ Set.null overlaySlots
       }
       where
         NumSlots t                  = numSlots
@@ -528,20 +577,62 @@ prop_simple_cardano_convergence TestSetup
         w :: Word64
         w = Shelley.computeStabilityWindow setupK coeff
 
-        -- the independent probability that a Shelley slot will have at least
-        -- one leader
-        f :: Double
-        f = fromRational $ SL.unitIntervalToRational $ SL.activeSlotVal coeff
+    -- Whether there was a Shelley block forged in a non-overlay slot.
+    --
+    -- This event evidences that the stake pools were correctly created and
+    -- delegated to.
+    label_hadActiveNonOverlaySlots :: String
+    label_hadActiveNonOverlaySlots =
+        show $ or $
+        [ Set.notMember slot overlaySlots
+        | (_nid, no) <- Map.toList testOutputNodes
+        , let NodeOutput{nodeOutputForges} = no
+        , (slot, blk) <- Map.toDescList nodeOutputForges
+        , isShelley blk
+        ]
+      where
+        TestOutput{testOutputNodes} = testOutput
 
-        -- a strong threshold, along the lines of " not even once in the
-        -- lifetime of the project "
-        oneBillionth :: Double
-        oneBillionth = 1e-9
+    -- All OBFT overlay slots in the test.
+    overlaySlots :: Set SlotNo
+    overlaySlots =
+        Set.filter (< SlotNo t) $
+        Set.unions $
+        takeWhile (isJust . Set.lookupLT (SlotNo t)) $
+        map overlayOffsets [0..]
+      where
+        NumSlots t = numSlots
 
-        isShelley :: CardanoBlock c -> Bool
-        isShelley = \case
-            BlockByron{}   -> False
-            BlockShelley{} -> True
+        -- The overlay slots in the ith Shelley epoch.
+        --
+        -- TODO: This function conceptually should be simpler if we created a
+        -- sufficiently accurate 'EpochInfo' and so didn't need the shift. But
+        -- doing so (eg by constructing a HardFork @Summary@) is currently
+        -- significantly involved than this workaround.
+        overlayOffsets :: Word64 -> Set SlotNo
+        overlayOffsets i =
+            -- Shift to account for the initial Byron era.
+            Set.mapMonotonic (Util.addSlots numByronSlots) $
+
+            Map.keysSet $
+            SL.overlayScheduleToMap $
+            runIdentity $ flip runReaderT shelleyGlobals $
+            SL.overlaySchedule
+              @Crypto
+              (EpochNo i)   -- NB 0 <-> the first /Shelley/ epoch
+              genesisKeyHashes
+              (sgProtocolParams genesisShelley)   -- notably contains setupD
+
+        shelleyGlobals =
+            mkShelleyGlobals
+              genesisShelley
+              -- Suitable only for this narrow context
+              (fixedSizeEpochInfo epochSizeShelley)
+              maxMajorPVShelley
+
+        genesisKeyHashes =
+            Set.fromList $
+            map (Shelley.mkKeyHash . Shelley.cnGenesisKey) coreNodes
 
     numByronSlots :: Word64
     numByronSlots = numByronEpochs * unEpochSize epochSizeByron
@@ -551,9 +642,9 @@ prop_simple_cardano_convergence TestSetup
         if rsShelleyBlocks reachesShelley then "Shelley" else "Byron"
 
     finalIntersectionDepth :: Word64
-    finalIntersectionDepth = d
+    finalIntersectionDepth = depth
       where
-        NumBlocks d = calcFinalIntersectionDepth testOutput
+        NumBlocks depth = calcFinalIntersectionDepth testOutput
 
     tabulatePartitionDuration :: Property -> Property
     tabulatePartitionDuration =
@@ -579,13 +670,15 @@ prop_simple_cardano_convergence TestSetup
         tabulate "partition in or abuts era (Byron, Shelley)"
           [ show (inclByron, inclShelley) ]
       where
-        Partition (SlotNo firstSlotIn) (NumSlots d) = setupPartition
-        firstSlotAfter                              = firstSlotIn + d
+        Partition (SlotNo firstSlotIn) (NumSlots dur) = setupPartition
+        firstSlotAfter                                = firstSlotIn + dur
 
         trans = ledgerReachesShelley reachesShelley
 
-        inclByron   = d > 0 && (not trans || firstSlotIn    <= numByronSlots)
-        inclShelley = d > 0 && (trans     && firstSlotAfter >= numByronSlots)
+        inclByron   =
+            dur > 0 && (not trans || firstSlotIn    <= numByronSlots)
+        inclShelley =
+            dur > 0 && (trans     && firstSlotAfter >= numByronSlots)
 
 mkProtocolCardanoAndHardForkTxs
   :: forall sc m. (IOLike m, TPraosCrypto sc)
@@ -669,15 +762,15 @@ mkProtocolCardanoAndHardForkTxs
     protVerShelley :: SL.ProtVer
     protVerShelley = SL.ProtVer shelleyMajorVersion 0
 
-    maxMajorPVShelley :: Natural
-    maxMajorPVShelley = 100
-
     leaderCredentialsShelley :: TPraosLeaderCredentials sc
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
 
 {-------------------------------------------------------------------------------
   Constants
 -------------------------------------------------------------------------------}
+
+maxMajorPVShelley :: Natural
+maxMajorPVShelley = 100   -- arbitrary
 
 -- | The major protocol version of Byron in this test
 --
@@ -793,6 +886,18 @@ mkMessageDelay part = CalcMessageDelay $
 {-------------------------------------------------------------------------------
   Miscellany
 -------------------------------------------------------------------------------}
+
+byronEpochSize :: SecurityParam -> Word64
+byronEpochSize (SecurityParam k) =
+    unEpochSlots $ kEpochSlots $ CC.Common.BlockCount k
+
+shelleyEpochSize :: SecurityParam -> Word64
+shelleyEpochSize = unEpochSize . Shelley.mkEpochSize
+
+isShelley :: CardanoBlock c -> Bool
+isShelley = \case
+    BlockByron{}   -> False
+    BlockShelley{} -> True
 
 -- | Render a number as a positive difference from @k@
 --

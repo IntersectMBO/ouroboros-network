@@ -17,12 +17,17 @@ module Test.ThreadNet.Infra.Shelley (
   , coreNodeKeys
   , genCoreNode
   , incrementMinorProtVer
+  , mkCredential
   , mkEpochSize
   , mkGenesisConfig
   , mkKesConfig
+  , mkKeyHash
+  , mkKeyHashVrf
   , mkLeaderCredentials
   , mkProtocolRealTPraos
   , mkSetDecentralizationParamTxs
+  , mkVerKey
+  , networkId
   , tpraosSlotLength
   ) where
 
@@ -40,13 +45,14 @@ import           Test.QuickCheck
 import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
-import           Cardano.Crypto.Hash.Class (hashWithSerialiser)
+import           Cardano.Crypto.Hash.Class (Hash, HashAlgorithm,
+                     hashWithSerialiser)
 import           Cardano.Crypto.KES.Class (KESAlgorithm, SignKeyKES,
                      deriveVerKeyKES, genKeyKES, seedSizeKES, totalPeriodsKES)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
-import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
-                     genKeyVRF, seedSizeVRF)
+import           Cardano.Crypto.VRF.Class (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
+                     deriveVerKeyVRF, genKeyVRF, seedSizeVRF)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -76,7 +82,7 @@ import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as CSL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 
 {-------------------------------------------------------------------------------
@@ -130,18 +136,18 @@ data CoreNode c = CoreNode {
     , cnOCert       :: !(SL.OCert               c)
     }
 
-data CoreNodeKeyInfo h = CoreNodeKeyInfo
+data CoreNodeKeyInfo c = CoreNodeKeyInfo
   { cnkiKeyPair
-      ::  ( SL.KeyPair 'SL.Payment (TPraosMockCrypto h)
-          , SL.KeyPair 'SL.Staking (TPraosMockCrypto h)
+      ::  ( SL.KeyPair 'SL.Payment c
+          , SL.KeyPair 'SL.Staking c
           )
   , cnkiCoreNode ::
-      ( SL.KeyPair 'SL.Genesis (TPraosMockCrypto h)
-      , Gen.AllIssuerKeys (TPraosMockCrypto h) 'SL.GenesisDelegate
+      ( SL.KeyPair 'SL.Genesis c
+      , Gen.AllIssuerKeys c 'SL.GenesisDelegate
       )
   }
 
-coreNodeKeys :: CoreNode (TPraosMockCrypto h) -> CoreNodeKeyInfo h
+coreNodeKeys :: CSL.Mock c => CoreNode c -> CoreNodeKeyInfo c
 coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
     CoreNodeKeyInfo {
         cnkiCoreNode =
@@ -489,7 +495,18 @@ initialLovelacePerCoreNode :: Word64
 initialLovelacePerCoreNode = 1000
 
 mkCredential :: TPraosCrypto c => SignKeyDSIGN (DSIGN c) -> SL.Credential r c
-mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
+mkCredential = SL.KeyHashObj . mkKeyHash
+
+mkKeyHash :: TPraosCrypto c => SignKeyDSIGN (DSIGN c) -> SL.KeyHash r c
+mkKeyHash = SL.hashKey . mkVerKey
+
+mkVerKey :: TPraosCrypto c => SignKeyDSIGN (DSIGN c) -> SL.VKey r c
+mkVerKey = SL.VKey . deriveVerKeyDSIGN
+
+mkKeyHashVrf :: (HashAlgorithm h, VRFAlgorithm vrf)
+             => SignKeyVRF vrf
+             -> Hash h (VerKeyVRF vrf)
+mkKeyHashVrf = SL.hashVerKeyVRF . deriveVerKeyVRF
 
 networkId :: SL.Network
 networkId = SL.Testnet

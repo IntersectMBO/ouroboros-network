@@ -360,7 +360,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
 -- We ignore the mempool for these tests
 instance TxGen TestBlock where
-  testGenTxs _ _ _ _ _ = return []
+  testGenTxs _ _ _ _ _ _ = return []
 
 {-------------------------------------------------------------------------------
   Hard fork

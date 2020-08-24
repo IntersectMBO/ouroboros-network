@@ -74,9 +74,10 @@ test-suite test
   main-is:             Main.hs
   other-modules:
                        Test.Consensus.Cardano.ByronCompatibility
+                       Test.Consensus.Cardano.Examples
                        Test.Consensus.Cardano.Generators
                        Test.Consensus.Cardano.Golden
-                       Test.Consensus.Cardano.Examples
+                       Test.Consensus.Cardano.MockCrypto
                        Test.Consensus.Cardano.Serialisation
                        Test.Consensus.Cardano.Translation
                        Test.ThreadNet.Cardano
@@ -87,6 +88,7 @@ test-suite test
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-slotting
@@ -102,6 +104,7 @@ test-suite test
                      , time
 
                      , shelley-spec-ledger
+                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus
