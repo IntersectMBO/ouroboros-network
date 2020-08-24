@@ -52,7 +52,6 @@ import           GHC.Stack (HasCallStack, callStack, popCallStack)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (lastMaybe, takeUntil)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
@@ -60,6 +59,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Error
                      (ImmutableDBError (..), MissingBlock (..), UserError (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile)
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Test.Ouroboros.Storage.TestBlock hiding (EBB)
 

@@ -23,9 +23,9 @@ import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
                      withStreamIncrementalOffsets)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 

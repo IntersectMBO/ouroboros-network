@@ -12,7 +12,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))

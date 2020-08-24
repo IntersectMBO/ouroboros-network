@@ -38,8 +38,8 @@ import           Ouroboros.Consensus.Storage.ChainDB
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
+import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   RunNode proper

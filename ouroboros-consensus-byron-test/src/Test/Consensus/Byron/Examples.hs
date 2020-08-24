@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
 import           Ouroboros.Consensus.Byron.Ledger

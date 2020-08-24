@@ -28,7 +28,7 @@
 -- have the precise bytestring that we can pass in as the annotation). If we
 -- coupled the encoder to the decoder, we wouldn't be able to cleanly model
 -- this use case. Moreover, sometimes we only need a single direction.
-module Ouroboros.Consensus.Storage.ChainDB.Serialisation (
+module Ouroboros.Consensus.Storage.Serialisation (
     -- * Serialisation to/from disk storage
     EncodeDisk (..)
   , DecodeDisk (..)
@@ -85,7 +85,7 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
   Serialisation to/from disk storage
 -------------------------------------------------------------------------------}
 
--- | Encode a type @a@ so that it can be stored on disk, i.e., by the ChainDB.
+-- | Encode a type @a@ so that it can be stored on disk.
 --
 -- There is no version negotiation for on disk serialisation. However,
 -- instances can still decide to perform versioning internally to maintain
@@ -100,7 +100,7 @@ class EncodeDisk blk a where
     => CodecConfig blk -> a -> Encoding
   encodeDisk _ccfg = encode
 
--- | Decode a type @a@ read from disk, i.e., by the ChainDB.
+-- | Decode a type @a@ read from disk.
 --
 -- There is no version negotiation for on disk serialisation. However,
 -- instances can still decide to perform versioning internally to maintain

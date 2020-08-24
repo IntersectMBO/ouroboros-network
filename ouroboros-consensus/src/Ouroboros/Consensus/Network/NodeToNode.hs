@@ -89,8 +89,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (SerialisedHeader)
+import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 
 {-------------------------------------------------------------------------------
   Handlers

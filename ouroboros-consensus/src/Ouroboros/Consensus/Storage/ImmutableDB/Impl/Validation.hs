@@ -37,8 +37,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (DecodeDisk (..), HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -56,6 +54,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..),
+                     HasBinaryBlockInfo (..))
 
 -- | Bundle of arguments used most validation functions.
 --

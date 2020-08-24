@@ -106,11 +106,11 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.SignableRepresentation ()

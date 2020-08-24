@@ -87,7 +87,7 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
                      StreamTo, UnknownRange)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbSerialiseConstraints)

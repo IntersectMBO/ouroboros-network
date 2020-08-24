@@ -46,12 +46,12 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (BinaryBlockInfo (..), EncodeDisk (..),
-                     HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      extractHeader)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
+import           Ouroboros.Consensus.Storage.Serialisation
+                     (BinaryBlockInfo (..), EncodeDisk (..),
+                     HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl (extractBlockInfo)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId,

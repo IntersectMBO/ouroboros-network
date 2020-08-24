@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Local shorthand to make the instances more readable
 type MockBlock ext = SimpleBlock SimpleMockCrypto ext

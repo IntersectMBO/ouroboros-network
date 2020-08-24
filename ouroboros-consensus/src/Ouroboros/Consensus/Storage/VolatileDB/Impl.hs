@@ -139,11 +139,11 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
                      runWithTempRegistry)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Error

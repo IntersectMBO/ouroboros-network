@@ -187,7 +187,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Init
-                       Ouroboros.Consensus.Storage.ChainDB.Serialisation
                        Ouroboros.Consensus.Storage.Common
                        Ouroboros.Consensus.Storage.FS.API
                        Ouroboros.Consensus.Storage.FS.API.Types
@@ -215,6 +214,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                       Ouroboros.Consensus.Storage.Serialisation
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
                        Ouroboros.Consensus.Storage.VolatileDB.Error

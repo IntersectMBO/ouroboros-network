@@ -37,8 +37,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDbError (..), Reader (..), getPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   Accessing the environment

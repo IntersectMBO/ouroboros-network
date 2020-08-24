@@ -51,7 +51,7 @@ import           Ouroboros.Consensus.Node.Run (RunNode (..),
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Test.Tasty

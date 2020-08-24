@@ -115,12 +115,12 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      runWithTempRegistry)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
 import           Ouroboros.Consensus.Storage.FS.CRC
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks

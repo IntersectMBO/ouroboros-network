@@ -83,9 +83,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
+import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
 import           Ouroboros.Network.MockChain.Chain (Chain (..))

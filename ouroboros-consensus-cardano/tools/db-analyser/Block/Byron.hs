@@ -28,7 +28,7 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Chain
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
+import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron

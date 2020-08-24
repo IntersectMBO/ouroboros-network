@@ -30,11 +30,11 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.CRC
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (DecodeDisk (..), HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
+import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..),
+                     HasBinaryBlockInfo (..))
 
 -- | Information about a block returned by the parser.
 --

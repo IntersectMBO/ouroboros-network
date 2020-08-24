@@ -33,11 +33,11 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
                      ResourceRegistry, allocate, release, unsafeRelease)
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
                      (getBlockComponent)

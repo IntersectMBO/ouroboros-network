@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
                      WithPoint (..), getSerialisedBlockWithPoint,
                      getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion

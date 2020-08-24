@@ -8,8 +8,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (EncodeDisk (..), HasBinaryBlockInfo (..))
+import           Ouroboros.Consensus.Storage.Serialisation (EncodeDisk (..),
+                     HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB hiding
                      (VolatileDbArgs (..))
 

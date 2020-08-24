@@ -65,8 +65,8 @@ import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseNodeToNode (..),
                      SerialiseResult (..))
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-                     (EncodeDisk (..), SerialisedHeader)
+import           Ouroboros.Consensus.Storage.Serialisation (EncodeDisk (..),
+                     SerialisedHeader)
 import           Ouroboros.Consensus.Util.CBOR (decodeAsFlatTerm)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
