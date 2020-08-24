@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..))
@@ -211,6 +212,9 @@ instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
 
 instance ShowProxy (Query ByronBlock) where
+
+instance LedgerSupportsPeerSelection ByronBlock where
+  getPeers = const []
 
 instance CommonProtocolParams ByronBlock where
   maxHeaderSize = fromIntegral . Update.ppMaxHeaderSize . getProtocolParameters

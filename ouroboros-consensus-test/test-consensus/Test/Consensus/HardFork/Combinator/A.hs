@@ -78,6 +78,7 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -369,6 +370,9 @@ instance HasNestedContent Header BlockA where
 
 instance ReconstructNestedCtxt Header BlockA
   -- Use defaults
+
+instance LedgerSupportsPeerSelection BlockA where
+  getPeers = const []
 
 data UpdateA =
    ProposalSubmitted
