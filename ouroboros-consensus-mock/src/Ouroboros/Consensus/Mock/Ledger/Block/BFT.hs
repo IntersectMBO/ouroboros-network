@@ -108,7 +108,7 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
   protocolLedgerView   _ _ = TickedTrivial
-  ledgerViewForecastAt _ _ = Just . trivialForecast
+  ledgerViewForecastAt _   = trivialForecast
 
 {-------------------------------------------------------------------------------
   Forging

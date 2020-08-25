@@ -275,9 +275,9 @@ runChainSync securityParam (ClientUpdates clientUpdates)
               Chain.toAnchoredFragment . fst <$>
               readTVar varClientState
           , getCurrentLedger  = snd <$> readTVar varClientState
-          , getOurTip         = do
-              chain <- fst <$> readTVar varClientState
-              return $ Chain.headTip chain
+          , getPastLedger     = \pt ->
+              computePastLedger nodeCfg pt . fst <$>
+                readTVar varClientState
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
           }
@@ -466,6 +466,43 @@ updateClientState cfg chain ledgerState chainUpdates =
     runValidate m = case runExcept m of
       Left  _ -> error "Client ledger validation error"
       Right x -> x
+
+-- | Simulates 'ChainDB.getPastLedger'.
+computePastLedger ::
+     TopLevelConfig TestBlock
+  -> Point TestBlock
+  -> Chain TestBlock
+  -> Maybe (ExtLedgerState TestBlock)
+computePastLedger cfg pt chain
+    | pt `elem` validPoints
+    = Just $ go testInitExtLedger (Chain.toOldestFirst chain)
+    | otherwise
+    = Nothing
+  where
+    SecurityParam k = configSecurityParam cfg
+
+    curFrag :: AnchoredFragment TestBlock
+    curFrag =
+          AF.anchorNewest k
+        . Chain.toAnchoredFragment
+        $ chain
+
+    validPoints :: [Point TestBlock]
+    validPoints =
+        AF.anchorPoint curFrag : map blockPoint (AF.toOldestFirst curFrag)
+
+    -- | Apply blocks to the ledger state until we have applied the block
+    -- matching @pt@, after which we return the resulting ledger.
+    --
+    -- PRECONDITION: @pt@ is in the list of blocks or genesis.
+    go :: ExtLedgerState TestBlock -> [TestBlock] -> ExtLedgerState TestBlock
+    go !st blks
+        | castPoint (getTip st) == pt
+        = st
+        | blk:blks' <- blks
+        = go (tickThenReapply (extLedgerCfgFromTopLevel cfg) blk st) blks'
+        | otherwise
+        = error "point not in the list of blocks"
 
 {-------------------------------------------------------------------------------
   ChainSyncClientSetup

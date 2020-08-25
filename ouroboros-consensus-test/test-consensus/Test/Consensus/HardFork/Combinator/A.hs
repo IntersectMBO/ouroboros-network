@@ -237,8 +237,8 @@ instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()
 
 instance LedgerSupportsProtocol BlockA where
-  protocolLedgerView   _ _ = TickedTrivial
-  ledgerViewForecastAt _ _ = Just . trivialForecast
+  protocolLedgerView   _ _  = TickedTrivial
+  ledgerViewForecastAt _    = trivialForecast
 
 instance HasPartialConsensusConfig ProtocolA
 

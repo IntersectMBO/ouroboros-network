@@ -54,7 +54,6 @@ import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis (..))
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
@@ -318,7 +317,6 @@ translateLedgerStateByronToShelley
 translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
     ShelleyLedgerState {
       ledgerTip = ledgerTipShelley
-    , history   = History.empty
     , shelleyState
     }
   where

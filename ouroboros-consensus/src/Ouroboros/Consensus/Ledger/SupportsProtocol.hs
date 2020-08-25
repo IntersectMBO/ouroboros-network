@@ -3,7 +3,6 @@
 
 module Ouroboros.Consensus.Ledger.SupportsProtocol (
     LedgerSupportsProtocol(..)
-  , ledgerViewForecastAtTip
   ) where
 
 import           Control.Monad.Except
@@ -28,15 +27,11 @@ class ( BlockSupportsProtocol blk
                      -> Ticked (LedgerState blk)
                      -> Ticked (LedgerView (BlockProtocol blk))
 
-  -- | Get a (historical) forecast at the given slot
+  -- | Get a forecast at the given ledger state.
   --
-  -- Returns 'Nothing' if the given slot is too far in the past.
-  -- It is an 'error' to call this with a slot in the future.
-  --
-  -- This forecast can be used to validate headers of blocks within the range
-  -- of the forecast. These blocks do not necessarily need to live on the same
-  -- branch as the current ledger, but the slot at which the forecast is
-  -- obtained must be within @k@ blocks from the tip.
+  -- This forecast can be used to validate headers of blocks within the range of
+  -- the forecast. These blocks need to live on a chain that fits on the last
+  -- applied block of the given ledger.
   --
   -- The range of the forecast should allow to validate a sufficient number of
   -- headers to validate an alternative chain longer than ours, so that chain
@@ -56,10 +51,10 @@ class ( BlockSupportsProtocol blk
   -- to produce the same view whenever the 'SlotNo' /is/ in range, however.
   -- More precisely:
   --
-  -- For all slots @at@ such that @At at >= ledgerTipSlot st@, if
+  -- If
   --
-  -- >    forecastFor (ledgerViewForecastAt cfg st at) for
-  -- > == Right view
+  -- >    forecastFor (ledgerViewForecastAt cfg st) for
+  -- > == Just view
   --
   -- then
   --
@@ -67,27 +62,11 @@ class ( BlockSupportsProtocol blk
   -- > == view
   --
   -- See 'lemma_ledgerViewForecastAt_applyChainTick'.
-  ledgerViewForecastAt :: HasCallStack
-                       => LedgerConfig blk
-                       -> LedgerState blk
-                       -> WithOrigin SlotNo
-                       -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
-
--- | Get a 'Forecast' from the tip of the ledger
---
--- This is currently only used in block production, and as an indirect way to
--- avoid block production when the wall clock is too far ahead of the ledger.
---
--- TODO: If/when we remove that check, we can probably remove this function.
--- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
-ledgerViewForecastAtTip :: LedgerSupportsProtocol blk
-                        => LedgerConfig blk
-                        -> LedgerState blk
-                        -> Forecast (LedgerView (BlockProtocol blk))
-ledgerViewForecastAtTip cfg st =
-    case ledgerViewForecastAt cfg st (ledgerTipSlot st) of
-      Just forecast -> forecast
-      Nothing       -> error "ledgerViewForecastAtTip: impossible"
+  ledgerViewForecastAt ::
+       HasCallStack
+    => LedgerConfig blk
+    -> LedgerState blk
+    -> Forecast (LedgerView (BlockProtocol blk))
 
 -- | Relation between 'ledgerViewForecastAt' and 'applyChainTick'
 _lemma_ledgerViewForecastAt_applyChainTick

@@ -28,8 +28,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Ledger.History (LedgerViewHistory)
-import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
@@ -126,30 +124,9 @@ instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
           go (steps - 1) (NotOrigin slot) (TPraosState.append slot newPrtclState st)
 
 instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (History.LedgerViewHistory (TPraosMockCrypto h)) where
-  arbitrary = do
-      snapshots   <- choose (0, 5)
-      startSlot   <- SlotNo <$> choose (0, 100)
-      go snapshots startSlot History.empty
-    where
-      maxRollback = 5
-
-      go :: Int
-         -> SlotNo
-         -> LedgerViewHistory (TPraosMockCrypto h)
-         -> Gen (LedgerViewHistory (TPraosMockCrypto h))
-      go snapshots slot hist
-        | 0 <- snapshots = return hist
-        | otherwise      = do
-          ledgerView <- arbitrary
-          let hist' = History.snapOld maxRollback slot ledgerView hist
-          go (snapshots - 1) (succ slot) hist'
-
-instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
       => Arbitrary (LedgerState (Block h)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
-    <*> arbitrary
     <*> arbitrary
 
 instance HashAlgorithm h => Arbitrary (AnnTip (Block h)) where

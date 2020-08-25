@@ -70,7 +70,6 @@ import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -213,7 +212,6 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     initLedgerState :: LedgerState (ShelleyBlock c)
     initLedgerState = ShelleyLedgerState {
         ledgerTip    = GenesisPoint
-      , history      = History.empty
       , shelleyState = SL.chainNes initShelleyState
       }
 

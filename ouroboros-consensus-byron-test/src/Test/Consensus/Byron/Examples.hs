@@ -47,7 +47,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
 import           Ouroboros.Consensus.Byron.Ledger
-import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as DH
 import           Ouroboros.Consensus.Byron.Node (ByronLeaderCredentials (..))
 
 import           Test.Util.Serialisation.Golden (Labelled, labelled, unlabelled)
@@ -195,8 +194,7 @@ exampleChainDepState = withEBB
 
 emptyLedgerState :: LedgerState ByronBlock
 emptyLedgerState = ByronLedgerState {
-      byronLedgerState       = initState
-    , byronDelegationHistory = DH.empty
+      byronLedgerState = initState
     }
   where
     initState :: CC.Block.ChainValidationState

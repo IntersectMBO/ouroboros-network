@@ -330,19 +330,15 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           WrapTickedLedgerView $
             protocolLedgerView (completeLedgerConfig' ei cfg) st
 
-  ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..} (HardForkLedgerState st) p = do
-      st'      <- State.retractToSlot p st
-      forecast <- hsequence' $
-                    hczipWith3
-                      proxySingle
-                      forecastOne
-                      pcfgs
-                      (History.getShape hardForkLedgerConfigShape)
-                      (getHardForkState st')
-      return $ mkHardForkForecast
-                 (InPairs.requiringBoth cfgs $
-                    translateLedgerView hardForkEraTranslation)
-                 forecast
+  ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..} (HardForkLedgerState st) =
+      mkHardForkForecast
+        (InPairs.requiringBoth cfgs $ translateLedgerView hardForkEraTranslation)
+        (hczipWith3
+          proxySingle
+          forecastOne
+          pcfgs
+          (History.getShape hardForkLedgerConfigShape)
+          (getHardForkState st))
     where
       ei    = State.epochInfoLedger ledgerCfg st
       pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -352,13 +348,13 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       --
       -- See comment of 'hardForkEraTransition' for justification of the
       -- use of @st'@ to determine the transition/tip.
-      forecastOne :: forall blk. SingleEraBlock                       blk
-                  => WrapPartialLedgerConfig                          blk
-                  -> K EraParams                                      blk
-                  -> Current LedgerState                              blk
-                  -> (Maybe :.: Current (AnnForecast WrapLedgerView)) blk
-      forecastOne pcfg (K eraParams) Current{..} = Comp $
-          ann <$> ledgerViewForecastAt cfg currentState p
+      forecastOne :: forall blk. SingleEraBlock           blk
+                  => WrapPartialLedgerConfig              blk
+                  -> K EraParams                          blk
+                  -> Current LedgerState                  blk
+                  -> Current (AnnForecast WrapLedgerView) blk
+      forecastOne pcfg (K eraParams) Current{..} =
+          ann $ ledgerViewForecastAt cfg currentState
         where
           cfg :: LedgerConfig blk
           cfg = completeLedgerConfig' ei pcfg

@@ -88,7 +88,6 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
                      TPraosStandardCrypto)
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
@@ -456,16 +455,8 @@ exampleNewEpochState = SL.NewEpochState {
 exampleLedgerState :: LedgerState (ShelleyBlock TPraosStandardCrypto)
 exampleLedgerState = ShelleyLedgerState {
       ledgerTip    = blockPoint exampleBlock
-    , history      = history
     , shelleyState = exampleNewEpochState
     }
-  where
-    history :: History.LedgerViewHistory TPraosStandardCrypto
-    history = History.snapOld
-        (SL.securityParameter SL.testGlobals)
-        (SlotNo 10)
-        (SL.currentLedgerView exampleNewEpochState)
-        History.empty
 
 exampleHeaderState :: HeaderState (ShelleyBlock TPraosStandardCrypto)
 exampleHeaderState = genesisHeaderState st

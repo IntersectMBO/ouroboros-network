@@ -82,19 +82,18 @@ type Consensus (client :: Type -> Type -> (Type -> Type) -> Type -> Type) blk m 
    client (Header blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
-data ChainDbView m blk = ChainDbView
-  { getCurrentChain   :: STM m (AnchoredFragment (Header blk))
-  , getCurrentLedger  :: STM m (ExtLedgerState blk)
-  , getOurTip         :: STM m (Tip blk)
-  , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
-  }
+data ChainDbView m blk = ChainDbView {
+      getCurrentChain   :: STM m (AnchoredFragment (Header blk))
+    , getCurrentLedger  :: STM m (ExtLedgerState blk)
+    , getPastLedger     :: Point blk -> STM m (Maybe (ExtLedgerState blk))
+    , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+    }
 
-defaultChainDbView :: (IOLike m, HasHeader (Header blk))
-                   => ChainDB m blk -> ChainDbView m blk
-defaultChainDbView chainDB = ChainDbView
-    { getCurrentChain   = ChainDB.getCurrentChain   chainDB
+defaultChainDbView :: ChainDB m blk -> ChainDbView m blk
+defaultChainDbView chainDB = ChainDbView {
+      getCurrentChain   = ChainDB.getCurrentChain   chainDB
     , getCurrentLedger  = ChainDB.getCurrentLedger  chainDB
-    , getOurTip         = ChainDB.getCurrentTip     chainDB
+    , getPastLedger     = ChainDB.getPastLedger     chainDB
     , getIsInvalidBlock = ChainDB.getIsInvalidBlock chainDB
     }
 
@@ -350,7 +349,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
                 { getCurrentChain
                 , getCurrentLedger
-                , getOurTip
+                , getPastLedger
                 , getIsInvalidBlock
                 }
                 _version
@@ -373,10 +372,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
          -- ^ Exception to throw when no intersection is found.
       -> Stateful m blk () (ClientPipelinedStIdle 'Z)
     findIntersection mkResult = Stateful $ \() -> do
-      (ourFrag, ourHeaderState, ourTip) <- atomically $ (,,)
+      (ourFrag, ourHeaderState) <- atomically $ (,)
         <$> getCurrentChain
         <*> (headerState <$> getCurrentLedger)
-        <*> (Our <$> getOurTip)
       -- We select points from the last @k@ headers of our current chain. This
       -- means that if an intersection is found for one of these points, it
       -- was an intersection within the last @k@ blocks of our current chain.
@@ -385,6 +383,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           points    = AF.selectPoints
                         (map fromIntegral (offsets maxOffset))
                         ourFrag
+          ourTip    = ourTipFromChain ourFrag
           uis = UnknownIntersectionState
             { ourFrag        = ourFrag
             , ourHeaderState = ourHeaderState
@@ -464,7 +463,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                                , ourFrag
                                } = do
       ourFrag' <- getCurrentChain
-      ourTip'  <- Our <$> getOurTip
       if
         | AF.headPoint ourFrag == AF.headPoint ourFrag' ->
           -- Our current chain didn't change, and changes to their chain that
@@ -504,7 +502,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                  { ourFrag                = ourFrag'
                  , theirFrag              = trimmedCandidateFrag
                  , theirHeaderState       = theirHeaderState
-                 , ourTip                 = ourTip'
+                 , ourTip                 = ourTipFromChain ourFrag'
                  , mostRecentIntersection = castPoint intersection
                  }
 
@@ -644,10 +642,28 @@ chainSyncClient mkPipelineDecision0 tracer cfg
         mKis' <- intersectsWithCurrentChain kis
         case mKis' of
           Nothing -> return NoLongerIntersects
-          Just kis'@KnownIntersectionState { ourTip, mostRecentIntersection } ->
-            getLedgerView hdr mostRecentIntersection ourTip theirTip >>= \case
-              Left  result     -> return $ Uninteresting result
-              Right ledgerView -> return $ Intersects kis' ledgerView
+          Just kis'@KnownIntersectionState { mostRecentIntersection } -> do
+            -- We're calling 'ledgerViewForecastAt' in the same STM transaction
+            -- as 'intersectsWithCurrentChain'. This guarantees the former's
+            -- precondition: the intersection is within the last @k@ blocks of
+            -- the current chain.
+            forecast <-
+              maybe
+                (error $
+                   "intersection not within last k blocks: " <> show mostRecentIntersection)
+                (ledgerViewForecastAt (configLedger cfg) . ledgerState)
+                <$> getPastLedger mostRecentIntersection
+
+            case runExcept $ forecastFor forecast (blockSlot hdr) of
+              -- The header is too far ahead of the intersection point with our
+              -- current chain. We have to wait until our chain and the
+              -- intersection have advanced far enough. This will wait on
+              -- changes to the current chain via the call to
+              -- 'intersectsWithCurrentChain' befoer it.
+              Left OutsideForecastRange{} ->
+                retry
+              Right ledgerView ->
+                return $ Intersects kis' ledgerView
 
       case intersectCheck of
         NoLongerIntersects ->
@@ -657,11 +673,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           continueWithState ()
             $ drainThePipe n
             $ findIntersection NoMoreIntersection
-
-        Uninteresting result ->
-          -- The upstream chain is no longer interesting to us, gracefully
-          -- terminate with the given result
-          terminateAfterDrain n result
 
         Intersects kis' ledgerView -> do
           -- Our chain still intersects with the candidate fragment and we
@@ -706,52 +717,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           atomically $ writeTVar varCandidate theirFrag'
 
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
-
-    -- Get the ledger view required to validate the header
-    --
-    -- To validate the block, we need the consensus chain state (updated using
-    -- headers only, and kept as part of the candidate state) and the
-    -- (forecast) ledger view. We read the latter as the first thing in
-    -- the transaction, because we might have to retry the transaction if the
-    -- ledger state is too far behind the upstream peer (see below).
-    --
-    -- NOTE: this doesn't need to be consistent with our current (possibly
-    -- outdated) view of our chain, i.e. 'ourFrag', we /only/ use
-    -- @curLedger@ to validate /their/ header, even in the special case
-    -- discussed below.
-    getLedgerView ::
-         Header blk
-      -> Point blk        -- ^ Intersection between our and their chain
-      -> Our (Tip blk)    -- ^ Only to produce an error message
-      -> Their (Tip blk)  -- ^ Only to produce an error message
-      -> STM m (Either ChainSyncClientResult
-                       (Ticked (LedgerView (BlockProtocol blk))))
-    getLedgerView hdr intersection ourTip theirTip = do
-        curLedger <- ledgerState <$> getCurrentLedger
-
-        -- The invariant guarantees us that the intersection of their tip
-        -- and our tip is within k blocks from our tip. This means that the
-        -- forecast ledger view must be available, unless
-        --
-        -- (1) they are too far /ahead/ of us, and we must simply wait
-        -- (2) the chain density is so low that despite having @k@ blocks,
-        --     we nonetheless have no ledger view available. This should not
-        --     happen under normal conditions.
-        case ledgerViewForecastAt
-               (configLedger cfg)
-               curLedger
-               (pointSlot intersection) of
-          Nothing -> -- Case (2)
-            return $ Left $
-              InvalidRollForward (realPointToPoint hdrPoint) ourTip theirTip
-          Just forecast ->
-            case runExcept $ forecastFor forecast (realPointSlot hdrPoint) of
-              Left OutsideForecastRange{} -> -- Case (1)
-                retry
-              Right lv ->
-                return $ Right lv
-      where
-        hdrPoint = headerRealPoint hdr
 
     rollBackward :: MkPipelineDecision
                  -> Nat n
@@ -843,6 +808,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     traceException m = m `catch` \(e :: ChainSyncClientException) -> do
       traceWith tracer $ TraceException e
       throwM e
+
+    ourTipFromChain :: AnchoredFragment (Header blk) -> Our (Tip blk)
+    ourTipFromChain = Our . AF.anchorToTip . AF.headAnchor
 
     -- Recent offsets
     --
@@ -944,9 +912,6 @@ data IntersectCheck blk =
     -- | The upstream chain no longer intersects with our current chain because
     -- our current chain changed in the background.
     NoLongerIntersects
-    -- | The upstream chain still interects with our current chain, but is no
-    -- longer interesting. Gracefully terminate with the given result.
-  | Uninteresting ChainSyncClientResult
     -- | The upstream chain still intersects with our chain, return the
     -- resulting 'KnownIntersectionState' and the 'LedgerView' corresponding to
     -- the header 'rollForward' received.
@@ -996,20 +961,6 @@ data ChainSyncClientResult =
           (Our   (Tip blk))
           (Their (Tip blk))
 
-      -- | We were unable to get a ledger view for the intersection point
-      -- between the candidate's chain and our chain.
-      --
-      -- This can only happen in the case of very low density chains, where
-      -- the @k@ blocks on our chain span more than @2k@ slots. Note that
-      -- producing a block on top of a chain while the distance from the tip
-      -- of that chain to the current slot (in terms of wallblock) is very
-      -- large will also result in such a low density chain.
-    | forall blk. BlockSupportsProtocol blk =>
-        InvalidRollForward
-          (Point blk)  -- ^ Roll forward to this header
-          (Our   (Tip blk))
-          (Their (Tip blk))
-
       -- | Our chain changed such that it no longer intersects with the
       -- candidate's fragment, and asking for a new intersection did not yield
       -- one.
@@ -1038,12 +989,6 @@ instance Eq ChainSyncClientResult where
       Nothing   -> False
       Just Refl -> (a, b, c) == (a', b', c')
   ForkTooDeep{} == _ = False
-
-  InvalidRollForward (a :: Point blk) b c == InvalidRollForward (a' :: Point blk') b' c' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> (a, b, c) == (a', b', c')
-  InvalidRollForward{} == _ = False
 
   NoMoreIntersection (a :: Our (Tip blk)) b == NoMoreIntersection (a' :: Our (Tip blk')) b' =
     case eqT @blk @blk' of

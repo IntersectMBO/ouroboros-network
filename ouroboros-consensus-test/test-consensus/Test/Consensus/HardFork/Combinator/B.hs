@@ -203,7 +203,7 @@ instance BlockSupportsProtocol BlockB where
 
 instance LedgerSupportsProtocol BlockB where
   protocolLedgerView   _ _ = TickedTrivial
-  ledgerViewForecastAt _ _ = Just . trivialForecast
+  ledgerViewForecastAt _   = trivialForecast
 
 instance HasPartialConsensusConfig ProtocolB
 
