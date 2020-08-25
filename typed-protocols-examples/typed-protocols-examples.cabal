@@ -21,7 +21,7 @@ library
   exposed-modules:   Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver.Simple
-  
+
                    , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
@@ -54,11 +54,11 @@ library
   ghc-options:       -Wall
                      -Wno-unticked-promoted-constructors
                      -Wcompat
-                     -Wincomplete-uni-patterns                            
-                     -Wincomplete-record-updates                          
-                     -Wpartial-fields                                     
-                     -Widentities                                         
-                     -Wredundant-constraints                              
+                     -Wincomplete-uni-patterns
+                     -Wincomplete-record-updates
+                     -Wpartial-fields
+                     -Widentities
+                     -Wredundant-constraints
 
 test-suite typed-protocols-tests
   type:              exitcode-stdio-1.0

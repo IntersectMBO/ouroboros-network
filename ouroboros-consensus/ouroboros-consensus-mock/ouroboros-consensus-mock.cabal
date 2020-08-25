@@ -41,9 +41,8 @@ library
                        Ouroboros.Consensus.Mock.Node.Serialisation
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
-  build-depends:       base              >=4.9   && <4.13
+  build-depends:       base              >=4.9   && <4.15
                      , bimap             >=0.3   && <0.5
-                     , binary            >=0.8   && <0.9
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class

@@ -24,7 +24,6 @@ packages: ./typed-protocols
 
 constraints:
   ip < 1.5,
-  graphviz == 2999.20.0.3,
   hedgehog >= 1.0,
   bimap >= 0.4.0
 
