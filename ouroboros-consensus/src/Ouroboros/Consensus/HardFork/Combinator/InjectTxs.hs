@@ -50,7 +50,6 @@ matchTx' = go
     go _            (Z x) (TZ f)   = Right $ TZ (Pair x f)
     go (PCons _ is) (S x) (TS g f) = bimap MS (TS g) $ go is x f
     go _            (S x) (TZ f)   = Left $ MR x f
-    go PNil            _  (TS _ f) = case f of {}
     go (PCons i is) (Z x) (TS g f) =
         case injectTxWith i x of
           Nothing -> Left $ ML x (Telescope.tip f)
