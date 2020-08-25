@@ -29,12 +29,11 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async
-import           Control.Exception (SomeException)
 import qualified Control.Exception as E
-import           Control.Monad (void)
 import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
 import           Data.Proxy
+import           Data.Kind (Type)
 
 class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
   {-# MINIMAL waitCatchSTM, pollSTM #-}
@@ -98,7 +97,7 @@ class ( MonadSTM m
   {-# MINIMAL async, asyncThreadId, cancel, cancelWith, asyncWithUnmask #-}
 
   -- | An asynchronous action
-  type Async m :: * -> *
+  type Async m :: Type -> Type
 
   async                 :: m a -> m (Async m a)
   asyncThreadId         :: Proxy m -> Async m a -> ThreadId m

@@ -57,8 +57,8 @@ import qualified Control.Monad.STM as STM
 
 import           Control.Applicative (Alternative (..))
 import           Control.Exception
-import           Control.Monad (MonadPlus)
 import           Control.Monad.Reader
+import           Data.Kind (Type)
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -73,7 +73,7 @@ class ( Monad stm
       , Alternative stm
       , MonadPlus stm
       ) => MonadSTMTx stm where
-  type TVar_ stm :: * -> *
+  type TVar_ stm :: Type -> Type
 
   newTVar      :: a -> stm (TVar_ stm a)
   readTVar     :: TVar_ stm a -> stm a
@@ -92,7 +92,7 @@ class ( Monad stm
   check _    = retry
 
   -- Additional derived STM APIs
-  type TMVar_ stm :: * -> *
+  type TMVar_ stm :: Type -> Type
   newTMVar        :: a -> stm (TMVar_ stm a)
   newEmptyTMVar   ::      stm (TMVar_ stm a)
   takeTMVar       :: TMVar_ stm a      -> stm a
@@ -104,14 +104,14 @@ class ( Monad stm
   swapTMVar       :: TMVar_ stm a -> a -> stm a
   isEmptyTMVar    :: TMVar_ stm a      -> stm Bool
 
-  type TQueue_ stm :: * -> *
+  type TQueue_ stm :: Type -> Type
   newTQueue      :: stm (TQueue_ stm a)
   readTQueue     :: TQueue_ stm a -> stm a
   tryReadTQueue  :: TQueue_ stm a -> stm (Maybe a)
   writeTQueue    :: TQueue_ stm a -> a -> stm ()
   isEmptyTQueue  :: TQueue_ stm a -> stm Bool
 
-  type TBQueue_ stm :: * -> *
+  type TBQueue_ stm :: Type -> Type
   newTBQueue     :: Natural -> stm (TBQueue_ stm a)
   readTBQueue    :: TBQueue_ stm a -> stm a
   tryReadTBQueue :: TBQueue_ stm a -> stm (Maybe a)
@@ -126,7 +126,7 @@ type TBQueue m = TBQueue_ (STM m)
 
 class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
   -- STM transactions
-  type STM m :: * -> *
+  type STM m :: Type -> Type
 
   atomically :: HasCallStack => STM m a -> m a
 

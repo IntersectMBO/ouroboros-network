@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTSyntax                 #-}
@@ -57,25 +58,25 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Time (DiffTime, NominalDiffTime, UTCTime (..), addUTCTime,
+import           Data.Time (NominalDiffTime, UTCTime (..), addUTCTime,
                      diffUTCTime, fromGregorian)
 import           Data.Typeable (Typeable)
 
-import           Control.Applicative (Alternative (..), Applicative (..))
-import           Control.Exception (ErrorCall (..), Exception (..),
-                     SomeException, assert, asyncExceptionFromException,
-                     asyncExceptionToException, throw)
-import           Control.Monad (MonadPlus, join, mapM_)
+import           Control.Applicative (Alternative (..))
+import           Control.Exception (ErrorCall (..), assert,
+                     asyncExceptionFromException, asyncExceptionToException,
+                     throw)
+import           Control.Monad (MonadPlus, join)
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
-import qualified Control.Monad.ST.Strict as StrictST
 import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
+import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
 import qualified Control.Monad.Catch as Exceptions
-import           Control.Monad.Fail as MonadFail
+import qualified Control.Monad.Fail as Fail
 
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
@@ -184,9 +185,11 @@ instance Monad (SimM s) where
     {-# INLINE (>>) #-}
     (>>) = (*>)
 
-    fail = MonadFail.fail
+#if !(MIN_VERSION_base(4,13,0))
+    fail = Fail.fail
+#endif
 
-instance MonadFail (SimM s) where
+instance Fail.MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
 
 
@@ -214,9 +217,11 @@ instance Monad (STM s) where
     {-# INLINE (>>) #-}
     (>>) = (*>)
 
-    fail = MonadFail.fail
+#if !(MIN_VERSION_base(4,13,0))
+    fail = Fail.fail
+#endif
 
-instance MonadFail (STM s) where
+instance Fail.MonadFail (STM s) where
   fail msg = STM $ \_ -> ThrowStm (toException (ErrorCall msg))
 
 instance Alternative (STM s) where

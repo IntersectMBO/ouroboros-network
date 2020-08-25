@@ -19,7 +19,7 @@ import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Exception (assert)
 import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
-import           Data.Functor (void)
+import           Data.Kind (Type)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
@@ -43,7 +43,7 @@ class Monad m => MonadDelay m where
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
 class (MonadSTM m, MonadDelay m) => MonadTimer m where
-  data Timeout m :: *
+  data Timeout m :: Type
 
   -- | Create a new timeout which will fire at the given time duration in
   -- the future.
