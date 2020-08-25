@@ -292,7 +292,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
   where
     -- Byron
     ProtocolInfo {
-        pInfoConfig = TopLevelConfig {
+        pInfoConfig = topLevelConfigByron@TopLevelConfig {
             topLevelConfigProtocol = consensusConfigByron
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = ledgerConfigByron
@@ -388,7 +388,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                 blockConfigShelley
           , blockConfigCodec =
               CardanoCodecConfig
-                (Byron.mkByronCodecConfig genesisByron)
+                (configCodec topLevelConfigByron)
                 Shelley.ShelleyCodecConfig
           }
       }

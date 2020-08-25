@@ -106,6 +106,7 @@ import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -666,9 +667,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
       invalidTracer addTracer selTracer updatesTracer
       nodeDBs _coreNodeId = ChainDbArgs
         { -- HasFS instances
-          cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
+          cdbHasFSImmDb           = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
+        , cdbHasFSVolDb           = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB           = SomeHasFS $ simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
         , cdbImmValidation        = ImmDB.ValidateAllChunks
         , cdbVolValidation        = VolDB.ValidateAll

@@ -1,17 +1,16 @@
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE PatternSynonyms           #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Thin wrapper around the ImmutableDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
@@ -91,7 +90,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS,
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
@@ -141,12 +140,12 @@ type TraceEvent blk =
 -- | Arguments to initialize the ImmutableDB
 --
 -- See also 'defaultArgs'.
-data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
+data ImmDbArgs m blk = ImmDbArgs {
       immCodecConfig    :: CodecConfig blk
     , immChunkInfo      :: ChunkInfo
     , immValidation     :: ImmDB.ValidationPolicy
     , immCheckIntegrity :: blk -> Bool
-    , immHasFS          :: HasFS m h
+    , immHasFS          :: SomeHasFS m
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
     , immRegistry       :: ResourceRegistry m
@@ -163,7 +162,7 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immHasFS              = ioHasFS $ MountPoint (fp </> "immutable")
+      immHasFS              = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
     , immCacheConfig        = cacheConfig
     , immTracer             = nullTracer
       -- Fields without a default
@@ -223,8 +222,8 @@ openDB
      )
   => ImmDbArgs m blk
   -> m (ImmDB m blk)
-openDB ImmDbArgs {..} = do
-    createDirectoryIfMissing immHasFS True (mkFsPath [])
+openDB ImmDbArgs { immHasFS = SomeHasFS hasFS, ..} = do
+    createDirectoryIfMissing hasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
       { immDB              = immDB
@@ -234,7 +233,7 @@ openDB ImmDbArgs {..} = do
   where
     args = ImmDB.ImmutableDbArgs
       { registry    = immRegistry
-      , hasFS       = immHasFS
+      , hasFS       = hasFS
       , chunkInfo   = immChunkInfo
       , hashInfo    = hashInfo (Proxy @blk)
       , tracer      = immTracer
@@ -245,7 +244,7 @@ openDB ImmDbArgs {..} = do
       }
     parser = ImmDB.chunkFileParser
                immCodecConfig
-               immHasFS
+               hasFS
                (decodeDisk immCodecConfig)
                immCheckIntegrity
 

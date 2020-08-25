@@ -32,12 +32,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
   Arguments
 -------------------------------------------------------------------------------}
 
-data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
+data ChainDbArgs m blk = ChainDbArgs {
 
       -- HasFS instances
-      cdbHasFSImmDb       :: HasFS m h1
-    , cdbHasFSVolDb       :: HasFS m h2
-    , cdbHasFSLgrDB       :: HasFS m h3
+      cdbHasFSImmDb       :: SomeHasFS m
+    , cdbHasFSVolDb       :: SomeHasFS m
+    , cdbHasFSLgrDB       :: SomeHasFS m
 
       -- Policy
     , cdbImmValidation    :: ImmDB.ValidationPolicy
