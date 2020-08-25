@@ -14,13 +14,13 @@ module Main (main) where
 import           Data.Foldable (asum)
 import           Options.Applicative
 
-import           Control.Tracer (contramap, debugTracer, nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import qualified Ouroboros.Consensus.Node as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Util.IOLike (atomically)
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -160,6 +160,7 @@ analyse
   -> IO ()
 analyse CmdLine {..} args =
     withRegistry $ \registry -> do
+      tracer <- mkTracer verbose
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmDbChunkInfo cfg
@@ -181,9 +182,13 @@ analyse CmdLine {..} args =
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
   where
-    tracer
-      | verbose   = contramap show debugTracer
-      | otherwise = nullTracer
+    mkTracer False = return nullTracer
+    mkTracer True  = do
+      startTime <- getMonotonicTime
+      return $ Tracer $ \ev -> do
+        traceTime <- getMonotonicTime
+        let diff = diffTime traceTime startTime
+        putStrLn $ concat ["[", show diff, "] ", show ev]
 
     immValidationPolicy = case (analysis, validation) of
       (_, Just ValidateAllBlocks)      -> ImmDB.ValidateAllChunks
