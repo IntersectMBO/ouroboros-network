@@ -48,7 +48,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.9 && <4.13,
+  build-depends:       base              >=4.9 && <4.15,
                        io-sim,
 
                        cborg             >=0.2.1 && <0.3,
@@ -59,8 +59,8 @@ library
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -Wcompat
-                       -Wincomplete-uni-patterns                            
-                       -Wincomplete-record-updates                          
-                       -Wpartial-fields                                     
-                       -Widentities                                         
-                       -Wredundant-constraints                              
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints

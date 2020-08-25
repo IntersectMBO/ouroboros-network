@@ -7,7 +7,7 @@ license-files:
 category:            Network
 build-type:          Simple
 extra-source-files:  README.md
-cabal-version:       >=1.20
+cabal-version:       >=1.10
 
 flag demo
   description: Build a demo application
@@ -19,13 +19,13 @@ library
   other-modules:        Network.NTP.Client.Packet
                         Network.NTP.Client.Query
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.13
-                      , binary          >=0.8 && <0.9
+                      , base            >=4.9 && <4.15
+                      , binary          >=0.8 && <0.11
                       , bytestring      >=0.10 && <0.11
                       , contra-tracer   >=0.1 && <0.2
                       , network         >= 3.1 && <3.2
                       , stm             >=2.4 && <2.6
-                      , time            >=1.6 && <1.10
+                      , time            >=1.6 && <1.11
                       , Win32-network   >=0.1 && <0.2
 
   hs-source-dirs:       src
@@ -44,9 +44,9 @@ test-suite test-ntp-client
   main-is:            Test.hs
   other-modules:        Network.NTP.Client.Packet
   type:               exitcode-stdio-1.0
-  build-depends:        base            >=4.9 && <4.13
-                      , binary          >=0.8 && <0.9
-                      , time            >=1.6 && <1.10
+  build-depends:        base            >=4.9 && <4.15
+                      , binary          >=0.8 && <0.11
+                      , time            >=1.6 && <1.11
                       , QuickCheck
                       , tasty
                       , tasty-quickcheck
@@ -61,7 +61,7 @@ executable demo-ntp-client
   else
      buildable: False
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.13
+                      , base            >=4.9 && <4.15
                       , contra-tracer   >=0.1 && <0.2
                       , Win32-network   >=0.1 && <0.2
                       , ntp-client
