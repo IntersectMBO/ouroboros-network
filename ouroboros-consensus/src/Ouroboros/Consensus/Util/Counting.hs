@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Util.Counting (
   ) where
 
 import qualified Data.Foldable as Foldable
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Util.SOP
@@ -56,12 +57,12 @@ import           Ouroboros.Consensus.Util.SOP
 type Exactly xs a = NP (K a) xs
 
 -- | At most one value for each type level index
-data AtMost :: [*] -> * -> * where
+data AtMost :: [Type] -> Type -> Type where
   AtMostNil  :: AtMost xs a
   AtMostCons :: !a -> !(AtMost xs a) -> AtMost (x ': xs) a
 
 -- | Non-empty variation on 'AtMost'
-data NonEmpty :: [*] -> * -> * where
+data NonEmpty :: [Type] -> Type -> Type where
   NonEmptyOne  :: !a -> NonEmpty (x ': xs) a
   NonEmptyCons :: !a -> !(NonEmpty xs a) -> NonEmpty (x ': xs) a
 

@@ -16,7 +16,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (Coercible, coerce)
-import           Data.Proxy (Proxy (..))
 import           Data.SOP.BasicFunctors
 
 import           Cardano.Crypto.Hash (ShortHash)
@@ -34,8 +33,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
-import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..),
-                     Query (..))
+import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node ()

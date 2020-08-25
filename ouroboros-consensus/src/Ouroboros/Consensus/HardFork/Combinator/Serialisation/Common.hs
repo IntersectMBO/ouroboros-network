@@ -76,6 +76,7 @@ import           Control.Exception (throw)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
@@ -104,10 +105,10 @@ import           Ouroboros.Consensus.Util.SOP
   Distinguish between the first era and all others
 -------------------------------------------------------------------------------}
 
-type family FirstEra (xs :: [*]) where
+type family FirstEra (xs :: [Type]) where
   FirstEra (x ': xs) = x
 
-type family LaterEra (xs :: [*]) where
+type family LaterEra (xs :: [Type]) where
   LaterEra (x ': xs) = xs
 
 isFirstEra :: forall f xs. All SingleEraBlock xs

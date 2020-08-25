@@ -4,9 +4,7 @@
 module Test.ThreadNet.RealTPraos (tests) where
 
 import           Control.Monad (replicateM)
-import           Data.List ((!!))
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
 import           Test.QuickCheck

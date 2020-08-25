@@ -8,7 +8,7 @@ module Test.Ouroboros.Storage.ChainDB.GcSchedule (tests, example) where
 import           Control.Monad (forM)
 import           Control.Tracer (nullTracer)
 import           Data.Fixed (div')
-import           Data.List
+import           Data.List (foldl', partition, sort)
 import           Data.Time.Clock
 import           Data.Void (Void)
 

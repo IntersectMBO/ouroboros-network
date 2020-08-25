@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (ChunkNo (..), RelativeSlot (..), maxRelativeIndex)
+                     (RelativeSlot (..), maxRelativeIndex)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary

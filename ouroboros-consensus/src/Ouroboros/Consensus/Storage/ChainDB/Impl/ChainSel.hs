@@ -22,7 +22,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (unless)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, contramap, traceWith)
@@ -33,7 +32,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)

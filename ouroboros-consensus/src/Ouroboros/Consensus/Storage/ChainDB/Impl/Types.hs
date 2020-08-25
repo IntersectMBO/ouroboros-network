@@ -60,7 +60,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
-import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
@@ -69,7 +68,7 @@ import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 

@@ -346,7 +346,7 @@ writeSnapshot :: forall m l r h. MonadThrow m
               -> (l -> Encoding)
               -> (r -> Encoding)
               -> DiskSnapshot -> ChainSummary l r -> m ()
-writeSnapshot hasFS@HasFS{..} encLedger encRef ss cs = do
+writeSnapshot hasFS encLedger encRef ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where

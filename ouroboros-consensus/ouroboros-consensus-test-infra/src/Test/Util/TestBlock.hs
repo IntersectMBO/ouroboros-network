@@ -67,7 +67,6 @@ import           Data.Proxy
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
-import           Data.Type.Equality ((:~:) (Refl))
 import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Random as R
@@ -76,7 +75,7 @@ import           Test.QuickCheck hiding (Result)
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block hiding (hashSize)

@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Inspect (
   ) where
 
 import           Data.Either
+import           Data.Kind (Type)
 import           Data.Void
 
 import           Ouroboros.Consensus.Config
@@ -52,8 +53,8 @@ class ( Show     (LedgerWarning blk)
       , Eq       (LedgerUpdate  blk)
       , Condense (LedgerUpdate  blk)
       ) => InspectLedger blk where
-  type LedgerWarning blk :: *
-  type LedgerUpdate  blk :: *
+  type LedgerWarning blk :: Type
+  type LedgerUpdate  blk :: Type
 
   -- | Inspect the ledger
   --

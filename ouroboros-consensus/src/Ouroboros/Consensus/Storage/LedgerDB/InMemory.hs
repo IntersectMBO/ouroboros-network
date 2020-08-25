@@ -13,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
@@ -69,7 +70,7 @@ import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
-import           Data.Kind (Constraint)
+import           Data.Kind (Constraint, Type)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:|>), Empty), (|>))
 import qualified Data.Sequence.Strict as Seq
@@ -298,7 +299,7 @@ instance Monad m => ThrowsLedgerError l r (ExceptT (AnnLedgerError l r) m) where
 -- * Compute the constraint @c@ on the monad @m@ in order to run the query:
 --   a. If we are passing a block by reference, we must be able to resolve it.
 --   b. If we are applying rather than reapplying, we might have ledger errors.
-data Ap :: (* -> *) -> * -> * -> * -> Constraint -> * where
+data Ap :: (Type -> Type) -> Type -> Type -> Type -> Constraint -> Type where
   ReapplyVal :: r -> b -> Ap m l r b ()
   ApplyVal   :: r -> b -> Ap m l r b (                       ThrowsLedgerError l r m)
   ReapplyRef :: r      -> Ap m l r b (ResolvesBlocks  r b m)
@@ -459,8 +460,6 @@ pushLedgerState current' ref db@LedgerDB{..}  = prune $ db {
       ledgerDbCheckpoints = snapshots
     }
   where
-    LedgerDbParams{..} = ledgerDbParams
-
     snapshots = ledgerDbCheckpoints |> Checkpoint ref current'
 
 {-------------------------------------------------------------------------------

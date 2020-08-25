@@ -60,8 +60,6 @@ import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks (..))
-
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API

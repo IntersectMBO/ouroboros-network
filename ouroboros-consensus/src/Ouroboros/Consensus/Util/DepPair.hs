@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Util.DepPair (
   , Proxy(..)
   ) where
 
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict (I (..))
 import           Data.Type.Equality ((:~:) (..))
@@ -65,7 +66,7 @@ class SameDepIndex f where
 
 -- | A dependency is trivial if it always maps to the same type @b@
 class TrivialDependency f where
-  type TrivialIndex f :: *
+  type TrivialIndex f :: Type
   hasSingleIndex :: f a -> f b -> a :~: b
   indexIsTrivial :: f (TrivialIndex f)
 

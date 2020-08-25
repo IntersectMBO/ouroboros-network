@@ -9,7 +9,6 @@ module Test.ThreadNet.LeaderSchedule (
 import           Control.Monad (replicateM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 
 import           Test.QuickCheck
 import           Test.Tasty

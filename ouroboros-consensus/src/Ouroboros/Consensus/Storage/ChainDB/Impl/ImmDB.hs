@@ -75,7 +75,6 @@ import           Data.Binary.Put (Put)
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
-import           Data.Proxy (Proxy (..))
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           GHC.Stack

@@ -22,10 +22,11 @@ import           Control.Monad.Except
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes
+import           Data.Kind (Type)
 import           Data.List (delete, sort)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
+import           Data.TreeDiff (defaultExprViaShow)
 import           Data.Typeable
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
@@ -265,7 +266,7 @@ data TestThread m = TestThread {
 -- | Instructions to a thread
 --
 -- The type argument indicates the result of the instruction
-data ThreadInstr m :: * -> * where
+data ThreadInstr m :: Type -> Type where
   -- | Have the thread spawn a child thread
   ThreadFork :: Link () -> ThreadInstr m (TestThread m)
 

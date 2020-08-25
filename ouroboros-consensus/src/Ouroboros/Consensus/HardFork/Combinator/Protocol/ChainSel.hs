@@ -14,6 +14,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel (
   , mapWithBlockNo
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block
@@ -28,7 +29,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
   Configuration
 -------------------------------------------------------------------------------}
 
-data AcrossEraSelection :: * -> * -> * where
+data AcrossEraSelection :: Type -> Type -> Type where
   -- | Just compare block numbers
   --
   -- This is a useful default when two eras run totally different consensus
@@ -144,7 +145,7 @@ acrossEraSelection = \cfgs ffs l r ->
   WithBlockNo
 -------------------------------------------------------------------------------}
 
-data WithBlockNo (f :: k -> *) (a :: k) = WithBlockNo {
+data WithBlockNo (f :: k -> Type) (a :: k) = WithBlockNo {
       getBlockNo  :: BlockNo
     , dropBlockNo :: f a
     }

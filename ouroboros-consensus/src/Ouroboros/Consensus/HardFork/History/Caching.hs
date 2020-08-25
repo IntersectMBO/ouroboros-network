@@ -10,6 +10,8 @@ module Ouroboros.Consensus.HardFork.History.Caching (
   , cachedRunQueryThrow
   ) where
 
+import           Data.Kind (Type)
+
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.History.Qry
@@ -20,7 +22,7 @@ import           Ouroboros.Consensus.HardFork.History.Summary
 -------------------------------------------------------------------------------}
 
 -- | Stateful abstraction to execute queries
-data RunWithCachedSummary (xs :: [*]) m = RunWithCachedSummary {
+data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
       -- | Run the specified query
       --
       -- If the query fails with a 'PastHorizonException', it will update its

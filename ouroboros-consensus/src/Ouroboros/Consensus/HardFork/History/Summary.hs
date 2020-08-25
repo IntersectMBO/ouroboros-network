@@ -51,6 +51,7 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Dict (Dict (..))
 import           Data.SOP.Strict (K (..), NP (..), SListI, lengthSList)
@@ -276,7 +277,7 @@ singletonShape params = Shape (exactlyOne params)
 -- Any transition listed here must be "certain". How certainty is established is
 -- ledger dependent, but it should imply that this is no longer subject to
 -- rollback.
-data Transitions :: [*] -> * where
+data Transitions :: [Type] -> Type where
   -- | If the indices are, say, @'[Byron, Shelley, Goguen]@, then we can have
   -- have at most two transitions: one to Shelley, and one to Goguen. There
   -- cannot be a transition /to/ the initial ledger.

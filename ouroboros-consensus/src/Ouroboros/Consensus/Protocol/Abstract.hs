@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
+import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 
@@ -31,7 +32,7 @@ import           Ouroboros.Consensus.Ticked
 -- Defined out of the class so that protocols can define this type without
 -- having to define the entire protocol at the same time (or indeed in the same
 -- module).
-data family ConsensusConfig p :: *
+data family ConsensusConfig p :: Type
 
 -- | Chain selection
 class ( NoUnexpectedThunks (ChainSelConfig p)
@@ -41,11 +42,11 @@ class ( NoUnexpectedThunks (ChainSelConfig p)
       , Eq   (ChainSelConfig p)
       ) => ChainSelection p where
   -- | Configuration required for chain selection
-  type family ChainSelConfig p :: *
+  type family ChainSelConfig p :: Type
   type ChainSelConfig p = ()
 
   -- | View on a header required for chain selection
-  type family SelectView p :: *
+  type family SelectView p :: Type
   type SelectView p = BlockNo
 
   -- | Do we prefer the candidate chain over ours?
@@ -118,13 +119,13 @@ class ( Show (ChainDepState   p)
   --
   -- NOTE: This chain is blockchain dependent, i.e., updated when new blocks
   -- come in (more precisely, new /headers/), and subject to rollback.
-  type family ChainDepState p :: *
+  type family ChainDepState p :: Type
 
   -- | Evidence that a node /is/ the leader
-  type family IsLeader p :: *
+  type family IsLeader p :: Type
 
   -- | Evidence that we /can/ be a leader
-  type family CanBeLeader p :: *
+  type family CanBeLeader p :: Type
 
   -- | Projection of the ledger state the Ouroboros protocol needs access to
   --
@@ -165,13 +166,13 @@ class ( Show (ChainDepState   p)
   -- in the consensus layer since that depends on the computation (and sampling)
   -- of entropy, which is done consensus side, not ledger side (the reward
   -- calculation does not depend on this).
-  type family LedgerView p :: *
+  type family LedgerView p :: Type
 
   -- | Validation errors
-  type family ValidationErr p :: *
+  type family ValidationErr p :: Type
 
   -- | View on a header required to validate it
-  type family ValidateView p :: *
+  type family ValidateView p :: Type
 
   -- | 'ConsensusConfig' must include the 'ChainSelConfig' p
   chainSelConfig :: ConsensusConfig p -> ChainSelConfig p

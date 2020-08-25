@@ -45,8 +45,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
-import           Ouroboros.Consensus.Mock.Ledger.Block
-                     (Ticked (TickedSimpleLedgerState))
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,

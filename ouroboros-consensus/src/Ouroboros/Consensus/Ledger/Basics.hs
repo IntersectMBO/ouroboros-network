@@ -20,6 +20,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TickedLedgerState
   ) where
 
+import           Data.Kind (Type)
+
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -48,7 +50,7 @@ getTipSlot = pointSlot . getTip
 -------------------------------------------------------------------------------}
 
 -- | Static environment required for the ledger
-type family LedgerCfg l :: *
+type family LedgerCfg l :: Type
 
 class ( -- Requirements on the ledger state itself
         Show               l
@@ -70,7 +72,7 @@ class ( -- Requirements on the ledger state itself
   --
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of
   -- these errors does not depend on the type of the block.
-  type family LedgerErr l :: *
+  type family LedgerErr l :: Type
 
   -- | Apply "slot based" state transformations
   --
@@ -106,7 +108,7 @@ class ( -- Requirements on the ledger state itself
 -------------------------------------------------------------------------------}
 
 -- | Ledger state associated with a block
-data family LedgerState blk :: *
+data family LedgerState blk :: Type
 
 type instance HeaderHash (LedgerState blk) = HeaderHash blk
 

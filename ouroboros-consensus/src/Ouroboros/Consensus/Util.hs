@@ -68,7 +68,7 @@ import           Data.Foldable (asum, toList)
 import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Functor.Product
-import           Data.Kind
+import           Data.Kind (Constraint, Type)
 import           Data.List (foldl', maximumBy)
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
@@ -83,17 +83,17 @@ import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
   Type-level utility
 -------------------------------------------------------------------------------}
 
-data Dict :: Constraint -> * where
+data Dict :: Constraint -> Type where
   Dict :: a => Dict a
 
 class Empty a
 instance Empty a
 
-data Some (f :: k -> *) where
+data Some (f :: k -> Type) where
     Some :: f a -> Some f
 
 -- | Pair of functors instantiated to the /same/ existential
-data SomePair (f :: k -> *) (g :: k -> *) where
+data SomePair (f :: k -> Type) (g :: k -> Type) where
     SomePair :: f a -> g a -> SomePair f g
 
 mustBeRight :: Either Void a -> a

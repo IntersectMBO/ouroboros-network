@@ -33,8 +33,6 @@ import           Foreign.Storable (Storable (sizeOf))
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
-
 import           Ouroboros.Consensus.Block hiding (hashSize, headerHash)
 import           Ouroboros.Consensus.Util.IOLike
 

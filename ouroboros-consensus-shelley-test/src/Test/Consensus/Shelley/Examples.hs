@@ -33,7 +33,6 @@ import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
-import           Data.Proxy (Proxy (..))
 import           Data.Ratio ((%))
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set

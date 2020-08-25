@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Util.SOP (
   , checkIsNonEmpty
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.Dict
 import           Data.SOP.Strict
 import           Data.Word
@@ -128,7 +129,7 @@ lenses_NP = go sList
 
 -- | Conjure up an 'SListI' constraint from an 'NP'
 npToSListI :: NP a xs -> (SListI xs => r) -> r
-npToSListI = sListToSListI . npToSList
+npToSListI np = sListToSListI $ npToSList np
   where
     sListToSListI :: SList xs -> (SListI xs => r) -> r
     sListToSListI SNil  k = k
@@ -155,7 +156,7 @@ fn_5 f = Fn $ \x0 ->
   Type-level non-empty lists
 -------------------------------------------------------------------------------}
 
-data ProofNonEmpty :: [*] -> * where
+data ProofNonEmpty :: [Type] -> Type where
   ProofNonEmpty :: Proxy x -> Proxy xs -> ProofNonEmpty (x ': xs)
 
 class IsNonEmpty xs where

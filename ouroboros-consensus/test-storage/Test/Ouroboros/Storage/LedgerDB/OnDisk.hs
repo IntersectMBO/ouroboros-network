@@ -39,12 +39,12 @@ import           Control.Tracer (nullTracer)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
+import           Data.Kind (Type)
 import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy
-import           Data.TreeDiff (ToExpr (..))
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
@@ -110,9 +110,9 @@ class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
       , Serialise (LedgerSt t)
       , Serialise (BlockRef t)
       ) => LUT (t :: LedgerUnderTest) where
-  type family LedgerSt t :: *
-  type family BlockVal t :: *
-  type family BlockRef t :: *
+  type family LedgerSt t :: Type
+  type family BlockVal t :: Type
+  type family BlockRef t :: Type
 
   -- | Genesis value
   ledgerGenesis :: Proxy t -> LedgerSt t

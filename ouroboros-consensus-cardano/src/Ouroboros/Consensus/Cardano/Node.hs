@@ -65,8 +65,6 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
-import           Shelley.Spec.Ledger.BaseTypes (Nonce (..))
-
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion

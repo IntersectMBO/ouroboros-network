@@ -10,8 +10,6 @@ import           Test.Ouroboros.Storage.Util
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
-import           Ouroboros.Consensus.Storage.FS.API
-
 tests :: FilePath -> TestTree
 tests tmpDir = testGroup "HasFS"
     [ StateMachine.tests tmpDir
@@ -23,6 +21,4 @@ tests tmpDir = testGroup "HasFS"
 
 -- | A unit test example.
 _test_example :: Assertion
-_test_example =
-  apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} ->
-    return ()
+_test_example = apiEquivalenceFs (expectFsResult (@?= ())) $ \_ -> return ()

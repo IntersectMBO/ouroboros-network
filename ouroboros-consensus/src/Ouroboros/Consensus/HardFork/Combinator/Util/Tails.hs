@@ -23,6 +23,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Tails (
   , hcpure
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.Strict hiding (hcmap, hcpure, hmap, hpure)
 import qualified Data.SOP.Strict as SOP
 
@@ -31,7 +32,7 @@ import qualified Data.SOP.Strict as SOP
 -------------------------------------------------------------------------------}
 
 -- | For every tail @(x ': xs)@ of the list, an @f x y@ for every @y@ in @xs@
-data Tails (f :: k -> k -> *) (xs :: [k]) where
+data Tails (f :: k -> k -> Type) (xs :: [k]) where
   TNil  :: Tails f '[]
   TCons :: NP (f x) xs -> Tails f xs -> Tails f (x ': xs)
 

@@ -28,6 +28,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.Kind (Type)
 import           Data.Word
 import           GHC.Generics
 
@@ -99,9 +100,9 @@ extractHeader BinaryBlockInfo { headerOffset, headerSize } =
 -- | The type of a block, header, and header hash of a database. Used by
 -- 'BlockComponent'.
 class DB db where
-  type DBBlock      db :: *
-  type DBHeader     db :: *
-  type DBHeaderHash db :: *
+  type DBBlock      db :: Type
+  type DBHeader     db :: Type
+  type DBHeaderHash db :: Type
 
 -- | Which component of the block to read from a database: the whole block,
 -- its header, its hash, the block size, ..., or combinations thereof.

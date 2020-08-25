@@ -14,6 +14,7 @@ module Test.Util.BoolProps (
   requiredIf,
   ) where
 
+import           Data.Kind (Type)
 import           GHC.Generics
 
 {-------------------------------------------------------------------------------
@@ -94,7 +95,7 @@ checkReqs x
 -------------------------------------------------------------------------------}
 
 class GCollectReqs rep where
-  gCollectReqs :: rep (x :: *) -> ([Prereq], [Requirement])
+  gCollectReqs :: rep (x :: Type) -> ([Prereq], [Requirement])
 
 instance GCollectReqs U1 where
   gCollectReqs U1 = mempty

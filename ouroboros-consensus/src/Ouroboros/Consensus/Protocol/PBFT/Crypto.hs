@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Protocol.PBFT.Crypto (
   , PBftMockCrypto
   ) where
 
+import           Data.Kind (Type)
 import           Data.Typeable
 
 import           Cardano.Crypto.DSIGN.Class
@@ -37,9 +38,9 @@ class ( Typeable c
       , NoUnexpectedThunks (PBftVerKeyHash c)
       , NoUnexpectedThunks (PBftDelegationCert c)
       ) => PBftCrypto c where
-  type family PBftDSIGN          c :: *
-  type family PBftDelegationCert c = (d :: *) | d -> c
-  type family PBftVerKeyHash     c = (d :: *) | d -> c
+  type family PBftDSIGN          c :: Type
+  type family PBftDelegationCert c = (d :: Type) | d -> c
+  type family PBftVerKeyHash     c = (d :: Type) | d -> c
 
   dlgCertGenVerKey :: PBftDelegationCert c -> VerKeyDSIGN (PBftDSIGN c)
   dlgCertDlgVerKey :: PBftDelegationCert c -> VerKeyDSIGN (PBftDSIGN c)

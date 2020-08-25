@@ -67,15 +67,12 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
-import           Control.Exception (Exception (..))
 import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF

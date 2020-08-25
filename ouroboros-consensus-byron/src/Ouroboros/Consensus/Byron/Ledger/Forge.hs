@@ -40,7 +40,6 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
-import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
@@ -129,7 +128,7 @@ forgeRegularBlock
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg bno sno st@TickedByronLedgerState{..} txs isLeader =
+forgeRegularBlock cfg bno sno st txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)

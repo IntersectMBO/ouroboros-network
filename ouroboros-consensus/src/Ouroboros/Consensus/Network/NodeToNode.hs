@@ -38,7 +38,6 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
-import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))

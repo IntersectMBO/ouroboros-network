@@ -9,7 +9,7 @@ module Test.Consensus.Node (tests) where
 import           Data.Bifunctor (second)
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
-import           Data.Time.Clock (DiffTime, secondsToDiffTime)
+import           Data.Time.Clock (secondsToDiffTime)
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 

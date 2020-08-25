@@ -42,7 +42,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..), RequiringBoth (..))
+                     (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 

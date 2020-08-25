@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Cardano (
   , verifyProtocolClient
   ) where
 
+import           Data.Kind (Type)
 import           Data.Type.Equality
 
 import           Cardano.Prelude (Natural)
@@ -77,7 +78,7 @@ type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraos
 -------------------------------------------------------------------------------}
 
 -- | Consensus protocol to use
-data Protocol (m :: * -> *) blk p where
+data Protocol (m :: Type -> Type) blk p where
   -- | Run PBFT against the real Byron ledger
   ProtocolByron
     :: Genesis.Config

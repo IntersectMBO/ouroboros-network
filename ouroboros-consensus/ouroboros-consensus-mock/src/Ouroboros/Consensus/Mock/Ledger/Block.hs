@@ -68,6 +68,7 @@ import           Codec.Serialise (Serialise (..), serialise)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.Typeable
 import           Data.Word
@@ -90,7 +91,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -310,7 +310,7 @@ class ( SimpleCrypto c
       , Show               (MockLedgerConfig c ext)
       , NoUnexpectedThunks (MockLedgerConfig c ext)
       ) => MockProtocolSpecific c ext where
-  type family MockLedgerConfig c ext :: *
+  type family MockLedgerConfig c ext :: Type
 
 {-------------------------------------------------------------------------------
   Update the ledger
@@ -496,7 +496,7 @@ instance InspectLedger (SimpleBlock c ext) where
 -------------------------------------------------------------------------------}
 
 class (HashAlgorithm (SimpleHash c), Typeable c) => SimpleCrypto c where
-  type family SimpleHash c :: *
+  type family SimpleHash c :: Type
 
 data SimpleStandardCrypto
 data SimpleMockCrypto

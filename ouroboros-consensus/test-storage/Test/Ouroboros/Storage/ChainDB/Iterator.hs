@@ -27,9 +27,9 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     Iterator (..), IteratorResult (..), StreamFrom (..),
-                     StreamTo (..), UnknownRange (..), traverseIterator)
+import           Ouroboros.Consensus.Storage.ChainDB.API (Iterator (..),
+                     IteratorResult (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..), traverseIterator)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
                      (IteratorEnv (..), newIterator)

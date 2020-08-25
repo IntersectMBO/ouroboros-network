@@ -33,6 +33,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
   , requiringBoth
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.Strict hiding (hcmap, hcpure, hmap, hpure)
 
 import           Ouroboros.Consensus.Util.SOP
@@ -42,7 +43,7 @@ import           Ouroboros.Consensus.Util.SOP
 -------------------------------------------------------------------------------}
 
 -- | We have an @f x y@ for each pair @(x, y)@ of successive list elements
-data InPairs (f :: k -> k -> *) (xs :: [k]) where
+data InPairs (f :: k -> k -> Type) (xs :: [k]) where
   PNil  :: InPairs f '[x]
   PCons :: f x y -> InPairs f (y ': zs) -> InPairs f (x ': y ': zs)
 

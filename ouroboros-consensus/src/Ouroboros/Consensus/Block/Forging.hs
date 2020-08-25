@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Block.Forging (
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
+import           Data.Kind (Type)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -36,15 +37,15 @@ import           Ouroboros.Consensus.Ticked
 --
 -- This should happen only rarely. An example might be that our hot key
 -- does not (yet/anymore) match the delegation state.
-type family CannotForge blk :: *
+type family CannotForge blk :: Type
 
 -- | Returned when a call to 'updateForgeState' succeeded and caused the forge
 -- state to change. This info is traced.
-type family ForgeStateInfo blk :: *
+type family ForgeStateInfo blk :: Type
 
 -- | Returned when a call 'updateForgeState' failed, e.g., because the KES key
 -- is no longer valid. This info is traced.
-type family ForgeStateUpdateError blk :: *
+type family ForgeStateUpdateError blk :: Type
 
 -- | The result of 'updateForgeState'.
 --

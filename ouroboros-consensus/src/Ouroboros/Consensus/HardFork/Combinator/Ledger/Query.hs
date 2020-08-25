@@ -37,6 +37,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.Bifunctor
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Type.Equality
@@ -77,7 +78,7 @@ instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
 
 type HardForkQueryResult xs = Either (MismatchEraInfo xs)
 
-data instance Query (HardForkBlock xs) :: * -> * where
+data instance Query (HardForkBlock xs) :: Type -> Type where
   -- | Answer a query about an era if it is the current one.
   QueryIfCurrent ::
        QueryIfCurrent xs result
@@ -173,7 +174,7 @@ getHardForkQuery q k1 k2 k3 = case q of
   Current era queries
 -------------------------------------------------------------------------------}
 
-data QueryIfCurrent :: [*] -> * -> * where
+data QueryIfCurrent :: [Type] -> Type -> Type where
   QZ :: Query x result           -> QueryIfCurrent (x ': xs) result
   QS :: QueryIfCurrent xs result -> QueryIfCurrent (x ': xs) result
 

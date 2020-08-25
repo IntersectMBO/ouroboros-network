@@ -19,7 +19,6 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (void)
 import           Control.Monad.Except
 import           Data.Maybe (isJust, isNothing, listToMaybe)
 import           Data.Set (Set)

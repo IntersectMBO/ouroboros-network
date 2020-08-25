@@ -59,6 +59,7 @@ import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Foldable (toList)
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
@@ -115,7 +116,7 @@ class ( StandardHash blk
       , Eq                 (TipInfo blk)
       , NoUnexpectedThunks (TipInfo blk)
       ) => HasAnnTip blk where
-  type TipInfo blk :: *
+  type TipInfo blk :: Type
   type TipInfo blk = HeaderHash blk
 
   -- | Extract 'TipInfo' from a block header
@@ -341,7 +342,7 @@ class ( BasicEnvelopeValidation blk
       ) => ValidateEnvelope blk where
 
   -- | A block-specific error that 'validateEnvelope' can return.
-  type OtherHeaderEnvelopeError blk :: *
+  type OtherHeaderEnvelopeError blk :: Type
   type OtherHeaderEnvelopeError blk = Void
 
   -- | Do additional envelope checks

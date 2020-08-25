@@ -28,12 +28,13 @@ module Ouroboros.Consensus.Util.OptNP (
   ) where
 
 import           Control.Monad (guard)
+import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.SOP.Strict
 import           Data.Type.Equality
 
 -- | Like an 'NP', but with optional values
-data OptNP (empty :: Bool) (f :: k -> *) (xs :: [k]) where
+data OptNP (empty :: Bool) (f :: k -> Type) (xs :: [k]) where
   OptNil  :: OptNP 'True f '[]
   OptCons :: !(f x) -> !(OptNP empty f xs) -> OptNP 'False f (x ': xs)
   OptSkip :: !(OptNP empty f xs) -> OptNP empty f (x ': xs)

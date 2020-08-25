@@ -37,9 +37,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, isNothing, listToMaybe)
-import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App), defaultExprViaShow)
-import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
 import qualified Generics.SOP as SOP
@@ -59,7 +57,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
@@ -76,8 +74,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB hiding
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
-                     (Internal (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
@@ -498,7 +494,7 @@ lockstep model@Model {..} cmdErr (At resp) = Event
 
 -- | Generate a 'CmdErr'
 generator :: Model m Symbolic -> Gen (At CmdErr m Symbolic)
-generator m@Model {..} = do
+generator m = do
     cmd    <- unAt <$> generateCmd m
     cmdErr <- if errorFor cmd
        then frequency
@@ -709,13 +705,13 @@ getDBFiles dbm =
 
 -- | Shrinker
 shrinker :: Model m Symbolic -> At CmdErr m Symbolic -> [At CmdErr m Symbolic]
-shrinker m@Model {..} (At (CmdErr mbErrors cmd)) = fmap At $
+shrinker m (At (CmdErr mbErrors cmd)) = fmap At $
     [CmdErr mbErrors' cmd  | mbErrors' <- shrink mbErrors] ++
     [CmdErr mbErrors  cmd' | At cmd'   <- shrinkCmd m (At cmd)]
 
 -- | Shrink a 'Cmd'.
 shrinkCmd :: Model m Symbolic -> At Cmd m Symbolic -> [At Cmd m Symbolic]
-shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
+shrinkCmd _ (At cmd) = fmap At $ case cmd of
     AppendBlock _slot  _hash _b        -> []
     AppendEBB   _epoch _hash _ebb      -> []
     Stream  _mbStart _mbEnd            -> []
@@ -735,8 +731,6 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     Corruption corr                    ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
-    DBModel {..} = dbModel
-
     shrinkCorruption (MkCorruption corrs) =
       [ MkCorruption corrs'
       | corrs' <- shrinkCorruptions corrs]

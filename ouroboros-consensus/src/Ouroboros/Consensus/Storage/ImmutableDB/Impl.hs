@@ -274,7 +274,7 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
       DbClosed -> do
         putMVar varInternalState internalState
         traceWith tracer $ DBAlreadyClosed
-      DbOpen openState@OpenState {..} -> do
+      DbOpen openState -> do
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
         putMVar varInternalState DbClosed

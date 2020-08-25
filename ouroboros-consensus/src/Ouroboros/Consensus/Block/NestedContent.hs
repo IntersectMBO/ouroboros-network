@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Block.NestedContent (
   , module Ouroboros.Consensus.Util.DepPair
   ) where
 
+import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Type.Equality
@@ -94,7 +95,7 @@ curriedNest ctxt a = nest (DepPair ctxt a)
 -- | Context identifying what kind of block we have
 --
 -- In almost all places we will use 'NestedCtxt' rather than 'NestedCtxt_'.
-data family NestedCtxt_ blk :: (* -> *) -> (* -> *)
+data family NestedCtxt_ blk :: (Type -> Type) -> (Type -> Type)
 
 {-------------------------------------------------------------------------------
   Flip arguments

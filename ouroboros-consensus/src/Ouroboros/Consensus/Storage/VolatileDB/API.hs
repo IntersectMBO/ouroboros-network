@@ -14,7 +14,7 @@ import           Data.ByteString.Builder (Builder)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.Block (MaxSlotNo)
 

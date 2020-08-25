@@ -22,7 +22,6 @@ module Test.Consensus.Cardano.Examples (
   ) where
 
 import           Data.Bifunctor (first)
-import           Data.Proxy (Proxy (..))
 import           Data.SOP.Strict
 
 import           Ouroboros.Network.Block (Serialised (..))

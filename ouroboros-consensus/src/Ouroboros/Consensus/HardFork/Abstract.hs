@@ -7,6 +7,8 @@ module Ouroboros.Consensus.HardFork.Abstract (
   , neverForksHardForkSummary
   ) where
 
+import           Data.Kind (Type)
+
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -19,7 +21,7 @@ class HasHardForkHistory blk where
   -- in the hard fork, e.g., we might have something like
   --
   -- > '[ByronBlock, ShelleyBlock, GoguenBlock]
-  type family HardForkIndices blk :: [*]
+  type family HardForkIndices blk :: [Type]
 
   -- | Summary of the hard fork state
   --
