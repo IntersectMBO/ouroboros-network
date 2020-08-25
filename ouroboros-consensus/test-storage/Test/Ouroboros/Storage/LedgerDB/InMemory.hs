@@ -46,7 +46,6 @@ tests = testGroup "InMemory" [
     , testGroup "Push" [
           testProperty "incrementsLength"       prop_pushIncrementsLength
         , testProperty "lengthMatchesNumBlocks" prop_lengthMatchesNumBlocks
-        , testProperty "matchesPolicy"          prop_pushMatchesPolicy
         , testProperty "expectedLedger"         prop_pushExpectedLedger
         , testProperty "pastLedger"             prop_pastLedger
         ]
@@ -54,7 +53,6 @@ tests = testGroup "InMemory" [
           testProperty "maxRollbackGenesisZero" prop_maxRollbackGenesisZero
         , testProperty "ledgerDbMaxRollback"    prop_snapshotsMaxRollback
         , testProperty "switchSameChain"        prop_switchSameChain
-        , testProperty "switchMatchesPolicy"    prop_switchMatchesPolicy
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
         , testProperty "pastAfterSwitch"        prop_pastAfterSwitch
         ]
@@ -84,30 +82,6 @@ prop_genesisLength params =
     genSnaps = ledgerDbFromGenesis params testInitLedger
 
 {-------------------------------------------------------------------------------
-  Verifying shape of the Ledger DB
--------------------------------------------------------------------------------}
-
--- | Verify the snap of the ledger DB
---
--- No matter how many snapshots we have, we always expected a snapshot every
--- @snapEvery@ blocks.
-verifyShape :: (Show r, Show l) => Word64 -> [(r, Maybe l)] -> Property
-verifyShape snapEvery = \ss ->
-    counterexample ("snapshots: " ++ show ss) $
-      go 1 ss
-  where
-    go :: Word64 -> [(r, Maybe l)] -> Property
-    go _ []           = property True
-    go n ((_, ms):ss) =
-        case (n `mod` snapEvery == 0, ms) of
-          (True  , Just _ ) -> go (n + 1) ss
-          (False , Nothing) -> go (n + 1) ss
-          (True  , Nothing) -> counterexample "missing snapshot" $
-                                 property False
-          (False , Just _)  -> counterexample "unexpected snapshot" $
-                                 property False
-
-{-------------------------------------------------------------------------------
   Constructing snapshots
 -------------------------------------------------------------------------------}
 
@@ -128,11 +102,6 @@ prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
           ledgerDbChainLength csPushed
       === csNumBlocks
 
-prop_pushMatchesPolicy :: ChainSetup -> Property
-prop_pushMatchesPolicy setup@ChainSetup{..} =
-    classify (chainSetupSaturated setup) "saturated" $
-      verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList csPushed)
-
 prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
@@ -148,7 +117,7 @@ prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated"    $
     classify withinReach                 "within reach" $
-          ledgerDbPast' (csBlockConfig setup) tip csPushed
+          ledgerDbPast tip csPushed
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -164,7 +133,6 @@ prop_pastLedger setup@ChainSetup{..} =
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (csBlockConfig setup) prefix csGenSnaps
 
-    -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
     withinReach :: Bool
     withinReach = (csNumBlocks - csPrefixLen) <= ledgerDbMaxRollback csPushed
@@ -185,11 +153,10 @@ prop_snapshotsMaxRollback setup@ChainSetup{..} =
           if chainSetupSaturated setup
             then (ledgerDbMaxRollback csPushed) `ge` k
             else (ledgerDbMaxRollback csPushed) `ge` (min k csNumBlocks)
-        , (ledgerDbMaxRollback csPushed) `lt` (k + snapEvery)
+        , (ledgerDbMaxRollback csPushed) `le` k
         ]
   where
     SecurityParam k = ledgerDbSecurityParam csParams
-    snapEvery       = ledgerDbSnapEvery     csParams
 
 prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
@@ -199,13 +166,6 @@ prop_switchSameChain setup@SwitchSetup{..} =
   where
     ChainSetup{csPushed} = ssChainSetup
     blockInfo            = ssRemoved
-
-prop_switchMatchesPolicy :: SwitchSetup -> Property
-prop_switchMatchesPolicy setup@SwitchSetup{..} =
-    classify (switchSetupSaturated setup) "saturated" $
-      verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList ssSwitched)
-  where
-    ChainSetup{csParams} = ssChainSetup
 
 prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
@@ -223,7 +183,7 @@ prop_pastAfterSwitch :: SwitchSetup -> Property
 prop_pastAfterSwitch setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated"    $
     classify withinReach                  "within reach" $
-          ledgerDbPast' (csBlockConfig ssChainSetup) tip ssSwitched
+          ledgerDbPast tip ssSwitched
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -239,7 +199,6 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (csBlockConfig ssChainSetup) prefix (csGenSnaps ssChainSetup)
 
-    -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
     withinReach :: Bool
     withinReach = (ssNumBlocks - ssPrefixLen) <= ledgerDbMaxRollback ssSwitched
@@ -407,20 +366,13 @@ instance Arbitrary SwitchSetup where
 instance Arbitrary LedgerDbParams where
   arbitrary = do
       k <- choose (0, 6)
-      snapEvery <- choose (1, 8)
       return $ LedgerDbParams {
-            ledgerDbSnapEvery     = snapEvery
-          , ledgerDbSecurityParam = SecurityParam k
+            ledgerDbSecurityParam = SecurityParam k
           }
-  shrink params@LedgerDbParams{..} = concat [
-        [ params {ledgerDbSnapEvery = snapEvery'}
-        | snapEvery' <- shrink ledgerDbSnapEvery
-        , snapEvery' > 0
-        ]
-      , [ params {ledgerDbSecurityParam = SecurityParam k'}
-        | k' <- shrink (maxRollbacks ledgerDbSecurityParam)
-        ]
-      ]
+  shrink params@LedgerDbParams{..} =
+    [ params {ledgerDbSecurityParam = SecurityParam k'}
+    | k' <- shrink (maxRollbacks ledgerDbSecurityParam)
+    ]
 
 {-------------------------------------------------------------------------------
   Serialisation roundtrip

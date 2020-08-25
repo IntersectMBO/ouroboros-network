@@ -468,11 +468,11 @@ runMock cmd initMock =
 
         -- The snapshot that the real implementation will write to disk
         --
-        -- The real implementation keeps the length of the blocks between @k@
-        -- and @k + snapEvery 1@ (provided that there are enough blocks). The
-        -- function 'ledgerDbCountToPrune' computes how many (old) blocks should
-        -- be dropped to get back into that range; the last (most recent) block
-        -- to be dropped will become the new anchor. It is the anchor that gets
+        -- The real implementation keeps the length of the snapshots at @k@
+        -- (provided that there are enough blocks). The function
+        -- 'ledgerDbCountToPrune' computes how many (old) blocks should be
+        -- dropped to get back into that range; the last (most recent) block to
+        -- be dropped will become the new anchor. It is the anchor that gets
         -- written to disk.
         snapped :: Tip' t
         snapped
@@ -995,9 +995,8 @@ sm lgrDbParams db = StateMachine {
 
 prop_sequential :: LUT t => Proxy t -> LedgerDbParams -> QC.Property
 prop_sequential p lgrDbParams =
-    QC.collect (tagMemPolicy lgrDbParams) $
-      forAllCommands (sm lgrDbParams (dbUnused p)) Nothing $ \cmds ->
-        QC.monadicIO (propCmds lgrDbParams cmds)
+    forAllCommands (sm lgrDbParams (dbUnused p)) Nothing $ \cmds ->
+      QC.monadicIO (propCmds lgrDbParams cmds)
 
 -- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
@@ -1020,20 +1019,6 @@ propCmds lgrDbParams cmds = do
 
 dbUnused :: Proxy t -> StandaloneDB IO t
 dbUnused = error "DB unused during command generation"
-
-{-------------------------------------------------------------------------------
-  Labelling of the ledger DB params
--------------------------------------------------------------------------------}
-
--- Record the @snapEvery@ parameter in relation to K
-data TagLedgerDbParams =
-    TagLedgerDbParams { rangeSnapEvery :: RangeK }
-  deriving (Show)
-
-tagMemPolicy :: LedgerDbParams -> TagLedgerDbParams
-tagMemPolicy LedgerDbParams{..} = TagLedgerDbParams{
-      rangeSnapEvery = rangeK ledgerDbSecurityParam ledgerDbSnapEvery
-    }
 
 {-------------------------------------------------------------------------------
   Event labelling

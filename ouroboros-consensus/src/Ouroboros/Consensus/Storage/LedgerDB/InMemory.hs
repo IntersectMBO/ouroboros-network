@@ -56,18 +56,15 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
-   , ledgerDbPast'
    ) where
 
 import           Prelude hiding (mod, (/))
-import qualified Prelude
 
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
-import           Control.Monad ((>=>))
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (toList)
@@ -98,184 +95,65 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 --
 -- The ledger DB looks like
 --
--- > anchor |> blocks and snapshots <| current
+-- > anchor |> snapshots <| current
 --
 -- where @anchor@ records the oldest known snapshot and @current@ the most
--- recent.
+-- recent. The anchor is the oldest point we can roll back to.
 --
--- As an example, suppose we have @snapEvery = 4@ (i.e., we will take a
--- snapshot every 4 blocks) and @k = 6@. The ledger DB grows as illustrated
--- below, where we indicate the anchor, number of blocks, the stored
--- blocks/snapshots, and the current ledger; the oldest block we can roll back
--- to is marked.
+-- We take a snapshot after each block is applied and keep in memory a window
+-- of the last @k@ snapshots. We have verified empirically (#1936) that the
+-- overhead of keeping @k snapshots in memory is small, i.e., about 5%
+-- compared to keeping a snapshot every 100 blocks. This is thanks to sharing
+-- between consecutive snapshots.
 --
--- > anchor |> #   [ blocks ]                                      <| tip
+-- As an example, suppose we have @k = 6@. The ledger DB grows as illustrated
+-- below, where we indicate the anchor number of blocks, the stored snapshots,
+-- and the current ledger.
+--
+-- > anchor |> #   [ snapshots ]                   <| tip
 -- > ---------------------------------------------------------------------------
--- > *G     |> (0) [ ]                                             <| G
--- > *G     |> (1) [ B1]                                           <| L1
--- > *G     |> (2) [ B1,  B2]                                      <| L2
--- > *G     |> (3) [ B1,  B2,   B3]                                <| L3
--- > *G     |> (4) [ B1,  B2,   B3,  L4]                           <| L4
--- > *G     |> (5) [ B1,  B2,   B3,  L4,  B5]                      <| L5
--- > *G     |> (6) [ B1,  B2,   B3,  L4,  B5,  B6]                 <| L6
--- >  G     |> (7) [*B1,  B2,   B3,  L4,  B5,  B6,  B7]            <| L7
--- >  G     |> (8) [ B1, *B2,   B3,  L4,  B5,  B6,  B7,  L8]       <| L8
--- >  G     |> (9) [ B1,  B2,  *B3,  L4,  B5,  B6,  B7,  L8,  B9]  <| L9   (*)
--- > *L4    |> (6) [ B5,  B6,   B7,  L8,  B9,  B10]                <| L10  (**)
--- >  L4    |> (7) [*B5,  B6,   B7,  L8,  B9,  B10, B11]           <| L11
--- >  L4    |> (8) [ B5, *B6,   B7,  L8,  B9,  B10, B11, L12]      <| L12
--- >  L4    |> (9) [ B5,  B6,  *B7,  L8,  B9,  B10, B12, L12, B13] <| L13
--- > *L8    |> (6) [ B9,  B10,  B12, L12, B13, B14]                <| L14
+-- > G      |> (0) [ ]                             <| G
+-- > G      |> (1) [ L1]                           <| L1
+-- > G      |> (2) [ L1,  L2]                      <| L2
+-- > G      |> (3) [ L1,  L2,  L3]                 <| L3
+-- > G      |> (4) [ L1,  L2,  L3,  L4]            <| L4
+-- > G      |> (5) [ L1,  L2,  L3,  L4,  L5]       <| L5
+-- > G      |> (6) [ L1,  L2,  L3,  L4,  L5,  L6]  <| L6
+-- > L1     |> (6) [ L2,  L3,  L4,  L5,  L6,  L7]  <| L7
+-- > L2     |> (6) [ L3,  L4,  L5,  L6,  L7,  L8]  <| L8
+-- > L3     |> (6) [ L4,  L5,  L6,  L7,  L8,  L9]  <| L9   (*)
+-- > L4     |> (6) [ L5,  L6,  L7,  L8,  L9,  L10] <| L10
+-- > L5     |> (6) [*L6,  L7,  L8,  L9,  L10, L11] <| L11
+-- > L6     |> (6) [ L7,  L8,  L9,  L10, L11, L12] <| L12
+-- > L7     |> (6) [ L8,  L9,  L10, L12, L12, L13] <| L13
+-- > L8     |> (6) [ L9,  L10, L12, L12, L13, L14] <| L14
 --
--- The ledger DB must guarantee we must at all times be able to roll back @k@
+-- The ledger DB must guarantee that at all times we are able to roll back @k@
 -- blocks. For example, if we are on line (*), and roll back 6 blocks, we get
 --
--- > G |> [B1, B2, B3]
---
--- from which we can /compute/ @G |> [B1, B2, B3] <| L3@ by re-applying
--- @snapEvery - 1@ blocks. However, as soon as we pushed one more block @(**)@,
--- and then roll back 6 blocks, we end up with
---
--- > L4 |> [] <| L4
---
--- This representation has the following properties:
---
--- * The distance between snapshots is at most @snapEvery@. This implies that
---   rolling back involves re-applying at most @snapEvery - 1@ blocks
---   (note that @snapEvery >= 1@).
---
--- * This implies that the number of (references to) blocks we store will vary
---   between @k@ and @k + snapEvery - 1@ (unless we are near genesis).
---
--- * When the number of blocks reaches @k + snapEvery@, we can drop the first
---   @snapEvery@ blocks, shifting up the anchor.
---
--- * The average number of blocks we have to reapply on a rollback is given by
---
---   >    average [0 .. snapEvery - 1]
---   > == ((snapEvery - 1) * snapEvery / 2) / snapEvery
---   > == (snapEvery - 1) / 2
---
---   (Obvious) boundary case: if @snapEvery == 1@, the average number is zero.
---
--- * The number of snapshots we store is in the range
---
---   > [1 + floor(k / snapEvery), 1 + ceiling(k / snapEvery)]
---
---   If @snapEvery@ divides @k@, the number is precisely @1 + k / snapEvery@.
---
--- * Picking a suitable value of @snapEvery@ for a given @k@ is a tradeoff
---   between cost of reapplying blocks and the cost of storing more snapshots.
---   The latter is primarily the cost of less opportunity for garbage
---   collection, which is hard to quantify abstractly. This should probably
---   be determined empirically.
---
--- Some example boundary cases:
---
--- * Suppose @k = 4@ and @snapEvery = 1@:
---
---   > *G  |> []               <| G
---   > *G  |> [L1]             <| L1
---   > *G  |> [L1, L2]         <| L2
---   > *G  |> [L1, L2, L3]     <| L3
---   > *G  |> [L1, L2, L3, L4] <| L4
---   > *L1 |> [L2, L3, L4, L5] <| L5
---   > *L2 |> [L3, L4, L5, L6] <| L6
---
---   Note that in this case the number of blocks will always be @k@ (unless we
---   are close to genesis), and the anchor is always the oldest point we can
---   roll back to.
---
--- * If @k = 1@ and @snapEvery = 4@, we get
---
---   > *G  |> [ ]                  <| G
---   > *G  |> [ B1]                <| L1
---   >  G  |> [*B1,  B2]           <| L2
---   >  G  |> [ B1, *B2,  B3]      <| L3
---   >  G  |> [ B1,  B2, *B3, L4]  <| L4
---   > *L4 |> [ B5]                <| L5
---   >  L4 |> [*B5,  B6]           <| L6
---   >  L4 |> [ B5, *B6,  B7]      <| L7
---   >  L4 |> [ B5,  B6, *B7, L8]  <| L8
---   > *L8 |> [*B9]                <| L9
---
---   (The minimum distance between the current ledger and the maximum rollback
---   is @k@.)
---
--- * If @k = 0@ and @snapEvery = 4@, we get
---
---   > *G  |> [ ]                  <| G
---   >  G  |> [*B1]                <| L1
---   >  G  |> [ B1, *B2]           <| L2
---   >  G  |> [ B1,  B2, *B3]      <| L3
---   > *L4 |> [ ]                  <| L4
---   >  L4 |> [*B5]                <| L5
---   >  L4 |> [ B5, *B6]           <| L6
---   >  L4 |> [ B5,  B6, *B7]      <| L7
---   > *L8 |> [ ]                  <| L8
---
---   @k = 0@ is the only case where the list might be empty. Of course, this is
---   not a particularly useful configuration.
---
--- * If @k = 1@ and @snapEvery = 1@, we get
---
---   > *G  |> [ ]   <| G
---   > *G  |> [ L1] <| L1
---   > *L1 |> [ L2] <| L2
---   > *L2 |> [ L3] <| L3
---
--- * If @k = 0@ and @snapEvery = 1@, we get
---
---   > *G  |> [ ] <| G
---   > *L1 |> [ ] <| L1
---   > *L2 |> [ ] <| L2
---
--- * Finally, if @k = snapEvery = k4@, we get
---
---   > *G  |> [ ]                             <| G
---   > *G  |> [ B1]                           <| L1
---   > *G  |> [ B1,  B2]                      <| L2
---   > *G  |> [ B1,  B2,  B3]                 <| L3
---   > *G  |> [ B1,  B2,  B3, L4]             <| L4
---   >  G  |> [*B1,  B2,  B3, L4, B5]         <| L5
---   >  G  |> [ B1, *B2,  B3, L4, B5, B6]     <| L6
---   >  G  |> [ B1,  B2, *B3, L4, B5, B6, B7] <| L7
---   > *L4 |> [ B5,  B6,  B7, L8]             <| L8
---   >  L4 |> [*B5,  B6,  B7, L8, B9]         <| L9
+-- > L3 |> []
 data LedgerDB l r = LedgerDB {
-      -- | The ledger state at the tip of the chain
-      ledgerDbCurrent :: !l
-
       -- | Older ledger states
-    , ledgerDbBlocks  :: !(StrictSeq (Checkpoint l r))
+      ledgerDbCheckpoints :: !(StrictSeq (Checkpoint l r))
 
       -- | Information about the state of the ledger /before/
-    , ledgerDbAnchor  :: !(ChainSummary l r)
+    , ledgerDbAnchor      :: !(ChainSummary l r)
 
       -- | Ledger DB parameters
-    , ledgerDbParams  :: !LedgerDbParams
+    , ledgerDbParams      :: !LedgerDbParams
     }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
-data LedgerDbParams = LedgerDbParams {
-      -- | Take a snapshot every @n@ blocks
-      --
-      -- Must be @>= 1@.
-      ledgerDbSnapEvery     :: !Word64
-
+newtype LedgerDbParams = LedgerDbParams {
       -- | Security parameter (maximum rollback)
-    , ledgerDbSecurityParam :: !SecurityParam
+      ledgerDbSecurityParam :: SecurityParam
     }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 -- | Default parameters
---
--- TODO: We should decide empirically what a good @snapEvery@ value is.
--- <https://github.com/input-output-hk/ouroboros-network/issues/1026>
 ledgerDbDefaultParams :: SecurityParam -> LedgerDbParams
-ledgerDbDefaultParams (SecurityParam k) = LedgerDbParams {
-      ledgerDbSnapEvery     = 100
-    , ledgerDbSecurityParam = SecurityParam k
+ledgerDbDefaultParams securityParam = LedgerDbParams {
+      ledgerDbSecurityParam = securityParam
     }
 
 {-------------------------------------------------------------------------------
@@ -294,21 +172,15 @@ data instance Ticked (LedgerDB l r) = TickedLedgerDB {
   Internal: checkpoints
 -------------------------------------------------------------------------------}
 
-data Checkpoint l r =
-    -- | Checkpoint with a block reference only
-    CpBlock !r
-
-    -- | Checkpoint with a ledger state
-  | CpSShot !r !l
+-- | Checkpoint with a ledger state
+data Checkpoint l r = Checkpoint {
+      cpBlock :: !r
+    , cpState :: !l
+    }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
-cpToPair :: Checkpoint l r -> (r, Maybe l)
-cpToPair (CpBlock r)   = (r, Nothing)
-cpToPair (CpSShot r l) = (r, Just l)
-
-cpBlock :: Checkpoint l r -> r
-cpBlock (CpBlock r)   = r
-cpBlock (CpSShot r _) = r
+cpToPair :: Checkpoint l r -> (r, l)
+cpToPair (Checkpoint r l) = (r, l)
 
 {-------------------------------------------------------------------------------
   Chain summary
@@ -337,10 +209,9 @@ genesisChainSummary l = ChainSummary Origin 0 l
 -- | Ledger DB starting at the specified ledger state
 ledgerDbWithAnchor :: LedgerDbParams -> ChainSummary l r -> LedgerDB l r
 ledgerDbWithAnchor params anchor = LedgerDB {
-      ledgerDbCurrent = csLedger anchor
-    , ledgerDbBlocks  = Seq.empty
-    , ledgerDbAnchor  = anchor
-    , ledgerDbParams  = params
+      ledgerDbCheckpoints = Seq.empty
+    , ledgerDbAnchor      = anchor
+    , ledgerDbParams      = params
     }
 
 ledgerDbFromGenesis :: LedgerDbParams -> l -> LedgerDB l r
@@ -478,53 +349,51 @@ applyBlock cfg ap db = case ap of
     l :: l
     l = ledgerDbCurrent db
 
--- | Short-hand for re-applying a block that we have by reference
---
--- This is not defined in terms of 'applyBlock' because we don't need the
--- full ledger DB here (because we never throw any errors).
-reapplyRef :: forall m l b r. (ResolvesBlocks r b m, ApplyBlock l b)
-           => FullBlockConfig l b -> r -> l -> m l
-reapplyRef cfg r l = (flip (tickThenReapply cfg) l) <$> resolveBlock r
-
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
 
+-- | The ledger state at the tip of the chain
+ledgerDbCurrent :: LedgerDB l r -> l
+ledgerDbCurrent LedgerDB{..} = case ledgerDbCheckpoints of
+  Empty                  -> csLedger ledgerDbAnchor
+  (_ :|> Checkpoint _ l) -> l
+
 -- | Total length of the chain (in terms of number of blocks)
 ledgerDbChainLength :: LedgerDB l r -> Word64
 ledgerDbChainLength LedgerDB{..} =
-    csLength ledgerDbAnchor + fromIntegral (Seq.length ledgerDbBlocks)
+    csLength ledgerDbAnchor + fromIntegral (Seq.length ledgerDbCheckpoints)
 
 -- | References to blocks and corresponding ledger state (from old to new)
-ledgerDbToList :: LedgerDB l r -> [(r, Maybe l)]
-ledgerDbToList LedgerDB{..} = map cpToPair $ toList ledgerDbBlocks
+ledgerDbToList :: LedgerDB l r -> [(r, l)]
+ledgerDbToList LedgerDB{..} = map cpToPair $ toList ledgerDbCheckpoints
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
--- For each snapshot we also return the distance from the tip
+-- This also includes the snapshot at the anchor. For each snapshot we also
+-- return the distance from the tip.
 ledgerDbSnapshots :: forall l r. LedgerDB l r -> [(Word64, l)]
-ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbBlocks
+ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbCheckpoints
   where
     go :: Word64 -> StrictSeq (Checkpoint l r) -> [(Word64, l)]
-    go !offset Empty                = [(offset, csLedger ledgerDbAnchor)]
-    go !offset (ss :|> CpBlock _)   =               go (offset + 1) ss
-    go !offset (ss :|> CpSShot _ l) = (offset, l) : go (offset + 1) ss
+    go !offset Empty                   = [(offset, csLedger ledgerDbAnchor)]
+    go !offset (ss :|> Checkpoint _ l) = (offset, l) : go (offset + 1) ss
 
 -- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: LedgerDB l r -> Word64
-ledgerDbMaxRollback LedgerDB{..} = fromIntegral (Seq.length ledgerDbBlocks)
+ledgerDbMaxRollback LedgerDB{..} = fromIntegral (Seq.length ledgerDbCheckpoints)
 
 -- | Reference to the block at the tip of the chain
 ledgerDbTip :: LedgerDB l r -> WithOrigin r
 ledgerDbTip LedgerDB{..} =
-    case ledgerDbBlocks of
+    case ledgerDbCheckpoints of
       Empty    -> csTip ledgerDbAnchor
       _ :|> cp -> NotOrigin (cpBlock cp)
 
 -- | Have we seen at least @k@ blocks?
 ledgerDbIsSaturated :: LedgerDB l r -> Bool
 ledgerDbIsSaturated LedgerDB{..} =
-    fromIntegral (Seq.length ledgerDbBlocks) >= k
+    fromIntegral (Seq.length ledgerDbCheckpoints) >= k
   where
     LedgerDbParams{..} = ledgerDbParams
     SecurityParam k    = ledgerDbSecurityParam
@@ -533,9 +402,7 @@ ledgerDbIsSaturated LedgerDB{..} =
   Internal updates
 -------------------------------------------------------------------------------}
 
--- | Internal: shift the anchor given a bunch of blocks
---
--- PRE: The last block in the sequence /must/ contain a ledger snapshot.
+-- | Internal: shift the anchor given a bunch of checkpoints.
 shiftAnchor :: forall r l. HasCallStack
             => StrictSeq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
 shiftAnchor toRemove ChainSummary{..} = ChainSummary {
@@ -548,69 +415,36 @@ shiftAnchor toRemove ChainSummary{..} = ChainSummary {
     csLedger' :: l
     (csTip', csLedger') =
         case toRemove of
-          Empty             -> error "shiftAnchor: empty list"
-          _ :|> CpBlock _   -> error "shiftAnchor: missing ledger"
-          _ :|> CpSShot r l -> (r, l)
+          Empty                -> error "shiftAnchor: empty list"
+          _ :|> Checkpoint r l -> (r, l)
 
--- | Internal: count number of blocks to prune, given total number of blocks
+-- | Internal: count number of checkpoints to prune, given total number of
+-- checkpoints
 --
 -- This is exposed for the benefit of tests only.
-ledgerDbCountToPrune :: HasCallStack => LedgerDbParams -> Int -> Int
+ledgerDbCountToPrune :: LedgerDbParams -> Int -> Int
 ledgerDbCountToPrune LedgerDbParams{..} curSize'
-  | curSize <= maxSize = 0
-  | otherwise          = fromIntegral $ numToRemove
+  | curSize <= k = 0
+  | otherwise    = fromIntegral $ curSize - k
   where
     SecurityParam k = ledgerDbSecurityParam
-
-    -- Current, minimum and maximum number of blocks we need
-    curSize, minSize, maxSize :: Word64
     curSize = fromIntegral curSize'
-    minSize = k
-    maxSize = k + ledgerDbSnapEvery - 1
 
-    -- Number of blocks to remove (assuming curSize > maxSize)
-    --
-    -- Notes:
-    --
-    -- * If @curSize > maxSize@, then @curSize >= ledgerDbSnapEvery@
-    -- * This means we will at least remove 'ledgerDbSnapEvery' blocks
-    -- * We will remove an even multiple of 'ledgerDbSnapEvery' blocks
-    -- * This means that the last block we remove must contain a snapshot
-    numToRemove :: Word64
-    numToRemove = nearestMultiple ledgerDbSnapEvery (curSize - minSize)
-
-    -- Nearest multiple of n, not exceeding x
-    --
-    -- > nearestMultiple 4 3 == 0
-    -- > nearestMultiple 4 4 == 4
-    -- > nearestMultiple 4 5 == 4
-    -- > ..
-    -- > nearestMultiple 4 7 == 4
-    -- > nearestMultiple 4 8 == 8
-    -- > nearestMultiple 4 9 == 8
-    nearestMultiple :: Integral a => a -> a -> a
-    nearestMultiple n x = floor (x' `safeDiv` n') * n
-      where
-        n', x' :: Double
-        n' = fromIntegral n
-        x' = fromIntegral x
-
--- | Internal: drop unneeded blocks from the head of the list
---
--- Postcondition: number blocks is between k and k + snapEvery - 1
+-- | Internal: drop unneeded snapshots from the head of the list
 prune :: HasCallStack => LedgerDB l r -> LedgerDB l r
 prune db@LedgerDB{..} =
     if toPrune == 0
       then db
-      else let (removed, kept) = Seq.splitAt toPrune ledgerDbBlocks
+      else let (removed, kept) = Seq.splitAt toPrune ledgerDbCheckpoints
                anchor'         = shiftAnchor removed ledgerDbAnchor
-           in db { ledgerDbAnchor = anchor'
-                 , ledgerDbBlocks = kept
+           in db { ledgerDbAnchor      = anchor'
+                 , ledgerDbCheckpoints = kept
                  }
   where
-    -- Number of blocks to remove (assuming curSize > maxSize)
+    -- Number of snapshots to remove (assuming curSize > maxSize)
     toPrune :: Int
-    toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
+    toPrune =
+      ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbCheckpoints)
 
  -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
@@ -622,94 +456,55 @@ pushLedgerState :: l  -- ^ Updated ledger state
                 -> r  -- ^ Reference to the applied block
                 -> LedgerDB l r -> LedgerDB l r
 pushLedgerState current' ref db@LedgerDB{..}  = prune $ db {
-      ledgerDbCurrent = current'
-    , ledgerDbBlocks  = blocks'
+      ledgerDbCheckpoints = snapshots
     }
   where
     LedgerDbParams{..} = ledgerDbParams
 
-    newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
-    blocks' = ledgerDbBlocks
-           |> if newPos `safeMod` ledgerDbSnapEvery == 0
-                then CpSShot ref current'
-                else CpBlock ref
+    snapshots = ledgerDbCheckpoints |> Checkpoint ref current'
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
 -------------------------------------------------------------------------------}
 
--- | Compute ledger state after list of checkpoints
---
--- Given a list of checkpoints, find the most recent checkpoint that has a
--- associated ledger state, compute the list of blocks that should be applied
--- on top of that ledger state, then reapply those blocks from old to new.
-ledgerAfter :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-            => FullBlockConfig l b
-            -> ChainSummary l r
-            -> StrictSeq (Checkpoint l r)
-            -> m l
-ledgerAfter cfg anchor blocks' =
-    uncurry computeCurrent $ reapply blocks'
-  where
-    reapply :: StrictSeq (Checkpoint l r) -> ([r], l)
-    reapply = go []
-      where
-        go :: [r] -> StrictSeq (Checkpoint l r) -> ([r], l)
-        go acc Empty                = (acc, csLedger anchor)
-        go acc (_  :|> CpSShot _ l) = (acc, l)
-        go acc (ss :|> CpBlock r)   = go (r:acc) ss
-
-    computeCurrent :: [r] -> l -> m l
-    computeCurrent []     = return
-    computeCurrent (r:rs) = reapplyRef cfg r >=> computeCurrent rs
-
 -- | Reconstruct ledger DB from a list of checkpoints
-reconstructFrom :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-                => FullBlockConfig l b
-                -> LedgerDbParams
+reconstructFrom :: forall l r.
+                   LedgerDbParams
                 -> ChainSummary l r
                 -> StrictSeq (Checkpoint l r)
-                -> m (LedgerDB l r)
-reconstructFrom cfg params anchor blocks =
-    reconstruct <$> ledgerAfter cfg anchor blocks
-  where
-    reconstruct :: l -> LedgerDB l r
-    reconstruct current = LedgerDB {
-          ledgerDbCurrent = current
-        , ledgerDbBlocks  = blocks
-        , ledgerDbParams  = params
-        , ledgerDbAnchor  = anchor
-        }
+                -> LedgerDB l r
+reconstructFrom params anchor snapshots =
+    LedgerDB {
+        ledgerDbCheckpoints = snapshots
+      , ledgerDbParams      = params
+      , ledgerDbAnchor      = anchor
+      }
 
 -- | Generalization of rollback using a function on the checkpoints
-rollbackTo :: (ApplyBlock l b, ResolvesBlocks r b m)
-           => FullBlockConfig l b
-           -> (   ChainSummary l r
+rollbackTo :: (   ChainSummary l r
                -> StrictSeq (Checkpoint l r)
                -> Maybe (StrictSeq (Checkpoint l r))
               )
            -> LedgerDB l r
-           -> m (Maybe (LedgerDB l r))
-rollbackTo cfg f (LedgerDB _current blocks anchor params) =
-    case f anchor blocks of
-      Nothing      -> return Nothing
-      Just blocks' -> Just <$> reconstructFrom cfg params anchor blocks'
+           -> Maybe (LedgerDB l r)
+rollbackTo f (LedgerDB checkpoints anchor params) =
+    reconstructFrom params anchor <$> f anchor checkpoints
 
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
-         => FullBlockConfig l b
-         -> Word64
+rollback :: forall l r.
+            Word64
          -> LedgerDB l r
-         -> m (Maybe (LedgerDB l r))
-rollback _   0 db = return $ Just db
-rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
+         -> Maybe (LedgerDB l r)
+rollback 0 db = Just db
+rollback n db = rollbackTo (\_anchor -> go) db
   where
     go :: StrictSeq (Checkpoint l r) -> Maybe (StrictSeq (Checkpoint l r))
-    go blocks =
-        if Seq.length blocks >= fromIntegral n
-          then Just $ Seq.take (Seq.length blocks - fromIntegral n) blocks
+    go checkpoints =
+        if Seq.length checkpoints >= fromIntegral n
+          then Just $
+            Seq.take (Seq.length checkpoints - fromIntegral n) checkpoints
           else Nothing
 
 {-------------------------------------------------------------------------------
@@ -717,27 +512,26 @@ rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
 -------------------------------------------------------------------------------}
 
 -- | Get past ledger state
---
--- This may have to re-apply blocks, and hence read from disk.
-ledgerDbPast :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m, Eq r)
-             => FullBlockConfig l b
-             -> WithOrigin r
+ledgerDbPast :: forall l r.
+                Eq r
+             => WithOrigin r
              -> LedgerDB l r
-             -> m (Maybe l)
-ledgerDbPast cfg tip db
-  | ledgerDbTip db == tip = return $ Just (ledgerDbCurrent db)
-  | otherwise             = fmap ledgerDbCurrent <$> rollbackTo cfg go db
+             -> Maybe l
+ledgerDbPast tip db
+  | ledgerDbTip db == tip = Just (ledgerDbCurrent db)
+  | otherwise             = ledgerDbCurrent <$> rollbackTo go db
   where
     go :: ChainSummary l r
        -> StrictSeq (Checkpoint l r)
        -> Maybe (StrictSeq (Checkpoint l r))
-    go anchor blocks =
-        case blocks' of
+    go anchor checkpoints =
+        case checkpoints' of
           Empty | csTip anchor /= tip -> Nothing
-          _otherwise                  -> Just blocks'
+          _otherwise                  -> Just checkpoints'
       where
-        blocks' :: StrictSeq (Checkpoint l r)
-        blocks' = Seq.dropWhileR (\cp -> NotOrigin (cpBlock cp) /= tip) blocks
+        checkpoints' :: StrictSeq (Checkpoint l r)
+        checkpoints' =
+          Seq.dropWhileR (\cp -> NotOrigin (cpBlock cp) /= tip) checkpoints
 
 {-------------------------------------------------------------------------------
   Updates
@@ -769,15 +563,14 @@ ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l b, ResolvesBlocks r b m, c)
+ledgerDbSwitch :: (ApplyBlock l b, Monad m, c)
                => FullBlockConfig l b
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l r b c]  -- ^ New blocks to apply
                -> LedgerDB l r
                -> m (Either ExceededRollback (LedgerDB l r))
-ledgerDbSwitch cfg numRollbacks newBlocks db = do
-    mRolledBack <- rollback cfg numRollbacks db
-    case mRolledBack of
+ledgerDbSwitch cfg numRollbacks newBlocks db =
+    case rollback numRollbacks db of
       Nothing ->
         return $ Left $ ExceededRollback {
             rollbackMaximum   = ledgerDbMaxRollback db
@@ -808,8 +601,8 @@ instance ( IsLedger l
          ) => IsLedger (LedgerDB l r) where
   type LedgerErr (LedgerDB l r) = LedgerErr l
 
-  applyChainTick cfg slot db@LedgerDB{..} = TickedLedgerDB {
-        tickedLedgerDbTicked = applyChainTick cfg slot ledgerDbCurrent
+  applyChainTick cfg slot db = TickedLedgerDB {
+        tickedLedgerDbTicked = applyChainTick cfg slot (ledgerDbCurrent db)
       , tickedLedgerDbOrig   = db
       }
 
@@ -860,10 +653,6 @@ ledgerDbSwitch' cfg n bs db =
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
 
-ledgerDbPast' :: forall l b. (ApplyBlock l b, Eq b)
-              => FullBlockConfig l b -> WithOrigin b -> LedgerDB l b -> Maybe l
-ledgerDbPast' cfg tip = triviallyResolve (Proxy @b) . ledgerDbPast cfg tip
-
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
@@ -891,15 +680,3 @@ decodeChainSummary decodeLedger decodeRef = do
     csLength <- Dec.decodeWord64
     csLedger <- decodeLedger
     return ChainSummary{..}
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-safeMod :: (Integral a, HasCallStack) => a -> a -> a
-safeMod _ 0 = error "safeMod: division by zero"
-safeMod x y = x `Prelude.mod` y
-
-safeDiv :: (Eq a, Fractional a, HasCallStack) => a -> a -> a
-safeDiv _ 0 = error "safeDiv: division by zero"
-safeDiv x y = x Prelude./ y

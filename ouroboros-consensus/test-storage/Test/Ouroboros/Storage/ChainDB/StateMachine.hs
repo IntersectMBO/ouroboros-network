@@ -1618,10 +1618,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbVolValidation        = VolDB.ValidateAll
     , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB          = LedgerDbParams {
-                                    -- Pick a small value for 'ledgerDbSnapEvery',
-                                    -- so that maximum supported rollback is limited
-                                    ledgerDbSnapEvery     = 2
-                                  , ledgerDbSecurityParam = configSecurityParam cfg
+                                    ledgerDbSecurityParam = configSecurityParam cfg
                                   }
     , cdbDiskPolicy           = defaultDiskPolicy (configSecurityParam cfg)
 

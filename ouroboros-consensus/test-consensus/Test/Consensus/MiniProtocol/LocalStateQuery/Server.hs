@@ -193,8 +193,7 @@ initLgrDB k chain = do
 
     params :: LedgerDbParams
     params = LedgerDbParams
-      { ledgerDbSnapEvery     = maxRollbacks k
-      , ledgerDbSecurityParam = k
+      { ledgerDbSecurityParam = k
       }
 
     cfg = testCfg k
