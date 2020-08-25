@@ -12,7 +12,7 @@ jobs:
     name: "Haddocks"
     runs-on: ubuntu-18.04
     container:
-      image: phadej/ghc:8.6.5-bionic
+      image: phadej/ghc:8.10.2-bionic
     steps:
       - name: set PATH
         run: |
@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.cabal/store
-          key: cabal-store-8.6.5
+          key: cabal-store-8.10.2
       - name: Update Hackage index
         run: cabal v2-update
 
