@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Mock.Node (
 import           Codec.Serialise (Serialise, serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Map.Strict as Map
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           Ouroboros.Consensus.Block
@@ -53,7 +52,6 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
          , Show (CannotForge           (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateInfo        (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateUpdateError (SimpleBlock SimpleMockCrypto ext))
-         , Typeable ext
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where

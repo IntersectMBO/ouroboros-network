@@ -17,8 +17,6 @@ module Ouroboros.Consensus.Node.Run (
   , RunNode (..)
   ) where
 
-import           Data.Typeable (Typeable)
-
 import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Util.ShowProxy
@@ -84,8 +82,6 @@ class ( LedgerSupportsProtocol           blk
       , Show                (CannotForge blk)
       , Show             (ForgeStateInfo blk)
       , Show      (ForgeStateUpdateError blk)
-      , Typeable                         blk
-      , Typeable             (ApplyTxErr blk)
       , ShowProxy                        blk
       , ShowProxy            (ApplyTxErr blk)
       , ShowProxy                 (GenTx blk)

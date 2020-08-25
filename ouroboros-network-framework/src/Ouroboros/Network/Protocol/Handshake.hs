@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Control.Tracer (Tracer, contramap)
-import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
@@ -106,7 +105,6 @@ runHandshakeClient
        , MonadMask m
        , MonadThrow (STM m)
        , Ord vNumber
-       , Typeable vNumber
        )
     => MuxBearer m
     -> connectionId
@@ -141,7 +139,6 @@ runHandshakeServer
        , MonadMask m
        , MonadThrow (STM m)
        , Ord vNumber
-       , Typeable vNumber
        )
     => MuxBearer m
     -> connectionId

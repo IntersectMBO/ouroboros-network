@@ -32,7 +32,6 @@ module Ouroboros.Network.Driver.Limits (
   ) where
 
 import Data.Maybe (fromMaybe)
-import Data.Typeable (Typeable)
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -67,16 +66,14 @@ data ProtocolTimeLimits ps = ProtocolTimeLimits {
 
 data ProtocolLimitFailure where
     ExceededSizeLimit :: forall (pr :: PeerRole) ps (st :: ps).
-                         ( Typeable ps
-                         , forall (st' :: ps). Show (ClientHasAgency st')
+                         ( forall (st' :: ps). Show (ClientHasAgency st')
                          , forall (st' :: ps). Show (ServerHasAgency st')
                          , ShowProxy ps
                          )
                       => PeerHasAgency pr st
                       -> ProtocolLimitFailure
     ExceededTimeLimit :: forall (pr :: PeerRole) ps (st :: ps).
-                         ( Typeable ps
-                         , forall (st' :: ps). Show (ClientHasAgency st')
+                         ( forall (st' :: ps). Show (ClientHasAgency st')
                          , forall (st' :: ps). Show (ServerHasAgency st')
                          , ShowProxy ps
                          )
@@ -106,8 +103,6 @@ instance Exception ProtocolLimitFailure where
 
 driverWithLimits :: forall ps failure bytes m.
                     ( MonadThrow m
-                    , Typeable failure
-                    , Typeable ps
                     , Show failure
                     , ShowProxy ps
                     , forall (st' :: ps). Show (ClientHasAgency st')
@@ -210,8 +205,6 @@ runPeerWithLimits
      , MonadThrow (STM m)
      , MonadMonotonicTime m
      , MonadTimer m
-     , Typeable ps
-     , Typeable failure
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
@@ -245,8 +238,6 @@ runPipelinedPeerWithLimits
      , MonadThrow (STM m)
      , MonadMonotonicTime m
      , MonadTimer m
-     , Typeable ps
-     , Typeable failure
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
