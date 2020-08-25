@@ -59,7 +59,6 @@ dictNestedHdr = \case
     NCS (NCZ CtxtShelley)             -> Dict
     NCS (NCS (NCZ CtxtShelley))       -> Dict
     NCS (NCS (NCS (NCZ CtxtShelley))) -> Dict
-    NCS (NCS (NCS (NCS x)))           -> case x of {}
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo
