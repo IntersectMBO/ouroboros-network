@@ -147,7 +147,6 @@ type instance Same       NS   = NS
 
 unZ :: NS f '[x] -> f x
 unZ (Z x) = x
-unZ (S x) = case x of {}
 
 index_NS :: forall f xs . NS f xs -> Int
 index_NS = go 0

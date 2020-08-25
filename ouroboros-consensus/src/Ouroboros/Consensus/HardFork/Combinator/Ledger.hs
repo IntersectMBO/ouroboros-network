@@ -390,7 +390,6 @@ mkHardForkForecast translations st = Forecast {
     go sno PNil         (TZ cur)       = forecastFinalEra sno   cur
     go sno (PCons t _)  (TZ cur)       = forecastNotFinal sno t cur
     go sno (PCons _ ts) (TS past rest) = shiftView past <$> go sno ts rest
-    go _   PNil         (TS _    rest) = case rest of {}
 
 -- | Construct forecast when we're in the final era.
 --

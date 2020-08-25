@@ -53,7 +53,6 @@ dictNestedHdr = \case
     NCZ (CtxtByronBoundary {}) -> Dict
     NCZ (CtxtByronRegular  {}) -> Dict
     NCS (NCZ CtxtShelley)      -> Dict
-    NCS (NCS x)                -> case x of {}
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo
