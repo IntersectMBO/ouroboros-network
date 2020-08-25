@@ -643,7 +643,6 @@ projNestedCtxt = NestedCtxt . aux . flipNestedCtxt
   where
     aux :: NestedCtxt_ (HardForkBlock '[blk]) f a -> NestedCtxt_ blk f a
     aux (NCZ ctxt) = ctxt
-    aux (NCS ctxt) = case ctxt of {}
 
 injNestedCtxt :: NestedCtxt f blk a -> NestedCtxt f (HardForkBlock '[blk]) a
 injNestedCtxt = NestedCtxt . NCZ . flipNestedCtxt

@@ -289,7 +289,6 @@ toAtMost = go
 
 fromTZ :: Telescope g f '[x] -> f x
 fromTZ (TZ fx)  = fx
-fromTZ (TS _ t) = case t of {}
 
 {-------------------------------------------------------------------------------
   Extension and retraction
@@ -326,8 +325,6 @@ extend = go
             TS gx <$> go es ps (TZ fy)
     go (PCons _ es) (_ :* ps) (TS gx fx) =
         TS gx <$> go es ps fx
-    go PNil _ (TS _ t) =
-        case t of {}
 
 newtype Retract m g f x y = Retract { retractWith :: g x -> f y -> m (f x) }
 
@@ -407,10 +404,6 @@ align = \es rs atTip ->
     go (PCons e es) (TCons _ rs) (_ :* fs) (TS g'x t'x) (TZ fx) = do
         (gx, fy) <- extendWith (provide e g'x) fx
         TS gx <$> go es rs fs t'x (TZ fy)
-    go PNil _ _ _ (TS _ t) =
-        case t of {}
-    go PNil _ _ (TS _ t) _ =
-        case t of {}
 
 {-------------------------------------------------------------------------------
   Derived API
@@ -499,7 +492,6 @@ scanl = go
        -> Telescope (Product h g) (Product h f) (x' ': xs')
     go _            hx (TZ fx)   = TZ (Pair hx fx)
     go (PCons f fs) hx (TS gx t) = TS (Pair hx gx) $ go fs (getNext f hx gx) t
-    go PNil         _  (TS _  t) = case t of {}
 
 {-------------------------------------------------------------------------------
   Standard type class instances
