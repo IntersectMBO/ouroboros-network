@@ -1,11 +1,11 @@
-with-compiler: C:\\ProgramData\\chocolatey\\lib\\ghc.8.6.5\\tools\\ghc-8.6.5\\bin\\ghc
+with-compiler: C:\\ProgramData\\chocolatey\\lib\\ghc.8.10.2\\tools\\ghc-8.10.2\\bin\\ghc
 tests: True
 
 max-backjumps: 5000
 reorder-goals: True
 
 package Win32-network
-  ghc-options: -Werror 
+  ghc-options: -Werror
   flags: +demo
 
 package ntp-client

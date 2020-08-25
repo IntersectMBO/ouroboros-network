@@ -9,6 +9,6 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 
 # install work environment
-choco install -y ghc --version 8.6.5
+choco install -y ghc --version 8.10.2
 choco install -y git
 choco install -y firefox
