@@ -20,7 +20,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
-import           Control.Exception (AssertionFailed (..), SomeException)
+import           Control.Exception (AssertionFailed (..))
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork

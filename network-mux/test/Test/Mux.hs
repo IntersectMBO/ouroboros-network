@@ -25,7 +25,7 @@ import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
-import           Data.List (dropWhileEnd, and, nub)
+import           Data.List (dropWhileEnd, nub)
 import           Data.Tuple (swap)
 import           Data.Word
 import           Test.QuickCheck hiding ((.&.))

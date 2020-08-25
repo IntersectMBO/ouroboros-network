@@ -139,7 +139,7 @@ codecBlockFetchId = Codec encode decode
          -> AnyMessage (BlockFetch block)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) st.
+  decode :: forall (pr :: PeerRole) (st :: BlockFetch block).
             PeerHasAgency pr st
          -> m (DecodeStep (AnyMessage (BlockFetch block))
                           CodecFailure m (SomeMessage st))

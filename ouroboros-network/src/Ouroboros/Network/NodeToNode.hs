@@ -96,7 +96,6 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int)
 import           Data.Time.Clock (DiffTime)
 import           Data.Void (Void)
 import           Data.Word

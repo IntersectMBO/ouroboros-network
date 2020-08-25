@@ -19,7 +19,6 @@ import           Data.List (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isNothing, listToMaybe)
-import           Data.Semigroup ((<>))
 import           Data.Tuple (swap)
 
 import           Test.QuickCheck

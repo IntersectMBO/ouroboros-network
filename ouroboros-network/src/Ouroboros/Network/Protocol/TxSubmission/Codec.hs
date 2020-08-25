@@ -202,7 +202,7 @@ codecTxSubmissionId = Codec encode decode
          -> AnyMessage (TxSubmission txid tx)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) st.
+  decode :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
             PeerHasAgency pr st
          -> m (DecodeStep (AnyMessage (TxSubmission txid tx))
                           CodecFailure m (SomeMessage st))

@@ -234,7 +234,7 @@ setFetchClientContext :: MonadSTM m
 setFetchClientContext (FetchClientRegistry ctxVar _ _ _ _) tracer policy =
     atomically $ do
       ok <- tryPutTMVar ctxVar (tracer, policy)
-      unless ok $ fail "setFetchClientContext: called more than once"
+      unless ok $ error "setFetchClientContext: called more than once"
 
 -- | A read-only 'STM' action to get the current 'PeerFetchStatus' for all
 -- fetch clients in the 'FetchClientRegistry'.

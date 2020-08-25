@@ -31,7 +31,7 @@ import           Data.List (foldl')
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
-import           Data.Semigroup (Semigroup, Last(..))
+import           Data.Semigroup (Last(..))
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict

@@ -18,7 +18,6 @@ import qualified Control.Monad.ST as ST
 import           Control.Tracer (nullTracer)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (cycle)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Functor.Identity (Identity (..))

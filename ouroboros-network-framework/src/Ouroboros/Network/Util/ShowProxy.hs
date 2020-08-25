@@ -10,7 +10,6 @@ module Ouroboros.Network.Util.ShowProxy
   , Proxy (..)
   ) where
 
-import Data.Proxy (Proxy (..))
 import Data.Typeable
 
 class ShowProxy p where

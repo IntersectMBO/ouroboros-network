@@ -99,7 +99,7 @@ import           Data.Void (Void)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.TypedProtocol (Peer, PeerRole (AsClient))
+import           Network.TypedProtocol (Peer)
 import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Codec

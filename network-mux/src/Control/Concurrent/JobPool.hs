@@ -1,6 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 
 module Control.Concurrent.JobPool (
@@ -12,15 +12,15 @@ module Control.Concurrent.JobPool (
     collect
   ) where
 
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import           Data.Proxy (Proxy(..))
+import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadThread(..))
+import           Control.Monad.Class.MonadFork (MonadThread (..))
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (SomeException, SomeAsyncException(..))
 
 
 data JobPool m a = JobPool {

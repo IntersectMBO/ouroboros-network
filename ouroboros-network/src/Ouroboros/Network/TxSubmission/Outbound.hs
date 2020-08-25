@@ -23,7 +23,7 @@ import qualified Data.Foldable as Foldable
 import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (Exception(..), assert)
+import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
