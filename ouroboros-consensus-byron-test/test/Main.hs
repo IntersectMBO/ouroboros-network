@@ -13,6 +13,10 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "byron"
+  [ Test.ThreadNet.RealPBFT.tests
+  ]
+  `asTypeOf`
+  testGroup "byron"
   [ Test.Consensus.Byron.Golden.tests
   , Test.Consensus.Byron.Serialisation.tests
   , Test.ThreadNet.RealPBFT.tests

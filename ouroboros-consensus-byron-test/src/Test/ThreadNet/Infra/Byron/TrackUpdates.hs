@@ -164,20 +164,32 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result
           Ref.Nominal -> case st of
               -- the proposal is in this slot
               Proposing                    ->
-                  let -- if this leader just joined, it will forge before the
-                      -- proposal reaches its mempool, unless it's node 0
-                      lostRace = s == leaderJoinSlot &&
-                                 leader /= CoreNodeId 0
-                  in
-                  if lostRace then continueWith st else
+                  -- Thomas' workaround in NodeKernel delays the forge long
+                  -- enough that the node's proposal will be included in its
+                  -- first block.
+                  --
+                  -- CODE FOR OLD BEHAVIOR REMOVED
+
                   -- votes can be valid immediately and at least one should
                   -- also be in this block
                   go (Voting s Set.empty) s (o:os)
               Voting proposalSlot votes    ->
                   let votesInTheNewBlock =
+                          -- Thomas' workaround in NodeKernel delays the forge
+                          -- long enough that the node's own vote will be
+                          -- included in its first block.
+                          --
+                          -- OLD BEHAVIOR DESCRIBED BELOW THIS LINE
+                          --
                           -- an exception to the rule: the proposal and c0's
                           -- own vote always has time to reach its mempool
-                          (if leader == c0 then Set.insert c0 else id) $
+                          Set.insert leader $
+                          -- Thomas' workaround in NodeKernel delays the forge
+                          -- long enough that the node's own vote will be
+                          -- included in its first block.
+                          --
+                          -- OLD BEHAVIOR DESCRIBED BELOW THIS LINE
+                          --
                           -- if the leader is joining in this slot, then no
                           -- votes will reach its mempool before it forges:
                           -- other nodes' votes will be delayed via
@@ -191,7 +203,6 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result
                           Map.keysSet $ Map.filter (< s) m
                         where
                           NodeJoinPlan m = nodeJoinPlan
-                          c0 = CoreNodeId 0
 
                       votes'    = Set.union votesInTheNewBlock votes
                       confirmed = fromIntegral (Set.size votes') >= quorum

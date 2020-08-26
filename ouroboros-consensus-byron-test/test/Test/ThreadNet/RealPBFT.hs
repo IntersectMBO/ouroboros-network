@@ -463,6 +463,12 @@ tests = testGroup "RealPBFT" $
             , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
             }
     , testProperty "topology prevents timely dlg cert tx propagation" $
+          -- Thomas' workaround in NodeKernel delays the forge long enough that
+          -- c3 *does* receive the c4 transaction before c3 forges. So this
+          -- test now passes.
+          --
+          -- OLD BEHAVIOR DESCRIBED BELOW THIS LINE
+          --
           -- Caught a bug in the test infrastructure. If node X rekeys in slot
           -- S and Y leads slot S+1, then either the topology must connect X
           -- and Y directly, or Y must join before slot S. Otherwise, X
@@ -488,7 +494,6 @@ tests = testGroup "RealPBFT" $
           -- communicate its dlg cert tx to c3 in time (it arrives in s38, but
           -- after c3 has forged its block).
           let ncn5 = NumCoreNodes 5 in
-          expectFailure $
           once $
           prop_simple_real_pbft_convergence TestSetup
             { setupEBBs       = ProduceEBBs
