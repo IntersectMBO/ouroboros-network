@@ -378,15 +378,18 @@ prop_simple_cardano_convergence TestSetup
   , setupTestConfig
   , setupVersion
   } =
-    tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
-    tabulate "Observed forge during a non-overlay Shelley slot"
-      [label_hadActiveNonOverlaySlots] $
-    tabulatePartitionDuration $
-    tabulateFinalIntersectionDepth $
-    tabulatePartitionPosition $
     prop_general_semisync pga testOutput .&&.
     prop_inSync testOutput .&&.
-    prop_ReachesShelley reachesShelley
+    prop_ReachesShelley reachesShelley .&&.
+    prop_noCPViolation .&&.
+    ( tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
+      tabulate "Observed forge during a non-overlay Shelley slot"
+        [label_hadActiveNonOverlaySlots] $
+      tabulatePartitionDuration $
+      tabulateFinalIntersectionDepth $
+      tabulatePartitionPosition $
+      property True
+    )
   where
     TestConfig
       { initSeed
@@ -663,6 +666,15 @@ prop_simple_cardano_convergence TestSetup
     finalIntersectionDepth = depth
       where
         NumBlocks depth = calcFinalIntersectionDepth pga testOutput
+
+    prop_noCPViolation :: Property
+    prop_noCPViolation =
+        counterexample
+          ( "finalChains: " <>
+            show (nodeOutputFinalChain <$> testOutputNodes testOutput)
+          ) $
+        counterexample "CP violation in final chains!" $
+        property $ maxRollbacks setupK >= finalIntersectionDepth
 
     tabulatePartitionDuration :: Property -> Property
     tabulatePartitionDuration =
