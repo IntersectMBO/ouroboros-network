@@ -657,7 +657,7 @@ prop_governor_gossip_1hr (GovernorMockEnvironmentWAD env@GovernorMockEnvironment
     knownPeersAfter1Hour trace =
       listToMaybe
         [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
-        | (_, GovernorDebug (TraceGovernorState st _)) <- reverse (takeFirstNHours 1 trace) ]
+        | (_, GovernorDebug (TraceGovernorState _ _ st)) <- reverse (takeFirstNHours 1 trace) ]
 
     -- The ones we find should be a subset of the ones possible to find
     subsetProperty found reachable =
@@ -720,7 +720,7 @@ prop_governor_connstatus (GovernorMockEnvironmentWAD env) =
         lastTestStatus =
           listToMaybe
             [ Governor.establishedStatus st
-            | (_, GovernorDebug (TraceGovernorState st _)) <- reverse trace ]
+            | (_, GovernorDebug (TraceGovernorState _ _ st)) <- reverse trace ]
 
 
 --

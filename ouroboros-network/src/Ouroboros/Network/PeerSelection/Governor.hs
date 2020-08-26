@@ -493,12 +493,12 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
           error "peerSelectionGovernorLoop: impossible: nothing to do"
 
         Guarded Nothing decisionAction -> do
-          traceWith debugTracer (TraceGovernorState st Nothing)
+          traceWith debugTracer (TraceGovernorState now Nothing st)
           atomically decisionAction
 
         Guarded (Just (Min wakeupAt)) decisionAction -> do
           let wakeupIn = diffTime wakeupAt now
-          traceWith debugTracer (TraceGovernorState st (Just wakeupIn))
+          traceWith debugTracer (TraceGovernorState now (Just wakeupIn) st)
           wakupTimeout <- newTimeout wakeupIn
           let wakeup    = awaitTimeout wakupTimeout >> pure (wakeupDecision st)
           decision     <- atomically (decisionAction <|> wakeup)
