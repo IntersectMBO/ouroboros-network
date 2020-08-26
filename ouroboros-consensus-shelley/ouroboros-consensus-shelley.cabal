@@ -44,8 +44,7 @@ library
                        Ouroboros.Consensus.Shelley.Protocol.HotKey
                        Ouroboros.Consensus.Shelley.Protocol.Util
 
-  build-depends:       base              >=4.9   && <4.13
-                     , binary            >=0.8   && <0.9
+  build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class

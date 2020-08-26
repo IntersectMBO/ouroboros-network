@@ -8,7 +8,6 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
 
-import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)

@@ -8,7 +8,7 @@ module Test.Util.QSM (
   ) where
 
 import           Control.Monad
-import           Control.Monad.Fail
+import qualified Control.Monad.Fail as Fail
 import           Data.Typeable
 
 import qualified Test.StateMachine.Logic as Logic
@@ -34,7 +34,7 @@ instance Monad (Example cmd) where
   Run c k  >>= f = Run c (k >=> f)
   Fail err >>= _ = Fail err
 
-instance MonadFail (Example cmd) where
+instance Fail.MonadFail (Example cmd) where
   fail = Fail
 
 -- | Run a command, and capture its references

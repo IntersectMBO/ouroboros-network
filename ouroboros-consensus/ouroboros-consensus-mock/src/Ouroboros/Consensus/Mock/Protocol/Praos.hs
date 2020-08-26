@@ -47,9 +47,9 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Control.Monad.Identity (runIdentity)
+import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -447,8 +447,6 @@ infosStake s@PraosConfig{..} xs e = case ys of
     []                  -> praosInitialStake
     (BlockInfo{..} : _) -> biStake
   where
-    PraosParams{..} = praosParams
-
     e' = if e >= 2 then EpochNo (unEpochNo e - 2) else 0
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
@@ -497,10 +495,10 @@ class ( KESAlgorithm  (PraosKES  c)
       , Cardano.Crypto.VRF.Class.Signable (PraosVRF c) (Natural, SlotNo, VRFType)
       , ContextKES (PraosKES c) ~ ()
       , ContextVRF (PraosVRF c) ~ ()
-      ) => PraosCrypto (c :: *) where
-  type family PraosKES  c :: *
-  type family PraosVRF  c :: *
-  type family PraosHash c :: *
+      ) => PraosCrypto (c :: Type) where
+  type family PraosKES  c :: Type
+  type family PraosVRF  c :: Type
+  type family PraosHash c :: Type
 
 data PraosStandardCrypto
 data PraosMockCrypto

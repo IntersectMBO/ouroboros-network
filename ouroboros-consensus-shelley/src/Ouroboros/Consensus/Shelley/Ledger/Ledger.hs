@@ -55,7 +55,7 @@ import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
-import           Data.Type.Equality ((:~:) (Refl), apply)
+import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 

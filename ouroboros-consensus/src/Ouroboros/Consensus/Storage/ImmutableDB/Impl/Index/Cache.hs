@@ -51,13 +51,11 @@ import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF,
-                     unsafeNoUnexpectedThunks)
+import           Cardano.Prelude (forceElemsToWHNF, unsafeNoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (tryPutMVar)
 import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

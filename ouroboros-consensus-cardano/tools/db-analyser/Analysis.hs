@@ -18,12 +18,8 @@ import           Control.Monad.Except
 import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 
 import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
-                     genesisPoint)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -215,7 +211,7 @@ processAllChainDB chainDB rr callback = do
       Origin -> return ()
       At tip -> do
         Right itr <- ChainDB.stream chainDB rr GetBlock
-          (StreamFromExclusive genesisPoint)
+          (StreamFromExclusive GenesisPoint)
           (StreamToInclusive tip)
         go itr
   where
@@ -238,7 +234,7 @@ processAllImmDB immDB rr callback = do
       Origin -> return ()
       At tip -> do
         Right itr <- ImmDB.stream immDB rr GetBlock
-          (StreamFromExclusive genesisPoint)
+          (StreamFromExclusive GenesisPoint)
           (StreamToInclusive tip)
         go itr
   where

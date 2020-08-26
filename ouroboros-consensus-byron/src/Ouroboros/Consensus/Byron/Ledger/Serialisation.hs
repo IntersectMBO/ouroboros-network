@@ -43,8 +43,6 @@ import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word (Word32)
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 

@@ -959,7 +959,7 @@ between k cfg from to m = do
 -- tip).
 garbageCollectable :: forall blk. HasHeader blk
                    => SecurityParam -> Model blk -> blk -> Bool
-garbageCollectable secParam m@Model{..} b =
+garbageCollectable secParam m b =
     -- Note: we don't use the block number but the slot number, as the
     -- VolatileDB's garbage collection is in terms of slot numbers.
     NotOrigin (blockSlot b) < immutableSlotNo secParam m
@@ -973,7 +973,7 @@ garbageCollectable secParam m@Model{..} b =
 -- case from a block that was never added to the model in the first place.
 garbageCollectablePoint :: forall blk. HasHeader blk
                         => SecurityParam -> Model blk -> RealPoint blk -> Bool
-garbageCollectablePoint secParam m@Model{..} pt
+garbageCollectablePoint secParam m pt
     | Just blk <- getBlock (realPointHash pt) m
     = garbageCollectable secParam m blk
     | otherwise

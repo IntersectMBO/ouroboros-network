@@ -17,6 +17,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Compat (
   , singleEraCompatQuery
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block
@@ -38,7 +39,7 @@ import qualified Ouroboros.Consensus.HardFork.History.Qry as Qry
 
 -- | Version of @Query (HardForkBlock xs)@ without the restriction to have
 -- at least two eras
-data HardForkCompatQuery blk :: * -> * where
+data HardForkCompatQuery blk :: Type -> Type where
   CompatIfCurrent ::
        Query blk result
     -> HardForkCompatQuery blk result

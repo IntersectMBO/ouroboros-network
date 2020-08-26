@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Node.NetworkProtocolVersion
   , NodeToClientVersion(..)
   ) where
 
+import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import           Data.Proxy
 
@@ -26,8 +27,8 @@ class ( Show (BlockNodeToNodeVersion   blk)
       , Eq   (BlockNodeToNodeVersion   blk)
       , Eq   (BlockNodeToClientVersion blk)
       ) => HasNetworkProtocolVersion blk where
-  type BlockNodeToNodeVersion   blk :: *
-  type BlockNodeToClientVersion blk :: *
+  type BlockNodeToNodeVersion   blk :: Type
+  type BlockNodeToClientVersion blk :: Type
 
   -- Defaults
 

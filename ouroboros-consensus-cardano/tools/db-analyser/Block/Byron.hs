@@ -99,8 +99,7 @@ aBlockOrBoundary fromBoundary fromRegular blk = case blk of
 countTxOutputsByron :: Chain.ABlock ByteString -> Int
 countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
   where
-    Chain.AHeader{..} = blockHeader
-    Chain.ABody{..}   = blockBody
+    Chain.ABody { bodyTxPayload } = blockBody
 
     countTxPayload :: Chain.ATxPayload a -> Int
     countTxPayload = sum

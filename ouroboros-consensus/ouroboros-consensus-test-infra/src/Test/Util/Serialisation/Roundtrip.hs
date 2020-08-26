@@ -34,7 +34,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
-import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,

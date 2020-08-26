@@ -39,7 +39,6 @@ import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 

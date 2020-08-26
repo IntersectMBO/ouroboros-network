@@ -20,7 +20,7 @@ import           Data.Functor.Identity (Identity (..))
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
@@ -31,8 +31,6 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting,
                      Handle)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-                     (RelativeSlot)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache as Cache

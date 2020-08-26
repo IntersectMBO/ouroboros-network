@@ -27,7 +27,6 @@ module Ouroboros.Consensus.Util.MonadSTM.RAWLock
 
 import           Prelude hiding (read)
 
-import           Control.Monad (join)
 import           Control.Monad.Except
 import           Data.Functor (($>))
 import           GHC.Generics (Generic)

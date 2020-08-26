@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   ) where
 
 import           Control.Monad.Except
+import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           GHC.Stack (HasCallStack)
@@ -130,7 +131,7 @@ ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))
 -------------------------------------------------------------------------------}
 
 -- | Different queries supported by the ledger, indexed by the result type.
-data family Query blk :: * -> *
+data family Query blk :: Type -> Type
 
 -- | Query the ledger state.
 --

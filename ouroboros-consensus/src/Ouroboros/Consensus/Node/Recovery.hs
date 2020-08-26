@@ -6,7 +6,6 @@ module Ouroboros.Consensus.Node.Recovery
   , removeCleanShutdownMarker
   ) where
 
-import           Control.Exception (SomeException)
 import           Control.Monad (unless, when)
 
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)

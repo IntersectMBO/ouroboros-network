@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (BlockRef (..),
                      ChainDB, ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
                      (DecodeDisk (..), DecodeDiskDep (..),
-                     ReconstructNestedCtxt (..), SizeInBytes)
+                     ReconstructNestedCtxt (..))
 import           Ouroboros.Consensus.Storage.Common
 
 -- | Translate a ChainDB 'BlockComponent' into a 'BlockComponent' known by the

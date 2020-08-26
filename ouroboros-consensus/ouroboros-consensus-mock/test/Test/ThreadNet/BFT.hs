@@ -7,8 +7,6 @@ module Test.ThreadNet.BFT (
     tests
   ) where
 
-import           Data.Proxy (Proxy (..))
-
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck

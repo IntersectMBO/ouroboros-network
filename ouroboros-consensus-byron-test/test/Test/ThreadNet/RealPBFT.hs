@@ -22,7 +22,6 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
-import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 

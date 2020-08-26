@@ -21,7 +21,6 @@ module Test.Util.LogicalClock (
   , blockUntilTick
   ) where
 
-import           Control.Exception (Exception)
 import           Control.Monad
 import           Data.Time (NominalDiffTime)
 import           Data.Word

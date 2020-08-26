@@ -38,6 +38,7 @@ import           Prelude hiding (flip)
 
 import           Data.Bifunctor
 import           Data.Functor.Product
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Void
 
@@ -54,7 +55,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
   Main API
 -------------------------------------------------------------------------------}
 
-data Mismatch :: (k -> *) -> (k -> *) -> [k] -> * where
+data Mismatch :: (k -> Type) -> (k -> Type) -> [k] -> Type where
   ML :: f x -> NS g xs -> Mismatch f g (x ': xs)
   MR :: NS f xs -> g x -> Mismatch f g (x ': xs)
   MS :: Mismatch f g xs -> Mismatch f g (x ': xs)

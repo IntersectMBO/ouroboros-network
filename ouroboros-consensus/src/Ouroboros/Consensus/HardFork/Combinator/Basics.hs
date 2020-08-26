@@ -36,6 +36,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   ) where
 
 import           Data.Functor.Identity
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -62,7 +63,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types
   Hard fork protocol, block, and ledger state
 -------------------------------------------------------------------------------}
 
-data HardForkProtocol (xs :: [*])
+data HardForkProtocol (xs :: [Type])
 
 newtype HardForkBlock xs = HardForkBlock {
       getHardForkBlock :: OneEraBlock xs

@@ -16,7 +16,6 @@ import           Control.Monad (guard, replicateM)
 import           Control.Monad.Identity (runIdentity)
 import           Control.Monad.Reader (runReaderT)
 import           Data.Functor ((<&>))
-import           Data.List ((!!))
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, maybeToList)
 import           Data.Proxy (Proxy (..))

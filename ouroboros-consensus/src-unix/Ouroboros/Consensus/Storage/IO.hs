@@ -17,7 +17,7 @@ import           Prelude hiding (read, truncate)
 
 import           Control.Monad (void)
 import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal as Internal
+import qualified Data.ByteString.Internal as Internal
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)

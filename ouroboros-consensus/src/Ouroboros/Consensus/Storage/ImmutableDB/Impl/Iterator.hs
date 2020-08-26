@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (when)
 import           Control.Monad.Except
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy
@@ -30,8 +29,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     allNoUnexpectedThunks, forceElemsToWHNF)
+import           Cardano.Prelude (allNoUnexpectedThunks, forceElemsToWHNF)
 
 import           GHC.Stack (HasCallStack)
 

@@ -27,8 +27,7 @@ library
                        Test.ThreadNet.Infra.Shelley
                        Test.ThreadNet.TxGen.Shelley
 
-  build-depends:       base              >=4.9   && <4.13
-                     , binary            >=0.8   && <0.9
+  build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
@@ -75,13 +74,12 @@ test-suite test
                        Test.ThreadNet.RealTPraos
 
   build-depends:       base
-                     , binary
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude
                      , cardano-slotting
-                     , cborg             >=0.2.2 && <0.3
+                     , cborg
                      , containers
                      , QuickCheck
                      , time

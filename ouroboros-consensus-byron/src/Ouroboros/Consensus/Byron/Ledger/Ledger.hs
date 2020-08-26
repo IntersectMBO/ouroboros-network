@@ -44,7 +44,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import           Data.Type.Equality ((:~:) (Refl))
+import           Data.Kind (Type)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -173,7 +173,7 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
-data instance Query ByronBlock :: * -> * where
+data instance Query ByronBlock :: Type -> Type where
   GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
 instance QueryLedger ByronBlock where

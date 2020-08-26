@@ -1085,7 +1085,7 @@ tag = C.classify [
             Right $ tagConcurrentWriterReader put
 
     tagOpenReadThenWrite :: Set FsPath -> EventPred
-    tagOpenReadThenWrite readOpen = successful $ \ev@Event{..} _ ->
+    tagOpenReadThenWrite readOpen = successful $ \ev _ ->
       case eventMockCmd ev of
         Open (PExpPath fp) ReadMode ->
           Right $ tagOpenReadThenWrite $ Set.insert fp readOpen
@@ -1094,7 +1094,7 @@ tag = C.classify [
         _otherwise -> Right $ tagOpenReadThenWrite readOpen
 
     tagOpenReadThenRead :: Set FsPath -> EventPred
-    tagOpenReadThenRead readOpen = successful $ \ev@Event{..} _ ->
+    tagOpenReadThenRead readOpen = successful $ \ev _ ->
       case eventMockCmd ev of
         Open (PExpPath fp) ReadMode | Set.member fp readOpen ->
           Left TagOpenReadThenRead
@@ -1103,7 +1103,7 @@ tag = C.classify [
         _otherwise -> Right $ tagOpenReadThenRead readOpen
 
     tagWriteWriteRead :: Map (HandleMock, FsPath) Int -> EventPred
-    tagWriteWriteRead wr = successful $ \ev@Event{..} _ ->
+    tagWriteWriteRead wr = successful $ \ev _ ->
       case eventMockCmd ev of
         Put (Handle h fp) bs | BS.length bs > 0 ->
           let f Nothing  = Just 0
@@ -1138,20 +1138,20 @@ tag = C.classify [
             Right $ tagOpenDirectory created
 
     tagWrite :: EventPred
-    tagWrite = successful $ \ev@Event{..} _ ->
+    tagWrite = successful $ \ev _ ->
       case eventMockCmd ev of
         Put _ bs | BS.length bs > 0 ->
           Left TagWrite
         _otherwise -> Right tagWrite
 
     tagSeekFromEnd :: EventPred
-    tagSeekFromEnd = successful $ \ev@Event{..} _ ->
+    tagSeekFromEnd = successful $ \ev _ ->
       case eventMockCmd ev of
         Seek _ SeekFromEnd n | n < 0 -> Left TagSeekFromEnd
         _otherwise                   -> Right tagSeekFromEnd
 
     tagCreateDirectory :: EventPred
-    tagCreateDirectory = successful $ \ev@Event{..} _ ->
+    tagCreateDirectory = successful $ \ev _ ->
       case eventMockCmd ev of
         CreateDirIfMissing True (PExpPath fp) | length (fsPathToList fp) > 1 ->
           Left TagCreateDirectory
@@ -1159,32 +1159,32 @@ tag = C.classify [
           Right tagCreateDirectory
 
     tagDoesFileExistOK :: EventPred
-    tagDoesFileExistOK = successful $ \ev@Event{..} suc ->
+    tagDoesFileExistOK = successful $ \ev suc ->
       case (eventMockCmd ev, suc) of
         (DoesFileExist _, Bool True) -> Left TagDoesFileExistOK
         _otherwise                   -> Right tagDoesFileExistOK
 
     tagDoesFileExistKO :: EventPred
-    tagDoesFileExistKO = successful $ \ev@Event{..} suc ->
+    tagDoesFileExistKO = successful $ \ev suc ->
       case (eventMockCmd ev, suc) of
         (DoesFileExist _, Bool False) -> Left TagDoesFileExistKO
         _otherwise                    -> Right tagDoesFileExistKO
 
     tagDoesDirectoryExistOK :: EventPred
-    tagDoesDirectoryExistOK = successful $ \ev@Event{..} suc ->
+    tagDoesDirectoryExistOK = successful $ \ev suc ->
       case (eventMockCmd ev, suc) of
         (DoesDirectoryExist (PExpPath fp), Bool True) | not (fp == mkFsPath ["/"])
                    -> Left TagDoesDirectoryExistOK
         _otherwise -> Right tagDoesDirectoryExistOK
 
     tagDoesDirectoryExistKO :: EventPred
-    tagDoesDirectoryExistKO = successful $ \ev@Event{..} suc ->
+    tagDoesDirectoryExistKO = successful $ \ev suc ->
       case (eventMockCmd ev, suc) of
         (DoesDirectoryExist _, Bool False) -> Left TagDoesDirectoryExistKO
         _otherwise                         -> Right tagDoesDirectoryExistKO
 
     tagRemoveFile :: Set FsPath -> EventPred
-    tagRemoveFile removed = successful $ \ev@Event{..} _suc ->
+    tagRemoveFile removed = successful $ \ev _suc ->
       case eventMockCmd ev of
         RemoveFile fe -> Right $ tagRemoveFile $ Set.insert fp removed
           where
@@ -1197,13 +1197,13 @@ tag = C.classify [
         _otherwise -> Right $ tagRemoveFile removed
 
     tagRenameFile :: EventPred
-    tagRenameFile = successful $ \ev@Event{..} _suc ->
+    tagRenameFile = successful $ \ev _suc ->
       case eventMockCmd ev of
         RenameFile {} -> Left TagRenameFile
         _otherwise    -> Right tagRenameFile
 
     tagClosedTwice :: Set HandleMock -> EventPred
-    tagClosedTwice closed = successful $ \ev@Event{..} _suc ->
+    tagClosedTwice closed = successful $ \ev _suc ->
       case eventMockCmd ev of
         Close (Handle h _) | Set.member h closed -> Left TagClosedTwice
         Close (Handle h _) -> Right $ tagClosedTwice $ Set.insert h closed
@@ -1235,7 +1235,7 @@ tag = C.classify [
         _otherwise -> Right $ tagWriteInvalid openRead
 
     tagPutSeekGet :: Set HandleMock -> Set HandleMock -> EventPred
-    tagPutSeekGet put seek = successful $ \ev@Event{..} _suc ->
+    tagPutSeekGet put seek = successful $ \ev _suc ->
       case eventMockCmd ev of
         Put (Handle h _) bs | BS.length bs > 0 ->
           Right $ tagPutSeekGet (Set.insert h put) seek
@@ -1248,7 +1248,7 @@ tag = C.classify [
         _otherwise -> Right $ tagPutSeekGet put seek
 
     tagPutSeekNegGet :: Set HandleMock -> Set HandleMock -> EventPred
-    tagPutSeekNegGet put seek = successful $ \ev@Event{..} _suc ->
+    tagPutSeekNegGet put seek = successful $ \ev _suc ->
       case eventMockCmd ev of
         Put (Handle h _) bs | BS.length bs > 0 ->
           Right $ tagPutSeekNegGet (Set.insert h put) seek
@@ -1270,14 +1270,14 @@ tag = C.classify [
         _otherwise -> Right tagExclusiveFail
 
     tagReadEOF :: EventPred
-    tagReadEOF = successful $ \ev@Event{..} suc ->
+    tagReadEOF = successful $ \ev suc ->
       case (eventMockCmd ev, suc) of
         (Get _ n, ByteString bl)
           | n > 0, BS.null bl -> Left  TagReadEOF
         _otherwise            -> Right tagReadEOF
 
     tagPread :: EventPred
-    tagPread = successful $ \ev@Event{..} _ ->
+    tagPread = successful $ \ev _ ->
       case eventMockCmd ev of
         GetAt{}    -> Left  TagPread
         _otherwise -> Right tagPread

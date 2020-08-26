@@ -30,9 +30,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Crypto.KES.Class hiding (forgetSignKeyKES)
 import qualified Cardano.Crypto.KES.Class as Relative (Period)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Shelley.Spec.Ledger.Crypto (Crypto (..))
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
 import           Ouroboros.Consensus.Block (UpdateInfo (..))

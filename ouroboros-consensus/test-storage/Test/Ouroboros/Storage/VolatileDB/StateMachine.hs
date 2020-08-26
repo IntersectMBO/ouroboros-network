@@ -28,10 +28,8 @@ import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.TreeDiff (ToExpr (..))
 import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
@@ -475,7 +473,7 @@ shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
     [ CmdErr cmd' mbErr | cmd'   <- shrinkCmd m cmd ]
 
 shrinkCmd :: Model Symbolic -> Cmd -> [Cmd]
-shrinkCmd Model{..} cmd = case cmd of
+shrinkCmd _ cmd = case cmd of
     GetBlockInfo   bids       -> GetBlockInfo <$> shrinkList (const []) bids
     FilterByPredecessor preds -> FilterByPredecessor <$> shrinkList (const []) preds
     Corruption cors           -> Corruption <$> shrinkCorruptions cors

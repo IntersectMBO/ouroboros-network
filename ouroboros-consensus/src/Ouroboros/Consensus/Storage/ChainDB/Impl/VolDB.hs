@@ -69,7 +69,6 @@ import           Data.Foldable (foldl')
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)

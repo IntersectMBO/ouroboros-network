@@ -40,11 +40,12 @@ import           Data.Bifunctor
 import           Data.Fixed (divMod')
 import           Data.Foldable (asum, toList)
 import           Data.Functor.Identity
+import           Data.Kind (Type)
 import           Data.SOP.Strict (SListI)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Show (showParen, showSpace, showString)
+import           GHC.Show (showSpace)
 import           GHC.Stack
 import           Quiet
 
@@ -141,7 +142,7 @@ import           Ouroboros.Consensus.HardFork.History.Util
 -- 'Qry' adds a monadic interface on top of 'Expr'. Although means that 'Qry'
 -- itself is not showable, the 'PastHorizonException' can nonetheless show the
 -- offending expression alongside the 'Summary' against which it was evaluated.
-data Qry :: * -> * where
+data Qry :: Type -> Type where
   QPure :: a -> Qry a
   QExpr :: ClosedExpr a -> (a -> Qry b) -> Qry b
 
@@ -184,7 +185,7 @@ deriving via Quiet EpochInEra  instance Show EpochInEra
 data ClosedExpr a = ClosedExpr (forall f. Expr f a)
 
 -- | Query expressions in PHOAS
-data Expr (f :: * -> *) :: * -> * where
+data Expr (f :: Type -> Type) :: Type -> Type where
   -- PHOAS infrastructure
 
   EVar  :: f a -> Expr f a

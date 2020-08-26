@@ -6,8 +6,10 @@ module Ouroboros.Consensus.Protocol.Signed (
   , SignedHeader(..)
   ) where
 
+import           Data.Kind (Type)
+
 -- | The part of the header that is signed
-type family Signed hdr :: *
+type family Signed hdr :: Type
 
 -- | Header that contain a signed part
 --

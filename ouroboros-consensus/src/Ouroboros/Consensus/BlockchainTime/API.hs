@@ -15,7 +15,7 @@ module Ouroboros.Consensus.BlockchainTime.API (
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike

@@ -48,7 +48,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
@@ -76,8 +75,6 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
-                     (hardForkBlockchainTime)
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Abstract

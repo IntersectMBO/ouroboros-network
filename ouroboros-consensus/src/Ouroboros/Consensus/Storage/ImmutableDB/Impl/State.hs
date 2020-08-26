@@ -30,8 +30,6 @@ import           Control.Tracer (Tracer)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..))
-
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -244,8 +242,6 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
       Left  e -> throwM e
       Right r -> return r
   where
-    HasFS{..} = hasFS
-
     -- We use 'readMVarSTM' to read a potentially stale internal state if
     -- somebody's appending to the ImmutableDB at the same time. Reads can
     -- safely happen concurrently with appends, so this is fine and allows for

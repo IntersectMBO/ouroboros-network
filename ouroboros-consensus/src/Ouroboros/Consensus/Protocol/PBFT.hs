@@ -47,7 +47,6 @@ import           Control.Monad.Except
 import           Data.Bifunctor (first)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
-import           Data.Proxy (Proxy (..))
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
@@ -306,7 +305,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
 
   tickChainDepState _ lv _ = TickedPBftState lv
 
-  updateChainDepState cfg@PBftConfig{..}
+  updateChainDepState cfg
                       toValidate
                       slot
                       (TickedPBftState (TickedPBftLedgerView dms) state) =
@@ -343,7 +342,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
     where
       params = pbftWindowParams cfg
 
-  reupdateChainDepState cfg@PBftConfig{..}
+  reupdateChainDepState cfg
                         toValidate
                         slot
                         (TickedPBftState (TickedPBftLedgerView dms) state) =

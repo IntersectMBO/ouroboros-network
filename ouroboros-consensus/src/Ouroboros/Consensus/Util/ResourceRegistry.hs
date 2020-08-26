@@ -50,7 +50,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Exception (Exception, asyncExceptionFromException)
+import           Control.Exception (asyncExceptionFromException)
 import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
@@ -65,7 +65,7 @@ import qualified Data.Set as Set
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
+import           Cardano.Prelude (OnlyCheckIsWHNF (..),
                      UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util (mustBeRight, whenJust)

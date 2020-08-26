@@ -36,6 +36,7 @@ module Data.SOP.Strict (
   ) where
 
 import           Data.Coerce
+import           Data.Kind (Type)
 
 import           Data.SOP hiding (Injection, NP (..), NS (..), hd, injections,
                      shiftInjection, tl, unZ)
@@ -49,7 +50,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..),
   NP
 -------------------------------------------------------------------------------}
 
-data NP :: (k -> *) -> [k] -> * where
+data NP :: (k -> Type) -> [k] -> Type where
   Nil  :: NP f '[]
   (:*) :: !(f x) -> !(NP f xs) -> NP f (x ': xs)
 
@@ -136,7 +137,7 @@ instance HTraverse_ NP where
   NS
 -------------------------------------------------------------------------------}
 
-data NS :: (k -> *) -> [k] -> * where
+data NS :: (k -> Type) -> [k] -> Type where
   Z :: !(f x) -> NS f (x ': xs)
   S :: !(NS f xs) -> NS f (x ': xs)
 
@@ -233,7 +234,7 @@ instance HTrans NS NS where
   Injections
 -------------------------------------------------------------------------------}
 
-type Injection (f :: k -> *) (xs :: [k]) = f -.-> K (NS f xs)
+type Injection (f :: k -> Type) (xs :: [k]) = f -.-> K (NS f xs)
 
 injections :: forall xs f. SListI xs => NP (Injection f xs) xs
 injections = go sList
@@ -271,14 +272,14 @@ deriving instance (All (Eq `Compose` f) xs, All (Ord `Compose` f) xs) => Ord (NP
 -------------------------------------------------------------------------------}
 
 instance All (Compose NoUnexpectedThunks f) xs
-      => NoUnexpectedThunks (NS (f :: k -> *) (xs :: [k])) where
+      => NoUnexpectedThunks (NS (f :: k -> Type) (xs :: [k])) where
   showTypeOf _ = "NS"
   whnfNoUnexpectedThunks ctxt = \case
       Z l -> noUnexpectedThunks ("Z" : ctxt) l
       S r -> noUnexpectedThunks ("S" : ctxt) r
 
 instance All (Compose NoUnexpectedThunks f) xs
-      => NoUnexpectedThunks (NP (f :: k -> *) (xs :: [k])) where
+      => NoUnexpectedThunks (NP (f :: k -> Type) (xs :: [k])) where
   showTypeOf _ = "NP"
   whnfNoUnexpectedThunks ctxt = \case
       Nil     -> return NoUnexpectedThunks

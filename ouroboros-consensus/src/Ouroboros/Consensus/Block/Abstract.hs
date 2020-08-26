@@ -66,6 +66,7 @@ import qualified Data.ByteString as Strict
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 
@@ -89,20 +90,20 @@ import           Ouroboros.Consensus.Block.EBB
 -------------------------------------------------------------------------------}
 
 -- | Map block to consensus protocol
-type family BlockProtocol blk :: *
+type family BlockProtocol blk :: Type
 
 {-------------------------------------------------------------------------------
   Configuration
 -------------------------------------------------------------------------------}
 
 -- | Static configuration required to work with this type of blocks
-data family BlockConfig blk :: *
+data family BlockConfig blk :: Type
 
 -- | Static configuration required for serialisation and deserialisation of
 -- types pertaining to this type of block.
 --
 -- Data family instead of type family to get better type inference.
-data family CodecConfig blk :: *
+data family CodecConfig blk :: Type
 
 {-------------------------------------------------------------------------------
   Get hash of previous block
@@ -123,7 +124,7 @@ blockPrevHash cfg = castHash . headerPrevHash cfg . getHeader
   Link block to its header
 -------------------------------------------------------------------------------}
 
-data family Header blk :: *
+data family Header blk :: Type
 
 class HasHeader (Header blk) => GetHeader blk where
   getHeader          :: blk -> Header blk
@@ -240,7 +241,7 @@ decodeRawHash p = fromShortRawHash p <$> Serialise.decode
 --
 -- @SomeBlock f blk@ is isomorphic to @Some (f blk)@, but is more convenient
 -- in partial applications.
-data SomeBlock (f :: * -> * -> *) blk where
+data SomeBlock (f :: Type -> Type -> Type) blk where
   SomeBlock :: f blk a -> SomeBlock f blk
 
 {-------------------------------------------------------------------------------

@@ -34,8 +34,7 @@ module Ouroboros.Consensus.Util.HList (
   , afterFn
   ) where
 
-import           Data.Kind (Constraint)
-import           Data.Monoid ((<>))
+import           Data.Kind (Constraint, Type)
 import           Data.Proxy
 import           Prelude hiding (foldMap, foldl, foldr)
 
@@ -43,7 +42,7 @@ import           Prelude hiding (foldMap, foldl, foldr)
   Basic definitions
 -------------------------------------------------------------------------------}
 
-data HList :: [*] -> * where
+data HList :: [Type] -> Type where
   Nil  :: HList '[]
   (:*) :: a -> HList as -> HList (a ': as)
 
@@ -134,11 +133,11 @@ collapse _ f = go
   Singleton for HList
 -------------------------------------------------------------------------------}
 
-data SList :: [*] -> * where
+data SList :: [Type] -> Type where
   SNil :: SList '[]
   SCons :: SList as -> SList (a ': as)
 
-class IsList (xs :: [*]) where
+class IsList (xs :: [Type]) where
   isList :: SList xs
 
 instance              IsList '[]       where isList = SNil

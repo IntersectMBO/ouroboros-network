@@ -12,7 +12,6 @@ import qualified Control.Exception as Exn
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.List (inits, tails)
-import           Data.Proxy (Proxy (..))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 
@@ -423,8 +422,6 @@ prop_validGenerator st@TestPBftState{..} =
                    testOldPBftState
     .&&.
     Seq.null (S.preWindow testOldPBftState)
-  where
-    S.PBftState{..} = testPBftState
 
 -- | Our direct calculation of @csABb@ matches the result of the corresponding
 -- appends and a rewind.

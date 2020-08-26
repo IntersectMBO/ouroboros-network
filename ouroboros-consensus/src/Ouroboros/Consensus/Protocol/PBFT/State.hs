@@ -582,7 +582,7 @@ serializationFormatVersion0 = 0
 
 encodePBftState :: Serialise (PBftVerKeyHash c)
                 => PBftState c -> Encoding
-encodePBftState st@PBftState{..} =
+encodePBftState st =
     encodeVersion serializationFormatVersion0 $ mconcat [
         Serialise.encodeListLen 3
       , encode (withOriginToMaybe anchor)

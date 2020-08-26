@@ -5,7 +5,6 @@ module Test.ThreadNet.Praos (
     tests
   ) where
 
-import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 

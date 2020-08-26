@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
   ) where
 
 import           Control.Monad.Except
+import           Data.Kind (Type)
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
@@ -24,11 +25,11 @@ import           Ouroboros.Consensus.Util.IOLike
 -- The mempool (and, accordingly, blocks) consist of "generalized
 -- transactions"; this could be "proper" transactions (transferring funds) but
 -- also other kinds of things such as update proposals, delegations, etc.
-data family GenTx blk :: *
+data family GenTx blk :: Type
 
 -- | Updating the ledger with a single transaction may result in a different
 -- error type as when updating it with a block
-type family ApplyTxErr blk :: *
+type family ApplyTxErr blk :: Type
 
 class ( UpdateLedger blk
       , NoUnexpectedThunks (GenTx blk)
@@ -89,7 +90,7 @@ class ( UpdateLedger blk
   txInBlockSize :: GenTx blk -> Word32
 
 -- | A generalized transaction, 'GenTx', identifier.
-data family TxId tx :: *
+data family TxId tx :: Type
 
 -- | Transactions with an identifier
 --

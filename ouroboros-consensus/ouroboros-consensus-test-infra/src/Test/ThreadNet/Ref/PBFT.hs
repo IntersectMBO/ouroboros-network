@@ -27,7 +27,7 @@ module Test.ThreadNet.Ref.PBFT (
 import           Control.Applicative ((<|>))
 import           Control.Arrow ((&&&))
 import           Control.Monad (guard)
-import           Data.Foldable (Foldable, foldl', toList)
+import           Data.Foldable (foldl', toList)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Sequence (Seq)

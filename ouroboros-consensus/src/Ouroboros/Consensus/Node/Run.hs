@@ -20,7 +20,6 @@ module Ouroboros.Consensus.Node.Run (
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised)
-import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block

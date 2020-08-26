@@ -27,6 +27,7 @@ module Test.Consensus.HardFork.Infra (
   ) where
 
 import           Control.Monad.Except
+import           Data.Kind (Type)
 import           Data.SOP.Dict (Dict (..))
 import           Data.SOP.Strict
 import           Data.Word
@@ -70,7 +71,7 @@ data Era = Era {
      }
   deriving (Show, Eq, Ord)
 
-data Eras :: [*] -> * where
+data Eras :: [Type] -> Type where
     -- We guarantee to have at least one era
     Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
 

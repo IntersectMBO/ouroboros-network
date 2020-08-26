@@ -31,7 +31,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
 
 import           Analysis
 import           Block.Byron (ByronBlockArgs)
-import           Block.Cardano (Args (..), CardanoBlockArgs)
+import           Block.Cardano (CardanoBlockArgs)
 import           Block.Shelley (ShelleyBlockArgs)
 import           HasAnalysis
 

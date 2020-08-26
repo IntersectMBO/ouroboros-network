@@ -9,13 +9,11 @@ module Test.Consensus.Cardano.Serialisation (tests) where
 import           Cardano.Crypto.Hash (ShortHash)
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Proxy (Proxy (..))
 
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))

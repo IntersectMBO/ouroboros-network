@@ -38,6 +38,7 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -67,7 +68,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
@@ -76,7 +76,7 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
+type Consensus (client :: Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
    client (Header blk) (Tip blk) m Void
 
 -- | Abstract over the ChainDB

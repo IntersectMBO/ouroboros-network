@@ -24,6 +24,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Block (
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable (Typeable)
 import           Data.Word
@@ -123,7 +124,7 @@ instance CanHardFork xs => GetPrevHash (HardForkBlock xs) where
   NestedContent
 -------------------------------------------------------------------------------}
 
-data instance NestedCtxt_ (HardForkBlock xs) :: (* -> *) -> (* -> *) where
+data instance NestedCtxt_ (HardForkBlock xs) :: (Type -> Type) -> (Type -> Type) where
     NCZ :: NestedCtxt_ x                  f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
     NCS :: NestedCtxt_ (HardForkBlock xs) f a -> NestedCtxt_ (HardForkBlock (x ': xs)) f a
 

@@ -33,8 +33,7 @@ library
                        Ouroboros.Consensus.Cardano.CanHardFork
                        Ouroboros.Consensus.Cardano.Node
 
-  build-depends:       base              >=4.9   && <4.13
-                     , binary            >=0.8   && <0.9
+  build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
@@ -84,8 +83,7 @@ test-suite test
                        Test.ThreadNet.TxGen.Cardano
 
   build-depends:       base
-                     , binary            >=0.8   && <0.9
-                     , bytestring        >=0.10  && <0.11
+                     , bytestring
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
@@ -93,7 +91,7 @@ test-suite test
                      , cardano-ledger-test
                      , cardano-slotting
                      , cardano-prelude
-                     , cborg             >=0.2.2 && <0.3
+                     , cborg
                      , containers
                      , hedgehog-quickcheck
                      , mtl

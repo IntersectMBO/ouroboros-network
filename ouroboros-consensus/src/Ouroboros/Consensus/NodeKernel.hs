@@ -37,7 +37,6 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
@@ -57,7 +56,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Util (whenJust)

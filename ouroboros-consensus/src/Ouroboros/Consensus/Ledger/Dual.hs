@@ -64,6 +64,7 @@ import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -86,7 +87,6 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
   Block
@@ -249,13 +249,13 @@ class (
       ) => Bridge m a where
 
   -- | Additional information relating both ledgers
-  type BridgeLedger m a :: *
+  type BridgeLedger m a :: Type
 
   -- | Information required to update the bridge when applying a block
-  type BridgeBlock m a :: *
+  type BridgeBlock m a :: Type
 
   -- | Information required to update the bridge when applying a transaction
-  type BridgeTx m a :: *
+  type BridgeTx m a :: Type
 
   updateBridgeWithBlock :: DualBlock m a
                         -> BridgeLedger m a -> BridgeLedger m a

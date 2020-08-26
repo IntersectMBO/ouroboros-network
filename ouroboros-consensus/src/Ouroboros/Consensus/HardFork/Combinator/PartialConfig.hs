@@ -17,6 +17,7 @@ module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
   ) where
 
 import           Data.Functor.Identity
+import           Data.Kind (Type)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.EpochInfo
@@ -29,7 +30,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 class ( ConsensusProtocol p
       , NoUnexpectedThunks (PartialConsensusConfig p)
       ) => HasPartialConsensusConfig p where
-  type PartialConsensusConfig p :: *
+  type PartialConsensusConfig p :: Type
   type PartialConsensusConfig p = ConsensusConfig p
 
   -- | Construct 'ConsensusConfig' from 'PartialConsensusConfig'
@@ -59,7 +60,7 @@ class ( ConsensusProtocol p
 class ( UpdateLedger blk
       , NoUnexpectedThunks (PartialLedgerConfig blk)
       ) => HasPartialLedgerConfig blk where
-  type PartialLedgerConfig blk :: *
+  type PartialLedgerConfig blk :: Type
   type PartialLedgerConfig blk = LedgerConfig blk
 
   -- | Construct 'LedgerConfig' from 'PartialLedgerCfg'

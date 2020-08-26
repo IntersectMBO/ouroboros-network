@@ -37,6 +37,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
 
 import           Data.Bifunctor (first)
 import           Data.Coerce
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Type.Equality
@@ -621,7 +622,7 @@ projQuery' :: Query (HardForkBlock '[b]) result
            -> ProjHardForkQuery b result
 projQuery' qry = projQuery qry $ \Refl -> ProjHardForkQuery
 
-data ProjHardForkQuery b :: * -> * where
+data ProjHardForkQuery b :: Type -> Type where
   ProjHardForkQuery ::
        Query b result'
     -> ProjHardForkQuery b (HardForkQueryResult '[b] result')

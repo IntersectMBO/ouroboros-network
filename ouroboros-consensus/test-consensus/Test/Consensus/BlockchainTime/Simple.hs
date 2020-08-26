@@ -12,19 +12,17 @@
 
 module Test.Consensus.BlockchainTime.Simple (tests) where
 
-import           Control.Exception (SomeException, fromException)
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Tracer
 import           Data.Fixed
-import           Data.Time (UTCTime)
 import qualified Data.Time.Clock as Time
 import           Test.QuickCheck hiding (Fixed)
 import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..))
 
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim

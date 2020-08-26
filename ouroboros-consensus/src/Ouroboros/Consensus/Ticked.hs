@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Ticked (
     Ticked(..)
   ) where
 
+import           Data.Kind (Type)
 import           Data.SOP.BasicFunctors
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -30,7 +31,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 -- * New leader schedule computed for Shelley
 -- * Transition from Byron to Shelley activated in the hard fork combinator.
 -- * Nonces switched out at the start of a new epoch.
-data family Ticked st :: *
+data family Ticked st :: Type
 
 -- Standard instance for use with trivial state
 

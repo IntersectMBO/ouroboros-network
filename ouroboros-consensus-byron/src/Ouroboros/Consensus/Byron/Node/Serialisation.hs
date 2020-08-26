@@ -198,7 +198,7 @@ instance ReconstructNestedCtxt Header ByronBlock where
         _ -> error $ "invalid ByronBlock with prefix: " <> show prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
-  encodeDiskDepIx ByronCodecConfig{..} (SomeBlock (NestedCtxt ctxt)) = mconcat [
+  encodeDiskDepIx _ccfg (SomeBlock (NestedCtxt ctxt)) = mconcat [
         CBOR.encodeListLen 2
       , case ctxt of
           CtxtByronBoundary size -> mconcat [
@@ -212,7 +212,7 @@ instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
       ]
 
 instance EncodeDiskDep (NestedCtxt Header) ByronBlock where
-  encodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) h =
+  encodeDiskDep _ccfg (NestedCtxt ctxt) h =
       case ctxt of
         CtxtByronRegular _size ->
           encodeByronRegularHeader h

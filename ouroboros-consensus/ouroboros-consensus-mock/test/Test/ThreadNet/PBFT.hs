@@ -7,7 +7,6 @@ module Test.ThreadNet.PBFT (
   ) where
 
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 
 import           Test.QuickCheck

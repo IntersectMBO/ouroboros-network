@@ -340,7 +340,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg@TPraosConfig{..} TPraosCanBeLeader{..} slot cs = do
+  checkIsLeader cfg TPraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
       case SL.lookupInOverlaySchedule slot (SL.lvOverlaySched lv) of
         -- Slot isn't in the overlay schedule, so we're in Praos
