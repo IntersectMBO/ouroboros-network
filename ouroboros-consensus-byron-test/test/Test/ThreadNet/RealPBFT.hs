@@ -143,6 +143,26 @@ tests = testGroup "RealPBFT" $
     [ testProperty "trivial join plan is considered deterministic"
         $ \TestSetup{setupK = k, setupTestConfig = TestConfig{numCoreNodes}} ->
           prop_deterministicPlan $ realPBftParams k numCoreNodes
+    , testProperty "block forged before svu transaction made it into the mempool" $
+          once $
+          let ncn = NumCoreNodes 2 in
+          -- With 'getPastLedger' implemented in STM, i.e., no longer using a
+          -- LedgerCursor that can require IO, we now forge a block before the
+          -- svu transaction making it into the Mempool, failing the test.
+          prop_simple_real_pbft_convergence TestSetup
+            { setupEBBs       = NoEBBs
+            , setupK          = SecurityParam 2
+            , setupTestConfig = TestConfig
+              { initSeed     = Seed 0
+              , nodeTopology = meshNodeTopology ncn
+              , numCoreNodes = ncn
+              , numSlots     = NumSlots 1
+              }
+            , setupNodeJoinPlan = trivialNodeJoinPlan ncn
+            , setupNodeRestarts = noRestarts
+            , setupSlotLength   = defaultSlotLength
+            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            }
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
       -- as of merging PR #773, this test case fails without the commit that
       -- introduces the InvalidRollForward exception
