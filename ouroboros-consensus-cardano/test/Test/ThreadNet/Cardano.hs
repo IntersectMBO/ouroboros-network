@@ -367,21 +367,7 @@ prop_simple_cardano_convergence TestSetup
     tabulatePartitionDuration $
     tabulateFinalIntersectionDepth $
     tabulatePartitionPosition $
-    prop_general_semisync PropGeneralArgs
-      { pgaBlockProperty       = const $ property True
-      , pgaCountTxs            = fromIntegral . length . extractTxs
-      , pgaExpectedCannotForge = noExpectedCannotForges
-      , pgaFirstBlockNo        = 0
-      , pgaFixedMaxForkLength  = Just maxForkLength
-      , pgaFixedSchedule       =
-          -- the leader schedule isn't fixed because the Shelley leader
-          -- schedule is (at least ideally) unpredictable
-          Nothing
-      , pgaSecurityParam       = setupK
-      , pgaTestConfig          = setupTestConfig
-      , pgaTestConfigB         = testConfigB
-      }
-      testOutput .&&.
+    prop_general_semisync pga testOutput .&&.
     prop_inSync testOutput .&&.
     prop_ReachesShelley reachesShelley
   where
@@ -390,6 +376,21 @@ prop_simple_cardano_convergence TestSetup
       , numCoreNodes
       , numSlots
       } = setupTestConfig
+
+    pga = PropGeneralArgs
+        { pgaBlockProperty       = const $ property True
+        , pgaCountTxs            = fromIntegral . length . extractTxs
+        , pgaExpectedCannotForge = noExpectedCannotForges
+        , pgaFirstBlockNo        = 1
+        , pgaFixedMaxForkLength  = Just maxForkLength
+        , pgaFixedSchedule       =
+            -- the leader schedule isn't fixed because the Shelley leader
+            -- schedule is (at least ideally) unpredictable
+            Nothing
+        , pgaSecurityParam       = setupK
+        , pgaTestConfig          = setupTestConfig
+        , pgaTestConfigB         = testConfigB
+        }
 
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
@@ -643,7 +644,7 @@ prop_simple_cardano_convergence TestSetup
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth
       where
-        NumBlocks depth = calcFinalIntersectionDepth testOutput
+        NumBlocks depth = calcFinalIntersectionDepth pga testOutput
 
     tabulatePartitionDuration :: Property -> Property
     tabulatePartitionDuration =
