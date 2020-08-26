@@ -53,25 +53,27 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbSnapshots
    , ledgerDbIsSaturated
    , ledgerDbCountToPrune
+   , ledgerDbPastSpec
      -- ** Pure API
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
    ) where
 
-import           Prelude hiding (mod, (/))
-
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
+import           Control.Monad (mplus)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
-import           Data.Foldable (toList)
+import           Data.Foldable (find, toList)
+import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Proxy
+import qualified Data.Sequence as LazySeq
 import           Data.Sequence.Strict (StrictSeq ((:|>), Empty), (|>))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
@@ -510,27 +512,108 @@ rollback n db = rollbackTo (\_anchor -> go) db
   Get past ledger states
 -------------------------------------------------------------------------------}
 
--- | Get past ledger state
-ledgerDbPast :: forall l r.
-                Eq r
-             => WithOrigin r
-             -> LedgerDB l r
-             -> Maybe l
-ledgerDbPast tip db
-  | ledgerDbTip db == tip = Just (ledgerDbCurrent db)
-  | otherwise             = ledgerDbCurrent <$> rollbackTo go db
+-- | Get a past ledger state
+--
+--  \( O(\log n * \log n) \).
+--
+-- When no 'Checkpoint' (or anchor) has the given @'WithOrigin' r@, 'Nothing' is
+-- returned.
+--
+-- To avoid a linear search on the checkpoints (typically 2160 of them), we do a
+-- binary search benefitting from the cheap splits of the underlying
+-- 'StrictSeq' \( O(\log n) \).
+--
+-- For a binary search, the checkpoints have to be ordered by @r@. In practice,
+-- we'll use 'RealPoint' for @r@, which, because of the existence of EBBs,
+-- doesn't have a reliable ordering: it orders first on 'SlotNo', which is
+-- correct. But in case of a tie, it will look at the hash, which is not what we
+-- need: an EBB has the same slot as the block after it, so we'd want the
+-- 'RealPoint' of an EBB to be /less/ than the 'RealPoint' of the regular block
+-- in the same slot. But the decision is made based on the hash, so we won't get
+-- a reliable answer.
+--
+-- Therefore, we take a projection @refOrder :: r -> ro@ as an argument. The
+-- @ro@ type should have a correct ordering, so that the list below is correctly
+-- ordered:
+--
+-- > map (refOrder . cpBlock) $ Seq.toList (ledgerDbCheckpoints db)
+--
+-- When instantiating @r@ to 'RealPoint', one should use 'realPointSlot' as
+-- @refOrder@.
+--
+-- Note: we don't use @fingertree@ for the checkpoints (with its @search@
+-- operation we could use here) because we'd have to impose more constraints on
+-- the @r@ type. We could do an interpolation search if we assume more about the
+-- @ro@ parameter ('SlotNo'), but that would be more complicated.
+ledgerDbPast ::
+     forall l r ro. (Ord ro, Eq r)
+  => (r -> ro)
+  -> WithOrigin r
+  -> LedgerDB l r
+  -> Maybe l
+ledgerDbPast refOrder tip db
+    | tip == ledgerDbTip db
+    = Just (ledgerDbCurrent db)
+    | tip == csTip (ledgerDbAnchor db)
+    = Just (csLedger (ledgerDbAnchor db))
+    | NotOrigin tip' <- tip
+    = cpState <$> binarySearch tip' (Seq.getSeq (ledgerDbCheckpoints db))
+    | otherwise
+    = Nothing
   where
-    go :: ChainSummary l r
-       -> StrictSeq (Checkpoint l r)
-       -> Maybe (StrictSeq (Checkpoint l r))
-    go anchor checkpoints =
-        case checkpoints' of
-          Empty | csTip anchor /= tip -> Nothing
-          _otherwise                  -> Just checkpoints'
+    binarySearch :: r -> LazySeq.Seq (Checkpoint l r) -> Maybe (Checkpoint l r)
+    binarySearch _   LazySeq.Empty = Nothing
+    binarySearch ref checkpoints   = case LazySeq.splitAt middle checkpoints of
+        (before, LazySeq.Empty)        -> binarySearch ref before
+        (before, cp LazySeq.:<| after) ->
+          case (compare `on` refOrder) ref (cpBlock cp) of
+            LT -> binarySearch ref before
+            GT -> binarySearch ref after
+            EQ
+              | isMatch cp -> Just cp
+              | otherwise  ->
+                -- Oh EBBs, why do you make everything so much harder? An EBB
+                -- has the same slot as the regular block after it. We look left
+                -- and right from @cp@ for checkpoints with the same @ro@
+                -- ('SlotNo' in practice) and do a linear search among those.
+                -- When it's indeed a slot populated by both a regular block and
+                -- EBB, we'll look at /one/ other checkpoint. In all other
+                -- cases, we'll look at /none/. Note that we have to look in
+                -- both directions because we don't know whether @cp@ is the EBB
+                -- or the regular block in the same slot.
+                find isMatch (LazySeq.takeWhileR sameOrder before) `mplus`
+                find isMatch (LazySeq.takeWhileL sameOrder after)
       where
-        checkpoints' :: StrictSeq (Checkpoint l r)
-        checkpoints' =
-          Seq.dropWhileR (\cp -> NotOrigin (cpBlock cp) /= tip) checkpoints
+        middle :: Int
+        middle = LazySeq.length checkpoints `div` 2
+
+        isMatch :: Checkpoint l r -> Bool
+        isMatch cp = cpBlock cp == ref
+
+        sameOrder :: Checkpoint l r -> Bool
+        sameOrder cp = refOrder (cpBlock cp) == refOrder ref
+
+-- | Get a past ledger state
+--
+-- \( O(n) \)
+--
+-- Straightforward implementation of 'ledgerDbPast' using a linear search.
+--
+-- Can be used in tests to compare against 'ledgerDbPast'.
+ledgerDbPastSpec ::
+     forall l r. Eq r
+  => WithOrigin r
+  -> LedgerDB l r
+  -> Maybe l
+ledgerDbPastSpec tip db
+    | tip == ledgerDbTip db
+    = Just (ledgerDbCurrent db)
+    | tip == csTip (ledgerDbAnchor db)
+    = Just (csLedger (ledgerDbAnchor db))
+    | NotOrigin tip' <- tip
+    = cpState <$> find ((== tip') . cpBlock) (ledgerDbCheckpoints db)
+    | otherwise
+    = Nothing
 
 {-------------------------------------------------------------------------------
   Updates
