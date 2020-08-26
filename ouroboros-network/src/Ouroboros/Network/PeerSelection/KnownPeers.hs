@@ -36,6 +36,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Semigroup (Min (..))
 import qualified Data.OrdPSQ as PSQ
 import           Data.OrdPSQ (OrdPSQ)
 --import           System.Random (RandomGen(..))
@@ -240,11 +241,14 @@ setCurrentTime :: Ord peeraddr
                => Time
                -> KnownPeers peeraddr
                -> KnownPeers peeraddr
-setCurrentTime now knownPeers@KnownPeers { nextGossipTimes }
+setCurrentTime now knownPeers@KnownPeers { nextGossipTimes, nextConnectTimes }
  -- Efficient check for the common case of there being nothing to do:
-  | Just (_,t,_,_) <- PSQ.minView nextGossipTimes
+  | Just (Min t) <- (f <$> PSQ.minView nextGossipTimes)
+                 <> (f <$> PSQ.minView nextConnectTimes)
   , t > now
   = knownPeers
+  where
+    f (_,t,_,_) = Min t
 
 setCurrentTime now knownPeers@KnownPeers {
                      availableForGossip,
