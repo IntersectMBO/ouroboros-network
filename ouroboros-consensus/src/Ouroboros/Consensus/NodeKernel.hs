@@ -317,6 +317,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         -- on our chain. When that happens, we simply give up on the chance to
         -- produce a block.
         unticked <- do
+          threadDelay 0
           mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
             Just l  -> return l
