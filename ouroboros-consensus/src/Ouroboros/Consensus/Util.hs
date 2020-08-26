@@ -59,8 +59,6 @@ module Ouroboros.Consensus.Util (
   , fib
   ) where
 
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
-                     hashFromBytesShort)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
@@ -76,6 +74,9 @@ import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
+
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
+                     hashFromBytesShort)
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 

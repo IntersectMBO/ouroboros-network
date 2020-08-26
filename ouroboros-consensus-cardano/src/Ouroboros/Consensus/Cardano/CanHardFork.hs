@@ -4,8 +4,8 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -16,24 +16,19 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , ByronPartialLedgerConfig (..)
   , ShelleyPartialLedgerConfig (..)
     -- * Exported for testing purposes
-  , translateTxIdByronToShelley
-  , translateCompactTxOutByronToShelley
+  , SL.translateTxIdByronToShelley
+  , SL.translateCompactTxOutByronToShelley
   ) where
 
-import           Control.Monad.Reader (runReader)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import qualified Cardano.Crypto.Hashing as Hashing
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Update as CC.Update
-import qualified Cardano.Chain.UTxO as CC
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -55,22 +50,16 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
-import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis (..))
+import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
-import           Ouroboros.Consensus.Util (hashFromBytesE)
-
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
-import qualified Shelley.Spec.Ledger.Rewards as SL
+import qualified Shelley.Spec.Ledger.HardFork as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 
@@ -268,35 +257,6 @@ translatePointByronToShelley = \case
     GenesisPoint   -> GenesisPoint
     BlockPoint s h -> BlockPoint s (translateHeaderHashByronToShelley h)
 
-
--- | We use the same hashing algorithm so we can unwrap and rewrap the bytes.
--- We don't care about the type that is hashed, which will differ going from
--- Byron to Shelley, we just use the hashes as IDs.
-translateTxIdByronToShelley :: Crypto sc => CC.TxId -> SL.TxId sc
-translateTxIdByronToShelley =
-    SL.TxId . hashFromBytesE . Hashing.hashToBytes
-
-translateCompactTxInByronToShelley :: Crypto sc => CC.CompactTxIn -> SL.TxIn sc
-translateCompactTxInByronToShelley (CC.CompactTxInUtxo compactTxId idx) =
-    SL.TxInCompact
-      (translateTxIdByronToShelley (CC.fromCompactTxId compactTxId))
-      (fromIntegral idx)
-
-translateCompactTxOutByronToShelley :: CC.CompactTxOut -> SL.TxOut sc
-translateCompactTxOutByronToShelley (CC.CompactTxOut compactAddr amount) =
-    SL.TxOutCompact
-      (CC.unsafeGetCompactAddress compactAddr)
-      (CC.unsafeGetLovelace amount)
-
-translateUTxOByronToShelley :: forall sc. Crypto sc => CC.UTxO -> SL.UTxO sc
-translateUTxOByronToShelley (CC.UTxO utxoByron) =
-    SL.UTxO $ Map.fromList
-      [ (txInShelley, txOutShelley)
-      | (txInByron, txOutByron) <- Map.toList utxoByron
-      , let txInShelley  = translateCompactTxInByronToShelley  txInByron
-            txOutShelley = translateCompactTxOutByronToShelley txOutByron
-      ]
-
 translateLedgerStateByronToShelleyWrapper
   :: forall sc. Crypto sc
   => RequiringBoth
@@ -319,85 +279,16 @@ translateLedgerStateByronToShelley cfgShelley epochNo ledgerByron =
     ShelleyLedgerState {
       ledgerTip = ledgerTipShelley
     , history   = History.empty
-    , shelleyState
+    , shelleyState = SL.translateToShelleyLedgerState shelleyLedgerGenesis
+        shelleyLedgerGlobals epochNo (byronLedgerState ledgerByron)
     }
   where
-    ShelleyLedgerConfig { shelleyLedgerGenesis = genesisShelley } = cfgShelley
-
-    shelleyState :: SL.ShelleyState sc
-    shelleyState = SL.NewEpochState {
-        nesEL     = epochNo
-      , nesBprev  = SL.BlocksMade Map.empty
-      , nesBcur   = SL.BlocksMade Map.empty
-      , nesEs     = epochState
-      , nesRu     = SL.SNothing
-      , nesPd     = SL.PoolDistr Map.empty
-      , nesOsched = overlaySchedule
-      }
-
-    pparams :: SL.PParams
-    pparams = sgProtocolParams genesisShelley
-
-    -- | NOTE: we ignore the Byron delegation map because the genesis and
-    -- delegation verification keys are hashed using a different hashing
-    -- scheme, Blake2b_224, whereas Shelley uses Blake2b_256. This means we
-    -- can't simply convert them, as Byron nowhere stores the original
-    -- verification keys.
-    --
-    -- Fortunately, no Byron genesis delegations have happened yet, and if
-    -- they did, we would be aware of them before the hard fork, as we
-    -- instigate the hard fork. We just have to make sure that the hard-coded
-    -- Shelley genesis contains the same genesis and delegation verification
-    -- keys, but hashed with the right algorithm.
-    genDelegs :: SL.GenDelegs sc
-    genDelegs = SL.GenDelegs $ sgGenDelegs genesisShelley
-
-    reserves :: SL.Coin
-    reserves =
-        fromIntegral (sgMaxLovelaceSupply genesisShelley) - SL.balance utxoShelley
-
-    epochState :: SL.EpochState sc
-    epochState = SL.EpochState {
-        esAccountState = SL.AccountState (SL.Coin 0) reserves
-      , esSnapshots    = SL.emptySnapShots
-      , esLState       = ledgerState
-      , esPrevPp       = pparams
-      , esPp           = pparams
-      , esNonMyopic    = SL.emptyNonMyopic
-      }
-
-    utxoByron :: CC.UTxO
-    utxoByron = CC.cvsUtxo $ byronLedgerState ledgerByron
-
-    utxoShelley :: SL.UTxO sc
-    utxoShelley = translateUTxOByronToShelley utxoByron
-
-    ledgerState :: SL.LedgerState sc
-    ledgerState = SL.LedgerState {
-        _utxoState = SL.UTxOState {
-            _utxo      = utxoShelley
-          , _deposited = SL.Coin 0
-          , _fees      = SL.Coin 0
-          , _ppups     = SL.emptyPPUPState
-          }
-      , _delegationState = SL.DPState {
-          _dstate = SL.emptyDState { SL._genDelegs = genDelegs }
-        , _pstate = SL.emptyPState
-        }
-      }
+    ShelleyLedgerConfig {..} = cfgShelley
 
     ledgerTipShelley :: Point (ShelleyBlock sc)
     ledgerTipShelley =
       translatePointByronToShelley $
       ledgerTipPoint (Proxy @ByronBlock) ledgerByron
-
-    overlaySchedule :: SL.OverlaySchedule sc
-    overlaySchedule =
-      flip runReader (shelleyLedgerGlobals cfgShelley) $
-        SL.overlaySchedule
-          epochNo
-          (Map.keysSet (sgGenDelegs genesisShelley))
-          (sgProtocolParams genesisShelley)
 
 translateChainDepStateByronToShelleyWrapper
   :: forall sc.
@@ -452,22 +343,9 @@ translateLedgerViewByronToShelley
   -> EpochNo
   -> Ticked (SL.LedgerView sc)
 translateLedgerViewByronToShelley shelleyCfg epochNo = TickedPraosLedgerView $
-    SL.LedgerView {
-        lvProtParams   = sgProtocolParams genesisShelley
-      , lvOverlaySched = overlaySchedule
-      , lvPoolDistr    = SL.PoolDistr Map.empty
-      , lvGenDelegs    = SL.GenDelegs $ sgGenDelegs genesisShelley
-      }
+    SL.mkInitialShelleyLedgerView genesisShelley shelleyLedgerGlobals epochNo
   where
     ShelleyLedgerConfig {
         shelleyLedgerGenesis = genesisShelley
       , shelleyLedgerGlobals
       } = shelleyCfg
-
-    overlaySchedule :: SL.OverlaySchedule sc
-    overlaySchedule =
-      flip runReader shelleyLedgerGlobals $
-        SL.overlaySchedule
-          epochNo
-          (Map.keysSet (sgGenDelegs genesisShelley))
-          (sgProtocolParams genesisShelley)
