@@ -65,7 +65,7 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
        case controlMessage of
             Terminate -> return Terminate
 
-            -- Contitnue
+            -- Continue
             _  -> do
               done <- Lazy.readTVar delayVar
               if done
