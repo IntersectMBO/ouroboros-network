@@ -24,10 +24,10 @@ set -euo pipefail
 # overhead and also more reliable percentages in their QuickCheck statistics.
 rows=(
     # From the slowest individual invocation ...
-    '1 Cardano    2000'  # ~35 minutes per invocation
+    '1 Cardano    1500'  # ~70 minutes per invocation
     '2 RealTPraos 200'   # ~30 minutes per invocation (but high variance)
     '4 RealTPraos 100'   # ~15 minutes per invocation (but high variance)
-    '5 Cardano    300'   # ~5  minutes per invocation
+    '5 Cardano    200'   # ~9  minutes per invocation
     # ... to fastest individual invocation
     #
     # And the number of invocations is non-decreasing.

@@ -138,9 +138,10 @@ instance Arbitrary TestSetup where
                 -- Shelley epoch, since stake pools can only be created and
                 -- delegated to via Shelley transactions.
                 `suchThat` ((/= 0) . Shelley.decentralizationParamToRational)
-    setupK <- SecurityParam <$> choose (4, 6)
-                -- If k < 4, common prefix violations become too likely in
-                -- Praos mode.
+    setupK <- SecurityParam <$> choose (8, 10)
+                -- If k < 8, common prefix violations become too likely in
+                -- Praos mode for thin overlay schedules (ie low d), even for
+                -- f=0.2.
 
     setupInitialNonce <- frequency
       [ (1, pure SL.NeutralNonce)
@@ -770,8 +771,14 @@ mkProtocolCardanoAndHardForkTxs
   Constants
 -------------------------------------------------------------------------------}
 
+-- | The active slot coefficient, @f@.
+--
+-- Some of these tests includes Shelley epochs in which stakepools are actually
+-- leading. In that case, the @k@, @d@, and @f@ parameters and the length of
+-- any scheduled network partitions need to be balanced so that Common Prefix
+-- violations (in particular, wedges) are extremely unlikely.
 activeSlotCoeff :: Rational
-activeSlotCoeff = 0.5
+activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
 
 maxMajorPVShelley :: Natural
 maxMajorPVShelley = 100   -- arbitrary
