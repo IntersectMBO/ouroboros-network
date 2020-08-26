@@ -496,6 +496,7 @@ prop_simple_cardano_convergence TestSetup
         Shelley.mkGenesisConfig
           (SL.ProtVer shelleyMajorVersion 0)
           setupK
+          activeSlotCoeff
           setupD
           setupSlotLengthShelley
           (Shelley.mkKesConfig (Proxy @(KES Crypto)) numSlots)
@@ -769,6 +770,9 @@ mkProtocolCardanoAndHardForkTxs
   Constants
 -------------------------------------------------------------------------------}
 
+activeSlotCoeff :: Rational
+activeSlotCoeff = 0.5
+
 maxMajorPVShelley :: Natural
 maxMajorPVShelley = 100   -- arbitrary
 
@@ -892,7 +896,7 @@ byronEpochSize (SecurityParam k) =
     unEpochSlots $ kEpochSlots $ CC.Common.BlockCount k
 
 shelleyEpochSize :: SecurityParam -> Word64
-shelleyEpochSize = unEpochSize . Shelley.mkEpochSize
+shelleyEpochSize k = unEpochSize $ Shelley.mkEpochSize k activeSlotCoeff
 
 isShelley :: CardanoBlock c -> Bool
 isShelley = \case
