@@ -34,6 +34,7 @@ module Test.ThreadNet.Infra.Shelley (
 import qualified Data.ByteString as BS
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Ratio (denominator, numerator)
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -111,13 +112,6 @@ instance Arbitrary DecentralizationParam where
 
 tpraosSlotLength :: SlotLength
 tpraosSlotLength = slotLengthFromSec 2
-
--- | The reciprocal of the active slots coefficient
---
--- To simplify related calculations throughout the test suite, we require this
--- to be a natural number.
-recipActiveSlotsCoeff :: Num a => a
-recipActiveSlotsCoeff = 2   -- so f = 0.5
 
 {-------------------------------------------------------------------------------
   CoreNode secrets/etc
@@ -250,8 +244,18 @@ mkKesConfig prx (NumSlots t) = KesConfig
   TPraos node configuration
 -------------------------------------------------------------------------------}
 
-mkEpochSize :: SecurityParam -> EpochSize
-mkEpochSize (SecurityParam k) = EpochSize $ 10 * k * recipActiveSlotsCoeff
+-- | The epoch size, given @k@ and @f@.
+--
+-- INVARIANT: @10 * k / f@ must be a whole number.
+mkEpochSize :: SecurityParam -> Rational -> EpochSize
+mkEpochSize (SecurityParam k) f =
+    if r /= 0 then error "10 * k / f must be a whole number" else
+    EpochSize q
+  where
+    n = numerator   f
+    d = denominator f
+
+    (q, r) = quotRem (10 * k * fromInteger d) (fromInteger n)
 
 -- | Note: a KES algorithm supports a particular max number of KES evolutions,
 -- but we can configure a potentially lower maximum for the ledger, that's why
@@ -260,20 +264,21 @@ mkGenesisConfig
   :: forall c. TPraosCrypto c
   => ProtVer  -- ^ Initial protocol version
   -> SecurityParam
+  -> Rational   -- ^ Initial active slot coefficient
   -> DecentralizationParam
   -> SlotLength
   -> KesConfig
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig pVer k d slotLength kesCfg coreNodes =
+mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
     ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = recip recipActiveSlotsCoeff
+    , sgActiveSlotsCoeff      = f
     , sgSecurityParam         = maxRollbacks k
-    , sgEpochLength           = mkEpochSize k
+    , sgEpochLength           = mkEpochSize k f
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
     , sgMaxKESEvolutions      = maxEvolutions     kesCfg
     , sgSlotLength            = getSlotLength slotLength
