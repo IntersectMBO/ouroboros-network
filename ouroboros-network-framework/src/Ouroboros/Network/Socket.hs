@@ -268,7 +268,7 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
              Mx.muxStart
                muxTracer
-               (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app)
+               (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
                (Snocket.toBearer sn sduTimeout muxTracer sd)
 
 
@@ -385,7 +385,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
                  Mx.muxStart
                    muxTracer'
-                   (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app)
+                   (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
                    (Snocket.toBearer sn sduTimeout muxTracer' sd)
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'

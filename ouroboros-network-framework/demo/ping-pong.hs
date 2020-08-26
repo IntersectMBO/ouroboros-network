@@ -94,7 +94,7 @@ maximumMiniProtocolLimits =
 demoProtocol0 :: RunMiniProtocol appType bytes m a b
               -> OuroborosApplication appType addr bytes m a b
 demoProtocol0 pingPong =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -184,7 +184,7 @@ demoProtocol1 :: RunMiniProtocol appType bytes m a b
               -> RunMiniProtocol appType bytes m a b
               -> OuroborosApplication appType addr bytes m a b
 demoProtocol1 pingPong pingPong' =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,

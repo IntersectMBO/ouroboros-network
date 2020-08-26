@@ -22,7 +22,7 @@ import           Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
 import           System.Random (StdGen, random)
 
-import           Ouroboros.Network.Mux (RunOrStop (..), ScheduledStop)
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
@@ -47,27 +47,29 @@ keepAliveClient
        )
     => Tracer m (TraceKeepAliveClient peer)
     -> StdGen
-    -> ScheduledStop m
+    -> ControlMessageSTM m
     -> peer
     -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
     -> KeepAliveClient m ()
-keepAliveClient tracer inRng shouldStopSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
+keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
     let (cookie, rng) = random inRng in
     SendMsgKeepAlive (Cookie cookie) (go rng Nothing)
   where
     payloadSize = 2
 
     decisionSTM :: Lazy.TVar m Bool
-                -> STM  m RunOrStop
+                -> STM  m ControlMessage
     decisionSTM delayVar = do
-       shouldStop <- shouldStopSTM
-       case shouldStop of
-            Stop -> return Stop
-            Run  -> do
+       controlMessage <- controlMessageSTM
+       case controlMessage of
+            Terminate -> return Terminate
+
+            -- Continue
+            _  -> do
               done <- Lazy.readTVar delayVar
               if done
-                 then return Run
+                 then return Continue
                  else retry
 
     go :: StdGen -> Maybe Time -> m (KeepAliveClient m ())
@@ -95,10 +97,12 @@ keepAliveClient tracer inRng shouldStopSTM peer dqCtx KeepAliveInterval { keepAl
       decision <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
       case decision of
-        Run  ->
+        -- 'decisionSTM' above cannot return 'Quiesce'
+        Quiesce   -> error "keepAlive: impossible happened"
+        Continue  ->
             let (cookie, rng') = random rng in
             pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
-        Stop -> pure (SendMsgDone (pure ()))
+        Terminate -> pure (SendMsgDone (pure ()))
 
 
 keepAliveServer
