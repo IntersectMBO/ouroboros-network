@@ -364,11 +364,11 @@ setConnectTime peeraddrs time
                  } =
     assert (all (`Map.member` allPeers) peeraddrs) $
     let knownPeers' = knownPeers {
-          availableForGossip =
+          availableToConnect =
                    availableToConnect
             Set.\\ peeraddrs,
 
-          nextGossipTimes =
+          nextConnectTimes =
             List.foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
                         nextConnectTimes
                         peeraddrs
