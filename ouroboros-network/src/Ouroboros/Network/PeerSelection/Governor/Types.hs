@@ -435,6 +435,7 @@ data TracePeerSelection peeraddr =
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState  (PeerSelectionState peeraddr peerconn)
-                           (Maybe DiffTime)
+       TraceGovernorState Time
+                          (Maybe DiffTime)
+                          (PeerSelectionState peeraddr peerconn)
   deriving (Show, Functor)
