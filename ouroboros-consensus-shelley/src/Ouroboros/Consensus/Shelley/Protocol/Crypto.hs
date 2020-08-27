@@ -9,8 +9,6 @@ module Ouroboros.Consensus.Shelley.Protocol.Crypto (
   , TPraosStandardCrypto
   ) where
 
-import           Data.Typeable (Typeable)
-
 import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
@@ -30,7 +28,6 @@ import           Shelley.Spec.Ledger.OCert (OCertSignable)
 import           Shelley.Spec.Ledger.TxData (TxBody)
 
 class ( Crypto c
-      , Typeable (VRF c)
       , Condense (SigKES (KES c))
       , DSIGN.Signable
           (DSIGN c)

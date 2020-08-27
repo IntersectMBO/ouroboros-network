@@ -35,8 +35,6 @@ module Ouroboros.Network.Driver.Simple (
   runConnectedPeersPipelined,
   ) where
 
-import Data.Typeable (Typeable)
-
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Driver
@@ -88,39 +86,34 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
 
-data DecoderFailure failure where
+data DecoderFailure where
     DecoderFailure :: forall (pr :: PeerRole) ps (st :: ps) failure.
-                      ( Typeable ps
-                      , forall (st' :: ps). Show (ClientHasAgency st')
+                      ( forall (st' :: ps). Show (ClientHasAgency st')
                       , forall (st' :: ps). Show (ServerHasAgency st')
                       , ShowProxy ps
+                      , Show failure
                       )
                    => PeerHasAgency pr st
                    -> failure
-                   -> DecoderFailure failure
+                   -> DecoderFailure
 
-instance Show failure
-         => Show (DecoderFailure failure) where
+instance Show DecoderFailure where
     show (DecoderFailure (tok :: PeerHasAgency pr (st :: ps)) failure) =
       concat
         [ "DecoderFailure ("
         , showProxy (Proxy :: Proxy ps)
         , ") "
-        , show tok 
+        , show tok
         , ") ("
         , show failure
         , ")"
         ]
 
-instance ( Typeable failure
-         , Show failure
-         ) => Exception (DecoderFailure failure) where
+instance Exception DecoderFailure where
 
 
 driverSimple :: forall ps failure bytes m.
                 ( MonadThrow m
-                , Typeable ps
-                , Typeable failure
                 , Show failure
                 , forall (st :: ps). Show (ClientHasAgency st)
                 , forall (st :: ps). Show (ServerHasAgency st)
@@ -163,8 +156,6 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadThrow m
-     , Typeable ps
-     , Typeable failure
      , Show failure
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
@@ -192,8 +183,6 @@ runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
      , MonadThrow m
-     , Typeable ps
-     , Typeable failure
      , Show failure
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
@@ -241,8 +230,6 @@ runDecoderWithChannel Channel{recv} = go
 runConnectedPeers :: ( MonadSTM m
                      , MonadAsync m
                      , MonadCatch m
-                     , Typeable ps
-                     , Typeable failure
                      , Show failure
                      , forall (st' :: ps). Show (ClientHasAgency st')
                      , forall (st' :: ps). Show (ServerHasAgency st')
@@ -272,8 +259,6 @@ runConnectedPeersAsymmetric
     :: ( MonadSTM m
        , MonadAsync m
        , MonadCatch m
-       , Typeable ps
-       , Typeable failure
        , Show failure
        , forall (st' :: ps). Show (ClientHasAgency st')
        , forall (st' :: ps). Show (ServerHasAgency st')
@@ -300,8 +285,6 @@ runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
 runConnectedPeersPipelined :: ( MonadSTM m
                               , MonadAsync m
                               , MonadCatch m
-                              , Typeable ps
-                              , Typeable failure
                               , Show failure
                               , forall (st' :: ps). Show (ClientHasAgency st')
                               , forall (st' :: ps). Show (ServerHasAgency st')

@@ -36,7 +36,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
@@ -316,8 +315,6 @@ mkApps
   :: forall m peer blk e bCS bTX bSQ.
      ( IOLike m
      , Exception e
-     , Typeable blk
-     , Typeable (ApplyTxErr blk)
      , ShowProxy blk
      , ShowProxy (ApplyTxErr blk)
      , ShowProxy (Query blk)

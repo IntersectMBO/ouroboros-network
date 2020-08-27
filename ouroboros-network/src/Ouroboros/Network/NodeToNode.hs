@@ -638,7 +638,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- producer, as it's likely that the other side of the connection
           -- will return grabage as well.
         , ErrorPolicy
-           $ \(_ :: DecoderFailure CBOR.DeserialiseFailure)
+           $ \(_ :: DecoderFailure)
                  -> Just theyBuggyOrEvil
 
         , ErrorPolicy

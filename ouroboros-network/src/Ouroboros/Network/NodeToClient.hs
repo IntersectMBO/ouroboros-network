@@ -564,7 +564,7 @@ networkErrorPolicies = ErrorPolicies
 
         -- deserialisation failure of a message from a trusted node
       , ErrorPolicy
-         $ \(_ :: DecoderFailure CBOR.DeserialiseFailure)
+         $ \(_ :: DecoderFailure)
                -> Just ourBug
 
       , ErrorPolicy
