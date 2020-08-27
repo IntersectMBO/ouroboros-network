@@ -95,7 +95,7 @@ codecLocalTxSubmissionId =
            -> AnyMessage (LocalTxSubmission tx reject)
     encode _ = AnyMessage
 
-    decode :: forall (pr :: PeerRole) st.
+    decode :: forall (pr :: PeerRole) (st :: LocalTxSubmission tx reject).
               PeerHasAgency pr st
            -> m (DecodeStep (AnyMessage (LocalTxSubmission tx reject))
                             CodecFailure m (SomeMessage st))

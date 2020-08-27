@@ -20,8 +20,9 @@ module Network.TypedProtocol.Channel
 
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import qualified Data.ByteString      as BS
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
 import           Data.Time.Clock (DiffTime)
@@ -29,8 +30,6 @@ import           Numeric.Natural
 
 import qualified System.IO as IO
                    ( Handle, hFlush, hIsEOF )
-
-import           Control.Monad.Class.MonadSTM
 
 
 -- | One end of a duplex channel. It is a reliable, ordered channel of some
@@ -184,7 +183,7 @@ createPipelineTestChannels sz = do
       where
         send x = atomically $ do
                    full <- isFullTBQueue bufferWrite
-                   if full then fail failureMsg
+                   if full then error failureMsg
                            else writeTBQueue bufferWrite x
         recv   = atomically (Just <$> readTBQueue bufferRead)
 

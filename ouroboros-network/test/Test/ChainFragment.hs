@@ -14,8 +14,7 @@ module Test.ChainFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (fromJust, fromMaybe, listToMaybe, maybe,
-                     maybeToList)
+import           Data.Maybe (fromJust, fromMaybe, listToMaybe, maybeToList)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -25,8 +24,6 @@ import           Text.Show.Functions ()
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment (..))
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.MockChain.Chain (ChainUpdate (..),
-                     Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -34,7 +31,7 @@ import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Test.Chain ()
 import           Test.ChainGenerators (TestBlockChain (..),
                      TestChainAndRange (..), addSlotGap, genChainAnchor,
-                     genNonNegative, genSlotGap, mkPartialBlock)
+                     genNonNegative, genSlotGap)
 
 
 --

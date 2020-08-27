@@ -1,13 +1,13 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE GADTSyntax          #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTSyntax                #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 module Network.Mux (
 
@@ -41,10 +41,10 @@ module Network.Mux (
     , WithMuxBearer (..)
     ) where
 
-import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map.Strict as Map
+import           Data.Int (Int64)
 import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 
 import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
@@ -58,10 +58,10 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
 import           Network.Mux.Channel
-import           Network.Mux.Egress  as Egress
+import           Network.Mux.Egress as Egress
 import           Network.Mux.Ingress as Ingress
-import           Network.Mux.Types
 import           Network.Mux.Trace
+import           Network.Mux.Types
 
 
 data Mux (mode :: MuxMode) m =
@@ -524,8 +524,8 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       -- indicate a thread is running (or ready to start on demand)
       status <- readTVar miniProtocolStatusVar
       unless (status == StatusIdle) $
-        fail $ "runMiniProtocol: protocol thread already running for "
-            ++ show ptclNum ++ " " ++ show ptclDir'
+        error $ "runMiniProtocol: protocol thread already running for "
+             ++ show ptclNum ++ " " ++ show ptclDir'
       let !status' = case startMode of
                        StartOnDemand -> StatusStartOnDemand
                        StartEagerly  -> StatusRunning

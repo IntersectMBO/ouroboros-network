@@ -49,7 +49,7 @@ import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor   
+import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor
 import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -466,10 +466,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> JobPool m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
-peerSelectionGovernorLoop tracer debugTracer
-                          actions@PeerSelectionActions{..}
-                          policy@PeerSelectionPolicy{..}
-                          jobPool =
+peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
     loop
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
@@ -492,7 +489,7 @@ peerSelectionGovernorLoop tracer debugTracer
       case guardedDecisions now st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
-          fail "peerSelectionGovernorLoop: impossible: nothing to do"
+          error "peerSelectionGovernorLoop: impossible: nothing to do"
 
         Guarded Nothing decisionAction -> do
           traceWith debugTracer (TraceGovernorState st Nothing)

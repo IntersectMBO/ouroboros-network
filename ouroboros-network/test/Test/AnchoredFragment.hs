@@ -9,7 +9,7 @@ module Test.AnchoredFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (isJust, isNothing, listToMaybe, maybe, maybeToList)
+import           Data.Maybe (isJust, isNothing, listToMaybe, maybeToList)
 import           Data.Word (Word64)
 
 import           Test.QuickCheck

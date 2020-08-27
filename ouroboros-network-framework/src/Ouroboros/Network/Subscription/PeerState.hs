@@ -42,7 +42,6 @@ module Ouroboros.Network.Subscription.PeerState
 
 import           Control.Exception (Exception, SomeException (..), assert)
 import           Control.Monad.State
-import           Data.Functor ((<$))
 import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)

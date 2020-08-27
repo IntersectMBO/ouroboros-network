@@ -42,7 +42,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
-                     (acceptableVersion, simpleSingletonVersions)
+                     (acceptableVersion)
 import           Ouroboros.Network.Testing.Serialise
 import           Ouroboros.Network.Util.ShowProxy
 

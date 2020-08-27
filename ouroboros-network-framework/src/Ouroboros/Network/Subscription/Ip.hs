@@ -41,7 +41,6 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
-import           Data.Time.Clock (DiffTime)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf

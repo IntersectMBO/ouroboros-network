@@ -24,8 +24,6 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer
 
-import           Data.Proxy (Proxy (..))
-
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

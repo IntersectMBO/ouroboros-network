@@ -54,12 +54,12 @@ library
                        FlexibleContexts
                        ScopedTypeVariables
                        RankNTypes
-  build-depends:       base  >=4.9 && <4.13,
+  build-depends:       base  >=4.9 && <4.15,
                        async >=2.1,
                        bytestring,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6,
-                       time  >=1.6 && <1.10
+                       time  >=1.6 && <1.11
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -Wcompat

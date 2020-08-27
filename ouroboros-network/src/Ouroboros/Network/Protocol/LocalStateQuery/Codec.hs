@@ -18,6 +18,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Kind (Type)
 import           Data.Type.Equality ((:~:) (..))
 import           Text.Printf
 
@@ -25,7 +26,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Block (Point)
 
-data Some (f :: k -> *) where
+data Some (f :: k -> Type) where
     Some :: f a -> Some f
 
 codecLocalStateQuery
@@ -152,7 +153,7 @@ codecLocalStateQuery encodePoint  decodePoint
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block (query :: * -> *) m.
+  :: forall block (query :: Type -> Type) m.
      Monad m
   => (forall result1 result2.
           query result1

@@ -214,7 +214,7 @@ createPipelineTestChannels sz = do
       where
         send x = atomically $ do
                    full <- isFullTBQueue bufferWrite
-                   if full then fail failureMsg
+                   if full then error failureMsg
                            else writeTBQueue bufferWrite x
         recv   = atomically (Just <$> readTBQueue bufferRead)
 

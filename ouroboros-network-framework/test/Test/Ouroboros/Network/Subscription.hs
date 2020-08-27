@@ -23,9 +23,9 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (void, (<$))
+import           Data.Functor (void)
 import qualified Data.IP as IP
-import           Data.List as L
+import qualified Data.List as L
 import qualified Data.Map as M
 import           Data.Void (Void)
 import           Data.Word
@@ -61,7 +61,7 @@ import           Test.Ouroboros.Network.Orphans ()
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty, shuffle)
+import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 import           Text.Show.Functions ()
 
@@ -615,7 +615,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 (unversionedProtocol initiatorApp))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
-    return (res == mapAccumL f 0 xs)
+    return (res == L.mapAccumL f 0 xs)
 
   where
     withDummyServer :: Socket.AddrInfo
@@ -689,7 +689,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
       rrcfgB
 
     (resA, resB) <- waitBoth a_aid b_aid
-    return $ (resA == mapAccumL f 0 xs) && (resB == mapAccumL f 0 xs)
+    return $ (resA == L.mapAccumL f 0 xs) && (resB == L.mapAccumL f 0 xs)
 
   where
 

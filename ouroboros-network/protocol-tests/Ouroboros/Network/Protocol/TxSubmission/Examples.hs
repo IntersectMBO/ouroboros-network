@@ -21,7 +21,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Sequence.Strict (StrictSeq)
-import           Data.Foldable as Foldable (foldr, foldl', toList)
+import           Data.Foldable as Foldable (foldl', toList)
 
 import           Control.Monad (when)
 import           Control.Exception (assert)
@@ -89,15 +89,15 @@ txSubmissionClient tracer txId txSize maxUnacked =
           traceWith tracer (EventRecvMsgRequestTxIds unackedSeq unackedMap
                                                      remainingTxs ackNo reqNo)
           when (ackNo > fromIntegral (Seq.length unackedSeq)) $
-            fail $ "txSubmissionClientConst.recvMsgRequestTxIds: "
-                ++ "peer acknowledged more txids than possible"
+            error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
+                 ++ "peer acknowledged more txids than possible"
 
           when (  fromIntegral (Seq.length unackedSeq)
                 - ackNo
                 + fromIntegral reqNo
                 > maxUnacked) $
-            fail $ "txSubmissionClientConst.recvMsgRequestTxIds: "
-                ++ "peer requested more txids than permitted"
+            error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
+                 ++ "peer requested more txids than permitted"
 
           let unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
               unackedMap' = foldl' (flip Map.delete) unackedMap
@@ -105,9 +105,9 @@ txSubmissionClient tracer txId txSize maxUnacked =
 
           case blocking of
             TokBlocking | not (Seq.null unackedSeq')
-              -> fail $ "txSubmissionClientConst.recvMsgRequestTxIds: "
-                     ++ "peer made a blocking request for more txids when "
-                     ++ "there are still unacknowledged txids."
+              -> error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
+                      ++ "peer made a blocking request for more txids when "
+                      ++ "there are still unacknowledged txids."
             _ -> return ()
 
           -- This example is eager, it always provides as many as asked for,
@@ -149,8 +149,8 @@ txSubmissionClient tracer txId txSize maxUnacked =
                 -- Here we remove from the map, while the seq stays unchanged.
                 -- This enforces that each tx can be requested at most once.
 
-            missing -> fail $ "txSubmissionClientConst.recvMsgRequestTxs: "
-                           ++ "requested missing TxIds: " ++ show missing
+            missing -> error $ "txSubmissionClientConst.recvMsgRequestTxs: "
+                            ++ "requested missing TxIds: " ++ show missing
 
         recvMsgKThxBye :: m ()
         recvMsgKThxBye = pure ()
@@ -217,7 +217,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 --
 txSubmissionServer
   :: forall txid tx m.
-     (Ord txid, Show txid, Show tx, Monad m)
+     (Ord txid, Monad m)
   => Tracer m (TraceEventServer txid tx)
   -> (tx -> txid)
   -> Word16  -- ^ Maximum number of unacknowledged txids

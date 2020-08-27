@@ -32,6 +32,7 @@ import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
+import qualified Control.Monad.Fail as Fail
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 import           Control.Monad.Class.MonadTimer hiding (timeout)
@@ -198,7 +199,7 @@ runGovernorInMockEnvironment mockEnv =
 data TraceMockEnv = TraceEnvPeersStatus (Map PeerAddr PeerStatus)
   deriving Show
 
-mockPeerSelectionActions :: (MonadAsync m, MonadTimer m)
+mockPeerSelectionActions :: (MonadAsync m, MonadTimer m, Fail.MonadFail m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
@@ -217,7 +218,7 @@ mockPeerSelectionActions tracer
                gossipScripts targetsVar peerConns
 
 mockPeerSelectionActions' :: forall m.
-                             (MonadSTM m, MonadTimer m)
+                             (MonadSTM m, MonadTimer m, Fail.MonadFail m)
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
                           -> Map PeerAddr (TVar m GossipScript)
@@ -272,7 +273,7 @@ mockPeerSelectionActions' tracer
       snapshot <- atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> fail "activatePeerConnection of hot peer"
+          PeerHot  -> error "activatePeerConnection of hot peer"
           PeerWarm -> writeTVar conn PeerHot
           --TODO: check it's just a race condition and not just wrong:
           PeerCold -> return ()
@@ -1056,11 +1057,11 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 readPeerSelectionTargets = return targets,
                 requestPeerGossip        = \_ -> return [],
                 requestPublicRootPeers   = \_ -> return (Set.empty, 0),
-                establishPeerConnection  = fail "establishPeerConnection",
-                monitorPeerConnection    = fail "monitorPeerConnection",
-                activatePeerConnection   = fail "activatePeerConnection",
-                deactivatePeerConnection = fail "deactivatePeerConnection",
-                closePeerConnection      = fail "closePeerConnection"
+                establishPeerConnection  = error "establishPeerConnection",
+                monitorPeerConnection    = error "monitorPeerConnection",
+                activatePeerConnection   = error "activatePeerConnection",
+                deactivatePeerConnection = error "deactivatePeerConnection",
+                closePeerConnection      = error "closePeerConnection"
               }
 
     targets :: PeerSelectionTargets

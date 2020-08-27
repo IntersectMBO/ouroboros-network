@@ -30,8 +30,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)
 import qualified Control.Monad.Class.MonadTimer as MonadTimer
-import           Control.Exception (Exception(..),
-                   asyncExceptionToException, asyncExceptionFromException)
+import           Control.Exception (asyncExceptionFromException,
+                     asyncExceptionToException)
 
 
 -- | The type of the 'System.Timeout.timeout' function.

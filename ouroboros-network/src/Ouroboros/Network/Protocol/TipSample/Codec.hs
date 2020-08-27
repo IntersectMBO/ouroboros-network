@@ -114,7 +114,7 @@ codecTipSampleId = Codec encode decode
            -> AnyMessage (TipSample tip)
     encode _ = AnyMessage
 
-    decode :: forall (pr :: PeerRole) st.
+    decode :: forall (pr :: PeerRole) (st :: TipSample tip).
               PeerHasAgency pr st
            -> m (DecodeStep (AnyMessage (TipSample tip))
                             CodecFailure m (SomeMessage st))

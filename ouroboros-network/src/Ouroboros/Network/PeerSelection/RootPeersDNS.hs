@@ -34,7 +34,7 @@ import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 
-import           Control.Exception (Exception (..), IOException)
+import           Control.Exception (IOException)
 import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -43,7 +43,6 @@ import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer(..), contramap, traceWith)
 
-import           Data.Time (UTCTime)
 import           System.Directory (getModificationTime)
 
 import           Data.IP (IPv4)

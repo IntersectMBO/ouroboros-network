@@ -9,7 +9,6 @@ module Ouroboros.Network.Testing.Serialise (
     where
 
 import           Codec.CBOR.FlatTerm
-import           Codec.CBOR.Read (DeserialiseFailure (..))
 import           Codec.Serialise
 import           Test.QuickCheck (Property, counterexample, property, (.&&.), (===))
 

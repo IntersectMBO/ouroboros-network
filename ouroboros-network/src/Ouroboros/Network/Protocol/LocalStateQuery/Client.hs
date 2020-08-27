@@ -43,7 +43,7 @@ localStateQueryClientNull =
 --  * a request to acquire a state
 --  * a termination messge
 --
-data ClientStIdle block query (m :: * -> *) a where
+data ClientStIdle block query (m :: Type -> Type) a where
   SendMsgAcquire :: Point block
                  -> ClientStAcquiring block query m a
                  -> ClientStIdle      block query m a

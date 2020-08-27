@@ -11,7 +11,6 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Ouroboros.Network.Socket (tests) where
 
-import           Data.Functor ((<$))
 import           Data.Void (Void)
 import           Data.List (mapAccumL)
 import qualified Data.ByteString.Lazy as BL

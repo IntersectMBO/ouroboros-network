@@ -10,16 +10,17 @@ module Control.Monad.Class.MonadFork
   ) where
 
 import qualified Control.Concurrent as IO
-import qualified GHC.Conc.Sync as IO (labelThread)
-import           Control.Exception (Exception, AsyncException(ThreadKilled))
+import           Control.Exception (AsyncException (ThreadKilled), Exception)
 import           Control.Monad.Reader
+import           Data.Kind (Type)
+import qualified GHC.Conc.Sync as IO (labelThread)
 
 
 class (Monad m, Eq   (ThreadId m),
                 Ord  (ThreadId m),
                 Show (ThreadId m)) => MonadThread m where
 
-  type ThreadId m :: *
+  type ThreadId m :: Type
 
   myThreadId     :: m (ThreadId m)
   labelThread    :: ThreadId m -> String -> m ()

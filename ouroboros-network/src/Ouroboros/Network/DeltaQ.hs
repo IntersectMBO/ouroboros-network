@@ -37,7 +37,6 @@ module Ouroboros.Network.DeltaQ (
   ) where
 
 import           Control.Monad.Class.MonadTime (Time (..), diffTime)
-import           Data.Semigroup ((<>))
 import           Data.Time.Clock (DiffTime)
 import           Data.Word (Word32)
 

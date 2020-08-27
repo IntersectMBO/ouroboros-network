@@ -21,7 +21,6 @@ import           Control.Monad
 import           Data.Hashable
 import           Data.List hiding (inits)
 import           Data.Maybe (catMaybes)
-import           Data.Semigroup (Semigroup (..))
 import           Data.Tuple (swap)
 import           Data.Time (DiffTime)
 import           GHC.Generics (Generic)
@@ -42,7 +41,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Util.ShowProxy
 
 -- TODO Should this be impored here
-import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
                      (ChainProducerState (..), initChainProducerState,

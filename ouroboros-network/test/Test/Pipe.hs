@@ -16,7 +16,6 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck

@@ -83,17 +83,15 @@ import qualified Codec.CBOR.Read as Read
 import qualified Codec.CBOR.Write as Write
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (when)
+import           Control.Tracer (contramap)
 import qualified Data.ByteString.Base16.Lazy as B16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import           Data.Coerce (Coercible, coerce)
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Proxy (Proxy)
+import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-
--- TODO: it should be exported from 'Cardano.Prelude'
-import           Control.Tracer (contramap)
 
 import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
 
@@ -110,7 +108,7 @@ genesisPoint :: Point block
 genesisPoint = Point origin
 
 -- | Header hash
-type family HeaderHash b :: *
+type family HeaderHash b :: Type
 
 -- | Header fields we expect to be present in a block
 --
