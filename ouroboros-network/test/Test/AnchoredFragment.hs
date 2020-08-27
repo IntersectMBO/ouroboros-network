@@ -81,6 +81,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "filterWithStop_always_stop"         prop_filterWithStop_always_stop
   , testProperty "filterWithStop_never_stop"          prop_filterWithStop_never_stop
   , testProperty "filterWithStop"                     prop_filterWithStop
+  , testProperty "filterWithStop vs spec"             prop_filterWithStop_vs_spec
   , testProperty "filterWithStop_filter"              prop_filterWithStop_filter
   ]
 
@@ -715,6 +716,14 @@ prop_filterWithStop p stop (TestBlockAnchoredFragment_ anchor chain) =
       = reverse $ lastFrag':frags
       | otherwise
       = c ++ [stoppedFrag]
+
+prop_filterWithStop_vs_spec ::
+     (Block -> Bool)
+  -> (Block -> Bool)
+  -> TestBlockAnchoredFragment
+  -> Property
+prop_filterWithStop_vs_spec p stop (TestBlockAnchoredFragment_ _ chain) =
+    AF.filterWithStop p stop chain === AF.filterWithStopSpec p stop chain
 
 prop_filterWithStop_filter :: TestBlockAnchoredFragment -> Property
 prop_filterWithStop_filter (TestBlockAnchoredFragment chain) =

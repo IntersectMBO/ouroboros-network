@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE PatternSynonyms     #-}
@@ -84,7 +85,10 @@ module Ouroboros.Network.AnchoredFragment (
   filterWithStop,
 
   -- * Helper functions
-  prettyPrint
+  prettyPrint,
+
+  -- * Reference implementations for testing
+  filterWithStopSpec
   ) where
 
 import           Prelude hiding (filter, head, last, length, null)
@@ -785,13 +789,17 @@ mapAnchoredFragment f (AnchoredFragment a c) =
     AnchoredFragment (castAnchor a) (CF.mapChainFragment f c)
 
 -- | \( O\(n\) \). Variation on 'filterWithStop' without a stop condition.
-filter :: forall block. HasHeader block
-       => (block -> Bool)  -- ^ Filtering predicate
-       -> AnchoredFragment block
-       -> [AnchoredFragment block]
+filter ::
+     forall block. HasHeader block
+  => (block -> Bool)  -- ^ Filtering predicate
+  -> AnchoredFragment block
+  -> [AnchoredFragment block]
 filter p = filterWithStop p (const False)
 
--- | \( O\(n\) \). Filter out blocks that don't match the predicate.
+-- | \( O(n + r * \log(\min(i,n-i)) \) where /r/ is the number of consecutive
+-- ranges of blocks to be included in the result.
+--
+-- Filter out blocks that don't match the predicate.
 --
 -- As filtering removes blocks the result is a sequence of disconnected
 -- fragments. The fragments are in the original order and are of maximum size.
@@ -808,12 +816,91 @@ filter p = filterWithStop p (const False)
 --
 -- > filter         odd        -> [[1], [3], [5]]
 -- > filterWithStop odd (>= 4) -> [[1], [3], [4, 5, 6]]
-filterWithStop :: forall block. HasHeader block
-               => (block -> Bool)  -- ^ Filtering predicate
-               -> (block -> Bool)  -- ^ Stop condition
-               -> AnchoredFragment block
-               -> [AnchoredFragment block]
-filterWithStop p stop = goNext []
+filterWithStop ::
+     forall block. HasHeader block
+  => (block -> Bool)  -- ^ Filtering predicate
+  -> (block -> Bool)  -- ^ Stop condition
+  -> AnchoredFragment block
+  -> [AnchoredFragment block]
+filterWithStop p stop c =
+    map (applyFilterRange c) $ startRange (zip [0..] (toOldestFirst c))
+  where
+    startRange :: [(Int, block)] -> [FilterRange]
+    startRange [] = []
+    startRange ((i, blk):blks)
+        | stop blk
+         -- We can stop filtering, the last range is from @blk@ to the end of the
+         -- fragment.
+        = [FilterRange i (length c - 1)]
+
+        | p blk
+          -- We can use @blk@ to start a range, try extending it with the next
+          -- block
+        = extendRange i i blks
+
+        | otherwise
+          -- Not part of a range, try the next block
+        = startRange blks
+
+    extendRange :: Int -> Int -> [(Int, block)] -> [FilterRange]
+    extendRange !start !end [] = [FilterRange start end]
+    extendRange !start !end ((i, blk):blks)
+        | stop blk
+          -- We can stop filtering, the last range is from @start@ to the end of the
+          -- fragment.
+        = [FilterRange start (length c - 1)]
+
+        | p blk
+          -- Extend the open range with @blk@
+        = extendRange start i blks
+
+        | otherwise
+          -- End the open range and try starting another one
+        = FilterRange start end : startRange blks
+
+-- | Range with /inclusive/ bounds, i.e., indices, that should be included in
+-- the result of a filtering operation.
+--
+-- INVARIANT: the first lower bound <= the upper bound
+--
+-- When used in combination with a fragment, both indices should be in the [0,
+-- size of fragment) range.
+data FilterRange = FilterRange !Int !Int
+  deriving (Show)
+
+-- | \( O(\log(\min(i,n-i)) \). Apply a 'FilterRange' to a fragment, returning
+-- the fragment matching the range.
+--
+-- For example, @FilterRange 0 0@ correspond to the first element of the
+-- fragment. @FilterRange 0 1@ corresponds to the first two elements of the
+-- fragment.
+--
+-- Since both bounds are inclusive, the fragment is never empty.
+--
+-- PRECONDITION: both indices are in the @[0, size of fragment)@ range.
+applyFilterRange ::
+     forall block. HasHeader block
+  => AnchoredFragment block
+  -> FilterRange
+  -> AnchoredFragment block
+applyFilterRange c (FilterRange start stop) = inRange
+  where
+    (_before, fromStart) = splitAt start c
+    (inRange, _after)    = splitAt (stop - start + 1) fromStart
+
+-- | \( O\(n\) \). Naive reference implementation of 'filterWithStop'.
+--
+-- While the asymptotic complexity of this function is better than that of
+-- 'filterWithStop', the allocation cost is high. This function deconstructs and
+-- reconstructs the fragment (until the stop condition is reached), even when no
+-- blocks are removed.
+filterWithStopSpec ::
+     forall block. HasHeader block
+  => (block -> Bool)  -- ^ Filtering predicate
+  -> (block -> Bool)  -- ^ Stop condition
+  -> AnchoredFragment block
+  -> [AnchoredFragment block]
+filterWithStopSpec p stop = goNext []
   where
     goNext :: [AnchoredFragment block]  -- Previously constructed fragments
            -> AnchoredFragment block    -- Fragment still to process
