@@ -419,7 +419,7 @@ data TracePeerSelection peeraddr =
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      | TraceForgetColdPeers    Int Int (Set peeraddr) -- target, actual, selected
      | TracePromoteColdPeers   Int Int (Set peeraddr)
-     | TracePromoteColdFailed  peeraddr SomeException
+     | TracePromoteColdFailed  peeraddr DiffTime SomeException
      | TracePromoteColdDone    peeraddr
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
      | TracePromoteWarmFailed  peeraddr SomeException

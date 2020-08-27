@@ -283,12 +283,15 @@ setCurrentTime now knownPeers@KnownPeers {
 incrementFailCount :: Ord peeraddr
                    => peeraddr
                    -> KnownPeers peeraddr
-                   -> KnownPeers peeraddr
+                   -> (Int, KnownPeers peeraddr)
 incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
     assert (peeraddr `Map.member` allPeers) $
-    knownPeers {
-      allPeers = Map.adjust incr peeraddr allPeers
-    }
+    let allPeers' = Map.update (Just . incr) peeraddr allPeers
+    in ( -- since the `peeraddr` is assumed to be part of `allPeers` the `Map.!`
+         -- is safe
+         knownPeerFailCount (allPeers' Map.! peeraddr)
+       , knownPeers { allPeers = allPeers' }
+       )
   where
     incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
 
