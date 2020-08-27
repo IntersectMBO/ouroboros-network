@@ -3,9 +3,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
+{-# OPTIONS_GHC -Wwarn    #-}
 module Test.ThreadNet.BFT (
     tests
   ) where
+
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -19,6 +23,8 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT
 import           Ouroboros.Consensus.Mock.Node.Serialisation
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Test.ThreadNet.General
@@ -27,6 +33,8 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
+import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.Seed
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Consensus.Ledger.Mock.Generators ()
@@ -34,6 +42,7 @@ import           Test.Consensus.Ledger.Mock.Generators ()
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
+import           Test.Util.Slots
 
 data TestSetup = TestSetup
   { setupK            :: SecurityParam
@@ -61,6 +70,20 @@ tests = testGroup "BFT" $
     [ roundtrip_all testCodecCfg dictNestedHdr
     , testProperty "simple convergence" $ \setup ->
         prop_simple_bft_convergence setup
+
+    , testProperty "BUG" $ once $
+        prop_simple_bft_convergence $
+          let ncn = NumCoreNodes 2 in
+          TestSetup {
+              setupK = SecurityParam 2
+            , setupTestConfig = TestConfig {
+                  initSeed = Seed 0
+                , nodeTopology = meshNodeTopology ncn
+                , numCoreNodes = ncn
+                , numSlots = NumSlots 6
+                }
+            , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 4)])
+            }
     ]
   where
     -- We pick a single value for @k@ for the serialisation tests
