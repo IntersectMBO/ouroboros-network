@@ -27,9 +27,9 @@ belowTarget :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> Time
             -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 belowTarget actions
-            now
+            blockedAt
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
@@ -46,9 +46,9 @@ belowTarget actions
   , not inProgressPublicRootsReq
 
     -- We limit how frequently we make requests, are we allowed to do it yet?
-  , now >= publicRootRetryTime
+  , blockedAt >= publicRootRetryTime
   = Guarded Nothing $
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TracePublicRootsRequest
                           targetNumberOfRootPeers
                           numRootPeers,

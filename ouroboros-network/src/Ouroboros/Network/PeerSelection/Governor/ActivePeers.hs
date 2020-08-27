@@ -73,7 +73,7 @@ belowTarget actions
       let selectedToPromote' :: Map peeraddr peerconn
           selectedToPromote' = establishedPeers
                                  `Map.restrictKeys` selectedToPromote
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TracePromoteWarmPeers
                           targetNumberOfActivePeers
                           numActivePeers
@@ -187,7 +187,7 @@ aboveTarget actions
           selectedToDemote' = establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceDemoteHotPeers
                           targetNumberOfActivePeers
                           numActivePeers
