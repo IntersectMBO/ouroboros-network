@@ -76,7 +76,7 @@ belowTarget actions
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TracePromoteColdPeers
                           targetNumberOfEstablishedPeers
                           numEstablishedPeers
@@ -225,7 +225,7 @@ aboveTarget actions
           selectedToDemote' = establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceDemoteWarmPeers
                           targetNumberOfEstablishedPeers
                           numEstablishedPeers
