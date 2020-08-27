@@ -22,7 +22,6 @@ import           Data.Set (Set)
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -38,7 +37,7 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemote
 targetPeers :: MonadSTM m
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 targetPeers PeerSelectionActions{readPeerSelectionTargets}
             st@PeerSelectionState{
               localRootPeers,
@@ -54,7 +53,7 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
       let localRootPeers' = Map.take (targetNumberOfKnownPeers targets')
                                      localRootPeers
 
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceTargetsChanged targets targets',
         decisionJobs  = [],
         decisionState = assert (sanePeerSelectionTargets targets')
@@ -70,14 +69,13 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
 jobs :: MonadSTM m
      => JobPool m (Completion m peeraddr peerconn)
      -> PeerSelectionState peeraddr peerconn
-     -> Time
-     -> Guarded (STM m) (Decision m peeraddr peerconn)
-jobs jobPool st now =
+     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
     Guarded Nothing $ do
       Completion completion <- JobPool.collect jobPool
-      return $! completion st now
+      return (completion st)
 
 
 -- | Monitor connections.
@@ -86,7 +84,7 @@ connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPeerConnection}}
             st@PeerSelectionState {
               activePeers,
@@ -101,7 +99,7 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                             establishedStatus'
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceDemoteAsynchronous demotions,
         decisionJobs  = [],
         decisionState = st {
@@ -152,7 +150,7 @@ localRoots :: forall peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
            => PeerSelectionActions peeraddr peerconn m
            -> PeerSelectionState peeraddr peerconn
-           -> Guarded (STM m) (Decision m peeraddr peerconn)
+           -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 localRoots actions@PeerSelectionActions{readLocalRootPeers}
            st@PeerSelectionState{
              localRootPeers,
@@ -205,7 +203,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           selectedToDemote  = activePeers `Set.intersection` removedSet
           selectedToDemote' = establishedPeers
                                `Map.restrictKeys` selectedToDemote
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceLocalRootPeersChanged localRootPeers
                                                    localRootPeers',
         decisionState = st {

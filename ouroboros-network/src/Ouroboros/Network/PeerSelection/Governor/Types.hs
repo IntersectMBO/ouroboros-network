@@ -394,6 +394,10 @@ data Decision m peeraddr peerconn = Decision {
        decisionJobs  :: [Job m (Completion m peeraddr peerconn)]
      }
 
+-- | Decision which has access to the current time, rather than the time when
+-- the governor's loop blocked to make a decision.
+--
+type TimedDecision m peeraddr peerconn = Time -> Decision m peeraddr peerconn
 
 -- | Type alias for function types which are used to create governor decisions.
 -- Allmost all decisions are following this pattern.
@@ -401,7 +405,7 @@ data Decision m peeraddr peerconn = Decision {
 type MkGuardedDecision peeraddr peerconn m
      = PeerSelectionPolicy peeraddr m
     -> PeerSelectionState peeraddr peerconn
-    -> Guarded (STM m) (Decision m peeraddr peerconn)
+    -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 
 
 newtype Completion m peeraddr peerconn =

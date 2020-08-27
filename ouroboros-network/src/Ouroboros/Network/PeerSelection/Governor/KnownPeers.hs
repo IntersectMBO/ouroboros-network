@@ -35,9 +35,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> Time
             -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions now
+belowTarget actions
             policy@PeerSelectionPolicy {
               policyMaxInProgressGossipReqs,
               policyPickKnownPeersForGossip,
@@ -66,7 +65,7 @@ belowTarget actions now
                                 `Map.restrictKeys` availableForGossip)
                              numGossipReqsPossible
       let numGossipReqs = Set.size selectedForGossip
-      return Decision {
+      return $ \now -> Decision {
         decisionTrace = TraceGossipRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
@@ -292,7 +291,7 @@ aboveTarget PeerSelectionPolicy {
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceForgetColdPeers
                           targetNumberOfKnownPeers
                           numKnownPeers
