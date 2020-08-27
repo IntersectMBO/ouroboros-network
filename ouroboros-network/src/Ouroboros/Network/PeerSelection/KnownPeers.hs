@@ -36,6 +36,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Maybe (fromJust)
 import           Data.Semigroup (Min (..))
 import qualified Data.OrdPSQ as PSQ
 import           Data.OrdPSQ (OrdPSQ)
@@ -283,12 +284,15 @@ setCurrentTime now knownPeers@KnownPeers {
 incrementFailCount :: Ord peeraddr
                    => peeraddr
                    -> KnownPeers peeraddr
-                   -> KnownPeers peeraddr
+                   -> (Int, KnownPeers peeraddr)
 incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
     assert (peeraddr `Map.member` allPeers) $
-    knownPeers {
-      allPeers = Map.adjust incr peeraddr allPeers
-    }
+    case Map.updateLookupWithKey (\_ -> Just . incr) peeraddr allPeers of
+      (mbPeerInfo, allPeers') ->
+        -- since the `peeraddr` is assumed to be part of `allPeers` the `fromJust`
+        -- is a total function.
+        (knownPeerFailCount (fromJust mbPeerInfo),
+         knownPeers { allPeers = allPeers' })
   where
     incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
 
