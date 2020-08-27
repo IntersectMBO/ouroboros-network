@@ -19,6 +19,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     -- * Special operations
     setCurrentTime,
     incrementFailCount,
+    resetFailCount,
 
     -- ** Tracking when we can gossip
     minGossipTime,
@@ -295,6 +296,17 @@ incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
          knownPeers { allPeers = allPeers' })
   where
     incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
+
+
+resetFailCount :: Ord peeraddr
+               => peeraddr
+               -> KnownPeers peeraddr
+               -> KnownPeers peeraddr
+resetFailCount peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerFailCount = 0 })
+                              peeraddr allPeers
+               }
 
 
 -------------------------------
