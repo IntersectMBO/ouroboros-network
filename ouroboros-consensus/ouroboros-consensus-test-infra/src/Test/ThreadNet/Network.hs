@@ -25,10 +25,8 @@ module Test.ThreadNet.Network (
   , plainTestNodeInitialization
   , TracingConstraints
     -- * Tracers
-  , MiniProtocolExpectedException (..)
   , MiniProtocolFatalException (..)
   , MiniProtocolState (..)
-  , TraceMiniProtocolRestart (..)
     -- * Test Output
   , TestOutput (..)
   , NodeOutput (..)
@@ -65,13 +63,10 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
-import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
 import           Ouroboros.Network.Protocol.TxSubmission.Type
-import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
-import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -83,7 +78,6 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
-import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -244,7 +238,7 @@ data VertexStatus m blk
 -- There are always exactly two edges between two vertices that are connected
 -- by the 'NodeTopology': one for the client-server relationship in each
 -- direction. When the mini protocol instances crash, the edge replaces them
--- with new instances, possibly after a delay (see 'RestartCause').
+-- with new instances, possibly after a delay.
 --
 -- (We do not need 'EFalling' because node instances can exist without mini
 -- protocols; we only need 'VFalling' because mini protocol instances cannot
@@ -1045,25 +1039,13 @@ data CodecError
   Running an edge
 -------------------------------------------------------------------------------}
 
--- | Cause for an edge to restart
---
-data RestartCause
-  = RestartExn !MiniProtocolExpectedException
-    -- ^ restart due to an exception in one of the mini protocol instances
-    --
-    -- Edges only catch-and-restart on /expected/ exceptions; anything else
-    -- will tear down the whole hierarchy of test threads. See
-    -- 'MiniProtocolExpectedException'.
-  | RestartNode
-    -- ^ restart because at least one of the two nodes is 'VFalling'
-
 -- | Fork two directed edges, one in each direction between the two vertices
 --
 forkBothEdges
   :: (IOLike m, RunNode blk, HasCallStack)
   => ResourceRegistry m
   -> OracularClock m
-  -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> Tracer m (SlotNo, MiniProtocolState)
   -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
   -> Map CoreNodeId (VertexStatusVar m blk)
@@ -1095,8 +1077,6 @@ forkBothEdges sharedRegistry clock tr version cfg vertexStatusVars (node1, node2
 --
 -- The edge cannot start until both nodes are simultaneously 'VUp'.
 --
--- The edge may restart itself for the reasons modeled by 'RestartCause'
---
 -- The actual control flow here does not faithfully model the real
 -- implementation. On an exception, for example, the actual node implementation
 -- kills the other threads on the same peer as the thread that threw the
@@ -1111,31 +1091,22 @@ forkBothEdges sharedRegistry clock tr version cfg vertexStatusVars (node1, node2
 directedEdge ::
   forall m blk. (IOLike m, RunNode blk)
   => ResourceRegistry m
-  -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+  -> Tracer m (SlotNo, MiniProtocolState)
   -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
   -> OracularClock m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
-  -> m ()
+  -> m Void
 directedEdge registry tr version cfg clock edgeStatusVar client server =
     loop
   where
+    loop :: m Void
     loop = do
-        restart <- directedEdgeInner registry clock version cfg edgeStatusVar client server
-          `catch` (pure . RestartExn)
+        directedEdgeInner registry tr clock version cfg edgeStatusVar client server
           `catch` hUnexpected
         atomically $ writeTVar edgeStatusVar EDown
-        case restart of
-          RestartNode  -> pure ()
-          RestartExn e -> do
-            -- "error policy": restart at beginning of next slot
-            s <- OracularClock.getCurrentSlot clock
-            let s' = succ s
-            traceWith tr (s, MiniProtocolDelayed, e)
-            void $ OracularClock.blockUntilSlot clock s'
-            traceWith tr (s', MiniProtocolRestarting, e)
         loop
       where
         -- Wrap synchronous exceptions in 'MiniProtocolFatalException'
@@ -1158,6 +1129,7 @@ directedEdge registry tr version cfg clock edgeStatusVar client server =
 directedEdgeInner ::
   forall m blk. (IOLike m, RunNode blk)
   => ResourceRegistry m
+  -> Tracer m (SlotNo, MiniProtocolState)
   -> OracularClock m
   -> (NodeToNodeVersion, BlockNodeToNodeVersion blk)
   -> (CodecConfig blk, CalcMessageDelay blk)
@@ -1166,8 +1138,8 @@ directedEdgeInner ::
      -- ^ client threads on this node
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ server threads on this node
-  -> m RestartCause
-directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay) edgeStatusVar
+  -> m ()
+directedEdgeInner registry tr clock (version, blockVersion) (cfg, calcMessageDelay) edgeStatusVar
   (node1, vertexStatusVar1) (node2, vertexStatusVar2) = do
     -- block until both nodes are 'VUp'
     (LimitedApp app1, LimitedApp app2) <- atomically $ do
@@ -1193,27 +1165,25 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
              )
              -- ^ server action to run on node2
           -> (msg -> m ())
-          -> m (m (), m ())
+          -> m (m void, m void)
         miniProtocol proto client server middle = do
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( fst <$> client app1 version (fromCoreNodeId node2) chan
-             , fst <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( restartOnTerminate $ fst <$> client app1 version (fromCoreNodeId node2) chan
+             , restartOnTerminate $ fst <$> server app2 version (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests
-    fmap (\() -> RestartNode) $
-      (>>= withAsyncsWaitAny) $
+    (>>= withAsyncsWaitAny) $
       fmap flattenPairs $
       sequence $
         pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
         NE.:|
       [ miniProtocol "ChainSync"
-          (wrapMPEE MPEEChainSyncClient NTN.aChainSyncClient)
+          NTN.aChainSyncClient
           NTN.aChainSyncServer
           chainSyncMiddle
-        -- TODO do not swallow exceptions from these protocols
       , miniProtocol "BlockFetch"
           NTN.aBlockFetchClient
           NTN.aBlockFetchServer
@@ -1232,17 +1202,19 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
       VUp _ app -> pure app
       _         -> retry
 
+    restartOnTerminate :: m () -> m void
+    restartOnTerminate app = do
+        app
+        -- Restart at beginning of next slot
+        s <- OracularClock.getCurrentSlot clock
+        let s' = succ s
+        traceWith tr (s, MiniProtocolDelayed)
+        void $ OracularClock.blockUntilSlot clock s'
+        traceWith tr (s', MiniProtocolRestarting)
+        restartOnTerminate app
+
     flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
     flattenPairs = uncurry (<>) . NE.unzip
-
-    -- TODO only wrap actually expected exceptions
-    wrapMPEE ::
-         Exception e
-      => (e -> MiniProtocolExpectedException)
-      -> (app -> version -> peer -> chan -> m a)
-      -> (app -> version -> peer -> chan -> m a)
-    wrapMPEE f m = \app ver them chan ->
-        catch (m app ver them chan) $ throwM . f
 
     -- terminates when the vertex starts 'VFalling'
     --
@@ -1570,43 +1542,10 @@ type LimitedApp' m peer blk =
   Tracing
 -------------------------------------------------------------------------------}
 
--- | Non-fatal exceptions expected from the threads of a 'directedEdge'
---
-data MiniProtocolExpectedException
-  = MPEEChainSyncClient CSClient.ChainSyncClientException
-    -- ^ see "Ouroboros.Consensus.MiniProtocol.ChainSync.Client"
-    --
-    -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.
-    -- If it does not agree with the consensus client & server, 'Dynamic chain
-    -- generation' tests will fail, since they will not catch the right
-    -- exception.
-  | MPEEBlockFetchClient BFClient.BlockFetchProtocolFailure
-    -- ^ see "Ouroboros.Network.BlockFetch.Client"
-  | MPEEBlockFetchServer BFServer.BlockFetchServerException
-    -- ^ see "Ouroboros.Consensus.MiniProtocol.BlockFetch.Server"
-  | MPEETxSubmissionClient TxOutbound.TxSubmissionProtocolError
-    -- ^ see "Ouroboros.Network.TxSubmission.Outbound"
-  | MPEETxSubmissionServer TxInbound.TxSubmissionProtocolError
-    -- ^ see "Ouroboros.Network.TxSubmission.Inbound"
-  deriving (Show)
-
-instance Exception MiniProtocolExpectedException
-
 data MiniProtocolState = MiniProtocolDelayed | MiniProtocolRestarting
   deriving (Show)
 
-data TraceMiniProtocolRestart peer
-  = TraceMiniProtocolRestart
-      peer peer
-      SlotNo
-      MiniProtocolState
-      MiniProtocolExpectedException
-    -- ^ us them when-start-blocking state reason
-  deriving (Show)
-
--- | Any synchronous exception from a 'directedEdge' that was not handled as a
--- 'MiniProtocolExpectedException'
---
+-- | Any synchronous exception from a 'directedEdge'.
 data MiniProtocolFatalException = MiniProtocolFatalException
   { mpfeType   :: !Typeable.TypeRep
     -- ^ Including the type explicitly makes it easier for a human to debug
