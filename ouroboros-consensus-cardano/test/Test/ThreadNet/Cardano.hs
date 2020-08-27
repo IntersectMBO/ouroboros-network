@@ -88,6 +88,7 @@ import qualified Test.ThreadNet.Util.NodeTopology as Topo
 import           Test.ThreadNet.Util.Seed (runGen)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
+import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
@@ -343,10 +344,25 @@ genPartition (NumCoreNodes n) (NumSlots t) (SecurityParam k) = do
 
     pure $ Partition (SlotNo firstSlotIn) (NumSlots dur)
 
+-- | Run relatively fewer tests
+--
+-- These tests are slow, so we settle for running fewer of them in this test
+-- suite since it is invoked frequently (eg CI for each push).
+twoFifthsTestCount :: QuickCheckTests -> QuickCheckTests
+twoFifthsTestCount (QuickCheckTests n) = QuickCheckTests $
+    if 0 == n then 0 else
+    max 1 $ (2 * n) `div` 5
+
 tests :: TestTree
 tests = testGroup "Cardano ThreadNet" $
-    [ testProperty "simple convergence" $ \setup ->
-          prop_simple_cardano_convergence setup
+    [ let name = "simple convergence" in
+      askIohkNightlyEnabled $ \enabled ->
+      if enabled
+      then testProperty name $ \setup ->
+             prop_simple_cardano_convergence setup
+      else adjustOption twoFifthsTestCount $
+           testProperty name $ \setup ->
+             prop_simple_cardano_convergence setup
     ]
 
 prop_simple_cardano_convergence :: TestSetup -> Property
