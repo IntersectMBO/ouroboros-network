@@ -35,6 +35,8 @@ import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.ClientState
 
 
+import Debug.Trace
+
 
 -- | A registry for the threads that are executing the client side of the
 -- 'BlockFetch' protocol to communicate with our peers.
@@ -145,7 +147,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
 -- registration and deregistration.
 --
 bracketSyncWithFetchClient :: forall m a peer header block.
-                              (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
+                              (MonadThrow m, MonadSTM m, MonadFork m, Ord peer, Show peer)
                            => FetchClientRegistry peer header block m
                            -> peer
                            -> m a
@@ -172,6 +174,7 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
         modifyTVar syncRegistry $ \m ->
           assert (peer `Map.notMember` m) $
           Map.insert peer (tid, doneVar) m
+        traceM $ "Registered peer: " <> show peer
 
     unregister :: StrictTMVar m () -> m ()
     unregister doneVar =
@@ -180,6 +183,7 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
         modifyTVar syncRegistry $ \m ->
           assert (peer `Map.member` m) $
           Map.delete peer m
+        traceM $ "Unregistered peer: " <> show peer
 
 bracketKeepAliveClient :: forall m a peer header block.
                               (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)

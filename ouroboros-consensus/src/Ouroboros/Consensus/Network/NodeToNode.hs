@@ -92,6 +92,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
                      (ReconstructNestedCtxt, SerialisedHeader)
 
+import           Debug.Trace (traceM)
+
 {-------------------------------------------------------------------------------
   Handlers
 -------------------------------------------------------------------------------}
@@ -390,6 +392,7 @@ mkApps
      ( IOLike m
      , MonadTimer m
      , Ord remotePeer
+     , Show remotePeer
      , Exception e
      , LedgerSupportsProtocol blk
      , ShowProxy blk
@@ -419,23 +422,27 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       -- each candidate chain there is a corresponding block fetch client that
       -- can be used to fetch blocks for that chain.
       bracketSyncWithFetchClient
-        (getFetchClientRegistry kernel) them $
-        bracketChainSyncClient
-            (Node.chainSyncClientTracer (getTracers kernel))
-            (defaultChainDbView (getChainDB kernel))
-            (getNodeCandidates kernel)
-            them $ \varCandidate -> do
-              chainSyncTimeout <- genChainSyncTimeout
-              (_, trailing) <-
-                runPipelinedPeerWithLimits
-                  (contramap (TraceLabelPeer them) tChainSyncTracer)
-                  cChainSyncCodec
-                  (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-                  (timeLimitsChainSync chainSyncTimeout)
-                  channel
-                  $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version varCandidate
-              return ((), trailing)
+        (getFetchClientRegistry kernel) them $ do
+          traceM $ "CS start: " <> show them
+          res <- bracketChainSyncClient
+              (Node.chainSyncClientTracer (getTracers kernel))
+              (defaultChainDbView (getChainDB kernel))
+              (getNodeCandidates kernel)
+              them $ \varCandidate -> do
+                chainSyncTimeout <- genChainSyncTimeout
+                (_, trailing) <-
+                  runPipelinedPeerWithLimits
+                    (contramap (TraceLabelPeer them) tChainSyncTracer)
+                    cChainSyncCodec
+                    (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+                    (timeLimitsChainSync chainSyncTimeout)
+                    channel
+                    $ chainSyncClientPeerPipelined
+                    $ hChainSyncClient version varCandidate
+                traceM $ "CS done: " <> show them
+                return ((), trailing)
+          traceM $ "CS really done: " <> show them
+          return res
 
     aChainSyncServer
       :: NodeToNodeVersion

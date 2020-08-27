@@ -241,6 +241,7 @@ blockFetchLogic :: forall peer header block m.
                    , MonadSTM m
                    , Ord peer
                    , Hashable peer
+                   , Show peer
                    )
                 => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))

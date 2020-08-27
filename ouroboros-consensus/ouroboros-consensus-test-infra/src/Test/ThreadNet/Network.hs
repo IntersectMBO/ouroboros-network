@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_GHC -Wwarn #-}
 -- | Setup network
 module Test.ThreadNet.Network (
     runThreadNetwork
@@ -110,6 +111,7 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
+import           Debug.Trace
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
@@ -340,7 +342,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           sharedRegistry
           clock
           -- traces when/why the mini protocol instances start and stop
-          nullDebugTracer
+          (showTracing debugTracer)
           (version, blockVersion)
           (codecConfig, calcMessageDelay)
           vertexStatusVars
@@ -869,7 +871,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 }
 
           -- traces the node's local events other than those from the -- ChainDB
-          tracers = instrumentationTracers <> nullDebugTracers
+          tracers = instrumentationTracers <> nullDebugTracers -- showTracers debugTracer
 
       let -- use a backoff delay of exactly one slot length (which the
           -- 'OracularClock' always knows) for the following reasons
@@ -1170,8 +1172,8 @@ directedEdgeInner registry tr clock (version, blockVersion) (cfg, calcMessageDel
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( restartOnTerminate $ fst <$> client app1 version (fromCoreNodeId node2) chan
-             , restartOnTerminate $ fst <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( restartOnTerminate proto node1 node2 (fmap fst . client app1 version (fromCoreNodeId node2)) chan
+             , restartOnTerminate proto node2 node1 (fmap fst . server app2 version (fromCoreNodeId node1)) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests
@@ -1202,16 +1204,20 @@ directedEdgeInner registry tr clock (version, blockVersion) (cfg, calcMessageDel
       VUp _ app -> pure app
       _         -> retry
 
-    restartOnTerminate :: m () -> m void
-    restartOnTerminate app = do
-        app
+    restartOnTerminate :: String -> CoreNodeId -> CoreNodeId -> (Channel m msg -> m ()) -> Channel m msg -> m void
+    restartOnTerminate proto from to app chan = do
+        let conn = proto <> " from " <> show from <> " to " <> show to
+        traceM $ "Starting " <> conn
+        app chan
         -- Restart at beginning of next slot
         s <- OracularClock.getCurrentSlot clock
+        traceM $ "Terminated " <> conn <> " in " <> show s
         let s' = succ s
         traceWith tr (s, MiniProtocolDelayed)
         void $ OracularClock.blockUntilSlot clock s'
         traceWith tr (s', MiniProtocolRestarting)
-        restartOnTerminate app
+        traceM $ "Restarting " <> conn <> " in " <> show s'
+        restartOnTerminate proto from to app chan
 
     flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
     flattenPairs = uncurry (<>) . NE.unzip

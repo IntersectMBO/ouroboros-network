@@ -135,6 +135,7 @@ initNodeKernel
        , NoUnexpectedThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
+       , Show remotePeer
        )
     => NodeArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)

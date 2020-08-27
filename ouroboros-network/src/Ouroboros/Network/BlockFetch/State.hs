@@ -64,6 +64,7 @@ fetchLogicIterations
      , MonadSTM m
      , Ord peer
      , Hashable peer
+     , Show peer
      )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
@@ -110,7 +111,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 --
 fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
-      HasHeader header, HasHeader block,
+      HasHeader header, HasHeader block, Show peer,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
@@ -177,6 +178,7 @@ fetchDecisionsForStateSnapshot
   :: (HasHeader header,
       HeaderHash header ~ HeaderHash block,
       Ord peer,
+      Show peer,
       Hashable peer)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
@@ -195,8 +197,10 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchedMaxSlotNo,
       fetchStateFetchMode
     } =
-    assert (                 Map.keysSet fetchStatePeerChains
-            `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
+    if not ((Map.keysSet fetchStatePeerChains) `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) then
+        error $ "peerChains: " <> show (Map.keysSet fetchStatePeerChains) <> " peerStates: " <> show (Map.keysSet fetchStatePeerStates) else
+    -- assert (                 Map.keysSet fetchStatePeerChains
+    --         `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
     assert (                 Map.keysSet fetchStatePeerStates
             `Set.isSubsetOf` Map.keysSet fetchStatePeerGSVs) $
