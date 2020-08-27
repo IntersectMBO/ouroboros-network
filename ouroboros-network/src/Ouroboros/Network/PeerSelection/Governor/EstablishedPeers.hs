@@ -13,6 +13,7 @@ import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException)
 
 import           Ouroboros.Network.PeerSelection.Types
@@ -102,6 +103,13 @@ belowTarget actions
     availableToConnect   = KnownPeers.availableToConnect knownPeers
 
 
+baseColdPeerRetryDiffTime :: Int
+baseColdPeerRetryDiffTime = 5
+
+maxColdPeerRetryBackoff :: Int
+maxColdPeerRetryBackoff = 5
+
+
 jobPromoteColdPeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                    => PeerSelectionActions peeraddr peerconn m
@@ -112,16 +120,28 @@ jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {est
   where
     handler :: SomeException -> Completion m peeraddr peerconn
     handler e =
-      Completion $ \st _now -> Decision {
-        decisionTrace = TracePromoteColdFailed peeraddr e,
-        decisionState = st {
-                          knownPeers            = KnownPeers.incrementFailCount
-                                                    peeraddr (knownPeers st),
-                          inProgressPromoteCold = Set.delete peeraddr
-                                                    (inProgressPromoteCold st)
-                        },
-        decisionJobs  = []
-      }
+      Completion $ \st now ->
+        let (failCount, knownPeers') = KnownPeers.incrementFailCount
+                                         peeraddr
+                                         (knownPeers st)
+
+            -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
+            delay :: DiffTime
+            delay = fromIntegral $
+              2 ^ (pred failCount `min` maxColdPeerRetryBackoff) * baseColdPeerRetryDiffTime
+        in
+          Decision {
+            decisionTrace = TracePromoteColdFailed peeraddr delay e,
+            decisionState = st {
+                              knownPeers            = KnownPeers.setConnectTime
+                                                        (Set.singleton peeraddr)
+                                                        (delay `addTime` now)
+                                                        knownPeers',
+                              inProgressPromoteCold = Set.delete peeraddr
+                                                        (inProgressPromoteCold st)
+                            },
+            decisionJobs  = []
+          }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
