@@ -156,7 +156,10 @@ jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {est
                           establishedStatus     = Map.insert peeraddr PeerWarm
                                                     (establishedStatus st),
                           inProgressPromoteCold = Set.delete peeraddr
-                                                    (inProgressPromoteCold st)
+                                                    (inProgressPromoteCold st),
+                          knownPeers            = KnownPeers.resetFailCount
+                                                    peeraddr
+                                                    (knownPeers st)
                         },
         decisionJobs  = []
       }
