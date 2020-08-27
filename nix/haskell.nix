@@ -82,8 +82,8 @@ let
         # Make sure that libsodium DLLs are available for tests
         packages.ouroboros-consensus-shelley-test.components.all.postInstall = lib.mkForce "";
         packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-cardano.components.all.postInstall = lib.mkForce "";
-        packages.ouroboros-consensus-cardano.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-cardano-test.components.all.postInstall = lib.mkForce "";
+        packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       } else {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
