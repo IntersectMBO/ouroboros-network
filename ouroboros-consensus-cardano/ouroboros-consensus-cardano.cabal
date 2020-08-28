@@ -67,65 +67,6 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
-test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
-  other-modules:
-                       Test.Consensus.Cardano.ByronCompatibility
-                       Test.Consensus.Cardano.Examples
-                       Test.Consensus.Cardano.Generators
-                       Test.Consensus.Cardano.Golden
-                       Test.Consensus.Cardano.MockCrypto
-                       Test.Consensus.Cardano.Serialisation
-                       Test.Consensus.Cardano.Translation
-                       Test.ThreadNet.Cardano
-                       Test.ThreadNet.TxGen.Cardano
-
-  build-depends:       base
-                     , bytestring
-                     , cardano-binary
-                     , cardano-crypto-class
-                     , cardano-crypto-wrapper
-                     , cardano-ledger
-                     , cardano-ledger-test
-                     , cardano-slotting
-                     , cardano-prelude
-                     , cborg
-                     , containers
-                     , hedgehog-quickcheck
-                     , mtl
-                     , QuickCheck
-                     , sop-core
-                     , tasty
-                     , tasty-quickcheck
-                     , time
-
-                     , shelley-spec-ledger
-                     , shelley-spec-ledger-test
-
-                     , ouroboros-network
-                     , ouroboros-consensus
-                     , ouroboros-consensus-test-infra
-                     , ouroboros-consensus-byron
-                     , ouroboros-consensus-byron-test
-                     , ouroboros-consensus-shelley
-                     , ouroboros-consensus-shelley-test
-                     , ouroboros-consensus-cardano
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
-
 executable db-analyser
   hs-source-dirs:      tools/db-analyser
   main-is:             Main.hs

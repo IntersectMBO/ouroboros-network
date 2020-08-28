@@ -1,6 +1,6 @@
-name:                  ouroboros-consensus-byron-test
+name:                  ouroboros-consensus-cardano-test
 version:               0.1.0.0
-synopsis:              Test infrastructure for Byron
+synopsis:              Test of the instantation of the Ouroboros consensus layer used by Cardano
 -- description:
 license:               Apache-2.0
 license-files:
@@ -19,43 +19,43 @@ source-repository head
 
 library
   hs-source-dirs:      src
-
   exposed-modules:
-                       Ouroboros.Consensus.ByronDual.Ledger
-                       Ouroboros.Consensus.ByronDual.Node
-                       Ouroboros.Consensus.ByronDual.Node.Serialisation
+                       Test.Consensus.Cardano.Examples
+                       Test.Consensus.Cardano.Generators
+                       Test.Consensus.Cardano.MockCrypto
 
-                       Test.Consensus.Byron.Examples
-                       Test.Consensus.Byron.Generators
-                       Test.ThreadNet.Infra.Byron
-                       Test.ThreadNet.Infra.Byron.Genesis
-                       Test.ThreadNet.Infra.Byron.ProtocolInfo
-                       Test.ThreadNet.Infra.Byron.TrackUpdates
-                       Test.ThreadNet.TxGen.Byron
+                       Test.ThreadNet.TxGen.Cardano
 
-  build-depends:       base              >=4.9   && <4.15
-                     , bytestring        >=0.10  && <0.11
+  build-depends:       base
+                     , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-test
                      , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-ledger-test
+                     , cardano-slotting
                      , cardano-prelude
-                     , containers        >=0.5   && <0.7
+                     , cborg
+                     , containers
                      , hedgehog-quickcheck
-                     , mtl               >=2.2   && <2.3
+                     , mtl
                      , QuickCheck
-                     , serialise         >=0.2   && <0.3
+                     , sop-core
+                     , tasty
+                     , tasty-quickcheck
+                     , time
 
-                     , byron-spec-ledger
+                     , shelley-spec-ledger
+                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
-                     , ouroboros-consensus-byronspec
-
+                     , ouroboros-consensus-byron-test
+                     , ouroboros-consensus-shelley
+                     , ouroboros-consensus-shelley-test
+                     , ouroboros-consensus-cardano
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -73,42 +73,43 @@ test-suite test
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:
-                       Test.Consensus.Byron.Golden
-                       Test.Consensus.Byron.Serialisation
-                       Test.ThreadNet.DualPBFT
-                       Test.ThreadNet.RealPBFT
+                       Test.Consensus.Cardano.ByronCompatibility
+                       Test.Consensus.Cardano.Golden
+                       Test.Consensus.Cardano.Serialisation
+                       Test.Consensus.Cardano.Translation
+                       Test.ThreadNet.Cardano
 
   build-depends:       base
-                     , binary-search
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-test
                      , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-slotting
+                     , cardano-prelude
                      , cborg
                      , containers
                      , hedgehog-quickcheck
                      , mtl
                      , QuickCheck
+                     , sop-core
                      , tasty
-                     , tasty-hunit
                      , tasty-quickcheck
                      , time
 
-                     , byron-spec-chain
-                     , byron-spec-ledger
-                     , small-steps
-                     , small-steps-test
+                     , shelley-spec-ledger
+                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-byron-test
-                     , ouroboros-consensus-byronspec
+                     , ouroboros-consensus-shelley
+                     , ouroboros-consensus-shelley-test
+                     , ouroboros-consensus-cardano
+                     , ouroboros-consensus-cardano-test
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -122,3 +123,4 @@ test-suite test
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
+

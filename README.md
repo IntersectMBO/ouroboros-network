@@ -73,51 +73,59 @@ Consensus layer of the family Ouroboros blockchain protocols.
 
 ### Consensus test suite
 ```
-cabal new-run ouroboros-consensus:test-consensus
+cabal new-run ouroboros-consensus-test:test-consensus
 ```
 or with `nix`
 ```
-nix-build -A haskellPackages.ouroboros-consensus.checks.test-consensus
+nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-consensus
 ```
 ### Storage test suite
 ```
-cabal new-run ouroboros-consensus:test-storage
+cabal new-run ouroboros-consensus-test:test-storage
 ```
 or with `nix`
 ```
-nix-build -A haskellPackages.ouroboros-consensus.checks.test-storage
-```
-### Mock test suite
-```
-cabal new-run ouroboros-consensus-mock:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-mock.checks.test
-```
-### Byron test suite
-```
-cabal new-run ouroboros-consensus-byron:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-byron.checks.test
-```
-### Shelley test suite
-```
-cabal new-run ouroboros-consensus-shelley:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-shelley.checks.test
+nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-storage
 ```
 ### Test infrastructure test suite
 ```
-cabal new-run ouroboros-consensus-test-infra:test
+cabal new-run ouroboros-consensus-test:test-infra
 ```
 or with `nix`
 ```
-nix-build -A haskellPackages.ouroboros-consensus-test-infra.checks.test
+nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-infra
+```
+### Mock test suite
+```
+cabal new-run ouroboros-consensus-mock-test:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-mock-test.checks.test
+```
+### Byron test suite
+```
+cabal new-run ouroboros-consensus-byron-test:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-byron-test.checks.test
+```
+### Shelley test suite
+```
+cabal new-run ouroboros-consensus-shelley-test:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-shelley-test.checks.test
+```
+### Cardano test suite
+```
+cabal new-run ouroboros-consensus-cardano-test:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-cardano-test.checks.test
 ```
 
 ## Formatting

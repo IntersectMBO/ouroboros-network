@@ -11,10 +11,10 @@ please refer to the various test suites within the
 [repository](https://github.com/input-output-hk/ouroboros-network/); at the time
 of writing, this is
 
-* `ouroboros-consensus/ouroboros-consensus-test-infra/test/Main.hs`
-* `ouroboros-consensus/test-storage/Main.hs`
-* `ouroboros-consensus/test-consensus/Main.hs`
-* `ouroboros-consensus/ouroboros-consensus-mock/test/Main.hs`
+* `ouroboros-consensus-test/test-infra/Main.hs`
+* `ouroboros-consensus-test/test-storage/Main.hs`
+* `ouroboros-consensus-test/test-consensus/Main.hs`
+* `ouroboros-consensus/ouroboros-consensus-mock-test/test/Main.hs`
 * `ouroboros-consensus-byron-test/test/Main.hs`
 * `ouroboros-consensus-shelley-test/test/Main.hs`
 * `ouroboros-consensus-cardano/test/Main.hs`
@@ -28,9 +28,9 @@ components.
 
 ## Testing the test infrastructure
 
-The library `ouroboros-consensus-test-infra` provides a bunch of test utilities
-that we use throughout the consensus layer tests. It comes with a few tests of
-its own. Some examples:
+The library `ouroboros-consensus-test` provides a bunch of test utilities that
+we use throughout the consensus layer tests. It comes with a few tests of its
+own. Some examples:
 
 * Some consensus tests override the leader schedule from the underlying
   protocol, instead explicitly recording which nodes lead when. If we use a
@@ -42,9 +42,10 @@ There isn't too much here; after all, if we start testing the test, where does
 it stop? :) That said, `test-consensus` contains a few more tests in this same
 category (see below).
 
-**Stats.** The `test-infra` library itself is 8,700 lines of code. Since this
-library is used throughout all tests, I've not added that line count to any of
-the other statistics. The test suite for the library is minute, a mere 140 loc.
+**Stats.** The `ouroboros-consensus-test` library itself is 8,700 lines of code.
+Since this library is used throughout all tests, I've not added that line count
+to any of the other statistics. The test suite for the library is minute, a mere
+140 loc.
 
 ## The storage layer (`test-storage` test suite)
 
