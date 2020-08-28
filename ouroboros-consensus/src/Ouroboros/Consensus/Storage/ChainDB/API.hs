@@ -49,10 +49,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , UnknownRange(..)
   , validBounds
   , streamAll
-    -- * Ledger Cursor API
-  , LedgerCursor(..)
-  , LedgerCursorFailure(..)
-  , getPastLedger
     -- * Invalid block reason
   , InvalidBlockReason(..)
     -- * Readers
@@ -170,6 +166,13 @@ data ChainDB m blk = ChainDB {
 
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
+
+      -- | Get the ledger for the given point.
+      --
+      -- When the given point is not among the last @k@ blocks of the current
+      -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
+      -- returned.
+    , getPastLedger      :: Point blk -> STM m (Maybe (ExtLedgerState blk))
 
       -- | Get block at the tip of the chain, if one exists
       --
@@ -305,10 +308,6 @@ data ChainDB m blk = ChainDB {
            ResourceRegistry m
         -> BlockComponent (ChainDB m blk) b
         -> m (Reader m blk b)
-
-      -- | Get a ledger cursor that is focused on the ledger corresponding to
-      -- the tip of the current chain (see 'getCurrentLedger').
-    , newLedgerCursor   :: m (LedgerCursor m blk)
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -633,51 +632,6 @@ streamAll chainDB registry = do
           -- stream.
           Left  e  -> error (show e)
           Right it -> return $ Just it
-
-{-------------------------------------------------------------------------------
-  Ledger cursor API
--------------------------------------------------------------------------------}
-
--- | A potentially more efficient way to obtain past ledger snapshots.
---
--- NOTE: a 'LedgerCursor' currently allocates no resources that need explicit
--- cleanup, so there is no @ledgerCursorClose@ operation.
-data LedgerCursor m blk = LedgerCursor {
-      ledgerCursorState :: m (ExtLedgerState blk)
-      -- ^ The ledger state the cursor is pointing at.
-    , ledgerCursorMove  :: Point blk
-                        -> m (Either LedgerCursorFailure (ExtLedgerState blk))
-      -- ^ Move the ledger cursor to the given point.
-      --
-      -- This cannot live in STM, because the ledger DB does not store all
-      -- ledger snapshots, and so getting a past ledger DB may involve reading
-      -- from disk.
-      --
-      -- When the cursor could not be moved to the given point, a
-      -- 'LedgerCursorFailure' is returned, otherwise the request ledger state
-      -- is returned.
-    }
-
--- | Returned in case 'LedgerCursorMove' failed.
-data LedgerCursorFailure
-  = PointTooOld
-    -- ^ The given point corresponds to a block older than @k@.
-    --
-    -- It might also /not/ be on the chain.
-  | PointNotOnChain
-    -- ^ The given point is not on the chain.
-  deriving (Eq, Show)
-
--- | Utility function to get the ledger state at the given point.
---
--- Is a combination of 'newLedgerCursor' and 'ledgerCursorMove'.
---
--- See the docstring of 'newLedgerCursor' for more information.
-getPastLedger :: Monad m
-              => ChainDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
-getPastLedger chainDB pt = do
-    cursor <- newLedgerCursor chainDB
-    either (const Nothing) Just <$> ledgerCursorMove cursor pt
 
 {-------------------------------------------------------------------------------
   Invalid block reason

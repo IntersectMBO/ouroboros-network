@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -159,8 +158,11 @@ mkServer
   -> m (LocalStateQueryServer TestBlock (Query TestBlock) m ())
 mkServer k chain = do
     lgrDB <- initLgrDB k chain
-    return $ localStateQueryServer cfg $
-      LedgerCursor.newLedgerCursor lgrDB getImmutablePoint
+    return $
+      localStateQueryServer
+        cfg
+        (LgrDB.getPastState lgrDB)
+        getImmutablePoint
   where
     cfg = configLedger $ testCfg k
     getImmutablePoint = return $ Chain.headPoint $

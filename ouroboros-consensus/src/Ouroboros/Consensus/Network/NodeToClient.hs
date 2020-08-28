@@ -39,6 +39,7 @@ import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -114,7 +115,8 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
       , hStateQueryServer =
           localStateQueryServer
             (configLedger cfg)
-            (ChainDB.newLedgerCursor getChainDB)
+            (ChainDB.getPastLedger getChainDB)
+            (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
       }
 
 {-------------------------------------------------------------------------------

@@ -184,7 +184,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
                        Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Query
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Reader

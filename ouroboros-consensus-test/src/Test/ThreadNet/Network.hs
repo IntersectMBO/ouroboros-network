@@ -159,6 +159,11 @@ data TestNodeInitialization m blk = TestNodeInitialization
   { tniCrucialTxs   :: [GenTx blk]
     -- ^ these transactions are added immediately and repeatedly (whenever the
     -- 'ledgerTipSlot' changes)
+    --
+    -- In particular, a leading node's crucial transactions must (if valid)
+    -- enter its mempool each slot /before/ the node takes the mempool snapshot
+    -- that determines which transactions will be included in the block it's
+    -- about to forge.
   , tniProtocolInfo :: ProtocolInfo m blk
   }
 
@@ -572,16 +577,21 @@ runThreadNetwork systemTime ThreadNetworkArgs
       => OracularClock m
       -> SlotNo
       -> ResourceRegistry m
+      -> (SlotNo -> STM m ())
       -> (fingerprint, STM m fingerprint)
       -- ^ How to get the fingerprint of the current ledger state
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs clock s0 registry (initialLdgr, getLdgr) mempool txs0 =
+    forkCrucialTxs clock s0 registry unblockForge (initialLdgr, getLdgr) mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
         let loop (slot, mempFp, ldgrFp) = do
               _ <- addTxs mempool txs0
+
+              -- See 'unblockForge' in 'forkNode'
+              atomically $ unblockForge slot
+
               let
                 -- a clock tick might render a crucial transaction valid
                 slotChanged = do
@@ -854,6 +864,23 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
       let blockForging = origBlockForging { forgeBlock = customForgeBlock }
 
+      -- This variable holds the number of the earliest slot in which the
+      -- crucial txs have not yet been added. In other words, it holds the
+      -- successor of the number of the latest slot in which the crucial txs
+      -- have been added.
+      --
+      -- Key facts: The thread that adds the crucial transactions updates this
+      -- variable, and the forge tracer for 'TraceNodeIsLeader' blocks on it.
+      (unblockForge, blockOnCrucial) <- do
+        var <- uncheckedNewTVarM 0
+        pure
+          ( \s -> do
+              modifyTVar var (succ s `max`)
+          , \s -> do
+              sentinel <- readTVar var
+              check $ s < sentinel
+          )
+
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
                 { chainSyncClientTracer = Tracer $ \case
@@ -866,7 +893,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                                 traceWith headerAddTracer
                                   (RealPoint s h, blockNo hdr)
                     _ -> pure ()
-                , forgeTracer           = nodeEventsForges nodeInfoEvents
+                , forgeTracer           = Tracer $ \ev -> do
+                    traceWith (nodeEventsForges nodeInfoEvents) ev
+                    case ev of
+                      TraceNodeIsLeader s -> atomically $ blockOnCrucial s
+                      _                   -> pure ()
                 }
 
           -- traces the node's local events other than those from the -- ChainDB
@@ -972,6 +1003,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         clock
         joinSlot
         registry
+        unblockForge
         -- a fingerprint for the ledger
         ( GenesisPoint
         ,     (ledgerTipPoint (Proxy @blk) . ledgerState)
