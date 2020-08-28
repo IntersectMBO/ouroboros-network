@@ -569,17 +569,25 @@ anchorNewest :: forall block. HasHeader block
              => Word64  -- ^ @n@
              -> AnchoredFragment block
              -> AnchoredFragment block
-anchorNewest n c = case c of
-    Empty _       -> c
-    _ | n >= len  -> c
-      | otherwise -> dropOldest (len - n) c
+anchorNewest n c
+    | toDrop <= 0
+    = c
+    | toDrop < 5
+      -- Hybrid approach: microbenchmarks have shown that a linear drop is
+      -- faster when the number of elements is small. For a larger number of
+      -- elements, the asymptotic complexity of 'splitAt' wins.
+    = linearDrop toDrop c
+    | otherwise
+    = snd $ splitAt toDrop c
   where
-    len = fromIntegral $ length c
+    len, toDrop :: Int
+    len    = length c
+    toDrop = len - fromIntegral n
 
-    dropOldest :: Word64 -> AnchoredFragment block -> AnchoredFragment block
-    dropOldest _ (Empty a) = Empty a
-    dropOldest 0 c'        = c'
-    dropOldest m (_ :< c') = dropOldest (m - 1) c'
+    linearDrop :: Int -> AnchoredFragment block -> AnchoredFragment block
+    linearDrop !_ (Empty a) = Empty a
+    linearDrop !0 c'        = c'
+    linearDrop !m (_ :< c') = linearDrop (m - 1) c'
 
 -- | \( O(\max(n_1, n_2)) \). Check whether the first anchored fragment is a
 -- prefix of the second.
