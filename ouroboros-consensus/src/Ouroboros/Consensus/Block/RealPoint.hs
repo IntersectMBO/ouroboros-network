@@ -81,10 +81,14 @@ realPointHash :: RealPoint blk -> HeaderHash blk
 realPointHash (RealPoint _ h) = h
 
 blockRealPoint :: HasHeader blk => blk -> RealPoint blk
-blockRealPoint blk = RealPoint (blockSlot blk) (blockHash blk)
+blockRealPoint blk = RealPoint s h
+  where
+    HeaderFields { headerFieldSlot = s, headerFieldHash = h } = getHeaderFields blk
 
 headerRealPoint :: HasHeader (Header blk) => Header blk -> RealPoint blk
-headerRealPoint hdr = RealPoint (blockSlot hdr) (blockHash hdr)
+headerRealPoint hdr = RealPoint s h
+  where
+    HeaderFields { headerFieldSlot = s, headerFieldHash = h } = getHeaderFields hdr
 
 realPointToPoint :: RealPoint blk -> Point blk
 realPointToPoint (RealPoint s h) = BlockPoint s h
