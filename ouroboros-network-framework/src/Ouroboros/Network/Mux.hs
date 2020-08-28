@@ -32,7 +32,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as LBS
 
@@ -111,9 +110,7 @@ data RunMiniProtocol (mode :: MuxMode) bytes m a b where
 
 data MuxPeer bytes m a where
     MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
-               ( Typeable ps
-               , Typeable failure
-               , Show failure
+               ( Show failure
                , forall (st' :: ps). Show (ClientHasAgency st')
                , forall (st' :: ps). Show (ServerHasAgency st')
                , ShowProxy ps
@@ -125,9 +122,7 @@ data MuxPeer bytes m a where
 
     MuxPeerPipelined
              :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
-               ( Typeable ps
-               , Typeable failure
-               , Show failure
+               ( Show failure
                , forall (st' :: ps). Show (ClientHasAgency st')
                , forall (st' :: ps). Show (ServerHasAgency st')
                , ShowProxy ps
