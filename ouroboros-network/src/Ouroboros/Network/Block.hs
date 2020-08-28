@@ -256,7 +256,9 @@ castPoint GenesisPoint           = GenesisPoint
 castPoint (BlockPoint slot hash) = BlockPoint slot (coerce hash)
 
 blockPoint :: HasHeader block => block -> Point block
-blockPoint b = Point (block (blockSlot b) (blockHash b))
+blockPoint b = Point (block s h)
+  where
+    HeaderFields { headerFieldSlot = s, headerFieldHash = h } = getHeaderFields b
 
 {-------------------------------------------------------------------------------
   Tip of a chain

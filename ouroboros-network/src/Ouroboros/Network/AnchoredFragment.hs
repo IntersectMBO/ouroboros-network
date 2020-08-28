@@ -189,7 +189,13 @@ anchorIsGenesis Anchor{}      = False
 -- In other words, this would be the block immediately /before/ the other blocks
 -- in the fragment.
 anchorFromBlock :: HasHeader block => block -> Anchor block
-anchorFromBlock b = Anchor (blockSlot b) (blockHash b) (blockNo b)
+anchorFromBlock b = Anchor sno hash bno
+  where
+    HeaderFields {
+        headerFieldSlot    = sno
+      , headerFieldBlockNo = bno
+      , headerFieldHash    = hash
+      } = getHeaderFields b
 
 -- | Compute which 'Point' this anchor corresponds to
 anchorToPoint :: Anchor block -> Point block
