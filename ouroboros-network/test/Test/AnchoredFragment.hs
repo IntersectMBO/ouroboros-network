@@ -60,6 +60,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "fromOldestFirst/toOldestFirst"      prop_fromOldestFirst_toOldestFirst
   , testProperty "toList/head"                        prop_toList_head
   , testProperty "toList/last"                        prop_toList_last
+  , testProperty "splitAt"                            prop_splitAt
   , testProperty "dropNewest"                         prop_dropNewest
   , testProperty "takeOldest"                         prop_takeOldest
   , testProperty "dropWhileNewest"                    prop_dropWhileNewest
@@ -128,6 +129,19 @@ prop_toList_last (TestBlockAnchoredFragment chain) =
     (headOrAnchor anchor . AF.toOldestFirst) chain == AF.last chain
   where
     anchor = AF.anchor chain
+
+prop_splitAt :: TestBlockAnchoredFragment -> Bool
+prop_splitAt (TestBlockAnchoredFragment chain) =
+    let blocks = AF.toOldestFirst chain in
+    and [ let (before,         after)         = AF.splitAt n chain
+              (beforeExpected, afterExpected) = L.splitAt  n blocks
+          in AF.toOldestFirst before == beforeExpected       &&
+             AF.toOldestFirst after  == afterExpected        &&
+             AF.anchorPoint   before == AF.anchorPoint chain &&
+             AF.headPoint     before == AF.anchorPoint after &&
+             AF.headPoint     after  == AF.headPoint   chain &&
+             AF.join before after    == Just chain
+        | n <- [0..Prelude.length blocks] ]
 
 prop_dropNewest :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest (TestBlockAnchoredFragment chain) =

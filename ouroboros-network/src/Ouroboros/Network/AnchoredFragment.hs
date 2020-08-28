@@ -53,6 +53,7 @@ module Ouroboros.Network.AnchoredFragment (
   toOldestFirst,
   fromNewestFirst,
   fromOldestFirst,
+  splitAt,
   dropNewest,
   takeOldest,
   dropWhileNewest,
@@ -91,7 +92,7 @@ module Ouroboros.Network.AnchoredFragment (
   filterWithStopSpec
   ) where
 
-import           Prelude hiding (filter, head, last, length, null)
+import           Prelude hiding (filter, head, last, length, null, splitAt)
 
 import           Data.Functor ((<&>))
 import           Data.List (find)
@@ -399,6 +400,24 @@ fromOldestFirst :: HasHeader block
                 => Anchor block  -- ^ Anchor
                 -> [block] -> AnchoredFragment block
 fromOldestFirst a bs = mkAnchoredFragment a (CF.fromOldestFirst bs)
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' at a given
+--  position.
+--
+-- POSTCONDITION: @(before, after) = splitAt i f@, then:
+-- * @anchorPoint before == anchorPoint f@
+-- * @headPoint   before == anchorPoint after@
+-- * @headPoint   after  == headPoint f@
+-- * @join before after  == Just f@
+splitAt ::
+      forall block. HasHeader block
+   => Int
+   -> AnchoredFragment block
+   -> (AnchoredFragment block, AnchoredFragment block)
+splitAt i (AnchoredFragment a c) = case CF.splitAt i c of
+   (before, after) ->
+     let before' = mkAnchoredFragment a before
+     in (before', mkAnchoredFragment (headAnchor before') after)
 
 -- | \( O(\log(\min(i,n-i)) \). Drop the newest @n@ blocks from the
 -- 'AnchoredFragment'. The anchor point is not changed.
