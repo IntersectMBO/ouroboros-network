@@ -37,6 +37,7 @@ module Ouroboros.Network.ChainFragment (
   toOldestFirst,
   fromNewestFirst,
   fromOldestFirst,
+  splitAt,
   dropNewest,
   dropOldest,
   takeNewest,
@@ -76,7 +77,8 @@ module Ouroboros.Network.ChainFragment (
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, filter, head, last, length, null)
+import           Prelude hiding (drop, filter, head, last, length, null,
+                     splitAt)
 
 import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
@@ -327,6 +329,22 @@ fromNewestFirst = foldr (flip (:>)) Empty
 fromOldestFirst :: HasHeader block => [block] -> ChainFragment block
 fromOldestFirst bs = ChainFragment $ FT.fromList bs
 
+-- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' at a given
+--  position.
+--
+-- > splitAt i f = (takeOldest i f, dropOldest i f)
+--
+-- POSTCONDITION:
+-- > (before, after) = splitAt i f
+-- > f == joinSuccessor before after
+splitAt ::
+      forall block. HasHeader block
+   => Int
+   -> ChainFragment block
+   -> (ChainFragment block, ChainFragment block)
+splitAt i (ChainFragment c) = case FT.split (\v -> bmSize v > i) c of
+    (before, after) -> (ChainFragment before, ChainFragment after)
+
 -- | \( O(\log(\min(i,n-i)) \). Drop the newest @n@ blocks from the
 -- 'ChainFragment'.
 dropNewest :: HasHeader block
@@ -394,7 +412,6 @@ takeWhileOldest _ Empty    = Empty
 takeWhileOldest p (b :< c)
                | p b       = b :< takeWhileOldest p c
                | otherwise = Empty
-
 
 -- | \( O(1) \).
 length :: HasHeader block => ChainFragment block -> Int
@@ -649,8 +666,8 @@ pointOnChainFragmentSpec p = go
 -- putting @r2@ after @l2@:
 --
 -- @
--- Just c1 = 'joinChainFragments' l1 r1
--- Just c1 = 'joinChainFragments' l1 r1
+-- Just c1 = 'joinSuccessor' l1 r1
+-- Just c1 = 'joinSuccessor' l1 r1
 -- @
 --
 -- Chains that intersect will always have the exact same common prefix, but
