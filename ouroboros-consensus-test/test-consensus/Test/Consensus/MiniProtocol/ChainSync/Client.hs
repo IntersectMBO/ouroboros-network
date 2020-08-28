@@ -27,10 +27,9 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto.DSIGN.Mock
 
-import           Ouroboros.Network.Block (getTipPoint)
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (getTipPoint)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
@@ -38,6 +37,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (chainState,
                      initChainProducerState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.Mux (ControlMessage (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -94,44 +94,45 @@ updatesToGenerate = 100
 prop_chainSync :: ChainSyncClientSetup -> Property
 prop_chainSync ChainSyncClientSetup {..} =
     counterexample
-    ("Client chain: "      <> ppChain clientChain        <> "\n" <>
-     "Server chain: "      <> ppChain serverChain        <> "\n" <>
-     "Synched fragment: "  <> ppFragment synchedFragment <> "\n" <>
-     "Trace:\n"            <> unlines (map ppTraceEvent events)) $
+    ("Client chain: "     <> ppChain finalClientChain  <> "\n" <>
+     "Server chain: "     <> ppChain finalServerChain  <> "\n" <>
+     "Synced fragment: "  <> ppFragment syncedFragment <> "\n" <>
+     "Trace:\n"           <> unlines (map ppTraceEvent traceEvents)) $
     -- If an exception has been thrown, we check that it was right to throw
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
-    case mbEx of
-      Just (ForkTooDeep intersection _ _)     ->
+    case mbResult of
+      Just (Right (ForkTooDeep intersection _ _))     ->
         label "ForkTooDeep" $
         counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection clientFragment)
-      Just (InvalidRollBack intersection _ _) ->
-        label "InvalidRollBack" $
-        counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
-        not (withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection (Our ourTip) (Their theirTip)) ->
+      Just (Right (NoMoreIntersection (Our ourTip) (Their theirTip))) ->
         label "NoMoreIntersection" $
         counterexample ("NoMoreIntersection ourHead: " <> ppPoint (getTipPoint ourTip) <>
                         ", theirHead: " <> ppPoint (getTipPoint theirTip)) $
-        not (clientFragment `forksWithinK` synchedFragment)
-      Just e ->
-        counterexample ("Exception: " ++ displayException e) False
+        not (clientFragment `forksWithinK` syncedFragment)
+      Just (Right (RolledBackPastIntersection intersection _ _)) ->
+        label "RolledBackPastIntersection" $
+        counterexample ("RolledBackPastIntersection intersection: " <> ppPoint intersection) $
+        not (withinFragmentBounds intersection syncedFragment)
+      Just (Right result) ->
+        counterexample ("Terminated with result: " ++ show result) False
+      Just (Left ex) ->
+        counterexample ("Exception: " ++ displayException ex) False
       Nothing ->
         counterexample "Synced fragment not a suffix of the server chain"
-        (synchedFragment `isSuffixOf` serverChain) .&&.
+        (syncedFragment `isSuffixOf` finalServerChain) .&&.
         counterexample "Synced fragment doesn't intersect with the client chain"
-        (clientFragment `forksWithinK` synchedFragment) .&&.
+        (clientFragment `forksWithinK` syncedFragment) .&&.
         counterexample "Synced fragment doesn't have the same anchor as the client fragment"
-        (AF.anchorPoint clientFragment === AF.anchorPoint synchedFragment)
+        (AF.anchorPoint clientFragment === AF.anchorPoint syncedFragment)
   where
     k = maxRollbacks securityParam
 
-    (clientChain, serverChain, synchedFragment, mbEx, events) = runSimOrThrow $
-      runChainSync securityParam clientUpdates serverUpdates
-                   startTick
+    ChainSyncOutcome {..} = runSimOrThrow $
+      runChainSync securityParam clientUpdates serverUpdates startTick
 
-    clientFragment = AF.anchorNewest k $ Chain.toAnchoredFragment clientChain
+    clientFragment = AF.anchorNewest k $ Chain.toAnchoredFragment finalClientChain
 
     forksWithinK
       :: AnchoredFragment TestBlock  -- ^ Our chain
@@ -210,6 +211,14 @@ type TraceEvent = (Tick, Either
   (TraceChainSyncClientEvent TestBlock)
   (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))))
 
+data ChainSyncOutcome = ChainSyncOutcome {
+      finalClientChain :: Chain TestBlock
+    , finalServerChain :: Chain TestBlock
+    , syncedFragment   :: AnchoredFragment TestBlock
+    , mbResult         :: Maybe (Either ChainSyncClientException ChainSyncClientResult)
+    , traceEvents      :: [TraceEvent]
+    }
+
 -- | We have a client and a server chain that both start at genesis. At
 -- certain times, we apply updates to both of these chains to simulate changes
 -- to the chains.
@@ -225,7 +234,7 @@ type TraceEvent = (Tick, Either
 -- sync client will keep the candidate fragment in sync with the updating
 -- server chain.
 --
--- At the end, we return the final chains, the synched candidate fragment, and
+-- At the end, we return the final chains, the synced candidate fragment, and
 -- any exception thrown by the chain sync client. The candidate fragment can
 -- then be compared to the actual server chain. If an exception was thrown, no
 -- more chain updates are applied so the state at the time of the exception is
@@ -239,21 +248,16 @@ runChainSync
     -> ClientUpdates
     -> ServerUpdates
     -> Tick  -- ^ Start chain syncing at this time
-    -> m (Chain TestBlock, Chain TestBlock,
-          AnchoredFragment TestBlock, Maybe ChainSyncClientException,
-          [TraceEvent])
-       -- ^ (The final client chain, the final server chain, the synced
-       --    candidate fragment, exception thrown by the chain sync client,
-       --    the traced ChainSync and protocol events)
+    -> m ChainSyncOutcome
 runChainSync securityParam (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
     clock <- LogicalClock.new registry numTicks
 
     -- Set up the client
-    varCandidates      <- uncheckedNewTVarM Map.empty
-    varClientState     <- uncheckedNewTVarM (Genesis, testInitExtLedger)
-    varClientException <- uncheckedNewTVarM Nothing
+    varCandidates   <- uncheckedNewTVarM Map.empty
+    varClientState  <- uncheckedNewTVarM (Genesis, testInitExtLedger)
+    varClientResult <- uncheckedNewTVarM Nothing
     -- Candidates are removed from the candidates map when disconnecting, so
     -- we lose access to them. Therefore, store the candidate 'TVar's in a
     -- separate map too, one that isn't emptied. We can use this map to look
@@ -288,6 +292,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                    nodeCfg
                    chainDbView
                    maxBound
+                   (return Continue)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
@@ -298,9 +303,10 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     varLastUpdate <- uncheckedNewTVarM 0
     void $ LogicalClock.onEachTick registry clock "scheduled updates" $ \tick -> do
       -- Stop updating the client and server chains when the chain sync client
-      -- has thrown an exception, so that at the end, we can read the chains
-      -- in the states they were in when the exception was thrown.
-      stop <- fmap isJust $ atomically $ readTVar varClientException
+      -- has thrown an exception or has gracefully terminated, so that at the
+      -- end, we can read the chains in the states they were in when the
+      -- exception was thrown.
+      stop <- fmap isJust $ atomically $ readTVar varClientResult
       unless stop $ do
         -- Client
         whenJust (Map.lookup tick clientUpdates) $ \chainUpdates ->
@@ -345,13 +351,16 @@ runChainSync securityParam (ClientUpdates clientUpdates)
            serverId $ \varCandidate -> do
              atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
-             runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
-               chainSyncClientPeerPipelined $ client varCandidate
-        `catch` \(e :: ChainSyncClientException) -> do
+             (result, _) <-
+               runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
+                 chainSyncClientPeerPipelined $ client varCandidate
+             atomically $ writeTVar varClientResult (Just (Right result))
+             return ()
+        `catch` \(ex :: ChainSyncClientException) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
-          atomically $ writeTVar varClientException (Just e)
+          atomically $ writeTVar varClientResult (Just (Left ex))
           -- Rethrow, but it will be ignored anyway.
-          throwM e
+          throwM ex
       void $ forkLinkedThread registry "ChainSyncServer" $
         runPeer nullTracer codecChainSyncId serverChannel
                 (chainSyncServerPeer server)
@@ -361,20 +370,18 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     -- to finish
     threadDelay 2000
 
-    trace <- getTrace
+    traceEvents <- getTrace
     -- Collect the return values
     atomically $ do
-      clientChain       <- fst <$> readTVar varClientState
-      serverChain       <- chainState <$> readTVar varChainProducerState
+      finalClientChain       <- fst <$> readTVar varClientState
+      finalServerChain       <- chainState <$> readTVar varChainProducerState
       candidateFragment <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
-      clientException   <- readTVar varClientException
-      return (
-          clientChain
-        , fmap testHeader serverChain
-        , AF.mapAnchoredFragment testHeader candidateFragment
-        , clientException
-        , trace
-        )
+      mbResult      <- readTVar varClientResult
+      return ChainSyncOutcome {
+          finalServerChain = testHeader <$> finalServerChain
+        , syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
+        , ..
+        }
   where
     k = maxRollbacks securityParam
 
@@ -541,7 +548,7 @@ instance Show ChainSyncClientSetup where
 -- If we don't do this, the client's chain might no longer intersect with the
 -- synced candidate. This is because the ChainSync protocol won't have had a
 -- chance to update the candidate fragment, as the code to handle this case
--- (our chain has changed such that it no longer intersects with the synched
+-- (our chain has changed such that it no longer intersects with the synced
 -- candidate -> initiate the \"find a new intersection\" part of the protocol)
 -- is run when we receive new messages (roll forward/backward) from the
 -- server.
