@@ -88,6 +88,7 @@ import qualified Test.ThreadNet.Util.NodeTopology as Topo
 import           Test.ThreadNet.Util.Seed (runGen)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
+import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
@@ -138,9 +139,10 @@ instance Arbitrary TestSetup where
                 -- Shelley epoch, since stake pools can only be created and
                 -- delegated to via Shelley transactions.
                 `suchThat` ((/= 0) . Shelley.decentralizationParamToRational)
-    setupK <- SecurityParam <$> choose (4, 6)
-                -- If k < 4, common prefix violations become too likely in
-                -- Praos mode.
+    setupK <- SecurityParam <$> choose (8, 10)
+                -- If k < 8, common prefix violations become too likely in
+                -- Praos mode for thin overlay schedules (ie low d), even for
+                -- f=0.2.
 
     setupInitialNonce <- frequency
       [ (1, pure SL.NeutralNonce)
@@ -342,10 +344,25 @@ genPartition (NumCoreNodes n) (NumSlots t) (SecurityParam k) = do
 
     pure $ Partition (SlotNo firstSlotIn) (NumSlots dur)
 
+-- | Run relatively fewer tests
+--
+-- These tests are slow, so we settle for running fewer of them in this test
+-- suite since it is invoked frequently (eg CI for each push).
+twoFifthsTestCount :: QuickCheckTests -> QuickCheckTests
+twoFifthsTestCount (QuickCheckTests n) = QuickCheckTests $
+    if 0 == n then 0 else
+    max 1 $ (2 * n) `div` 5
+
 tests :: TestTree
 tests = testGroup "Cardano ThreadNet" $
-    [ testProperty "simple convergence" $ \setup ->
-          prop_simple_cardano_convergence setup
+    [ let name = "simple convergence" in
+      askIohkNightlyEnabled $ \enabled ->
+      if enabled
+      then testProperty name $ \setup ->
+             prop_simple_cardano_convergence setup
+      else adjustOption twoFifthsTestCount $
+           testProperty name $ \setup ->
+             prop_simple_cardano_convergence setup
     ]
 
 prop_simple_cardano_convergence :: TestSetup -> Property
@@ -361,35 +378,39 @@ prop_simple_cardano_convergence TestSetup
   , setupTestConfig
   , setupVersion
   } =
-    tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
-    tabulate "Observed forge during a non-overlay Shelley slot"
-      [label_hadActiveNonOverlaySlots] $
-    tabulatePartitionDuration $
-    tabulateFinalIntersectionDepth $
-    tabulatePartitionPosition $
-    prop_general_semisync PropGeneralArgs
-      { pgaBlockProperty       = const $ property True
-      , pgaCountTxs            = fromIntegral . length . extractTxs
-      , pgaExpectedCannotForge = noExpectedCannotForges
-      , pgaFirstBlockNo        = 0
-      , pgaFixedMaxForkLength  = Just maxForkLength
-      , pgaFixedSchedule       =
-          -- the leader schedule isn't fixed because the Shelley leader
-          -- schedule is (at least ideally) unpredictable
-          Nothing
-      , pgaSecurityParam       = setupK
-      , pgaTestConfig          = setupTestConfig
-      , pgaTestConfigB         = testConfigB
-      }
-      testOutput .&&.
+    prop_general_semisync pga testOutput .&&.
     prop_inSync testOutput .&&.
-    prop_ReachesShelley reachesShelley
+    prop_ReachesShelley reachesShelley .&&.
+    prop_noCPViolation .&&.
+    ( tabulate "ReachesShelley label" [label_ReachesShelley reachesShelley] $
+      tabulate "Observed forge during a non-overlay Shelley slot"
+        [label_hadActiveNonOverlaySlots] $
+      tabulatePartitionDuration $
+      tabulateFinalIntersectionDepth $
+      tabulatePartitionPosition $
+      property True
+    )
   where
     TestConfig
       { initSeed
       , numCoreNodes
       , numSlots
       } = setupTestConfig
+
+    pga = PropGeneralArgs
+        { pgaBlockProperty       = const $ property True
+        , pgaCountTxs            = fromIntegral . length . extractTxs
+        , pgaExpectedCannotForge = noExpectedCannotForges
+        , pgaFirstBlockNo        = 1
+        , pgaFixedMaxForkLength  = Just maxForkLength
+        , pgaFixedSchedule       =
+            -- the leader schedule isn't fixed because the Shelley leader
+            -- schedule is (at least ideally) unpredictable
+            Nothing
+        , pgaSecurityParam       = setupK
+        , pgaTestConfig          = setupTestConfig
+        , pgaTestConfigB         = testConfigB
+        }
 
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
@@ -495,6 +516,7 @@ prop_simple_cardano_convergence TestSetup
         Shelley.mkGenesisConfig
           (SL.ProtVer shelleyMajorVersion 0)
           setupK
+          activeSlotCoeff
           setupD
           setupSlotLengthShelley
           (Shelley.mkKesConfig (Proxy @(KES Crypto)) numSlots)
@@ -643,7 +665,16 @@ prop_simple_cardano_convergence TestSetup
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth
       where
-        NumBlocks depth = calcFinalIntersectionDepth testOutput
+        NumBlocks depth = calcFinalIntersectionDepth pga testOutput
+
+    prop_noCPViolation :: Property
+    prop_noCPViolation =
+        counterexample
+          ( "finalChains: " <>
+            show (nodeOutputFinalChain <$> testOutputNodes testOutput)
+          ) $
+        counterexample "CP violation in final chains!" $
+        property $ maxRollbacks setupK >= finalIntersectionDepth
 
     tabulatePartitionDuration :: Property -> Property
     tabulatePartitionDuration =
@@ -768,6 +799,15 @@ mkProtocolCardanoAndHardForkTxs
   Constants
 -------------------------------------------------------------------------------}
 
+-- | The active slot coefficient, @f@.
+--
+-- Some of these tests includes Shelley epochs in which stakepools are actually
+-- leading. In that case, the @k@, @d@, and @f@ parameters and the length of
+-- any scheduled network partitions need to be balanced so that Common Prefix
+-- violations (in particular, wedges) are extremely unlikely.
+activeSlotCoeff :: Rational
+activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
+
 maxMajorPVShelley :: Natural
 maxMajorPVShelley = 100   -- arbitrary
 
@@ -891,7 +931,7 @@ byronEpochSize (SecurityParam k) =
     unEpochSlots $ kEpochSlots $ CC.Common.BlockCount k
 
 shelleyEpochSize :: SecurityParam -> Word64
-shelleyEpochSize = unEpochSize . Shelley.mkEpochSize
+shelleyEpochSize k = unEpochSize $ Shelley.mkEpochSize k activeSlotCoeff
 
 isShelley :: CardanoBlock c -> Bool
 isShelley = \case

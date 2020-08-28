@@ -850,27 +850,26 @@ prop_general_internal syncity pga testOutput =
   Final chains properties
 -------------------------------------------------------------------------------}
 
--- | What was the most number of blocks needed to be dropped from a final chain
--- in order to reach the final chains' common prefix?
+-- | What was the most number of /signed/ blocks needed to be dropped from a
+-- final chain in order to reach the final chains' common prefix?
+--
+-- NOTE: This count excludes EBBs.
 calcFinalIntersectionDepth :: forall blk. (BA.HasHeader blk)
-                           => TestOutput blk
+                           => PropGeneralArgs blk
+                           -> TestOutput blk
                            -> NumBlocks
-calcFinalIntersectionDepth TestOutput{testOutputNodes} =
-    NumBlocks difference
+calcFinalIntersectionDepth pga testOutput =
+    NumBlocks $ unBlockNo $
+    case (MockChain.headBlockNo commonPrefix, maxLength) of
+      (BA.Origin,       BA.Origin)      -> 0
+      (BA.Origin,       BA.NotOrigin b) -> 1 + b - pgaFirstBlockNo
+      (BA.NotOrigin{},  BA.Origin)      -> error "impossible"
+      (BA.NotOrigin cp, BA.NotOrigin b) ->
+          assert (b >= cp) $   -- guaranteed by the foldl below
+          b - cp
   where
-    difference :: Word64
-    difference =
-        assert (dl >= dr) $   -- guaranteed by the foldl below
-        dl - dr
-      where
-        dl = count maxLength
-        dr = count $ MockChain.headBlockNo commonPrefix
-
-    -- NOTE: this test involves only the epoch 0 EBB required by Byron
-    count :: BA.WithOrigin BlockNo -> Word64
-    count = \case
-        BA.Origin                -> error "the Byron epoch 0 EBB is missing!"
-        BA.NotOrigin (BlockNo d) -> d   -- recall pgaFirstBlockNo is 0
+    PropGeneralArgs{pgaFirstBlockNo} = pga
+    TestOutput{testOutputNodes}      = testOutput
 
     -- length of longest chain
     maxLength    :: BA.WithOrigin BlockNo
