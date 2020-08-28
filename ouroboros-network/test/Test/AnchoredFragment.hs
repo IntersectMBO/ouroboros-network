@@ -77,7 +77,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
   , testProperty "toChain/fromChain"                  prop_toChain_fromChain
-  , testProperty  "anchorNewest"                      prop_anchorNewest
+  , testProperty "anchorNewest"                       prop_anchorNewest
   , testProperty "filter"                             prop_filter
   , testProperty "filterWithStop_always_stop"         prop_filterWithStop_always_stop
   , testProperty "filterWithStop_never_stop"          prop_filterWithStop_never_stop
