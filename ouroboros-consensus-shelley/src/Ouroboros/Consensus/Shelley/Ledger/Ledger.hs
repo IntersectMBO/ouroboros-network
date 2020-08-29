@@ -49,6 +49,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
+import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Data.Functor.Identity
 import           Data.Kind (Type)
@@ -222,15 +223,43 @@ instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
 
   applyChainTick cfg
                  slotNo
-                 (ShelleyLedgerState pt history bhState) =
+                 (ShelleyLedgerState pt history oldShelleyState) =
       TickedShelleyLedgerState {
           untickedLedgerTip  = pt
-        , untickedHistory    = history
-        , tickedShelleyState = SL.applyTickTransition
-                                 (shelleyLedgerGlobals cfg)
-                                 bhState
-                                 slotNo
+        , untickedHistory    =
+            case pointSlot pt of
+              NotOrigin oldSlotNo
+                  | ledgerViewChanged oldShelleyState newShelleyState ->
+                  History.snapOld
+                     securityParameter
+                     snapshotExclusiveUpperBound
+                     (SL.currentLedgerView oldShelleyState)
+                     history
+                where
+                  oldEpoch  = runIdentity $ epochInfoEpoch epochInfo oldSlotNo
+                  epoch     = runIdentity $ epochInfoEpoch epochInfo slotNo
+                  firstSlot = runIdentity $ epochInfoFirst epochInfo epoch
+
+                  -- Since we're recording the ledger view of the previous
+                  -- epoch, use the first slot of the new epoch as the
+                  -- exclusive upper bound for that new entry in the history.
+                  snapshotExclusiveUpperBound :: SlotNo
+                  snapshotExclusiveUpperBound =
+                      assert (epoch == succ oldEpoch) $
+                      firstSlot
+              _ -> history
+        , tickedShelleyState = newShelleyState
         }
+    where
+      SL.Globals
+        { epochInfo
+        , securityParameter
+        } = shelleyLedgerGlobals cfg
+
+      newShelleyState = SL.applyTickTransition
+        (shelleyLedgerGlobals cfg)
+        oldShelleyState
+        slotNo
 
 instance TPraosCrypto c
       => ApplyBlock (LedgerState (ShelleyBlock c)) (ShelleyBlock c) where
@@ -270,6 +299,8 @@ applyHelper f cfg blk
     newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
 
     let history'
+            -- TODO Can we remove the epoch number check? I'm wondering if
+            -- applyChainTick will have always already handled that?
           | ledgerViewChanged oldShelleyState newShelleyState
           = History.snapOld
               (SL.securityParameter globals)
@@ -287,20 +318,20 @@ applyHelper f cfg blk
   where
     globals = shelleyLedgerGlobals (blockConfigLedger cfg)
 
-    -- | The overlay schedule, the pool distribution, and optionally the
-    -- protocol parameters change at the epoch boundary. By checking whether
-    -- the epoch changed, we can avoid checking the equality of the huge
-    -- overlay schedule.
-    --
-    -- The genesis delegates can change within an epoch, so we must check them
-    -- each time.
-    ledgerViewChanged :: SL.ShelleyState c -> SL.ShelleyState c -> Bool
-    ledgerViewChanged old new =
-           SL.nesEL old /= SL.nesEL new
-        || SL.lvGenDelegs oldLedgerView /= SL.lvGenDelegs newLedgerView
-      where
-        oldLedgerView = SL.currentLedgerView old
-        newLedgerView = SL.currentLedgerView new
+-- | The overlay schedule, the pool distribution, and optionally the
+-- protocol parameters change at the epoch boundary. By checking whether
+-- the epoch changed, we can avoid checking the equality of the huge
+-- overlay schedule.
+--
+-- The genesis delegates can change within an epoch, so we must check them
+-- each time.
+ledgerViewChanged :: SL.ShelleyState c -> SL.ShelleyState c -> Bool
+ledgerViewChanged old new =
+       SL.nesEL old /= SL.nesEL new
+    || SL.lvGenDelegs oldLedgerView /= SL.lvGenDelegs newLedgerView
+  where
+    oldLedgerView = SL.currentLedgerView old
+    newLedgerView = SL.currentLedgerView new
 
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = TickedPraosLedgerView
