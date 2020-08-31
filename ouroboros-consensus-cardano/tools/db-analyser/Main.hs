@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RecordWildCards  #-}
-
 -- | Database analyse tool.
 module Main (main) where
 
@@ -154,6 +154,7 @@ analyse ::
   -> IO ()
 analyse CmdLine {..} args =
     withRegistry $ \registry -> do
+
       tracer <- mkTracer verbose
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
@@ -165,14 +166,26 @@ analyse CmdLine {..} args =
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
             }
           (immutableDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+
       if onlyImmutableDB then
         ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs) $ \immutableDB -> do
-          runAnalysis analysis cfg (Left immutableDB) registry
+          runAnalysis analysis $ AnalysisEnv {
+              cfg
+            , initLedger
+            , db = Left immutableDB
+            , registry
+            }
           tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
           putStrLn $ "ImmutableDB tip: " ++ show tipPoint
+
       else
         ChainDB.withDB chainDbArgs $ \chainDB -> do
-          runAnalysis analysis cfg (Right chainDB) registry
+          runAnalysis analysis $ AnalysisEnv {
+              cfg
+            , initLedger
+            , db = Right chainDB
+            , registry
+            }
           tipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show tipPoint
   where

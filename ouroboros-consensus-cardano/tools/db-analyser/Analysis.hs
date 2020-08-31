@@ -1,18 +1,22 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Analysis (
     AnalysisName (..)
   , runAnalysis
+  , AnalysisEnv (..)
   ) where
 
 import           Control.Monad.Except
-import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
@@ -38,33 +42,35 @@ data AnalysisName =
   | OnlyValidation
   deriving Show
 
-type Analysis blk = TopLevelConfig blk
-                 -> Either (ImmutableDB IO blk) (ChainDB IO blk)
-                 -> ResourceRegistry IO
-                 -> IO ()
-
-emptyAnalysis :: Analysis blk
-emptyAnalysis _ _ _ = return ()
-
 runAnalysis :: HasAnalysis blk => AnalysisName -> Analysis blk
 runAnalysis ShowSlotBlockNo     = showSlotBlockNo
 runAnalysis CountTxOutputs      = countTxOutputs
-runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
+runAnalysis ShowBlockHeaderSize = showHeaderSize
 runAnalysis ShowBlockTxsSize    = showBlockTxsSize
 runAnalysis ShowEBBs            = showEBBs
-runAnalysis OnlyValidation      = emptyAnalysis
+runAnalysis OnlyValidation      = \_ -> return ()
+
+type Analysis blk = AnalysisEnv blk -> IO ()
+
+data AnalysisEnv blk = AnalysisEnv {
+      cfg        :: TopLevelConfig blk
+    , initLedger :: ExtLedgerState blk
+    , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
+    , registry   :: ResourceRegistry IO
+    }
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
 -------------------------------------------------------------------------------}
 
-showSlotBlockNo :: forall blk. HasHeader blk => Analysis blk
-showSlotBlockNo _cfg db rr = processAll db rr go
+showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
+showSlotBlockNo AnalysisEnv { db, registry } =
+    processAll_ db registry GetHeader process
   where
-    go :: blk -> IO ()
-    go blk = putStrLn $ intercalate "\t" [
-        show (blockNo   blk)
-      , show (blockSlot blk)
+    process :: Header blk -> IO ()
+    process hdr = putStrLn $ intercalate "\t" [
+        show (blockNo   hdr)
+      , show (blockSlot hdr)
       ]
 
 {-------------------------------------------------------------------------------
@@ -72,55 +78,51 @@ showSlotBlockNo _cfg db rr = processAll db rr go
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
-countTxOutputs _cfg db rr = do
-    cumulative <- newIORef 0
-    processAll db rr (go cumulative)
+countTxOutputs AnalysisEnv { db, registry } = do
+    void $ processAll db registry GetBlock 0 process
   where
-    go :: IORef Int -> blk -> IO ()
-    go cumulative blk = do
-        countCum  <- atomicModifyIORef cumulative $ \c ->
-                       let c' = c + count in (c', c')
+    process :: Int -> blk -> IO Int
+    process cumulative blk = do
+        let cumulative' = cumulative + count
         putStrLn $ intercalate "\t" [
             show slotNo
           , show count
-          , show countCum
+          , show cumulative'
           ]
+        return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
         slotNo = blockSlot blk
 
 {-------------------------------------------------------------------------------
-  Analysis: show the block header size in bytes for all blocks
+  Analysis: show the header size in bytes for all blocks
 -------------------------------------------------------------------------------}
 
-showBlockHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockHeaderSize _cfg db rr = do
-    maxBlockHeaderSizeRef <- newIORef 0
-    processAll db rr (go maxBlockHeaderSizeRef)
-    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
-    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
+showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
+showHeaderSize AnalysisEnv { db, registry } = do
+    maxHeaderSize <-
+      processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) 0 process
+    putStrLn ("Maximum encountered header size = " <> show maxHeaderSize)
   where
-    go :: IORef SizeInBytes -> blk -> IO ()
-    go maxBlockHeaderSizeRef blk = do
-        void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
+    process :: Word16 -> (SlotNo, Word16) -> IO Word16
+    process maxHeaderSize (slotNo, headerSize) = do
         putStrLn $ intercalate "\t" [
             show slotNo
-          , "Block header size = " <> show blockHdrSz
+          , "Header size = " <> show headerSize
           ]
-      where
-        slotNo = blockSlot blk
-        blockHdrSz = HasAnalysis.blockHeaderSize blk
+        return $ maxHeaderSize `max` headerSize
 
 {-------------------------------------------------------------------------------
   Analysis: show the total transaction sizes in bytes per block
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockTxsSize _cfg db rr = processAll db rr process
+showBlockTxsSize AnalysisEnv { db, registry } =
+    processAll_ db registry GetBlock process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
-          show slotNo
+          show (blockSlot blk)
         , "Num txs in block = " <> show numBlockTxs
         , "Total size of txs in block = " <> show blockTxsSize
         ]
@@ -134,19 +136,17 @@ showBlockTxsSize _cfg db rr = processAll db rr process
         blockTxsSize :: SizeInBytes
         blockTxsSize = sum txSizes
 
-        slotNo = blockSlot blk
-
 {-------------------------------------------------------------------------------
   Analysis: show EBBs and their predecessors
 -------------------------------------------------------------------------------}
 
 showEBBs :: forall blk. HasAnalysis blk => Analysis blk
-showEBBs _cfg db rr = do
+showEBBs AnalysisEnv { db, registry } = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll db rr processIfEBB
+    processAll_ db registry GetBlock process
   where
-    processIfEBB :: blk -> IO ()
-    processIfEBB blk =
+    process :: blk -> IO ()
+    process blk =
         case blockIsEBB blk of
           Just _epoch ->
             putStrLn $ intercalate "\t" [
@@ -166,42 +166,60 @@ showEBBs _cfg db rr = do
 -------------------------------------------------------------------------------}
 
 processAll ::
-     forall blk. HasHeader blk
+     forall blk b st. HasHeader blk
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
-  -> (blk -> IO ())
-  -> IO ()
+  -> BlockComponent blk b
+  -> st
+  -> (st -> b -> IO st)
+  -> IO st
 processAll = either processAllImmutableDB processAllChainDB
 
+processAll_ ::
+     forall blk b. HasHeader blk
+  => Either (ImmutableDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> BlockComponent blk b
+  -> (b -> IO ())
+  -> IO ()
+processAll_ db rr blockComponent callback =
+    processAll db rr blockComponent () (const callback)
+
 processAllChainDB ::
-     forall blk. HasHeader blk
+     forall st blk b. HasHeader blk
   => ChainDB IO blk
   -> ResourceRegistry IO
-  -> (blk -> IO ())
-  -> IO ()
-processAllChainDB chainDB rr callback =
-    ChainDB.streamAll chainDB rr GetBlock >>= go
+  -> BlockComponent blk b
+  -> st
+  -> (st -> b -> IO st)
+  -> IO st
+processAllChainDB chainDB rr blockComponent initState callback = do
+    itr <- ChainDB.streamAll chainDB rr blockComponent
+    go itr initState
   where
-    go :: ChainDB.Iterator IO blk blk -> IO ()
-    go itr = do
-        itrResult <- ChainDB.iteratorNext itr
-        case itrResult of
-          ChainDB.IteratorExhausted    -> return ()
-          ChainDB.IteratorResult blk   -> callback blk >> go itr
-          ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " ++ show pt
+    go :: ChainDB.Iterator IO blk b -> st -> IO st
+    go itr !st = do
+      itrResult <- ChainDB.iteratorNext itr
+      case itrResult of
+        ChainDB.IteratorExhausted    -> return st
+        ChainDB.IteratorResult b     -> callback st b >>= go itr
+        ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " <> show pt
 
 processAllImmutableDB ::
-     forall blk. HasHeader blk
+     forall st blk b. HasHeader blk
   => ImmutableDB IO blk
   -> ResourceRegistry IO
-  -> (blk -> IO ())
-  -> IO ()
-processAllImmutableDB immutableDB rr callback = do
-    ImmutableDB.streamAll immutableDB rr GetBlock >>= go
+  -> BlockComponent blk b
+  -> st
+  -> (st -> b -> IO st)
+  -> IO st
+processAllImmutableDB immutableDB rr blockComponent initState callback = do
+    itr <- ImmutableDB.streamAll immutableDB rr blockComponent
+    go itr initState
   where
-    go :: ImmutableDB.Iterator IO blk blk -> IO ()
-    go itr = do
+    go :: ImmutableDB.Iterator IO blk b -> st -> IO st
+    go itr !st = do
         itrResult <- ImmutableDB.iteratorNext itr
         case itrResult of
-          ImmutableDB.IteratorExhausted  -> return ()
-          ImmutableDB.IteratorResult blk -> callback blk >> go itr
+          ImmutableDB.IteratorExhausted -> return st
+          ImmutableDB.IteratorResult b  -> callback st b >>= go itr

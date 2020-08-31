@@ -42,8 +42,6 @@ instance HasAnalysis (ShelleyBlock StandardShelley) where
       return $ mkShelleyProtocolInfo config initialNonce
     countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
-    blockHeaderSize =
-      fromIntegral . SL.bHeaderSize . SL.bheader . Shelley.shelleyBlockRaw
     blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) ->
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs

@@ -13,10 +13,8 @@ module Block.Byron (
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum)
-import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
@@ -51,8 +49,6 @@ instance HasAnalysis ByronBlock where
       config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
       return $ mkByronProtocolInfo config threshold
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
-    blockHeaderSize = fromIntegral .
-      aBlockOrBoundary blockBoundaryHeaderSize blockHeaderSizeByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
 
@@ -107,13 +103,6 @@ countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
 
     countTx :: Chain.Tx -> Int
     countTx = length . Chain.txOutputs
-
-blockBoundaryHeaderSize ::  Chain.ABoundaryBlock ByteString -> Natural
-blockBoundaryHeaderSize =
-    fromIntegral . BS.length . Chain.boundaryHeaderAnnotation . Chain.boundaryHeader
-
-blockHeaderSizeByron ::  Chain.ABlock ByteString -> Natural
-blockHeaderSizeByron = Chain.headerLength . Chain.blockHeader
 
 blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
 blockTxSizesByron block =
