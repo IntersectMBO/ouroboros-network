@@ -20,6 +20,7 @@ import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
+import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
 
 import qualified Cardano.Chain.Block as Chain
@@ -41,7 +42,7 @@ instance HasAnalysis ByronBlock where
     data Args ByronBlock =
       ByronBlockArgs {
           configFileByron      :: FilePath
-        , requiresNetworkMagic :: Bool
+        , requiresNetworkMagic :: RequiresNetworkMagic
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
@@ -64,9 +65,9 @@ parseByronArgs = ByronBlockArgs
           , help "Path to config file"
           , metavar "PATH"
           ])
-    <*> switch (mconcat [
-            long "testnet"
-          , help "The DB contains blocks from testnet rather than mainnet"
+    <*> flag RequiresNoMagic RequiresMagic (mconcat [
+            long "requires-magic"
+          , help "The DB contains blocks from a testnet, requiring network magic, rather than mainnet"
           ])
     <*> parseMaybe (option auto (mconcat [
             long "genesisHash"
@@ -122,17 +123,19 @@ blockTxSizesByron block =
     Chain.ABody{ bodyTxPayload } = blockBody
     Chain.ATxPayload{ aUnTxPayload = blockTxAuxs } = bodyTxPayload
 
-openGenesisByron :: FilePath -> Maybe (Crypto.Hash Raw) -> Bool -> IO Genesis.Config
-openGenesisByron configFile mHash onMainNet = do
+openGenesisByron ::
+     FilePath
+  -> Maybe (Crypto.Hash Raw)
+  -> RequiresNetworkMagic
+  -> IO Genesis.Config
+openGenesisByron configFile mHash requiresNetworkMagic = do
     genesisHash <- case mHash of
       Nothing -> either (error . show) return =<< runExceptT
         (Genesis.unGenesisHash . snd <$> Genesis.readGenesisData configFile)
       Just hash -> return hash
     genesisConfig <- either (error . show) return =<< runExceptT
       (Genesis.mkConfigFromFile
-        (if onMainNet -- transactions on testnet include magic number
-          then Crypto.RequiresNoMagic
-          else Crypto.RequiresMagic)
+        requiresNetworkMagic
         configFile
         genesisHash)
     return genesisConfig
