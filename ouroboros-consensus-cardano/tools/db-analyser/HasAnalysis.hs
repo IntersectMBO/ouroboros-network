@@ -22,6 +22,5 @@ class GetPrevHash blk => HasAnalysis blk where
     argsParser      :: proxy blk -> Parser (Args blk)
     mkProtocolInfo  :: Args blk -> IO (ProtocolInfo IO blk)
     countTxOutputs  :: blk -> Int
-    blockHeaderSize :: blk -> SizeInBytes
     blockTxSizes    :: blk -> [SizeInBytes]
     knownEBBs       :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)

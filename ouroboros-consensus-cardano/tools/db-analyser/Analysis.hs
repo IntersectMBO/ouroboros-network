@@ -18,6 +18,7 @@ module Analysis (
 import           Control.Monad.Except
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word16)
 
 import           Cardano.Slotting.Slot
 
@@ -77,15 +78,20 @@ runAnalysis OnlyValidation      = noAnalysis
   Analysis: show block and slot number for all blocks
 -------------------------------------------------------------------------------}
 
-showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-                => Analysis blk
+showSlotBlockNo ::
+     forall blk.
+     ( HasHeader blk
+     , HasHeader (Header blk)
+     , ImmDbSerialiseConstraints blk
+     )
+  => Analysis blk
 showSlotBlockNo _cfg _initLedger db rr =
-    processAll_ db rr go
+    processAll_ db rr GetHeader (>>= process)
   where
-    go :: blk -> IO ()
-    go blk = putStrLn $ intercalate "\t" [
-        show (blockNo   blk)
-      , show (blockSlot blk)
+    process :: Header blk -> IO ()
+    process hdr = putStrLn $ intercalate "\t" [
+        show (blockNo   hdr)
+      , show (blockSlot hdr)
       ]
 
 {-------------------------------------------------------------------------------
@@ -96,10 +102,10 @@ countTxOutputs
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
 countTxOutputs _cfg _initLedger db rr = do
-    void $ processAll db rr 0 go
+    void $ processAll db rr GetBlock 0 ((=<<) . process)
   where
-    go :: Int -> blk -> IO Int
-    go cumulative blk = do
+    process :: Int -> blk -> IO Int
+    process cumulative blk = do
         let cumulative' = cumulative + count
         putStrLn $ intercalate "\t" [
             show slotNo
@@ -119,19 +125,17 @@ showBlockHeaderSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
 showBlockHeaderSize _cfg _initLedger db rr = do
-    maxBlockHeaderSize <- processAll db rr 0 go
-    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
+    maxHeaderSize <-
+      processAll db rr ((,) <$> GetSlot <*> GetHeaderSize) 0 process
+    putStrLn ("Maximum encountered block header size = " <> show maxHeaderSize)
   where
-    go :: SizeInBytes -> blk -> IO SizeInBytes
-    go maxBlockHeaderSize blk = do
+    process :: Word16 -> (SlotNo, Word16) -> IO Word16
+    process maxHeaderSize (slotNo, headerSize) = do
         putStrLn $ intercalate "\t" [
             show slotNo
-          , "Block header size = " <> show blockHdrSz
+          , "Block header size = " <> show headerSize
           ]
-        return $ maxBlockHeaderSize `max` blockHdrSz
-      where
-        slotNo = blockSlot blk
-        blockHdrSz = HasAnalysis.blockHeaderSize blk
+        return $ maxHeaderSize `max` headerSize
 
 {-------------------------------------------------------------------------------
   Analysis: show the total transaction sizes in bytes per block
@@ -141,7 +145,7 @@ showBlockTxsSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
 showBlockTxsSize _cfg _initLedger db rr =
-    processAll_ db rr process
+    processAll_ db rr GetBlock (>>= process)
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -170,10 +174,10 @@ showEBBs
   => Analysis blk
 showEBBs cfg _initLedger db rr = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll_ db rr processIfEBB
+    processAll_ db rr GetBlock (>>= process)
   where
-    processIfEBB :: blk -> IO ()
-    processIfEBB blk =
+    process :: blk -> IO ()
+    process blk =
         case blockIsEBB blk of
           Just _epoch ->
             putStrLn $ intercalate "\t" [
@@ -193,67 +197,80 @@ showEBBs cfg _initLedger db rr = do
 -------------------------------------------------------------------------------}
 
 processAll ::
-     forall blk st. (HasHeader blk, ImmDbSerialiseConstraints blk)
+     forall blk b st. (HasHeader blk, ImmDbSerialiseConstraints blk)
   => Either (ImmDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
+  -> BlockComponent (ChainDB IO blk) b
   -> st
-  -> (st -> blk -> IO st)
+  -> (st -> b -> IO st)
   -> IO st
 processAll = either processAllImmDB processAllChainDB
 
 processAll_ ::
-     forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+     forall blk b. (HasHeader blk, ImmDbSerialiseConstraints blk)
   => Either (ImmDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
-  -> (blk -> IO ())
+  -> BlockComponent (ChainDB IO blk) b
+  -> (b -> IO ())
   -> IO ()
-processAll_ db rr callback = processAll db rr () (const callback)
+processAll_ db rr blockComponent callback =
+    processAll db rr blockComponent () (const callback)
 
 processAllChainDB ::
-     forall st blk. StandardHash blk
+     forall st blk b. StandardHash blk
   => ChainDB IO blk
   -> ResourceRegistry IO
+  -> BlockComponent (ChainDB IO blk) b
   -> st
-  -> (st -> blk -> IO st)
+  -> (st -> b -> IO st)
   -> IO st
-processAllChainDB chainDB rr initState callback = do
+processAllChainDB chainDB rr blockComponent initState callback = do
     tipPoint <- atomically $ ChainDB.getTipPoint chainDB
     case pointToWithOriginRealPoint tipPoint of
       Origin -> return initState
       At tip -> do
-        Right itr <- ChainDB.stream chainDB rr GetBlock
-          (StreamFromExclusive GenesisPoint)
-          (StreamToInclusive tip)
+        Right itr <-
+          ChainDB.stream
+            chainDB
+            rr
+            blockComponent
+            (StreamFromExclusive GenesisPoint)
+            (StreamToInclusive tip)
         go itr initState
   where
-    go :: ChainDB.Iterator IO blk (IO blk) -> st -> IO st
+    go :: ChainDB.Iterator IO blk b -> st -> IO st
     go itr !st = do
       itrResult <- ChainDB.iteratorNext itr
       case itrResult of
-        ChainDB.IteratorExhausted     -> return st
-        ChainDB.IteratorResult mblk   -> mblk >>= \blk -> callback st blk >>= go itr
-        ChainDB.IteratorBlockGCed pnt -> error $ "block gced " ++ show pnt
+        ChainDB.IteratorExhausted    -> return st
+        ChainDB.IteratorResult b     -> callback st b >>= go itr
+        ChainDB.IteratorBlockGCed pt -> error $ "block gced " ++ show pt
 
 processAllImmDB ::
-     forall st blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+     forall st blk b. (HasHeader blk, ImmDbSerialiseConstraints blk)
   => ImmDB IO blk
   -> ResourceRegistry IO
+  -> BlockComponent (ChainDB IO blk) b
   -> st
-  -> (st -> blk -> IO st)
+  -> (st -> b -> IO st)
   -> IO st
-processAllImmDB immDB rr initState callback = do
+processAllImmDB immDB rr blockComponent initState callback = do
     tipPoint <- ImmDB.getPointAtTip immDB
     case pointToWithOriginRealPoint tipPoint of
       Origin -> return initState
       At tip -> do
-        Right itr <- ImmDB.stream immDB rr GetBlock
-          (StreamFromExclusive GenesisPoint)
-          (StreamToInclusive tip)
+        Right itr <-
+          ImmDB.stream
+            immDB
+            rr
+            blockComponent
+            (StreamFromExclusive GenesisPoint)
+            (StreamToInclusive tip)
         go itr initState
   where
-    go :: ImmDB.Iterator (HeaderHash blk) IO (IO blk) -> st -> IO st
+    go :: ImmDB.Iterator (HeaderHash blk) IO b -> st -> IO st
     go itr !st = do
         itrResult <- ImmDB.iteratorNext itr
         case itrResult of
-          ImmDB.IteratorExhausted   -> return st
-          ImmDB.IteratorResult mblk -> mblk >>= \blk -> callback st blk >>= go itr
+          ImmDB.IteratorExhausted -> return st
+          ImmDB.IteratorResult b  -> callback st b >>= go itr
