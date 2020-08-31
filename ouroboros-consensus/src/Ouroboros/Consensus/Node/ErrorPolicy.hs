@@ -19,7 +19,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ChainSyncClientException (..))
+                     (ChainSyncClientException)
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -93,18 +93,10 @@ consensusErrorPolicy = ErrorPolicies {
           -- peer is on a chain that forks off more than @k@ blocks away.
         , ErrorPolicy $ \(_ :: BlockFetchServerException) -> Just distantPeer
 
-          -- Some chain sync client exceptions indicate malicious behaviour,
-          -- others merely mean that we should disconnect from this client
-          -- because we have diverged too much.
-        , ErrorPolicy $ \(e :: ChainSyncClientException) ->
-            case e of
-              HeaderError{}         -> Just theyBuggyOrEvil
-              InvalidIntersection{} -> Just theyBuggyOrEvil
-              DoesntFit{}           -> Just theyBuggyOrEvil
-              -- A block so far in the future that it exceeds the max clock
-              -- skew is also considered to be invalid
-              -- ('InFutureExceedsClockSkew' constructor).
-              InvalidBlock{}        -> Just theyBuggyOrEvil
+          -- Chain sync client exceptions indicate malicious behaviour. When we
+          -- have diverged too much from a client, making it no longer
+          -- interesting to us, we terminate with a result.
+        , ErrorPolicy $ \(_ :: ChainSyncClientException) -> Just theyBuggyOrEvil
 
           -- Dispatch on nested exception
         , ErrorPolicy $ \(ExceptionInLinkedThread _ e) ->

@@ -33,6 +33,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Forge
@@ -118,9 +119,10 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
-  protocolLedgerView   cfg _ = pretendTicked $ simpleMockLedgerConfig cfg
-  ledgerViewForecastAt cfg _ = Just . constantForecastOf
+  protocolLedgerView   cfg _  = pretendTicked $ simpleMockLedgerConfig cfg
+  ledgerViewForecastAt cfg st = constantForecastOf
                                  (pretendTicked $ simpleMockLedgerConfig cfg)
+                                 (getTipSlot st)
 
 pretendTicked :: PBftLedgerView PBftMockCrypto
               -> Ticked (PBftLedgerView PBftMockCrypto)

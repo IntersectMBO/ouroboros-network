@@ -56,6 +56,9 @@ tests = testGroup "InMemory" [
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
         , testProperty "pastAfterSwitch"        prop_pastAfterSwitch
         ]
+    , testGroup "Lookup" [
+          testProperty "ledgerDbPast"           prop_pastVsSpec
+        ]
     ]
 
 {-------------------------------------------------------------------------------
@@ -117,7 +120,7 @@ prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated"    $
     classify withinReach                 "within reach" $
-          ledgerDbPast tip csPushed
+          ledgerDbPast tbSlot tip csPushed
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -183,7 +186,7 @@ prop_pastAfterSwitch :: SwitchSetup -> Property
 prop_pastAfterSwitch setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated"    $
     classify withinReach                  "within reach" $
-          ledgerDbPast tip ssSwitched
+          ledgerDbPast tbSlot tip ssSwitched
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -202,6 +205,21 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
     -- See 'prop_snapshotsMaxRollback'
     withinReach :: Bool
     withinReach = (ssNumBlocks - ssPrefixLen) <= ledgerDbMaxRollback ssSwitched
+
+{-------------------------------------------------------------------------------
+  Lookup
+-------------------------------------------------------------------------------}
+
+-- | Check the implementation of 'ledgerDbPast' against the 'ledgerDbPastSpec'
+-- reference implementation.
+prop_pastVsSpec :: SwitchSetup -> Property
+prop_pastVsSpec SwitchSetup{..} = conjoin [
+          ledgerDbPast     tbSlot r ssSwitched
+      === ledgerDbPastSpec        r ssSwitched
+      -- Include all blocks in the LedgerDB, but also blocks /not/ in the
+      -- LedgerDB
+    | r <- Origin : map NotOrigin (ssChain <> ssRemoved)
+    ]
 
 {-------------------------------------------------------------------------------
   Test setup

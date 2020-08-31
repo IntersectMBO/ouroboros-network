@@ -328,7 +328,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         -- the consensus tests at the moment.
         -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
         case runExcept $ forecastFor
-                           (ledgerViewForecastAtTip
+                           (ledgerViewForecastAt
                               (configLedger cfg)
                               (ledgerState unticked))
                            currentSlot of

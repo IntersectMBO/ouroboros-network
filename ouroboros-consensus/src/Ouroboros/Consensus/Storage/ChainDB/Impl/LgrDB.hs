@@ -306,7 +306,11 @@ getPastState :: (IOLike m, HasHeader blk)
              => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
     db <- readTVar varDB
-    return $ LedgerDB.ledgerDbPast (pointToWithOriginRealPoint p) db
+    return $
+      LedgerDB.ledgerDbPast
+        realPointSlot
+        (pointToWithOriginRealPoint p)
+        db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current

@@ -20,7 +20,7 @@ import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
-import           Cardano.Chain.Common (BlockCount (..), KeyHash)
+import           Cardano.Chain.Common (KeyHash)
 import qualified Cardano.Chain.Delegation as CC.Del
 import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Act
 import qualified Cardano.Chain.Delegation.Validation.Interface as CC.DI
@@ -44,7 +44,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 import qualified Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes as PBftState
 
 import           Ouroboros.Consensus.Byron.Ledger
-import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as DH
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Test.QuickCheck hiding (Result)
@@ -262,24 +261,8 @@ instance Arbitrary ByronNodeToClientVersion where
 instance Arbitrary CC.Del.Map where
   arbitrary = CC.Del.fromList <$> arbitrary
 
-instance Arbitrary DelegationHistory where
-  arbitrary = do
-      steps <- choose (0, 5)
-      go steps (SlotNo 0) DH.empty
-    where
-      go :: Int
-         -> SlotNo
-         -> DelegationHistory
-         -> Gen DelegationHistory
-      go steps prevSlot st
-        | 0 <- steps = return st
-        | otherwise  = do
-          slot <- ((prevSlot +) . SlotNo) <$> choose (1, 5)
-          delMap <- arbitrary
-          go (steps - 1) slot (DH.snapOld (BlockCount 10) slot delMap st)
-
 instance Arbitrary (LedgerState ByronBlock) where
-  arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary
+  arbitrary = ByronLedgerState <$> arbitrary
 
 instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip

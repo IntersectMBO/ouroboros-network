@@ -30,7 +30,6 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.Block
                        Ouroboros.Consensus.Shelley.Ledger.Config
                        Ouroboros.Consensus.Shelley.Ledger.Forge
-                       Ouroboros.Consensus.Shelley.Ledger.History
                        Ouroboros.Consensus.Shelley.Ledger.Integrity
                        Ouroboros.Consensus.Shelley.Ledger.Ledger
                        Ouroboros.Consensus.Shelley.Ledger.Mempool

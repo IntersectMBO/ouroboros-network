@@ -660,8 +660,8 @@ instance ValidateEnvelope TestBlock where
         $ cfg
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolLedgerView   _ _ = TickedTrivial
-  ledgerViewForecastAt _ _ = Just . trivialForecast
+  protocolLedgerView   _ _  = TickedTrivial
+  ledgerViewForecastAt _    = trivialForecast
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]

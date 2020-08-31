@@ -4,6 +4,8 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -45,11 +47,13 @@ import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Kind (Type)
+import qualified Data.Text as Text
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Binary (DecoderError (..), enforceSize, fromCBOR,
+                     toCBOR)
+import           Cardano.Prelude (NoUnexpectedThunks, cborError)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as Gen
@@ -67,26 +71,24 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.PBFT (Ticked (..))
+import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
-                     (DelegationHistory)
-import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as History
 import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
+import           Ouroboros.Consensus.Byron.Protocol
 
 {-------------------------------------------------------------------------------
   LedgerState
 -------------------------------------------------------------------------------}
 
-data instance LedgerState ByronBlock = ByronLedgerState {
-      byronLedgerState       :: !CC.ChainValidationState
-    , byronDelegationHistory :: !DelegationHistory
+newtype instance LedgerState ByronBlock = ByronLedgerState {
+      byronLedgerState :: CC.ChainValidationState
     }
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
@@ -98,8 +100,7 @@ initByronLedgerState :: Gen.Config
                      -> Maybe CC.UTxO -- ^ Optionally override UTxO
                      -> LedgerState ByronBlock
 initByronLedgerState genesis mUtxo = ByronLedgerState {
-      byronLedgerState       = override mUtxo initState
-    , byronDelegationHistory = History.empty
+      byronLedgerState = override mUtxo initState
     }
   where
     initState :: CC.ChainValidationState
@@ -140,9 +141,8 @@ getByronTip state =
 -- | The ticked Byron ledger state
 --
 -- Ticking does not change the 'DelegationHistory'.
-data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
-      tickedByronLedgerState         :: !CC.ChainValidationState
-    , untickedByronDelegationHistory :: !DelegationHistory
+newtype instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
+      tickedByronLedgerState :: CC.ChainValidationState
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -151,11 +151,8 @@ instance IsLedger (LedgerState ByronBlock) where
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
       TickedByronLedgerState {
-          untickedByronDelegationHistory = byronDelegationHistory
-        , tickedByronLedgerState         = CC.applyChainTick
-                                             cfg
-                                             (toByronSlotNo slotNo)
-                                             byronLedgerState
+          tickedByronLedgerState =
+            CC.applyChainTick cfg (toByronSlotNo slotNo) byronLedgerState
         }
 
 {-------------------------------------------------------------------------------
@@ -208,87 +205,43 @@ instance LedgerSupportsProtocol ByronBlock where
       . CC.getDelegationMap
       . tickedByronLedgerState
 
-  -- Delegation state for a particular point in time
+  -- Create a forecast of the delegation state
   --
-  -- The situation looks something like this:
+  -- We can return forecasts for slots in the @[NOW .. NOW+2k)@ window, where
+  -- @NOW@ is the slot number of the last block applied to the ledger.
   --
-  -- > (Label for reference)        0             1      2             3      4
-  -- > -------------------------------------------------------------------------
-  -- > Delegation changes           v             v      v             v      v
-  -- > Snapshots            [......)[............)[.....)      NOW
-  -- > Requested slot                      A                B       C      D
+  -- These forecasts will be used to validate future headers, i.e., to check
+  -- whether they have been created by the right delegates.
   --
-  -- where NOW refers to the slot number of the last block we applied, and
-  -- the requested slot must be within a @[-2k .. +2k)@ window around NOW.
+  -- We cannot look more than @2k@ slots ahead, because there might be
+  -- delegation state changes present in the blocks between the last block
+  -- applied to the ledger and the header to validate that can kick in after
+  -- @2k@ slots.
   --
-  -- Note that there can be no delegation changes between (2) and (NOW): if
-  -- there were, we'd have another snapshot. Four possibilities:
-  --
-  -- A. We have a historical snapshot of the delegation state that contains the
-  --    requested slot. If so, we just return that.
-  -- B. The slot is in the past, but we have no snapshot. In this case, it must
-  --    be that the current ledger state is valid, between points (2) and (3).
-  -- C. The slot is in the future, but before the first scheduled change to the
-  --    delegation state. Again, current ledger state is valid, also between
-  --    points (2) and (3).
-  -- D. The slot is in the future, but after the first scheduled update. We must
-  --    apply that scheduled update; the resulting delegation state will be
-  --    valid from the point of that first schedulded update (3) until the
-  --    next (4).
-  --
-  -- We can collapse cases (B, C, D) into a single one as follows: split the
-  -- scheduled delegations into the ones that should have been applied at the
-  -- requested slot, and those that are still in the future. For the example
-  -- above this amounts to
-  --
-  -- B. ([], (3, 4)]
-  -- C. ([], (3, 4)]
-  -- D. ([3], [4])
-  --
-  -- Then take the delegation state from in current ledger state, and apply the
-  -- updates that should be applied.
-  --
-  -- NOTE: These forecasts are used to validate headers from blocks that
-  -- potentially live on different chains. We can do this, because the
-  -- delegation state (delegation map and scheduled delegations) at the
-  -- intersection point A between our chain and that chain applies equally to
-  -- /any/ chain starting at that intersection point (only slot numbers are
-  -- relevant). It does however mean that we must limit the range of the
-  -- forecast to @2k@ slots /from the intersection/ point; if we don't, there
-  -- could be delegation certificates present on the other chain that we do not
-  -- know about and that could have taken effect.
-  ledgerViewForecastAt cfg (ByronLedgerState ls ss) at = do
-      guard (at >= minLo)
-      return $ Forecast at $ \for ->
-        case History.find (NotOrigin for) ss of
-          Just dm -> return $ toTickedPBftLedgerView dm -- Case (A)
-          Nothing -> do
-            -- Case (B), (C) or (D): the delegation map in the current state
-            -- applies, modulo pending delegations (which will get applied by
-            -- 'previewDelegationMap').
-            when (for >= maxHi) $
-              throwError $ OutsideForecastRange {
-                  outsideForecastAt     = at
-                , outsideForecastMaxFor = maxHi
-                , outsideForecastFor    = for
-                }
-            return $ toTickedPBftLedgerView $
-                       CC.previewDelegationMap (toByronSlotNo for) ls
+  -- To create a forecast, take the delegation state from the given ledger
+  -- state, and apply the updates that should be applied by the given slot.
+  ledgerViewForecastAt cfg (ByronLedgerState st) = Forecast at $ \for ->
+      toTickedPBftLedgerView <$> if
+        | for == lastSlot ->
+          return $ CC.getDelegationMap st
+        | for < maxFor ->
+          return $ CC.previewDelegationMap (toByronSlotNo for) st
+        | otherwise ->
+          throwError $ OutsideForecastRange {
+              outsideForecastAt     = at
+            , outsideForecastMaxFor = maxFor
+            , outsideForecastFor    = for
+            }
     where
       SecurityParam k = genesisSecurityParam cfg
-      tip             = fromByronSlotNo $ CC.cvsLastSlot ls
-
-      -- The lower bound is inclusive
-      minLo :: WithOrigin SlotNo
-      minLo = if (2 * k) > unSlotNo tip
-                then Origin
-                else NotOrigin (SlotNo $ unSlotNo tip - (2 * k))
+      lastSlot        = fromByronSlotNo $ CC.cvsLastSlot st
+      at              = NotOrigin lastSlot
 
       -- The upper bound is exclusive
-      maxHi :: SlotNo
-      maxHi = case at of
-                Origin      -> SlotNo $ 2 * k
-                NotOrigin s -> SlotNo $ unSlotNo s + 1 + (2 * k)
+      maxFor :: SlotNo
+      maxFor = case at of
+          Origin      -> SlotNo $ 2 * k
+          NotOrigin s -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 -- | To be used for a Byron-to-X (where X is typically Shelley) chain.
 byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
@@ -359,19 +312,9 @@ applyABlock :: CC.ValidationMode
             -> CC.HeaderHash
             -> Ticked (LedgerState (ByronBlock))
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABlock validationMode cfg blk blkHash TickedByronLedgerState{..} = do
-    state' <- CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
-    -- If the delegation state changed, take a snapshot of the old state
-    let history'
-          |    CC.cvsDelegationState state'
-            == CC.cvsDelegationState tickedByronLedgerState
-                      = untickedByronDelegationHistory
-          | otherwise = History.snapOld
-                          (Gen.configK cfg)
-                          (fromByronSlotNo $ CC.blockSlot blk)
-                          (CC.getDelegationMap tickedByronLedgerState) -- the old state!
-                          untickedByronDelegationHistory
-    return $ ByronLedgerState state' history'
+applyABlock validationMode cfg blk blkHash TickedByronLedgerState{..} =
+    ByronLedgerState <$>
+      CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
 
 -- | Apply boundary block
 --
@@ -381,9 +324,9 @@ applyABoundaryBlock :: Gen.Config
                     -> CC.ABoundaryBlock ByteString
                     -> Ticked (LedgerState ByronBlock)
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABoundaryBlock cfg blk TickedByronLedgerState{..} = do
-    current' <- CC.validateBoundary cfg blk tickedByronLedgerState
-    return $ ByronLedgerState current' untickedByronDelegationHistory
+applyABoundaryBlock cfg blk TickedByronLedgerState{..} =
+    ByronLedgerState <$>
+      CC.validateBoundary cfg blk tickedByronLedgerState
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -407,18 +350,38 @@ encodeByronHeaderState = encodeHeaderState
     encodeByronAnnTip
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
-encodeByronLedgerState ByronLedgerState{..} = mconcat
-    [ CBOR.encodeListLen 2
+encodeByronLedgerState ByronLedgerState{..} = mconcat [
+      -- We use @listLen 1@ to distinguish a new Byron ledger state, which no
+      -- longer includes the delegation history, from an old one (@listLen 2@).
+      CBOR.encodeListLen 1
     , encode byronLedgerState
-    , History.encodeDelegationHistory byronDelegationHistory
     ]
 
 decodeByronLedgerState :: Decoder s (LedgerState ByronBlock)
 decodeByronLedgerState = do
-    CBOR.decodeListLenOf 2
-    ByronLedgerState
-      <$> decode
-      <*> History.decodeDelegationHistory
+    size <- CBOR.decodeListLen
+    case size of
+      1 -> ByronLedgerState <$> decode
+      -- Backwards compatible with the old Byron ledger state, which includes
+      -- the delegation history, which we ignore.
+      2 -> ByronLedgerState <$> decode <* decodeDelegationHistory
+      _ -> cborError $
+             DecoderErrorCustom
+               "ByronLedgerState"
+               ("expected size 1 or 2, not " <> Text.pack (show size))
+
+-- | Decode what used to be the @DelegationHistory@, removed as part of #1935.
+--
+-- Since we're no longer interested in it, ignore the resulting bytes.
+--
+-- But to remain binary compatible with old Byron ledger state snapshots, we
+-- have to consume the exact bytes corresponding to the delegation history.
+decodeDelegationHistory :: Decoder s ()
+decodeDelegationHistory = do
+    enforceSize "DelegationHistory" 2
+    _ :: WithOrigin SlotNo <- decode
+    _ :: [History.Snapshot (PBftLedgerView PBftByronCrypto)] <- decode
+    return ()
 
 encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of

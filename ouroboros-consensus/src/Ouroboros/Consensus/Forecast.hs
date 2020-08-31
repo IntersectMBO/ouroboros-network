@@ -12,6 +12,7 @@ import           Control.Exception (Exception)
 import           Control.Monad.Except
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics (GetTip, getTipSlot)
 import           Ouroboros.Consensus.Ticked
 
 -- | Forecast the effect of time ticking
@@ -28,11 +29,12 @@ mapForecast f (Forecast at for) = Forecast{
     , forecastFor = fmap f . for
     }
 
--- | Trivial forecast of values of type @()@
+-- | Trivial forecast of values of type @()@ performed by an instance of
+-- 'GetTip'.
 --
 -- Specialization of 'constantForecast'.
-trivialForecast :: WithOrigin SlotNo -> Forecast ()
-trivialForecast = constantForecastOf TickedTrivial
+trivialForecast :: GetTip b => b -> Forecast ()
+trivialForecast x = constantForecastOf TickedTrivial (getTipSlot x)
 
 -- | Forecast where the values are never changing
 --
@@ -44,7 +46,7 @@ constantForecastOf a at = Forecast {
     , forecastFor = \for ->
                       if NotOrigin for >= at
                         then return a
-                        else error "trivialForecast: precondition violated"
+                        else error "constantForecastOf: precondition violated"
     }
 
 data OutsideForecastRange =
