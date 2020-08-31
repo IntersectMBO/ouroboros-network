@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -15,7 +16,6 @@ module Analysis (
   ) where
 
 import           Control.Monad.Except
-import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDB (..), StreamFrom (..), StreamTo (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB hiding
                      (iteratorNext)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB hiding
@@ -79,8 +79,8 @@ runAnalysis OnlyValidation      = noAnalysis
 
 showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
                 => Analysis blk
-showSlotBlockNo _cfg _initLedger immDB rr =
-    processAll immDB rr go
+showSlotBlockNo _cfg _initLedger db rr =
+    processAll_ db rr go
   where
     go :: blk -> IO ()
     go blk = putStrLn $ intercalate "\t" [
@@ -95,19 +95,18 @@ showSlotBlockNo _cfg _initLedger immDB rr =
 countTxOutputs
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-countTxOutputs _cfg _initLedger immDB rr = do
-    cumulative <- newIORef 0
-    processAll immDB rr (go cumulative)
+countTxOutputs _cfg _initLedger db rr = do
+    void $ processAll db rr 0 go
   where
-    go :: IORef Int -> blk -> IO ()
+    go :: Int -> blk -> IO Int
     go cumulative blk = do
-        countCum  <- atomicModifyIORef cumulative $ \c ->
-                       let c' = c + count in (c', c')
+        let cumulative' = cumulative + count
         putStrLn $ intercalate "\t" [
             show slotNo
           , show count
-          , show countCum
+          , show cumulative'
           ]
+        return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
         slotNo = blockSlot blk
@@ -119,19 +118,17 @@ countTxOutputs _cfg _initLedger immDB rr = do
 showBlockHeaderSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockHeaderSize _cfg _initLedger immDB rr = do
-    maxBlockHeaderSizeRef <- newIORef 0
-    processAll immDB rr (go maxBlockHeaderSizeRef)
-    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
+showBlockHeaderSize _cfg _initLedger db rr = do
+    maxBlockHeaderSize <- processAll db rr 0 go
     putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
   where
-    go :: IORef SizeInBytes -> blk -> IO ()
-    go maxBlockHeaderSizeRef blk = do
-        void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
+    go :: SizeInBytes -> blk -> IO SizeInBytes
+    go maxBlockHeaderSize blk = do
         putStrLn $ intercalate "\t" [
             show slotNo
           , "Block header size = " <> show blockHdrSz
           ]
+        return $ maxBlockHeaderSize `max` blockHdrSz
       where
         slotNo = blockSlot blk
         blockHdrSz = HasAnalysis.blockHeaderSize blk
@@ -143,8 +140,8 @@ showBlockHeaderSize _cfg _initLedger immDB rr = do
 showBlockTxsSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockTxsSize _cfg _initLedger immDB rr =
-    processAll immDB rr process
+showBlockTxsSize _cfg _initLedger db rr =
+    processAll_ db rr process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -171,9 +168,9 @@ showBlockTxsSize _cfg _initLedger immDB rr =
 showEBBs
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showEBBs cfg _initLedger immDB rr = do
+showEBBs cfg _initLedger db rr = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll immDB rr processIfEBB
+    processAll_ db rr processIfEBB
   where
     processIfEBB :: blk -> IO ()
     processIfEBB blk =
@@ -195,56 +192,68 @@ showEBBs cfg _initLedger immDB rr = do
   Auxiliary: processing all blocks in the DB
 -------------------------------------------------------------------------------}
 
-processAll :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-           => Either (ImmDB IO blk) (ChainDB IO blk)
-           -> ResourceRegistry IO
-           -> (blk -> IO ())
-           -> IO ()
-processAll db rr callback = case db of
-  Left  immDB   -> processAllImmDB immDB rr callback
-  Right chainDB -> processAllChainDB chainDB rr callback
+processAll ::
+     forall blk st. (HasHeader blk, ImmDbSerialiseConstraints blk)
+  => Either (ImmDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> st
+  -> (st -> blk -> IO st)
+  -> IO st
+processAll = either processAllImmDB processAllChainDB
 
-processAllChainDB :: forall blk. StandardHash blk
-                  => ChainDB IO blk
-                  -> ResourceRegistry IO
-                  -> (blk -> IO ())
-                  -> IO ()
-processAllChainDB chainDB rr callback = do
+processAll_ ::
+     forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+  => Either (ImmDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> (blk -> IO ())
+  -> IO ()
+processAll_ db rr callback = processAll db rr () (const callback)
+
+processAllChainDB ::
+     forall st blk. StandardHash blk
+  => ChainDB IO blk
+  -> ResourceRegistry IO
+  -> st
+  -> (st -> blk -> IO st)
+  -> IO st
+processAllChainDB chainDB rr initState callback = do
     tipPoint <- atomically $ ChainDB.getTipPoint chainDB
     case pointToWithOriginRealPoint tipPoint of
-      Origin -> return ()
+      Origin -> return initState
       At tip -> do
         Right itr <- ChainDB.stream chainDB rr GetBlock
           (StreamFromExclusive GenesisPoint)
           (StreamToInclusive tip)
-        go itr
+        go itr initState
   where
-    go :: ChainDB.Iterator IO blk (IO blk) -> IO ()
-    go itr = do
+    go :: ChainDB.Iterator IO blk (IO blk) -> st -> IO st
+    go itr !st = do
       itrResult <- ChainDB.iteratorNext itr
       case itrResult of
-        ChainDB.IteratorExhausted     -> return ()
-        ChainDB.IteratorResult mblk   -> mblk >>= \blk -> callback blk >> go itr
+        ChainDB.IteratorExhausted     -> return st
+        ChainDB.IteratorResult mblk   -> mblk >>= \blk -> callback st blk >>= go itr
         ChainDB.IteratorBlockGCed pnt -> error $ "block gced " ++ show pnt
 
-processAllImmDB :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
-                => ImmDB IO blk
-                -> ResourceRegistry IO
-                -> (blk -> IO ())
-                -> IO ()
-processAllImmDB immDB rr callback = do
-    tipPoint <- getPointAtTip immDB
+processAllImmDB ::
+     forall st blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
+  => ImmDB IO blk
+  -> ResourceRegistry IO
+  -> st
+  -> (st -> blk -> IO st)
+  -> IO st
+processAllImmDB immDB rr initState callback = do
+    tipPoint <- ImmDB.getPointAtTip immDB
     case pointToWithOriginRealPoint tipPoint of
-      Origin -> return ()
+      Origin -> return initState
       At tip -> do
         Right itr <- ImmDB.stream immDB rr GetBlock
           (StreamFromExclusive GenesisPoint)
           (StreamToInclusive tip)
-        go itr
+        go itr initState
   where
-    go :: Iterator (HeaderHash blk) IO (IO blk) -> IO ()
-    go itr = do
+    go :: ImmDB.Iterator (HeaderHash blk) IO (IO blk) -> st -> IO st
+    go itr !st = do
         itrResult <- ImmDB.iteratorNext itr
         case itrResult of
-          IteratorExhausted   -> return ()
-          IteratorResult mblk -> mblk >>= \blk -> callback blk >> go itr
+          ImmDB.IteratorExhausted   -> return st
+          ImmDB.IteratorResult mblk -> mblk >>= \blk -> callback st blk >>= go itr
