@@ -23,6 +23,7 @@ import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.IOLike
@@ -53,13 +54,15 @@ data AnalysisName =
   | OnlyValidation
   deriving Show
 
-type Analysis blk = TopLevelConfig blk
-                 -> Either (ImmDB IO blk) (ChainDB IO blk)
-                 -> ResourceRegistry IO
-                 -> IO ()
+type Analysis blk =
+     TopLevelConfig blk
+  -> ExtLedgerState blk
+  -> Either (ImmDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> IO ()
 
-emptyAnalysis :: Analysis blk
-emptyAnalysis _ _ _ = return ()
+noAnalysis :: Analysis blk
+noAnalysis _ _ _ _ = return ()
 
 runAnalysis :: (HasAnalysis blk, RunNode blk)
             => AnalysisName -> Analysis blk
@@ -68,7 +71,7 @@ runAnalysis CountTxOutputs      = countTxOutputs
 runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
 runAnalysis ShowBlockTxsSize    = showBlockTxsSize
 runAnalysis ShowEBBs            = showEBBs
-runAnalysis OnlyValidation      = emptyAnalysis
+runAnalysis OnlyValidation      = noAnalysis
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
@@ -76,7 +79,7 @@ runAnalysis OnlyValidation      = emptyAnalysis
 
 showSlotBlockNo :: forall blk. (HasHeader blk, ImmDbSerialiseConstraints blk)
                 => Analysis blk
-showSlotBlockNo _cfg immDB rr =
+showSlotBlockNo _cfg _initLedger immDB rr =
     processAll immDB rr go
   where
     go :: blk -> IO ()
@@ -92,7 +95,7 @@ showSlotBlockNo _cfg immDB rr =
 countTxOutputs
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-countTxOutputs _cfg immDB rr = do
+countTxOutputs _cfg _initLedger immDB rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
@@ -116,7 +119,7 @@ countTxOutputs _cfg immDB rr = do
 showBlockHeaderSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockHeaderSize _cfg immDB rr = do
+showBlockHeaderSize _cfg _initLedger immDB rr = do
     maxBlockHeaderSizeRef <- newIORef 0
     processAll immDB rr (go maxBlockHeaderSizeRef)
     maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
@@ -140,7 +143,8 @@ showBlockHeaderSize _cfg immDB rr = do
 showBlockTxsSize
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showBlockTxsSize _cfg immDB rr = processAll immDB rr process
+showBlockTxsSize _cfg _initLedger immDB rr =
+    processAll immDB rr process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -167,7 +171,7 @@ showBlockTxsSize _cfg immDB rr = processAll immDB rr process
 showEBBs
   :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
   => Analysis blk
-showEBBs cfg immDB rr = do
+showEBBs cfg _initLedger immDB rr = do
     putStrLn "EBB\tPrev\tKnown"
     processAll immDB rr processIfEBB
   where

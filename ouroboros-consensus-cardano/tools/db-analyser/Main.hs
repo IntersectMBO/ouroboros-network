@@ -173,12 +173,12 @@ analyse CmdLine {..} args =
           (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
       if onlyImmDB then
         ImmDB.withImmDB immDbArgs $ \immDB -> do
-          runAnalysis analysis cfg (Left immDB) registry
+          runAnalysis analysis cfg initLedger (Left immDB) registry
           immDbTipPoint <- ImmDB.getPointAtTip immDB
           putStrLn $ "ImmDB tip: " ++ show immDbTipPoint
       else
         ChainDB.withDB chainDbArgs $ \chainDB -> do
-          runAnalysis analysis cfg (Right chainDB) registry
+          runAnalysis analysis cfg initLedger (Right chainDB) registry
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
   where
