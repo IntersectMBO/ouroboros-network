@@ -40,11 +40,13 @@ import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Word (Word64, Word8)
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..))
+import           Cardano.Crypto.DSIGN (DSIGNAlgorithm)
+import qualified Cardano.Crypto.DSIGN as DSIGN
 import           Cardano.Crypto.Hash (HashAlgorithm)
 import qualified Cardano.Crypto.Hash as Hash
 import qualified Cardano.Crypto.Seed as Seed
-import           Cardano.Crypto.VRF (VRFAlgorithm (..))
+import           Cardano.Crypto.VRF (VRFAlgorithm)
+import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Serialised (..))
@@ -58,12 +60,13 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Util.Time
 
+import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, VRF)
+import           Cardano.Ledger.Era (Era (Crypto))
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
@@ -88,8 +91,8 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     TPraosStandardCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol (StandardShelley,
+                     TPraosCrypto)
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
@@ -106,7 +109,7 @@ testEpochInfo :: EpochInfo Identity
 testEpochInfo = SL.epochInfo SL.testGlobals
 
 -- | These are dummy values.
-testShelleyGenesis :: SL.ShelleyGenesis c
+testShelleyGenesis :: SL.ShelleyGenesis era
 testShelleyGenesis = SL.ShelleyGenesis {
       sgSystemStart       = UTCTime (fromGregorian 2020 5 14) 0
     , sgNetworkMagic      = 0
@@ -127,57 +130,58 @@ testShelleyGenesis = SL.ShelleyGenesis {
     , sgStaking           = SL.emptyGenesisStaking
     }
 
-codecConfig :: CodecConfig (ShelleyBlock TPraosStandardCrypto)
+codecConfig :: CodecConfig (ShelleyBlock StandardShelley)
 codecConfig = ShelleyCodecConfig
 
 mkDummyHash :: forall h a. HashAlgorithm h => Proxy h -> Int -> Hash.Hash h a
 mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR
 
-mkKeyHash :: forall c discriminator. Crypto c => Int -> SL.KeyHash discriminator c
-mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(SL.ADDRHASH c))
+mkKeyHash :: forall era discriminator. Era era => Int -> SL.KeyHash discriminator era
+mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(ADDRHASH (Crypto era)))
 
-mkScriptHash :: forall c. Crypto c => Int -> SL.ScriptHash c
-mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(SL.ADDRHASH c))
+mkScriptHash :: forall era. Era era => Int -> SL.ScriptHash era
+mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(ADDRHASH (Crypto era)))
 
 -- | @mkKeyPair'@ from @Test.Shelley.Spec.Ledger.Utils@ doesn't work for real
 -- crypto:
 -- <https://github.com/input-output-hk/cardano-ledger-specs/issues/1770>
 mkDSIGNKeyPair ::
-     forall c kd. DSIGNAlgorithm (SL.DSIGN c)
+     forall era kd. DSIGNAlgorithm (DSIGN (Crypto era))
   => Word8
-  -> SL.KeyPair kd c
-mkDSIGNKeyPair byte = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN sk) sk
+  -> SL.KeyPair kd era
+mkDSIGNKeyPair byte = SL.KeyPair (SL.VKey $ DSIGN.deriveVerKeyDSIGN sk) sk
   where
     seed =
       Seed.mkSeedFromBytes $
         Strict.replicate
-          (fromIntegral (seedSizeDSIGN (Proxy @(SL.DSIGN c))))
+          (fromIntegral (DSIGN.seedSizeDSIGN (Proxy @(DSIGN (Crypto era)))))
           byte
 
-    sk = genKeyDSIGN seed
+    sk = DSIGN.genKeyDSIGN seed
 
 mkVRFKeyPair ::
-     forall v. VRFAlgorithm v
-  => Word8
-  -> (SignKeyVRF v, VerKeyVRF v)
-mkVRFKeyPair byte = (sk, deriveVerKeyVRF sk)
+     forall era. VRFAlgorithm (VRF (Crypto era))
+  => Proxy era
+  -> Word8
+  -> (SL.SignKeyVRF era, SL.VerKeyVRF era)
+mkVRFKeyPair _ byte = (sk, VRF.deriveVerKeyVRF sk)
   where
     seed =
       Seed.mkSeedFromBytes $
         Strict.replicate
-          (fromIntegral (seedSizeVRF (Proxy @v)))
+          (fromIntegral (VRF.seedSizeVRF (Proxy @(VRF (Crypto era)))))
           byte
 
-    sk = genKeyVRF seed
+    sk = VRF.genKeyVRF seed
 
-keyToCredential :: Crypto c => SL.KeyPair r c -> SL.Credential r c
+keyToCredential :: Era era => SL.KeyPair r era -> SL.Credential r era
 keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 
 {-------------------------------------------------------------------------------
   Examples
 -------------------------------------------------------------------------------}
 
-examples :: Golden.Examples (ShelleyBlock TPraosStandardCrypto)
+examples :: Golden.Examples (ShelleyBlock StandardShelley)
 examples = Golden.Examples {
       exampleBlock            = unlabelled exampleBlock
     , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
@@ -224,33 +228,33 @@ examples = Golden.Examples {
               ]))
         ]
 
-    proposedPParamsUpdates :: SL.ProposedPPUpdates TPraosStandardCrypto
+    proposedPParamsUpdates :: SL.ProposedPPUpdates StandardShelley
     proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
         (mkKeyHash 0)
         (SL.emptyPParamsUpdate {SL._keyDeposit = SJust 100})
 
-examplePoolDistr :: forall c. TPraosCrypto c => SL.PoolDistr c
+examplePoolDistr :: forall era. TPraosCrypto era => SL.PoolDistr era
 examplePoolDistr = SL.PoolDistr $ Map.fromList [
       (mkKeyHash 1, SL.IndividualPoolStake
                       1
-                      (SL.hashVerKeyVRF (snd (SL.vrf (exampleKeys @c)))))
+                      (SL.hashVerKeyVRF (snd (SL.vrf (exampleKeys @era)))))
     ]
 
 -- | This is not a valid block. We don't care, we are only interested in
 -- serialisation, not validation.
-exampleBlock :: ShelleyBlock TPraosStandardCrypto
+exampleBlock :: ShelleyBlock StandardShelley
 exampleBlock = mkShelleyBlock $ SL.Block blockHeader blockBody
   where
-    keys :: SL.AllIssuerKeys TPraosStandardCrypto 'SL.StakePool
+    keys :: SL.AllIssuerKeys StandardShelley 'SL.StakePool
     keys = exampleKeys
 
     (_, (hotKey, _)) = head $ SL.hot keys
     SL.KeyPair vKeyCold _ = SL.cold keys
 
-    blockHeader :: SL.BHeader TPraosStandardCrypto
+    blockHeader :: SL.BHeader StandardShelley
     blockHeader = SL.BHeader blockHeaderBody (SL.signedKES () 0 blockHeaderBody hotKey)
 
-    blockHeaderBody :: SL.BHBody TPraosStandardCrypto
+    blockHeaderBody :: SL.BHBody StandardShelley
     blockHeaderBody = SL.BHBody {
           bheaderBlockNo = BlockNo 3
         , bheaderSlotNo  = SlotNo 9
@@ -265,33 +269,33 @@ exampleBlock = mkShelleyBlock $ SL.Block blockHeader blockBody
         , bprotver       = SL.ProtVer 2 0
         }
 
-    blockBody :: SL.TxSeq TPraosStandardCrypto
+    blockBody :: SL.TxSeq StandardShelley
     blockBody = SL.TxSeq (StrictSeq.fromList [exampleTx])
 
     mkBytes :: Word8 -> ByteString
     mkBytes =
       Strict.replicate
-        (fromIntegral (sizeOutputVRF (Proxy @(SL.VRF TPraosStandardCrypto))))
+        (fromIntegral (VRF.sizeOutputVRF (Proxy @(VRF (Crypto StandardShelley)))))
 
-exampleSerialisedBlock :: Serialised (ShelleyBlock TPraosStandardCrypto)
+exampleSerialisedBlock :: Serialised (ShelleyBlock StandardShelley)
 exampleSerialisedBlock = Serialised "<BLOCK>"
 
-exampleHeader :: Header (ShelleyBlock TPraosStandardCrypto)
+exampleHeader :: Header (ShelleyBlock StandardShelley)
 exampleHeader = getHeader exampleBlock
 
-exampleSerialisedHeader :: SerialisedHeader (ShelleyBlock TPraosStandardCrypto)
+exampleSerialisedHeader :: SerialisedHeader (ShelleyBlock StandardShelley)
 exampleSerialisedHeader = SerialisedHeaderFromDepPair $
     GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
 
-exampleHeaderHash :: HeaderHash (ShelleyBlock TPraosStandardCrypto)
+exampleHeaderHash :: HeaderHash (ShelleyBlock StandardShelley)
 exampleHeaderHash = blockHash exampleBlock
 
 -- | This is not a valid transaction. We don't care, we are only interested in
 -- serialisation, not validation.
-exampleTx :: forall c. c ~ TPraosStandardCrypto => SL.Tx c
+exampleTx :: forall era. era ~ StandardShelley => SL.Tx era
 exampleTx = SL.Tx txBody witnessSet (SJust metadata)
   where
-    txBody :: SL.TxBody c
+    txBody :: SL.TxBody era
     txBody = SL.TxBody
         (Set.fromList [
             SL.TxIn SL.genesisId 0
@@ -314,23 +318,23 @@ exampleTx = SL.Tx txBody witnessSet (SJust metadata)
         (SJust (SL.Update ppup (EpochNo 0)))
         (SJust (SL.hashMetaData metadata))
       where
-        ppup :: SL.ProposedPPUpdates c
+        ppup :: SL.ProposedPPUpdates era
         ppup = SL.ProposedPPUpdates $
             Map.singleton
               (mkKeyHash 1)
               (SL.emptyPParamsUpdate { SL._maxBHSize = SJust 4000 })
 
-    witnessSet :: SL.WitnessSet c
+    witnessSet :: SL.WitnessSet era
     witnessSet = mempty {
           SL.addrWits =
             SL.makeWitnessesVKey (SL.hashAnnotated txBody) witnesses
         }
       where
-        witnesses :: [SL.KeyPair 'SL.Witness c]
+        witnesses :: [SL.KeyPair 'SL.Witness era]
         witnesses = [
               SL.asWitness examplePayKey
             , SL.asWitness exampleStakeKey
-            , SL.asWitness $ SL.cold (exampleKeys @c @'SL.StakePool)
+            , SL.asWitness $ SL.cold (exampleKeys @era @'SL.StakePool)
             ]
 
     metadata :: SL.MetaData
@@ -341,15 +345,15 @@ exampleTx = SL.Tx txBody witnessSet (SJust metadata)
         , (4, SL.Map [(SL.I 3, SL.B "b")])
         ]
 
-exampleGenTx :: GenTx (ShelleyBlock TPraosStandardCrypto)
+exampleGenTx :: GenTx (ShelleyBlock StandardShelley)
 exampleGenTx = mkShelleyTx exampleTx
 
-exampleGenTxId :: GenTxId (ShelleyBlock TPraosStandardCrypto)
+exampleGenTxId :: GenTxId (ShelleyBlock StandardShelley)
 exampleGenTxId = txId exampleGenTx
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
-exampleApplyTxErr :: ApplyTxErr (ShelleyBlock TPraosStandardCrypto)
+exampleApplyTxErr :: ApplyTxErr (ShelleyBlock StandardShelley)
 exampleApplyTxErr =
       ApplyTxError
     $ pure
@@ -357,19 +361,19 @@ exampleApplyTxErr =
     $ STS.UtxowFailure
     $ STS.InvalidWitnessesUTXOW [SL.asWitness (SL.vKey exampleStakeKey)]
 
-exampleAnnTip :: AnnTip (ShelleyBlock TPraosStandardCrypto)
+exampleAnnTip :: AnnTip (ShelleyBlock StandardShelley)
 exampleAnnTip = AnnTip {
       annTipSlotNo  = SlotNo 14
     , annTipBlockNo = BlockNo 6
     , annTipInfo    = exampleHeaderHash
     }
 
-exampleChainDepState :: ChainDepState (BlockProtocol (ShelleyBlock TPraosStandardCrypto))
+exampleChainDepState :: ChainDepState (BlockProtocol (ShelleyBlock StandardShelley))
 exampleChainDepState =
     TPraosState.append 2             (mkPrtclState 2) $
     TPraosState.empty  (NotOrigin 1) (mkPrtclState 1)
   where
-    mkPrtclState :: Word64 -> SL.ChainDepState TPraosStandardCrypto
+    mkPrtclState :: Word64 -> SL.ChainDepState StandardShelley
     mkPrtclState seed = SL.ChainDepState
       { SL.csProtocol = STS.PrtclState
           (Map.fromList [
@@ -388,8 +392,8 @@ exampleChainDepState =
 -- | This is probably not a valid ledger. We don't care, we are only
 -- interested in serialisation, not validation.
 exampleNewEpochState ::
-     forall c. c ~ TPraosStandardCrypto
-  => SL.NewEpochState c
+     forall era. era ~ StandardShelley
+  => SL.NewEpochState era
 exampleNewEpochState = SL.NewEpochState {
       nesEL     = EpochNo 0
     , nesBprev  = SL.BlocksMade (Map.singleton (mkKeyHash 1) 10)
@@ -400,7 +404,7 @@ exampleNewEpochState = SL.NewEpochState {
     , nesOsched = overlaySchedule
     }
   where
-    epochState :: SL.EpochState c
+    epochState :: SL.EpochState era
     epochState = SL.EpochState {
           esAccountState = SL.AccountState {
               _treasury = SL.Coin 10000
@@ -425,13 +429,13 @@ exampleNewEpochState = SL.NewEpochState {
         , esNonMyopic    = nonMyopic
         }
       where
-        addr :: SL.Addr c
+        addr :: SL.Addr era
         addr = SL.Addr
                  SL.Testnet
                  (keyToCredential examplePayKey)
                  (SL.StakeRefBase (keyToCredential exampleStakeKey))
 
-    rewardUpdate :: SL.RewardUpdate c
+    rewardUpdate :: SL.RewardUpdate era
     rewardUpdate = SL.RewardUpdate {
           deltaT    = SL.Coin 10
         , deltaR    = SL.Coin 100
@@ -440,10 +444,10 @@ exampleNewEpochState = SL.NewEpochState {
         , nonMyopic = nonMyopic
         }
 
-    nonMyopic :: SL.NonMyopic c
+    nonMyopic :: SL.NonMyopic era
     nonMyopic = SL.emptyNonMyopic
 
-    overlaySchedule :: SL.OverlaySchedule c
+    overlaySchedule :: SL.OverlaySchedule era
     overlaySchedule =
         SL.overlayScheduleHelper
           (EpochSize 2)
@@ -452,16 +456,16 @@ exampleNewEpochState = SL.NewEpochState {
           (SL.truncateUnitInterval (9 % 10))
           (SL.mkActiveSlotCoeff (SL.truncateUnitInterval (5 % 100)))
 
-exampleLedgerState :: LedgerState (ShelleyBlock TPraosStandardCrypto)
+exampleLedgerState :: LedgerState (ShelleyBlock StandardShelley)
 exampleLedgerState = ShelleyLedgerState {
       ledgerTip    = blockPoint exampleBlock
     , shelleyState = exampleNewEpochState
     }
 
-exampleHeaderState :: HeaderState (ShelleyBlock TPraosStandardCrypto)
+exampleHeaderState :: HeaderState (ShelleyBlock StandardShelley)
 exampleHeaderState = genesisHeaderState st
   where
-    prtclState :: SL.ChainDepState TPraosStandardCrypto
+    prtclState :: SL.ChainDepState StandardShelley
     prtclState = SL.ChainDepState
       { SL.csProtocol = STS.PrtclState
           (Map.fromList [
@@ -476,10 +480,10 @@ exampleHeaderState = genesisHeaderState st
       , SL.csLabNonce = SL.mkNonceFromNumber 2
       }
 
-    st :: TPraosState TPraosStandardCrypto
+    st :: TPraosState StandardShelley
     st = TPraosState.empty (NotOrigin 1) prtclState
 
-exampleExtLedgerState :: ExtLedgerState (ShelleyBlock TPraosStandardCrypto)
+exampleExtLedgerState :: ExtLedgerState (ShelleyBlock StandardShelley)
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState
@@ -489,23 +493,23 @@ exampleExtLedgerState = ExtLedgerState {
   Keys
 -------------------------------------------------------------------------------}
 
-examplePayKey :: Crypto c => SL.KeyPair 'SL.Payment c
+examplePayKey :: Era era => SL.KeyPair 'SL.Payment era
 examplePayKey = mkDSIGNKeyPair 0
 
-exampleStakeKey :: Crypto c => SL.KeyPair 'SL.Staking c
+exampleStakeKey :: Era era => SL.KeyPair 'SL.Staking era
 exampleStakeKey = mkDSIGNKeyPair 1
 
-exampleKeys :: Crypto c => SL.AllIssuerKeys c r
+exampleKeys :: forall era r. Era era => SL.AllIssuerKeys era r
 exampleKeys =
     SL.AllIssuerKeys
       coldKey
-      (mkVRFKeyPair 1)
+      (mkVRFKeyPair (Proxy @era) 1)
       [(SL.KESPeriod 0, SL.mkKESKeyPair (1, 0, 0, 0, 3))]
       (SL.hashKey (SL.vKey coldKey))
   where
     coldKey = mkDSIGNKeyPair 1
 
-examplePoolParams :: forall c. Crypto c => SL.PoolParams c
+examplePoolParams :: forall era. Era era => SL.PoolParams era
 examplePoolParams = SL.PoolParams {
       _poolPubKey = SL.hashKey $ SL.vKey $ SL.cold poolKeys
     , _poolVrf    = SL.hashVerKeyVRF $ snd $ SL.vrf poolKeys
@@ -521,4 +525,4 @@ examplePoolParams = SL.PoolParams {
         }
     }
   where
-    poolKeys = exampleKeys @c @'SL.StakePool
+    poolKeys = exampleKeys @era @'SL.StakePool

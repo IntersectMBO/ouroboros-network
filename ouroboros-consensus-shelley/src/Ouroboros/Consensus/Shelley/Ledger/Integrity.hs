@@ -19,9 +19,9 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 -- | Verify whether a header is not corrupted
 verifyHeaderIntegrity
-  :: TPraosCrypto c
+  :: TPraosCrypto era
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
-  -> Header (ShelleyBlock c)
+  -> Header (ShelleyBlock era)
   -> Bool
 verifyHeaderIntegrity slotsPerKESPeriod hdr@ShelleyHeader { shelleyHeaderRaw } =
     isRight $ SL.verifySignedKES () ocertVkHot t hdrBody hdrSignature
@@ -43,9 +43,9 @@ verifyHeaderIntegrity slotsPerKESPeriod hdr@ShelleyHeader { shelleyHeaderRaw } =
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses
 verifyBlockIntegrity
-  :: TPraosCrypto c
+  :: TPraosCrypto era
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
-  -> ShelleyBlock c -> Bool
+  -> ShelleyBlock era -> Bool
 verifyBlockIntegrity slotsPerKESPeriod blk =
     verifyHeaderIntegrity slotsPerKESPeriod (getHeader blk) &&
     blockMatchesHeader                      (getHeader blk) blk

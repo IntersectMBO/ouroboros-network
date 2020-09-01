@@ -40,16 +40,15 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES)
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.Consensus.Shelley.MockCrypto (MockShelley)
 import           Test.ThreadNet.TxGen.Shelley
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (genVersion)
 import           Test.ThreadNet.Util.Seed (runGen)
 
-type Crypto = TPraosMockCrypto ShortHash
+type Era = MockShelley ShortHash
 
 data TestSetup = TestSetup
   { setupD            :: DecentralizationParam
@@ -65,7 +64,7 @@ data TestSetup = TestSetup
     -- This test varies it too ensure it explores different leader schedules.
   , setupK            :: SecurityParam
   , setupTestConfig   :: TestConfig
-  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Crypto))
+  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Era))
   }
   deriving (Show)
 
@@ -92,7 +91,7 @@ instance Arbitrary TestSetup where
 
       setupTestConfig <- arbitrary
 
-      setupVersion <- genVersion (Proxy @(ShelleyBlock Crypto))
+      setupVersion <- genVersion (Proxy @(ShelleyBlock Era))
 
       pure TestSetup
         { setupD
@@ -281,14 +280,14 @@ prop_simple_real_tpraos_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    coreNodes :: [CoreNode Crypto]
+    coreNodes :: [CoreNode Era]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
           genCoreNode initialKESPeriod
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisConfig :: ShelleyGenesis Crypto
+    genesisConfig :: ShelleyGenesis Era
     genesisConfig =
         mkGenesisConfig
           genesisProtVer
@@ -296,7 +295,7 @@ prop_simple_real_tpraos_convergence TestSetup
           activeSlotCoeff
           setupD
           tpraosSlotLength
-          (mkKesConfig (Proxy @(KES Crypto)) numSlots)
+          (mkKesConfig (Proxy @Era) numSlots)
           coreNodes
 
     epochSize :: EpochSize
@@ -357,11 +356,11 @@ prop_simple_real_tpraos_convergence TestSetup
             DoGeneratePPUs    -> True
             DoNotGeneratePPUs -> False
 
-        finalLedgers :: [(NodeId, LedgerState (ShelleyBlock Crypto))]
+        finalLedgers :: [(NodeId, LedgerState (ShelleyBlock Era))]
         finalLedgers =
             Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
 
-        ledgerConfig :: LedgerConfig (ShelleyBlock Crypto)
+        ledgerConfig :: LedgerConfig (ShelleyBlock Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
             (fixedSizeEpochInfo epochSize)

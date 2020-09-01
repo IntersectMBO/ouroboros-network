@@ -6,7 +6,6 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.Cardano.Serialisation (tests) where
 
-import           Cardano.Crypto.Hash (ShortHash)
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 
@@ -34,23 +33,22 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
 
-import           Test.Consensus.Shelley.MockCrypto hiding (Block)
-
 import           Test.Consensus.Cardano.Generators (epochSlots, k)
+import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 
 tests :: TestTree
 tests = testGroup "Cardano"
     [ roundtrip_all testCodecCfg dictNestedHdr
 
-      -- Note: the above roundtrip tests use 'TPraosMockCrypto' (because we
-      -- most generators only work with mock crypto, not with real crypto).
-      -- But because the Byron hash (currently not parameterised over crypto)
-      -- is 32 bytes while the mock Shelley hash is 4 bytes, the
-      -- 'prop_hashSize' is not included in 'roundtrip_all', as it would fail.
+      -- Note: the above roundtrip tests use 'MockCryptoByronCompat' (because
+      -- most generators only work with mock crypto, not with real crypto). But
+      -- because the Byron hash (currently not parameterised over crypto) is 32
+      -- bytes while the mock Shelley hash is 4 bytes, the 'prop_hashSize' is
+      -- not included in 'roundtrip_all', as it would fail.
       --
       -- Therefore, we test 'prop_hashSize' separately, but with
-      -- 'TPraosStandardCrypto', where the Shelley hash is 32 bytes. We also
-      -- run 'roundtrip_ConvertRawHash' for the real crypto.
+      -- 'StandardCrypto', where the Shelley hash is 32 bytes. We also run
+      -- 'roundtrip_ConvertRawHash' for the real crypto.
     , testProperty "hashSize real crypto"       $ prop_hashSize            pReal
     , testProperty "ConvertRawHash real crypto" $ roundtrip_ConvertRawHash pReal
 
@@ -58,16 +56,16 @@ tests = testGroup "Cardano"
 
     ]
   where
-    pReal :: Proxy (CardanoBlock TPraosStandardCrypto)
+    pReal :: Proxy (CardanoBlock StandardCrypto)
     pReal = Proxy
 
-testCodecCfg :: CardanoCodecConfig (TPraosMockCrypto ShortHash)
+testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron
 testCodecCfg =
   CardanoCodecConfig (ByronCodecConfig epochSlots k) ShelleyCodecConfig
 
 dictNestedHdr
   :: forall a.
-     NestedCtxt_ (CardanoBlock (TPraosMockCrypto ShortHash)) Header a
+     NestedCtxt_ (CardanoBlock MockCryptoCompatByron) Header a
   -> Dict (Eq a, Show a)
 dictNestedHdr = \case
     NCZ (CtxtByronBoundary {}) -> Dict
@@ -79,7 +77,7 @@ dictNestedHdr = \case
   BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_CardanoBinaryBlockInfo :: CardanoBlock (TPraosMockCrypto ShortHash) -> Property
+prop_CardanoBinaryBlockInfo :: CardanoBlock MockCryptoCompatByron -> Property
 prop_CardanoBinaryBlockInfo blk =
     encodedNestedHeader === extractedHeader
   where

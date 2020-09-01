@@ -51,17 +51,18 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    pMock :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
+    pMock :: Proxy (ShelleyBlock (MockShelley ShortHash))
     pMock = Proxy
 
-    pReal :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
+    pReal :: Proxy (ShelleyBlock (MockShelley ShortHash))
     pReal = Proxy
 
-    testCodecCfg :: CodecConfig (ShelleyBlock (TPraosMockCrypto ShortHash))
+    testCodecCfg :: CodecConfig (ShelleyBlock (MockShelley ShortHash))
     testCodecCfg = ShelleyCodecConfig
 
-    dictNestedHdr :: forall a c. Crypto c
-                  => NestedCtxt_ (ShelleyBlock c) Header a -> Dict (Eq a, Show a)
+    dictNestedHdr ::
+         forall a era. Era era
+      => NestedCtxt_ (ShelleyBlock era) Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtShelley = Dict
 
 {-------------------------------------------------------------------------------

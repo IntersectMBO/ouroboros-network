@@ -46,7 +46,8 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosStandardCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto,
+                     StandardShelley)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
@@ -65,7 +66,7 @@ import           Test.Consensus.Cardano.Generators (toTelescope')
   Setup
 -------------------------------------------------------------------------------}
 
-type Crypto = TPraosStandardCrypto
+type Crypto = StandardCrypto
 
 eraExamples :: NP Examples (CardanoEras Crypto)
 eraExamples = Byron.examples :* Shelley.examples :* Nil
@@ -114,7 +115,7 @@ injExamplesByron Golden.Examples {..} = Golden.Examples {
 
 -- Generalise in #2368
 injExamplesShelley ::
-     Examples (ShelleyBlock Crypto)
+     Examples (ShelleyBlock StandardShelley)
   -> Examples (CardanoBlock Crypto)
 injExamplesShelley Golden.Examples {..} = Golden.Examples {
       exampleBlock            = inj exampleBlock            BlockShelley
@@ -176,8 +177,8 @@ summary =
 eraInfoByron :: SingleEraInfo ByronBlock
 eraInfoByron = singleEraInfo (Proxy @ByronBlock)
 
-eraInfoShelley :: SingleEraInfo (ShelleyBlock Crypto)
-eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock Crypto))
+eraInfoShelley :: SingleEraInfo (ShelleyBlock StandardShelley)
+eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock StandardShelley))
 
 codecConfig :: CardanoCodecConfig Crypto
 codecConfig = CardanoCodecConfig Byron.codecConfig Shelley.codecConfig
@@ -194,7 +195,7 @@ serialisedBlockByron (Serialised _) = Serialised "<CARDANO_BLOCK>"
 -- | In reality, an era tag would be prepended, but we're testing that the
 -- encoder doesn't care what the bytes are.
 serialisedBlockShelley ::
-     Serialised (ShelleyBlock Crypto)
+     Serialised (ShelleyBlock StandardShelley)
   -> Serialised (CardanoBlock Crypto)
 serialisedBlockShelley (Serialised _) = Serialised "<CARDANO_BLOCK>"
 
@@ -207,7 +208,7 @@ serialisedHeaderByron =
     . serialisedHeaderToPair
 
 serialisedHeaderShelley ::
-     SerialisedHeader (ShelleyBlock Crypto)
+     SerialisedHeader (ShelleyBlock StandardShelley)
   -> SerialisedHeader (CardanoBlock Crypto)
 serialisedHeaderShelley =
       serialisedHeaderFromPair
@@ -217,8 +218,8 @@ serialisedHeaderShelley =
 headerHashByron :: HeaderHash ByronBlock -> HeaderHash (CardanoBlock Crypto)
 headerHashByron = OneEraHash . toShortRawHash (Proxy @ByronBlock)
 
-headerHashShelley :: HeaderHash (ShelleyBlock Crypto) -> HeaderHash (CardanoBlock Crypto)
-headerHashShelley = OneEraHash . toShortRawHash (Proxy @(ShelleyBlock Crypto))
+headerHashShelley :: HeaderHash (ShelleyBlock StandardShelley) -> HeaderHash (CardanoBlock Crypto)
+headerHashShelley = OneEraHash . toShortRawHash (Proxy @(ShelleyBlock StandardShelley))
 
 someQueryByron ::
      SomeBlock Query ByronBlock
@@ -226,7 +227,7 @@ someQueryByron ::
 someQueryByron (SomeBlock q) = SomeBlock (QueryIfCurrentByron q)
 
 someQueryShelley ::
-     SomeBlock Query (ShelleyBlock Crypto)
+     SomeBlock Query (ShelleyBlock StandardShelley)
   -> SomeBlock Query (CardanoBlock Crypto)
 someQueryShelley (SomeBlock q) = SomeBlock (QueryIfCurrentShelley q)
 
@@ -234,14 +235,14 @@ someResultByron :: SomeResult ByronBlock -> SomeResult (CardanoBlock Crypto)
 someResultByron (SomeResult q r) =
     SomeResult (QueryIfCurrentByron q) (QueryResultSuccess r)
 
-someResultShelley :: SomeResult (ShelleyBlock Crypto) -> SomeResult (CardanoBlock Crypto)
+someResultShelley :: SomeResult (ShelleyBlock StandardShelley) -> SomeResult (CardanoBlock Crypto)
 someResultShelley (SomeResult q r) =
     SomeResult (QueryIfCurrentShelley q) (QueryResultSuccess r)
 
 annTipByron :: AnnTip ByronBlock -> AnnTip (CardanoBlock Crypto)
 annTipByron = undistribAnnTip . Z
 
-annTipShelley :: AnnTip (ShelleyBlock Crypto) -> AnnTip (CardanoBlock Crypto)
+annTipShelley :: AnnTip (ShelleyBlock StandardShelley) -> AnnTip (CardanoBlock Crypto)
 annTipShelley = undistribAnnTip . S . Z
 
 ledgerStateByron ::
@@ -256,7 +257,7 @@ ledgerStateByron stByron =
         }
 
 ledgerStateShelley ::
-     LedgerState (ShelleyBlock Crypto)
+     LedgerState (ShelleyBlock StandardShelley)
   -> LedgerState (CardanoBlock Crypto)
 ledgerStateShelley stShelley =
     HardForkLedgerState $ toTelescope' (Proxy @LedgerState) (Right (past, cur))
@@ -283,7 +284,7 @@ chainDepStateByron stByron =
         }
 
 chainDepStateShelley ::
-     ChainDepState (BlockProtocol (ShelleyBlock Crypto))
+     ChainDepState (BlockProtocol (ShelleyBlock StandardShelley))
   -> ChainDepState (BlockProtocol (CardanoBlock Crypto))
 chainDepStateShelley stShelley =
     toTelescope' (Proxy @WrapChainDepState) (Right (past, cur))
@@ -311,7 +312,7 @@ extLedgerStateByron ExtLedgerState {..} = ExtLedgerState {
     }
 
 extLedgerStateShelley ::
-     ExtLedgerState (ShelleyBlock Crypto)
+     ExtLedgerState (ShelleyBlock StandardShelley)
   -> ExtLedgerState (CardanoBlock Crypto)
 extLedgerStateShelley ExtLedgerState {..} = ExtLedgerState {
       ledgerState = ledgerStateShelley ledgerState

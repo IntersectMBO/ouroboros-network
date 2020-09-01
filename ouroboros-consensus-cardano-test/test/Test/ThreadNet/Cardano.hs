@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Test.ThreadNet.Cardano (
     tests
@@ -32,8 +33,6 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..))
-
-import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -67,13 +66,12 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import           Ouroboros.Consensus.Shelley.Ledger (mkShelleyGlobals)
 import           Ouroboros.Consensus.Shelley.Node
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES, TPraosCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
 
-import           Test.Consensus.Cardano.MockCrypto (TPraosMockCryptoCompatByron)
+import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
@@ -92,9 +90,9 @@ import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
--- | Use 'TPraosMockCryptoCompatByron' so that bootstrap addresses and
+-- | Use 'MockCryptoCompatByron' so that bootstrap addresses and
 -- bootstrap witnesses are supported.
-type Crypto = TPraosMockCryptoCompatByron Blake2b_256
+type Crypto = MockCryptoCompatByron
 
 -- | When and for how long the nodes are partitioned
 --
@@ -504,14 +502,14 @@ prop_simple_cardano_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    coreNodes :: [Shelley.CoreNode Crypto]
+    coreNodes :: [Shelley.CoreNode (ShelleyEra Crypto)]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
           Shelley.genCoreNode initialKESPeriod
       where
         NumCoreNodes n = numCoreNodes
 
-    genesisShelley :: ShelleyGenesis Crypto
+    genesisShelley :: ShelleyGenesis (ShelleyEra Crypto)
     genesisShelley =
         Shelley.mkGenesisConfig
           (SL.ProtVer shelleyMajorVersion 0)
@@ -519,7 +517,7 @@ prop_simple_cardano_convergence TestSetup
           activeSlotCoeff
           setupD
           setupSlotLengthShelley
-          (Shelley.mkKesConfig (Proxy @(KES Crypto)) numSlots)
+          (Shelley.mkKesConfig (Proxy @(ShelleyEra Crypto)) numSlots)
           coreNodes
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
@@ -639,7 +637,7 @@ prop_simple_cardano_convergence TestSetup
             SL.overlayScheduleToMap $
             runIdentity $ flip runReaderT shelleyGlobals $
             SL.overlaySchedule
-              @Crypto
+              @(ShelleyEra Crypto)
               (EpochNo i)   -- NB 0 <-> the first /Shelley/ epoch
               genesisKeyHashes
               (sgProtocolParams genesisShelley)   -- notably contains setupD
@@ -711,7 +709,7 @@ prop_simple_cardano_convergence TestSetup
             dur > 0 && (trans     && firstSlotAfter >= numByronSlots)
 
 mkProtocolCardanoAndHardForkTxs
-  :: forall sc m. (IOLike m, TPraosCrypto sc)
+  :: forall c m. (IOLike m, CardanoHardForkConstraints c)
      -- Byron
   => PBftParams
   -> CoreNodeId
@@ -719,13 +717,13 @@ mkProtocolCardanoAndHardForkTxs
   -> CC.Genesis.GeneratedSecrets
   -> CC.Update.ProtocolVersion
      -- Shelley
-  -> ShelleyGenesis sc
+  -> ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
-  -> Shelley.CoreNode sc
+  -> Shelley.CoreNode (ShelleyEra c)
      -- Hard fork
   -> Maybe EpochNo
   -> TriggerHardFork
-  -> TestNodeInitialization m (CardanoBlock sc)
+  -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
     genesisShelley initialNonce coreNodeShelley
@@ -735,7 +733,7 @@ mkProtocolCardanoAndHardForkTxs
       , tniProtocolInfo = pInfo
       }
   where
-    crucialTxs :: [GenTx (CardanoBlock sc)]
+    crucialTxs :: [GenTx (CardanoBlock c)]
     crucialTxs =
         GenTxByron <$> tniCrucialTxs tniByron
       where
@@ -750,7 +748,7 @@ mkProtocolCardanoAndHardForkTxs
               generatedSecretsByron
               propPV
 
-    pInfo :: ProtocolInfo m (CardanoBlock sc)
+    pInfo :: ProtocolInfo m (CardanoBlock c)
     pInfo = protocolInfoCardano
         -- Byron
         genesisByron
@@ -792,7 +790,7 @@ mkProtocolCardanoAndHardForkTxs
     protVerShelley :: SL.ProtVer
     protVerShelley = SL.ProtVer shelleyMajorVersion 0
 
-    leaderCredentialsShelley :: TPraosLeaderCredentials sc
+    leaderCredentialsShelley :: TPraosLeaderCredentials (ShelleyEra c)
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
 
 {-------------------------------------------------------------------------------

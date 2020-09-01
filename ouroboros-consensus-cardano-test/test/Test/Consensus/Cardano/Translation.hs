@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Translation (tests) where
@@ -36,7 +37,7 @@ tests = testGroup "Translation" [
 prop_translateTxOut_correctness :: CC.CompactTxOut -> Property
 prop_translateTxOut_correctness compactTxOut =
         translateTxOutByronToShelley
-          @TPraosStandardCrypto
+          @StandardShelley
           (CC.fromCompactTxOut compactTxOut)
     === translateCompactTxOutByronToShelley compactTxOut
 
@@ -44,14 +45,14 @@ prop_translateTxOut_correctness compactTxOut =
   Reference implementation
 ------------------------------------------------------------------------------}
 
-translateTxOutByronToShelley :: forall sc. Crypto sc => CC.TxOut -> SL.TxOut sc
+translateTxOutByronToShelley :: forall era. Era era => CC.TxOut -> SL.TxOut era
 translateTxOutByronToShelley (CC.TxOut addr amount) =
     SL.TxOut (translateAddr addr) (translateAmount amount)
   where
     translateAmount :: CC.Lovelace -> SL.Coin
     translateAmount = SL.Coin . CC.lovelaceToInteger
 
-    translateAddr :: CC.Address -> SL.Addr sc
+    translateAddr :: CC.Address -> SL.Addr era
     translateAddr = SL.AddrBootstrap . SL.BootstrapAddress
 
 {------------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
+  , CardanoHardForkConstraints
   , TriggerHardFork (..)
     -- * SupportedNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
@@ -81,7 +82,7 @@ import           Ouroboros.Consensus.Cardano.CanHardFork
 -------------------------------------------------------------------------------}
 
 instance SerialiseConstraintsHFC ByronBlock
-instance TPraosCrypto sc => SerialiseConstraintsHFC (ShelleyBlock sc)
+instance TPraosCrypto era => SerialiseConstraintsHFC (ShelleyBlock era)
 
 -- | Important: we need to maintain binary compatibility with Byron blocks, as
 -- they are already stored on disk.
@@ -108,7 +109,7 @@ instance TPraosCrypto sc => SerialiseConstraintsHFC (ShelleyBlock sc)
 --
 -- For more details, see:
 -- <https://github.com/input-output-hk/ouroboros-network/pull/1175#issuecomment-558147194>
-instance TPraosCrypto sc => SerialiseHFC (CardanoEras sc) where
+instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
   encodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley) = \case
       -- We are backwards compatible with Byron and thus use the exact same
       -- encoding.
@@ -166,11 +167,11 @@ prependTag tag payload = mconcat [
 
 -- | We support only Byron V1 with the hard fork disabled, as no other
 -- versions have been released before the hard fork
-pattern CardanoNodeToNodeVersion1 :: BlockNodeToNodeVersion (CardanoBlock sc)
+pattern CardanoNodeToNodeVersion1 :: BlockNodeToNodeVersion (CardanoBlock c)
 pattern CardanoNodeToNodeVersion1 =
     HardForkNodeToNodeDisabled ByronNodeToNodeVersion1
 
-pattern CardanoNodeToNodeVersion2 :: BlockNodeToNodeVersion (CardanoBlock sc)
+pattern CardanoNodeToNodeVersion2 :: BlockNodeToNodeVersion (CardanoBlock c)
 pattern CardanoNodeToNodeVersion2 =
     HardForkNodeToNodeEnabled (
          EraNodeToNodeEnabled ByronNodeToNodeVersion2
@@ -180,11 +181,11 @@ pattern CardanoNodeToNodeVersion2 =
 
 -- | We support Byron V1 with hard fork disabled, as it was released before
 -- the hard fork
-pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock sc)
+pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock c)
 pattern CardanoNodeToClientVersion1 =
     HardForkNodeToClientDisabled ByronNodeToClientVersion1
 
-pattern CardanoNodeToClientVersion2 :: BlockNodeToClientVersion (CardanoBlock sc)
+pattern CardanoNodeToClientVersion2 :: BlockNodeToClientVersion (CardanoBlock c)
 pattern CardanoNodeToClientVersion2 =
     HardForkNodeToClientEnabled (
          EraNodeToClientEnabled ByronNodeToClientVersion1
@@ -192,7 +193,8 @@ pattern CardanoNodeToClientVersion2 =
       :* Nil
       )
 
-instance TPraosCrypto sc => SupportedNetworkProtocolVersion (CardanoBlock sc) where
+instance CardanoHardForkConstraints c
+      => SupportedNetworkProtocolVersion (CardanoBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
       , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
@@ -209,7 +211,7 @@ instance TPraosCrypto sc => SupportedNetworkProtocolVersion (CardanoBlock sc) wh
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
+instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
   -- TODO pull out of RunNode
   nodeBlockFetchSize = \case
       HeaderByron   headerByron   -> nodeBlockFetchSize headerByron
@@ -253,7 +255,7 @@ instance TPraosCrypto sc => RunNode (CardanoBlock sc) where
 -------------------------------------------------------------------------------}
 
 protocolInfoCardano
-  :: forall sc m. (IOLike m, TPraosCrypto sc)
+  :: forall c m. (IOLike m, CardanoHardForkConstraints c)
      -- Byron
   => Genesis.Config
   -> Maybe PBftSignatureThreshold
@@ -261,17 +263,17 @@ protocolInfoCardano
   -> Update.SoftwareVersion
   -> Maybe ByronLeaderCredentials
      -- Shelley
-  -> ShelleyGenesis sc
+  -> ShelleyGenesis (ShelleyEra c)
   -> Nonce
      -- ^ The initial nonce for the Shelley era, typically derived from the
      -- hash of Shelley Genesis config JSON file.
   -> ProtVer
   -> Natural
-  -> Maybe (TPraosLeaderCredentials sc)
+  -> Maybe (TPraosLeaderCredentials (ShelleyEra c))
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
   -> TriggerHardFork
-  -> ProtocolInfo m (CardanoBlock sc)
+  -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
                     mbLowerBound triggerHardFork =
@@ -322,17 +324,18 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     tpraosParams :: TPraosParams
     tpraosParams = Shelley.mkTPraosParams maxMajorPV initialNonce genesisShelley
 
-    blockConfigShelley :: BlockConfig (ShelleyBlock sc)
+    blockConfigShelley :: BlockConfig (ShelleyBlock (ShelleyEra c))
     blockConfigShelley =
         Shelley.mkShelleyBlockConfig
           protVer
           genesisShelley
           (tpraosBlockIssuerVKey mbCredsShelley)
 
-    partialConsensusConfigShelley :: PartialConsensusConfig (BlockProtocol (ShelleyBlock sc))
+    partialConsensusConfigShelley ::
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
     partialConsensusConfigShelley = tpraosParams
 
-    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock sc)
+    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
     partialLedgerConfigShelley = ShelleyPartialLedgerConfig $
         Shelley.mkShelleyLedgerConfig
           genesisShelley
@@ -349,7 +352,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     k :: SecurityParam
     k = assert (kByron == kShelley) kByron
 
-    shape :: History.Shape (CardanoEras sc)
+    shape :: History.Shape (CardanoEras c)
     shape = History.Shape $
       exactlyTwo
         (Byron.byronEraParams safeBeforeByron genesisByron)
@@ -359,7 +362,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
         safeBeforeByron =
             maybe History.NoLowerBound History.LowerBound mbLowerBound
 
-    cfg :: TopLevelConfig (CardanoBlock sc)
+    cfg :: TopLevelConfig (CardanoBlock c)
     cfg = TopLevelConfig {
         topLevelConfigProtocol = HardForkConsensusConfig {
             hardForkConsensusConfigK      = k
@@ -391,7 +394,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
           }
       }
 
-    blockForging :: Maybe (m (BlockForging m (CardanoBlock sc)))
+    blockForging :: Maybe (m (BlockForging m (CardanoBlock c)))
     blockForging = case (mbCredsByron, mbCredsShelley) of
         (Nothing, Nothing) -> Nothing
 
@@ -419,11 +422,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
             $ OptNil
 
 protocolClientInfoCardano
-  :: forall sc.
+  :: forall c.
      -- Byron
      EpochSlots
   -> SecurityParam
-  -> ProtocolClientInfo (CardanoBlock sc)
+  -> ProtocolClientInfo (CardanoBlock c)
 protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
       pClientInfoCodecConfig =
         CardanoCodecConfig
@@ -440,7 +443,7 @@ protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
 -- Byron. This is not possible for Shelley, as we would have to call
 -- 'completeLedgerConfig' and 'completeConsensusConfig' first.
 projByronTopLevelConfig
-  :: TopLevelConfig (CardanoBlock sc)
+  :: TopLevelConfig (CardanoBlock c)
   -> TopLevelConfig ByronBlock
 projByronTopLevelConfig cfg = byronCfg
   where

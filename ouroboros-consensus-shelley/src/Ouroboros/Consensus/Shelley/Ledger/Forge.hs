@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Assert
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -40,16 +39,16 @@ import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock
-  :: (TPraosCrypto c, Monad m)
-  => HotKey c m
-  -> TPraosCanBeLeader c
-  -> TopLevelConfig (ShelleyBlock c)
+  :: (TPraosCrypto era, Monad m)
+  => HotKey era m
+  -> TPraosCanBeLeader era
+  -> TopLevelConfig (ShelleyBlock era)
   -> BlockNo                             -- ^ Current block number
   -> SlotNo                              -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock c)  -- ^ Current ledger
-  -> [GenTx (ShelleyBlock c)]            -- ^ Txs to add in the block
-  -> TPraosIsLeader c                    -- ^ Leader proof
-  -> m (ShelleyBlock c)
+  -> TickedLedgerState (ShelleyBlock era)  -- ^ Current ledger
+  -> [GenTx (ShelleyBlock era)]            -- ^ Txs to add in the block
+  -> TPraosIsLeader era                    -- ^ Leader proof
+  -> m (ShelleyBlock era)
 forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
@@ -91,7 +90,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader
 
     mkBhBody toSign = SL.BHBody {
           bheaderPrev    = prevHash
-        , bheaderVk      = SL.VKey tpraosToSignIssuerVK
+        , bheaderVk      = tpraosToSignIssuerVK
         , bheaderVrfVk   = tpraosToSignVrfVK
         , bheaderSlotNo  = curSlot
         , bheaderBlockNo = curNo

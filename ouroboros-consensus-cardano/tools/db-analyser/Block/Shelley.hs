@@ -31,8 +31,8 @@ import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           HasAnalysis
 
-instance HasAnalysis (ShelleyBlock TPraosStandardCrypto) where
-    data Args (ShelleyBlock TPraosStandardCrypto) =
+instance HasAnalysis (ShelleyBlock StandardShelley) where
+    data Args (ShelleyBlock StandardShelley) =
       ShelleyBlockArgs {
           configFileShelley :: FilePath
         , initialNonce      :: Nonce
@@ -51,12 +51,13 @@ instance HasAnalysis (ShelleyBlock TPraosStandardCrypto) where
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
     knownEBBs = const Map.empty
 
-type ShelleyBlockArgs = Args (ShelleyBlock TPraosStandardCrypto)
+type ShelleyBlockArgs = Args (ShelleyBlock StandardShelley)
 
-mkShelleyProtocolInfo :: forall c. TPraosCrypto c
-                      => ShelleyGenesis c
-                      -> Nonce
-                      -> ProtocolInfo IO (ShelleyBlock c)
+mkShelleyProtocolInfo ::
+     forall era. TPraosCrypto era
+  => ShelleyGenesis era
+  -> Nonce
+  -> ProtocolInfo IO (ShelleyBlock era)
 mkShelleyProtocolInfo genesis initialNonce =
     protocolInfoShelley
       genesis
@@ -65,7 +66,7 @@ mkShelleyProtocolInfo genesis initialNonce =
       (SL.ProtVer 0 0)
       Nothing
 
-countOutputs :: Shelley.Crypto c => SL.Tx c -> Int
+countOutputs :: TPraosCrypto era => SL.Tx era -> Int
 countOutputs tx = length $ SL._outputs $ SL._body tx
 
 parseShelleyArgs :: Parser ShelleyBlockArgs

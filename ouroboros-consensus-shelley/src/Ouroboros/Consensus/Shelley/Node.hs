@@ -32,10 +32,8 @@ import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 
+import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Prelude (Natural)
-
-import           Cardano.Crypto.KES.Class
-import           Cardano.Crypto.VRF.Class (VerKeyVRF, deriveVerKeyVRF)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -73,7 +71,6 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
@@ -81,16 +78,16 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
   Credentials
 -------------------------------------------------------------------------------}
 
-data TPraosLeaderCredentials c = TPraosLeaderCredentials {
+data TPraosLeaderCredentials era = TPraosLeaderCredentials {
     -- | The unevolved signing KES key (at evolution 0).
     --
     -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
     -- automatically, whereas 'TPraosCanBeLeader' does not change.
-    tpraosLeaderCredentialsInitSignKey :: SignKeyKES (KES c)
-  , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader c
+    tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
+  , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
   }
 
-tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials c) -> BlockIssuerVKey c
+tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials era) -> BlockIssuerVKey era
 tpraosBlockIssuerVKey mbCredentials =
     case tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
            <$> mbCredentials of
@@ -101,17 +98,17 @@ tpraosBlockIssuerVKey mbCredentials =
   BlockForging
 -------------------------------------------------------------------------------}
 
-type instance CannotForge (ShelleyBlock c) = TPraosCannotForge c
+type instance CannotForge (ShelleyBlock era) = TPraosCannotForge era
 
-type instance ForgeStateInfo (ShelleyBlock c) = HotKey.KESInfo
+type instance ForgeStateInfo (ShelleyBlock era) = HotKey.KESInfo
 
-type instance ForgeStateUpdateError (ShelleyBlock c) = HotKey.KESEvolutionError
+type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionError
 
 shelleyBlockForging
-  :: forall m c. (TPraosCrypto c, IOLike m)
+  :: forall m era. (TPraosCrypto era, IOLike m)
   => TPraosParams
-  -> TPraosLeaderCredentials c
-  -> m (BlockForging m (ShelleyBlock c))
+  -> TPraosLeaderCredentials era
+  -> m (BlockForging m (ShelleyBlock era))
 shelleyBlockForging TPraosParams {..}
                     TPraosLeaderCredentials {
                         tpraosLeaderCredentialsInitSignKey = initSignKey
@@ -131,10 +128,10 @@ shelleyBlockForging TPraosParams {..}
       , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
       }
   where
-    forgingVRFHash :: SL.Hash c (VerKeyVRF (VRF c))
+    forgingVRFHash :: SL.Hash era (SL.VerKeyVRF era)
     forgingVRFHash =
           SL.hashVerKeyVRF
-        . deriveVerKeyVRF
+        . VRF.deriveVerKeyVRF
         . tpraosCanBeLeaderSignKeyVRF
         $ canBeLeader
 
@@ -151,7 +148,7 @@ shelleyBlockForging TPraosParams {..}
 
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
-validateGenesis :: TPraosCrypto c => SL.ShelleyGenesis c -> Either String ()
+validateGenesis :: TPraosCrypto era => SL.ShelleyGenesis era -> Either String ()
 validateGenesis = first errsToString . SL.validateGenesis
   where
     errsToString :: [SL.ValidationErr] -> String
@@ -160,15 +157,15 @@ validateGenesis = first errsToString . SL.validateGenesis
           ("Invalid genesis config:" : map SL.describeValidationErr errs)
 
 protocolInfoShelley
-  :: forall m c. (IOLike m, TPraosCrypto c)
-  => SL.ShelleyGenesis c
+  :: forall m era. (IOLike m, TPraosCrypto era)
+  => SL.ShelleyGenesis era
   -> SL.Nonce
      -- ^ The initial nonce, typically derived from the hash of Genesis config
      -- JSON file.
   -> Natural -- ^ Max major protocol version
   -> SL.ProtVer
-  -> Maybe (TPraosLeaderCredentials c)
-  -> ProtocolInfo m (ShelleyBlock c)
+  -> Maybe (TPraosLeaderCredentials era)
+  -> ProtocolInfo m (ShelleyBlock era)
 protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
@@ -177,7 +174,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
       }
   where
-    topLevelConfig :: TopLevelConfig (ShelleyBlock c)
+    topLevelConfig :: TopLevelConfig (ShelleyBlock era)
     topLevelConfig = TopLevelConfig {
         topLevelConfigProtocol = consensusConfig
       , topLevelConfigBlock = FullBlockConfig {
@@ -187,13 +184,13 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
           }
       }
 
-    consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))
+    consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock era))
     consensusConfig = TPraosConfig {
         tpraosParams
       , tpraosEpochInfo = epochInfo
       }
 
-    ledgerConfig :: LedgerConfig (ShelleyBlock c)
+    ledgerConfig :: LedgerConfig (ShelleyBlock era)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorPV
 
     epochInfo :: EpochInfo Identity
@@ -202,20 +199,20 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorPV initialNonce genesis
 
-    blockConfig :: BlockConfig (ShelleyBlock c)
+    blockConfig :: BlockConfig (ShelleyBlock era)
     blockConfig =
         mkShelleyBlockConfig
           protVer
           genesis
           (tpraosBlockIssuerVKey mbCredentials)
 
-    initLedgerState :: LedgerState (ShelleyBlock c)
+    initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {
         ledgerTip    = GenesisPoint
       , shelleyState = SL.chainNes initShelleyState
       }
 
-    initChainDepState :: State.TPraosState c
+    initChainDepState :: State.TPraosState era
     initChainDepState = State.empty Origin $
       SL.ChainDepState {
           SL.csProtocol = SL.PrtclState
@@ -232,10 +229,10 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     initialEpochNo :: EpochNo
     initialEpochNo = 0
 
-    initialUtxo :: SL.UTxO c
+    initialUtxo :: SL.UTxO era
     initialUtxo = SL.genesisUtxO genesis
 
-    initShelleyState :: SL.ChainState c
+    initShelleyState :: SL.ChainState era
     initShelleyState = registerGenesisStaking $ SL.initialShelleyState
       Origin
       initialEpochNo
@@ -246,7 +243,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       (SL.sgProtocolParams genesis)
       initialNonce
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock c)
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock era)
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState
@@ -255,7 +252,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     runShelleyBase :: SL.ShelleyBase a -> a
     runShelleyBase sb = runReader sb (shelleyLedgerGlobals ledgerConfig)
 
-    oSched :: SL.OverlaySchedule c
+    oSched :: SL.OverlaySchedule era
     oSched = runShelleyBase $
       SL.overlaySchedule
         initialEpochNo
@@ -270,7 +267,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     -- HERE BE DRAGONS! This function is intended to help in testing. It should
     -- not be called with anything other than 'emptyGenesisStaking' in
     -- production.
-    registerGenesisStaking :: SL.ChainState c -> SL.ChainState c
+    registerGenesisStaking :: SL.ChainState era -> SL.ChainState era
     registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
         { SL.chainNes = newChainNes }
       where
@@ -303,7 +300,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         -- about updating the '_delegations' field.
         --
         -- See STS DELEG for details
-        newDState :: SL.DState c
+        newDState :: SL.DState era
         newDState = (SL._dstate oldDPState) {
           SL._rewards = Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
@@ -313,7 +310,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
         -- We consider pools as having been registered in slot 0
         -- See STS POOL for details
-        newPState :: SL.PState c
+        newPState :: SL.PState era
         newPState = (SL._pstate oldDPState) {
           SL._pParams = sgsPools
         }
@@ -338,7 +335,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
                 error "Pointer stake addresses not allowed in initial snapshot"
               SL.StakeRefNull -> Nothing
 
-protocolClientInfoShelley :: ProtocolClientInfo (ShelleyBlock c)
+protocolClientInfoShelley :: ProtocolClientInfo (ShelleyBlock era)
 protocolClientInfoShelley =
     ProtocolClientInfo {
       -- No particular codec configuration is needed for Shelley
@@ -351,14 +348,14 @@ protocolClientInfoShelley =
 
 -- TODO: This should be updated as soon as we start preparing for the
 -- hard fork transition out of Shelley.
-instance InspectLedger (ShelleyBlock c) where
+instance InspectLedger (ShelleyBlock era) where
   -- Use defaults
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance
 -------------------------------------------------------------------------------}
 
-instance ConfigSupportsNode (ShelleyBlock c) where
+instance ConfigSupportsNode (ShelleyBlock era) where
   getSystemStart  = shelleySystemStart
   getNetworkMagic = shelleyNetworkMagic
 
@@ -366,7 +363,7 @@ instance ConfigSupportsNode (ShelleyBlock c) where
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => RunNode (ShelleyBlock c) where
+instance TPraosCrypto era => RunNode (ShelleyBlock era) where
   nodeBlockFetchSize hdr = overhead + headerSize + bodySize
     where
       -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block

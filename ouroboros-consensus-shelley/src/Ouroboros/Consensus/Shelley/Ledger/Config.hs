@@ -31,13 +31,13 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 -------------------------------------------------------------------------------}
 
 -- | In case we're a block issuer, the verification key we use.
-data BlockIssuerVKey c =
-    BlockIssuerVKey !(SL.VKey 'SL.BlockIssuer c)
+data BlockIssuerVKey era =
+    BlockIssuerVKey !(SL.VKey 'SL.BlockIssuer era)
   | NotABlockIssuer
   deriving stock (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
-data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
+data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
       -- | The highest protocol version this node supports. It will be stored
       -- the headers of produced blocks.
       shelleyProtocolVersion :: !SL.ProtVer
@@ -49,16 +49,16 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
       -- blocks, this should be set to the verification key corresponding to
       -- the node's signing key, to make sure we prefer self-issued blocks.
       -- For non block producing nodes, this can be set to 'NotABlockIssuer'.
-    , shelleyBlockIssuerVKey :: !(BlockIssuerVKey c)
+    , shelleyBlockIssuerVKey :: !(BlockIssuerVKey era)
     }
   deriving stock (Show, Generic)
   deriving anyclass NoUnexpectedThunks
 
 mkShelleyBlockConfig ::
      SL.ProtVer
-  -> SL.ShelleyGenesis c
-  -> BlockIssuerVKey c
-  -> BlockConfig (ShelleyBlock c)
+  -> SL.ShelleyGenesis era
+  -> BlockIssuerVKey era
+  -> BlockConfig (ShelleyBlock era)
 mkShelleyBlockConfig protVer genesis blockIssuerVKey = ShelleyConfig {
       shelleyProtocolVersion = protVer
     , shelleySystemStart     = SystemStart     $ SL.sgSystemStart  genesis
@@ -71,5 +71,5 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKey = ShelleyConfig {
 -------------------------------------------------------------------------------}
 
 -- | No particular codec configuration is needed for Shelley
-data instance CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+data instance CodecConfig (ShelleyBlock era) = ShelleyCodecConfig
   deriving (Generic, NoUnexpectedThunks)

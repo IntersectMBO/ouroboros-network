@@ -49,18 +49,18 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol
 
 
-type ShelleyTxId c = SL.TxId c
+type ShelleyTxId era = SL.TxId era
 
-data instance GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
+data instance GenTx (ShelleyBlock era) = ShelleyTx !(ShelleyTxId era) !(SL.Tx era)
   deriving stock    (Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
-instance Typeable c => ShowProxy (GenTx (ShelleyBlock c)) where
+instance Typeable era => ShowProxy (GenTx (ShelleyBlock era)) where
 
-type instance ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
+type instance ApplyTxErr (ShelleyBlock era) = SL.ApplyTxError era
 
 -- orphaned instance
-instance Typeable c => ShowProxy (SL.ApplyTxError c) where
+instance Typeable era => ShowProxy (SL.ApplyTxError era) where
 
 
 -- |'txInBlockSize' is used to estimate how many transactions we can grab from
@@ -87,7 +87,7 @@ fixedBlockBodyOverhead = 1024
 perTxOverhead :: Num a => a
 perTxOverhead = 4
 
-instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
+instance TPraosCrypto era => LedgerSupportsMempool (ShelleyBlock era) where
   txInvariant = const True
 
   applyTx = applyShelleyTx
@@ -105,38 +105,38 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
     where
       txSize = fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
-mkShelleyTx :: Crypto c => SL.Tx c -> GenTx (ShelleyBlock c)
+mkShelleyTx :: Era era => SL.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 
-newtype instance TxId (GenTx (ShelleyBlock c)) = ShelleyTxId (ShelleyTxId c)
+newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (ShelleyTxId era)
   deriving newtype (Eq, Ord, FromCBOR, ToCBOR)
-  deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock c)))
+  deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock era)))
 
-instance Typeable c => ShowProxy (TxId (GenTx (ShelleyBlock c))) where
+instance Typeable era => ShowProxy (TxId (GenTx (ShelleyBlock era))) where
 
-instance Crypto c => HasTxId (GenTx (ShelleyBlock c)) where
+instance Era era => HasTxId (GenTx (ShelleyBlock era)) where
   txId (ShelleyTx i _) = ShelleyTxId i
 
-instance Crypto c => HasTxs (ShelleyBlock c) where
+instance Era era => HasTxs (ShelleyBlock era) where
   extractTxs =
         map mkShelleyTx
       . txSeqToList
       . SL.bbody
       . shelleyBlockRaw
     where
-      txSeqToList :: TxSeq c -> [SL.Tx c]
+      txSeqToList :: TxSeq era -> [SL.Tx era]
       txSeqToList (TxSeq s) = toList s
 
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance Crypto c => ToCBOR (GenTx (ShelleyBlock c)) where
+instance Era era => ToCBOR (GenTx (ShelleyBlock era)) where
   -- No need to encode the 'TxId', it's just a hash of the 'SL.TxBody' inside
   -- 'SL.Tx', so it can be recomputed.
   toCBOR (ShelleyTx _txid tx) = wrapCBORinCBOR toCBOR tx
 
-instance Crypto c => FromCBOR (GenTx (ShelleyBlock c)) where
+instance Era era => FromCBOR (GenTx (ShelleyBlock era)) where
   fromCBOR = fmap mkShelleyTx $ unwrapCBORinCBOR
     $ (. Full) . runAnnotator <$> fromCBOR
 
@@ -144,16 +144,16 @@ instance Crypto c => FromCBOR (GenTx (ShelleyBlock c)) where
   Pretty-printing
 -------------------------------------------------------------------------------}
 
-instance Crypto c => Condense (GenTx (ShelleyBlock c)) where
+instance Era era => Condense (GenTx (ShelleyBlock era)) where
   condense (ShelleyTx _ tx ) = show tx
 
-instance Condense (GenTxId (ShelleyBlock c)) where
+instance Condense (GenTxId (ShelleyBlock era)) where
   condense (ShelleyTxId i) = "txid: " <> show i
 
-instance Crypto c => Show (GenTx (ShelleyBlock c)) where
+instance Era era => Show (GenTx (ShelleyBlock era)) where
   show = condense
 
-instance Show (GenTxId (ShelleyBlock c)) where
+instance Show (GenTxId (ShelleyBlock era)) where
   show = condense
 
 {-------------------------------------------------------------------------------
@@ -161,12 +161,12 @@ instance Show (GenTxId (ShelleyBlock c)) where
 -------------------------------------------------------------------------------}
 
 applyShelleyTx
-  :: TPraosCrypto c
-  => LedgerConfig (ShelleyBlock c)
+  :: TPraosCrypto era
+  => LedgerConfig (ShelleyBlock era)
   -> SlotNo
-  -> GenTx (ShelleyBlock c)
-  -> TickedLedgerState (ShelleyBlock c)
-  -> Except (ApplyTxErr (ShelleyBlock c)) (TickedLedgerState (ShelleyBlock c))
+  -> GenTx (ShelleyBlock era)
+  -> TickedLedgerState (ShelleyBlock era)
+  -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
 applyShelleyTx cfg slot (ShelleyTx _ tx) st =
     (\state -> st { tickedShelleyState = state }) <$>
        SL.overShelleyState
