@@ -17,11 +17,11 @@ import           Cardano.Crypto.VRF.Praos (PraosVRF)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
 import           Cardano.Ledger.Era (Era)
+
+import           Shelley.Spec.Ledger.API (BHBody, TxBody)
 import           Shelley.Spec.Ledger.BaseTypes (Seed, Shelley)
-import           Shelley.Spec.Ledger.BlockChain (BHBody)
 import qualified Shelley.Spec.Ledger.Keys as SL
 import           Shelley.Spec.Ledger.OCert (OCertSignable)
-import           Shelley.Spec.Ledger.TxData (TxBody)
 
 class ( Era era
       , SL.DSignable    era (OCertSignable era)

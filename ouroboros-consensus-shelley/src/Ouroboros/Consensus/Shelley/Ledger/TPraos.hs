@@ -11,8 +11,8 @@ import           Cardano.Crypto.VRF (certifiedOutput)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
 
+import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config

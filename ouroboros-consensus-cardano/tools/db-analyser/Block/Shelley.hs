@@ -17,9 +17,9 @@ import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
 import           Options.Applicative
 
+import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Tx as SL
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 

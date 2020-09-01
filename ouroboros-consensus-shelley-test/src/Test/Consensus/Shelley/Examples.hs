@@ -62,7 +62,6 @@ import           Ouroboros.Consensus.Util.Time
 
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, VRF)
 import           Cardano.Ledger.Era (Era (Crypto))
-import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
