@@ -100,9 +100,6 @@ roundtrip' enc dec a = case deserialiseFromBytes dec bs of
 type Arbitrary' a = (Arbitrary a, Eq a, Show a)
 
 -- | All roundtrip tests
---
--- NOTE: we don't include 'prop_hashSize' because the hard fork from Byron
--- (real crypto) to Shelley (mock crypto) has differently sized hashes.
 roundtrip_all
   :: forall blk.
      ( RunNode blk
@@ -136,6 +133,7 @@ roundtrip_all ccfg dictNestedHdr =
       , testGroup "SerialiseNodeToClient" $ roundtrip_SerialiseNodeToClient ccfg
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
+      , testProperty "hashSize"           $ prop_hashSize                   (Proxy @blk)
       , testProperty "nodeBlockFetchSize" $ prop_nodeBlockFetchSize         ccfg
       ]
 

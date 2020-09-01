@@ -33,10 +33,6 @@ tests :: TestTree
 tests = testGroup "Shelley"
     [ roundtrip_all testCodecCfg dictNestedHdr
 
-      -- 'roundtrip_ConvertRawHash' for mock crypto is included in
-      -- 'roundtrip_all', but 'prop_hashSize' is not
-    , testProperty "hashSize mock crypto" $ prop_hashSize pMock
-
       -- Test for real crypto too
     , testProperty "hashSize real crypto"       $ prop_hashSize pReal
     , testProperty "ConvertRawHash real crypto" $ roundtrip_ConvertRawHash pReal
@@ -51,9 +47,6 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    pMock :: Proxy (ShelleyBlock (MockShelley ShortHash))
-    pMock = Proxy
-
     pReal :: Proxy (ShelleyBlock (MockShelley ShortHash))
     pReal = Proxy
 

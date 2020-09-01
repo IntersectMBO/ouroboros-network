@@ -22,7 +22,6 @@ import           Ouroboros.Consensus.Byron.Node ()
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
-import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node ()
@@ -39,25 +38,8 @@ import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 tests :: TestTree
 tests = testGroup "Cardano"
     [ roundtrip_all testCodecCfg dictNestedHdr
-
-      -- Note: the above roundtrip tests use 'MockCryptoByronCompat' (because
-      -- most generators only work with mock crypto, not with real crypto). But
-      -- because the Byron hash (currently not parameterised over crypto) is 32
-      -- bytes while the mock Shelley hash is 4 bytes, the 'prop_hashSize' is
-      -- not included in 'roundtrip_all', as it would fail.
-      --
-      -- Therefore, we test 'prop_hashSize' separately, but with
-      -- 'StandardCrypto', where the Shelley hash is 32 bytes. We also run
-      -- 'roundtrip_ConvertRawHash' for the real crypto.
-    , testProperty "hashSize real crypto"       $ prop_hashSize            pReal
-    , testProperty "ConvertRawHash real crypto" $ roundtrip_ConvertRawHash pReal
-
     , testProperty "BinaryBlockInfo sanity check" prop_CardanoBinaryBlockInfo
-
     ]
-  where
-    pReal :: Proxy (CardanoBlock StandardCrypto)
-    pReal = Proxy
 
 testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron
 testCodecCfg =
