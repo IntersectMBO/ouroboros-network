@@ -27,7 +27,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , NonMyopicMemberRewards (..)
     -- * Ledger config
   , ShelleyLedgerConfig (..)
-  , mkShelleyGlobals
   , mkShelleyLedgerConfig
   , shelleyEraParams
     -- * Auxiliary
@@ -89,6 +88,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
+import qualified Shelley.Spec.Ledger.StabilityWindow as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
@@ -96,7 +96,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
                      Ticked (TickedPraosLedgerView))
-import qualified Ouroboros.Consensus.Shelley.Protocol as Protocol
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -134,40 +133,8 @@ shelleyEraParams genesis = HardFork.EraParams {
     }
   where
     stabilityWindow =
-        Protocol.computeStabilityWindow
-          (SecurityParam (SL.sgSecurityParam genesis))
-          (SL.sgActiveSlotCoeff genesis)
-
-mkShelleyGlobals
-  :: SL.ShelleyGenesis era
-  -> EpochInfo Identity
-  -> Natural
-  -> SL.Globals
-mkShelleyGlobals genesis epochInfo maxMajorPV =
-    SL.Globals {
-        activeSlotCoeff   = SL.sgActiveSlotCoeff   genesis
-      , epochInfo         = epochInfo
-      , maxKESEvo         = SL.sgMaxKESEvolutions  genesis
-      , maxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
-      , maxMajorPV        = maxMajorPV
-      , networkId         = SL.sgNetworkId         genesis
-      , quorum            = SL.sgUpdateQuorum      genesis
-      , randomnessStabilisationWindow
-      , securityParameter = k
-      , slotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
-      , stabilityWindow
-      }
-  where
-    SecurityParam k = SecurityParam $ SL.sgSecurityParam genesis
-
-    stabilityWindow =
-        Protocol.computeStabilityWindow
-          (SecurityParam $ SL.sgSecurityParam genesis)
-          (SL.sgActiveSlotCoeff genesis)
-
-    randomnessStabilisationWindow =
-        Protocol.computeRandomnessStabilisationWindow
-          (SecurityParam $ SL.sgSecurityParam genesis)
+        SL.computeStabilityWindow
+          (SL.sgSecurityParam genesis)
           (SL.sgActiveSlotCoeff genesis)
 
 mkShelleyLedgerConfig
@@ -178,7 +145,7 @@ mkShelleyLedgerConfig
 mkShelleyLedgerConfig genesis epochInfo maxMajorPV =
     ShelleyLedgerConfig {
         shelleyLedgerGenesis   = genesis
-      , shelleyLedgerGlobals   = mkShelleyGlobals genesis epochInfo maxMajorPV
+      , shelleyLedgerGlobals   = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
       , shelleyLedgerEraParams = shelleyEraParams genesis
       }
 

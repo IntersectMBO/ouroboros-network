@@ -32,9 +32,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosCrypto
   , StandardCrypto
   , StandardShelley
-    -- * Stability
-  , computeStabilityWindow
-  , computeRandomnessStabilisationWindow
     -- * CannotForge
   , TPraosCannotForge (..)
   , tpraosCheckCanForge
@@ -71,6 +68,7 @@ import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
+import qualified Shelley.Spec.Ledger.StabilityWindow as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
@@ -426,10 +424,8 @@ mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
 mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
       epochInfo                     = epochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
-    , stabilityWindow               =
-        computeStabilityWindow tpraosSecurityParam tpraosLeaderF
-    , randomnessStabilisationWindow =
-        computeRandomnessStabilisationWindow tpraosSecurityParam tpraosLeaderF
+    , stabilityWindow               = SL.computeStabilityWindow               k tpraosLeaderF
+    , randomnessStabilisationWindow = SL.computeRandomnessStabilisationWindow k tpraosLeaderF
     , securityParameter             = k
     , maxKESEvo                     = tpraosMaxKESEvo
     , quorum                        = tpraosQuorum
@@ -462,40 +458,6 @@ meetsLeaderThreshold
     SL.PoolDistr poolDistr = lvPoolDistr
     r = maybe 0 SL.individualPoolStake
         $ Map.lookup keyHash poolDistr
-
-{-------------------------------------------------------------------------------
-  Stability
--------------------------------------------------------------------------------}
-
--- | Calculate the stability window (e.g. the number of slots needed for a block
--- to become stable) from the security param and the active slot coefficient.
---
--- The value 3k/f is determined to be a suitabe value as per
--- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
-computeStabilityWindow
-  :: SecurityParam
-  -> SL.ActiveSlotCoeff
-  -> Word64
-computeStabilityWindow securityParam asc =
-    ceiling $ fromIntegral @_ @Double (3 * k) / fromRational (toRational f)
-  where
-    SecurityParam k = securityParam
-    f = SL.intervalValue . SL.activeSlotVal $ asc
-
--- | Calculate the randomness stabilisation window from the security param and
--- the active slot coefficient.
---
--- The value 4k/f is determined to be a suitabe value as per
--- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
-computeRandomnessStabilisationWindow
-  :: SecurityParam
-  -> SL.ActiveSlotCoeff
-  -> Word64
-computeRandomnessStabilisationWindow securityParam asc =
-    ceiling $ fromIntegral @_ @Double (4 * k) / fromRational (toRational f)
-  where
-    SecurityParam k = securityParam
-    f = SL.intervalValue . SL.activeSlotVal $ asc
 
 {-------------------------------------------------------------------------------
   CannotForge

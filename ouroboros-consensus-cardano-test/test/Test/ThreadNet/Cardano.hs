@@ -62,10 +62,9 @@ import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.StabilityWindow as SL
 
-import           Ouroboros.Consensus.Shelley.Ledger (mkShelleyGlobals)
 import           Ouroboros.Consensus.Shelley.Node
-import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
@@ -594,7 +593,7 @@ prop_simple_cardano_convergence TestSetup
         coeff = SL.sgActiveSlotCoeff genesisShelley
 
         w :: Word64
-        w = Shelley.computeStabilityWindow setupK coeff
+        w = SL.computeStabilityWindow k coeff
 
     -- Whether there was a Shelley block forged in a non-overlay slot.
     --
@@ -643,7 +642,7 @@ prop_simple_cardano_convergence TestSetup
               (sgProtocolParams genesisShelley)   -- notably contains setupD
 
         shelleyGlobals =
-            mkShelleyGlobals
+            SL.mkShelleyGlobals
               genesisShelley
               -- Suitable only for this narrow context
               (fixedSizeEpochInfo epochSizeShelley)
