@@ -14,17 +14,14 @@ jobs:
     container:
       image: phadej/ghc:8.6.5-bionic
     steps:
-      - name: Set PATH
+      - name: set PATH
         run: |
           echo "::add-path::$HOME/.cabal/bin"
       - name: Install dependencies
         run: |
           apt-get update
           apt-get install -y libsodium-dev jq
-      - name: Configure
-        run: |
-          ln -s cabal.project.local.github-pages cabal.project.local
-      - name: Install cabal-plan
+      - name: install cabal-plan
         run: |
           mkdir -p $HOME/.cabal/bin
           curl -sL https://github.com/haskell-hvr/cabal-plan/releases/download/v0.6.2.0/cabal-plan-0.6.2.0-x86_64-linux.xz > cabal-plan.xz
@@ -45,10 +42,14 @@ jobs:
       - name: checkout ouroboros-network repository
         run: |
           git clone --depth 1 https://github.com/${{ github.repository }}.git .
+          git config --local user.email "marcin.szamotulski@iohk.io"
+          git config --local user.name ${{ github.actor }}
           git fetch origin ${{ github.ref }}:temporary-ci-branch
           git checkout ${{ github.sha }}
-          git config --local user.email "marcin.szamotulski@iohk.io"
-          git config --local user.name  ${{ github.actor }}
+
+      - name: configure
+        run: |
+          ln -s cabal.project.local.github-pages cabal.project.local
 
       # Cache dist-newstyle directory
       - name: cache dist-newstyle
@@ -57,12 +58,12 @@ jobs:
           path: dist-newstyle
           key: dist-newstyle
 
-      - name: Build Haddock Documentation 🔧
+      - name: build Haddock documentation 🔧
         run: |
           mkdir ./haddocks
           ./scripts/haddocs.sh ./haddocks
 
-      - name: Deploy to gh-pages 🚀
+      - name: deploy to gh-pages 🚀
         run: |
           git fetch origin gh-pages:gh-pages
           git checkout gh-pages
