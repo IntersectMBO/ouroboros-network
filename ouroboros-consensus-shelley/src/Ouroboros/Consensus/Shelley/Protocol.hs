@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -15,6 +16,7 @@
 --   schedule determining slots to be produced by BFT
 module Ouroboros.Consensus.Shelley.Protocol (
     TPraos
+  , TPraosState (..)
   , TPraosChainSelectView (..)
   , SelfIssued (..)
   , TPraosFields (..)
@@ -26,7 +28,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosCanBeLeader (..)
   , TPraosIsLeader (..)
   , mkShelleyGlobals
-  , TPraosState
   , MaxMajorProtVer (..)
     -- * Crypto
   , Era
@@ -41,6 +42,8 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , Ticked (..)
   ) where
 
+import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except (throwError)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
@@ -50,6 +53,7 @@ import           Data.Ord (Down (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
@@ -58,6 +62,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Versioned
 
 import           Cardano.Ledger.Crypto (VRF)
 import           Cardano.Ledger.Era (Era (Crypto))
@@ -75,8 +80,6 @@ import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 import           Ouroboros.Consensus.Shelley.Protocol.Util
 
 {-------------------------------------------------------------------------------
@@ -325,13 +328,41 @@ newtype instance Ticked (SL.LedgerView era) = TickedPraosLedgerView {
       getTickedPraosLedgerView :: SL.LedgerView era
     }
 
--- | Ticked ChainDep state
+-- | Transitional Praos consensus state.
 --
--- We add the ticked state to the history only when applying a header.
-data instance Ticked (TPraosState era) = TickedPraosState {
-      tickedPraosStateTicked     :: SL.ChainDepState era
-    , tickedPraosStateOrig       :: TPraosState era
-    , tickedPraosStateLedgerView :: Ticked (LedgerView (TPraos era))
+-- In addition to the 'ChainDepState' provided by the ledger, we track the slot
+-- number of the last applied header.
+data TPraosState era = TPraosState {
+      tpraosStateLastSlot      :: !(WithOrigin SlotNo)
+    , tpraosStateChainDepState :: !(SL.ChainDepState era)
+    }
+  deriving (Generic, Show, Eq)
+
+instance Era era => NoUnexpectedThunks (TPraosState era)
+
+serialisationFormatVersion0 :: VersionNumber
+serialisationFormatVersion0 = 0
+
+instance Era era => Serialise (TPraosState era) where
+  encode (TPraosState slot chainDepState) =
+    encodeVersion serialisationFormatVersion0 $ mconcat [
+        CBOR.encodeListLen 2
+      , toCBOR slot
+      , toCBOR chainDepState
+      ]
+
+  decode = decodeVersion
+      [(serialisationFormatVersion0, Decode decodeTPraosState0)]
+    where
+      decodeTPraosState0 = do
+        enforceSize "TPraosState" 2
+        TPraosState <$> fromCBOR <*> fromCBOR
+
+-- | Ticked 'TPraosState'
+--
+data instance Ticked (TPraosState era) = TickedChainDepState {
+      tickedTPraosStateChainDepState :: SL.ChainDepState era
+    , tickedTPraosStateLedgerView    :: Ticked (LedgerView (TPraos era))
     }
 
 instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
@@ -379,8 +410,8 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
               | otherwise
               -> Nothing
     where
-      chainState = tickedPraosStateTicked cs
-      lv         = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
+      chainState = tickedTPraosStateChainDepState cs
+      lv         = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
       eta0       = STS.ticknStateEpochNonce $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
@@ -391,44 +422,43 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
 
       SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 
-  tickChainDepState TPraosConfig{..} (TickedPraosLedgerView lv) slot cds =
-      TickedPraosState {
-          tickedPraosStateTicked     = cs'
-        , tickedPraosStateOrig       = cds
-        , tickedPraosStateLedgerView = TickedPraosLedgerView lv
+  tickChainDepState TPraosConfig{..}
+                    (TickedPraosLedgerView lv)
+                    slot
+                    (TPraosState lastSlot st) =
+      TickedChainDepState {
+          tickedTPraosStateChainDepState = st'
+        , tickedTPraosStateLedgerView    = TickedPraosLedgerView lv
         }
     where
-      cs' = SL.tickChainDepState
+      st' = SL.tickChainDepState
               shelleyGlobals
               lv
-              (isNewEpoch tpraosEpochInfo slot (State.lastSlot cds))
-              (State.currentState cds)
+              (isNewEpoch tpraosEpochInfo slot lastSlot)
+              st
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
 
-  updateChainDepState TPraosConfig{..} b slot cs = do
-      newCS <- SL.updateChainDepState shelleyGlobals lv b (tickedPraosStateTicked cs)
-      return
-        $ State.prune (fromIntegral k)
-        $ State.append slot newCS (tickedPraosStateOrig cs)
+  updateChainDepState TPraosConfig{..} b slot cs =
+      TPraosState (NotOrigin slot) <$>
+        SL.updateChainDepState
+          shelleyGlobals
+          lv
+          b
+          (tickedTPraosStateChainDepState cs)
     where
-      SecurityParam k = tpraosSecurityParam tpraosParams
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
-      lv = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
+      lv = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
 
   reupdateChainDepState TPraosConfig{..} b slot cs =
-      let newCS = SL.reupdateChainDepState shelleyGlobals lv b (tickedPraosStateTicked cs)
-      in State.prune (fromIntegral k) $
-         State.append slot newCS (tickedPraosStateOrig cs)
+      TPraosState (NotOrigin slot) $
+        SL.reupdateChainDepState
+          shelleyGlobals
+          lv
+          b
+          (tickedTPraosStateChainDepState cs)
     where
-      SecurityParam k = tpraosSecurityParam tpraosParams
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
-      lv = getTickedPraosLedgerView (tickedPraosStateLedgerView cs)
-
-  -- Rewind the chain state
-  --
-  -- We don't roll back to the exact slot since that slot might not have been
-  -- filled; instead we roll back the the block just before it.
-  rewindChainDepState _proxy _k = State.rewind . pointSlot
+      lv = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
 
 mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
 mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {

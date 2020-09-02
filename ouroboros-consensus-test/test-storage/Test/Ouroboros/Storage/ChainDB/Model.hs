@@ -49,6 +49,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , getPastLedger
   , getIsValid
   , isValid
+  , getHeaderStateHistory
     -- * Iterators
   , stream
   , iteratorNext
@@ -104,6 +105,9 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..))
+import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -361,6 +365,17 @@ isValid :: forall blk. LedgerSupportsProtocol blk
         -> Model blk
         -> Maybe Bool
 isValid = flip . getIsValid
+
+getHeaderStateHistory ::
+     forall blk. LedgerSupportsProtocol blk
+  => TopLevelConfig blk
+  -> Model blk -> HeaderStateHistory blk
+getHeaderStateHistory cfg m@Model { initLedger } =
+      HeaderStateHistory.trim (fromIntegral n)
+    . HeaderStateHistory.fromChain cfg initLedger
+    $ currentChain m
+  where
+    n = maxActualRollback (configSecurityParam cfg) m
 
 {-------------------------------------------------------------------------------
   Construction

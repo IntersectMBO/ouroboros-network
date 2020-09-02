@@ -33,7 +33,6 @@ module Ouroboros.Consensus.Network.NodeToNode (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -155,7 +154,6 @@ mkHandlers
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
-     , Serialise (HeaderHash blk)
      , ReconstructNestedCtxt Header blk
      , Ord remotePeer
      )

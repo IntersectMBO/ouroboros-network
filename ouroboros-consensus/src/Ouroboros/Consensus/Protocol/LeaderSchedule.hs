@@ -107,7 +107,6 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   tickChainDepState     _ _ _ _ = TickedTrivial
   updateChainDepState   _ _ _ _ = return ()
   reupdateChainDepState _ _ _ _ = ()
-  rewindChainDepState   _ _ _ _ = Just ()
 
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))

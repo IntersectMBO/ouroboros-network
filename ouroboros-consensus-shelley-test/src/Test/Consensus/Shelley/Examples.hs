@@ -91,9 +91,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol (StandardShelley,
-                     TPraosCrypto)
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
+                     TPraosCrypto, TPraosState (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)
@@ -368,9 +366,7 @@ exampleAnnTip = AnnTip {
     }
 
 exampleChainDepState :: ChainDepState (BlockProtocol (ShelleyBlock StandardShelley))
-exampleChainDepState =
-    TPraosState.append 2             (mkPrtclState 2) $
-    TPraosState.empty  (NotOrigin 1) (mkPrtclState 1)
+exampleChainDepState = TPraosState (NotOrigin 1) (mkPrtclState 1)
   where
     mkPrtclState :: Word64 -> SL.ChainDepState StandardShelley
     mkPrtclState seed = SL.ChainDepState
@@ -462,25 +458,7 @@ exampleLedgerState = ShelleyLedgerState {
     }
 
 exampleHeaderState :: HeaderState (ShelleyBlock StandardShelley)
-exampleHeaderState = genesisHeaderState st
-  where
-    prtclState :: SL.ChainDepState StandardShelley
-    prtclState = SL.ChainDepState
-      { SL.csProtocol = STS.PrtclState
-          (Map.fromList [
-              (mkKeyHash 1, 1)
-            ])
-          (SL.mkNonceFromNumber 1)
-          SL.NeutralNonce
-      , SL.csTickn    = STS.TicknState {
-            STS.ticknStateEpochNonce    = SL.NeutralNonce
-          , STS.ticknStatePrevHashNonce = SL.mkNonceFromNumber 2
-          }
-      , SL.csLabNonce = SL.mkNonceFromNumber 2
-      }
-
-    st :: TPraosState StandardShelley
-    st = TPraosState.empty (NotOrigin 1) prtclState
+exampleHeaderState = genesisHeaderState exampleChainDepState
 
 exampleExtLedgerState :: ExtLedgerState (ShelleyBlock StandardShelley)
 exampleExtLedgerState = ExtLedgerState {

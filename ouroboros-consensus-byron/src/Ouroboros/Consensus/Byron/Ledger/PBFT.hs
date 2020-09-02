@@ -91,6 +91,5 @@ encodeByronChainDepState
 encodeByronChainDepState = S.encodePBftState
 
 decodeByronChainDepState
-  :: SecurityParam
-  -> Decoder s (ChainDepState (BlockProtocol ByronBlock))
-decodeByronChainDepState k = S.decodePBftState k (pbftWindowSize k)
+  :: Decoder s (ChainDepState (BlockProtocol ByronBlock))
+decodeByronChainDepState = S.decodePBftState

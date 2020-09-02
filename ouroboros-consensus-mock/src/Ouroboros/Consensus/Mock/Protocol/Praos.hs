@@ -382,20 +382,6 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
             }
     in PraosChainDepState $ bi : praosHistory cds
 
-  -- Rewind the chain state
-  --
-  -- The mock implementation of Praos keeps the full history of the chain state
-  -- since the dawn of time (#248). For this reason rewinding is very simple,
-  -- and we can't get to a point where we can't roll back more (unless the slot
-  -- number never occurred, but that would be a bug in the caller).
-  --
-  -- We don't roll back to the exact slot since that slot might not have been
-  -- filled; instead we roll back the the block just before it.
-  rewindChainDepState _proxy _k rewindTo (PraosChainDepState cds) =
-      -- This may drop us back to the empty list if we go back to genesis
-      Just . PraosChainDepState $
-        dropWhile (\bi -> NotOrigin (biSlot bi) > pointSlot rewindTo) cds
-
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).
 

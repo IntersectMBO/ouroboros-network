@@ -299,16 +299,28 @@ chainDepStateShelley stShelley =
         , currentState = WrapChainDepState stShelley
         }
 
+headerStateByron ::
+     HeaderState ByronBlock
+  -> HeaderState (CardanoBlock Crypto)
+headerStateByron HeaderState {..} = HeaderState {
+      headerStateTip      = annTipByron        <$> headerStateTip
+    , headerStateChainDep = chainDepStateByron  $  headerStateChainDep
+    }
+
+headerStateShelley ::
+     HeaderState (ShelleyBlock StandardShelley)
+  -> HeaderState (CardanoBlock Crypto)
+headerStateShelley HeaderState {..} = HeaderState {
+      headerStateTip      = annTipShelley        <$> headerStateTip
+    , headerStateChainDep = chainDepStateShelley  $  headerStateChainDep
+    }
+
 extLedgerStateByron ::
      ExtLedgerState ByronBlock
   -> ExtLedgerState (CardanoBlock Crypto)
 extLedgerStateByron ExtLedgerState {..} = ExtLedgerState {
       ledgerState = ledgerStateByron ledgerState
-    , headerState = HeaderState {
-          headerStateConsensus = chainDepStateByron (headerStateConsensus headerState)
-        , headerStateTips      = annTipByron <$> headerStateTips   headerState
-        , headerStateAnchor    = annTipByron <$> headerStateAnchor headerState
-        }
+    , headerState = headerStateByron headerState
     }
 
 extLedgerStateShelley ::
@@ -316,11 +328,7 @@ extLedgerStateShelley ::
   -> ExtLedgerState (CardanoBlock Crypto)
 extLedgerStateShelley ExtLedgerState {..} = ExtLedgerState {
       ledgerState = ledgerStateShelley ledgerState
-    , headerState = HeaderState {
-          headerStateConsensus = chainDepStateShelley (headerStateConsensus headerState)
-        , headerStateTips      = annTipShelley <$> headerStateTips   headerState
-        , headerStateAnchor    = annTipShelley <$> headerStateAnchor headerState
-        }
+    , headerState = headerStateShelley headerState
     }
 
 {-------------------------------------------------------------------------------

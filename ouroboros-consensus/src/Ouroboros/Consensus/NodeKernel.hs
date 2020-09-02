@@ -360,7 +360,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               (forgeStateInfoTracer tracers)
               cfg
               currentSlot
-              (tickedHeaderStateConsensus $ tickedHeaderState ticked)
+              (tickedHeaderStateChainDep $ tickedHeaderState ticked)
           case shouldForge of
             ForgeStateUpdateError err -> do
               trace $ TraceForgeStateUpdateError currentSlot err

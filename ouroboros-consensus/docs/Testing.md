@@ -498,23 +498,6 @@ but is used to do conversions across the entire chain, we verify that
 predictions about the "future" also work as correctly (including that the
 conversions say "outside range" if and only if the model expects them to be).
 
-#### `Test.Consensus.Protocol.PBFT`
-
-The PBFT consensus protocol needs to verify that within any given window, there
-is no more than a certain threshold of slots signed by a single key. This sounds
-easy enough, but it's complicated by two factors: first, it must support
-rollback, and second, it must deal with EBBs, a special kind of block on
-the Byron chain that shares a `SlotNo` and a `BlockNo` with non-EBB blocks,
-leading to all kinds of trouble.
-
-The tests here are property tests that validate that we can always rollback
-to the state we're interested in, within the contraints set by `k` (the
-security parameter, indicating how far we can rollback), whether or not
-EBBs are present.
-
-**Stats.** The PBFT state implementation (not the entire protocol) is 750 loc;
-the tests are 700 loc.
-
 ## Consensus tests
 
 The main consensus tests are the consensus layer's sophisticated tests. They are

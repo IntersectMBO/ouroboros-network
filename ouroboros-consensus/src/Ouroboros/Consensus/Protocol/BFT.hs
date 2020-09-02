@@ -162,7 +162,6 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 
   reupdateChainDepState _ _ _ _ = ()
   tickChainDepState     _ _ _ _ = TickedTrivial
-  rewindChainDepState   _ _ _ _ = Just ()
 
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance

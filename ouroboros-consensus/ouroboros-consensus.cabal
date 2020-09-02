@@ -101,6 +101,7 @@ library
                        Ouroboros.Consensus.HardFork.History.Qry
                        Ouroboros.Consensus.HardFork.History.Summary
                        Ouroboros.Consensus.HardFork.History.Util
+                       Ouroboros.Consensus.HeaderStateHistory
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Basics
@@ -143,7 +144,6 @@ library
                        Ouroboros.Consensus.Protocol.PBFT
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.PBFT.State
-                       Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.Ticked
                        Ouroboros.Consensus.TypeFamilyWrappers

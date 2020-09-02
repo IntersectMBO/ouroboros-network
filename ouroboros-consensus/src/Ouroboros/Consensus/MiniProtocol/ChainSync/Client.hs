@@ -36,10 +36,10 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , InvalidBlockReason
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
+import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -62,7 +62,10 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..), validateHeader)
+import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
+import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -83,18 +86,18 @@ type Consensus (client :: Type -> Type -> (Type -> Type) -> Type -> Type) blk m 
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {
-      getCurrentChain   :: STM m (AnchoredFragment (Header blk))
-    , getCurrentLedger  :: STM m (ExtLedgerState blk)
-    , getPastLedger     :: Point blk -> STM m (Maybe (ExtLedgerState blk))
-    , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+      getCurrentChain       :: STM m (AnchoredFragment (Header blk))
+    , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
+    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
+    , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
     }
 
 defaultChainDbView :: ChainDB m blk -> ChainDbView m blk
 defaultChainDbView chainDB = ChainDbView {
-      getCurrentChain   = ChainDB.getCurrentChain   chainDB
-    , getCurrentLedger  = ChainDB.getCurrentLedger  chainDB
-    , getPastLedger     = ChainDB.getPastLedger     chainDB
-    , getIsInvalidBlock = ChainDB.getIsInvalidBlock chainDB
+      getCurrentChain       = ChainDB.getCurrentChain       chainDB
+    , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
+    , getPastLedger         = ChainDB.getPastLedger         chainDB
+    , getIsInvalidBlock     = ChainDB.getIsInvalidBlock     chainDB
     }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
@@ -185,10 +188,72 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 -- TODO #467 if the 'theirTip' that they sent us is on our chain, just
 -- switch to it.
 
+
+-- = Candidate fragment size
+-- -------------------------
+--
+-- The size of the downloaded candidate fragment ('theirFrag') and the
+-- corresponding header state history ('theirHeaderStateHistory', which has the
+-- same size as 'theirFrag') is limited by how far in the future the ledger view
+-- can forecast.
+--
+-- For PBFT (Byron), we can forecast up to @2k@ slots ahead. Assuming a chain
+-- density of 100%, this means the look-ahead is @2k@ headers. For mainnet this
+-- means @2 * 2160 = 4320@ headers.
+--
+-- For TPraos (Shelley), we can forecast up to @3k/f@ slots ahead. Assuming a
+-- density of @f@, this means the look-ahead is @3k@ headers. For mainnet, this
+-- means @3 * 2160 = 6480@ headers.
+--
+-- The figure below shows the relation between 'ourFrag' and 'theirFrag':
+--
+-- >                       k headers or less, when A is genesis
+-- >              <--------------------->
+-- >            anchor    header       tip
+-- >              |         |           |
+-- >              V         V           V
+-- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
+-- >                     \
+-- > 'theirFrag':         H-H-H-H-...   ...   ...
+-- >                    ^
+-- >                    |
+-- >           most recent intersection (between A and the tip)
+--
+-- Note that the 'ourFrag' and 'theirFrag' share anchors /at all times/. In the
+-- figure above, the first three headers on 'ourFrag' are thus also on
+-- 'theirFrag'. The further away the most recent intersection is from the anchor
+-- point, the more headers 'theirFrag' and 'ourFrag' will have in common.
+--
+-- In the \"worst\" case 'theirFrag' has the following length:
+--
+-- >                        k
+-- >              <--------------------->
+-- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
+-- >                                    \
+-- > 'theirFrag':                        H-H-H-H-H-H-H-H-H-H-H-H-H-H-H...-H
+-- >                                     <-------------------------------->
+-- >                                               max look-ahead
+-- > max length   <------------------------------------------------------->
+-- > of 'theirFrag'         k + max look-ahead
+--
+-- For PBFT this is @2160 + 4320 = 6480@ headers, for TPraos this is @2160 +
+-- 6480 = 8640@ headers. The header state history will have the same length.
+--
+-- This worst case can happen when:
+-- * We are more than 6480 or respectively 8640 blocks behind, bulk syncing, and
+--   the BlockFetch client and/or the ChainDB can't keep up with the ChainSync
+--   client.
+-- * When our clock is running behind such that we are not adopting the
+--   corresponding blocks because we think they are from the future.
+-- * When an attacker is serving us headers from the future.
+--
+-- When we are in sync with the network, the fragment will typically be @k@ to
+-- @k + 1@ headers long.
+
 -- | State used when the intersection between the candidate and the current
 -- chain is unknown.
 data UnknownIntersectionState blk = UnknownIntersectionState
-  { ourFrag        :: !(AnchoredFragment (Header blk))
+  { ourFrag               :: !(AnchoredFragment (Header blk))
     -- ^ A view of the current chain fragment. Note that this might be
     -- temporarily out of date w.r.t. the actual current chain until we update
     -- it again.
@@ -197,10 +262,10 @@ data UnknownIntersectionState blk = UnknownIntersectionState
     -- with the candidate.
     --
     -- INVARIANT: 'ourFrag' contains @k@ headers, unless close to genesis.
-  , ourHeaderState :: !(HeaderState blk)
-    -- ^ 'HeaderState' corresponding to the tip (most recent block) of
+  , ourHeaderStateHistory :: !(HeaderStateHistory blk)
+    -- ^ 'HeaderStateHistory' corresponding to the tip (most recent block) of
     -- 'ourFrag'.
-  , ourTip         :: !(Our (Tip blk))
+  , ourTip                :: !(Our (Tip blk))
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
   deriving (Generic)
@@ -212,12 +277,19 @@ instance ( LedgerSupportsProtocol blk
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
 data KnownIntersectionState blk = KnownIntersectionState
-  { theirFrag              :: !(AnchoredFragment (Header blk))
+  { theirFrag               :: !(AnchoredFragment (Header blk))
     -- ^ The candidate, the synched fragment of their chain.
-  , theirHeaderState       :: !(HeaderState blk)
-    -- ^ 'HeaderState' corresponding to the tip (most recent block) of
+    --
+    -- See the \"Candidate fragment size\" note above.
+  , theirHeaderStateHistory :: !(HeaderStateHistory blk)
+    -- ^ 'HeaderStateHistory' corresponding to the tip (most recent block) of
     -- 'theirFrag'.
-  , ourFrag                :: !(AnchoredFragment (Header blk))
+    --
+    -- INVARIANT: the tips in 'theirHeaderStateHistory' correspond to the
+    -- headers in 'theirFrag', including the anchor.
+    --
+    -- See the \"Candidate fragment size\" note above.
+  , ourFrag                 :: !(AnchoredFragment (Header blk))
     -- ^ A view of the current chain fragment used to maintain the invariants
     -- with. Note that this might be temporarily out of date w.r.t. the actual
     -- current chain until we update it again.
@@ -228,9 +300,9 @@ data KnownIntersectionState blk = KnownIntersectionState
     -- this follows that both fragments intersect. This also means that
     -- 'theirFrag' forks off within the last @k@ headers/blocks of the
     -- 'ourFrag'.
-  , ourTip                 :: !(Our (Tip blk))
+  , ourTip                  :: !(Our (Tip blk))
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
-  , mostRecentIntersection :: !(Point blk)
+  , mostRecentIntersection  :: !(Point blk)
     -- ^ The most recent intersection point between 'theirFrag' and 'ourFrag'.
     -- Note that this is not necessarily the anchor point of both 'theirFrag'
     -- and 'ourFrag', they might have many more headers in common.
@@ -251,6 +323,7 @@ instance ( LedgerSupportsProtocol blk
 checkKnownIntersectionInvariants
   :: ( HasHeader blk
      , HasHeader (Header blk)
+     , HasAnnTip blk
      , ConsensusProtocol (BlockProtocol blk)
      )
   => ConsensusConfig (BlockProtocol blk)
@@ -259,9 +332,28 @@ checkKnownIntersectionInvariants
 checkKnownIntersectionInvariants cfg KnownIntersectionState
                                      { ourFrag
                                      , theirFrag
+                                     , theirHeaderStateHistory
                                      , ourTip
                                      , mostRecentIntersection
                                      }
+    -- 'theirHeaderStateHistory' invariant
+    | let HeaderStateHistory snapshots anchor = theirHeaderStateHistory
+          historyTips  = headerStateTip        <$> Foldable.toList snapshots
+          fragmentTips = NotOrigin . getAnnTip <$> AF.toOldestFirst theirFrag
+          historyAnchorPoint  = withOriginRealPointToPoint $ annTipRealPoint <$> headerStateTip anchor
+          fragmentAnchorPoint = castPoint $ AF.anchorPoint theirFrag
+    , historyTips /= fragmentTips || historyAnchorPoint /= fragmentAnchorPoint
+    = throwError $ unwords
+      [ "The tips in theirHeaderStateHistory didn't match the headers in theirFrag:"
+      , show historyTips
+      , "vs"
+      , show fragmentTips
+      , "with anchors"
+      , show historyAnchorPoint
+      , "vs"
+      , show fragmentAnchorPoint
+      ]
+
     -- 'ourFrag' invariants
     | let nbHeaders = AF.length ourFrag
           ourAnchorPoint = AF.anchorPoint ourFrag
@@ -317,6 +409,7 @@ checkKnownIntersectionInvariants cfg KnownIntersectionState
 assertKnownIntersectionInvariants
   :: ( HasHeader blk
      , HasHeader (Header blk)
+     , HasAnnTip blk
      , ConsensusProtocol (BlockProtocol blk)
      , HasCallStack
      )
@@ -335,7 +428,6 @@ chainSyncClient
     :: forall m blk.
        ( IOLike m
        , LedgerSupportsProtocol blk
-       , Serialise (HeaderHash blk)
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
@@ -348,7 +440,7 @@ chainSyncClient
 chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
                 { getCurrentChain
-                , getCurrentLedger
+                , getHeaderStateHistory
                 , getPastLedger
                 , getIsInvalidBlock
                 }
@@ -372,9 +464,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
          -- ^ Exception to throw when no intersection is found.
       -> Stateful m blk () (ClientPipelinedStIdle 'Z)
     findIntersection mkResult = Stateful $ \() -> do
-      (ourFrag, ourHeaderState) <- atomically $ (,)
+      (ourFrag, ourHeaderStateHistory) <- atomically $ (,)
         <$> getCurrentChain
-        <*> (headerState <$> getCurrentLedger)
+        <*> getHeaderStateHistory
       -- We select points from the last @k@ headers of our current chain. This
       -- means that if an intersection is found for one of these points, it
       -- was an intersection within the last @k@ blocks of our current chain.
@@ -384,10 +476,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                         (map fromIntegral (offsets maxOffset))
                         ourFrag
           ourTip    = ourTipFromChain ourFrag
-          uis = UnknownIntersectionState
-            { ourFrag        = ourFrag
-            , ourHeaderState = ourHeaderState
-            , ourTip         = ourTip
+          uis = UnknownIntersectionState {
+              ourFrag               = ourFrag
+            , ourHeaderStateHistory = ourHeaderStateHistory
+            , ourTip                = ourTip
             }
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
         { recvMsgIntersectFound = \i theirTip' ->
@@ -407,7 +499,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     intersectFound intersection theirTip
                  = Stateful $ \UnknownIntersectionState
                      { ourFrag
-                     , ourHeaderState
+                     , ourHeaderStateHistory
                      , ourTip = ourTip
                      } -> do
       traceWith tracer $ TraceFoundIntersection intersection ourTip theirTip
@@ -419,18 +511,17 @@ chainSyncClient mkPipelineDecision0 tracer cfg
         -- to fork", which means that a roll back is always followed by
         -- applying at least as many blocks that we rolled back.
         --
-        -- This is important for 'rewindHeaderState', which can only roll back
-        -- up to @k@ blocks, /once/, i.e., we cannot keep rolling back the
+        -- This is important for 'rewindHeaderStateHistory', which can only roll
+        -- back up to @k@ blocks, /once/, i.e., we cannot keep rolling back the
         -- same chain state multiple times, because that would mean that we
-        -- store the chain state for the /whole chain/, all the way to
-        -- genesis.
+        -- store the chain state for the /whole chain/, all the way to genesis.
         --
         -- So the rewind below is fine when we are switching to a fork (i.e.
         -- it is followed by rolling forward again), but we need some
         -- guarantees that the ChainSync protocol /does/ in fact give us a
         -- switch-to-fork instead of a true rollback.
-        (theirFrag, theirHeaderState) <- do
-          case attemptRollback cfg intersection (ourFrag, ourHeaderState) of
+        (theirFrag, theirHeaderStateHistory) <- do
+          case attemptRollback intersection (ourFrag, ourHeaderStateHistory) of
             Just (c, d) -> return (c, d)
             -- The @intersection@ is not on the candidate chain, even though
             -- we sent only points from the candidate chain to find an
@@ -441,11 +532,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
         atomically $ writeTVar varCandidate theirFrag
         let kis = assertKnownIntersectionInvariants (configConsensus cfg) $
               KnownIntersectionState
-                { theirFrag              = theirFrag
-                , theirHeaderState       = theirHeaderState
-                , ourFrag                = ourFrag
-                , ourTip                 = ourTip
-                , mostRecentIntersection = intersection
+                { theirFrag               = theirFrag
+                , theirHeaderStateHistory = theirHeaderStateHistory
+                , ourFrag                 = ourFrag
+                , ourTip                  = ourTip
+                , mostRecentIntersection  = intersection
                 }
         continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
 
@@ -459,7 +550,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
       -> STM m (Maybe (KnownIntersectionState blk))
     intersectsWithCurrentChain kis@KnownIntersectionState
                                { theirFrag
-                               , theirHeaderState
+                               , theirHeaderStateHistory
                                , ourFrag
                                } = do
       ourFrag' <- getCurrentChain
@@ -495,16 +586,23 @@ chainSyncClient mkPipelineDecision0 tracer cfg
            --   intersection point exist on their fragment, the new anchor
            --   point must also.
            Nothing -> error
-             "anchor point must be on candidate fragment if they intersect"
+               "anchor point must be on candidate fragment if they intersect"
            Just (_, trimmedCandidateFrag) -> return $ Just $
-             assertKnownIntersectionInvariants (configConsensus cfg) $
-               KnownIntersectionState
-                 { ourFrag                = ourFrag'
-                 , theirFrag              = trimmedCandidateFrag
-                 , theirHeaderState       = theirHeaderState
-                 , ourTip                 = ourTipFromChain ourFrag'
-                 , mostRecentIntersection = castPoint intersection
-                 }
+               assertKnownIntersectionInvariants (configConsensus cfg) $
+                 KnownIntersectionState {
+                     ourFrag                 = ourFrag'
+                   , theirFrag               = trimmedCandidateFrag
+                   , theirHeaderStateHistory = trimmedHeaderStateHistory'
+                   , ourTip                  = ourTipFromChain ourFrag'
+                   , mostRecentIntersection  = castPoint intersection
+                   }
+             where
+               -- We trim the 'HeaderStateHistory' to the same size as our
+               -- fragment so they keep in sync.
+               trimmedHeaderStateHistory' =
+                 HeaderStateHistory.trim
+                   (AF.length trimmedCandidateFrag)
+                   theirHeaderStateHistory
 
         | otherwise ->
           -- No more intersection with the current chain
@@ -678,8 +776,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- Our chain still intersects with the candidate fragment and we
           -- have obtained a 'LedgerView' that we can use to validate @hdr@.
 
-          let KnownIntersectionState
-                { ourTip, ourFrag, theirHeaderState, theirFrag
+          let KnownIntersectionState {
+                  ourTip
+                , ourFrag
+                , theirFrag
+                , theirHeaderStateHistory
                 , mostRecentIntersection
                 } = kis'
 
@@ -689,11 +790,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           when (actualPrevHash /= expectPrevHash) $
             disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
 
-          theirHeaderState' <-
-            case runExcept $ validateHeader' cfg ledgerView hdr theirHeaderState of
-              Right theirHeaderState' -> return theirHeaderState'
-              Left  vErr              -> disconnect $
-                HeaderError hdrPoint vErr ourTip theirTip
+          theirHeaderStateHistory' <-
+            case runExcept $ validateHeader cfg ledgerView hdr theirHeaderStateHistory of
+              Right theirHeaderStateHistory' -> return theirHeaderStateHistory'
+              Left  vErr ->
+                disconnect $ HeaderError hdrPoint vErr ourTip theirTip
 
           let theirFrag' = theirFrag :> hdr
               -- Advance the most recent intersection if we have the same header
@@ -707,12 +808,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 | otherwise
                 = mostRecentIntersection
               kis'' = assertKnownIntersectionInvariants (configConsensus cfg) $
-                KnownIntersectionState
-                  { theirFrag              = theirFrag'
-                  , theirHeaderState       = theirHeaderState'
-                  , ourFrag                = ourFrag
-                  , ourTip                 = ourTip
-                  , mostRecentIntersection = mostRecentIntersection'
+                KnownIntersectionState {
+                    theirFrag               = theirFrag'
+                  , theirHeaderStateHistory = theirHeaderStateHistory'
+                  , ourFrag                 = ourFrag
+                  , ourTip                  = ourTip
+                  , mostRecentIntersection  = mostRecentIntersection'
                   }
           atomically $ writeTVar varCandidate theirFrag'
 
@@ -729,12 +830,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                  theirTip
                = Stateful $ \KnownIntersectionState
                    { theirFrag
-                   , theirHeaderState
+                   , theirHeaderStateHistory
                    , ourFrag
                    , ourTip
                    , mostRecentIntersection
                    } -> traceException $ do
-        case attemptRollback cfg rollBackPoint (theirFrag, theirHeaderState) of
+        case attemptRollback rollBackPoint (theirFrag, theirHeaderStateHistory) of
           -- Remember that we use our current chain fragment as the starting
           -- point for the candidate's chain. Our fragment contained @k@
           -- headers. At this point, the candidate fragment might have grown to
@@ -761,7 +862,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             terminateAfterDrain n $
               RolledBackPastIntersection rollBackPoint ourTip theirTip
 
-          Just (theirFrag', theirHeaderState') -> do
+          Just (theirFrag', theirHeaderStateHistory') -> do
             -- We just rolled back to @intersection@, either our most recent
             -- intersection was after or at @intersection@, in which case
             -- @intersection@ becomes the new most recent intersection.
@@ -774,12 +875,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   | otherwise
                   = mostRecentIntersection
                 kis' = assertKnownIntersectionInvariants (configConsensus cfg) $
-                  KnownIntersectionState
-                    { theirFrag              = theirFrag'
-                    , theirHeaderState       = theirHeaderState'
-                    , ourFrag                = ourFrag
-                    , ourTip                 = ourTip
-                    , mostRecentIntersection = mostRecentIntersection'
+                  KnownIntersectionState {
+                      theirFrag               = theirFrag'
+                    , theirHeaderStateHistory = theirHeaderStateHistory'
+                    , ourFrag                 = ourFrag
+                    , ourTip                  = ourTip
+                    , mostRecentIntersection  = mostRecentIntersection'
                     }
             atomically $ writeTVar varCandidate theirFrag'
 
@@ -842,16 +943,14 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
 attemptRollback ::
      ( BlockSupportsProtocol blk
-     , Serialise (HeaderHash blk)
      , HasAnnTip blk
      )
-  => TopLevelConfig blk
-  -> Point blk
-  -> (AnchoredFragment (Header blk), HeaderState blk)
-  -> Maybe (AnchoredFragment (Header blk), HeaderState blk)
-attemptRollback cfg rollBackPoint (frag, state) = do
+  => Point blk
+  -> (AnchoredFragment (Header blk), HeaderStateHistory blk)
+  -> Maybe (AnchoredFragment (Header blk), HeaderStateHistory blk)
+attemptRollback rollBackPoint (frag, state) = do
     frag'  <- AF.rollback (castPoint rollBackPoint) frag
-    state' <- rewindHeaderState cfg rollBackPoint state
+    state' <- HeaderStateHistory.rewind rollBackPoint state
     return (frag', state')
 
 -- | Watch the invalid block checker function for changes (using its

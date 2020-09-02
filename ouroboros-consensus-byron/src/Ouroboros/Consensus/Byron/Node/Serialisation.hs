@@ -65,7 +65,7 @@ instance EncodeDisk ByronBlock (PBftState PBftByronCrypto) where
   encodeDisk _ = encodeByronChainDepState
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@
 instance DecodeDisk ByronBlock (PBftState PBftByronCrypto) where
-  decodeDisk ccfg = decodeByronChainDepState (getByronSecurityParam ccfg)
+  decodeDisk _ = decodeByronChainDepState
 
 instance EncodeDisk ByronBlock (AnnTip ByronBlock) where
   encodeDisk _ = encodeByronAnnTip

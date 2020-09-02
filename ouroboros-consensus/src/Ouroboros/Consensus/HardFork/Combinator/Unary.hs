@@ -325,17 +325,15 @@ instance Isomorphic HeaderState where
   project :: forall blk. NoHardForks blk
           => HeaderState (HardForkBlock '[blk]) -> HeaderState blk
   project HeaderState{..} = HeaderState {
-        headerStateConsensus = project' (Proxy @(WrapChainDepState blk)) headerStateConsensus
-      , headerStateTips      = project <$> headerStateTips
-      , headerStateAnchor    = project <$> headerStateAnchor
+        headerStateTip      = project <$> headerStateTip
+      , headerStateChainDep = project' (Proxy @(WrapChainDepState blk)) headerStateChainDep
       }
 
   inject :: forall blk. NoHardForks blk
          => HeaderState blk -> HeaderState (HardForkBlock '[blk])
   inject HeaderState{..} = HeaderState {
-        headerStateConsensus = inject' (Proxy @(WrapChainDepState blk)) headerStateConsensus
-      , headerStateTips      = inject <$> headerStateTips
-      , headerStateAnchor    = inject <$> headerStateAnchor
+        headerStateTip      = inject <$> headerStateTip
+      , headerStateChainDep = inject' (Proxy @(WrapChainDepState blk)) headerStateChainDep
       }
 
 instance Isomorphic (Ticked :.: LedgerState) where

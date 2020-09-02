@@ -283,11 +283,14 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     ProtocolInfo {
         pInfoConfig = cfg
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState = HardForkLedgerState $
-                            initHardForkState initLedgerStateByron
-          , headerState = genesisHeaderState $
-                            initHardForkState
-                              (WrapChainDepState initChainDepStateByron)
+            ledgerState =
+              HardForkLedgerState $
+                initHardForkState initLedgerStateByron
+          , headerState =
+              genesisHeaderState $
+                initHardForkState $
+                  WrapChainDepState $
+                    headerStateChainDep initHeaderStateByron
           }
       , pInfoBlockForging = blockForging
       }
@@ -301,9 +304,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initLedgerStateByron
-          , headerState = HeaderState {
-                headerStateConsensus = initChainDepStateByron
-              }
+          , headerState = initHeaderStateByron
           }
       } = protocolInfoByron @m genesisByron mSigThresh pVer sVer mbCredsByron
 

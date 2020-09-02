@@ -12,26 +12,25 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
-
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
-  , validateHeader'
   , revalidateHeader
     -- * Annotated tips
   , AnnTip(..)
   , annTipHash
   , annTipPoint
+  , annTipRealPoint
   , castAnnTip
   , mapAnnTip
   , HasAnnTip(..)
   , getAnnTip
     -- * Header state
   , HeaderState(..)
+  , castHeaderState
   , tickHeaderState
   , genesisHeaderState
-  , castHeaderState
-  , rewindHeaderState
+  , headerStatePoint
     -- * Validate header envelope
   , BasicEnvelopeValidation(..)
   , HeaderEnvelopeError(..)
@@ -55,14 +54,11 @@ module Ouroboros.Consensus.HeaderValidation (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Data.Coerce
-import           Data.Foldable (toList)
 import           Data.Kind (Type)
 import           Data.Proxy
-import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
-import qualified Data.Sequence.Strict as Seq
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
@@ -104,6 +100,9 @@ annTipHash = tipInfoHash (Proxy @blk) . annTipInfo
 
 annTipPoint :: forall blk. HasAnnTip blk => AnnTip blk -> Point blk
 annTipPoint annTip@AnnTip{..} = BlockPoint annTipSlotNo (annTipHash annTip)
+
+annTipRealPoint :: forall blk. HasAnnTip blk => AnnTip blk -> RealPoint blk
+annTipRealPoint annTip@AnnTip{..} = RealPoint annTipSlotNo (annTipHash annTip)
 
 castAnnTip :: TipInfo blk ~ TipInfo blk' => AnnTip blk -> AnnTip blk'
 castAnnTip AnnTip{..} = AnnTip{..}
@@ -149,21 +148,32 @@ getAnnTip hdr = AnnTip {
 --
 -- See 'validateHeader' for details
 data HeaderState blk = HeaderState {
-      -- | Protocol-specific state
-      headerStateConsensus :: !(ChainDepState (BlockProtocol blk))
-
-      -- | The most recent @k@ tips
-    , headerStateTips      :: !(StrictSeq (AnnTip blk))
-
-      -- | Tip /before/ 'headerStateTips'
-    , headerStateAnchor    :: !(WithOrigin (AnnTip blk))
+      headerStateTip      :: !(WithOrigin (AnnTip blk))
+    , headerStateChainDep :: !(ChainDepState (BlockProtocol blk))
     }
   deriving (Generic)
 
+castHeaderState ::
+     ( Coercible (ChainDepState (BlockProtocol blk ))
+                 (ChainDepState (BlockProtocol blk'))
+     , TipInfo blk ~ TipInfo blk'
+     )
+  => HeaderState blk -> HeaderState blk'
+castHeaderState HeaderState {..} = HeaderState {
+      headerStateTip      = castAnnTip <$> headerStateTip
+    , headerStateChainDep = coerce headerStateChainDep
+    }
+
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
+                => Eq (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
+                => Show (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
+                => NoUnexpectedThunks (HeaderState blk)
+
 data instance Ticked (HeaderState blk) = TickedHeaderState {
-      tickedHeaderStateConsensus :: Ticked (ChainDepState (BlockProtocol blk))
-    , untickedHeaderStateTips    :: StrictSeq (AnnTip blk)
-    , untickedHeaderStateAnchor  :: WithOrigin (AnnTip blk)
+      untickedHeaderStateTip    :: WithOrigin (AnnTip blk)
+    , tickedHeaderStateChainDep :: Ticked (ChainDepState (BlockProtocol blk))
     }
 
 -- | Tick the 'ChainDepState' inside the 'HeaderState'
@@ -172,98 +182,20 @@ tickHeaderState :: ConsensusProtocol (BlockProtocol blk)
                 -> Ticked (LedgerView (BlockProtocol blk))
                 -> SlotNo
                 -> HeaderState blk -> Ticked (HeaderState blk)
-tickHeaderState cfg ledgerView slot HeaderState{..} = TickedHeaderState {
-      untickedHeaderStateTips    = headerStateTips
-    , untickedHeaderStateAnchor  = headerStateAnchor
-    , tickedHeaderStateConsensus = tickChainDepState
-                                     cfg
-                                     ledgerView
-                                     slot
-                                     headerStateConsensus
+tickHeaderState cfg ledgerView slot HeaderState {..} = TickedHeaderState {
+      untickedHeaderStateTip    = headerStateTip
+    , tickedHeaderStateChainDep =
+        tickChainDepState cfg ledgerView slot headerStateChainDep
     }
-
-headerStateTip :: Ticked (HeaderState blk) -> WithOrigin (AnnTip blk)
-headerStateTip TickedHeaderState{..} =
-    case untickedHeaderStateTips of
-      Empty     -> untickedHeaderStateAnchor
-      _ :|> tip -> NotOrigin tip
-
-headerStatePush :: forall blk.
-                   SecurityParam
-                -> ChainDepState (BlockProtocol blk)
-                -> AnnTip blk
-                -> Ticked (HeaderState blk)
-                -> HeaderState blk
-headerStatePush (SecurityParam k) state newTip TickedHeaderState{..} =
-    case trim pushed of
-      Nothing                   -> HeaderState state pushed  untickedHeaderStateAnchor
-      Just (newAnchor, trimmed) -> HeaderState state trimmed (NotOrigin newAnchor)
-  where
-    pushed :: StrictSeq (AnnTip blk)
-    pushed = untickedHeaderStateTips :|> newTip
-
-    trim :: StrictSeq (AnnTip blk) -> Maybe (AnnTip blk, StrictSeq (AnnTip blk))
-    trim (newAnchor :<| trimmed) | Seq.length trimmed >= fromIntegral k =
-        Just (newAnchor, trimmed)
-    trim _otherwise = Nothing
-
-deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
-                => Show (HeaderState blk)
-deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
-                => NoUnexpectedThunks (HeaderState blk)
-deriving instance ( BlockSupportsProtocol blk
-                  , HasAnnTip blk
-                  , Eq (ChainDepState (BlockProtocol blk))
-                  ) => Eq (HeaderState blk)
 
 genesisHeaderState :: ChainDepState (BlockProtocol blk) -> HeaderState blk
-genesisHeaderState state = HeaderState state Seq.Empty Origin
+genesisHeaderState = HeaderState Origin
 
-castHeaderState :: ( Coercible (ChainDepState (BlockProtocol blk ))
-                               (ChainDepState (BlockProtocol blk'))
-                   , TipInfo blk ~ TipInfo blk'
-                   )
-                => HeaderState blk -> HeaderState blk'
-castHeaderState HeaderState{..} = HeaderState{
-      headerStateConsensus = coerce headerStateConsensus
-    , headerStateTips      = castSeq castAnnTip $ headerStateTips
-    , headerStateAnchor    = fmap    castAnnTip $ headerStateAnchor
-    }
-  where
-    -- This is unfortunate. We're doing busy-work on a strict-sequence,
-    -- mapping a function that actually doesn't change anything :/
-    castSeq :: (a -> b) -> StrictSeq a -> StrictSeq b
-    castSeq f = Seq.fromList . map f . toList
-
--- | Rewind the header state
---
--- This involves 'rewindChainState', and so inherits its PRECONDITION that the
--- target point must have been previously applied.
---
-rewindHeaderState :: forall blk.
-                     ( BlockSupportsProtocol blk
-                     , Serialise (HeaderHash blk)
-                     , HasAnnTip blk
-                     )
-                  => TopLevelConfig blk
-                  -> Point blk
-                  -> HeaderState blk -> Maybe (HeaderState blk)
-rewindHeaderState cfg p HeaderState{..} = do
-    chainDepState' <- rewindChainDepState
-                        (Proxy @(BlockProtocol blk))
-                        (configSecurityParam cfg)
-                        p
-                        headerStateConsensus
-    return $ HeaderState {
-        headerStateConsensus = chainDepState'
-      , headerStateTips      = Seq.dropWhileR rolledBack headerStateTips
-      , headerStateAnchor    = headerStateAnchor
-      }
-  where
-    -- the precondition ensures that @p@ is either in the old 'headerStateTips'
-    -- or the new 'headerStateTips' should indeed be empty
-    rolledBack :: AnnTip blk -> Bool
-    rolledBack t = annTipPoint t /= p
+headerStatePoint :: HasAnnTip blk => HeaderState blk -> Point blk
+headerStatePoint =
+      withOriginRealPointToPoint
+    . fmap annTipRealPoint
+    . headerStateTip
 
 {-------------------------------------------------------------------------------
   Validate header envelope
@@ -480,40 +412,15 @@ validateHeader cfg ledgerView hdr st = do
       validateEnvelope
         cfg
         ledgerView
-        (headerStateTip st)
+        (untickedHeaderStateTip st)
         hdr
     chainDepState' <- withExcept HeaderProtocolError $
       updateChainDepState
         (configConsensus cfg)
         (validateView (configBlock cfg) hdr)
         (blockSlot hdr)
-        (tickedHeaderStateConsensus st)
-    return $
-      headerStatePush
-        (configSecurityParam cfg)
-        chainDepState'
-        (getAnnTip hdr)
-        st
-
--- | Variation on 'validateHeader' that takes an unticked HeaderState
---
--- This is used only in the chain sync client for header-only validation.
-validateHeader' :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
-                => TopLevelConfig blk
-                -> Ticked (LedgerView (BlockProtocol blk))
-                -> Header blk
-                -> HeaderState blk
-                -> Except (HeaderError blk) (HeaderState blk)
-validateHeader' cfg ledgerView hdr hdrState =
-    validateHeader
-      cfg
-      ledgerView
-      hdr
-      (tickHeaderState
-         (configConsensus cfg)
-         ledgerView
-         (blockSlot hdr)
-         hdrState)
+        (tickedHeaderStateChainDep st)
+    return $ HeaderState (NotOrigin (getAnnTip hdr)) chainDepState'
 
 -- | Header revalidation
 --
@@ -531,11 +438,9 @@ revalidateHeader ::
   -> HeaderState blk
 revalidateHeader cfg ledgerView hdr st =
     assertWithMsg envelopeCheck $
-      headerStatePush
-        (configSecurityParam cfg)
+      HeaderState
+        (NotOrigin (getAnnTip hdr))
         chainDepState'
-        (getAnnTip hdr)
-        st
   where
     chainDepState' :: ChainDepState (BlockProtocol blk)
     chainDepState' =
@@ -543,14 +448,14 @@ revalidateHeader cfg ledgerView hdr st =
           (configConsensus cfg)
           (validateView (configBlock cfg) hdr)
           (blockSlot hdr)
-          (tickedHeaderStateConsensus st)
+          (tickedHeaderStateChainDep st)
 
     envelopeCheck :: Either String ()
     envelopeCheck = runExcept $ withExcept show $
         validateEnvelope
           cfg
           ledgerView
-          (headerStateTip st)
+          (untickedHeaderStateTip st)
           hdr
 
 {-------------------------------------------------------------------------------
@@ -626,19 +531,17 @@ encodeHeaderState :: (ChainDepState (BlockProtocol blk) -> Encoding)
                   -> (HeaderState blk -> Encoding)
 encodeHeaderState encodeChainDepState
                   encodeAnnTip'
-                  HeaderState{..} = mconcat [
-      encodeListLen 3
-    , encodeChainDepState headerStateConsensus
-    , Util.CBOR.encodeSeq        encodeAnnTip' headerStateTips
-    , Util.CBOR.encodeWithOrigin encodeAnnTip' headerStateAnchor
+                  HeaderState {..} = mconcat [
+      encodeListLen 2
+    , Util.CBOR.encodeWithOrigin encodeAnnTip' headerStateTip
+    , encodeChainDepState headerStateChainDep
     ]
 
 decodeHeaderState :: (forall s. Decoder s (ChainDepState (BlockProtocol blk)))
                   -> (forall s. Decoder s (AnnTip      blk))
                   -> (forall s. Decoder s (HeaderState blk))
 decodeHeaderState decodeChainDepState decodeAnnTip' = do
-    enforceSize "HeaderState" 3
-    headerStateConsensus <- decodeChainDepState
-    headerStateTips      <- Util.CBOR.decodeSeq        decodeAnnTip'
-    headerStateAnchor    <- Util.CBOR.decodeWithOrigin decodeAnnTip'
-    return HeaderState{..}
+    enforceSize "HeaderState" 2
+    headerStateTip      <- Util.CBOR.decodeWithOrigin decodeAnnTip'
+    headerStateChainDep <- decodeChainDepState
+    return HeaderState {..}

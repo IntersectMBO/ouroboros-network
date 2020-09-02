@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -136,6 +137,7 @@ data Cmd blk it rdr
   | GetCurrentChain
   | GetCurrentLedger
   | GetPastLedger         (Point blk)
+  | GetHeaderStateHistory
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
@@ -208,6 +210,7 @@ data Success blk it rdr
   | Point               (Point blk)
   | BlockNo             BlockNo
   | IsValid             IsValidResult
+  | HdrStateHistory     (HeaderStateHistory blk)
   | UnknownRange        (UnknownRange blk)
   | Iter                it
   | IterResult          (IteratorResult blk (AllComponents blk))
@@ -344,6 +347,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       GetCurrentChain          -> Chain               <$> atomically getCurrentChain
       GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
       GetPastLedger pt         -> MbLedger            <$> atomically (getPastLedger pt)
+      GetHeaderStateHistory    -> HdrStateHistory     <$> atomically getHeaderStateHistory
       GetTipBlock              -> MbBlock             <$> getTipBlock
       GetTipHeader             -> MbHeader            <$> getTipHeader
       GetTipPoint              -> Point               <$> atomically getTipPoint
@@ -558,6 +562,7 @@ runPure cfg = \case
     GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
+    GetHeaderStateHistory    -> ok  HdrStateHistory     $ query   (Model.getHeaderStateHistory cfg)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint

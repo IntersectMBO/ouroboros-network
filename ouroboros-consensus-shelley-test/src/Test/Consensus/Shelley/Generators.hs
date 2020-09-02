@@ -26,9 +26,8 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto)
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
+                     TPraosState (..))
 
 import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
@@ -102,24 +101,11 @@ instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
 
 instance Era era => Arbitrary (TPraosState era) where
   arbitrary = do
-      steps     <- choose (0, 5)
-      startSlot <- frequency
+      lastSlot <- frequency
         [ (1, return Origin)
         , (5, NotOrigin . SlotNo <$> choose (0, 100))
         ]
-      initState <- TPraosState.empty startSlot <$> arbitrary
-      go steps startSlot initState
-    where
-      go :: Int
-         -> WithOrigin SlotNo
-         -> TPraosState era
-         -> Gen (TPraosState era)
-      go steps prevSlot st
-        | 0 <- steps = return st
-        | otherwise  = do
-          let slot = withOrigin (SlotNo 0) succ prevSlot
-          newPrtclState <- arbitrary
-          go (steps - 1) (NotOrigin slot) (TPraosState.append slot newPrtclState st)
+      TPraosState lastSlot <$> arbitrary
 
 instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
   arbitrary = ShelleyLedgerState

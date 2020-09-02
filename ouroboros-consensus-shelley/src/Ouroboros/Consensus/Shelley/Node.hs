@@ -71,7 +71,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -209,8 +208,8 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       , shelleyState = SL.chainNes initShelleyState
       }
 
-    initChainDepState :: State.TPraosState era
-    initChainDepState = State.empty Origin $
+    initChainDepState :: TPraosState era
+    initChainDepState = TPraosState Origin $
       SL.ChainDepState {
           SL.csProtocol = SL.PrtclState
             (SL.chainOCertIssue     initShelleyState)

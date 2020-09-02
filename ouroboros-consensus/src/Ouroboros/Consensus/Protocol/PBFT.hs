@@ -63,8 +63,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
-                     (HeaderHashBytes, headerHashBytes)
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
@@ -103,8 +101,8 @@ data PBftValidateView c =
 
      -- | Boundary block (EBB)
      --
-     -- EBBs are not signed but do affect the consensus state.
-   | PBftValidateBoundary HeaderHashBytes
+     -- EBBs are not signed and they do not affect the consensus state.
+   | PBftValidateBoundary
 
 -- | Convenience constructor for 'PBftValidateView' for regular blocks
 pbftValidateRegular :: ( SignedHeader hdr
@@ -120,14 +118,8 @@ pbftValidateRegular contextDSIGN getFields hdr =
       contextDSIGN
 
 -- | Convenience constructor for 'PBftValidateView' for boundary blocks
-pbftValidateBoundary :: forall hdr c. (
-                          HasHeader hdr
-                        , Serialise (HeaderHash hdr)
-                        )
-                     => hdr -> PBftValidateView c
-pbftValidateBoundary hdr =
-    PBftValidateBoundary
-      (headerHashBytes (Proxy @hdr) (blockHash hdr))
+pbftValidateBoundary :: hdr -> PBftValidateView c
+pbftValidateBoundary _hdr = PBftValidateBoundary
 
 -- | Part of the header required for chain selection
 --
@@ -310,8 +302,8 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
                       slot
                       (TickedPBftState (TickedPBftLedgerView dms) state) =
       case toValidate of
-        PBftValidateBoundary hash ->
-          return $! appendEBB cfg params slot hash state
+        PBftValidateBoundary ->
+          return state
         PBftValidateRegular PBftFields{..} signed contextDSIGN -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
@@ -347,8 +339,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
                         slot
                         (TickedPBftState (TickedPBftLedgerView dms) state) =
       case toValidate of
-        PBftValidateBoundary hash ->
-          appendEBB cfg params slot hash state
+        PBftValidateBoundary -> state
         PBftValidateRegular PBftFields{pbftIssuer} _ _ ->
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
             Nothing ->
@@ -362,8 +353,6 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
                 Right () -> state'
     where
       params = pbftWindowParams cfg
-
-  rewindChainDepState _proxy = rewind
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftState'
@@ -416,28 +405,9 @@ append :: PBftCrypto c
        -> (SlotNo, PBftVerKeyHash c)
        -> PBftState c -> PBftState c
 append PBftConfig{..} PBftWindowParams{..} =
-    S.append pbftSecurityParam windowSize . uncurry S.PBftSigner
+    S.append windowSize . uncurry S.PBftSigner
   where
     PBftParams{..} = pbftParams
-
-appendEBB :: forall c. PBftCrypto c
-          => ConsensusConfig (PBft c)
-          -> PBftWindowParams
-          -> SlotNo
-          -> HeaderHashBytes
-          -> PBftState c -> PBftState c
-appendEBB PBftConfig{..} PBftWindowParams{..} =
-    S.appendEBB pbftSecurityParam windowSize
-  where
-    PBftParams{..} = pbftParams
-
-rewind :: forall c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
-       => SecurityParam -> Point hdr -> PBftState c -> Maybe (PBftState c)
-rewind k p = S.rewind k (pbftWindowSize k) p'
-  where
-    p' = case p of
-      GenesisPoint    -> Origin
-      BlockPoint s hh -> NotOrigin (s, headerHashBytes (Proxy :: Proxy hdr) hh)
 
 {-------------------------------------------------------------------------------
   PBFT specific types

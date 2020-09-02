@@ -504,7 +504,7 @@ encodeShelleyHeaderState :: Era era
                          => HeaderState (ShelleyBlock era)
                          -> Encoding
 encodeShelleyHeaderState = encodeHeaderState
-    toCBOR
+    encode
     encodeShelleyAnnTip
 
 encodeShelleyLedgerState :: Era era => LedgerState (ShelleyBlock era) -> Encoding
