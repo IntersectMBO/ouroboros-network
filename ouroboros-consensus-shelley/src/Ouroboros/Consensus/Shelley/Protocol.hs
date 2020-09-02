@@ -71,7 +71,6 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import qualified Shelley.Spec.Ledger.BlockChain as SL (checkLeaderValue, mkSeed,
                      seedEta, seedL)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
-import qualified Shelley.Spec.Ledger.STS.Tickn as SL (ticknStateEpochNonce)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)

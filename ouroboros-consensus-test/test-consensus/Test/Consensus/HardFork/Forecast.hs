@@ -38,7 +38,6 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
                      (AnnForecast (..), mkHardForkForecast)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))

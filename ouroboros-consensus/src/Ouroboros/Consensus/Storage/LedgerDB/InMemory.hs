@@ -66,7 +66,6 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
-import           Control.Monad (mplus)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (find, toList)

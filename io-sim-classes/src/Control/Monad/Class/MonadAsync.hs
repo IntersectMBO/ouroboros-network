@@ -38,7 +38,6 @@ import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
 
 import           Data.Foldable (fold)
-import           Data.Functor (void)
 import           Data.Kind (Type)
 import           Data.Proxy
 
