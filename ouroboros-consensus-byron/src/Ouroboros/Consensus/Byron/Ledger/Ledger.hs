@@ -5,7 +5,6 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -47,12 +46,10 @@ import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Kind (Type)
-import qualified Data.Text as Text
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (DecoderError (..), enforceSize, fromCBOR,
-                     toCBOR)
-import           Cardano.Prelude (NoUnexpectedThunks, cborError)
+import           Cardano.Binary (fromCBOR, toCBOR)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -71,7 +68,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..))
@@ -81,7 +77,6 @@ import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
-import           Ouroboros.Consensus.Byron.Protocol
 
 {-------------------------------------------------------------------------------
   LedgerState
@@ -139,8 +134,6 @@ getByronTip state =
 -------------------------------------------------------------------------------}
 
 -- | The ticked Byron ledger state
---
--- Ticking does not change the 'DelegationHistory'.
 newtype instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
       tickedByronLedgerState :: CC.ChainValidationState
     }
@@ -348,38 +341,10 @@ encodeByronHeaderState = encodeHeaderState
     encodeByronAnnTip
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
-encodeByronLedgerState ByronLedgerState{..} = mconcat [
-      -- We use @listLen 1@ to distinguish a new Byron ledger state, which no
-      -- longer includes the delegation history, from an old one (@listLen 2@).
-      CBOR.encodeListLen 1
-    , encode byronLedgerState
-    ]
+encodeByronLedgerState ByronLedgerState{..} = encode byronLedgerState
 
 decodeByronLedgerState :: Decoder s (LedgerState ByronBlock)
-decodeByronLedgerState = do
-    size <- CBOR.decodeListLen
-    case size of
-      1 -> ByronLedgerState <$> decode
-      -- Backwards compatible with the old Byron ledger state, which includes
-      -- the delegation history, which we ignore.
-      2 -> ByronLedgerState <$> decode <* decodeDelegationHistory
-      _ -> cborError $
-             DecoderErrorCustom
-               "ByronLedgerState"
-               ("expected size 1 or 2, not " <> Text.pack (show size))
-
--- | Decode what used to be the @DelegationHistory@, removed as part of #1935.
---
--- Since we're no longer interested in it, ignore the resulting bytes.
---
--- But to remain binary compatible with old Byron ledger state snapshots, we
--- have to consume the exact bytes corresponding to the delegation history.
-decodeDelegationHistory :: Decoder s ()
-decodeDelegationHistory = do
-    enforceSize "DelegationHistory" 2
-    _ :: WithOrigin SlotNo <- decode
-    _ :: [History.Snapshot (PBftLedgerView PBftByronCrypto)] <- decode
-    return ()
+decodeByronLedgerState = ByronLedgerState <$> decode
 
 encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of

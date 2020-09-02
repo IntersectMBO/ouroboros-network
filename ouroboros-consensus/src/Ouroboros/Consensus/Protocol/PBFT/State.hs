@@ -272,8 +272,9 @@ fromList signers = PBftState {
   Serialization
 -------------------------------------------------------------------------------}
 
-serializationFormatVersion0 :: VersionNumber
-serializationFormatVersion0 = 0
+-- | Version 0 supported rollback, removed in #2575.
+serializationFormatVersion1 :: VersionNumber
+serializationFormatVersion1 = 1
 
 invert :: PBftCrypto c => PBftState c -> Map (PBftVerKeyHash c) [SlotNo]
 invert =
@@ -293,17 +294,17 @@ encodePBftState ::
      (PBftCrypto c, Serialise (PBftVerKeyHash c))
   => PBftState c -> Encoding
 encodePBftState st =
-    encodeVersion serializationFormatVersion0 $
+    encodeVersion serializationFormatVersion1 $
       encode (invert st)
 
 decodePBftState ::
      forall c. (PBftCrypto c, Serialise (PBftVerKeyHash c))
   => forall s. Decoder s (PBftState c)
 decodePBftState = decodeVersion
-    [(serializationFormatVersion0, Decode decodePBftState0)]
+    [(serializationFormatVersion1, Decode decodePBftState1)]
   where
-    decodePBftState0 :: forall s. Decoder s (PBftState c)
-    decodePBftState0 = uninvert <$> decode
+    decodePBftState1 :: forall s. Decoder s (PBftState c)
+    decodePBftState1 = uninvert <$> decode
 
 instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
   encode = encode . toPair

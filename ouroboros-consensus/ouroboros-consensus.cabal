@@ -108,7 +108,6 @@ library
                        Ouroboros.Consensus.Ledger.CommonProtocolParams
                        Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
-                       Ouroboros.Consensus.Ledger.History
                        Ouroboros.Consensus.Ledger.Inspect
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsProtocol

@@ -340,21 +340,22 @@ data TPraosState era = TPraosState {
 
 instance Era era => NoUnexpectedThunks (TPraosState era)
 
-serialisationFormatVersion0 :: VersionNumber
-serialisationFormatVersion0 = 0
+-- | Version 0 supported rollback, removed in #2575.
+serialisationFormatVersion1 :: VersionNumber
+serialisationFormatVersion1 = 1
 
 instance Era era => Serialise (TPraosState era) where
   encode (TPraosState slot chainDepState) =
-    encodeVersion serialisationFormatVersion0 $ mconcat [
+    encodeVersion serialisationFormatVersion1 $ mconcat [
         CBOR.encodeListLen 2
       , toCBOR slot
       , toCBOR chainDepState
       ]
 
   decode = decodeVersion
-      [(serialisationFormatVersion0, Decode decodeTPraosState0)]
+      [(serialisationFormatVersion1, Decode decodeTPraosState1)]
     where
-      decodeTPraosState0 = do
+      decodeTPraosState1 = do
         enforceSize "TPraosState" 2
         TPraosState <$> fromCBOR <*> fromCBOR
 
