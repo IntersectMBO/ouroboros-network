@@ -75,8 +75,7 @@ import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
 import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
                      emptyPPUPState)
-import qualified Shelley.Spec.Ledger.MetaData as SL (MetaData (..),
-                     MetaDatum (..), hashMetaData)
+import qualified Shelley.Spec.Ledger.MetaData as SL (hashMetaData)
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)

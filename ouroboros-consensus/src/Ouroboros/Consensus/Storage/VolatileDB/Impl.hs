@@ -123,7 +123,6 @@ import           Control.Monad.State.Strict (get, gets, lift, modify, put,
                      state)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor.Identity (Identity)
 import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
