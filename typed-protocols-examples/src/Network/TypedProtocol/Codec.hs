@@ -42,6 +42,7 @@ module Network.TypedProtocol.Codec (
   ) where
 
 import           Control.Exception (Exception)
+import           Data.Kind (Type)
 
 import           Network.TypedProtocol.Core
                    ( Protocol(..), PeerRole(..)
@@ -385,7 +386,7 @@ prop_codec_splits splits runM codec msg =
 -- Used for the existential @st :: ps@ parameter when expressing that for each
 -- value of 'PeerHasAgency' for protocol A, there is a corresponding
 -- 'PeerHasAgency' for protocol B of some @st :: ps@.
-data SamePeerHasAgency (pr :: PeerRole) (ps :: *) where
+data SamePeerHasAgency (pr :: PeerRole) (ps :: Type) where
   SamePeerHasAgency
     :: forall (pr :: PeerRole) ps (st :: ps).
        PeerHasAgency pr st

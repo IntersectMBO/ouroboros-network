@@ -22,7 +22,6 @@ import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (Exception (..), IOException, bracket, catch, throwIO)
-import           System.IO.Error (userError, ioError)
 import           Control.Monad (foldM, forM_, replicateM_, when)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)

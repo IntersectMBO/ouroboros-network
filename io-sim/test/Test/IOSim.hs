@@ -18,7 +18,7 @@ import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
 import           Control.Exception (ArithException (..))
 import           Control.Monad
-import           System.IO.Error (IOError, ioeGetErrorString, isUserError)
+import           System.IO.Error (ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay

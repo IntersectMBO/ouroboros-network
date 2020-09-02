@@ -29,7 +29,6 @@ module Ouroboros.Consensus.Storage.VolatileDB.API (
 import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Maybe (isJust)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16)

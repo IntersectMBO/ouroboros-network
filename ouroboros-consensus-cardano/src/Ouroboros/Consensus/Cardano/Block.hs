@@ -133,8 +133,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Telescope (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 

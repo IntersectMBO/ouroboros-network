@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
 import           Data.Functor.Contravariant (contramap)
-import           Data.Proxy (Proxy (..))
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Node.InitStorage
