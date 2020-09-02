@@ -53,7 +53,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
                      (BinaryBlockInfo (..), EncodeDisk (..),
                      HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB
-import           Ouroboros.Consensus.Storage.VolatileDB.Impl (extractBlockInfo)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId,
                      unBlocksPerFile)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,

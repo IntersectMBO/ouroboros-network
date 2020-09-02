@@ -26,11 +26,9 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold)
 
 import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
