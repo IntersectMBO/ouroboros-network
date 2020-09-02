@@ -18,8 +18,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.BasicFunctors
 
-import           Cardano.Crypto.Hash (ShortHash)
-
 import qualified Cardano.Chain.Byron.API as CC
 
 import           Ouroboros.Network.Block (Serialised (..))
@@ -51,9 +49,8 @@ import           Test.Util.Serialisation.Roundtrip
 
 import           Test.Consensus.Byron.Generators ()
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
-
 import           Test.Consensus.Cardano.Generators (epochSlots, k)
+import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 
 tests :: TestTree
 tests = adjustOption reduceTests $
@@ -100,7 +97,7 @@ cardanoToByronCodeConfig = CodecConfigC2B byronCodecConfig
 
 -- | We don't use Shelley at all in this module, so we just pick some crypto
 -- and use that everywhere.
-type Crypto = TPraosMockCrypto ShortHash
+type Crypto = MockCryptoCompatByron
 
 byronNodeToNodeVersion :: BlockNodeToNodeVersion ByronBlock
 byronNodeToNodeVersion = ByronNodeToNodeVersion1

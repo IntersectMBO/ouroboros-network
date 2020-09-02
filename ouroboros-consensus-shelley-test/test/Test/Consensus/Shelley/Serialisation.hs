@@ -33,10 +33,6 @@ tests :: TestTree
 tests = testGroup "Shelley"
     [ roundtrip_all testCodecCfg dictNestedHdr
 
-      -- 'roundtrip_ConvertRawHash' for mock crypto is included in
-      -- 'roundtrip_all', but 'prop_hashSize' is not
-    , testProperty "hashSize mock crypto" $ prop_hashSize pMock
-
       -- Test for real crypto too
     , testProperty "hashSize real crypto"       $ prop_hashSize pReal
     , testProperty "ConvertRawHash real crypto" $ roundtrip_ConvertRawHash pReal
@@ -51,17 +47,15 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    pMock :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
-    pMock = Proxy
-
-    pReal :: Proxy (ShelleyBlock (TPraosMockCrypto ShortHash))
+    pReal :: Proxy (ShelleyBlock (MockShelley ShortHash))
     pReal = Proxy
 
-    testCodecCfg :: CodecConfig (ShelleyBlock (TPraosMockCrypto ShortHash))
+    testCodecCfg :: CodecConfig (ShelleyBlock (MockShelley ShortHash))
     testCodecCfg = ShelleyCodecConfig
 
-    dictNestedHdr :: forall a c. Crypto c
-                  => NestedCtxt_ (ShelleyBlock c) Header a -> Dict (Eq a, Show a)
+    dictNestedHdr ::
+         forall a era. Era era
+      => NestedCtxt_ (ShelleyBlock era) Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtShelley = Dict
 
 {-------------------------------------------------------------------------------

@@ -16,8 +16,6 @@ module Test.Consensus.Shelley.Generators (
     SomeResult (..)
   ) where
 
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
-
 import           Ouroboros.Network.Block (mkSerialised)
 
 import           Ouroboros.Consensus.Block
@@ -28,6 +26,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto)
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
@@ -38,7 +37,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
-import           Test.Consensus.Shelley.MockCrypto
+import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators (genPParams)
 
 {-------------------------------------------------------------------------------
@@ -48,26 +47,26 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators (genPParams)
   necessarily valid
 -------------------------------------------------------------------------------}
 
-instance HashAlgorithm h => Arbitrary (Block h) where
+instance CanMock era => Arbitrary (ShelleyBlock era) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
-instance HashAlgorithm h => Arbitrary (Header (Block h)) where
+instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary
 
-instance Crypto c => Arbitrary (ShelleyHash c) where
+instance CanMock era => Arbitrary (ShelleyHash era) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance HashAlgorithm h => Arbitrary (GenTx (Block h)) where
+instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
-instance HashAlgorithm h => Arbitrary (GenTxId (Block h)) where
+instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance HashAlgorithm h => Arbitrary (ApplyTxError (TPraosMockCrypto h)) where
-  arbitrary = ApplyTxError <$> arbitrary
+instance CanMock era => Arbitrary (SL.ApplyTxError era) where
+  arbitrary = SL.ApplyTxError <$> arbitrary
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
-instance HashAlgorithm h => Arbitrary (SomeBlock Query (Block h)) where
+instance CanMock era => Arbitrary (SomeBlock Query (ShelleyBlock era)) where
   arbitrary = oneof
     [ pure $ SomeBlock GetLedgerTip
     , pure $ SomeBlock GetEpochNo
@@ -80,12 +79,12 @@ instance HashAlgorithm h => Arbitrary (SomeBlock Query (Block h)) where
     , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
 
-instance HashAlgorithm h => Arbitrary (SomeResult (Block h)) where
+instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
     , SomeResult <$> (GetNonMyopicMemberRewards <$> arbitrary) <*> arbitrary
-    , SomeResult GetCurrentPParams <$> genPParams (Proxy @(TPraosMockCrypto h))
+    , SomeResult GetCurrentPParams <$> genPParams (Proxy @era)
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
     , SomeResult GetCurrentEpochState <$> arbitrary
@@ -95,14 +94,13 @@ instance HashAlgorithm h => Arbitrary (SomeResult (Block h)) where
     , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
     ]
 
-instance HashAlgorithm h
-      => Arbitrary (NonMyopicMemberRewards (TPraosMockCrypto h)) where
+instance CanMock era => Arbitrary (NonMyopicMemberRewards era) where
   arbitrary = NonMyopicMemberRewards <$> arbitrary
 
-instance HashAlgorithm h => Arbitrary (Point (Block h)) where
+instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
-instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
+instance Era era => Arbitrary (TPraosState era) where
   arbitrary = do
       steps     <- choose (0, 5)
       startSlot <- frequency
@@ -114,8 +112,8 @@ instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
     where
       go :: Int
          -> WithOrigin SlotNo
-         -> TPraosState (TPraosMockCrypto h)
-         -> Gen (TPraosState (TPraosMockCrypto h))
+         -> TPraosState era
+         -> Gen (TPraosState era)
       go steps prevSlot st
         | 0 <- steps = return st
         | otherwise  = do
@@ -123,13 +121,12 @@ instance HashAlgorithm h => Arbitrary (TPraosState (TPraosMockCrypto h)) where
           newPrtclState <- arbitrary
           go (steps - 1) (NotOrigin slot) (TPraosState.append slot newPrtclState st)
 
-instance (HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (LedgerState (Block h)) where
+instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
 
-instance HashAlgorithm h => Arbitrary (AnnTip (Block h)) where
+instance CanMock era => Arbitrary (AnnTip (ShelleyBlock era)) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
@@ -141,7 +138,7 @@ instance Arbitrary ShelleyNodeToNodeVersion where
 instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
-instance Arbitrary (SomeBlock (NestedCtxt f) (Block h)) where
+instance Era era => Arbitrary (SomeBlock (NestedCtxt f) (ShelleyBlock era)) where
   arbitrary = return (SomeBlock indexIsTrivial)
 
 {-------------------------------------------------------------------------------
@@ -152,9 +149,9 @@ instance Arbitrary (SL.PParams' SL.StrictMaybe) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance HashAlgorithm h => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
+instance (TPraosCrypto era, CanMock era) => Arbitrary (SL.LedgerView era) where
   arbitrary = do
-      lvProtParams   <- genPParams (Proxy @(TPraosMockCrypto h))
+      lvProtParams   <- genPParams (Proxy @era)
       lvOverlaySched <- arbitrary
       lvPoolDistr    <- arbitrary
       lvGenDelegs    <- arbitrary
@@ -172,8 +169,7 @@ instance HashAlgorithm h => Arbitrary (SL.LedgerView (TPraosMockCrypto h)) where
         , lvGenDelegs
         } = lv
 
-instance (HashAlgorithm h)
-    => Arbitrary (SL.ChainDepState (TPraosMockCrypto h)) where
+instance Era era => Arbitrary (SL.ChainDepState era) where
   arbitrary = genericArbitraryU
   shrink = genericShrink
 

@@ -10,6 +10,7 @@ import           Ouroboros.Consensus.Shelley.Ledger
 
 import           Ouroboros.Consensus.Cardano.Block
 
+import           Cardano.Ledger.Crypto (Crypto)
 
 {-------------------------------------------------------------------------------
   Condense
@@ -19,6 +20,6 @@ import           Ouroboros.Consensus.Cardano.Block
 
 instance CondenseConstraints ByronBlock
 
-instance Crypto sc => CondenseConstraints (ShelleyBlock sc)
+instance Era era => CondenseConstraints (ShelleyBlock era)
 
-instance Crypto sc => CondenseConstraints (CardanoBlock sc)
+instance Crypto c => CondenseConstraints (CardanoBlock c)

@@ -52,7 +52,8 @@ import           Ouroboros.Consensus.Byron.Node as X
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosStandardCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto,
+                     StandardShelley)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC
@@ -70,8 +71,8 @@ import           Ouroboros.Consensus.Cardano.ShelleyHFC
 -------------------------------------------------------------------------------}
 
 type ProtocolByron          = HardForkProtocol '[ByronBlock]
-type ProtocolShelley        = HardForkProtocol '[ShelleyBlock TPraosStandardCrypto]
-type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock TPraosStandardCrypto]
+type ProtocolShelley        = HardForkProtocol '[ShelleyBlock StandardShelley]
+type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock StandardShelley]
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -90,7 +91,7 @@ data Protocol (m :: Type -> Type) blk p where
 
   -- | Run TPraos against the real Shelley ledger
   ProtocolShelley
-    :: ShelleyGenesis TPraosStandardCrypto
+    :: ShelleyGenesis StandardShelley
     -> Nonce
        -- ^ The initial nonce, typically derived from the hash of Genesis
        -- config JSON file.
@@ -99,8 +100,8 @@ data Protocol (m :: Type -> Type) blk p where
        -- mutually incompatible.
     -> ProtVer
     -> Natural -- ^ Max major protocol version
-    -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
-    -> Protocol m (ShelleyBlockHFC TPraosStandardCrypto) ProtocolShelley
+    -> Maybe (TPraosLeaderCredentials StandardShelley)
+    -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
 
   -- | Run the protocols of /the/ Cardano block
   ProtocolCardano
@@ -111,7 +112,7 @@ data Protocol (m :: Type -> Type) blk p where
     -> Update.SoftwareVersion
     -> Maybe ByronLeaderCredentials
        -- Shelley
-    -> ShelleyGenesis TPraosStandardCrypto
+    -> ShelleyGenesis StandardShelley
     -> Nonce
        -- ^ The initial nonce for the Shelley era, typically derived from the
        -- hash of Shelley Genesis config JSON file.
@@ -120,7 +121,7 @@ data Protocol (m :: Type -> Type) blk p where
        -- mutually incompatible.
     -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
     -> Natural -- ^ Max major protocol version
-    -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
+    -> Maybe (TPraosLeaderCredentials StandardShelley)
        -- Hard fork
     -> Maybe EpochNo
        -- ^ maybe lower bound on first Shelley epoch
@@ -134,7 +135,7 @@ data Protocol (m :: Type -> Type) blk p where
        --
        -- The @Nothing@ case is useful for test and possible alternative nets.
     -> TriggerHardFork
-    -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
+    -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolByron{}   = Refl
@@ -191,14 +192,14 @@ data ProtocolClient blk p where
 
   ProtocolClientShelley
     :: ProtocolClient
-         (ShelleyBlockHFC TPraosStandardCrypto)
+         (ShelleyBlockHFC StandardShelley)
          ProtocolShelley
 
   ProtocolClientCardano
     :: EpochSlots
     -> SecurityParam
     -> ProtocolClient
-         (CardanoBlock TPraosStandardCrypto)
+         (CardanoBlock StandardCrypto)
          ProtocolCardano
 
 -- | Sanity check that we have the right type combinations

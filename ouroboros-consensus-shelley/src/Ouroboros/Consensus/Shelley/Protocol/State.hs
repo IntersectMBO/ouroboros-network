@@ -34,14 +34,14 @@ import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.Crypto
+
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (Era)
 
 -- | Praos consensus state.
 --
--- The transitional praos implementation itself has a concept of state, given
--- by the @STS.State (PRTCL c)@ type. This state, however, doesn't support
--- rewinding.
-data TPraosState c = TPraosState {
+-- The transitional praos implementation itself has a concept of state, given by
+-- the @SL.ChainDepState@ type. This state, however, doesn't support rewinding.
+data TPraosState era = TPraosState {
       -- | Anchor
       --
       -- The anchor is the earliest slot to which we can roll back. It should
@@ -57,13 +57,13 @@ data TPraosState c = TPraosState {
       anchor           :: !(WithOrigin SlotNo)
 
       -- | Historical state snapshots.
-    , historicalStates :: !(Map (WithOrigin SlotNo) (SL.ChainDepState c))
+    , historicalStates :: !(Map (WithOrigin SlotNo) (SL.ChainDepState era))
     }
   deriving (Generic, Show, Eq)
 
-instance Crypto c => NoUnexpectedThunks (TPraosState c)
+instance Era era => NoUnexpectedThunks (TPraosState era)
 
-checkInvariants :: TPraosState c -> Either String ()
+checkInvariants :: TPraosState era -> Either String ()
 checkInvariants TPraosState { anchor, historicalStates }
     -- Don't use 'Map.findMin', as its partial, giving a worse error message.
     -- Use 'minViewWithKey' instead.
@@ -76,11 +76,11 @@ checkInvariants TPraosState { anchor, historicalStates }
     | otherwise
     = Right ()
 
-assertInvariants :: HasCallStack => TPraosState c -> TPraosState c
+assertInvariants :: HasCallStack => TPraosState era -> TPraosState era
 assertInvariants st = assertWithMsg (checkInvariants st) st
 
 -- | Extract the current state
-currentState :: HasCallStack => TPraosState c -> SL.ChainDepState c
+currentState :: HasCallStack => TPraosState era -> SL.ChainDepState era
 currentState st
     | Just (cs, _) <- Map.maxView (historicalStates st)
     = cs
@@ -88,7 +88,7 @@ currentState st
     = error "Empty state"
 
 -- | Find the slot for the last state snapshot.
-lastSlot :: HasCallStack => TPraosState c -> WithOrigin SlotNo
+lastSlot :: HasCallStack => TPraosState era -> WithOrigin SlotNo
 lastSlot st
     | Just ((slot, _), _) <- Map.maxViewWithKey (historicalStates st)
     = slot
@@ -101,9 +101,9 @@ lastSlot st
 -- calling this to have a state containing more history than needed.
 append
   :: SlotNo
-  -> SL.ChainDepState c
-  -> TPraosState c
-  -> TPraosState c
+  -> SL.ChainDepState era
+  -> TPraosState era
+  -> TPraosState era
 append slot prtclState st = st {
       historicalStates = Map.insert (NotOrigin slot) prtclState (historicalStates st)
     }
@@ -111,8 +111,8 @@ append slot prtclState st = st {
 -- | Prune the state to a given maximum size
 prune
   :: Int -- ^ Size (in terms of number of blocks) to prune the state to.
-  -> TPraosState c
-  -> TPraosState c
+  -> TPraosState era
+  -> TPraosState era
 prune toSize st
     | oldestIx < 0
     = st
@@ -127,7 +127,7 @@ prune toSize st
     hs = historicalStates st
     oldestIx = Map.size hs - toSize
 
-size :: TPraosState c -> Int
+size :: TPraosState era -> Int
 size = Map.size . historicalStates
 
 -- | Rewind the state to the specified slot
@@ -141,8 +141,8 @@ size = Map.size . historicalStates
 -- then we simply return the state as it was following the last applied block.
 rewind
   :: WithOrigin SlotNo -- ^ Slot to rewind to
-  -> TPraosState c
-  -> Maybe (TPraosState c)
+  -> TPraosState era
+  -> Maybe (TPraosState era)
 rewind toSlot st
   | toSlot < anchor st = Nothing
   | otherwise = Just $ assertInvariants TPraosState {
@@ -158,7 +158,7 @@ rewind toSlot st
         Nothing      -> older
         Just current -> Map.insert toSlot current older
 
-empty :: WithOrigin SlotNo -> SL.ChainDepState c -> TPraosState c
+empty :: WithOrigin SlotNo -> SL.ChainDepState era -> TPraosState era
 empty slot prtclState = TPraosState {
       anchor           = slot
     , historicalStates = Map.singleton slot prtclState
@@ -171,7 +171,7 @@ empty slot prtclState = TPraosState {
 serialisationFormatVersion0 :: VersionNumber
 serialisationFormatVersion0 = 0
 
-instance Crypto c => Serialise (TPraosState c) where
+instance Era era => Serialise (TPraosState era) where
   encode TPraosState { anchor, historicalStates } =
     encodeVersion serialisationFormatVersion0 $ mconcat [
       CBOR.encodeListLen 2
@@ -188,8 +188,8 @@ instance Crypto c => Serialise (TPraosState c) where
         either fail return $ checkInvariants st
         return st
 
-instance Crypto c => ToCBOR (TPraosState c) where
+instance Era era => ToCBOR (TPraosState era) where
   toCBOR = encode
 
-instance Crypto c => FromCBOR (TPraosState c) where
+instance Era era => FromCBOR (TPraosState era) where
   fromCBOR = decode

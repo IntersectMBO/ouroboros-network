@@ -16,7 +16,6 @@ module Test.Consensus.Byron.Serialisation (tests) where
 import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity
-import           Data.Proxy (Proxy (..))
 
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -47,8 +46,6 @@ import           Test.Consensus.Byron.Generators
 tests :: TestTree
 tests = testGroup "Byron"
     [ roundtrip_all testCodecCfg dictNestedHdr
-
-    , testProperty "hashSize" $ prop_hashSize (Proxy @ByronBlock)
 
     , testProperty "BinaryBlockInfo sanity check" prop_byronBinaryBlockInfo
 

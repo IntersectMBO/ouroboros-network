@@ -19,11 +19,11 @@ data ShelleyNodeToNodeVersion = ShelleyNodeToNodeVersion1
 data ShelleyNodeToClientVersion = ShelleyNodeToClientVersion1
   deriving (Show, Eq, Ord, Enum, Bounded)
 
-instance HasNetworkProtocolVersion (ShelleyBlock c) where
-  type BlockNodeToNodeVersion   (ShelleyBlock c) = ShelleyNodeToNodeVersion
-  type BlockNodeToClientVersion (ShelleyBlock c) = ShelleyNodeToClientVersion
+instance HasNetworkProtocolVersion (ShelleyBlock era) where
+  type BlockNodeToNodeVersion   (ShelleyBlock era) = ShelleyNodeToNodeVersion
+  type BlockNodeToClientVersion (ShelleyBlock era) = ShelleyNodeToClientVersion
 
-instance SupportedNetworkProtocolVersion (ShelleyBlock c) where
+instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
   supportedNodeToNodeVersions   _ = Map.fromList [
         (NodeToNodeV_1, ShelleyNodeToNodeVersion1)
         -- V_2 enables block size hints for Byron headers and the hard fork

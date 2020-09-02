@@ -28,13 +28,13 @@ import           Ouroboros.Consensus.Cardano.Node ()
 -------------------------------------------------------------------------------}
 
 -- | Shelley as the single era in the hard fork combinator
-type ShelleyBlockHFC c = HardForkBlock '[ShelleyBlock c]
+type ShelleyBlockHFC era = HardForkBlock '[ShelleyBlock era]
 
 {-------------------------------------------------------------------------------
   NoHardForks instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto c => NoHardForks (ShelleyBlock c) where
+instance TPraosCrypto era => NoHardForks (ShelleyBlock era) where
   getEraParams            cfg = shelleyLedgerEraParams (configLedger cfg)
   toPartialConsensusConfig _  = tpraosParams
   toPartialLedgerConfig    _  = ShelleyPartialLedgerConfig
@@ -46,14 +46,14 @@ instance TPraosCrypto c => NoHardForks (ShelleyBlock c) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance TPraosCrypto c => SupportedNetworkProtocolVersion (ShelleyBlockHFC c) where
+instance TPraosCrypto era => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
-      supportedNodeToNodeVersions (Proxy @(ShelleyBlock c))
+      supportedNodeToNodeVersions (Proxy @(ShelleyBlock era))
 
   supportedNodeToClientVersions _ =
       Map.map HardForkNodeToClientDisabled $
-      supportedNodeToClientVersions (Proxy @(ShelleyBlock c))
+      supportedNodeToClientVersions (Proxy @(ShelleyBlock era))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC instance
@@ -62,4 +62,4 @@ instance TPraosCrypto c => SupportedNetworkProtocolVersion (ShelleyBlockHFC c) w
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance TPraosCrypto c => SerialiseHFC '[ShelleyBlock c] where
+instance TPraosCrypto era => SerialiseHFC '[ShelleyBlock era] where

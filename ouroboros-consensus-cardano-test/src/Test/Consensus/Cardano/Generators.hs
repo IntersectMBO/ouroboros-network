@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -16,7 +17,6 @@ module Test.Consensus.Cardano.Generators (
   , toTelescope'
   ) where
 
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Data.Coerce
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
@@ -43,11 +43,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.State
 import           Ouroboros.Consensus.Byron.Ledger
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork ()
-import           Ouroboros.Consensus.Cardano.Node ()
+import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
@@ -55,19 +53,21 @@ import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
 import           Test.Consensus.Byron.Generators
 
 import           Test.Consensus.Shelley.Generators
-import           Test.Consensus.Shelley.MockCrypto
+import           Test.Consensus.Shelley.MockCrypto (CanMock)
+
+import           Test.Consensus.Cardano.MockCrypto
 
 {-------------------------------------------------------------------------------
   Disk
 -------------------------------------------------------------------------------}
 
-instance HashAlgorithm h => Arbitrary (CardanoBlock (TPraosMockCrypto h)) where
+instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
   arbitrary = oneof
     [ BlockByron   <$> arbitrary
     , BlockShelley <$> arbitrary
     ]
 
-instance HashAlgorithm h => Arbitrary (CardanoHeader (TPraosMockCrypto h)) where
+instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
   arbitrary = getHeader <$> arbitrary
 
 -- TODO if we try to use arbitrary instances for 'SlotNo' and 'EpochNo' here, we
@@ -80,17 +80,17 @@ instance Arbitrary History.Bound where
                     <*> (EpochNo      <$> arbitrary)
 
 arbitraryHardForkState
-  :: forall f sc a.
+  :: forall f c a.
      ( Arbitrary (f ByronBlock)
-     , Arbitrary (f (ShelleyBlock sc))
-     , Coercible a (HardForkState_ f f (CardanoEras sc))
+     , Arbitrary (f (ShelleyBlock (ShelleyEra c)))
+     , Coercible a (HardForkState_ f f (CardanoEras c))
      )
   => Proxy f
   -> Gen a
 arbitraryHardForkState p = toTelescope' p <$> oneof
     [ Left  <$> genCurrent (Proxy @ByronBlock)
     , Right <$> ((,) <$> genPast    (Proxy @ByronBlock)
-                     <*> genCurrent (Proxy @(ShelleyBlock sc)))
+                     <*> genCurrent (Proxy @(ShelleyBlock (ShelleyEra c))))
     ]
   where
     genCurrent
@@ -111,12 +111,12 @@ arbitraryHardForkState p = toTelescope' p <$> oneof
             , return NoSnapshot
             ]
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (CardanoLedgerState sc) where
+instance (c ~ MockCryptoCompatByron, Era (ShelleyEra c))
+      => Arbitrary (CardanoLedgerState c) where
   arbitrary = arbitraryHardForkState (Proxy @LedgerState)
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (HardForkChainDepState (CardanoEras sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (HardForkChainDepState (CardanoEras c)) where
   arbitrary = arbitraryHardForkState (Proxy @WrapChainDepState)
 
 -- | Forwarding
@@ -124,34 +124,28 @@ instance Arbitrary (ChainDepState (BlockProtocol blk))
       => Arbitrary (WrapChainDepState blk) where
   arbitrary = WrapChainDepState <$> arbitrary
 
--- | NOTE: Byron hashes are always 32 bytes, but for Shelley it depends on the
--- crypto: with 'TPraosStandardCrypto' the hash is also 32 bytes, but with
--- 'TPraosMockCrypto' it is 4 bytes ('ShortHash'). As this generator is only
--- used in the roundtrip tests, where we don't care about the length of the
--- hash, this difference is fine.
---
--- When we would store them on disk (specifically, in the secondary index of
--- the ImmutableDB) and try to read them again, this would go wrong, as we
--- require all hashes to have the same length.
-instance Crypto sc => Arbitrary (OneEraHash (CardanoEras sc)) where
+instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+      => Arbitrary (OneEraHash (CardanoEras c)) where
   arbitrary = OneEraHash <$> oneof
     [ toShortRawHash (Proxy @ByronBlock) <$> arbitrary
-    , toShortRawHash (Proxy @(ShelleyBlock sc)) <$> arbitrary
+    , toShortRawHash (Proxy @(ShelleyBlock (ShelleyEra c))) <$> arbitrary
     ]
 
-instance HashAlgorithm h => Arbitrary (AnnTip (CardanoBlock (TPraosMockCrypto h))) where
+instance (c ~ MockCryptoCompatByron, Era (ShelleyEra c))
+      => Arbitrary (AnnTip (CardanoBlock c)) where
   arbitrary = oneof
     [ mapAnnTip TipInfoByron   <$> arbitrary @(AnnTip (ByronBlock))
-    , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock (TPraosMockCrypto h)))
+    , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock (ShelleyEra c)))
     ]
 
 {-------------------------------------------------------------------------------
   NodeToNode
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto sc => Arbitrary (HardForkNodeToNodeVersion (CardanoEras sc)) where
+instance CardanoHardForkConstraints c
+      => Arbitrary (HardForkNodeToNodeVersion (CardanoEras c)) where
   arbitrary =
-    elements $ Map.elems $ supportedNodeToNodeVersions (Proxy @(CardanoBlock sc))
+    elements $ Map.elems $ supportedNodeToNodeVersions (Proxy @(CardanoBlock c))
 
 arbitraryNodeToNode
   :: ( Arbitrary (WithVersion ByronNodeToNodeVersion byron)
@@ -159,7 +153,7 @@ arbitraryNodeToNode
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
-  -> Gen (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc)) cardano)
+  -> Gen (WithVersion (HardForkNodeToNodeVersion (CardanoEras c)) cardano)
 arbitraryNodeToNode injByron injShelley = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
@@ -189,56 +183,61 @@ arbitraryNodeToNode injByron injShelley = oneof
         <$> arbitrary <*> arbitrary
     ]
 
-
-instance sc ~ TPraosMockCrypto h
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
-                                (SomeBlock (NestedCtxt Header) (CardanoBlock sc))) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (SomeBlock (NestedCtxt Header) (CardanoBlock c))) where
   arbitrary = arbitraryNodeToNode injByron injShelley
     where
       injByron   = mapSomeNestedCtxt NCZ
       injShelley = mapSomeNestedCtxt (NCS . NCZ)
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
-                                (CardanoBlock sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (CardanoBlock c)) where
   arbitrary = arbitraryNodeToNode BlockByron BlockShelley
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
-                                (CardanoHeader sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (CardanoHeader c)) where
   arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
-                                (CardanoGenTx sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (CardanoGenTx c)) where
   arbitrary = arbitraryNodeToNode GenTxByron GenTxShelley
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras sc))
-                                (CardanoGenTxId sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (CardanoGenTxId c)) where
   arbitrary = arbitraryNodeToNode GenTxIdByron GenTxIdShelley
 
 {-------------------------------------------------------------------------------
   NodeToClient
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto sc => Arbitrary (HardForkNodeToClientVersion (CardanoEras sc)) where
+instance CardanoHardForkConstraints c
+      => Arbitrary (HardForkNodeToClientVersion (CardanoEras c)) where
   arbitrary =
-    elements $ Map.elems $ supportedNodeToClientVersions (Proxy @(CardanoBlock sc))
+    elements $ Map.elems $ supportedNodeToClientVersions (Proxy @(CardanoBlock c))
 
-newtype HardForkEnabledNodeToClientVersion sc = HardForkEnabledNodeToClientVersion {
-      getHardForkEnabledNodeToClientVersion :: HardForkNodeToClientVersion (CardanoEras sc)
+newtype HardForkEnabledNodeToClientVersion c = HardForkEnabledNodeToClientVersion {
+      getHardForkEnabledNodeToClientVersion :: HardForkNodeToClientVersion (CardanoEras c)
     }
-  deriving newtype (Eq, Show)
 
-instance TPraosCrypto sc => Arbitrary (HardForkEnabledNodeToClientVersion sc) where
+deriving newtype instance CardanoHardForkConstraints c
+                       => Eq (HardForkEnabledNodeToClientVersion c)
+deriving newtype instance CardanoHardForkConstraints c
+                       => Show (HardForkEnabledNodeToClientVersion c)
+
+instance CardanoHardForkConstraints c
+      => Arbitrary (HardForkEnabledNodeToClientVersion c) where
   arbitrary =
         elements
       . map HardForkEnabledNodeToClientVersion
       . filter isHardForkNodeToClientEnabled
       . Map.elems
       . supportedNodeToClientVersions
-      $ Proxy @(CardanoBlock sc)
+      $ Proxy @(CardanoBlock c)
 
 arbitraryNodeToClient
   :: ( Arbitrary (WithVersion ByronNodeToClientVersion byron)
@@ -246,7 +245,7 @@ arbitraryNodeToClient
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
-  -> Gen (WithVersion (HardForkNodeToClientVersion (CardanoEras sc)) cardano)
+  -> Gen (WithVersion (HardForkNodeToClientVersion (CardanoEras c)) cardano)
 arbitraryNodeToClient injByron injShelley = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
@@ -274,19 +273,19 @@ arbitraryNodeToClient injByron injShelley = oneof
         <$> arbitrary <*> arbitrary
     ]
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
-                                (CardanoBlock sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (CardanoBlock c)) where
   arbitrary = arbitraryNodeToClient BlockByron BlockShelley
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
-                                (CardanoGenTx sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (CardanoGenTx c)) where
   arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h a))
-      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
-                                (CardanoApplyTxErr sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (CardanoApplyTxErr c)) where
   arbitrary = frequency
       [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley)
       , (2, WithVersion
@@ -297,12 +296,12 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h, forall a. Arbitrary (Hash h 
 instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
 
-instance Arbitrary (Some (QueryHardFork (CardanoEras sc))) where
+instance Arbitrary (Some (QueryHardFork (CardanoEras c))) where
   arbitrary = return $ Some GetInterpreter
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
-                                (SomeBlock Query (CardanoBlock sc))) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (SomeBlock Query (CardanoBlock c))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley)
       , (1, WithVersion
@@ -359,12 +358,12 @@ instance (Arbitrary a, SListI xs) => Arbitrary (NonEmpty xs a) where
       xs  <- vectorOf len arbitrary
       return $ fromMaybe (error "nonEmptyFromList failed") $ nonEmptyFromList xs
 
-instance Arbitrary (History.Interpreter (CardanoEras sc)) where
+instance Arbitrary (History.Interpreter (CardanoEras c)) where
   arbitrary = History.mkInterpreter . History.Summary <$> arbitrary
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras sc))
-                                (SomeResult (CardanoBlock sc))) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (SomeResult (CardanoBlock c))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley)
       , (1, WithVersion
@@ -389,7 +388,7 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
       -- from Byron. Only the inverse. We ignore that in this generator, as it
       -- doesn't matter for serialisation purposes, we just generate a random
       -- 'MismatchEraInfo'.
-      genQueryIfCurrentResultEraMismatch :: Gen (SomeResult (CardanoBlock sc))
+      genQueryIfCurrentResultEraMismatch :: Gen (SomeResult (CardanoBlock c))
       genQueryIfCurrentResultEraMismatch = oneof
           [ (\(SomeResult q (_ :: result)) mismatch ->
                 SomeResult (QueryIfCurrentByron q) (Left @_ @result mismatch))
@@ -399,27 +398,27 @@ instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
               <$> arbitrary <*> arbitrary
           ]
 
-      genQueryAnytimeResultByron :: Gen (SomeResult (CardanoBlock sc))
+      genQueryAnytimeResultByron :: Gen (SomeResult (CardanoBlock c))
       genQueryAnytimeResultByron =
           SomeResult (QueryAnytimeByron GetEraStart) <$> arbitrary
 
-      genQueryAnytimeResultShelley :: Gen (SomeResult (CardanoBlock sc))
+      genQueryAnytimeResultShelley :: Gen (SomeResult (CardanoBlock c))
       genQueryAnytimeResultShelley =
           SomeResult (QueryAnytimeShelley GetEraStart) <$> arbitrary
 
-      genQueryHardForkResult :: Gen (SomeResult (CardanoBlock sc))
+      genQueryHardForkResult :: Gen (SomeResult (CardanoBlock c))
       genQueryHardForkResult =
           SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
 
-instance (sc ~ TPraosMockCrypto h, HashAlgorithm h)
-      => Arbitrary (MismatchEraInfo (CardanoEras sc)) where
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (MismatchEraInfo (CardanoEras c)) where
   arbitrary = MismatchEraInfo <$> elements
       [ ML eraInfoByron (Z (LedgerEraInfo eraInfoShelley))
       , MR (Z eraInfoShelley) (LedgerEraInfo eraInfoByron)
       ]
     where
       eraInfoByron   = singleEraInfo (Proxy @ByronBlock)
-      eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock sc))
+      eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock (ShelleyEra c)))
 
 {-------------------------------------------------------------------------------
   Auxiliary functions

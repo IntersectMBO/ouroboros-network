@@ -42,11 +42,11 @@ import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
 import           HasAnalysis
 
-instance HasAnalysis (CardanoBlock TPraosStandardCrypto) where
-  data Args (CardanoBlock TPraosStandardCrypto) =
+instance HasAnalysis (CardanoBlock StandardCrypto) where
+  data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
-      , shelleyArgs :: Args (ShelleyBlock TPraosStandardCrypto)
+      , shelleyArgs :: Args (ShelleyBlock StandardShelley)
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -68,19 +68,19 @@ instance HasAnalysis (CardanoBlock TPraosStandardCrypto) where
   knownEBBs _ = Map.mapKeys castHeaderHash . Map.map castChainHash $
     knownEBBs (Proxy @ByronBlock)
 
-type CardanoBlockArgs = Args (CardanoBlock TPraosStandardCrypto)
+type CardanoBlockArgs = Args (CardanoBlock StandardCrypto)
 
 parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
 
-mkCardanoProtocolInfo :: forall c. TPraosCrypto c
-                      => Genesis.Config
-                      -> ShelleyGenesis c
-                      -> Maybe PBftSignatureThreshold
-                      -> Nonce
-                      -> ProtocolInfo IO (CardanoBlock c)
+mkCardanoProtocolInfo ::
+     Genesis.Config
+  -> ShelleyGenesis StandardShelley
+  -> Maybe PBftSignatureThreshold
+  -> Nonce
+  -> ProtocolInfo IO (CardanoBlock StandardCrypto)
 mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold initialNonce =
     protocolInfoCardano
       byronConfig
@@ -96,9 +96,13 @@ mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold initialNonce 
       Nothing
       (TriggerHardForkAtVersion 2)
 
-castHeaderHash :: HeaderHash ByronBlock -> HeaderHash (CardanoBlock c)
+castHeaderHash ::
+     HeaderHash ByronBlock
+  -> HeaderHash (CardanoBlock StandardCrypto)
 castHeaderHash = OneEraHash . toShortRawHash (Proxy @ByronBlock)
 
-castChainHash :: ChainHash ByronBlock -> ChainHash (CardanoBlock c)
+castChainHash ::
+     ChainHash ByronBlock
+  -> ChainHash (CardanoBlock StandardCrypto)
 castChainHash GenesisHash   = GenesisHash
 castChainHash (BlockHash h) = BlockHash $ castHeaderHash h

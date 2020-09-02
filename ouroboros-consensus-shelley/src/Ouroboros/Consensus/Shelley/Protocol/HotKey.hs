@@ -28,15 +28,15 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Crypto.KES.Class hiding (forgetSignKeyKES)
-import qualified Cardano.Crypto.KES.Class as Relative (Period)
-
-import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
+import qualified Cardano.Crypto.KES as Relative (Period)
 
 import           Ouroboros.Consensus.Block (UpdateInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
+import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
+
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (Era)
 
 {-------------------------------------------------------------------------------
   KES Info
@@ -125,7 +125,7 @@ data KESEvolutionError =
 type KESEvolutionInfo = UpdateInfo KESInfo KESInfo KESEvolutionError
 
 -- | API to interact with the key.
-data HotKey c m = HotKey {
+data HotKey era m = HotKey {
       -- | Evolve the KES signing key to the given absolute KES period.
       --
       -- When the key cannot evolve anymore, we poison it.
@@ -139,43 +139,43 @@ data HotKey c m = HotKey {
       -- PRECONDITION: the key is not poisoned.
       --
       -- POSTCONDITION: the signature is in normal form.
-    , sign_      :: forall toSign. (Signable (KES c) toSign, HasCallStack)
-                 => toSign -> m (SignedKES (KES c) toSign)
+    , sign_      :: forall toSign. (SL.KESignable era toSign, HasCallStack)
+                 => toSign -> m (SL.SignedKES era toSign)
     }
 
 sign ::
-     (Signable (KES c) toSign, HasCallStack)
-  => HotKey c m
-  -> toSign -> m (SignedKES (KES c) toSign)
+     (SL.KESignable era toSign, HasCallStack)
+  => HotKey era m
+  -> toSign -> m (SL.SignedKES era toSign)
 sign = sign_
 
 -- | The actual KES key, unless it expired, in which case it is replaced by
 -- \"poison\".
-data KESKey c =
-    KESKey !(SignKeyKES (KES c))
+data KESKey era =
+    KESKey !(SL.SignKeyKES era)
   | KESKeyPoisoned
   deriving (Generic)
 
-instance Crypto c => NoUnexpectedThunks (KESKey c)
+instance Era era => NoUnexpectedThunks (KESKey era)
 
-kesKeyIsPoisoned :: KESKey c -> Bool
+kesKeyIsPoisoned :: KESKey era -> Bool
 kesKeyIsPoisoned KESKeyPoisoned = True
 kesKeyIsPoisoned (KESKey _)     = False
 
-data KESState c = KESState {
+data KESState era = KESState {
       kesStateInfo :: !KESInfo
-    , kesStateKey  :: !(KESKey c)
+    , kesStateKey  :: !(KESKey era)
     }
   deriving (Generic)
 
-instance Crypto c => NoUnexpectedThunks (KESState c)
+instance Era era => NoUnexpectedThunks (KESState era)
 
 mkHotKey ::
-     forall m c. (TPraosCrypto c, IOLike m)
-  => SignKeyKES (KES c)
+     forall m era. (Era era, IOLike m)
+  => SL.SignKeyKES era
   -> Absolute.KESPeriod  -- ^ Start period
   -> Word64              -- ^ Max KES evolutions
-  -> m (HotKey c m)
+  -> m (HotKey era m)
 mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
     varKESState <- newMVar initKESState
     return HotKey {
@@ -188,14 +188,14 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
             KESKeyPoisoned -> error "trying to sign with a poisoned key"
             KESKey key     -> do
               let evolution = kesEvolution kesStateInfo
-                  signed    = signedKES () evolution toSign key
+                  signed    = SL.signedKES () evolution toSign key
               -- Force the signature to WHNF (for 'SignedKES', WHNF implies
               -- NF) so that we don't have any thunks holding on to a key that
               -- might be destructively updated when evolved.
               evaluate signed
       }
   where
-    initKESState :: KESState c
+    initKESState :: KESState era
     initKESState = KESState {
         kesStateInfo = KESInfo {
             kesStartPeriod = startPeriod
@@ -220,8 +220,8 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 --
 -- When the key is poisoned, we always return 'UpdateFailed'.
 evolveKey ::
-     forall m c. (TPraosCrypto c, IOLike m)
-  => StrictMVar m (KESState c) -> Absolute.KESPeriod -> m KESEvolutionInfo
+     forall m era. (Era era, IOLike m)
+  => StrictMVar m (KESState era) -> Absolute.KESPeriod -> m KESEvolutionInfo
 evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
     let info = kesStateInfo kesState
     -- We mask the evolution process because if we got interrupted after
@@ -258,18 +258,18 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
                go targetEvolution info key
 
   where
-    poisonState :: KESState c -> KESState c
+    poisonState :: KESState era -> KESState era
     poisonState kesState = kesState { kesStateKey = KESKeyPoisoned }
 
     -- | PRECONDITION:
     --
     -- > targetEvolution >= curEvolution
-    go :: KESEvolution -> KESInfo -> SignKeyKES (KES c) -> m (KESState c)
+    go :: KESEvolution -> KESInfo -> SL.SignKeyKES era -> m (KESState era)
     go targetEvolution info key
       | targetEvolution <= curEvolution
       = return $ KESState { kesStateInfo = info, kesStateKey = KESKey key }
       | otherwise
-      = case updateKES () key curEvolution of
+      = case SL.updateKES () key curEvolution of
           -- This cannot happen
           Nothing    -> error "Could not update KES key"
           Just !key' -> do

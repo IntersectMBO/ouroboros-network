@@ -6,7 +6,8 @@
 {-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
-    CardanoEras
+    ShelleyEra
+  , CardanoEras
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -89,18 +90,25 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 
+import qualified Shelley.Spec.Ledger.BaseTypes as Era (Shelley)
+
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+
 
 {-------------------------------------------------------------------------------
   The eras of the Cardano bock chain
 -------------------------------------------------------------------------------}
 
+-- | The Shelley ledger and block type itself is parameterised by an era
+-- parameter, which is in its turn parameterised by the crypto used.
+type ShelleyEra c = Era.Shelley c
+
 -- | First we had the Byron era and then the Shelley era.
 --
--- We parameterise over the crypto used in the Shelley era: @sc@.
+-- We parameterise over the crypto used in the Shelley era: @c@.
 --
 -- TODO: parameterise ByronBlock over crypto too
-type CardanoEras sc = '[ByronBlock, ShelleyBlock sc]
+type CardanoEras c = '[ByronBlock, ShelleyBlock (ShelleyEra c)]
 
 {-------------------------------------------------------------------------------
   The block type of the Cardano block chain
@@ -111,16 +119,16 @@ type CardanoEras sc = '[ByronBlock, ShelleyBlock sc]
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'BlockByron' and 'BlockShelley'.
 --
--- > toEither :: CardanoBlock sc -> Either ByronBlock (ShelleyBlock sc)
+-- > toEither :: CardanoBlock c -> Either ByronBlock (ShelleyBlock (ShelleyEra c))
 -- > toEither (BlockByron   b) = Left b
 -- > toEither (BlockShelley s) = Right s
 --
-type CardanoBlock sc = HardForkBlock (CardanoEras sc)
+type CardanoBlock c = HardForkBlock (CardanoEras c)
 
-pattern BlockByron :: ByronBlock -> CardanoBlock sc
+pattern BlockByron :: ByronBlock -> CardanoBlock c
 pattern BlockByron b = HardForkBlock (OneEraBlock (Z (I b)))
 
-pattern BlockShelley :: ShelleyBlock sc -> CardanoBlock sc
+pattern BlockShelley :: ShelleyBlock (ShelleyEra c) -> CardanoBlock c
 pattern BlockShelley b = HardForkBlock (OneEraBlock (S (Z (I b))))
 
 {-# COMPLETE BlockByron, BlockShelley #-}
@@ -133,12 +141,14 @@ pattern BlockShelley b = HardForkBlock (OneEraBlock (S (Z (I b))))
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'HeaderByron' and 'HeaderShelley'.
-type CardanoHeader sc = Header (CardanoBlock sc)
+type CardanoHeader c = Header (CardanoBlock c)
 
-pattern HeaderByron :: Header ByronBlock -> CardanoHeader sc
+pattern HeaderByron :: Header ByronBlock -> CardanoHeader c
 pattern HeaderByron h = HardForkHeader (OneEraHeader (Z h))
 
-pattern HeaderShelley :: Header (ShelleyBlock sc) -> CardanoHeader sc
+pattern HeaderShelley ::
+     Header (ShelleyBlock (ShelleyEra c))
+  -> CardanoHeader c
 pattern HeaderShelley h = HardForkHeader (OneEraHeader (S (Z h)))
 
 {-# COMPLETE HeaderByron, HeaderShelley #-}
@@ -151,12 +161,12 @@ pattern HeaderShelley h = HardForkHeader (OneEraHeader (S (Z h)))
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'GenTxByron' and 'GenTxShelley'.
-type CardanoGenTx sc = GenTx (CardanoBlock sc)
+type CardanoGenTx c = GenTx (CardanoBlock c)
 
-pattern GenTxByron :: GenTx ByronBlock -> CardanoGenTx sc
+pattern GenTxByron :: GenTx ByronBlock -> CardanoGenTx c
 pattern GenTxByron tx = HardForkGenTx (OneEraGenTx (Z tx))
 
-pattern GenTxShelley :: GenTx (ShelleyBlock sc) -> CardanoGenTx sc
+pattern GenTxShelley :: GenTx (ShelleyBlock (ShelleyEra c)) -> CardanoGenTx c
 pattern GenTxShelley tx = HardForkGenTx (OneEraGenTx (S (Z tx)))
 
 {-# COMPLETE GenTxByron, GenTxShelley #-}
@@ -165,13 +175,15 @@ pattern GenTxShelley tx = HardForkGenTx (OneEraGenTx (S (Z tx)))
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'GenTxIdByron' and 'GenTxIdShelley'.
-type CardanoGenTxId sc = GenTxId (CardanoBlock sc)
+type CardanoGenTxId c = GenTxId (CardanoBlock c)
 
-pattern GenTxIdByron :: GenTxId ByronBlock -> CardanoGenTxId sc
+pattern GenTxIdByron :: GenTxId ByronBlock -> CardanoGenTxId c
 pattern GenTxIdByron txid =
     HardForkGenTxId (OneEraGenTxId (Z (WrapGenTxId txid)))
 
-pattern GenTxIdShelley :: GenTxId (ShelleyBlock sc) -> CardanoGenTxId sc
+pattern GenTxIdShelley ::
+     GenTxId (ShelleyBlock (ShelleyEra c))
+  -> CardanoGenTxId c
 pattern GenTxIdShelley txid =
     HardForkGenTxId (OneEraGenTxId (S (Z (WrapGenTxId txid))))
 
@@ -183,7 +195,7 @@ pattern GenTxIdShelley txid =
 -- constructors 'ApplyTxByronErr', 'ApplyTxErrShelley', and
 -- 'ApplyTxErrWrongEra'.
 --
--- > toText :: CardanoApplyTxErr sc -> Text
+-- > toText :: CardanoApplyTxErr c -> Text
 -- > toText (ApplyTxErrByron b) = byronApplyTxErrToText b
 -- > toText (ApplyTxErrShelley s) = shelleyApplyTxErrToText s
 -- > toText (ApplyTxErrWrongEra eraMismatch) =
@@ -191,17 +203,19 @@ pattern GenTxIdShelley txid =
 -- >   " era applied to a ledger from the " <>
 -- >   ledgerEraName eraMismatch <> " era"
 --
-type CardanoApplyTxErr sc = HardForkApplyTxErr (CardanoEras sc)
+type CardanoApplyTxErr c = HardForkApplyTxErr (CardanoEras c)
 
-pattern ApplyTxErrByron :: ApplyTxErr ByronBlock -> CardanoApplyTxErr sc
+pattern ApplyTxErrByron :: ApplyTxErr ByronBlock -> CardanoApplyTxErr c
 pattern ApplyTxErrByron err =
     HardForkApplyTxErrFromEra (OneEraApplyTxErr (Z (WrapApplyTxErr err)))
 
-pattern ApplyTxErrShelley :: ApplyTxErr (ShelleyBlock sc) -> CardanoApplyTxErr sc
+pattern ApplyTxErrShelley ::
+     ApplyTxErr (ShelleyBlock (ShelleyEra c))
+  -> CardanoApplyTxErr c
 pattern ApplyTxErrShelley err =
     HardForkApplyTxErrFromEra (OneEraApplyTxErr (S (Z (WrapApplyTxErr err))))
 
-pattern ApplyTxErrWrongEra :: EraMismatch -> CardanoApplyTxErr sc
+pattern ApplyTxErrWrongEra :: EraMismatch -> CardanoApplyTxErr c
 pattern ApplyTxErrWrongEra eraMismatch <-
     HardForkApplyTxErrWrongEra (mkEraMismatch -> eraMismatch)
 
@@ -217,7 +231,7 @@ pattern ApplyTxErrWrongEra eraMismatch <-
 -- constructors 'LedgerErrorByron', 'LedgerErrorShelley', and
 -- 'LedgerErrorWrongEra'.
 --
--- > toText :: CardanoLedgerError sc -> Text
+-- > toText :: CardanoLedgerError c -> Text
 -- > toText (LedgerErrorByron b) = byronLedgerErrorToText b
 -- > toText (LedgerErrorShelley s) = shelleyLedgerErrorToText s
 -- > toText (LedgerErrorWrongEra eraMismatch) =
@@ -225,19 +239,19 @@ pattern ApplyTxErrWrongEra eraMismatch <-
 -- >   " era applied to a ledger from the " <>
 -- >   ledgerEraName eraMismatch <> " era"
 --
-type CardanoLedgerError sc = HardForkLedgerError (CardanoEras sc)
+type CardanoLedgerError c = HardForkLedgerError (CardanoEras c)
 
-pattern LedgerErrorByron :: LedgerError ByronBlock -> CardanoLedgerError sc
+pattern LedgerErrorByron :: LedgerError ByronBlock -> CardanoLedgerError c
 pattern LedgerErrorByron err =
     HardForkLedgerErrorFromEra (OneEraLedgerError (Z (WrapLedgerErr err)))
 
-pattern LedgerErrorShelley :: LedgerError (ShelleyBlock sc)
-                           -> CardanoLedgerError sc
+pattern LedgerErrorShelley :: LedgerError (ShelleyBlock (ShelleyEra c))
+                           -> CardanoLedgerError c
 pattern LedgerErrorShelley err =
     HardForkLedgerErrorFromEra
       (OneEraLedgerError (S (Z (WrapLedgerErr err))))
 
-pattern LedgerErrorWrongEra :: EraMismatch -> CardanoLedgerError sc
+pattern LedgerErrorWrongEra :: EraMismatch -> CardanoLedgerError c
 pattern LedgerErrorWrongEra eraMismatch <-
     HardForkLedgerErrorWrongEra (mkEraMismatch -> eraMismatch)
 
@@ -252,24 +266,24 @@ pattern LedgerErrorWrongEra eraMismatch <-
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'OtherHeaderEnvelopeErrorByron',
 -- 'OtherHeaderEnvelopeErrorShelley', and 'OtherHeaderEnvelopeErrorWrongEra'.
-type CardanoOtherHeaderEnvelopeError sc = HardForkEnvelopeErr (CardanoEras sc)
+type CardanoOtherHeaderEnvelopeError c = HardForkEnvelopeErr (CardanoEras c)
 
 pattern OtherHeaderEnvelopeErrorByron
   :: OtherHeaderEnvelopeError ByronBlock
-  -> CardanoOtherHeaderEnvelopeError sc
+  -> CardanoOtherHeaderEnvelopeError c
 pattern OtherHeaderEnvelopeErrorByron err =
     HardForkEnvelopeErrFromEra
       (OneEraEnvelopeErr (Z (WrapEnvelopeErr err)))
 
 pattern OtherHeaderEnvelopeErrorShelley
-  :: OtherHeaderEnvelopeError (ShelleyBlock sc)
-  -> CardanoOtherHeaderEnvelopeError sc
+  :: OtherHeaderEnvelopeError (ShelleyBlock (ShelleyEra c))
+  -> CardanoOtherHeaderEnvelopeError c
 pattern OtherHeaderEnvelopeErrorShelley err =
     HardForkEnvelopeErrFromEra (OneEraEnvelopeErr (S (Z (WrapEnvelopeErr err))))
 
 pattern OtherHeaderEnvelopeErrorWrongEra
   :: EraMismatch
-  -> CardanoOtherHeaderEnvelopeError sc
+  -> CardanoOtherHeaderEnvelopeError c
 pattern OtherHeaderEnvelopeErrorWrongEra eraMismatch <-
     HardForkEnvelopeErrWrongEra (mkEraMismatch -> eraMismatch)
 
@@ -285,12 +299,14 @@ pattern OtherHeaderEnvelopeErrorWrongEra eraMismatch <-
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'TipInfoByron' and 'TipInfoShelley'.
-type CardanoTipInfo sc = OneEraTipInfo (CardanoEras sc)
+type CardanoTipInfo c = OneEraTipInfo (CardanoEras c)
 
-pattern TipInfoByron :: TipInfo ByronBlock -> CardanoTipInfo sc
+pattern TipInfoByron :: TipInfo ByronBlock -> CardanoTipInfo c
 pattern TipInfoByron ti = OneEraTipInfo (Z (WrapTipInfo ti))
 
-pattern TipInfoShelley :: TipInfo (ShelleyBlock sc) -> CardanoTipInfo sc
+pattern TipInfoShelley ::
+     TipInfo (ShelleyBlock (ShelleyEra c))
+  -> CardanoTipInfo c
 pattern TipInfoShelley ti = OneEraTipInfo (S (Z (WrapTipInfo ti)))
 
 {-# COMPLETE TipInfoByron, TipInfoShelley #-}
@@ -304,24 +320,24 @@ pattern TipInfoShelley ti = OneEraTipInfo (S (Z (WrapTipInfo ti)))
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'QueryIfCurrentByron', 'QueryIfCurrentShelley',
 -- 'QueryAnytimeByron', 'QueryAnytimeShelley', and 'QueryHardFork'.
-type CardanoQuery sc = Query (CardanoBlock sc)
+type CardanoQuery c = Query (CardanoBlock c)
 
 -- | Byron-specific query that can only be answered when the ledger in the
 -- Byron era.
 pattern QueryIfCurrentByron
   :: ()
-  => CardanoQueryResult sc result ~ a
+  => CardanoQueryResult c result ~ a
   => Query ByronBlock result
-  -> CardanoQuery sc a
+  -> CardanoQuery c a
 pattern QueryIfCurrentByron q = QueryIfCurrent (QZ q)
 
 -- | Shelley-specific query that can only be answered when the ledger in the
 -- Shelley era.
 pattern QueryIfCurrentShelley
   :: ()
-  => CardanoQueryResult sc result ~ a
-  => Query (ShelleyBlock sc) result
-  -> CardanoQuery sc a
+  => CardanoQueryResult c result ~ a
+  => Query (ShelleyBlock (ShelleyEra c)) result
+  -> CardanoQuery c a
 pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 
 -- | Query about the Byron era that can be answered anytime, i.e.,
@@ -334,7 +350,7 @@ pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 --
 pattern QueryAnytimeByron
   :: QueryAnytime result
-  -> CardanoQuery sc result
+  -> CardanoQuery c result
 pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (Z (K ())))
 
 -- | Query about the Shelley era that can be answered anytime, i.e.,
@@ -347,7 +363,7 @@ pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (Z (K ())))
 --
 pattern QueryAnytimeShelley
   :: QueryAnytime result
-  -> CardanoQuery sc result
+  -> CardanoQuery c result
 pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (S (Z (K ()))))
 
 {-# COMPLETE QueryIfCurrentByron
@@ -360,13 +376,13 @@ pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (S (Z (K ()))))
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
 -- constructors 'QueryResultSuccess' and 'QueryResultEraMismatch'.
-type CardanoQueryResult sc = HardForkQueryResult (CardanoEras sc)
+type CardanoQueryResult c = HardForkQueryResult (CardanoEras c)
 
-pattern QueryResultSuccess :: result -> CardanoQueryResult sc result
+pattern QueryResultSuccess :: result -> CardanoQueryResult c result
 pattern QueryResultSuccess result = Right result
 
 -- | A query from a different era than the ledger's era was sent.
-pattern QueryResultEraMismatch :: EraMismatch -> CardanoQueryResult sc result
+pattern QueryResultEraMismatch :: EraMismatch -> CardanoQueryResult c result
 pattern QueryResultEraMismatch eraMismatch <- Left (mkEraMismatch -> eraMismatch)
 
 {-# COMPLETE QueryResultSuccess, QueryResultEraMismatch #-}
@@ -379,12 +395,12 @@ pattern QueryResultEraMismatch eraMismatch <- Left (mkEraMismatch -> eraMismatch
 --
 -- Thanks to the pattern synonyms, you can treat this as the product of
 -- the Byron and Shelley 'CodecConfig'.
-type CardanoCodecConfig sc = CodecConfig (CardanoBlock sc)
+type CardanoCodecConfig c = CodecConfig (CardanoBlock c)
 
 pattern CardanoCodecConfig
   :: CodecConfig ByronBlock
-  -> CodecConfig (ShelleyBlock sc)
-  -> CardanoCodecConfig sc
+  -> CodecConfig (ShelleyBlock (ShelleyEra c))
+  -> CardanoCodecConfig c
 pattern CardanoCodecConfig cfgByron cfgShelley =
     HardForkCodecConfig (PerEraCodecConfig (cfgByron :* cfgShelley :* Nil))
 
@@ -398,12 +414,12 @@ pattern CardanoCodecConfig cfgByron cfgShelley =
 --
 -- Thanks to the pattern synonyms, you can treat this as the product of
 -- the Byron and Shelley 'BlockConfig'.
-type CardanoBlockConfig sc = BlockConfig (CardanoBlock sc)
+type CardanoBlockConfig c = BlockConfig (CardanoBlock c)
 
 pattern CardanoBlockConfig
   :: BlockConfig ByronBlock
-  -> BlockConfig (ShelleyBlock sc)
-  -> CardanoBlockConfig sc
+  -> BlockConfig (ShelleyBlock (ShelleyEra c))
+  -> CardanoBlockConfig c
 pattern CardanoBlockConfig cfgByron cfgShelley =
     HardForkBlockConfig (PerEraBlockConfig (cfgByron :* cfgShelley :* Nil))
 
@@ -419,13 +435,13 @@ pattern CardanoBlockConfig cfgByron cfgShelley =
 -- Byron and Shelley 'PartialConsensusConfig'.
 --
 -- NOTE: not 'ConsensusConfig', but 'PartialConsensusConfig'.
-type CardanoConsensusConfig sc =
-  ConsensusConfig (HardForkProtocol (CardanoEras sc))
+type CardanoConsensusConfig c =
+  ConsensusConfig (HardForkProtocol (CardanoEras c))
 
 pattern CardanoConsensusConfig
   :: PartialConsensusConfig (BlockProtocol ByronBlock)
-  -> PartialConsensusConfig (BlockProtocol (ShelleyBlock sc))
-  -> CardanoConsensusConfig sc
+  -> PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
+  -> CardanoConsensusConfig c
 pattern CardanoConsensusConfig cfgByron cfgShelley <-
     HardForkConsensusConfig {
         hardForkConsensusConfigPerEra = PerEraConsensusConfig
@@ -447,12 +463,12 @@ pattern CardanoConsensusConfig cfgByron cfgShelley <-
 -- Byron and Shelley 'PartialLedgerConfig'.
 --
 -- NOTE: not 'LedgerConfig', but 'PartialLedgerConfig'.
-type CardanoLedgerConfig sc = HardForkLedgerConfig (CardanoEras sc)
+type CardanoLedgerConfig c = HardForkLedgerConfig (CardanoEras c)
 
 pattern CardanoLedgerConfig
   :: PartialLedgerConfig ByronBlock
-  -> PartialLedgerConfig (ShelleyBlock sc)
-  -> CardanoLedgerConfig sc
+  -> PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+  -> CardanoLedgerConfig c
 pattern CardanoLedgerConfig cfgByron cfgShelley <-
     HardForkLedgerConfig {
         hardForkLedgerConfigPerEra = PerEraLedgerConfig
@@ -478,19 +494,19 @@ pattern CardanoLedgerConfig cfgByron cfgShelley <-
 -- 'LedgerState'. We don't give access to those internal details through the
 -- pattern synonyms. This is also the reason the pattern synonyms are not
 -- bidirectional.
-type CardanoLedgerState sc = LedgerState (CardanoBlock sc)
+type CardanoLedgerState c = LedgerState (CardanoBlock c)
 
 pattern LedgerStateByron
   :: LedgerState ByronBlock
-  -> CardanoLedgerState sc
+  -> CardanoLedgerState c
 pattern LedgerStateByron st <-
     HardForkLedgerState
       (State.HardForkState
         (Telescope.TZ (State.Current { currentState = st })))
 
 pattern LedgerStateShelley
-  :: LedgerState (ShelleyBlock sc)
-  -> CardanoLedgerState sc
+  :: LedgerState (ShelleyBlock (ShelleyEra c))
+  -> CardanoLedgerState c
 pattern LedgerStateShelley st <-
     HardForkLedgerState
       (State.HardForkState

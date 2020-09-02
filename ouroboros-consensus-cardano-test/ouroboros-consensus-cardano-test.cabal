@@ -76,7 +76,6 @@ test-suite test
                        Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Serialisation
-                       Test.Consensus.Cardano.Translation
                        Test.ThreadNet.Cardano
 
   build-depends:       base
