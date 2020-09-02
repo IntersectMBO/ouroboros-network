@@ -53,12 +53,15 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
       | stgeStartAt > curSlotNo = pure []
       | otherwise               = do
       n <- choose (0, 20)
-      go [] n $ applyChainTick (configLedger cfg) curSlotNo lst
+      go [] n $ applyChainTick lcfg curSlotNo lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv
         , stgeStartAt
         } = extra
+
+      lcfg :: LedgerConfig (ShelleyBlock (MockShelley h))
+      lcfg = configLedger cfg
 
       go :: [GenTx (ShelleyBlock (MockShelley h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
@@ -66,11 +69,13 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
          -> Gen [GenTx (ShelleyBlock (MockShelley h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-        tx <- genTx cfg curSlotNo st stgeGenEnv
-        case runExcept $ applyTx (configLedger cfg) curSlotNo tx st of
-          -- We don't mind generating invalid transactions
-          Left  _   -> go (tx:acc) (n - 1) st
-          Right st' -> go (tx:acc) (n - 1) st'
+        mbTx <- genTx cfg curSlotNo st stgeGenEnv
+        case mbTx of
+          Nothing -> return (reverse acc)  -- cannot afford more transactions
+          Just tx -> case runExcept $ applyTx lcfg curSlotNo tx st of
+              -- We don't mind generating invalid transactions
+              Left  _   -> go (tx:acc) (n - 1) st
+              Right st' -> go (tx:acc) (n - 1) st'
 
 genTx
   :: forall h. HashAlgorithm h
@@ -78,9 +83,9 @@ genTx
   -> SlotNo
   -> TickedLedgerState (ShelleyBlock (MockShelley h))
   -> Gen.GenEnv (MockShelley h)
-  -> Gen (GenTx (ShelleyBlock (MockShelley h)))
+  -> Gen (Maybe (GenTx (ShelleyBlock (MockShelley h))))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
-    mkShelleyTx <$> Gen.genTx
+    either (const Nothing) (Just . mkShelleyTx) <$> Gen.tryGenTx
       genEnv
       ledgerEnv
       (utxoSt, dpState)
