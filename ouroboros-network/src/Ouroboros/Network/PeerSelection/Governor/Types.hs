@@ -300,9 +300,12 @@ invariantPeerSelectionState PeerSelectionState{..} =
                      (KnownPeers.toMap knownPeers)
 
     -- The publicRootPeers are a subset of the knownPeers,
-    -- and with correct source info in the knownPeers.
+    -- and with correct source info in the knownPeers (either
+    -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
+    -- root peers might overlap).
  && Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                         knownPeerSource == PeerSourcePublicRoot)
+                         knownPeerSource == PeerSourcePublicRoot
+                      || knownPeerSource == PeerSourceLocalRoot)
                      (Map.fromSet (const ()) publicRootPeers)
                      (KnownPeers.toMap knownPeers)
 
