@@ -26,7 +26,7 @@ import           Test.Util.Orphans.IOLike ()
 -- Windows.
 mockFileLock
   :: Maybe DiffTime  -- ^ Optional release delay
-  -> SimM s (FileLock (SimM s))
+  -> IOSim s (FileLock (IOSim s))
 mockFileLock releaseDelay = do
     locks <- newMockFileLocks releaseDelay
     return FileLock {

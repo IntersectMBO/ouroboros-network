@@ -15,8 +15,8 @@ import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Control.Monad.IOSim (SimM, Trace, TraceEvent (..), runSimTrace,
-                     selectTraceEvents, traceResult)
+import           Control.Monad.IOSim (IOSim, Trace, TraceEvent (..),
+                     runSimTrace, selectTraceEvents, traceResult)
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen.Unsafe (Capture (..), capture)
@@ -123,7 +123,7 @@ prop_RAWLock_correctness (TestSetup rawDelays) =
 monadicSimWithTrace
   :: Testable a
   => (forall x. Trace x -> Property -> Property)
-  -> (forall s. PropertyM (SimM s) a)
+  -> (forall s. PropertyM (IOSim s) a)
   -> Property
 monadicSimWithTrace attachTrace m = property $ do
     tr <- runSimGenWithTrace (monadic' m)
@@ -131,7 +131,7 @@ monadicSimWithTrace attachTrace m = property $ do
       Left failure -> throw failure
       Right prop   -> return $ attachTrace tr prop
   where
-    runSimGenWithTrace :: (forall s. Gen (SimM s a)) -> Gen (Trace a)
+    runSimGenWithTrace :: (forall s. Gen (IOSim s a)) -> Gen (Trace a)
     runSimGenWithTrace f = do
       Capture eval <- capture
       return $ runSimTrace (eval f)

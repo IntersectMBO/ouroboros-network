@@ -346,7 +346,7 @@ schedulingToleranceSim =
     }
 
 
-prop_timeout_sim :: (forall s. WithTimeout (SimM s))
+prop_timeout_sim :: (forall s. WithTimeout (IOSim s))
                  -> TimeoutDuration -> ActionDuration -> Property
 prop_timeout_sim withTimeout timeoutDuration actionDuration =
     either (\err -> counterexample (show err) False) id $ runSim $
@@ -355,7 +355,7 @@ prop_timeout_sim withTimeout timeoutDuration actionDuration =
           withTimeout schedulingToleranceSim
           timeoutDuration actionDuration
 
-prop_timeouts_sim :: (forall s. WithTimeout (SimM s))
+prop_timeouts_sim :: (forall s. WithTimeout (IOSim s))
                   -> [(TimeoutDuration, ActionDuration)] -> Property
 prop_timeouts_sim withTimeout times =
     either (\err -> counterexample (show err) False) id $ runSim $

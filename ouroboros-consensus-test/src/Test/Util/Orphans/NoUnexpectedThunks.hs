@@ -11,18 +11,18 @@ import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 -- | Just like the IO instance, we don't actually check anything here
-instance NoUnexpectedThunks (SimM s a) where
-  showTypeOf _ = "SimM"
+instance NoUnexpectedThunks (IOSim s a) where
+  showTypeOf _ = "IOSim"
   whnfNoUnexpectedThunks _ctxt _act = return NoUnexpectedThunks
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar (SimM s) a) where
-  showTypeOf _ = "StrictTVar SimM"
+instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar (IOSim s) a) where
+  showTypeOf _ = "StrictTVar IOSim"
   whnfNoUnexpectedThunks ctxt tvar = do
       a <- unsafeSTToIO $ lazyToStrictST $ execReadTVar (toLazyTVar tvar)
       noUnexpectedThunks ctxt a
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar (SimM s) a) where
-  showTypeOf _ = "StrictMVar SimM"
+instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar (IOSim s) a) where
+  showTypeOf _ = "StrictMVar IOSim"
   whnfNoUnexpectedThunks ctxt StrictMVar { tvar } = do
       a <- unsafeSTToIO $ lazyToStrictST $ execReadTVar tvar
       noUnexpectedThunks ctxt a

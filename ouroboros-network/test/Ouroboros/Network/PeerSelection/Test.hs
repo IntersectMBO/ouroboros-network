@@ -601,20 +601,20 @@ data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
                     | MockEnvEvent   TraceMockEnv
   deriving Show
 
-tracerTracePeerSelection :: Tracer (SimM s) (TracePeerSelection PeerAddr)
+tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
-tracerDebugPeerSelection :: Tracer (SimM s) (DebugPeerSelection PeerAddr peerconn)
+tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr peerconn)
 tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
                                      tracerTestTraceEvent
 
-tracerMockEnv :: Tracer (SimM s) TraceMockEnv
+tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
-tracerTestTraceEvent :: Tracer (SimM s) TestTraceEvent
+tracerTestTraceEvent :: Tracer (IOSim s) TestTraceEvent
 tracerTestTraceEvent = dynamicTracer
 
-dynamicTracer :: Typeable a => Tracer (SimM s) a
+dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM
 
 selectPeerSelectionTraceEvents :: Trace a -> [(Time, TestTraceEvent)]

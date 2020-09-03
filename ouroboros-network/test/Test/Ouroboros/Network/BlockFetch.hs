@@ -595,5 +595,5 @@ _unit_bracketSyncWithFetchClient step = do
 -- Trace utils
 --
 
-dynamicTracer :: Typeable a => Tracer (SimM s) a
+dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM

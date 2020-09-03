@@ -931,7 +931,7 @@ prop_sequential lgrDbParams =
     forAllCommands (sm lgrDbParams dbUnused) Nothing $ \cmds ->
       QC.monadicIO (propCmds lgrDbParams cmds)
 
--- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
+-- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: LedgerDbParams
          -> QSM.Commands (At Cmd) (At Resp)

@@ -372,7 +372,7 @@ instance MonadAsync m => MonadAsync (ReaderT r m) where
 -- must be an instance of 'Exception', requiring it to be 'Typeable'; if @m@
 -- appeared in the type, we would require @m@ to be 'Typeable', which does not
 -- work with with the simulator, as it would require a 'Typeable' constraint
--- on the @s@ parameter of 'SimM'.
+-- on the @s@ parameter of 'IOSim'.
 data ExceptionInLinkedThread = ExceptionInLinkedThread String SomeException
 
 instance Show ExceptionInLinkedThread where

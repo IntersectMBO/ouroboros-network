@@ -51,7 +51,7 @@ tests =
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
-  , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
+  , testProperty "blockGenerator invariant IOSim" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   ]
 

@@ -314,7 +314,7 @@ deriving via AllowThunk (StrictTVar (OverrideDelay s) a)
 deriving via AllowThunk (StrictMVar (OverrideDelay s) a)
          instance NoUnexpectedThunks (StrictMVar (OverrideDelay s) a)
 
-instance MonadDelay (OverrideDelay (SimM s)) where
+instance MonadDelay (OverrideDelay (IOSim s)) where
   threadDelay d = OverrideDelay $ ReaderT $ \schedule -> do
       -- Do the original delay. This is important, because otherwise this
       -- turns into a busy loop in the simulator
@@ -344,7 +344,7 @@ instance (IOLike m, MonadDelay (OverrideDelay m)) => IOLike (OverrideDelay m) wh
 
 overrideDelay :: UTCTime
               -> Schedule
-              -> (forall s. OverrideDelay (SimM s) a)
+              -> (forall s. OverrideDelay (IOSim s) a)
               -> Either Failure a
 overrideDelay start schedule ma = runSim $ do
     setCurrentTime start
