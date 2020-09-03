@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
@@ -547,6 +548,7 @@ pickMapKeys m ns =
 -- TODO: Reenable this testcase.
 prop_governor_nolivelock :: GovernorMockEnvironment -> Property
 prop_governor_nolivelock env =
+    within 10_000_000 $
     let trace = takeFirstNHours 24 .
                 selectGovernorEvents .
                 selectPeerSelectionTraceEvents $
