@@ -276,58 +276,56 @@ emptyPeerSelectionState =
     }
 
 
-invariantPeerSelectionState :: Ord peeraddr
-                            => PeerSelectionState peeraddr peerconn -> Bool
-invariantPeerSelectionState PeerSelectionState{..} =
-    KnownPeers.invariant knownPeers
+assertPeerSelectionState :: Ord peeraddr
+                         => PeerSelectionState peeraddr peerconn
+                         -> a -> a
+assertPeerSelectionState PeerSelectionState{..} =
+   assert (KnownPeers.invariant knownPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
- && Set.isSubsetOf activePeersSet establishedPeersSet
- && Set.isSubsetOf establishedPeersSet knownPeersSet
- && Map.keysSet establishedStatus == establishedPeersSet
-
-    -- The localRootPeers and publicRootPeers must not overlap.
- && Set.null (Set.intersection localRootPeersSet publicRootPeers)
-
+ . assert (Set.isSubsetOf activePeersSet establishedPeersSet)
+ . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
+ . assert (Map.keysSet establishedStatus == establishedPeersSet)
+   -- The localRootPeers and publicRootPeers must not overlap.
+ . assert (Set.null (Set.intersection localRootPeersSet publicRootPeers))
     -- The localRootPeers are a subset of the knownPeers,
-    -- and with correct source and other info in the knownPeers.
- && Map.isSubmapOfBy (\rootPeerAdvertise
-                       KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
-                           knownPeerSource == PeerSourceLocalRoot
-                        && knownPeerAdvertise == rootPeerAdvertise)
-                     localRootPeers
-                     (KnownPeers.toMap knownPeers)
-
-    -- The publicRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers (either
     -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
- && Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                         knownPeerSource == PeerSourcePublicRoot
-                      || knownPeerSource == PeerSourceLocalRoot)
-                     (Map.fromSet (const ()) publicRootPeers)
-                     (KnownPeers.toMap knownPeers)
+ . assert (Map.isSubmapOfBy (\rootPeerAdvertise
+               KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
+                   knownPeerSource == PeerSourceLocalRoot
+                && knownPeerAdvertise == rootPeerAdvertise)
+             localRootPeers
+             (KnownPeers.toMap knownPeers))
+
+    -- The publicRootPeers are a subset of the knownPeers,
+    -- and with correct source info in the knownPeers.
+ . assert (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
+                 knownPeerSource == PeerSourcePublicRoot
+              || knownPeerSource == PeerSourceLocalRoot)
+             (Map.fromSet (const ()) publicRootPeers)
+             (KnownPeers.toMap knownPeers))
 
     --TODO: all other peers have PeerSourceGossip, so no stale source info.
 
     -- We don't want to pick local root peers to forget, so it had better be
     -- the case that there's fewer of them than our target number.
- && Map.size localRootPeers <= targetNumberOfKnownPeers targets
-
+ . assert (Map.size localRootPeers <= targetNumberOfKnownPeers targets)
     -- All currently established peers are in the availableToConnect set since
     -- the alternative is a record of failure, but these are not (yet) failed.
- && Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers)
+ . assert (Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers))
 
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
 
- && inProgressGossipReqs >= 0
- && Set.isSubsetOf inProgressPromoteCold coldPeersSet
- && Set.isSubsetOf inProgressPromoteWarm warmPeersSet
- && Set.isSubsetOf inProgressDemoteWarm  warmPeersSet
- && Set.isSubsetOf inProgressDemoteHot   hotPeersSet
- && Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm)
+ . assert (inProgressGossipReqs >= 0)
+ . assert (Set.isSubsetOf inProgressPromoteCold coldPeersSet)
+ . assert (Set.isSubsetOf inProgressPromoteWarm warmPeersSet)
+ . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
+ . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
+ . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
     localRootPeersSet   = Map.keysSet localRootPeers
     knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
