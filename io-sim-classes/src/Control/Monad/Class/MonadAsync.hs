@@ -430,7 +430,7 @@ forkRepeat label action =
                 case r of
                   Left _ -> go
                   _      -> return ()
-    in fork (labelThisThread label >> go)
+    in forkIO (labelThisThread label >> go)
 
 tryAll :: MonadCatch m => m a -> m (Either SomeException a)
 tryAll = try

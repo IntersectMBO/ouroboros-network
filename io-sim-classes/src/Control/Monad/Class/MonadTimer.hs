@@ -112,7 +112,7 @@ defaultRegisterDelay :: ( MonadTimer m
 defaultRegisterDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d
-    _ <- fork $ atomically (awaitTimeout t >>= writeTVar v)
+    _ <- forkIO $ atomically (awaitTimeout t >>= writeTVar v)
     return v
 
 --

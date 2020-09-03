@@ -7,6 +7,9 @@ module Control.Monad.Class.MonadFork
   ( MonadThread (..)
   , MonadFork (..)
   , labelThisThread
+  -- * Deprecated API
+  , fork
+  , forkWithUnmask
   ) where
 
 import qualified Control.Concurrent as IO
@@ -28,12 +31,20 @@ class (Monad m, Eq   (ThreadId m),
 
 class MonadThread m => MonadFork m where
 
-  fork           :: m () -> m (ThreadId m)
-  forkWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
-  throwTo        :: Exception e => ThreadId m -> e -> m ()
+  forkIO           :: m () -> m (ThreadId m)
+  forkIOWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
+  throwTo          :: Exception e => ThreadId m -> e -> m ()
 
-  killThread     :: ThreadId m -> m ()
+  killThread       :: ThreadId m -> m ()
   killThread tid = throwTo tid ThreadKilled
+
+fork :: MonadFork m => m () -> m (ThreadId m)
+fork = forkIO
+{-# DEPRECATED fork "use forkIO" #-}
+
+forkWithUnmask :: MonadFork m => ((forall a. m a -> m a) ->  m ()) -> m (ThreadId m)
+forkWithUnmask = forkIOWithUnmask
+{-# DEPRECATED forkWithUnmask "use forkIO" #-}
 
 
 instance MonadThread IO where
@@ -42,10 +53,10 @@ instance MonadThread IO where
   labelThread = IO.labelThread
 
 instance MonadFork IO where
-  fork           = IO.forkIO
-  forkWithUnmask = IO.forkIOWithUnmask
-  throwTo        = IO.throwTo
-  killThread     = IO.killThread
+  forkIO           = IO.forkIO
+  forkIOWithUnmask = IO.forkIOWithUnmask
+  throwTo          = IO.throwTo
+  killThread       = IO.killThread
 
 instance MonadThread m => MonadThread (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
@@ -53,8 +64,8 @@ instance MonadThread m => MonadThread (ReaderT e m) where
   labelThread t l = lift (labelThread t l)
 
 instance MonadFork m => MonadFork (ReaderT e m) where
-  fork (ReaderT f) = ReaderT $ \e -> fork (f e)
-  forkWithUnmask k = ReaderT $ \e -> forkWithUnmask $ \restore ->
+  forkIO (ReaderT f)   = ReaderT $ \e -> forkIO (f e)
+  forkIOWithUnmask k   = ReaderT $ \e -> forkIOWithUnmask $ \restore ->
                        let restore' :: ReaderT e m a -> ReaderT e m a
                            restore' (ReaderT f) = ReaderT $ restore . f
                        in runReaderT (k restore') e
