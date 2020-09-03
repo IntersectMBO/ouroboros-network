@@ -46,6 +46,8 @@ data StakeHolder =
 -------------------------------------------------------------------------------}
 
 -- | In the mock setup, only core nodes have stake
+--
+-- INVARIANT: The rationals should sum to 1.
 newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
   deriving (Show, Eq, Serialise, NoUnexpectedThunks)
 
@@ -78,14 +80,21 @@ totalStakes addrDist = foldl f Map.empty
 
 -- | Stake distribution where every address has equal state
 equalStakeDist :: AddrDist -> StakeDist
-equalStakeDist = StakeDist
-               . Map.fromList
-               . mapMaybe (nodeStake . snd)
-               . Map.toList
+equalStakeDist ad =
+    StakeDist $
+    Map.fromList $
+    mapMaybe (nodeStake . snd) $
+    Map.toList ad
   where
     nodeStake :: NodeId -> Maybe (CoreNodeId, Rational)
     nodeStake (RelayId _) = Nothing
-    nodeStake (CoreId i)  = Just (i, 1)
+    nodeStake (CoreId i)  = Just (i, recip (fromIntegral n))
+
+    n = length $ filter isCore $ Map.elems ad
+
+    isCore :: NodeId -> Bool
+    isCore CoreId{}  = True
+    isCore RelayId{} = False
 
 -- | Genesis stake distribution
 genesisStakeDist :: AddrDist -> StakeDist
