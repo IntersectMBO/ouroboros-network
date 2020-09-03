@@ -12,9 +12,10 @@ import qualified Data.Set as Set
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
+import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -138,17 +139,25 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
 
             publicRootRetryTime :: Time
             publicRootRetryTime = addTime publicRootRetryDiffTime now
-         in Decision {
-              decisionTrace = TracePublicRootsResults
-                                newPeers
-                                publicRootBackoffs'
-                                publicRootRetryDiffTime,
-              decisionState = st {
-                                publicRootPeers     = publicRootPeers',
-                                knownPeers          = knownPeers',
-                                publicRootBackoffs  = publicRootBackoffs',
-                                publicRootRetryTime = publicRootRetryTime,
-                                inProgressPublicRootsReq = False
-                              },
-              decisionJobs  = []
-            }
+
+         in assert
+             (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
+                        knownPeerSource == PeerSourcePublicRoot
+                     || knownPeerSource == PeerSourceLocalRoot)
+                  (Map.fromSet (const ()) publicRootPeers')
+                  (KnownPeers.toMap knownPeers'))
+
+             Decision {
+                decisionTrace = TracePublicRootsResults
+                                  newPeers
+                                  publicRootBackoffs'
+                                  publicRootRetryDiffTime,
+                decisionState = st {
+                                  publicRootPeers     = publicRootPeers',
+                                  knownPeers          = knownPeers',
+                                  publicRootBackoffs  = publicRootBackoffs',
+                                  publicRootRetryTime = publicRootRetryTime,
+                                  inProgressPublicRootsReq = False
+                                },
+                decisionJobs  = []
+              }

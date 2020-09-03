@@ -18,9 +18,10 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (Exception(..), SomeException)
+import           Control.Exception (Exception(..), SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
+import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -291,20 +292,28 @@ aboveTarget PeerSelectionPolicy {
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
-      return $ \_now -> Decision {
-        decisionTrace = TraceForgetColdPeers
-                          targetNumberOfKnownPeers
-                          numKnownPeers
-                          selectedToForget,
-        decisionState = st {
-                          knownPeers      = KnownPeers.delete
-                                              selectedToForget
-                                              knownPeers,
-                          publicRootPeers = publicRootPeers
-                                              Set.\\ selectedToForget
-                        },
-        decisionJobs  = []
-      }
+      return $ \_now ->
+        let knownPeers'      = KnownPeers.delete
+                                 selectedToForget
+                                 knownPeers
+            publicRootPeers' = publicRootPeers
+                                 Set.\\ selectedToForget
+        in assert
+            (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
+                     knownPeerSource == PeerSourcePublicRoot
+                  || knownPeerSource == PeerSourceLocalRoot)
+                 (Map.fromSet (const ()) publicRootPeers')
+                 (KnownPeers.toMap knownPeers'))
+
+              Decision {
+                decisionTrace = TraceForgetColdPeers
+                                  targetNumberOfKnownPeers
+                                  numKnownPeers
+                                  selectedToForget,
+                decisionState = st { knownPeers      = knownPeers',
+                                     publicRootPeers = publicRootPeers' },
+                decisionJobs  = []
+              }
 
   | otherwise
   = GuardedSkip Nothing
