@@ -408,6 +408,7 @@ noExpectedCannotForges _ _ _ = False
 prop_general ::
   forall blk.
      ( Condense blk
+     , Condense (HeaderHash blk)
      , Eq blk
      , RunNode blk
      )
@@ -435,6 +436,7 @@ data Synchronicity = SemiSync | Sync
 prop_general_semisync ::
   forall blk.
      ( Condense blk
+     , Condense (HeaderHash blk)
      , Eq blk
      , RunNode blk
      )
@@ -446,6 +448,7 @@ prop_general_semisync = prop_general_internal SemiSync
 prop_general_internal ::
   forall blk.
      ( Condense blk
+     , Condense (HeaderHash blk)
      , Eq blk
      , RunNode blk
      )
@@ -454,7 +457,7 @@ prop_general_internal ::
   -> TestOutput blk
   -> Property
 prop_general_internal syncity pga testOutput =
-    counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
+    counterexample ("nodeChains: " <> nodeChainsString) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
@@ -622,6 +625,12 @@ prop_general_internal syncity pga testOutput =
     nodeChains    = nodeOutputFinalChain <$> testOutputNodes
     nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
     nodeUpdates   = nodeOutputUpdates    <$> testOutputNodes
+
+    nodeChainsString :: String
+    nodeChainsString =
+        unlines $ ("" :) $
+        map (\x -> "  " <> condense x) $
+        Map.toList $ fmap MockChain.headTip nodeChains
 
     isConsensusExpected :: Bool
     isConsensusExpected = consensusExpected k nodeJoinPlan schedule

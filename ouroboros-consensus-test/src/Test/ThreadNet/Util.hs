@@ -61,12 +61,12 @@ import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
 shortestLength :: Map NodeId (Chain b) -> Natural
 shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 
-prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)
+prop_all_common_prefix :: (HasHeader b, Condense (HeaderHash b), Eq b)
                        => Word64 -> [Chain b] -> Property
 prop_all_common_prefix _ []     = property True
 prop_all_common_prefix l (c:cs) = conjoin [prop_common_prefix l c d | d <- cs]
 
-prop_common_prefix :: forall b. (HasHeader b, Condense b, Eq b)
+prop_common_prefix :: forall b. (HasHeader b, Condense (HeaderHash b), Eq b)
                    => Word64 -> Chain b -> Chain b -> Property
 prop_common_prefix l x y = go x y .&&. go y x
   where
@@ -91,14 +91,10 @@ prop_common_prefix l x y = go x y .&&. go y x
                               in  (l' + 1, c'')
 
     showChain :: Chain b -> String
-    showChain c = condense c
+    showChain c = condense (Chain.headTip c)
                   <> "\n(length "
                   <> show (Chain.length c)
-                  <> case Chain.lastSlot c of
-                        Nothing -> ")"
-                        Just s  ->    ", last slot "
-                                   <> show (unSlotNo s)
-                                   <> ")"
+                  <> ")"
 
 -- | Find the common prefix of two chains
 chainCommonPrefix :: HasHeader b => Chain b -> Chain b -> Chain b
