@@ -50,7 +50,7 @@ class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
   waitCatchSTM :: async a -> stm (Either SomeException a)
 
   default waitSTM :: MonadThrow stm => async a -> stm a
-  waitSTM action = waitCatchSTM action >>= either throwM return
+  waitSTM action = waitCatchSTM action >>= either throwSTM return
 
   waitAnySTM            :: [async a] -> stm (async a, a)
   waitAnyCatchSTM       :: [async a] -> stm (async a, Either SomeException a)

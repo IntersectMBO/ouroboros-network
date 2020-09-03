@@ -45,6 +45,10 @@ module Control.Monad.Class.MonadSTM
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
   , lengthTBQueueDefault
+
+  -- * MonadThrow aliases
+  , throwSTM
+  , catchSTM
   ) where
 
 import           Prelude hiding (read)
@@ -54,6 +58,8 @@ import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TQueue as STM
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
+
+import qualified Control.Monad.Class.MonadThrow as MonadThrow
 
 import           Control.Applicative (Alternative (..))
 import           Control.Exception
@@ -440,3 +446,17 @@ lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
   r <- readTVar rsize
   w <- readTVar wsize
   return $! size - r - w
+
+
+-- | 'throwIO' specialised to @stm@ monad.
+--
+throwSTM :: (MonadSTMTx stm, MonadThrow.MonadThrow stm, Exception e)
+         => e -> stm a
+throwSTM = MonadThrow.throwIO
+
+
+-- | 'catch' speclialized for an @stm@ monad.
+--
+catchSTM :: (MonadSTMTx stm, MonadThrow.MonadCatch stm, Exception e)
+         => stm a -> (e -> stm a) -> stm a
+catchSTM = MonadThrow.catch

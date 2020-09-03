@@ -16,6 +16,8 @@ module Control.Monad.Class.MonadThrow
   , ExitCase(..)
   , Handler(..)
   , catches
+  -- * Deprecated interfaces
+  , throwM
   ) where
 
 import           Control.Exception (Exception (..), SomeException)
@@ -32,8 +34,8 @@ import qualified Control.Monad.STM as STM
 --
 class Monad m => MonadThrow m where
 
-  {-# MINIMAL throwM #-}
-  throwM :: Exception e => e -> m a
+  {-# MINIMAL throwIO #-}
+  throwIO :: Exception e => e -> m a
 
   bracket  :: m a -> (a -> m b) -> (a -> m c) -> m c
   bracket_ :: m a -> m b -> m c -> m c
@@ -51,6 +53,10 @@ class Monad m => MonadThrow m where
 
   a `finally` sequel =
     bracket_ (return ()) sequel a
+
+throwM :: (MonadThrow m, Exception e) => e -> m a
+throwM = throwIO
+{-# DEPRECATED throwM "Use throwIO" #-}
 
 -- | Catching exceptions.
 --
@@ -86,7 +92,7 @@ class MonadThrow m => MonadCatch m where
       catch a handler'
     where
       handler' e = case p e of
-                     Nothing -> throwM e
+                     Nothing -> throwIO e
                      Just b  -> handler b
 
   try a = catch (Right `fmap` a) (return . Left)
@@ -96,7 +102,7 @@ class MonadThrow m => MonadCatch m where
     case r of
       Right v -> return (Right v)
       Left  e -> case p e of
-                   Nothing -> throwM e
+                   Nothing -> throwIO e
                    Just b  -> return (Left b)
 
   handle       = flip catch
@@ -105,7 +111,7 @@ class MonadThrow m => MonadCatch m where
   onException action what =
     action `catch` \e -> do
               _ <- what
-              throwM (e :: SomeException)
+              throwIO (e :: SomeException)
 
   bracketOnError acquire release = liftM fst . generalBracket
     acquire
@@ -120,7 +126,7 @@ class MonadThrow m => MonadCatch m where
       resource <- acquire
       b <- unmasked (use resource) `catch` \e -> do
         _ <- release resource (ExitCaseException e)
-        throwM e
+        throwIO e
       c <- release resource (ExitCaseSuccess b)
       return (b, c)
 
@@ -145,7 +151,7 @@ catchesHandler :: MonadCatch m
                => [Handler m a]
                -> SomeException
                -> m a
-catchesHandler handlers e = foldr tryHandler (throwM e) handlers
+catchesHandler handlers e = foldr tryHandler (throwIO e) handlers
     where tryHandler (Handler handler) res
               = case fromException e of
                 Just e' -> handler e'
@@ -188,7 +194,7 @@ class MonadThrow m => MonadEvaluate m where
 
 instance MonadThrow IO where
 
-  throwM   = IO.throwIO
+  throwIO  = IO.throwIO
 
   bracket  = IO.bracket
   bracket_ = IO.bracket_
@@ -225,7 +231,7 @@ instance MonadEvaluate IO where
 --
 
 instance MonadThrow STM where
-  throwM = STM.throwSTM
+  throwIO = STM.throwSTM
 
 instance MonadCatch STM where
   catch  = STM.catchSTM
@@ -234,7 +240,7 @@ instance MonadCatch STM where
     resource <- acquire
     b <- use resource `catch` \e -> do
       _ <- release resource (ExitCaseException e)
-      throwM e
+      throwIO e
     c <- release resource (ExitCaseSuccess b)
     return (b, c)
 
@@ -244,7 +250,7 @@ instance MonadCatch STM where
 --
 
 instance MonadThrow m => MonadThrow (ReaderT r m) where
-  throwM = lift . throwM
+  throwIO = lift . throwIO
   bracket acquire release use = ReaderT $ \env ->
     bracket
       (      runReaderT acquire     env)
@@ -282,7 +288,7 @@ instance MonadEvaluate m => MonadEvaluate (ReaderT r m) where
 --
 
 instance MonadCatch m => MonadThrow (ExceptT e m) where
-  throwM = lift . throwM
+  throwIO = lift . throwIO
 
 instance MonadCatch m => MonadCatch (ExceptT e m) where
   catch (ExceptT m) f = ExceptT $ catch m (runExceptT . f)
