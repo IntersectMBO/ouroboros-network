@@ -18,7 +18,7 @@
 module Control.Monad.IOSim (
   -- * Simulation monad
   IOSim,
-  SimSTM,
+  STMSim,
   -- ** Run simulation
   runSim,
   runSimOrThrow,
@@ -46,7 +46,8 @@ module Control.Monad.IOSim (
   -- * Low-level API
   execReadTVar,
   -- * Deprecated interfaces
-  SimM
+  SimM,
+  SimSTM
   ) where
 
 import           Prelude hiding (read)
@@ -157,7 +158,10 @@ data StmA s a where
   OrElse       :: StmA s a -> StmA s a -> (a -> StmA s b) -> StmA s b
 
 -- Exported type
+type STMSim = STM
+
 type SimSTM = STM
+{-# DEPRECATED SimSTM "Use STMSim" #-}
 
 data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
   deriving (Eq, Ord, Show)
