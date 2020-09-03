@@ -22,6 +22,7 @@ import           Data.Set (Set)
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -78,6 +79,12 @@ jobs jobPool st =
       return (completion st)
 
 
+-- | Reconnect delay for peers which asynchronously transitioned to cold state.
+--
+reconnectDelay :: DiffTime
+reconnectDelay = 10
+
+
 -- | Monitor connections.
 --
 connections :: forall m peeraddr peerconn.
@@ -99,7 +106,7 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                             establishedStatus'
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
-      return $ \_now -> Decision {
+      return $ \now -> Decision {
         decisionTrace = TraceDemoteAsynchronous demotions,
         decisionJobs  = [],
         decisionState = st {
@@ -113,7 +120,17 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                           -- handled elsewhere. We just update the async ones:
                           establishedStatus = demotedToWarm
                                                 <> establishedStatus
-                                                Map.\\ demotedToCold
+                                                Map.\\ demotedToCold,
+
+                          -- Asynchronous transition to cold peer can only be
+                          -- a result of a failure.
+                          knownPeers        = KnownPeers.setConnectTime
+                                                (Map.keysSet demotedToCold)
+                                                (reconnectDelay `addTime` now)
+                                            . foldr
+                                                ((snd .) . KnownPeers.incrementFailCount)
+                                                (knownPeers st)
+                                            $ (Map.keysSet demotedToCold)
                         }
       }
   where
