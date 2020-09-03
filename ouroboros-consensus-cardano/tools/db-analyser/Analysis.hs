@@ -20,8 +20,6 @@ import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word16)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
@@ -227,8 +225,8 @@ processAllChainDB ::
 processAllChainDB chainDB rr blockComponent initState callback = do
     tipPoint <- atomically $ ChainDB.getTipPoint chainDB
     case pointToWithOriginRealPoint tipPoint of
-      Origin -> return initState
-      At tip -> do
+      Origin        -> return initState
+      NotOrigin tip -> do
         Right itr <-
           ChainDB.stream
             chainDB
@@ -257,8 +255,8 @@ processAllImmDB ::
 processAllImmDB immDB rr blockComponent initState callback = do
     tipPoint <- ImmDB.getPointAtTip immDB
     case pointToWithOriginRealPoint tipPoint of
-      Origin -> return initState
-      At tip -> do
+      Origin        -> return initState
+      NotOrigin tip -> do
         Right itr <-
           ImmDB.stream
             immDB
