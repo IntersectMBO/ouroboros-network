@@ -17,7 +17,7 @@
 
 module Control.Monad.IOSim (
   -- * Simulation monad
-  SimM,
+  IOSim,
   SimSTM,
   -- ** Run simulation
   runSim,
@@ -44,7 +44,9 @@ module Control.Monad.IOSim (
   EventlogEvent(..),
   EventlogMarker(..),
   -- * Low-level API
-  execReadTVar
+  execReadTVar,
+  -- * Deprecated interfaces
+  SimM
   ) where
 
 import           Prelude hiding (read)
@@ -98,10 +100,13 @@ import           Control.Monad.Class.MonadTimer
 -- Simulation monad for protocol testing
 --
 
-newtype SimM s a = SimM { unSimM :: forall r. (a -> SimA s r) -> SimA s r }
+newtype IOSim s a = IOSim { unIOSim :: forall r. (a -> SimA s r) -> SimA s r }
 
-runSimM :: SimM s a -> SimA s a
-runSimM (SimM k) = k Return
+type SimM s = IOSim s
+{-# DEPRECATED SimM "Use IOSim" #-}
+
+runIOSim :: IOSim s a -> SimA s a
+runIOSim (IOSim k) = k Return
 
 data SimA s a where
   Return       :: a -> SimA s a
@@ -116,23 +121,23 @@ data SimA s a where
   SetWallTime  ::  UTCTime -> SimA s b  -> SimA s b
   UnshareClock :: SimA s b -> SimA s b
 
-  NewTimeout   :: DiffTime -> (Timeout (SimM s) -> SimA s b) -> SimA s b
-  UpdateTimeout:: Timeout (SimM s) -> DiffTime -> SimA s b -> SimA s b
-  CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
+  NewTimeout   :: DiffTime -> (Timeout (IOSim s) -> SimA s b) -> SimA s b
+  UpdateTimeout:: Timeout (IOSim s) -> DiffTime -> SimA s b -> SimA s b
+  CancelTimeout:: Timeout (IOSim s) -> SimA s b -> SimA s b
 
   Throw        :: SomeException -> SimA s a
   Catch        :: Exception e =>
                   SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
   Evaluate     :: a -> (a -> SimA s b) -> SimA s b
 
-  Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
+  Fork         :: IOSim s () -> (ThreadId -> SimA s b) -> SimA s b
   GetThreadId  :: (ThreadId -> SimA s b) -> SimA s b
   LabelThread  :: ThreadId -> String -> SimA s b -> SimA s b
 
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
   ThrowTo      :: SomeException -> ThreadId -> SimA s a -> SimA s a
-  SetMaskState :: MaskingState  -> SimM s a -> (a -> SimA s b) -> SimA s b
+  SetMaskState :: MaskingState  -> IOSim s a -> (a -> SimA s b) -> SimA s b
   GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
 
 
@@ -161,26 +166,26 @@ data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
 -- Monad class instances
 --
 
-instance Functor (SimM s) where
+instance Functor (IOSim s) where
     {-# INLINE fmap #-}
-    fmap f = \d -> SimM $ \k -> unSimM d (k . f)
+    fmap f = \d -> IOSim $ \k -> unIOSim d (k . f)
 
-instance Applicative (SimM s) where
+instance Applicative (IOSim s) where
     {-# INLINE pure #-}
-    pure = \x -> SimM $ \k -> k x
+    pure = \x -> IOSim $ \k -> k x
 
     {-# INLINE (<*>) #-}
-    (<*>) = \df dx -> SimM $ \k ->
-                        unSimM df (\f -> unSimM dx (\x -> k (f x)))
+    (<*>) = \df dx -> IOSim $ \k ->
+                        unIOSim df (\f -> unIOSim dx (\x -> k (f x)))
 
     {-# INLINE (*>) #-}
-    (*>) = \dm dn -> SimM $ \k -> unSimM dm (\_ -> unSimM dn k)
+    (*>) = \dm dn -> IOSim $ \k -> unIOSim dm (\_ -> unIOSim dn k)
 
-instance Monad (SimM s) where
+instance Monad (IOSim s) where
     return = pure
 
     {-# INLINE (>>=) #-}
-    (>>=) = \dm f -> SimM $ \k -> unSimM dm (\m -> unSimM (f m) k)
+    (>>=) = \dm f -> IOSim $ \k -> unIOSim dm (\m -> unIOSim (f m) k)
 
     {-# INLINE (>>) #-}
     (>>) = (*>)
@@ -189,8 +194,8 @@ instance Monad (SimM s) where
     fail = Fail.fail
 #endif
 
-instance Fail.MonadFail (SimM s) where
-  fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
+instance Fail.MonadFail (IOSim s) where
+  fail msg = IOSim $ \_ -> Throw (toException (IO.Error.userError msg))
 
 
 instance Functor (STM s) where
@@ -231,16 +236,16 @@ instance Alternative (STM s) where
 instance MonadPlus (STM s) where
 
 
-instance MonadSay (SimM s) where
-  say msg = SimM $ \k -> Say msg (k ())
+instance MonadSay (IOSim s) where
+  say msg = IOSim $ \k -> Say msg (k ())
 
-instance MonadThrow (SimM s) where
-  throwM e = SimM $ \_ -> Throw (toException e)
+instance MonadThrow (IOSim s) where
+  throwM e = IOSim $ \_ -> Throw (toException e)
 
-instance MonadEvaluate (SimM s) where
-  evaluate a = SimM $ \k -> Evaluate a k
+instance MonadEvaluate (IOSim s) where
+  evaluate a = IOSim $ \k -> Evaluate a k
 
-instance Exceptions.MonadThrow (SimM s) where
+instance Exceptions.MonadThrow (IOSim s) where
   throwM = MonadThrow.throwM
 
 instance MonadThrow (STM s) where
@@ -262,14 +267,14 @@ instance MonadThrow (STM s) where
 instance Exceptions.MonadThrow (STM s) where
   throwM = MonadThrow.throwM
 
-instance MonadCatch (SimM s) where
+instance MonadCatch (IOSim s) where
   catch action handler =
-    SimM $ \k -> Catch (runSimM action) (runSimM . handler) k
+    IOSim $ \k -> Catch (runIOSim action) (runIOSim . handler) k
 
-instance Exceptions.MonadCatch (SimM s) where
+instance Exceptions.MonadCatch (IOSim s) where
   catch = MonadThrow.catch
 
-instance MonadMask (SimM s) where
+instance MonadMask (IOSim s) where
   mask action = do
       b <- getMaskingState
       case b of
@@ -284,7 +289,7 @@ instance MonadMask (SimM s) where
         MaskedInterruptible   -> blockUninterruptible $ action block
         MaskedUninterruptible -> action blockUninterruptible
 
-instance Exceptions.MonadMask (SimM s) where
+instance Exceptions.MonadMask (IOSim s) where
   mask                = MonadThrow.mask
   uninterruptibleMask = MonadThrow.uninterruptibleMask
 
@@ -298,29 +303,29 @@ instance Exceptions.MonadMask (SimM s) where
       return (b, c)
 
 
-getMaskingState :: SimM s MaskingState
-unblock, block, blockUninterruptible :: SimM s a -> SimM s a
+getMaskingState :: IOSim s MaskingState
+unblock, block, blockUninterruptible :: IOSim s a -> SimM s a
 
-getMaskingState        = SimM  GetMaskState
-unblock              a = SimM (SetMaskState Unmasked a)
-block                a = SimM (SetMaskState MaskedInterruptible a)
-blockUninterruptible a = SimM (SetMaskState MaskedUninterruptible a)
+getMaskingState        = IOSim  GetMaskState
+unblock              a = IOSim (SetMaskState Unmasked a)
+block                a = IOSim (SetMaskState MaskedInterruptible a)
+blockUninterruptible a = IOSim (SetMaskState MaskedUninterruptible a)
 
-instance MonadThread (SimM s) where
-  type ThreadId (SimM s) = ThreadId
-  myThreadId       = SimM $ \k -> GetThreadId k
-  labelThread t l  = SimM $ \k -> LabelThread t l (k ())
+instance MonadThread (IOSim s) where
+  type ThreadId (IOSim s) = ThreadId
+  myThreadId       = IOSim $ \k -> GetThreadId k
+  labelThread t l  = IOSim $ \k -> LabelThread t l (k ())
 
-instance MonadFork (SimM s) where
-  fork task        = SimM $ \k -> Fork task k
+instance MonadFork (IOSim s) where
+  fork task        = IOSim $ \k -> Fork task k
   forkWithUnmask f = fork (f unblock)
-  throwTo tid e    = SimM $ \k -> ThrowTo (toException e) tid (k ())
+  throwTo tid e    = IOSim $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTMTx (STM s) where
   type TVar_      (STM s) = TVar s
-  type TMVar_     (STM s) = TMVarDefault (SimM s)
-  type TQueue_    (STM s) = TQueueDefault (SimM s)
-  type TBQueue_   (STM s) = TBQueueDefault (SimM s)
+  type TMVar_     (STM s) = TMVarDefault (IOSim s)
+  type TQueue_    (STM s) = TQueueDefault (IOSim s)
+  type TBQueue_   (STM s) = TBQueueDefault (IOSim s)
 
   newTVar         x = STM $ \k -> NewTVar x k
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
@@ -352,10 +357,10 @@ instance MonadSTMTx (STM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-instance MonadSTM (SimM s) where
-  type STM       (SimM s) = STM s
+instance MonadSTM (IOSim s) where
+  type STM       (IOSim s) = STM s
 
-  atomically action = SimM $ \k -> Atomically action k
+  atomically action = IOSim $ \k -> Atomically action k
 
   newTMVarM         = newTMVarMDefault
   newEmptyTMVarM    = newEmptyTMVarMDefault
@@ -375,8 +380,8 @@ instance MonadAsyncSTM (Async s) (STM s) where
   waitCatchSTM (Async _ w) = w
   pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
-instance MonadAsync (SimM s) where
-  type Async (SimM s) = Async s
+instance MonadAsync (IOSim s) where
+  type Async (IOSim s) = Async s
 
   async action = do
     var <- newEmptyTMVarM
@@ -391,45 +396,45 @@ instance MonadAsync (SimM s) where
 
   asyncWithUnmask k = async (k unblock)
 
-instance MonadST (SimM s) where
+instance MonadST (IOSim s) where
   withLiftST f = f liftST
 
-liftST :: StrictST.ST s a -> SimM s a
-liftST action = SimM $ \k -> LiftST action k
+liftST :: StrictST.ST s a -> IOSim s a
+liftST action = IOSim $ \k -> LiftST action k
 
-instance MonadMonotonicTime (SimM s) where
-  getMonotonicTime = SimM $ \k -> GetMonoTime k
+instance MonadMonotonicTime (IOSim s) where
+  getMonotonicTime = IOSim $ \k -> GetMonoTime k
 
-instance MonadTime (SimM s) where
-  getCurrentTime   = SimM $ \k -> GetWallTime k
+instance MonadTime (IOSim s) where
+  getCurrentTime   = IOSim $ \k -> GetWallTime k
 
 -- | Set the current wall clock time for the thread's clock domain.
 --
-setCurrentTime :: UTCTime -> SimM s ()
-setCurrentTime t = SimM $ \k -> SetWallTime t (k ())
+setCurrentTime :: UTCTime -> IOSim s ()
+setCurrentTime t = IOSim $ \k -> SetWallTime t (k ())
 
 -- | Put the thread into a new wall clock domain, not shared with the parent
 -- thread. Changing the wall clock time in the new clock domain will not affect
 -- the other clock of other threads. All threads forked by this thread from
 -- this point onwards will share the new clock domain.
 --
-unshareClock :: SimM s ()
-unshareClock = SimM $ \k -> UnshareClock (k ())
+unshareClock :: IOSim s ()
+unshareClock = IOSim $ \k -> UnshareClock (k ())
 
-instance MonadDelay (SimM s) where
+instance MonadDelay (IOSim s) where
   -- Use default in terms of MonadTimer
 
-instance MonadTimer (SimM s) where
-  data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
+instance MonadTimer (IOSim s) where
+  data Timeout (IOSim s) = Timeout !(TVar s TimeoutState) !TimeoutId
                         | NegativeTimeout !TimeoutId
                         -- ^ a negative timeout
 
   readTimeout (Timeout var _key)     = readTVar var
   readTimeout (NegativeTimeout _key) = pure TimeoutCancelled
 
-  newTimeout      d = SimM $ \k -> NewTimeout      d k
-  updateTimeout t d = SimM $ \k -> UpdateTimeout t d (k ())
-  cancelTimeout t   = SimM $ \k -> CancelTimeout t   (k ())
+  newTimeout      d = IOSim $ \k -> NewTimeout      d k
+  updateTimeout t d = IOSim $ \k -> UpdateTimeout t d (k ())
+  cancelTimeout t   = IOSim $ \k -> CancelTimeout t   (k ())
 
   timeout d action
     | d <  0    = Just <$> action
@@ -468,12 +473,12 @@ newtype EventlogEvent = EventlogEvent String
 -- 'selectTraceEventsDynamic'.
 newtype EventlogMarker = EventlogMarker String
 
-instance MonadEventlog (SimM s) where
+instance MonadEventlog (IOSim s) where
   traceEventM = traceM . EventlogEvent
   traceMarkerM = traceM . EventlogMarker
 
-traceM :: Typeable a => a -> SimM s ()
-traceM x = SimM $ \k -> Output (toDyn x) (k ())
+traceM :: Typeable a => a -> IOSim s ()
+traceM x = IOSim $ \k -> Output (toDyn x) (k ())
 
 
 --
@@ -611,13 +616,13 @@ data Failure =
 
 instance Exception Failure
 
-runSim :: forall a. (forall s. SimM s a) -> Either Failure a
+runSim :: forall a. (forall s. IOSim s a) -> Either Failure a
 runSim mainAction = traceResult False (runSimTrace mainAction)
 
 -- | For quick experiments and tests it is often appropriate and convenient to
 -- simply throw failures as exceptions.
 --
-runSimOrThrow :: forall a. (forall s. SimM s a) -> a
+runSimOrThrow :: forall a. (forall s. IOSim s a) -> a
 runSimOrThrow mainAction =
     case runSim mainAction of
       Left  e -> throw e
@@ -627,7 +632,7 @@ runSimOrThrow mainAction =
 -- are other threads still running or blocked. If one is trying to follow
 -- a strict thread cleanup policy then this helps testing for that.
 --
-runSimStrictShutdown :: forall a. (forall s. SimM s a) -> Either Failure a
+runSimStrictShutdown :: forall a. (forall s. IOSim s a) -> Either Failure a
 runSimStrictShutdown mainAction = traceResult True (runSimTrace mainAction)
 
 traceResult :: Bool -> Trace a -> Either Failure a
@@ -647,16 +652,16 @@ traceEvents _                             = []
 
 
 
-runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
+runSimTrace :: forall a. (forall s. IOSim s a) -> Trace a
 runSimTrace mainAction = runST (runSimTraceST mainAction)
 
-runSimTraceST :: forall s a. SimM s a -> ST s (Trace a)
+runSimTraceST :: forall s a. IOSim s a -> ST s (Trace a)
 runSimTraceST mainAction = schedule mainThread initialState
   where
     mainThread =
       Thread {
         threadId      = ThreadId 0,
-        threadControl = ThreadControl (runSimM mainAction) MainFrame,
+        threadControl = ThreadControl (runIOSim mainAction) MainFrame,
         threadBlocked = False,
         threadMasking = Unmasked,
         threadThrowTo = [],
@@ -903,7 +908,7 @@ schedule thread@Thread{
       let tid'     = nextTid
           thread'  = thread { threadControl = ThreadControl (k tid') ctl }
           thread'' = Thread { threadId      = tid'
-                            , threadControl = ThreadControl (runSimM a)
+                            , threadControl = ThreadControl (runIOSim a)
                                                             ForkFrame
                             , threadBlocked = False
                             , threadMasking = threadMasking thread
@@ -976,7 +981,7 @@ schedule thread@Thread{
 
     SetMaskState maskst' action' k -> do
       let thread' = thread { threadControl = ThreadControl
-                                               (runSimM action')
+                                               (runIOSim action')
                                                (MaskFrame k maskst ctl)
                            , threadMasking = maskst' }
       case maskst' of
@@ -1554,7 +1559,7 @@ example0 = do
     unless (x == 1) retry
   say "main done"
 
-example1 :: SimM s ()
+example1 :: IOSim s ()
 example1 = do
   say "starting"
   chan <- atomically (newTVar ([] :: [Int]))
@@ -1595,7 +1600,7 @@ example2 = do
     say "2"
   atomically $ writeTVar v (Just ())
 
-example3 :: SimM s ()
+example3 :: IOSim s ()
 example3 = do
   say "starting"
   threadDelay 1
@@ -1612,7 +1617,7 @@ example3 = do
   ct2 <- getCurrentTime
   say (show (mt2, ct2))
 
-example4 :: SimM s ()
+example4 :: IOSim s ()
 example4 = do
 
   say "starting"

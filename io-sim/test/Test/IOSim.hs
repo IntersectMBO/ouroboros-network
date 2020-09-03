@@ -37,15 +37,15 @@ import           Test.Tasty.QuickCheck
 tests :: TestTree
 tests =
   testGroup "IO simulator"
-  [ testProperty "read/write graph (IO)"   prop_stm_graph_io
-  , testProperty "read/write graph (SimM)" (withMaxSuccess 1000 prop_stm_graph_sim)
-  , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
+  [ testProperty "read/write graph (IO)"    prop_stm_graph_io
+  , testProperty "read/write graph (IOSim)" (withMaxSuccess 1000 prop_stm_graph_sim)
+  , testProperty "timers (IOSim)"           (withMaxSuccess 1000 prop_timers_ST)
   -- fails since we just use `threadDelay` to schedule timers in `IO`.
-  , testProperty "timers (IO)"             (expectFailure prop_timers_IO)
-  , testProperty "threadId order (SimM)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
-  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order_ST)
-  , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
-  , testProperty "STM wakeup order"        prop_wakeup_order_ST
+  , testProperty "timers (IO)"              (expectFailure prop_timers_IO)
+  , testProperty "threadId order (IOSim)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
+  , testProperty "fork order (IOSim)"       (withMaxSuccess 1000 prop_fork_order_ST)
+  , testProperty "fork order (IO)"          (expectFailure prop_fork_order_IO)
+  , testProperty "STM wakeup order"         prop_wakeup_order_ST
   , testGroup "throw/catch unit tests"
     [ testProperty "0" unit_catch_0
     , testProperty "1" unit_catch_1
@@ -389,7 +389,7 @@ unit_catch_0 =
         _                         -> property False
 
  where
-  example :: SimM s ()
+  example :: IOSim s ()
   example = do
     say "before"
     _ <- throwM DivideByZero
@@ -486,7 +486,7 @@ unit_fork_1 =
         Left FailureSloppyShutdown{} -> property True
         _                            -> property False
   where
-    example :: SimM s ()
+    example :: IOSim s ()
     example = do
       void $ fork $ say "child"
       say "parent"
@@ -502,7 +502,7 @@ unit_fork_2 =
           , ioeGetErrorString ioe == "oh noes!" -> property True
         _                                       -> property False
   where
-    example :: SimM s ()
+    example :: IOSim s ()
     example = do
       resVar <- newEmptyTMVarM
       void $ fork $ do
@@ -689,7 +689,7 @@ unit_async_10 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: SimM s ()
+    yield :: IOSim s ()
     yield = atomically (return ())  -- yield, go to end of runqueue
 
 
@@ -724,7 +724,7 @@ unit_async_11 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: SimM s ()
+    yield :: IOSim s ()
     yield = atomically (return ())  -- yield, go to end of runqueue
 
 
@@ -857,7 +857,7 @@ prop_stm_referenceM (SomeTerm _tyrep t) = do
 -- Utils
 --
 
-runSimTraceSay :: (forall s. SimM s a) -> [String]
+runSimTraceSay :: (forall s. IOSim s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)
 
 selectTraceSay :: Trace a -> [String]
