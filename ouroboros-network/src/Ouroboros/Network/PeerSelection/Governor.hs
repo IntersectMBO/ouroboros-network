@@ -44,7 +44,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
-import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
@@ -471,7 +470,7 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
     loop
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
-    loop !st = assert (invariantPeerSelectionState st) $ do
+    loop !st = assertPeerSelectionState st $ do
       blockedAt <- getMonotonicTime
       let knownPeers' = KnownPeers.setCurrentTime blockedAt (knownPeers st)
           st'         = st { knownPeers = knownPeers' }
