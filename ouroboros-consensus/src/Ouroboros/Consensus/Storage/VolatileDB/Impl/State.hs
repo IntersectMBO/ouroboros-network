@@ -146,7 +146,7 @@ modifyOpenState appendOrWrite
       DbOpen ost -> return ost
       DbClosed   -> do
         release varInternalState DbClosed
-        throwM $ ApiMisuse $ ClosedDBError Nothing
+        throwIO $ ApiMisuse $ ClosedDBError Nothing
 
     putSt :: OpenState blk h -> ExitCase (OpenState blk h) -> m ()
     putSt ost ec = case closeOrRelease of
@@ -228,7 +228,7 @@ withOpenState ::
 withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action = do
     (mr, ()) <- generalBracket open close (tryVolatileDB . access)
     case mr of
-      Left  e -> throwM e
+      Left  e -> throwIO e
       Right r -> return r
   where
     open :: m (OpenState blk h)
@@ -237,7 +237,7 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
         DbOpen ost -> return ost
         DbClosed   -> do
           atomically $ RAWLock.unsafeReleaseReadAccess varInternalState
-          throwM $ ApiMisuse (ClosedDBError Nothing)
+          throwIO $ ApiMisuse (ClosedDBError Nothing)
 
     close ::
          OpenState blk h

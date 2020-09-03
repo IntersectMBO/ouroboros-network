@@ -246,7 +246,7 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
           -- Reached end of file, no filled slot
           return Nothing
         (NoMoreRelativeSlots, Just _) ->
-          throwM $ UnexpectedFailure $
+          throwIO $ UnexpectedFailure $
             InvalidFileError primaryIndexFile "Index file too large" prettyCallStack
         (NextRelativeSlot slot, Just offset)
           | offset == 0 -> go pHnd (nextRelativeSlot slot)

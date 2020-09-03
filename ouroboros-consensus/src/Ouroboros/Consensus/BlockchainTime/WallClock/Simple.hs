@@ -125,4 +125,4 @@ waitUntilNextSlot time@SystemTime{..} slotLen oldCurrent = do
        | newCurrent == oldCurrent ->
            waitUntilNextSlot time slotLen oldCurrent
        | otherwise ->
-           throwM $ SystemClockMovedBack oldCurrent newCurrent
+           throwIO $ SystemClockMovedBack oldCurrent newCurrent

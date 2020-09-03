@@ -180,7 +180,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           (Just consumerAddress)
           realProducerAddress)
         $ \ _connAsync -> do
-          void $ fork $ sequence_
+          void $ forkIO $ sequence_
               [ do
                   threadDelay 10e-4 -- just to provide interest
                   atomically $ do

@@ -68,4 +68,4 @@ simHasFS var = HasFS {
           Right (a, st') -> do
             writeTVar var st'
             return $ Right a
-      either throwM return eOrA
+      either throwIO return eOrA

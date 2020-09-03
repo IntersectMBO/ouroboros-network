@@ -257,8 +257,8 @@ mkSnocket (AllocateError e) _localAddr _remoteAddr = Snocket {
     getLocalAddr = \Sock{localAddr} -> pure localAddr
   , getRemoteAddr = \Sock{remoteAddr = addr} -> pure addr
   , addrFamily = error "not supported"
-  , open = \_ -> throwM e
-  , openToConnect = \_  -> throwM e
+  , open = \_ -> throwIO e
+  , openToConnect = \_  -> throwIO e
   , connect = \_ _ -> pure ()
   , bind = \_ _ -> pure ()
   , listen = \_ -> pure ()
@@ -272,7 +272,7 @@ mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
   , addrFamily = error "not supported"
   , open = \_ -> pure Sock {remoteAddr, localAddr}
   , openToConnect = \_ -> pure Sock {remoteAddr, localAddr}
-  , connect = \_ _ -> throwM e
+  , connect = \_ _ -> throwIO e
   , accept = \_ -> error "not supported"
   , bind = \_ _ -> pure ()
   , listen = \_ -> pure ()
@@ -297,7 +297,7 @@ data ArbApp addr = ArbApp (Maybe ArbException) (Sock addr -> IO ())
 
 instance Arbitrary (ArbApp addr) where
     arbitrary = oneof
-      [ (\a@(ArbException e) -> ArbApp (Just a) (\_ -> throwM e)) <$> arbitrary
+      [ (\a@(ArbException e) -> ArbApp (Just a) (\_ -> throwIO e)) <$> arbitrary
       , pure $ ArbApp Nothing (\_ -> pure ())
       ]
 

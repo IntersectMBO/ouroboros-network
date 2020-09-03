@@ -1217,7 +1217,7 @@ dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
          DummyAppSucceed -> return ((), Nothing)
-         DummyAppFail    -> throwM $ MuxError (MuxShutdown Nothing) "App Fail"
+         DummyAppFail    -> throwIO $ MuxError (MuxShutdown Nothing) "App Fail"
 
 appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
 appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits

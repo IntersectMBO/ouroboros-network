@@ -360,7 +360,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientResult (Just (Left ex))
           -- Rethrow, but it will be ignored anyway.
-          throwM ex
+          throwIO ex
       void $ forkLinkedThread registry "ChainSyncServer" $
         runPeer nullTracer codecChainSyncId serverChannel
                 (chainSyncServerPeer server)

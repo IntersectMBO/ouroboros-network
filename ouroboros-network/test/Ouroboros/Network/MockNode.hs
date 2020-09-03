@@ -185,7 +185,7 @@ blockGenerator slotDuration chain = do
   -- communicate through a @TBQueue@, it is enough to make it very shallow,
   -- since it is supposed to be written and read once a slot time.
   var <- atomically (newTBQueue 1)
-  void $ fork $ go var Nothing chain
+  void $ forkIO $ go var Nothing chain
   return (readTBQueue var)
  where
   go :: TBQueue m (Maybe block) -> Maybe SlotNo -> [block] -> m ()
@@ -254,11 +254,11 @@ forkRelayKernel upstream cpsVar = do
   candidateChainVars <- replicateM (length upstream) (atomically (newTVar Nothing))
   -- chain validation threads
   zipWithM_
-    (\chain cchain -> fork $ chainValidation chain cchain)
+    (\chain cchain -> forkIO $ chainValidation chain cchain)
     upstream
     candidateChainVars
   -- chain selection thread
-  void $ fork $ longestChainSelection candidateChainVars cpsVar
+  void $ forkIO $ longestChainSelection candidateChainVars cpsVar
 
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has
@@ -309,7 +309,7 @@ relayNode _nid initChain chans = do
     startConsumer _cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-      void $ fork $ void $ runPeer nullTracer
+      void $ forkIO $ void $ runPeer nullTracer
                                    codecChainSyncId
                                    channel
                                    consumer
@@ -320,13 +320,13 @@ relayNode _nid initChain chans = do
                   -> Channel m (AnyMessage (ChainSync block (Tip block)))
                   -> m ()
     startProducer producer _pid channel =
-      -- use 'void' because 'fork' only works with 'm ()'
-      -- No sense throwing on Unexpected right? since fork will just squelch
+      -- use 'void' because 'forkIO' only works with 'm ()'
+      -- No sense throwing on Unexpected right? since forkIO will just squelch
       -- it. FIXME: use async...
-      void $ fork $ void $ runPeer nullTracer
-                                   codecChainSyncId
-                                   channel
-                                   producer
+      void $ forkIO $ void $ runPeer nullTracer
+                                     codecChainSyncId
+                                     channel
+                                     producer
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
@@ -353,7 +353,7 @@ forkCoreKernel :: forall block m.
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
   getBlock <- blockGenerator slotDuration gchain
-  void $ fork $ applyGeneratedBlock getBlock
+  void $ forkIO $ applyGeneratedBlock getBlock
 
   where
     applyGeneratedBlock

@@ -218,7 +218,7 @@ read (RAWLock var) = readTVar var >>= \case
     ReadAppend     _readers _appender st -> return st
     WaitingToWrite _readers _appender st -> return st
     Writing                              -> retry
-    Poisoned       (AllowThunk ex)       -> throwM ex
+    Poisoned       (AllowThunk ex)       -> throwSTM ex
 
 -- | Poison the lock with the given exception. All subsequent access to the
 -- lock will result in the given exception being thrown.
@@ -240,7 +240,7 @@ poison (RAWLock var) mkEx = atomically $ do
 -------------------------------------------------------------------------------}
 
 withPoisoned :: MonadThrow m => Except SomeException a -> m a
-withPoisoned = either throwM return . runExcept
+withPoisoned = either throwIO return . runExcept
 
 -- | Acquire the 'RAWLock' as a reader.
 --

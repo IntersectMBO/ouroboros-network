@@ -33,7 +33,7 @@ import qualified Codec.CBOR.Decoding as CBOR.D
 import qualified Codec.CBOR.Encoding as CBOR.E
 import qualified Codec.CBOR.FlatTerm as CBOR.F
 import qualified Codec.CBOR.Read as CBOR.R
-import           Control.Exception (assert, throwIO)
+import           Control.Exception (assert)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.ST

@@ -449,7 +449,7 @@ execTerm env t =
 
       Throw e -> do
         let e' = execExpr env e
-        throwM =<< snapshotExecValue e'
+        throwSTM =<< snapshotExecValue e'
 
       Retry -> retry
 

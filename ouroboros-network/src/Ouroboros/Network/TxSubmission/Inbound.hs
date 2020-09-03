@@ -256,7 +256,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             txidsMap = Map.fromList txids
 
         unless (Seq.length txidsSeq <= fromIntegral reqNo) $
-          throwM ProtocolErrorTxIdsNotRequested
+          throwIO ProtocolErrorTxIdsNotRequested
 
         -- Upon receiving a batch of new txids we extend our available set,
         -- and extended the unacknowledged sequence.
@@ -288,7 +288,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             txidsRequested = Set.fromList txids
 
         unless (txidsReceived `Set.isSubsetOf` txidsRequested) $
-          throwM ProtocolErrorTxNotRequested
+          throwIO ProtocolErrorTxNotRequested
 
             -- We can match up all the txids we requested, with those we
             -- received.

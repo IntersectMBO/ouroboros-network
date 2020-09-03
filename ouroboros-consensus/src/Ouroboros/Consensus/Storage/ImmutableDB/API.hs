@@ -347,7 +347,7 @@ data ApiMisuse =
 deriving instance Show ApiMisuse
 
 throwApiMisuse :: (MonadThrow m, HasCallStack) => ApiMisuse -> m a
-throwApiMisuse e = throwM $ ApiMisuse e prettyCallStack
+throwApiMisuse e = throwIO $ ApiMisuse e prettyCallStack
 
 data UnexpectedFailure =
     -- | An IO operation on the file-system threw an error.
@@ -396,7 +396,7 @@ data UnexpectedFailure =
 deriving instance Show UnexpectedFailure
 
 throwUnexpectedFailure :: MonadThrow m => UnexpectedFailure -> m a
-throwUnexpectedFailure = throwM . UnexpectedFailure
+throwUnexpectedFailure = throwIO . UnexpectedFailure
 
 -- | This type can be part of an exception, but also returned as part of an
 -- 'Either', because it can be expected in some cases.

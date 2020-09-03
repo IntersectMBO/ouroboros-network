@@ -481,4 +481,4 @@ wrapFailure :: forall m x. MonadCatch m => m x -> m x
 wrapFailure k = catch k rethrow
   where
     rethrow :: FsError -> m x
-    rethrow err = throwM $ LgrDbFailure err
+    rethrow err = throwIO $ LgrDbFailure err

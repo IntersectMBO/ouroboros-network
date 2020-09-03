@@ -175,7 +175,7 @@ mainTx :: ( MonadThrow (STM m)
           , MonadSTM m
           )
        => Main m (PeerStates m addr) Void
-mainTx (ThrowException e) = throwM e
+mainTx (ThrowException e) = throwIO e
 mainTx PeerStates{}       = retry
 
 

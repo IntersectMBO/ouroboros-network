@@ -57,12 +57,12 @@ getReader
   -> m r
 getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
-      ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
+      ChainDbClosed   -> throwIO $ ClosedDBError prettyCallStack
       ChainDbOpen env -> do
         readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen
           then return env
-          else throwM ClosedReaderError
+          else throwIO ClosedReaderError
     f env
 
 -- | Variant 'of 'getReader' for functions taking one argument.

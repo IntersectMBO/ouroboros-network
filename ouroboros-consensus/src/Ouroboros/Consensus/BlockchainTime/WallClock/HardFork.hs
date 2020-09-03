@@ -114,7 +114,7 @@ hardForkBlockchainTime registry
           -- user's system clock was adjusted (say by an NTP process).
           | m <  n    -> return ()
           | m == n    -> return ()
-          | otherwise -> throwM $ SystemClockMovedBack m n
+          | otherwise -> throwIO $ SystemClockMovedBack m n
 
 {-------------------------------------------------------------------------------
   Auxiliary

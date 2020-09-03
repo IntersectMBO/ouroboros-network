@@ -61,7 +61,7 @@ openDBMock chunkInfo ccfg = do
         updateE_ f = atomically $ do
           db <- readTVar dbVar
           case f db of
-            Left  e   -> throwM e
+            Left  e   -> throwSTM e
             Right db' -> writeTVar dbVar db'
 
         updateEE ::
@@ -70,7 +70,7 @@ openDBMock chunkInfo ccfg = do
         updateEE f = atomically $ do
           db <- readTVar dbVar
           case f db of
-            Left  e                -> throwM e
+            Left  e                -> throwSTM e
             Right (Left e)         -> return (Left e)
             Right (Right (a, db')) -> writeTVar dbVar db' >> return (Right a)
 

@@ -265,7 +265,7 @@ getKnownBlockComponent db blockComponent hash = do
       getBlockComponent db blockComponent hash
     case mBlock of
       Right b  -> return b
-      Left err -> throwM err
+      Left err -> throwIO err
 
 mustExist ::
      forall proxy blk b. (StandardHash blk, Typeable blk)

@@ -297,7 +297,7 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
           traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceExceptionExit pnum pmode e)
           atomically $ writeTVar muxStatus $ MuxFailed e
-          throwM e
+          throwIO e
 
         -- These two cover internal and protocol errors, but always fatal, so propagate.
         --TODO: decide if we should have exception wrappers here to identify
@@ -306,11 +306,11 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
         EventJobResult (MuxerException e) -> do
           traceWith tracer (MuxTraceState Dead)
           atomically $ writeTVar muxStatus $ MuxFailed e
-          throwM e
+          throwIO e
         EventJobResult (DemuxerException e) -> do
           traceWith tracer (MuxTraceState Dead)
           atomically $ writeTVar muxStatus $ MuxFailed e
-          throwM e
+          throwIO e
 
         EventControlCmd (CmdStartProtocolThread
                            StartEagerly

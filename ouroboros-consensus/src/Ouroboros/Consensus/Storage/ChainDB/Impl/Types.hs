@@ -118,7 +118,7 @@ getEnv :: forall m blk r. (IOLike m, HasCallStack)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwIO $ ClosedDBError prettyCallStack
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
 getEnv1 :: (IOLike m, HasCallStack)
@@ -142,7 +142,7 @@ getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwSTM $ ClosedDBError prettyCallStack
 
 -- | Variant of 'getEnv1' that works in 'STM'.
 getEnvSTM1 ::
@@ -152,7 +152,7 @@ getEnvSTM1 ::
   -> a -> STM m r
 getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
     ChainDbOpen env -> f env a
-    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwSTM $ ClosedDBError prettyCallStack
 
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)

@@ -46,7 +46,7 @@ namedPipeAsBearer tracer h =
       traceWith tracer Mx.MuxTraceRecvHeaderStart
       hbuf <- recvLen' True 8 []
       case Mx.decodeMuxSDU hbuf of
-        Left e -> throwM e
+        Left e -> throwIO e
         Right header@Mx.MuxSDU { Mx.msHeader } -> do
           traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
           blob <- recvLen' False (fromIntegral $ Mx.mhLength msHeader) []
@@ -64,7 +64,7 @@ namedPipeAsBearer tracer h =
         then do
           when waitingOnNextHeader
             $ threadDelay 1
-          throwM $ Mx.MuxError Mx.MuxBearerClosed (show h ++
+          throwIO $ Mx.MuxError Mx.MuxBearerClosed (show h ++
               " closed when reading data, waiting on next header " ++
               show waitingOnNextHeader)
         else do

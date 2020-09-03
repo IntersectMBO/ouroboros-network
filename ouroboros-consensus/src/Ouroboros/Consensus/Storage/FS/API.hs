@@ -177,7 +177,7 @@ hGetExactly hasFS h n = go n []
       | otherwise           = do
         bs <- hGetSome hasFS h remainingBytes
         if BS.null bs then
-          throwM FsError {
+          throwIO FsError {
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
@@ -205,7 +205,7 @@ hGetExactlyAt hasFS h n offset = go n offset []
         bs <- hGetSomeAt hasFS h remainingBytes currentOffset
         let readBytes = BS.length bs
         if BS.null bs then
-          throwM FsError {
+          throwIO FsError {
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactlyAt found eof before reading " ++ show n ++ " bytes"

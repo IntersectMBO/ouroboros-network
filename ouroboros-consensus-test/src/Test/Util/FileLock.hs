@@ -79,6 +79,6 @@ mockUnlockFile MockFileLocks { varLocks, releaseDelay } path =
             return $ return ()
           Just delay -> do
             writeTVar varLocks $ Map.insert path LazyRelease locks
-            return $ void $ fork $ do
+            return $ void $ forkIO $ do
               threadDelay delay
               atomically $ writeTVar varLocks $ Map.delete path locks

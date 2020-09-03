@@ -510,13 +510,13 @@ _unit_bracketSyncWithFetchClient step = do
 
     step "Exception in fetch"
     Left (Left _) <- testSkeleton
-      (\action -> action (threadDelay 0.1 >> throwM AsyncCancelled))
+      (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
       (\action -> action (threadDelay 0.2))
 
     step "Exception in sync"
     Right (Left _) <- testSkeleton
       (\action -> action (threadDelay 0.2))
-      (\action -> action (threadDelay 0.1 >> throwM AsyncCancelled))
+      (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
 
     return ()
 
@@ -567,7 +567,7 @@ _unit_bracketSyncWithFetchClient step = do
             let (fetchStatePeerStates, fetchStatePeerChains) = fingerprint'
             unless (                 Map.keysSet fetchStatePeerChains
                     `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
-              throwM (AssertionFailed "detected state mismatch")
+              throwIO (AssertionFailed "detected state mismatch")
 
             logic fingerprint'
 
@@ -578,7 +578,7 @@ _unit_bracketSyncWithFetchClient step = do
               res <- pollSTM logicAsync
               case res of
                 Nothing         -> waitEitherCatchSTM fetchAsync syncAsync
-                Just (Left  e)  -> throwM e
+                Just (Left  e)  -> throwIO e
                 Just (Right ()) -> error "impossible"
 
             threadDelay 0.1
@@ -586,7 +586,7 @@ _unit_bracketSyncWithFetchClient step = do
             atomically $ do
               x <- pollSTM logicAsync
               case x of
-                Just (Left e) -> throwM e
+                Just (Left e) -> throwIO e
                 _             -> return ()
             return res
 

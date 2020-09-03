@@ -1185,10 +1185,10 @@ directedEdge registry tr version cfg clock edgeStatusVar client server =
         --
         hUnexpected :: forall a. SomeException -> m a
         hUnexpected e@(Exn.SomeException e') = case fromException e of
-          Just (_ :: Exn.AsyncException) -> throwM e
+          Just (_ :: Exn.AsyncException) -> throwIO e
           Nothing                        -> case fromException e of
-            Just (_ :: Exn.SomeAsyncException) -> throwM e
-            Nothing                            -> throwM MiniProtocolFatalException
+            Just (_ :: Exn.SomeAsyncException) -> throwIO e
+            Nothing                            -> throwIO MiniProtocolFatalException
               { mpfeType   = Typeable.typeOf e'
               , mpfeExn    = e
               , mpfeClient = fst client

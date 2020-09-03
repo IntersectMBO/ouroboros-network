@@ -145,9 +145,9 @@ driverWithLimits tracer timeoutFn
         Just (Right x@(SomeMessage msg, _trailing')) -> do
           traceWith tracer (TraceRecvMsg (AnyMessageAndAgency stok msg))
           return x
-        Just (Left (Just failure)) -> throwM (DecoderFailure stok failure)
-        Just (Left Nothing)        -> throwM (ExceededSizeLimit stok)
-        Nothing                    -> throwM (ExceededTimeLimit stok)
+        Just (Left (Just failure)) -> throwIO (DecoderFailure stok failure)
+        Just (Left Nothing)        -> throwIO (ExceededSizeLimit stok)
+        Nothing                    -> throwIO (ExceededTimeLimit stok)
 
 runDecoderWithLimit
     :: forall m bytes failure a. Monad m

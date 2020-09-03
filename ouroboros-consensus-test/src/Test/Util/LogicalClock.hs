@@ -174,7 +174,7 @@ waitForTick :: IOLike m => LogicalClock m -> Tick -> m ()
 waitForTick clock tick = do
     start <- atomically $ getCurrentTick clock
     when (start >= tick) $
-      throwM $ WaitForTickTooLate {
+      throwIO $ WaitForTickTooLate {
           tickRequest = tick
         , tickCurrent = start
         }

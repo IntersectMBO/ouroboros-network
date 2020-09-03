@@ -364,8 +364,8 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
         case er of
-          Left (DNSError err) -> throwM err
-          Left (IOError  err) -> throwM err
+          Left (DNSError err) -> throwIO err
+          Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
                   [ lookupAWithTTL timeout resolvConf resolver daDomain

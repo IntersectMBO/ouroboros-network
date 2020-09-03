@@ -227,16 +227,16 @@ instance MonadSay (IOSim s) where
   say msg = IOSim $ \k -> Say msg (k ())
 
 instance MonadThrow (IOSim s) where
-  throwM e = IOSim $ \_ -> Throw (toException e)
+  throwIO e = IOSim $ \_ -> Throw (toException e)
 
 instance MonadEvaluate (IOSim s) where
   evaluate a = IOSim $ \k -> Evaluate a k
 
 instance Exceptions.MonadThrow (IOSim s) where
-  throwM = MonadThrow.throwM
+  throwM = MonadThrow.throwIO
 
 instance MonadThrow (STM s) where
-  throwM e = STM $ \_ -> ThrowStm (toException e)
+  throwIO e = STM $ \_ -> ThrowStm (toException e)
 
   -- Since these involve re-throwing the exception and we don't provide
   -- CatchSTM at all, then we can get away with trivial versions:
@@ -252,7 +252,7 @@ instance MonadThrow (STM s) where
     return r
 
 instance Exceptions.MonadThrow (STM s) where
-  throwM = MonadThrow.throwM
+  throwM = MonadThrow.throwIO
 
 instance MonadCatch (IOSim s) where
   catch action handler =
@@ -285,7 +285,7 @@ instance Exceptions.MonadMask (IOSim s) where
       resource <- acquire
       b <- unmasked (use resource) `catch` \e -> do
         _ <- release resource (Exceptions.ExitCaseException e)
-        throwM e
+        throwIO e
       c <- release resource (Exceptions.ExitCaseSuccess b)
       return (b, c)
 
@@ -304,9 +304,9 @@ instance MonadThread (IOSim s) where
   labelThread t l  = IOSim $ \k -> LabelThread t l (k ())
 
 instance MonadFork (IOSim s) where
-  fork task        = IOSim $ \k -> Fork task k
-  forkWithUnmask f = fork (f unblock)
-  throwTo tid e    = IOSim $ \k -> ThrowTo (toException e) tid (k ())
+  forkIO task        = IOSim $ \k -> Fork task k
+  forkIOWithUnmask f = forkIO (f unblock)
+  throwTo tid e      = IOSim $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTMTx (STM s) where
   type TVar_      (STM s) = TVar s
@@ -373,7 +373,7 @@ instance MonadAsync (IOSim s) where
   async action = do
     var <- newEmptyTMVarM
     tid <- mask $ \restore ->
-             fork $ try (restore action) >>= atomically . putTMVar var
+             forkIO $ try (restore action) >>= atomically . putTMVar var
     return (Async tid (readTMVar var))
 
   asyncThreadId _proxy (Async tid _) = tid
@@ -435,7 +435,7 @@ instance MonadTimer (IOSim s) where
                                          else Nothing)
           (\_ -> return Nothing) $
           bracket
-            (fork $ do
+            (forkIO $ do
                 fired <- atomically $ awaitTimeout t
                 when fired $ throwTo pid (TimeoutException tid))
             (\pid' -> do
@@ -461,8 +461,8 @@ newtype EventlogEvent = EventlogEvent String
 newtype EventlogMarker = EventlogMarker String
 
 instance MonadEventlog (IOSim s) where
-  traceEventM = traceM . EventlogEvent
-  traceMarkerM = traceM . EventlogMarker
+  traceEventIO = traceM . EventlogEvent
+  traceMarkerIO = traceM . EventlogMarker
 
 --
 -- Simulation interpreter

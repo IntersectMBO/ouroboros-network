@@ -85,4 +85,4 @@ onExceptionIf
   -> m a
 onExceptionIf p h m = m `catch` \e -> do
     when (p e) h
-    throwM e
+    throwIO e
