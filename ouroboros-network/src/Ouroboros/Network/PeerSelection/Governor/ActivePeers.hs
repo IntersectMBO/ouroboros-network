@@ -14,7 +14,7 @@ import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Concurrent.JobPool (Job(..))
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
@@ -124,18 +124,20 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of activatePeerConnection
       activatePeerConnection peerconn
-      return $ Completion $ \st _now -> Decision {
-        decisionTrace = TracePromoteWarmDone peeraddr,
-        decisionState = st {
-                          activePeers           = Set.insert peeraddr
-                                                    (activePeers st),
-                          establishedStatus     = Map.insert peeraddr PeerHot
-                                                    (establishedStatus st),
-                          inProgressPromoteWarm = Set.delete peeraddr
-                                                    (inProgressPromoteWarm st)
-                        },
-        decisionJobs  = []
-      }
+      return $ Completion $ \st _now ->
+        assert (peeraddr `Map.member` establishedPeers st)
+        Decision {
+          decisionTrace = TracePromoteWarmDone peeraddr,
+          decisionState = st {
+                            activePeers           = Set.insert peeraddr
+                                                      (activePeers st),
+                            establishedStatus     = Map.insert peeraddr PeerHot
+                                                      (establishedStatus st),
+                            inProgressPromoteWarm = Set.delete peeraddr
+                                                      (inProgressPromoteWarm st)
+                          },
+          decisionJobs  = []
+        }
 
 
 ----------------------------
@@ -232,15 +234,17 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
     job :: m (Completion m peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
-      return $ Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotDone peeraddr,
-        decisionState = st {
-                          activePeers         = Set.delete peeraddr
-                                                  (activePeers st),
-                          establishedStatus   = Map.insert peeraddr PeerWarm
-                                                  (establishedStatus st),
-                          inProgressDemoteHot = Set.delete peeraddr
-                                                  (inProgressDemoteHot st)
-                        },
-        decisionJobs  = []
-      }
+      return $ Completion $ \st _now ->
+        assert (peeraddr `Map.member` establishedPeers st)
+        Decision {
+          decisionTrace = TraceDemoteHotDone peeraddr,
+          decisionState = st {
+                            activePeers         = Set.delete peeraddr
+                                                    (activePeers st),
+                            establishedStatus   = Map.insert peeraddr PeerWarm
+                                                    (establishedStatus st),
+                            inProgressDemoteHot = Set.delete peeraddr
+                                                    (inProgressDemoteHot st)
+                          },
+          decisionJobs  = []
+        }

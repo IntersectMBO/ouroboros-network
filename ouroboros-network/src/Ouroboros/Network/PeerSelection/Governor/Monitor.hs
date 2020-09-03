@@ -25,6 +25,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
+import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -107,41 +108,53 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                             establishedStatus'
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
-      return $ \now -> Decision {
-        decisionTrace = TraceDemoteAsynchronous demotions,
-        decisionJobs  = [],
-        decisionState = st {
-                          activePeers       = activePeers
-                                                Set.\\ Map.keysSet demotions,
-                          establishedPeers  = establishedPeers
-                                                Map.\\ demotedToCold,
+      return $ \now ->
+        let activePeers1       = activePeers
+                                  Set.\\ Map.keysSet demotions
 
-                          -- Note that we do not use establishedStatus' which
-                          -- has the synchronous ones that are supposed to be
-                          -- handled elsewhere. We just update the async ones:
-                          establishedStatus = demotedToWarm
-                                                <> establishedStatus
-                                                Map.\\ demotedToCold,
+            establishedPeers1  = establishedPeers
+                                  Map.\\ demotedToCold
 
-                          -- Asynchronous transition to cold peer can only be
-                          -- a result of a failure.
-                          knownPeers        = KnownPeers.setConnectTime
-                                                (Map.keysSet demotedToCold)
-                                                (reconnectDelay `addTime` now)
-                                            . foldr
-                                                ((snd .) . KnownPeers.incrementFailCount)
-                                                (knownPeers st)
-                                            $ (Map.keysSet demotedToCold),
+            -- Note that we do not use establishedStatus' which
+            -- has the synchronous ones that are supposed to be
+            -- handled elsewhere. We just update the async ones:
+            establishedStatus1 = demotedToWarm
+                                  <> establishedStatus
+                                  Map.\\ demotedToCold
 
-                          -- When promoting a warm peer, it might happen
-                          -- that the connection will break (or one of the
-                          -- established protocols will error).  For that
-                          -- reason we need to adjust 'inProgressPromoteWarm'.
-                          inProgressPromoteWarm
-                                            = inProgressPromoteWarm
-                                                Set.\\ Map.keysSet demotions
-                        }
-      }
+            -- Asynchronous transition to cold peer can only be
+            -- a result of a failure.
+            knownPeers1        = KnownPeers.setConnectTime
+                                   (Map.keysSet demotedToCold)
+                                   (reconnectDelay `addTime` now)
+                               . foldr
+                                   ((snd .) . KnownPeers.incrementFailCount)
+                                   (knownPeers st)
+                               $ (Map.keysSet demotedToCold)
+
+        in assert
+            (let establishedPeersSet1 = Map.keysSet establishedPeers1
+             in activePeers1 `Set.isSubsetOf` establishedPeersSet1
+             && Map.keysSet establishedStatus1 == establishedPeersSet1)
+
+            Decision {
+              decisionTrace = TraceDemoteAsynchronous demotions,
+              decisionJobs  = [],
+              decisionState = st {
+                                activePeers       = activePeers1,
+                                establishedPeers  = establishedPeers1,
+                                establishedStatus = establishedStatus1,
+                                knownPeers        = knownPeers1,
+
+                                -- When promoting a warm peer, it might happen
+                                -- that the connection will break (or one of the
+                                -- established protocols will error).  For that
+                                -- reason we need to adjust 'inProgressPromoteWarm'.
+                                inProgressPromoteWarm
+                                                  = inProgressPromoteWarm
+                                                      Set.\\ Map.keysSet demotions
+                              }
+          }
   where
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
@@ -229,16 +242,31 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           selectedToDemote  = activePeers `Set.intersection` removedSet
           selectedToDemote' = establishedPeers
                                `Map.restrictKeys` selectedToDemote
-      return $ \_now -> Decision {
-        decisionTrace = TraceLocalRootPeersChanged localRootPeers
-                                                   localRootPeers',
-        decisionState = st {
-                          localRootPeers      = localRootPeers',
-                          publicRootPeers     = publicRootPeers',
-                          knownPeers          = knownPeers',
-                          inProgressDemoteHot = inProgressDemoteHot
-                                             <> selectedToDemote
-                        },
-        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
-      }
+      return $ \_now ->
+
+          assert
+            (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
+                     knownPeerSource == PeerSourcePublicRoot)
+                 (Map.fromSet (const ()) publicRootPeers')
+                 (KnownPeers.toMap knownPeers'))
+        . assert
+            (Map.isSubmapOfBy (\rootPeerAdvertise
+                   KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
+                       knownPeerSource == PeerSourceLocalRoot
+                    && knownPeerAdvertise == rootPeerAdvertise)
+                 localRootPeers'
+                 (KnownPeers.toMap knownPeers'))
+
+        $ Decision {
+            decisionTrace = TraceLocalRootPeersChanged localRootPeers
+                                                       localRootPeers',
+            decisionState = st {
+                              localRootPeers      = localRootPeers',
+                              publicRootPeers     = publicRootPeers',
+                              knownPeers          = knownPeers',
+                              inProgressDemoteHot = inProgressDemoteHot
+                                                 <> selectedToDemote
+                            },
+            decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
+                          | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
+          }
