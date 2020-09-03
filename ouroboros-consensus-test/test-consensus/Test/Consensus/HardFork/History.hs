@@ -84,6 +84,7 @@ tests = testGroup "HardForkHistory" [
             , testProperty "eventWallclockToSlot" eventWallclockToSlot
             , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
             , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
+            , testProperty "query vs expr"        queryVsExprConsistency
             ]
         ]
     ]
@@ -182,6 +183,45 @@ eventWallclockToSlot chain@ArbitraryChain{..} =
 
     diff :: NominalDiffTime
     diff = arbitraryDiffTime arbitraryParams
+
+-- | Composing queries should be equivalent to composing expressions.
+--
+-- This is a regression test. Each expression in a query should be evaluated in
+-- the same era, not each in the first era that yields a result, otherwise we
+-- get inconsistent results.
+queryVsExprConsistency :: ArbitraryChain -> Property
+queryVsExprConsistency ArbitraryChain{..} =
+    fromEither (const (property True)) $ do
+      absTime1 <- HF.runQuery (q1 eventTimeSlot) arbitrarySummary
+      absTime2 <- HF.runQuery (q2 eventTimeSlot) arbitrarySummary
+      return $ absTime1 === absTime2
+  where
+    EventTime{..} = eventTime arbitraryEvent
+
+    fromEither :: (e -> a) -> Either e a -> a
+    fromEither f (Left  e) = f e
+    fromEither _ (Right a) = a
+
+    -- | We compose multiple expressions into one query. Each of these
+    -- expressions should be evaluated in the same era.
+    q1 :: SlotNo -> HF.Qry RelativeTime
+    q1 absSlot = do
+        relSlot <- HF.qryFromExpr $ HF.EAbsToRelSlot  (HF.ELit absSlot)
+        relTime <- HF.qryFromExpr $ HF.ERelSlotToTime (HF.ELit relSlot)
+        -- If we don't evaluate each expression in the same era, the next
+        -- expression will be evaluated in the first era in which it succeeds,
+        -- even if one of the above queries was evaluated in a later era.
+        absTime <- HF.qryFromExpr $ HF.ERelToAbsTime  (HF.ELit relTime)
+        return absTime
+
+    -- | We build one big expression and turn that into one query. An expression
+    -- is always evaluated in a single era.
+    q2 :: SlotNo -> HF.Qry RelativeTime
+    q2 absSlot = HF.qryFromExpr $
+        HF.ELet (HF.EAbsToRelSlot  (HF.ELit absSlot)) $ \relSlot ->
+        HF.ELet (HF.ERelSlotToTime (HF.EVar relSlot)) $ \relTime ->
+        HF.ELet (HF.ERelToAbsTime  (HF.EVar relTime)) $ \absTime ->
+        HF.EVar absTime
 
 {-------------------------------------------------------------------------------
   Tests using EpochInfo

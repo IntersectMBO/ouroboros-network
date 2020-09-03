@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -38,7 +39,7 @@ import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
-import           Data.Foldable (asum, toList)
+import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.SOP.Strict (SListI)
@@ -52,6 +53,7 @@ import           Quiet
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Util (Some (..))
+import           Ouroboros.Consensus.Util.Counting (NonEmpty (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.History.EraParams
@@ -361,20 +363,34 @@ instance Exception PastHorizonException
 -- | Run a query
 --
 -- Unlike an 'Expr', which is evaluated in a single era, a 'Qry' is evaluated
--- against /all/ eras; each embedded 'Expr' might be evaluated in a different
--- era. If any of the embedded 'Expr's cannot be evaluated in /any/ era, we
--- report a 'PastHorizonException'.
-runQuery :: HasCallStack => Qry a -> Summary xs -> Either PastHorizonException a
-runQuery qry (Summary summary) = go qry
+-- against /all/ eras. Only if all 'Expr's embedded in the 'Qry' can be
+-- evaluated in the /same/ era (we don't want to mix properties of different
+-- eras in one query) do we return the result. If there is no era in which we
+-- can evaluate all 'Expr's in the 'Qry', we report a 'PastHorizonException'.
+--
+-- NOTE: this means that queries about separate eras have to be run separately,
+-- they should not be composed into a single query. How could we know to which
+-- era which relative slot/time refers?
+runQuery ::
+     forall a xs. HasCallStack
+  => Qry a -> Summary xs -> Either PastHorizonException a
+runQuery qry (Summary summary) = go summary
   where
-    eras :: [EraSummary]
-    eras = toList summary
+    go :: NonEmpty xs' EraSummary -> Either PastHorizonException a
+    go (NonEmptyOne era)       = tryEra era qry
+    go (NonEmptyCons era eras) = case tryEra era qry of
+        Left  _ -> go eras
+        Right x -> Right x
 
-    go :: Qry a -> Either PastHorizonException a
-    go (QPure x)   = Right x
-    go (QExpr e k) = case asum $ map (flip evalExprInEra e) eras of
-                       Just x  -> go (k x)
-                       Nothing -> Left $ PastHorizon callStack (Some e) eras
+    tryEra :: forall b. EraSummary -> Qry b -> Either PastHorizonException b
+    tryEra era = \case
+        QPure x   -> Right x
+        QExpr e k ->
+          case evalExprInEra era e of
+            Just x  ->
+              tryEra era (k x)
+            Nothing ->
+              Left $ PastHorizon callStack (Some e) (toList summary)
 
 runQueryThrow :: (HasCallStack, MonadThrow m )=> Qry a -> Summary xs -> m a
 runQueryThrow q = either throwM return . runQuery q
@@ -533,7 +549,7 @@ instance Show (ClosedExpr a) where
     where
       go :: Int  -- How many variables are already in scope?
          -> Int  -- Precedence
-         -> Expr Var a -> ShowS
+         -> Expr Var b -> ShowS
       go n d = showParen (d >= 11) . \case
 
           -- Variables and let-binding
