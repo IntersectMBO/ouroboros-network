@@ -98,7 +98,8 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
               establishedPeers,
               establishedStatus,
               inProgressDemoteHot,
-              inProgressDemoteWarm
+              inProgressDemoteWarm,
+              inProgressPromoteWarm
             } =
     Guarded Nothing $ do
       establishedStatus' <- traverse monitorPeerConnection establishedPeers
@@ -130,7 +131,15 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                             . foldr
                                                 ((snd .) . KnownPeers.incrementFailCount)
                                                 (knownPeers st)
-                                            $ (Map.keysSet demotedToCold)
+                                            $ (Map.keysSet demotedToCold),
+
+                          -- When promoting a warm peer, it might happen
+                          -- that the connection will break (or one of the
+                          -- established protocols will error).  For that
+                          -- reason we need to adjust 'inProgressPromoteWarm'.
+                          inProgressPromoteWarm
+                                            = inProgressPromoteWarm
+                                                Set.\\ Map.keysSet demotions
                         }
       }
   where
