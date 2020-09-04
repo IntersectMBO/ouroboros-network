@@ -21,7 +21,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , readTVar
   , writeTVar
   , modifyTVar
-  , updateTVar
+  , stateTVar
     -- * 'StrictTMVar'
   , StrictTMVar
   , castStrictTMVar
@@ -40,6 +40,7 @@ module Control.Monad.Class.MonadSTM.Strict
     -- ** Low-level API
   , checkInvariant
     -- * Deprecated API
+  , updateTVar
   , newTVarM
   , newTVarWithInvariantM
   , newTMVarM
@@ -50,8 +51,8 @@ import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      TMVar, TVar, isEmptyTMVar, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
-                     readTMVar, readTVar, swapTMVar, takeTMVar, tryPutTMVar,
-                     tryReadTMVar, tryTakeTMVar, writeTVar)
+                     readTMVar, readTVar, stateTVar, swapTMVar, takeTMVar,
+                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
 
@@ -119,12 +120,16 @@ writeTVar StrictTVar { tvar, invariant } !a =
 modifyTVar :: MonadSTM m => StrictTVar m a -> (a -> a) -> STM m ()
 modifyTVar v f = readTVar v >>= writeTVar v . f
 
-updateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
-updateTVar v f = do
+stateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
+stateTVar v f = do
     a <- readTVar v
     let (a', b) = f a
     writeTVar v a'
     return b
+
+updateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
+updateTVar = stateTVar
+{-# DEPRECATED updateTVar "Use stateTVar" #-}
 
 {-------------------------------------------------------------------------------
   Strict TMVar
