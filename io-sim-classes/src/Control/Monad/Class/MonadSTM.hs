@@ -15,9 +15,9 @@ module Control.Monad.Class.MonadSTM
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
-  , newTMVarMDefault
+  , newTMVarIODefault
   , newEmptyTMVarDefault
-  , newEmptyTMVarMDefault
+  , newEmptyTMVarIODefault
   , takeTMVarDefault
   , tryTakeTMVarDefault
   , putTMVarDefault
@@ -48,6 +48,13 @@ module Control.Monad.Class.MonadSTM
   -- * MonadThrow aliases
   , throwSTM
   , catchSTM
+
+  -- * Deprecated API
+  , newTVarM
+  , newTMVarM
+  , newTMVarMDefault
+  , newEmptyTMVarM
+  , newEmptyTMVarMDefault
   ) where
 
 import           Prelude hiding (read)
@@ -152,15 +159,28 @@ class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
 
   -- Helpful derived functions with default implementations
 
-  newTVarM        :: a -> m (TVar  m a)
-  newTMVarM       :: a -> m (TMVar m a)
-  newEmptyTMVarM  ::      m (TMVar m a)
-  newTBQueueIO    :: Natural -> m (TBQueue m a)
+  newTVarIO        :: a -> m (TVar  m a)
+  newTMVarIO       :: a -> m (TMVar m a)
+  newEmptyTMVarIO  ::      m (TMVar m a)
+  newTBQueueIO     :: Natural -> m (TBQueue m a)
 
-  newTVarM        = atomically . newTVar
-  newTMVarM       = atomically . newTMVar
-  newEmptyTMVarM  = atomically   newEmptyTMVar
+  newTVarIO       = atomically . newTVar
+  newTMVarIO      = atomically . newTMVar
+  newEmptyTMVarIO = atomically   newEmptyTMVar
   newTBQueueIO    = atomically . newTBQueue
+
+
+newTVarM :: MonadSTM m => a -> m (TVar  m a)
+newTVarM = newTVarIO
+{-# DEPRECATED newTVarM "Use newTVarIO" #-}
+
+newTMVarM :: MonadSTM m => a -> m (TMVar m a)
+newTMVarM = newTMVarIO
+{-# DEPRECATED newTMVarM "Use newTMVarIO" #-}
+
+newEmptyTMVarM  :: MonadSTM m => m (TMVar m a)
+newEmptyTMVarM = newEmptyTMVarIO
+{-# DEPRECATED newEmptyTMVarM "Use newEmptyTMVarIO" #-}
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -210,9 +230,9 @@ instance MonadSTM IO where
 
   atomically = wrapBlockedIndefinitely . STM.atomically
 
-  newTVarM       = STM.newTVarIO
-  newTMVarM      = STM.newTMVarIO
-  newEmptyTMVarM = STM.newEmptyTMVarIO
+  newTVarIO       = STM.newTVarIO
+  newTMVarIO      = STM.newTMVarIO
+  newEmptyTMVarIO = STM.newEmptyTMVarIO
 
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
 data BlockedIndefinitely = BlockedIndefinitely {
@@ -237,9 +257,9 @@ wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 instance MonadSTM m => MonadSTM (ReaderT r m) where
   type STM (ReaderT r m) = STM m
   atomically      = lift . atomically
-  newTVarM        = lift . newTVarM
-  newTMVarM       = lift . newTMVarM
-  newEmptyTMVarM  = lift   newEmptyTMVarM
+  newTVarIO       = lift . newTVarM
+  newTMVarIO      = lift . newTMVarM
+  newEmptyTMVarIO = lift   newEmptyTMVarM
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -252,20 +272,28 @@ newTMVarDefault a = do
   t <- newTVar (Just a)
   return (TMVar t)
 
-newTMVarMDefault :: MonadSTM m => a -> m (TMVarDefault m a)
-newTMVarMDefault a = do
+newTMVarIODefault :: MonadSTM m => a -> m (TMVarDefault m a)
+newTMVarIODefault a = do
   t <- newTVarM (Just a)
   return (TMVar t)
+
+newTMVarMDefault :: MonadSTM m => a -> m (TMVarDefault m a)
+newTMVarMDefault = newTMVarIODefault
+{-# DEPRECATED newTMVarMDefault "Use newTMVarIODefault" #-}
 
 newEmptyTMVarDefault :: MonadSTM m => STM m (TMVarDefault m a)
 newEmptyTMVarDefault = do
   t <- newTVar Nothing
   return (TMVar t)
 
-newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
-newEmptyTMVarMDefault = do
+newEmptyTMVarIODefault :: MonadSTM m => m (TMVarDefault m a)
+newEmptyTMVarIODefault = do
   t <- newTVarM Nothing
   return (TMVar t)
+
+newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
+newEmptyTMVarMDefault = newEmptyTMVarIODefault
+{-# DEPRECATED newEmptyTMVarMDefault "Use newEmptyTMVarIODefault" #-}
 
 takeTMVarDefault :: MonadSTM m => TMVarDefault m a -> STM m a
 takeTMVarDefault (TMVar t) = do

@@ -16,8 +16,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , castStrictTVar
   , toLazyTVar
   , newTVar
-  , newTVarM
-  , newTVarWithInvariantM
+  , newTVarIO
+  , newTVarWithInvariantIO
   , readTVar
   , writeTVar
   , modifyTVar
@@ -26,9 +26,9 @@ module Control.Monad.Class.MonadSTM.Strict
   , StrictTMVar
   , castStrictTMVar
   , newTMVar
-  , newTMVarM
+  , newTMVarIO
+  , newEmptyTMVarIO
   , newEmptyTMVar
-  , newEmptyTMVarM
   , takeTMVar
   , tryTakeTMVar
   , putTMVar
@@ -39,13 +39,19 @@ module Control.Monad.Class.MonadSTM.Strict
   , isEmptyTMVar
     -- ** Low-level API
   , checkInvariant
+    -- * Deprecated API
+  , newTVarM
+  , newTVarWithInvariantM
+  , newTMVarM
+  , newEmptyTMVarM
   ) where
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      TMVar, TVar, isEmptyTMVar, modifyTVar, newEmptyTMVar,
-                     newEmptyTMVarM, newTMVar, newTMVarM, newTVar, newTVarM,
-                     putTMVar, readTMVar, readTVar, swapTMVar, takeTMVar,
-                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
+                     newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
+                     newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
+                     readTMVar, readTVar, swapTMVar, takeTMVar, tryPutTMVar,
+                     tryReadTMVar, tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
 
@@ -80,16 +86,27 @@ toLazyTVar StrictTVar { tvar } = tvar
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
 newTVar !a = StrictTVar (const Nothing) <$> Lazy.newTVar a
 
+newTVarIO :: MonadSTM m => a -> m (StrictTVar m a)
+newTVarIO = newTVarWithInvariantIO (const Nothing)
+
 newTVarM :: MonadSTM m => a -> m (StrictTVar m a)
-newTVarM = newTVarWithInvariantM (const Nothing)
+newTVarM = newTVarIO
+{-# DEPRECATED newTVarM "Use newTVarIO" #-}
+
+newTVarWithInvariantIO :: (MonadSTM m, HasCallStack)
+                       => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
+                       -> a
+                       -> m (StrictTVar m a)
+newTVarWithInvariantIO invariant !a =
+    checkInvariant (invariant a) $
+    StrictTVar invariant <$> Lazy.newTVarIO a
 
 newTVarWithInvariantM :: (MonadSTM m, HasCallStack)
                       => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
                       -> a
                       -> m (StrictTVar m a)
-newTVarWithInvariantM invariant !a =
-    checkInvariant (invariant a) $
-    StrictTVar invariant <$> Lazy.newTVarM a
+newTVarWithInvariantM = newTVarWithInvariantIO
+{-# DEPRECATED newTVarWithInvariantM "Use newTVarWithInvariantIO" #-}
 
 readTVar :: MonadSTM m => StrictTVar m a -> STM m a
 readTVar StrictTVar { tvar } = Lazy.readTVar tvar
@@ -127,14 +144,22 @@ castStrictTMVar (StrictTMVar var) = StrictTMVar var
 newTMVar :: MonadSTM m => a -> STM m (StrictTMVar m a)
 newTMVar !a = StrictTMVar <$> Lazy.newTMVar a
 
+newTMVarIO :: MonadSTM m => a -> m (StrictTMVar m a)
+newTMVarIO !a = StrictTMVar <$> Lazy.newTMVarIO a
+
 newTMVarM :: MonadSTM m => a -> m (StrictTMVar m a)
-newTMVarM !a = StrictTMVar <$> Lazy.newTMVarM a
+newTMVarM = newTMVarIO
+{-# DEPRECATED newTMVarM "Use newTVarIO" #-}
 
 newEmptyTMVar :: MonadSTM m => STM m (StrictTMVar m a)
 newEmptyTMVar = StrictTMVar <$> Lazy.newEmptyTMVar
 
+newEmptyTMVarIO :: MonadSTM m => m (StrictTMVar m a)
+newEmptyTMVarIO = StrictTMVar <$> Lazy.newEmptyTMVarIO
+
 newEmptyTMVarM :: MonadSTM m => m (StrictTMVar m a)
-newEmptyTMVarM = StrictTMVar <$> Lazy.newEmptyTMVarM
+newEmptyTMVarM = newEmptyTMVarIO
+{-# DEPRECATED newEmptyTMVarM "Use newEmptyTMVarIO" #-}
 
 takeTMVar :: MonadSTM m => StrictTMVar m a -> STM m a
 takeTMVar (StrictTMVar tmvar) = Lazy.takeTMVar tmvar
