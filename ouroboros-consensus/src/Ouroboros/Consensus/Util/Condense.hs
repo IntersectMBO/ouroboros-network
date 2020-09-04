@@ -44,7 +44,7 @@ import qualified Ouroboros.Consensus.Util.HList as HList
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
                      WithOrigin (..))
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
+import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
 
 {-------------------------------------------------------------------------------
   Main class
@@ -159,6 +159,11 @@ instance Condense EpochNo where
 instance Condense (HeaderHash b) => Condense (ChainHash b) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = condense h
+
+instance Condense (HeaderHash b) => Condense (Tip b) where
+  condense TipGenesis       = "genesis"
+  condense (Tip slot h bno) =
+      "b" <> condense bno <> "-s" <> condense slot <> "-h" <> condense h
 
 instance Condense a => Condense (WithOrigin a) where
   condense Origin = "origin"

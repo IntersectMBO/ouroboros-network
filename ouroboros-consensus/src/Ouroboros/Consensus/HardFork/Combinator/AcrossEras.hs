@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.OptNP (OptNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -134,6 +135,9 @@ newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: ShortByteString }
 
 instance Show (OneEraHash xs) where
   show = BSC.unpack . B16.encode . Short.fromShort . getOneEraHash
+
+instance Condense (OneEraHash xs) where
+  condense = show
 
 {-------------------------------------------------------------------------------
   Value for two /different/ eras
