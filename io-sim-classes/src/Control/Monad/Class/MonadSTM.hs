@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                    #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
@@ -195,6 +194,7 @@ instance MonadSTMTx STM.STM where
   tryReadTQueue  = STM.tryReadTQueue
   writeTQueue    = STM.writeTQueue
   isEmptyTQueue  = STM.isEmptyTQueue
+  newTBQueue     = STM.newTBQueue
   readTBQueue    = STM.readTBQueue
   tryReadTBQueue = STM.tryReadTBQueue
   writeTBQueue   = STM.writeTBQueue
@@ -202,12 +202,6 @@ instance MonadSTMTx STM.STM where
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
 
-#if MIN_VERSION_stm(2,5,0)
-  newTBQueue     = STM.newTBQueue
-#else
-  -- STM prior to 2.5.0 takes an Int
-  newTBQueue     = STM.newTBQueue . fromEnum
-#endif
 
 instance MonadSTM IO where
   type STM IO = STM.STM
