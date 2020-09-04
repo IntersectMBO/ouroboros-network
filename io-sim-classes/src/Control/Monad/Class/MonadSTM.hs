@@ -93,6 +93,10 @@ class ( Monad stm
   modifyTVar'  :: TVar_ stm a -> (a -> a) -> stm ()
   modifyTVar' v f = readTVar v >>= \x -> writeTVar v $! f x
 
+  -- | @since io-sim-classes-0.2.0.0
+  stateTVar    :: TVar_ stm s -> (s -> (a, s)) -> stm a
+  stateTVar    = stateTVarDefault
+
   check        :: Bool -> stm ()
   check True = return ()
   check _    = retry
@@ -126,6 +130,15 @@ class ( Monad stm
   lengthTBQueue  :: TBQueue_ stm a -> stm Natural
   isEmptyTBQueue :: TBQueue_ stm a -> stm Bool
   isFullTBQueue  :: TBQueue_ stm a -> stm Bool
+
+
+stateTVarDefault :: MonadSTMTx stm => TVar_ stm s -> (s -> (a, s)) -> stm a
+stateTVarDefault var f = do
+   s <- readTVar var
+   let (a, s') = f s
+   writeTVar var s'
+   return a
+
 
 type TVar    m = TVar_    (STM m)
 type TMVar   m = TMVar_   (STM m)
@@ -165,6 +178,7 @@ instance MonadSTMTx STM.STM where
   orElse         = STM.orElse
   modifyTVar     = STM.modifyTVar
   modifyTVar'    = STM.modifyTVar'
+  stateTVar      = STM.stateTVar
   check          = STM.check
   newTMVar       = STM.newTMVar
   newEmptyTMVar  = STM.newEmptyTMVar
