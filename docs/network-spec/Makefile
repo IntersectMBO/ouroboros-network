@@ -33,11 +33,11 @@ all: $(DOCNAME).pdf
 # -interaction=nonstopmode keeps the pdflatex backend from stopping at a
 # missing file reference and interactively asking you for an alternative.
 
-$(DOCNAME).pdf: $(DOCNAME).tex messages.cddl
-	latexmk -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
+$(DOCNAME).pdf: $(DOCNAME).tex ../../ouroboros-network/test/messages.cddl
+	latexmk -bibtex -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
 
-watch: network.tex miniprotocols.tex messages.cddl
-	latexmk -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
+watch: network.tex miniprotocols.tex ../../ouroboros-network/test/messages.cddl
+	latexmk -bibtex -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
 
 clean:
 	latexmk -CA
