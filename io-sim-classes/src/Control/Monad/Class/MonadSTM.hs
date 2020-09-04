@@ -155,10 +155,12 @@ class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
   newTVarM        :: a -> m (TVar  m a)
   newTMVarM       :: a -> m (TMVar m a)
   newEmptyTMVarM  ::      m (TMVar m a)
+  newTBQueueIO    :: Natural -> m (TBQueue m a)
 
   newTVarM        = atomically . newTVar
   newTMVarM       = atomically . newTMVar
   newEmptyTMVarM  = atomically   newEmptyTMVar
+  newTBQueueIO    = atomically . newTBQueue
 
 --
 -- Instance for IO uses the existing STM library implementations
