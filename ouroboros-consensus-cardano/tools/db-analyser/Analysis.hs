@@ -1,18 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 
 module Analysis (
     AnalysisName (..)
   , runAnalysis
+  , AnalysisEnv (..)
   ) where
 
 import           Control.Monad.Except
@@ -53,38 +47,30 @@ data AnalysisName =
   | OnlyValidation
   deriving Show
 
-type Analysis blk =
-     TopLevelConfig blk
-  -> ExtLedgerState blk
-  -> Either (ImmDB IO blk) (ChainDB IO blk)
-  -> ResourceRegistry IO
-  -> IO ()
-
-noAnalysis :: Analysis blk
-noAnalysis _ _ _ _ = return ()
-
-runAnalysis :: (HasAnalysis blk, RunNode blk)
-            => AnalysisName -> Analysis blk
+runAnalysis :: HasAnalysis blk => AnalysisName -> Analysis blk
 runAnalysis ShowSlotBlockNo     = showSlotBlockNo
 runAnalysis CountTxOutputs      = countTxOutputs
-runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
+runAnalysis ShowBlockHeaderSize = showHeaderSize
 runAnalysis ShowBlockTxsSize    = showBlockTxsSize
 runAnalysis ShowEBBs            = showEBBs
-runAnalysis OnlyValidation      = noAnalysis
+runAnalysis OnlyValidation      = \_ -> return ()
+
+type Analysis blk = AnalysisEnv blk -> IO ()
+
+data AnalysisEnv blk = AnalysisEnv {
+      cfg        :: TopLevelConfig blk
+    , initLedger :: ExtLedgerState blk
+    , db         :: Either (ImmDB IO blk) (ChainDB IO blk)
+    , registry   :: ResourceRegistry IO
+    }
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
 -------------------------------------------------------------------------------}
 
-showSlotBlockNo ::
-     forall blk.
-     ( HasHeader blk
-     , HasHeader (Header blk)
-     , ImmDbSerialiseConstraints blk
-     )
-  => Analysis blk
-showSlotBlockNo _cfg _initLedger db rr =
-    processAll_ db rr GetHeader (>>= process)
+showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
+showSlotBlockNo AnalysisEnv { db, registry } =
+    processAll_ db registry GetHeader (>>= process)
   where
     process :: Header blk -> IO ()
     process hdr = putStrLn $ intercalate "\t" [
@@ -96,11 +82,9 @@ showSlotBlockNo _cfg _initLedger db rr =
   Analysis: show total number of tx outputs per block
 -------------------------------------------------------------------------------}
 
-countTxOutputs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-countTxOutputs _cfg _initLedger db rr = do
-    void $ processAll db rr GetBlock 0 ((=<<) . process)
+countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
+countTxOutputs AnalysisEnv { db, registry } = do
+    void $ processAll db registry GetBlock 0 ((=<<) . process)
   where
     process :: Int -> blk -> IO Int
     process cumulative blk = do
@@ -116,22 +100,20 @@ countTxOutputs _cfg _initLedger db rr = do
         slotNo = blockSlot blk
 
 {-------------------------------------------------------------------------------
-  Analysis: show the block header size in bytes for all blocks
+  Analysis: show the header size in bytes for all blocks
 -------------------------------------------------------------------------------}
 
-showBlockHeaderSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockHeaderSize _cfg _initLedger db rr = do
+showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
+showHeaderSize AnalysisEnv { db, registry } = do
     maxHeaderSize <-
-      processAll db rr ((,) <$> GetSlot <*> GetHeaderSize) 0 process
-    putStrLn ("Maximum encountered block header size = " <> show maxHeaderSize)
+      processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) 0 process
+    putStrLn ("Maximum encountered header size = " <> show maxHeaderSize)
   where
     process :: Word16 -> (SlotNo, Word16) -> IO Word16
     process maxHeaderSize (slotNo, headerSize) = do
         putStrLn $ intercalate "\t" [
             show slotNo
-          , "Block header size = " <> show headerSize
+          , "Header size = " <> show headerSize
           ]
         return $ maxHeaderSize `max` headerSize
 
@@ -139,11 +121,9 @@ showBlockHeaderSize _cfg _initLedger db rr = do
   Analysis: show the total transaction sizes in bytes per block
 -------------------------------------------------------------------------------}
 
-showBlockTxsSize
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showBlockTxsSize _cfg _initLedger db rr =
-    processAll_ db rr GetBlock (>>= process)
+showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
+showBlockTxsSize AnalysisEnv { db, registry } =
+    processAll_ db registry GetBlock (>>= process)
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -167,12 +147,10 @@ showBlockTxsSize _cfg _initLedger db rr =
   Analysis: show EBBs and their predecessors
 -------------------------------------------------------------------------------}
 
-showEBBs
-  :: forall blk. (HasAnalysis blk, ImmDbSerialiseConstraints blk)
-  => Analysis blk
-showEBBs cfg _initLedger db rr = do
+showEBBs :: forall blk. HasAnalysis blk => Analysis blk
+showEBBs AnalysisEnv { cfg, db, registry } = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll_ db rr GetBlock (>>= process)
+    processAll_ db registry GetBlock (>>= process)
   where
     process :: blk -> IO ()
     process blk =

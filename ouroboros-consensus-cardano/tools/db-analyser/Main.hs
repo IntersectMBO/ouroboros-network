@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -160,10 +161,11 @@ analyse
   -> IO ()
 analyse CmdLine {..} args =
     withRegistry $ \registry -> do
+
       tracer <- mkTracer verbose
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
-      let chunkInfo  = Node.nodeImmDbChunkInfo cfg
+      let chunkInfo = Node.nodeImmDbChunkInfo cfg
           args' = Node.mkChainDbArgs tracer registry InFuture.dontCheck
                     dbDir cfg initLedger chunkInfo
           chainDbArgs = args' {
@@ -171,16 +173,29 @@ analyse CmdLine {..} args =
             , ChainDB.cdbVolValidation = volValidationPolicy
             }
           (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+
       if onlyImmDB then
         ImmDB.withImmDB immDbArgs $ \immDB -> do
-          runAnalysis analysis cfg initLedger (Left immDB) registry
+          runAnalysis analysis $ AnalysisEnv {
+              cfg
+            , initLedger
+            , db = Left immDB
+            , registry
+            }
           immDbTipPoint <- ImmDB.getPointAtTip immDB
           putStrLn $ "ImmDB tip: " ++ show immDbTipPoint
+
       else
         ChainDB.withDB chainDbArgs $ \chainDB -> do
-          runAnalysis analysis cfg initLedger (Right chainDB) registry
+          runAnalysis analysis $ AnalysisEnv {
+              cfg
+            , initLedger
+            , db = Right chainDB
+            , registry
+            }
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
+
   where
     mkTracer False = return nullTracer
     mkTracer True  = do

@@ -11,13 +11,14 @@ import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   HasAnalysis
 -------------------------------------------------------------------------------}
 
-class GetPrevHash blk => HasAnalysis blk where
+class (GetPrevHash blk, ImmDbSerialiseConstraints blk) => HasAnalysis blk where
     data Args blk
     argsParser      :: proxy blk -> Parser (Args blk)
     mkProtocolInfo  :: Args blk -> IO (ProtocolInfo IO blk)
