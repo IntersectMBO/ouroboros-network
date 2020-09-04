@@ -110,6 +110,7 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   newTBQueue      = lift .  newTBQueue
   readTBQueue     = lift .  readTBQueue
   tryReadTBQueue  = lift .  tryReadTBQueue
+  flushTBQueue    = lift .  flushTBQueue
   writeTBQueue    = lift .: writeTBQueue
   lengthTBQueue   = lift .  lengthTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue

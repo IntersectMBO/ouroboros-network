@@ -44,6 +44,7 @@ module Control.Monad.Class.MonadSTM
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
   , lengthTBQueueDefault
+  , flushTBQueueDefault
 
   -- * MonadThrow aliases
   , throwSTM
@@ -131,6 +132,7 @@ class ( Monad stm
   newTBQueue     :: Natural -> stm (TBQueue_ stm a)
   readTBQueue    :: TBQueue_ stm a -> stm a
   tryReadTBQueue :: TBQueue_ stm a -> stm (Maybe a)
+  flushTBQueue   :: TBQueue_ stm a -> stm [a]
   writeTBQueue   :: TBQueue_ stm a -> a -> stm ()
   -- | @since 0.2.0.0
   lengthTBQueue  :: TBQueue_ stm a -> stm Natural
@@ -214,6 +216,7 @@ instance MonadSTMTx STM.STM where
   newTQueue      = STM.newTQueue
   readTQueue     = STM.readTQueue
   tryReadTQueue  = STM.tryReadTQueue
+  flushTBQueue   = STM.flushTBQueue
   writeTQueue    = STM.writeTQueue
   isEmptyTQueue  = STM.isEmptyTQueue
   newTBQueue     = STM.newTBQueue
@@ -477,6 +480,20 @@ lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
   r <- readTVar rsize
   w <- readTVar wsize
   return $! size - r - w
+
+
+flushTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m [a]
+flushTBQueueDefault (TBQueue rsize read wsize write size) = do
+  xs <- readTVar read
+  ys <- readTVar write
+  if null xs && null ys
+    then return []
+    else do
+      writeTVar read []
+      writeTVar write []
+      writeTVar rsize 0
+      writeTVar wsize size
+      return (xs ++ reverse ys)
 
 
 -- | 'throwIO' specialised to @stm@ monad.
