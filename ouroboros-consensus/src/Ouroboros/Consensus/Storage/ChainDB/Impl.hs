@@ -132,8 +132,8 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immutableDB volatileDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid      <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
-    varFutureBlocks <- newTVarM Map.empty
+    varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
+    varFutureBlocks <- newTVarIO Map.empty
 
 
     chainAndLedger <- ChainSel.initialChainSelection
@@ -151,13 +151,13 @@ openDBInternal args launchBgTasks = do
         cfg    = Args.cdbTopLevelConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain           <- newTVarM chain
-    varIterators       <- newTVarM Map.empty
-    varReaders         <- newTVarM Map.empty
-    varNextIteratorKey <- newTVarM (IteratorKey 0)
-    varNextReaderKey   <- newTVarM (ReaderKey   0)
+    varChain           <- newTVarIO chain
+    varIterators       <- newTVarIO Map.empty
+    varReaders         <- newTVarIO Map.empty
+    varNextIteratorKey <- newTVarIO (IteratorKey 0)
+    varNextReaderKey   <- newTVarIO (ReaderKey   0)
     varCopyLock        <- newMVar  ()
-    varKillBgThreads   <- newTVarM $ return ()
+    varKillBgThreads   <- newTVarIO $ return ()
     blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
     let env = CDB { cdbImmutableDB     = immutableDB
@@ -183,7 +183,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBlocksToAdd     = blocksToAdd
                   , cdbFutureBlocks    = varFutureBlocks
                   }
-    h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
+    h <- fmap CDBHandle $ newTVarIO $ ChainDbOpen env
     let chainDB = API.ChainDB
           { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
           , getCurrentChain       = getEnvSTM  h Query.getCurrentChain

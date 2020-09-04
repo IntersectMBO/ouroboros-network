@@ -149,7 +149,7 @@ newtype RAWLock m st = RAWLock (StrictTVar m (RAWState st))
 
 -- | Create a new 'RAWLock'
 new :: (IOLike m, NoUnexpectedThunks st) => st -> m (RAWLock m st)
-new st = RAWLock <$> newTVarM (emptyRAWState st)
+new st = RAWLock <$> newTVarIO (emptyRAWState st)
 
 -- | Access the state stored in the 'RAWLock' as a reader.
 --

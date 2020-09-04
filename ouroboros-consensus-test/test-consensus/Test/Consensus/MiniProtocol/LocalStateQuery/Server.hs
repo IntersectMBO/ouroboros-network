@@ -175,8 +175,8 @@ initLgrDB
   -> Chain TestBlock
   -> m (LgrDB m TestBlock)
 initLgrDB k chain = do
-    varDB          <- newTVarM genesisLedgerDB
-    varPrevApplied <- newTVarM mempty
+    varDB          <- newTVarIO genesisLedgerDB
+    varPrevApplied <- newTVarIO mempty
     let lgrDB = mkLgrDB varDB varPrevApplied resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0
       (map getHeader (Chain.toOldestFirst chain)) >>= \case

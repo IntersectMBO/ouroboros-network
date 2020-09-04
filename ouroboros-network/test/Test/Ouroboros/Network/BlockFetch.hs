@@ -536,7 +536,7 @@ _unit_bracketSyncWithFetchClient step = do
       registry <- newFetchClientRegistry
       setFetchClientContext registry nullTracer (error "no policy")
 
-      fetchStatePeerChainsVar <- newTVarM Map.empty
+      fetchStatePeerChainsVar <- newTVarIO Map.empty
 
       let peer  = "thepeer"
           fetch :: m a

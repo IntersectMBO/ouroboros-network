@@ -141,7 +141,7 @@ coreToRelaySim :: ( MonadSTM m
                -> Probe m (NodeId, Chain Block)
                -> m ()
 coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
-  donevar <- newTVarM False
+  donevar <- newTVarIO False
   (coreChans, relayChans) <- if duplex
     then createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
     else createOneWaySubscriptionChannels coreTrDelay relayTrDelay
@@ -223,7 +223,7 @@ coreToRelaySim2 :: ( MonadSTM m
                 -> Probe m (NodeId, Chain Block)
                 -> m ()
 coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
-  donevar <- newTVarM False
+  donevar <- newTVarIO False
   (cr1, r1c) <- createOneWaySubscriptionChannels coreTrDelay relayTrDelay
   (r1r2, r2r1) <- createOneWaySubscriptionChannels relayTrDelay relayTrDelay
 
@@ -458,7 +458,7 @@ type Probe m x = StrictTVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do
-    probe <- newTVarM []
+    probe <- newTVarIO []
     action probe
     reverse <$> atomically (readTVar probe)
 

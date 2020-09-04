@@ -92,8 +92,8 @@ newReader ::
   -> m (Reader m blk b)
 newReader h registry blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
-    readerKey  <- atomically $ updateTVar cdbNextReaderKey $ \r -> (succ r, r)
-    varReader <- newTVarM ReaderInit
+    readerKey  <- atomically $ stateTVar cdbNextReaderKey $ \r -> (succ r, r)
+    varReader <- newTVarIO ReaderInit
     let readerHandle = mkReaderHandle varReader
     atomically $ modifyTVar cdbReaders $ Map.insert readerKey readerHandle
     let reader = makeNewReader h readerKey varReader registry blockComponent
@@ -495,7 +495,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
     -- leaking the file handles.
     updateState :: ReaderState m blk b -> m ()
     updateState newReaderState = join $ atomically $
-      updateTVar varReader $ \readerState ->
+      stateTVar varReader $ \readerState ->
         (newReaderState, ) $ case readerState of
           -- Return a continuation (that we'll 'join') that closes the
           -- previous iterator.

@@ -354,7 +354,7 @@ prop_subscriptionWorker
   =
     tabulate "peer states & app errors" [printf "%-20s %s" (peerStateType ps) (exceptionType merr)] $
     ioProperty $ do
-      doneVar :: StrictTMVar IO () <- newEmptyTMVarM
+      doneVar :: StrictTMVar IO () <- newEmptyTMVarIO
       tbl <- newConnectionTable
       peerStatesVar <- newPeerStatesVar
       worker nullTracer

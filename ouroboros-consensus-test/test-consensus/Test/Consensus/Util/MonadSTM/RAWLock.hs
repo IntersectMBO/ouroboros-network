@@ -182,7 +182,7 @@ data RAW a = RAW
 type RAWVars m = RAW (StrictTVar m Int)
 
 newRAWVars :: IOLike m => m (RAWVars m)
-newRAWVars = RAW <$> newTVarM 0 <*> newTVarM 0 <*> newTVarM 0
+newRAWVars = RAW <$> newTVarIO 0 <*> newTVarIO 0 <*> newTVarIO 0
 
 type RAWState = RAW Int
 

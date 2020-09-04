@@ -212,7 +212,7 @@ mockPeerSelectionActions tracer
                        sequence [ (,) addr <$> initScript gossip
                                 | (addr, _, gossip) <- adjacency ]
     targetsVar <- playTimedScript targets
-    peerConns  <- newTVarM Map.empty
+    peerConns  <- newTVarIO Map.empty
     return $ mockPeerSelectionActions'
                tracer env
                gossipScripts targetsVar peerConns
@@ -914,7 +914,7 @@ arbitraryShortScriptOf a =
       (Script . NonEmpty.fromList) <$> vectorOf (min 5 (sz+1)) a
 
 initScript :: MonadSTM m => Script a -> m (TVar m (Script a))
-initScript = newTVarM
+initScript = newTVarIO
 
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
@@ -944,7 +944,7 @@ instance Arbitrary ScriptDelay where
 playTimedScript :: (MonadAsync m, MonadTimer m)
                 => TimedScript a -> m (TVar m a)
 playTimedScript (Script ((x0,d0) :| script)) = do
-    v <- newTVarM x0
+    v <- newTVarIO x0
     _ <- async $ do
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)

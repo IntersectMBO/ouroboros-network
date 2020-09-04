@@ -149,9 +149,9 @@ data NextTimeout m = NoNextTimeout
 
 newMonitorState :: MonadSTM m => m (MonitorState m)
 newMonitorState = do
-    nextTimeoutVar   <- newTVarM NoNextTimeout
-    curDeadlineVar   <- newTVarM (Time 0)
-    deadlineResetVar <- newTVarM False
+    nextTimeoutVar   <- newTVarIO NoNextTimeout
+    curDeadlineVar   <- newTVarIO (Time 0)
+    deadlineResetVar <- newTVarIO False
     return MonitorState{..}
 
 
@@ -237,7 +237,7 @@ timeout monitorState delay action =
       -- Set up the timeout and pass it over to the monitoring thread.
       -- This overwrites any previous timeout.
       tid <- myThreadId
-      timeoutStateVar <- newTVarM TimeoutPending
+      timeoutStateVar <- newTVarIO TimeoutPending
       now <- getMonotonicTime
       let deadline = addTime delay now
       setNewTimer monitorState tid deadline timeoutStateVar

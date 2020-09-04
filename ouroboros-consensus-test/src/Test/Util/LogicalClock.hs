@@ -143,7 +143,7 @@ newWithDelay :: (IOLike m, HasCallStack)
              -> NominalDiffTime
              -> m (LogicalClock m)
 newWithDelay registry (NumTicks numTicks) tickLen = do
-    current <- newTVarM 0
+    current <- newTVarIO 0
     done    <- newEmptyMVar ()
     _thread <- forkThread registry "ticker" $ do
                  -- Tick 0 is the first tick, so increment @numTicks - 1@ times

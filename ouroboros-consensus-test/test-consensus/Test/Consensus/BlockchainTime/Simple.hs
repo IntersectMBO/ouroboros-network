@@ -322,7 +322,7 @@ instance MonadDelay (OverrideDelay (IOSim s)) where
       -- However, the time /after/ the delay will be determined by the
       -- schedule (unless it is empty, in which case the threadDelay behaves
       -- as normal).
-      mOverride <- atomically $ updateTVar schedule nextDelay
+      mOverride <- atomically $ stateTVar schedule nextDelay
       case mOverride of
         Nothing -> return ()
         Just t  -> setCurrentTime t
@@ -348,7 +348,7 @@ overrideDelay :: UTCTime
               -> Either Failure a
 overrideDelay start schedule ma = runSim $ do
     setCurrentTime start
-    scheduleVar <- newTVarM schedule
+    scheduleVar <- newTVarIO schedule
     runReaderT (unOverrideDelay ma) scheduleVar
 
 originalDelay :: OverrideDelay IO a -> IO a

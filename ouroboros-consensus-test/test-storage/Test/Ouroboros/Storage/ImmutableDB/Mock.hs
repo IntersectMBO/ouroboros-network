@@ -55,7 +55,7 @@ openDBMock chunkInfo ccfg = do
         update_ f = atomically $ modifyTVar dbVar f
 
         update :: (DBModel blk -> (a, DBModel blk)) -> m a
-        update f = atomically $ updateTVar dbVar (swap . f)
+        update f = atomically $ stateTVar dbVar (swap . f)
 
         updateE_ :: (DBModel blk -> Either ImmutableDBError (DBModel blk)) -> m ()
         updateE_ f = atomically $ do

@@ -106,7 +106,7 @@ prop_stm_graph_sim g =
 prop_stm_graph :: (MonadFork m, MonadSTM m) => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
-            sequence [ newTVarM False | _ <- vertices g ]
+            sequence [ newTVarIO False | _ <- vertices g ]
     forM_ (vertices g) $ \v ->
       void $ forkIO $ do
         -- read all the inputs and wait for them to become true
@@ -221,7 +221,7 @@ test_timers xs =
     experiment :: Probe m (DiffTime, Int) -> m ()
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
-        v <- newTVarM False
+        v <- newTVarIO False
         void $ forkIO $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
@@ -273,7 +273,7 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
     experiment :: Int -> Probe m Int -> m ()
     experiment 0 _ = return ()
     experiment n p = do
-      v <- newTVarM False
+      v <- newTVarIO False
 
       void $ forkIO $ do
         probeOutput p n
@@ -305,7 +305,7 @@ test_threadId_order = \(Positive n) -> do
   where
     experiment :: m (ThreadId m)
     experiment = do
-      v <- newTVarM False
+      v <- newTVarIO False
 
       tid <- forkIO $ atomically $ writeTVar v True
 
@@ -336,7 +336,7 @@ test_wakeup_order :: ( MonadFork m
                      )
                 => m Property
 test_wakeup_order = do
-    v          <- newTVarM False
+    v          <- newTVarIO False
     wakupOrder <-
       withProbe $ \p -> do
         sequence_
@@ -364,7 +364,7 @@ type Probe m x = StrictTVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do
-    probe <- newTVarM []
+    probe <- newTVarIO []
     action probe
     reverse <$> atomically (readTVar probe)
 
@@ -504,7 +504,7 @@ unit_fork_2 =
   where
     example :: IOSim s ()
     example = do
-      resVar <- newEmptyTMVarM
+      resVar <- newEmptyTMVarIO
       void $ forkIO $ do
         res <- try (fail "oh noes!")
         atomically (putTMVar resVar (res :: Either SomeException ()))

@@ -42,8 +42,8 @@ blockFetchClientMap
   => [ChainRange block]
   -> BlockFetchClient block m [block]
 blockFetchClientMap ranges = BlockFetchClient $ do
-  var <- newTVarM []
-  donevar <- newTVarM (length ranges)
+  var <- newTVarIO []
+  donevar <- newTVarIO (length ranges)
   let blockFetchResponse = BlockFetchResponse {
         handleStartBatch =
           return $ constantBlockFetchReceiver

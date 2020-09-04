@@ -109,18 +109,18 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   isEmptyTQueue   = lift .  isEmptyTQueue
   newTBQueue      = lift .  newTBQueue
   readTBQueue     = lift .  readTBQueue
-  lengthTBQueue   = lift .  lengthTBQueue
   tryReadTBQueue  = lift .  tryReadTBQueue
   writeTBQueue    = lift .: writeTBQueue
+  lengthTBQueue   = lift .  lengthTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
 
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   type STM (WithEarlyExit m) = WithEarlyExit (STM m)
 
-  atomically     = earlyExit . atomically . withEarlyExit
-  newTMVarM      = lift . newTMVarM
-  newEmptyTMVarM = lift   newEmptyTMVarM
+  atomically      = earlyExit . atomically . withEarlyExit
+  newTMVarIO      = lift . newTMVarIO
+  newEmptyTMVarIO = lift   newEmptyTMVarIO
 
 instance MonadCatch m => MonadThrow (WithEarlyExit m) where
   throwIO = lift . throwIO

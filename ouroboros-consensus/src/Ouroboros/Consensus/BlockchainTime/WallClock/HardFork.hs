@@ -70,7 +70,7 @@ hardForkBlockchainTime registry
     systemTimeWait
 
     (firstSlot, firstDelay) <- getCurrentSlot' tracer time run backoffDelay
-    slotVar <- newTVarM firstSlot
+    slotVar <- newTVarIO firstSlot
     void $ forkLinkedThread registry "hardForkBlockchainTime" $
              loop run slotVar firstSlot firstDelay
 

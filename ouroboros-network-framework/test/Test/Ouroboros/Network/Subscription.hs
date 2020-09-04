@@ -304,7 +304,7 @@ prop_resolv :: forall m.
      -> m Property
 prop_resolv lr =  do
     --say $ printf "%s" $ show lr
-    peerStatesVar <- newTVarM ()
+    peerStatesVar <- newTVarIO ()
     x <- dnsResolve nullTracer (return lr) withMockResolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
     !res <- checkResult <$> extractResult x []
 
@@ -409,12 +409,12 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
                                Left  _ -> 0
                                Right r -> length r
 
-    clientCountVar <- newTVarM (ipv4ClientCount + ipv6ClientCount)
-    serverCountVar <- newTVarM (ipv4ClientCount + ipv6ClientCount)
-    serverPortMapVar  <- newTVarM M.empty
-    observerdConnectionOrderVar <- newTVarM []
-    firstDoneVar <- newEmptyTMVarM
-    serverWaitVar <- newTVarM False
+    clientCountVar <- newTVarIO (ipv4ClientCount + ipv6ClientCount)
+    serverCountVar <- newTVarIO (ipv4ClientCount + ipv6ClientCount)
+    serverPortMapVar  <- newTVarIO M.empty
+    observerdConnectionOrderVar <- newTVarIO []
+    firstDoneVar <- newEmptyTMVarIO
+    serverWaitVar <- newTVarIO False
 
     ipv4Servers <- replicateM (length serverIdsv4) (head <$> Socket.getAddrInfo Nothing (Just "127.0.0.1")
                             (Just "0"))
@@ -538,11 +538,11 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     initiatorAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     initiatorAddr6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
-    firstDoneVar <- newEmptyTMVarM
+    firstDoneVar <- newEmptyTMVarIO
 
-    cv <- newEmptyTMVarM
-    sv <- newEmptyTMVarM
-    siblingVar <- newTVarM 2
+    cv <- newEmptyTMVarIO
+    sv <- newEmptyTMVarIO
+    siblingVar <- newTVarIO 2
     tbl <- newConnectionTable
     clientTbl <- newConnectionTable
 
@@ -642,8 +642,8 @@ data ReqRspCfg = ReqRspCfg {
 
 newReqRspCfg :: String -> StrictTVar IO Int -> IO ReqRspCfg
 newReqRspCfg tag siblingVar = do
-    sv <- newEmptyTMVarM
-    cv <- newEmptyTMVarM
+    sv <- newEmptyTMVarIO
+    cv <- newEmptyTMVarIO
     return $ ReqRspCfg tag sv cv siblingVar
 
 prop_send_recv_init_and_rsp
@@ -655,10 +655,10 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
     responderAddr4A:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     responderAddr4B:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
-    addrAVar <- newEmptyTMVarM
-    addrBVar <- newEmptyTMVarM
+    addrAVar <- newEmptyTMVarIO
+    addrBVar <- newEmptyTMVarIO
 
-    siblingVar <- newTVarM 4
+    siblingVar <- newTVarIO 4
     {- 4 comes from one initiator and responder running on the server and one initiator and
      - and responder running on the client.
      -}

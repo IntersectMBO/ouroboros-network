@@ -66,7 +66,7 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
+import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
 import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
@@ -451,8 +451,8 @@ addBlockToAdd
   -> blk
   -> m (AddBlockPromise m blk)
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
-    varBlockWrittenToDisk <- newEmptyTMVarM
-    varBlockProcessed     <- newEmptyTMVarM
+    varBlockWrittenToDisk <- newEmptyTMVarIO
+    varBlockProcessed     <- newEmptyTMVarIO
     let !toAdd = BlockToAdd
           { blockToAdd = blk
           , varBlockWrittenToDisk

@@ -78,7 +78,7 @@ newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
 newMux (MiniProtocolBundle ptcls) = do
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
-    muxStatus <- newTVarM MuxReady
+    muxStatus <- newTVarIO MuxReady
     return Mux {
       muxMiniProtocols,
       muxControlCmdQueue,
@@ -100,8 +100,8 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarM BL.empty
-    miniProtocolStatusVar    <- newTVarM StatusIdle
+    miniProtocolIngressQueue <- newTVarIO BL.empty
+    miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
        miniProtocolIngressQueue,
@@ -208,7 +208,7 @@ miniProtocolJob tracer egressQueue
                 (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      w       <- newTVarM BL.empty
+      w       <- newTVarIO BL.empty
       let chan = muxChannel tracer egressQueue (Wanton w)
                            miniProtocolNum miniProtocolDirEnum
                            miniProtocolIngressQueue

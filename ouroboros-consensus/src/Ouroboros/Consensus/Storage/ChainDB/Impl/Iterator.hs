@@ -434,7 +434,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
       -> m (Iterator m blk b)
     makeIterator register itState = do
       iteratorKey <- makeNewIteratorKey
-      varItState  <- newTVarM itState
+      varItState  <- newTVarIO itState
       when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which

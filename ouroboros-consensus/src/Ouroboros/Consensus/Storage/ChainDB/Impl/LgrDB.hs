@@ -201,7 +201,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     createDirectoryIfMissing hasFS True (mkFsPath [])
     (db, replayed) <- initFromDisk args replayTracer immutableDB
     (varDB, varPrevApplied) <-
-      (,) <$> newTVarM db <*> newTVarM Set.empty
+      (,) <$> newTVarIO db <*> newTVarIO Set.empty
     return (
         LgrDB {
             varDB          = varDB

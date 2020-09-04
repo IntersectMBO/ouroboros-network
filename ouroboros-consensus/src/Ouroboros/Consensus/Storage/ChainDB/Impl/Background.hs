@@ -414,7 +414,7 @@ data GcParams = GcParams {
   deriving (Show)
 
 newGcSchedule :: IOLike m => m (GcSchedule m)
-newGcSchedule = GcSchedule <$> newTVarM Seq.empty
+newGcSchedule = GcSchedule <$> newTVarIO Seq.empty
 
 scheduleGC
   :: forall m blk. IOLike m

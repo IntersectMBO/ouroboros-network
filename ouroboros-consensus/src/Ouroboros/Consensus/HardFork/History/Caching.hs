@@ -51,7 +51,7 @@ runWithCachedSummary :: forall m xs. MonadSTM m
                      -> m (RunWithCachedSummary xs m)
 runWithCachedSummary getLatestSummary = do
     initSummary <- atomically getLatestSummary
-    var <- newTVarM initSummary
+    var <- newTVarIO initSummary
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
     go :: StrictTVar m (Summary xs)

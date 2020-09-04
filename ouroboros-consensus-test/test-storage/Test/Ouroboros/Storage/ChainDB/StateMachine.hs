@@ -382,7 +382,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
-      fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
+      fmap (`WithEq` a) $ atomically $ stateTVar varNextId $ \i -> (succ i, i)
 
 runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
 runBgTasks ChainDB.Internal{..} = do

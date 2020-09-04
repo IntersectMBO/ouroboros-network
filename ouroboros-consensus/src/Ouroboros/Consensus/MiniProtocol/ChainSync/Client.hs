@@ -137,7 +137,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
         body varCandidate
   where
     register = do
-      varCandidate <- newTVarM $ AF.Empty AF.AnchorGenesis
+      varCandidate <- newTVarIO $ AF.Empty AF.AnchorGenesis
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 

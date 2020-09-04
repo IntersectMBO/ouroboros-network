@@ -164,7 +164,7 @@ streamImpl dbEnv registry blockComponent = \from to ->
             secondaryOffset
             startIsEBB
 
-        varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
+        varIteratorState <- newTVarIO $ IteratorStateOpen iteratorState
 
         let ith = IteratorHandle {
                 ithHasFS    = hasFS

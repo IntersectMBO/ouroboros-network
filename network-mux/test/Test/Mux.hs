@@ -531,8 +531,8 @@ setupMiniReqRspCompat :: IO ()
                             , Channel IO -> IO ((), Maybe BL.ByteString)
                             )
 setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
-    serverResultVar <- newEmptyTMVarM
-    clientResultVar <- newEmptyTMVarM
+    serverResultVar <- newEmptyTMVarIO
+    clientResultVar <- newEmptyTMVarIO
 
     return ( verifyCallback serverResultVar clientResultVar
            , clientApp clientResultVar
@@ -844,7 +844,7 @@ prop_mux_starvation (Uneven response0 response1) =
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     activeMpsVar <- atomically $ newTVar 0
-    traceHeaderVar <- newTVarM []
+    traceHeaderVar <- newTVarIO []
     let headerTracer =
           Tracer $ \e -> case e of
             Compat.MuxTraceRecvHeaderEnd header
@@ -991,7 +991,7 @@ prop_demux_sdu a = do
              tabulate "SDU Violation " [violationLabel a] r
   where
     run (ArbitraryValidSDU sdu (Just Compat.MuxIngressQueueOverRun)) = do
-        stopVar <- newEmptyTMVarM
+        stopVar <- newEmptyTMVarIO
 
         -- To trigger Compat.MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
@@ -1019,7 +1019,7 @@ prop_demux_sdu a = do
             Right _ -> return $ property False
 
     run (ArbitraryValidSDU sdu err_m) = do
-        stopVar <- newEmptyTMVarM
+        stopVar <- newEmptyTMVarIO
 
         let server_mps = MiniProtocolInfo {
                             miniProtocolNum = MiniProtocolNum 2,
@@ -1045,7 +1045,7 @@ prop_demux_sdu a = do
             Right _ -> return $ err_m === Nothing
 
     run (ArbitraryInvalidSDU badSdu err) = do
-        stopVar <- newEmptyTMVarM
+        stopVar <- newEmptyTMVarIO
 
         let server_mps = MiniProtocolInfo {
                             miniProtocolNum = MiniProtocolNum 2,

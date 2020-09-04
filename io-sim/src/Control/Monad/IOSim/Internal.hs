@@ -350,8 +350,8 @@ instance MonadSTM (IOSim s) where
 
   atomically action = IOSim $ \k -> Atomically action k
 
-  newTMVarM         = newTMVarMDefault
-  newEmptyTMVarM    = newEmptyTMVarMDefault
+  newTMVarIO        = newTMVarIODefault
+  newEmptyTMVarIO   = newEmptyTMVarIODefault
 
 data Async s a = Async !ThreadId (STM s (Either SomeException a))
 
@@ -372,7 +372,7 @@ instance MonadAsync (IOSim s) where
   type Async (IOSim s) = Async s
 
   async action = do
-    var <- newEmptyTMVarM
+    var <- newEmptyTMVarIO
     tid <- mask $ \restore ->
              forkIO $ try (restore action) >>= atomically . putTMVar var
     return (Async tid (readTMVar var))

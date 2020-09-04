@@ -451,7 +451,7 @@ updateState :: forall m a. IOLike m
             -> State (RegistryState m) a
             -> m a
 updateState rr f =
-    atomically $ updateTVar (registryState rr) (swap . runState f)
+    atomically $ stateTVar (registryState rr) (swap . runState f)
 
 -- | Attempt to allocate a resource in a registry which is closed
 --
@@ -495,7 +495,7 @@ instance Exception RegistryClosedException
 unsafeNewRegistry :: (IOLike m, HasCallStack) => m (ResourceRegistry m)
 unsafeNewRegistry = do
     context  <- captureContext
-    stateVar <- newTVarM initState
+    stateVar <- newTVarIO initState
     return ResourceRegistry {
           registryContext = context
         , registryState   = stateVar
@@ -635,7 +635,7 @@ runWithTempRegistry
   => WithTempRegistry st m (a, st)
   -> m a
 runWithTempRegistry m = withRegistry $ \rr -> do
-    varTransferredTo <- newTVarM mempty
+    varTransferredTo <- newTVarIO mempty
     let tempRegistry = TempRegistry {
             tempResourceRegistry = rr
           , tempTransferredTo    = varTransferredTo
