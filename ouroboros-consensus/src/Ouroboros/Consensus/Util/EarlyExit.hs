@@ -38,8 +38,7 @@ import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
-                     MonadMonotonicTime (..), MonadSTMTxExtended (..),
-                     StrictMVar, StrictTVar)
+                     MonadMonotonicTime (..), StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -110,13 +109,11 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   isEmptyTQueue   = lift .  isEmptyTQueue
   newTBQueue      = lift .  newTBQueue
   readTBQueue     = lift .  readTBQueue
+  lengthTBQueue   = lift .  lengthTBQueue
   tryReadTBQueue  = lift .  tryReadTBQueue
   writeTBQueue    = lift .: writeTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
-
-instance MonadSTMTxExtended stm => MonadSTMTxExtended (WithEarlyExit stm) where
-  lengthTBQueue   = lift .  lengthTBQueue
 
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   type STM (WithEarlyExit m) = WithEarlyExit (STM m)
