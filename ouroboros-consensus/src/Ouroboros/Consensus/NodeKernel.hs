@@ -308,6 +308,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               trace failure
               exitEarly
 
+        trace $ TraceBlockContext currentSlot bcBlockNo bcPrevPoint
+
         -- Get ledger state corresponding to bcPrevPoint
         --
         -- This might fail if, in between choosing 'bcPrevPoint' and this call to
@@ -321,6 +323,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             Nothing -> do
               trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
+
+        trace $ TraceLedgerState currentSlot bcPrevPoint
 
         -- Check if we are not too far ahead of the chain
         --
@@ -343,6 +347,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             exitEarly
           Right _ ->
             return ()
+
+        trace $ TraceLedgerView currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
         let ticked = applyChainTick
