@@ -129,6 +129,9 @@ class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
   -- | Produce new block, given current ledger and tip
   genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
 
+  -- | The 'SlotNo' of the block reference
+  toSlotNo      :: Proxy t -> BlockRef t -> SlotNo
+
 type LedgerErr t = Lgr.LedgerErr (LedgerSt t)
 type LedgerCfg t = FullBlockConfig (LedgerSt t) (BlockVal t)
 
@@ -165,6 +168,7 @@ instance LUT 'LedgerSimple where
   ledgerGenesis _   = testInitLedger
   ledgerApply _ c b = runExcept . Lgr.tickThenApply c b
   blockRef      _ b = b
+  toSlotNo _        = tbSlot
 
   ledgerConfig _ dbParams = FullBlockConfig {
         blockConfigLedger = HardFork.defaultEraParams k slotLength
@@ -235,7 +239,7 @@ data Success t ss =
     Unit ()
   | MaybeErr (Either (LedgerErr t) ())
   | Ledger (LedgerSt t)
-  | Snapped (ss, Tip' t)
+  | Snapped (Maybe ss, Tip' t)
   | Restored (MockInitLog t ss, LedgerSt t)
   deriving (Functor, Foldable, Traversable)
 
@@ -268,10 +272,21 @@ newtype MockSnap = MockSnap Int
   deriving (Show, Eq, Ord, Generic, ToExpr)
 
 -- | State of all snapshots on disk
---
--- In addition to the state of the snapshot we also record the tip of the chain
--- at the time we took the snapshot; this is important for 'mockMaxRollback'.
-type MockSnaps t = Map MockSnap (Tip' t, SnapState)
+type MockSnaps t = Map MockSnap (SnapInfo t)
+
+-- | The information we keep for each snapshot
+data SnapInfo t = SnapInfo {
+      siSlot   :: SlotNo
+    , siSuffix :: Maybe String
+    , siState  :: SnapState
+    -- This mocks the real tip of the snapshot, while 'siSlot' the slot written
+    -- at the filename.
+    , siTip    :: Tip' t
+    }
+  deriving (Generic)
+
+deriving instance LUT t => Show   (SnapInfo t)
+deriving instance LUT t => ToExpr (SnapInfo t)
 
 -- | Mock implementation
 --
@@ -335,8 +350,8 @@ mockUpdateLedger f mock =
 mockRecentSnap :: Mock t -> Maybe SnapState
 mockRecentSnap Mock{..} =
     case Map.toDescList mockSnaps of
-      []             -> Nothing
-      (_, (_, st)):_ -> Just st
+      []                -> Nothing
+      (_, snapInfo) : _ -> Just (siState snapInfo)
 
 {-------------------------------------------------------------------------------
   Modelling restoration
@@ -369,10 +384,10 @@ fromInitLog (InitFailure ss err log') =
 mockInitLog :: forall t. LUT t => Mock t -> MockInitLog t MockSnap
 mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
   where
-    go :: [(MockSnap, (Tip' t, SnapState))] -> MockInitLog t MockSnap
+    go :: [(MockSnap, SnapInfo t)] -> MockInitLog t MockSnap
     go []                         = MockFromGenesis
-    go ((snap, (mr, state)):snaps) =
-        case (state, mr) of
+    go ((snap, SnapInfo {siTip, siState}) : snaps) =
+        case (siState, siTip) of
           (SnapCorrupted Delete, _) ->
             -- The real DB won't even see deleted snapshots
             go snaps
@@ -380,12 +395,13 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
             -- If it's truncated, it will skip it
             MockReadFailure snap $ go snaps
           (SnapOk, Origin) ->
-            -- Took Snapshot at genesis: definitely useable
-            MockFromSnapshot snap mr
+            -- TODO if we test manually creating a snapshot this could
+            -- actually become possible.
+            error "impossible to have a snapshot at genesis"
           (SnapOk, NotOrigin r) ->
             if onChain r
-              then MockFromSnapshot snap mr
-              else MockTooRecent    snap mr $ go snaps
+              then MockFromSnapshot snap siTip
+              else MockTooRecent    snap siTip $ go snaps
 
     onChain :: BlockRef t -> Bool
     onChain r = any (\(b, _l) -> blockRef p b == r) mockLedger
@@ -407,10 +423,10 @@ applyMockLog = go
           mockSnaps = Map.alter setIsDeleted ss (mockSnaps mock)
         }
 
-    setIsDeleted :: Maybe (WithOrigin (BlockRef t), SnapState)
-                 -> Maybe (WithOrigin (BlockRef t), SnapState)
-    setIsDeleted Nothing         = error "setIsDeleted: impossible"
-    setIsDeleted (Just (tip, _)) = Just (tip, SnapCorrupted Delete)
+    setIsDeleted :: Maybe (SnapInfo t)
+                 -> Maybe (SnapInfo t)
+    setIsDeleted Nothing   = error "setIsDeleted: impossible"
+    setIsDeleted (Just si) = Just si {siState = SnapCorrupted Delete}
 
 
 -- | Compute theretical maximum rollback
@@ -451,15 +467,27 @@ runMock cmd initMock =
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
-    go Snap          mock = (
-          Snapped (MockSnap (mockNext mock), snapped)
-        , mock { mockNext  = mockNext mock + 1
-               , mockSnaps = Map.insert (MockSnap (mockNext mock))
-                                        (snapped, SnapOk)
-                                        (mockSnaps mock)
-               }
-        )
+    go Snap          mock = ret
       where
+        -- The snapshot only makes it to disk if there is no other snapshot at
+        -- this slot and it's not at genesis.
+        ret :: (Success t MockSnap, Mock t)
+        ret = case snapped of
+          Origin -> noSnapshot
+          NotOrigin ref ->
+            let slotNo = toSlotNo (Proxy @ t) ref
+            in if slotExists slotNo
+            then noSnapshot
+            else (Snapped (snapShot, snapped)
+                 , mock { mockNext  = mockNext mock + 1
+                        , mockSnaps = mockSnaps' slotNo
+                        }
+                 )
+
+        -- If we don't take a snapshot, the 'Mock' doesn't change
+        noSnapshot :: (Success t MockSnap, Mock t)
+        noSnapshot = (Snapped (Nothing, snapped), mock)
+
         blocksAfterAnchor :: WithOrigin (BlockRef t)
                           -> [(BlockVal t, LedgerSt t)] -- old to new
                           -> [(BlockVal t, LedgerSt t)]
@@ -483,15 +511,34 @@ runMock cmd initMock =
           where
             blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
             n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
+
+        -- Checks if any file with this slot exists. Note that we shouldn't take
+        -- into account any deleted files.
+        slotExists :: SlotNo -> Bool
+        slotExists sl = any (fileExists sl) $ Map.elems (mockSnaps mock)
+
+        fileExists :: SlotNo -> SnapInfo t -> Bool
+        fileExists sl SnapInfo {siSlot, siState} =
+          (siSlot == sl) && (siState /= SnapCorrupted Delete)
+
+        mockSnaps' :: SlotNo -> MockSnaps t
+        mockSnaps' sl =
+          Map.insert
+            (MockSnap (mockNext mock))
+            (SnapInfo sl Nothing SnapOk snapped)
+            (mockSnaps mock)
+
+        snapShot :: Maybe MockSnap
+        snapShot = Just $ MockSnap $ mockNext mock
+
     go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
         )
       where
-        corrupt :: Maybe (Tip' t, SnapState)
-                -> Maybe (Tip' t, SnapState)
+        corrupt :: Maybe (SnapInfo t) -> Maybe (SnapInfo t)
         corrupt Nothing         = error "corrupt: impossible"
-        corrupt (Just (ref, _)) = Just $ (ref, SnapCorrupted c)
+        corrupt (Just snapInfo) = Just snapInfo {siState = SnapCorrupted c}
     go (Drop n) mock =
         go Restore $ mock {
             mockLedger = drop (fromIntegral n) (mockLedger mock)
@@ -663,7 +710,10 @@ runDB standalone@DB{..} cmd =
               ledgerDbSwitch dbLedgerCfg n (map (\b -> ApplyVal (blockRef p b) b) bs) db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
-        Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
+        (msnap, orig) <-
+          takeSnapshot nullTracer hasFS S.encode S.encode
+                       (mkDiskSnapshot $ toSlotNo (Proxy @ t)) db
+        return $ Snapped (msnap, orig)
     go hasFS Restore = do
         (initLog, db, _replayed) <-
           initLedgerDB
@@ -858,8 +908,8 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
             -> [(Corruption, Reference DiskSnapshot Symbolic)]
         aux (diskSnap, mockSnap) =
             case Map.lookup mockSnap (mockSnaps mock) of
-              Just (_tip, state) ->
-                map (, diskSnap) $ possibleCorruptionsInState state
+              Just SnapInfo {siState} ->
+                map (, diskSnap) $ possibleCorruptionsInState siState
               Nothing ->
                 error "possibleCorruptions: impossible"
 

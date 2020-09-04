@@ -326,7 +326,7 @@ currentPoint = castPoint
 
 takeSnapshot :: forall m blk.
                 (IOLike m, LgrDbSerialiseConstraints blk)
-             => LgrDB m blk -> m (DiskSnapshot, Point blk)
+             => LgrDB m blk -> m (Maybe DiskSnapshot, Point blk)
 takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS = SomeHasFS hasFS } = wrapFailure $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second withOriginRealPointToPoint <$> LedgerDB.takeSnapshot
@@ -334,6 +334,7 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS = SomeHasFS hasFS } = wrapFailure $
       hasFS
       encodeExtLedgerState'
       (encodeRealPoint encode)
+      (LedgerDB.mkDiskSnapshot realPointSlot)
       ledgerDB
   where
     ccfg = configCodec cfg
@@ -344,7 +345,7 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS = SomeHasFS hasFS } = wrapFailure $
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)
 
-trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
+trimSnapshots :: MonadCatch m => LgrDB m blk -> m ()
 trimSnapshots LgrDB { diskPolicy, tracer, hasFS = SomeHasFS hasFS } = wrapFailure $
     LedgerDB.trimSnapshots tracer hasFS diskPolicy
 

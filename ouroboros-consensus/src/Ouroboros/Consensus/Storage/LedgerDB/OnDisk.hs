@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Write to disk
   , takeSnapshot
   , trimSnapshots
+  , mkDiskSnapshot
     -- * Low-level API (primarily exposed for testing)
   , DiskSnapshot -- opaque
   , deleteSnapshot
@@ -37,7 +38,8 @@ import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.Bifunctor.TH as TH
 import qualified Data.List as List
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (isNothing, mapMaybe)
+import           Data.Ord
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -203,7 +205,9 @@ initLedgerDB replayTracer
                              s
         case ml of
           Left err -> do
-            deleteSnapshot hasFS s
+            when (isNothing (dsSuffix s)) $
+              -- We don't delete named snapshots, even if we couldn't parse them
+              deleteSnapshot hasFS s
             traceWith tracer $ InvalidSnapshot s err
             tryNewestFirst (acc . InitFailure s err) ss
           Right (r, l, replayed) ->
@@ -274,9 +278,15 @@ initStartingWith tracer conf streamAPI initDb = do
 -- testing purposes, 'takeSnapshot' returns the block reference corresponding
 -- to the snapshot that we wrote.
 --
--- NOTE: This is a lower-level API that unconditionally takes a snapshot
--- (i.e., independent from whether this snapshot corresponds to a state that
--- is more than @k@ back).
+-- NOTE: This is a lower-level API that takes a snapshot independent from
+-- whether this snapshot corresponds to a state that is more than @k@ back. It
+-- doesn't take a snapshot if a snapshot at the same slot already exists on
+-- disk or if the tip is at genesis.
+--
+-- Note that an EBB can have the same slot number as the block after it. This
+-- doesn't matter. The one block difference in the ledger state doesn't warrant
+-- an additional snapshot. The slot number in the name of the snapshot is only
+-- indicative, we don't rely on it being correct.
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot :: forall m l r h. MonadThrow m
@@ -284,46 +294,71 @@ takeSnapshot :: forall m l r h. MonadThrow m
              -> HasFS m h
              -> (l -> Encoding)
              -> (r -> Encoding)
-             -> LedgerDB l r -> m (DiskSnapshot, WithOrigin r)
-takeSnapshot tracer hasFS encLedger encRef db = do
-    ss <- nextAvailable <$> listSnapshots hasFS
-    writeSnapshot hasFS encLedger encRef ss oldest
-    traceWith tracer $ TookSnapshot ss (csTip oldest)
-    return (ss, csTip oldest)
+             -> (r -> DiskSnapshot)
+             -> LedgerDB l r
+             -> m (Maybe DiskSnapshot, WithOrigin r)
+takeSnapshot tracer hasFS encLedger encRef toSnap db = case tip of
+    Origin      -> return (Nothing, tip)
+    NotOrigin r -> do
+      let snapshot = toSnap r
+      snaps <- listSnapshots hasFS
+      if List.any (sameSlot snapshot) snaps
+        then return (Nothing, tip)
+        else do
+          writeSnapshot hasFS encLedger encRef snapshot oldest
+          traceWith tracer $ TookSnapshot snapshot tip
+          return (Just snapshot, tip)
   where
     oldest :: ChainSummary l r
     oldest = ledgerDbAnchor db
 
+    tip = csTip oldest
+
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
--- snapshots are stored on disk. The oldest snapshots are deleted.
---
--- The deleted snapshots are returned.
+-- snapshots are stored on disk. The oldest snapshots are deleted. Snapshots
+-- with a suffix are not deleted.
 trimSnapshots :: Monad m
               => Tracer m (TraceEvent r)
               -> HasFS m h
               -> DiskPolicy
-              -> m [DiskSnapshot]
+              -> m ()
 trimSnapshots tracer hasFS DiskPolicy{..} = do
-    snapshots <- listSnapshots hasFS
+    -- We ignore named snaspshots
+    snapshots <- filter (isNothing . dsSuffix) <$> listSnapshots hasFS
     -- The snapshot are most recent first, so we can simply drop from the
     -- front to get the snapshots that are "too" old.
-    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
+    forM_ (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
       deleteSnapshot hasFS snapshot
       traceWith tracer $ DeletedSnapshot snapshot
-      return snapshot
 
 {-------------------------------------------------------------------------------
   Internal: reading from disk
 -------------------------------------------------------------------------------}
 
--- | On disk snapshots are numbered monotonically
-newtype DiskSnapshot = DiskSnapshot Int
+data DiskSnapshot = DiskSnapshot {
+      -- | We name snapshots after the slot number the ledger state corresponds
+      -- to. This gives an indication of how recent the snapshot is.
+      --
+      -- Note that the snapshot names are only indicative, we don't rely on them
+      -- having the correct slot number. We only use the names to determine the
+      -- order in which we try them. If a user chooses to rename their
+      -- snapshots, we'll just try them in a different order. That order might
+      -- be suboptimal, i.e., trying older snapshots requiring more replay
+      -- first.
+      dsSlotNo :: SlotNo
+      -- | Snapshots can optionally have a suffix, separated by the slot number
+      -- with an underscore, e.g., @4492799_last_Byron@. This suffix acts as
+      -- metadata for the operator of the node. Snapshots with a suffix will
+      -- /not be trimmed/.
+    , dsSuffix :: Maybe String
+    }
   deriving (Show, Eq, Ord, Generic)
 
--- | Number of the next snapshot, given snapshots currently on disk
-nextAvailable :: [DiskSnapshot] -> DiskSnapshot
-nextAvailable [] = DiskSnapshot 1
-nextAvailable ss = let DiskSnapshot n = maximum ss in DiskSnapshot (n + 1)
+mkDiskSnapshot :: (r -> SlotNo) -> r -> DiskSnapshot
+mkDiskSnapshot toSlot r = DiskSnapshot (toSlot r) Nothing
+
+sameSlot :: DiskSnapshot -> DiskSnapshot -> Bool
+sameSlot ds1 ds2 = dsSlotNo ds1 == dsSlotNo ds2
 
 -- | Read snapshot from disk
 readSnapshot :: forall m l r h. (IOLike m)
@@ -357,20 +392,40 @@ writeSnapshot hasFS encLedger encRef ss cs = do
 deleteSnapshot :: HasCallStack => HasFS m h -> DiskSnapshot -> m ()
 deleteSnapshot HasFS{..} = removeFile . snapshotToPath
 
--- | List on-disk snapshots, most recent first
+-- | List on-disk snapshots.
+--
+-- Snapshots are sorted based on their slot.
 listSnapshots :: Monad m => HasFS m h -> m [DiskSnapshot]
 listSnapshots HasFS{..} =
     aux <$> listDirectory (mkFsPath [])
   where
     aux :: Set String -> [DiskSnapshot]
-    aux = List.sortBy (flip compare) . mapMaybe snapshotFromPath . Set.toList
+    aux = List.sortOn (Down . dsSlotNo) . mapMaybe snapshotFromPath . Set.toList
 
+-- | Snapshot files are named by their slot number and they can possibly have an
+-- underscore `_` followed by a suffix.
 snapshotToPath :: DiskSnapshot -> FsPath
-snapshotToPath (DiskSnapshot ss) = mkFsPath [show ss]
+snapshotToPath DiskSnapshot {..} = mkFsPath [pref ++ suff]
+  where
+    pref = show $ unSlotNo dsSlotNo
+    suff = case dsSuffix of
+      Nothing  -> ""
+      Just str -> "_" ++ str
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
-snapshotFromPath = fmap DiskSnapshot . readMaybe
+snapshotFromPath fileName = do
+    slot <- readSlot pref
+    return $ DiskSnapshot slot fixedSuff
+  where
+    (pref, suff) = break (== '_') fileName
 
+    readSlot :: String -> Maybe SlotNo
+    readSlot str = SlotNo <$> readMaybe str
+
+    fixedSuff :: Maybe String
+    fixedSuff = case suff of
+      ""      -> Nothing
+      _ : str -> Just str
 
 {-------------------------------------------------------------------------------
   Trace events
