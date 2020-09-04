@@ -60,6 +60,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "fromOldestFirst/toOldestFirst"      prop_fromOldestFirst_toOldestFirst
   , testProperty "toList/head"                        prop_toList_head
   , testProperty "toList/last"                        prop_toList_last
+  , testProperty "splitAt"                            prop_splitAt
   , testProperty "dropNewest"                         prop_dropNewest
   , testProperty "takeOldest"                         prop_takeOldest
   , testProperty "dropWhileNewest"                    prop_dropWhileNewest
@@ -76,11 +77,12 @@ tests = testGroup "AnchoredFragment"
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
   , testProperty "toChain/fromChain"                  prop_toChain_fromChain
-  , testProperty  "anchorNewest"                      prop_anchorNewest
+  , testProperty "anchorNewest"                       prop_anchorNewest
   , testProperty "filter"                             prop_filter
   , testProperty "filterWithStop_always_stop"         prop_filterWithStop_always_stop
   , testProperty "filterWithStop_never_stop"          prop_filterWithStop_never_stop
   , testProperty "filterWithStop"                     prop_filterWithStop
+  , testProperty "filterWithStop vs spec"             prop_filterWithStop_vs_spec
   , testProperty "filterWithStop_filter"              prop_filterWithStop_filter
   ]
 
@@ -127,6 +129,19 @@ prop_toList_last (TestBlockAnchoredFragment chain) =
     (headOrAnchor anchor . AF.toOldestFirst) chain == AF.last chain
   where
     anchor = AF.anchor chain
+
+prop_splitAt :: TestBlockAnchoredFragment -> Bool
+prop_splitAt (TestBlockAnchoredFragment chain) =
+    let blocks = AF.toOldestFirst chain in
+    and [ let (before,         after)         = AF.splitAt n chain
+              (beforeExpected, afterExpected) = L.splitAt  n blocks
+          in AF.toOldestFirst before == beforeExpected       &&
+             AF.toOldestFirst after  == afterExpected        &&
+             AF.anchorPoint   before == AF.anchorPoint chain &&
+             AF.headPoint     before == AF.anchorPoint after &&
+             AF.headPoint     after  == AF.headPoint   chain &&
+             AF.join before after    == Just chain
+        | n <- [0..Prelude.length blocks] ]
 
 prop_dropNewest :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest (TestBlockAnchoredFragment chain) =
@@ -715,6 +730,14 @@ prop_filterWithStop p stop (TestBlockAnchoredFragment_ anchor chain) =
       = reverse $ lastFrag':frags
       | otherwise
       = c ++ [stoppedFrag]
+
+prop_filterWithStop_vs_spec ::
+     (Block -> Bool)
+  -> (Block -> Bool)
+  -> TestBlockAnchoredFragment
+  -> Property
+prop_filterWithStop_vs_spec p stop (TestBlockAnchoredFragment_ _ chain) =
+    AF.filterWithStop p stop chain === AF.filterWithStopSpec p stop chain
 
 prop_filterWithStop_filter :: TestBlockAnchoredFragment -> Property
 prop_filterWithStop_filter (TestBlockAnchoredFragment chain) =
