@@ -9,4 +9,6 @@ pkgs: _: with pkgs; {
       buildPackages
       ;
   };
+
+  docs = callPackages ./docs.nix {};
 }
