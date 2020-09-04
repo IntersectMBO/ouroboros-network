@@ -122,6 +122,8 @@ class ( Monad stm
   readTBQueue    :: TBQueue_ stm a -> stm a
   tryReadTBQueue :: TBQueue_ stm a -> stm (Maybe a)
   writeTBQueue   :: TBQueue_ stm a -> a -> stm ()
+  -- | @since 0.2.0.0
+  lengthTBQueue  :: TBQueue_ stm a -> stm Natural
   isEmptyTBQueue :: TBQueue_ stm a -> stm Bool
   isFullTBQueue  :: TBQueue_ stm a -> stm Bool
 
@@ -182,6 +184,7 @@ instance MonadSTMTx STM.STM where
   readTBQueue    = STM.readTBQueue
   tryReadTBQueue = STM.tryReadTBQueue
   writeTBQueue   = STM.writeTBQueue
+  lengthTBQueue  = STM.lengthTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
 
@@ -431,16 +434,6 @@ isFullTBQueueDefault (TBQueue rsize _read wsize _write _size) = do
             then return False
             else return True
 
--- 'lengthTBQueue' was added in stm-2.5.0.0, but since we support older
--- versions of stm, we don't include it as a method in the type class. If we
--- were to conditionally (@MIN_VERSION_stm(2,5,0)@) include the method in the
--- type class, the IO simulator would have to conditionally include the
--- method, requiring a dependency on the @stm@ package, which would be
--- strange.
---
--- Nevertheless, we already provide a default implementation. Downstream
--- packages that don't mind having a >= 2.5 constraint on stm can use this to
--- implement 'lengthTBQueue' for the IO simulator.
 lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m Natural
 lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
   r <- readTVar rsize

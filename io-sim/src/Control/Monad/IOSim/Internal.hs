@@ -341,6 +341,7 @@ instance MonadSTMTx (STM s) where
   readTBQueue       = readTBQueueDefault
   tryReadTBQueue    = tryReadTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
+  lengthTBQueue     = lengthTBQueueDefault
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
