@@ -18,6 +18,9 @@ module Ouroboros.Consensus.Cardano.Node (
   , protocolClientInfoCardano
   , CardanoHardForkConstraints
   , TriggerHardFork (..)
+  , initialLedgerStateCardano
+  , ledgerConfigCardano
+  , mkPartialLedgerConfigShelley
     -- * SupportedNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
@@ -332,13 +335,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialConsensusConfigShelley = tpraosParams
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
-    partialLedgerConfigShelley = ShelleyPartialLedgerConfig $
-        Shelley.mkShelleyLedgerConfig
-          genesisShelley
-          -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
-          -- in the partial ledger config with the correct one.
-          History.dummyEpochInfo
-          maxMajorPV
+    partialLedgerConfigShelley =
+        mkPartialLedgerConfigShelley genesisShelley maxMajorPV
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
@@ -427,6 +425,93 @@ protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
           (pClientInfoCodecConfig (protocolClientInfoByron epochSlots secParam))
           (pClientInfoCodecConfig protocolClientInfoShelley)
     }
+
+{-------------------------------------------------------------------------------
+  Extra utilities
+-------------------------------------------------------------------------------}
+
+-- | Create the initial 'LedgerState' based on the given Byron genesis config.
+initialLedgerStateCardano :: Genesis.Config -> LedgerState (CardanoBlock c)
+initialLedgerStateCardano =
+      HardForkLedgerState
+    . initHardForkState
+    . flip Byron.initByronLedgerState Nothing
+
+-- | Create a 'LedgerConfig' for 'CardanoBlock'.
+ledgerConfigCardano ::
+     forall c.
+     -- Byron
+     Genesis.Config
+
+     -- Shelley
+  -> ShelleyGenesis (ShelleyEra c)
+  -> Natural  -- ^ Max major protocol version
+
+     -- Hard fork
+  -> TriggerHardFork
+  -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
+
+  -> CardanoLedgerConfig c
+ledgerConfigCardano genesisByron
+                    genesisShelley  maxMajorPV
+                    triggerHardFork mbLowerBound =
+    HardForkLedgerConfig {
+        hardForkLedgerConfigK      = k
+      , hardForkLedgerConfigShape  = shape
+      , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+          (  WrapPartialLedgerConfig partialLedgerConfigByron
+          :* WrapPartialLedgerConfig partialLedgerConfigShelley
+          :* Nil
+          )
+      }
+  where
+    -- Byron
+
+    kByron :: SecurityParam
+    kByron = Byron.genesisSecurityParam genesisByron
+
+    partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
+    partialLedgerConfigByron = ByronPartialLedgerConfig {
+          byronLedgerConfig = genesisByron
+        , triggerHardFork   = triggerHardFork
+        }
+
+    -- Shelley
+
+    kShelley :: SecurityParam
+    kShelley = SecurityParam $ sgSecurityParam genesisShelley
+
+    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+    partialLedgerConfigShelley =
+        mkPartialLedgerConfigShelley genesisShelley maxMajorPV
+
+    -- Cardano
+
+    k :: SecurityParam
+    k = assert (kByron == kShelley) kByron
+
+    shape :: History.Shape (CardanoEras c)
+    shape = History.Shape $
+      exactlyTwo
+        (Byron.byronEraParams safeBeforeByron genesisByron)
+        (Shelley.shelleyEraParams genesisShelley)
+
+    safeBeforeByron :: History.SafeBeforeEpoch
+    safeBeforeByron =
+        maybe History.NoLowerBound History.LowerBound mbLowerBound
+
+mkPartialLedgerConfigShelley ::
+     ShelleyGenesis (ShelleyEra c)
+  -> Natural  -- ^ Max major protocol version
+  -> PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+mkPartialLedgerConfigShelley genesisShelley maxMajorPV =
+    ShelleyPartialLedgerConfig $
+      Shelley.mkShelleyLedgerConfig
+        genesisShelley
+        -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo' in
+        -- the partial ledger config with the correct one.
+        History.dummyEpochInfo
+        maxMajorPV
 
 {-------------------------------------------------------------------------------
   Helpers
