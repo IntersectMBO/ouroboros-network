@@ -565,7 +565,7 @@ runPure cfg = \case
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.getMaxSlotNo
     GetIsValid pt            -> ok  isValidResult       $ query   (Model.isValid cfg pt)
-    Stream from to           -> err iter                $ updateE (Model.stream k ccfg from to)
+    Stream from to           -> err iter                $ updateE (Model.stream k from to)
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext @Identity it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext @Identity it allComponents)
     IteratorClose it         -> ok  Unit                $ update_ (Model.iteratorClose it)
@@ -578,8 +578,7 @@ runPure cfg = \case
     Reopen                   -> openOrClosed            $ update_  Model.reopen
     WipeVolDB                -> ok  Point               $ update  (Model.wipeVolDB cfg)
   where
-    k    = configSecurityParam cfg
-    ccfg = configCodec         cfg
+    k = configSecurityParam cfg
 
     advanceAndAdd slot blk m = (Model.tipPoint m', m')
       where
@@ -1042,7 +1041,7 @@ precondition Model {..} (At cmd) =
     -- TODO #871
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
-        case Model.between secParam (configCodec cfg) from to' dbModel of
+        case Model.between secParam from to' dbModel of
           Left  _    -> Bot
           -- All blocks must be valid
           Right blks -> forall blks $ \blk -> Boolean $

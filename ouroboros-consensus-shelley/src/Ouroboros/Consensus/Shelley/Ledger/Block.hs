@@ -147,7 +147,7 @@ instance Era era => HasHeader (Header (ShelleyBlock era)) where
     }
 
 instance Era era => GetPrevHash (ShelleyBlock era)  where
-  headerPrevHash _cfg =
+  headerPrevHash =
       fromShelleyPrevHash
     . SL.bheaderPrev
     . SL.bhbody

@@ -221,14 +221,13 @@ instance HasHeader (Header ByronBlock) where
       }
 
 instance GetPrevHash ByronBlock where
-  headerPrevHash cfg = fromByronPrevHash cfg . CC.abobHdrPrevHash . byronHeaderRaw
+  headerPrevHash = fromByronPrevHash . CC.abobHdrPrevHash . byronHeaderRaw
 
 instance Measured BlockMeasure ByronBlock where
   measure = blockMeasure
 
-fromByronPrevHash :: CodecConfig ByronBlock
-                  -> Maybe CC.HeaderHash -> ChainHash ByronBlock
-fromByronPrevHash _cfg = \case
+fromByronPrevHash :: Maybe CC.HeaderHash -> ChainHash ByronBlock
+fromByronPrevHash = \case
     Nothing -> GenesisHash
     Just h  -> BlockHash (ByronHash h)
 

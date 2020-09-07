@@ -63,7 +63,6 @@ openTestDB registry hasFS =
       }
   where
     parser = chunkFileParser
-               TestBlockCodecConfig
                hasFS
                (const <$> S.decode)
                testBlockIsValid

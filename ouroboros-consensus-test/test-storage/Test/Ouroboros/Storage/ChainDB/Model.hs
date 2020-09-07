@@ -486,15 +486,14 @@ addBlockPromise cfg blk m = (result, m')
 stream
   :: GetPrevHash blk
   => SecurityParam
-  -> CodecConfig blk
   -> StreamFrom  blk
   -> StreamTo    blk
   -> Model       blk
   -> Either ChainDbError
             (Either (UnknownRange blk) IteratorId, Model blk)
-stream securityParam cfg from to m = do
+stream securityParam from to m = do
     unless (validBounds from to) $ Left (InvalidIteratorRange from to)
-    case between securityParam cfg from to m of
+    case between securityParam from to m of
       Left  e    -> return (Left e,      m)
       Right blks -> return (Right itrId, m {
           iterators = Map.insert itrId blks (iterators m)
@@ -746,9 +745,8 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
 
 
 chains :: forall blk. (GetPrevHash blk)
-       => CodecConfig blk
-       -> Map (HeaderHash blk) blk -> [Chain blk]
-chains cfg bs = go Chain.Genesis
+       => Map (HeaderHash blk) blk -> [Chain blk]
+chains bs = go Chain.Genesis
   where
     -- Construct chains,
     go :: Chain blk -> [Chain blk]
@@ -765,7 +763,7 @@ chains cfg bs = go Chain.Genesis
           Map.findWithDefault Map.empty (Chain.headHash ch) fwd
 
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    fwd = successors cfg (Map.elems bs)
+    fwd = successors (Map.elems bs)
 
 validChains :: forall blk. LedgerSupportsProtocol blk
             => TopLevelConfig blk
@@ -790,8 +788,7 @@ validChains cfg m bs =
     -- first, which results in the valid chain A->B', which is then chosen
     -- over the equally preferable A->B as it will be the first in the list
     -- after a stable sort.
-    sortChains $
-    chains (configCodec cfg) bs
+    sortChains $ chains bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
@@ -804,23 +801,21 @@ validChains cfg m bs =
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. GetPrevHash blk
-           => CodecConfig blk
-           -> [blk]
+           => [blk]
            -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-successors cfg = Map.unionsWith Map.union . map single
+successors = Map.unionsWith Map.union . map single
   where
     single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
-    single b = Map.singleton (blockPrevHash cfg b)
+    single b = Map.singleton (blockPrevHash b)
                              (Map.singleton (blockHash b) b)
 
 between :: forall blk. GetPrevHash blk
         => SecurityParam
-        -> CodecConfig blk
         -> StreamFrom  blk
         -> StreamTo    blk
         -> Model       blk
         -> Either (UnknownRange blk) [blk]
-between k cfg from to m = do
+between k from to m = do
     fork <- errFork
     -- See #871.
     if partOfCurrentChain fork ||
@@ -840,7 +835,7 @@ between k cfg from to m = do
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
     fragments = map Chain.toAnchoredFragment
-              . chains cfg
+              . chains
               . blocks
               $ m
 

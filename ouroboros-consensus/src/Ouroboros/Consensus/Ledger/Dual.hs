@@ -277,10 +277,7 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   getHeaderFields = castHeaderFields . getHeaderFields . dualHeaderMain
 
 instance Bridge m a => GetPrevHash (DualBlock m a) where
-  headerPrevHash cfg =
-        castHash
-      . headerPrevHash (dualCodecConfigMain cfg)
-      . dualHeaderMain
+  headerPrevHash = castHash . headerPrevHash . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Protocol

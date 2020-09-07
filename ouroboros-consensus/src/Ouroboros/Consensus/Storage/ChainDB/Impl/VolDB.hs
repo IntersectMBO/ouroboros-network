@@ -219,7 +219,7 @@ putBlock
   :: (MonadCatch m, GetPrevHash blk, VolDbSerialiseConstraints blk)
   => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo codecConfig b binaryBlockInfo) binaryBlob
+    VolDB.putBlock vol (extractInfo b binaryBlockInfo) binaryBlob
   where
     binaryBlockInfo = getBinaryBlockInfo b
     binaryBlob      = CBOR.toBuilder $ encodeDisk codecConfig b
@@ -757,7 +757,6 @@ blockFileParser
        (HeaderHash blk)
 blockFileParser VolDbArgs{ volHasFS = SomeHasFS hasFS, .. } =
     blockFileParser'
-      volCodecConfig
       hasFS
       decodeNestedCtxtAndBlock
       volCheckIntegrity
@@ -779,8 +778,7 @@ blockFileParser VolDbArgs{ volHasFS = SomeHasFS hasFS, .. } =
 -- the whole @VolDbArgs@.
 blockFileParser'
   :: forall m blk h. (IOLike m, GetPrevHash blk, HasBinaryBlockInfo blk)
-  => CodecConfig blk
-  -> HasFS m h
+  => HasFS m h
   -> (forall s. Decoder s (Lazy.ByteString -> (ShortByteString, blk)))
   -> (blk -> Bool)
   -> VolDB.BlockValidationPolicy
@@ -788,8 +786,7 @@ blockFileParser'
        Util.CBOR.ReadIncrementalErr
        m
        (HeaderHash blk)
-blockFileParser' cfg
-                 hasFS
+blockFileParser' hasFS
                  decodeNestedCtxtAndBlock
                  isNotCorrupt
                  validationPolicy =
@@ -797,7 +794,7 @@ blockFileParser' cfg
       hasFS decodeNestedCtxtAndBlock fsPath (checkEntries [])
   where
     extractInfo' :: blk -> VolDB.BlockInfo (HeaderHash blk)
-    extractInfo' blk = extractInfo cfg blk (getBinaryBlockInfo blk)
+    extractInfo' blk = extractInfo blk (getBinaryBlockInfo blk)
 
     noValidation :: Bool
     noValidation = validationPolicy == VolDB.NoValidation
@@ -872,15 +869,14 @@ fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = NotOrigin hash
 
 extractInfo :: GetPrevHash blk
-            => CodecConfig blk
-            -> blk
+            => blk
             -> BinaryBlockInfo
             -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo cfg b BinaryBlockInfo{..} = VolDB.BlockInfo {
+extractInfo b BinaryBlockInfo{..} = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
     , bbno          = blockNo   b
-    , bpreBid       = fromChainHash (blockPrevHash cfg b)
+    , bpreBid       = fromChainHash (blockPrevHash b)
     , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize

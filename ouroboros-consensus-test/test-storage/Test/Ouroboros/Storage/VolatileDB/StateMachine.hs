@@ -592,7 +592,6 @@ test cmds = do
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser'
-          TestBlockCodecConfig
           hasFS
           ((\blk bytes -> (takePrefix testPrefixLen bytes, blk)) <$> decode)
           testBlockIsValid
