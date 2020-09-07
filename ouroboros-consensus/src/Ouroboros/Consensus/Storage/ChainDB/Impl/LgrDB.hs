@@ -244,7 +244,7 @@ initFromDisk LgrDbArgs { lgrHasFS = SomeHasFS hasFS, .. } replayTracer immDB = w
         decodeExtLedgerState'
         (decodeRealPoint decode)
         lgrParams
-        (extLedgerCfgFromTopLevel lgrTopLevelConfig)
+        (ExtLedgerCfg lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
@@ -377,7 +377,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
-               (extLedgerCfgFromTopLevel cfg)
+               (ExtLedgerCfg cfg)
                numRollbacks
                aps
                ledgerDB

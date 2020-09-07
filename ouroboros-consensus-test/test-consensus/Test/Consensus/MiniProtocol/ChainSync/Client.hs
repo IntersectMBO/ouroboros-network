@@ -445,7 +445,7 @@ updateClientState cfg chain ledgerState chainUpdates =
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
           ledgerState' = runValidate $ foldLedger
-                                         (extLedgerCfgFromTopLevel cfg)
+                                         (ExtLedgerCfg cfg)
                                          bs
                                          ledgerState
       Nothing
@@ -453,7 +453,7 @@ updateClientState cfg chain ledgerState chainUpdates =
       -- scratch
         | Just chain' <- Chain.applyChainUpdates (toChainUpdates chainUpdates) chain
         -> let ledgerState' = runValidate $ foldLedger
-                                              (extLedgerCfgFromTopLevel cfg)
+                                              (ExtLedgerCfg cfg)
                                               (Chain.toOldestFirst chain')
                                               testInitExtLedger
            in (chain', ledgerState')
@@ -500,7 +500,7 @@ computePastLedger cfg pt chain
         | castPoint (getTip st) == pt
         = st
         | blk:blks' <- blks
-        = go (tickThenReapply (extLedgerCfgFromTopLevel cfg) blk st) blks'
+        = go (tickThenReapply (ExtLedgerCfg cfg) blk st) blks'
         | otherwise
         = error "point not in the list of blocks"
 

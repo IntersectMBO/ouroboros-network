@@ -17,8 +17,6 @@ module Ouroboros.Consensus.Ledger.Extended (
     ExtLedgerState(..)
   , ExtValidationError(..)
   , ExtLedgerCfg(..)
-  , extLedgerCfgToTopLevel
-  , extLedgerCfgFromTopLevel
     -- * Serialisation
   , encodeExtLedgerState
   , decodeExtLedgerState
@@ -94,42 +92,18 @@ data instance Ticked (ExtLedgerState blk) = TickedExtLedgerState {
 --
 -- Since the extended ledger also does the consensus protocol validation, we
 -- also need the consensus config.
-data ExtLedgerCfg blk = ExtLedgerCfg {
-      extLedgerCfgProtocol :: !(ConsensusConfig (BlockProtocol blk))
-    , extLedgerCfgLedger   :: !(LedgerConfig blk)
+newtype ExtLedgerCfg blk = ExtLedgerCfg {
+      getExtLedgerCfg :: TopLevelConfig blk
     }
   deriving (Generic)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
+         , NoUnexpectedThunks (BlockConfig  blk)
+         , NoUnexpectedThunks (CodecConfig  blk)
          , NoUnexpectedThunks (LedgerConfig blk)
          ) => NoUnexpectedThunks (ExtLedgerCfg blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
-
--- | The addition of the 'ConsensusConfig' means we have the full config.
-extLedgerCfgToTopLevel :: FullBlockConfig (ExtLedgerState blk) blk
-                       -> TopLevelConfig blk
-extLedgerCfgToTopLevel FullBlockConfig{..} = TopLevelConfig {
-      topLevelConfigProtocol = extLedgerCfgProtocol
-    , topLevelConfigBlock    = FullBlockConfig {
-          blockConfigLedger = extLedgerCfgLedger
-        , blockConfigBlock  = blockConfigBlock
-        , blockConfigCodec  = blockConfigCodec
-        }
-    }
-  where
-    ExtLedgerCfg{..} = blockConfigLedger
-
-extLedgerCfgFromTopLevel :: TopLevelConfig blk
-                         -> FullBlockConfig (ExtLedgerState blk) blk
-extLedgerCfgFromTopLevel tlc = FullBlockConfig {
-      blockConfigLedger = ExtLedgerCfg {
-          extLedgerCfgProtocol = topLevelConfigProtocol tlc
-        , extLedgerCfgLedger   = configLedger tlc
-        }
-    , blockConfigBlock  = configBlock tlc
-    , blockConfigCodec  = configCodec tlc
-    }
 
 type instance HeaderHash (ExtLedgerState blk) = HeaderHash (LedgerState blk)
 
@@ -149,7 +123,7 @@ instance ( IsLedger (LedgerState  blk)
       TickedExtLedgerState {..}
     where
       lcfg :: LedgerConfig blk
-      lcfg = extLedgerCfgLedger cfg
+      lcfg = configLedger $ getExtLedgerCfg cfg
 
       tickedLedgerState :: Ticked (LedgerState blk)
       tickedLedgerState = applyChainTick lcfg slot ledger
@@ -160,7 +134,7 @@ instance ( IsLedger (LedgerState  blk)
       tickedHeaderState :: Ticked (HeaderState blk)
       tickedHeaderState =
           tickHeaderState
-            (extLedgerCfgProtocol cfg)
+            (configConsensus $ getExtLedgerCfg cfg)
             tickedLedgerView
             slot
             header
@@ -169,12 +143,12 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
   applyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState
       <$> (withExcept ExtValidationErrorLedger $
              applyLedgerBlock
-               (mapLedgerCfg extLedgerCfgLedger cfg)
+               (configLedger $ getExtLedgerCfg cfg)
                blk
                tickedLedgerState)
       <*> (withExcept ExtValidationErrorHeader $
              validateHeader
-               (extLedgerCfgToTopLevel cfg)
+               (getExtLedgerCfg cfg)
                tickedLedgerView
                (getHeader blk)
                tickedHeaderState)
@@ -182,12 +156,12 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
   reapplyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState {
         ledgerState =
              reapplyLedgerBlock
-               (mapLedgerCfg extLedgerCfgLedger cfg)
+               (configLedger $ getExtLedgerCfg cfg)
                blk
                tickedLedgerState
       , headerState =
              revalidateHeader
-               (extLedgerCfgToTopLevel cfg)
+               (getExtLedgerCfg cfg)
                tickedLedgerView
                (getHeader blk)
                tickedHeaderState

@@ -292,7 +292,7 @@ validationErrorImpossible = cantBeError . runExcept
 -------------------------------------------------------------------------------}
 
 applyByronBlock :: CC.ValidationMode
-                -> FullBlockConfig (LedgerState ByronBlock) ByronBlock
+                -> LedgerConfig ByronBlock
                 -> ByronBlock
                 -> TickedLedgerState ByronBlock
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
@@ -301,10 +301,8 @@ applyByronBlock validationMode
                 (ByronBlock blk _ (ByronHash blkHash))
                 ls =
     case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode lcfg blk' blkHash ls
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        lcfg blk'         ls
-  where
-    lcfg = blockConfigLedger cfg
+      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
+      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config

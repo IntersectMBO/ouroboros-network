@@ -220,7 +220,7 @@ instance TPraosCrypto era
 applyHelper ::
      (TPraosCrypto era, Monad m)
   => (SL.Globals -> SL.ShelleyState era -> SL.Block era -> m (SL.ShelleyState era))
-  -> FullBlockConfig (LedgerState (ShelleyBlock era)) (ShelleyBlock era)
+  -> LedgerConfig (ShelleyBlock era)
   -> ShelleyBlock era
   -> Ticked (LedgerState (ShelleyBlock era))
   -> m (LedgerState (ShelleyBlock era))
@@ -232,7 +232,7 @@ applyHelper f cfg blk (TickedShelleyLedgerState _ oldShelleyState) = do
       , shelleyState = newShelleyState
       }
   where
-    globals = shelleyLedgerGlobals (blockConfigLedger cfg)
+    globals = shelleyLedgerGlobals cfg
 
 instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
   protocolLedgerView _cfg = TickedPraosLedgerView

@@ -351,13 +351,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         trace $ TraceLedgerView currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let ticked = applyChainTick
-                       (ExtLedgerCfg {
-                            extLedgerCfgProtocol = topLevelConfigProtocol cfg
-                          , extLedgerCfgLedger   = configLedger cfg
-                          })
-                       currentSlot
-                       unticked
+        let ticked = applyChainTick (ExtLedgerCfg cfg) currentSlot unticked
 
         -- Check if we are the leader
         proof <- do

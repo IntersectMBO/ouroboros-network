@@ -373,11 +373,11 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
-              (dualFullBlockConfigMain cfg)
+              (dualLedgerConfigMain cfg)
               dualBlockMain
               tickedDualLedgerStateMain
           , applyMaybeBlock
-              (dualFullBlockConfigAux cfg)
+              (dualLedgerConfigAux cfg)
               dualBlockAux
               tickedDualLedgerStateAux
               tickedDualLedgerStateAuxOrig
@@ -395,11 +395,11 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                      TickedDualLedgerState{..} =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
-                                    (dualFullBlockConfigMain cfg)
+                                    (dualLedgerConfigMain cfg)
                                     dualBlockMain
                                     tickedDualLedgerStateMain
         , dualLedgerStateAux    = reapplyMaybeBlock
-                                    (dualFullBlockConfigAux cfg)
+                                    (dualLedgerConfigAux cfg)
                                     dualBlockAux
                                     tickedDualLedgerStateAux
                                     tickedDualLedgerStateAuxOrig
@@ -709,7 +709,7 @@ type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
 --
 -- Returns state unchanged on 'Nothing'
 applyMaybeBlock :: UpdateLedger blk
-                => FullBlockConfig (LedgerState blk) blk
+                => LedgerConfig blk
                 -> Maybe blk
                 -> TickedLedgerState blk
                 -> LedgerState blk
@@ -721,10 +721,10 @@ applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
 --
 -- See also 'applyMaybeBlock'
 reapplyMaybeBlock :: UpdateLedger blk
-                  => FullBlockConfig (LedgerState blk) blk
+                  => LedgerConfig blk
                   -> Maybe blk
                   -> TickedLedgerState blk
-                -> LedgerState blk
+                  -> LedgerState blk
                   -> LedgerState blk
 reapplyMaybeBlock _   Nothing      _   st = st
 reapplyMaybeBlock cfg (Just block) tst _  = reapplyLedgerBlock cfg block tst

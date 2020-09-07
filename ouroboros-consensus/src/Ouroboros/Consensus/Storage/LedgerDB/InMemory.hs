@@ -328,7 +328,7 @@ apRef (Weaken     ap)  = apRef ap
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
 applyBlock :: forall m c l r b. (ApplyBlock l b, Monad m, c)
-           => FullBlockConfig l b
+           => LedgerCfg l
            -> Ap m l r b c
            -> LedgerDB l r -> m l
 applyBlock cfg ap db = case ap of
@@ -632,7 +632,7 @@ data ExceededRollback = ExceededRollback {
     }
 
 ledgerDbPush :: forall m c l r b. (ApplyBlock l b, Monad m, c)
-             => FullBlockConfig l b
+             => LedgerCfg l
              -> Ap m l r b c -> LedgerDB l r -> m (LedgerDB l r)
 ledgerDbPush cfg ap db =
     (\current' -> pushLedgerState current' (apRef ap) db) <$>
@@ -640,13 +640,13 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
-                 => FullBlockConfig l b
+                 => LedgerCfg l
                  -> [Ap m l r b c] -> LedgerDB l r -> m (LedgerDB l r)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l b, Monad m, c)
-               => FullBlockConfig l b
+               => LedgerCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l r b c]  -- ^ New blocks to apply
                -> LedgerDB l r
@@ -691,7 +691,7 @@ instance ( IsLedger l
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
   applyLedgerBlock cfg blk TickedLedgerDB{..} =
       push <$> applyLedgerBlock
-                 (castFullBlockConfig cfg)
+                 cfg
                  blk
                  tickedLedgerDbTicked
    where
@@ -700,7 +700,7 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
 
   reapplyLedgerBlock cfg blk TickedLedgerDB{..} =
       push $ reapplyLedgerBlock
-               (castFullBlockConfig cfg)
+               cfg
                blk
                tickedLedgerDbTicked
    where
@@ -719,15 +719,15 @@ triviallyResolve :: forall b a. Proxy b
 triviallyResolve _ = runIdentity . defaultResolveBlocks return
 
 ledgerDbPush' :: ApplyBlock l b
-              => FullBlockConfig l b -> b -> LedgerDB l b -> LedgerDB l b
+              => LedgerCfg l -> b -> LedgerDB l b -> LedgerDB l b
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: ApplyBlock l b
-                  => FullBlockConfig l b -> [b] -> LedgerDB l b -> LedgerDB l b
+                  => LedgerCfg l -> [b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l b. ApplyBlock l b
-                => FullBlockConfig l b
+                => LedgerCfg l
                 -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs db =
     case triviallyResolve (Proxy @b) $

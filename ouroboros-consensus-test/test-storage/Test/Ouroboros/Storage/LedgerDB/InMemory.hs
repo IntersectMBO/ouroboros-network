@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -251,15 +250,11 @@ data ChainSetup = ChainSetup {
     }
   deriving (Show)
 
-csBlockConfig :: ChainSetup -> FullBlockConfig (LedgerState TestBlock) TestBlock
+csBlockConfig :: ChainSetup -> LedgerConfig TestBlock
 csBlockConfig = csBlockConfig' . csParams
 
-csBlockConfig' :: LedgerDbParams -> FullBlockConfig (LedgerState TestBlock) TestBlock
-csBlockConfig' dbParams = FullBlockConfig {
-      blockConfigLedger = HardFork.defaultEraParams k slotLength
-    , blockConfigBlock  = TestBlockConfig (NumCoreNodes 1) -- Ledger DB doesn't care
-    , blockConfigCodec  = TestBlockCodecConfig
-    }
+csBlockConfig' :: LedgerDbParams -> LedgerConfig TestBlock
+csBlockConfig' dbParams = HardFork.defaultEraParams k slotLength
   where
     k          = ledgerDbSecurityParam dbParams
     slotLength = slotLengthFromSec 20
