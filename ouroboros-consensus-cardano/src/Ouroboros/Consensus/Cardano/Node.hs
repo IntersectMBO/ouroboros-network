@@ -243,9 +243,7 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
     where
       TopLevelConfig {
           topLevelConfigProtocol = CardanoConsensusConfig _ shelleyPartialConsensusCfg
-        , topLevelConfigBlock = FullBlockConfig {
-              blockConfigBlock = CardanoBlockConfig byronBlockCfg _
-            }
+        , topLevelConfigBlock    = CardanoBlockConfig byronBlockCfg _
         } = cfg
 
       TPraosParams { tpraosSlotsPerKESPeriod } = shelleyPartialConsensusCfg
@@ -294,10 +292,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     ProtocolInfo {
         pInfoConfig = topLevelConfigByron@TopLevelConfig {
             topLevelConfigProtocol = consensusConfigByron
-          , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = ledgerConfigByron
-              , blockConfigBlock  = blockConfigByron
-              }
+          , topLevelConfigLedger   = ledgerConfigByron
+          , topLevelConfigBlock    = blockConfigByron
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initLedgerStateByron
@@ -373,25 +369,23 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               :* Nil
               )
           }
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigLedger = HardForkLedgerConfig {
-                hardForkLedgerConfigK      = k
-              , hardForkLedgerConfigShape  = shape
-              , hardForkLedgerConfigPerEra = PerEraLedgerConfig
-                  (  WrapPartialLedgerConfig partialLedgerConfigByron
-                  :* WrapPartialLedgerConfig partialLedgerConfigShelley
-                  :* Nil
-                  )
-              }
-          , blockConfigBlock =
-              CardanoBlockConfig
-                blockConfigByron
-                blockConfigShelley
-          , blockConfigCodec =
-              CardanoCodecConfig
-                (configCodec topLevelConfigByron)
-                Shelley.ShelleyCodecConfig
+      , topLevelConfigLedger = HardForkLedgerConfig {
+            hardForkLedgerConfigK      = k
+          , hardForkLedgerConfigShape  = shape
+          , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+              (  WrapPartialLedgerConfig partialLedgerConfigByron
+              :* WrapPartialLedgerConfig partialLedgerConfigShelley
+              :* Nil
+              )
           }
+      , topLevelConfigBlock =
+          CardanoBlockConfig
+            blockConfigByron
+            blockConfigShelley
+      , topLevelConfigCodec =
+          CardanoCodecConfig
+            (configCodec topLevelConfigByron)
+            Shelley.ShelleyCodecConfig
       }
 
     blockForging :: Maybe (m (BlockForging m (CardanoBlock c)))
@@ -449,19 +443,15 @@ projByronTopLevelConfig cfg = byronCfg
   where
     TopLevelConfig {
         topLevelConfigProtocol = CardanoConsensusConfig byronConsensusCfg _
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigBlock  = CardanoBlockConfig  byronBlockCfg  _
-          , blockConfigLedger = CardanoLedgerConfig byronLedgerCfg _
-          , blockConfigCodec  = CardanoCodecConfig  byronCodecCfg  _
-          }
+      , topLevelConfigLedger   = CardanoLedgerConfig    byronLedgerCfg _
+      , topLevelConfigBlock    = CardanoBlockConfig     byronBlockCfg  _
+      , topLevelConfigCodec    = CardanoCodecConfig     byronCodecCfg  _
       } = cfg
 
     byronCfg :: TopLevelConfig ByronBlock
     byronCfg = TopLevelConfig {
         topLevelConfigProtocol = byronConsensusCfg
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigBlock  = byronBlockCfg
-          , blockConfigLedger = byronLedgerConfig byronLedgerCfg
-          , blockConfigCodec  = byronCodecCfg
-          }
+      , topLevelConfigLedger   = byronLedgerConfig byronLedgerCfg
+      , topLevelConfigBlock    = byronBlockCfg
+      , topLevelConfigCodec    = byronCodecCfg
       }

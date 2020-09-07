@@ -176,11 +176,9 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     topLevelConfig :: TopLevelConfig (ShelleyBlock era)
     topLevelConfig = TopLevelConfig {
         topLevelConfigProtocol = consensusConfig
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigLedger = ledgerConfig
-          , blockConfigBlock  = blockConfig
-          , blockConfigCodec  = ShelleyCodecConfig
-          }
+      , topLevelConfigLedger   = ledgerConfig
+      , topLevelConfigBlock    = blockConfig
+      , topLevelConfigCodec    = ShelleyCodecConfig
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock era))

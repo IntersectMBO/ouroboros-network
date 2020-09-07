@@ -90,19 +90,17 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
             topLevelConfigProtocol = PBftConfig {
                 pbftParams = params
               }
-          , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = DualLedgerConfig {
-                    dualLedgerConfigMain = concreteGenesis
-                  , dualLedgerConfigAux  = abstractConfig
-                  }
-              , blockConfigBlock = DualBlockConfig {
-                    dualBlockConfigMain = concreteConfig
-                  , dualBlockConfigAux  = ByronSpecBlockConfig
-                  }
-              , blockConfigCodec = DualCodecConfig {
-                    dualCodecConfigMain = mkByronCodecConfig concreteGenesis
-                  , dualCodecConfigAux  = ByronSpecCodecConfig
-                  }
+          , topLevelConfigLedger = DualLedgerConfig {
+                dualLedgerConfigMain = concreteGenesis
+              , dualLedgerConfigAux  = abstractConfig
+              }
+          , topLevelConfigBlock = DualBlockConfig {
+                dualBlockConfigMain = concreteConfig
+              , dualBlockConfigAux  = ByronSpecBlockConfig
+              }
+          , topLevelConfigCodec = DualCodecConfig {
+                dualCodecConfigMain = mkByronCodecConfig concreteGenesis
+              , dualCodecConfigAux  = ByronSpecCodecConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {

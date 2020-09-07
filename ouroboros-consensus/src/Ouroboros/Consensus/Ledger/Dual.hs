@@ -29,8 +29,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtValidationErrorMain
-  , dualFullBlockConfigMain
-  , dualFullBlockConfigAux
   , dualTopLevelConfigMain
   , ctxtDualMain
     -- * Type class family instances
@@ -173,29 +171,13 @@ instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   Splitting the config
 -------------------------------------------------------------------------------}
 
-dualFullBlockConfigMain ::
-     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
-  -> FullBlockConfig (LedgerState m) m
-dualFullBlockConfigMain FullBlockConfig{..} = FullBlockConfig{
-      blockConfigLedger = dualLedgerConfigMain blockConfigLedger
-    , blockConfigBlock  = dualBlockConfigMain  blockConfigBlock
-    , blockConfigCodec  = dualCodecConfigMain  blockConfigCodec
-    }
-
-dualFullBlockConfigAux ::
-     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
-  -> FullBlockConfig (LedgerState a) a
-dualFullBlockConfigAux FullBlockConfig{..} = FullBlockConfig{
-      blockConfigLedger = dualLedgerConfigAux blockConfigLedger
-    , blockConfigBlock  = dualBlockConfigAux  blockConfigBlock
-    , blockConfigCodec  = dualCodecConfigAux  blockConfigCodec
-    }
-
 -- | This is only used for block production
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       topLevelConfigProtocol = topLevelConfigProtocol
-    , topLevelConfigBlock    = dualFullBlockConfigMain topLevelConfigBlock
+    , topLevelConfigLedger   = dualLedgerConfigMain topLevelConfigLedger
+    , topLevelConfigBlock    = dualBlockConfigMain  topLevelConfigBlock
+    , topLevelConfigCodec    = dualCodecConfigMain  topLevelConfigCodec
     }
 
 {-------------------------------------------------------------------------------

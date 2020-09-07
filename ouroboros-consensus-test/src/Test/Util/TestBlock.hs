@@ -387,11 +387,9 @@ singleNodeTestConfig = TopLevelConfig {
         , bftSignKey = SignKeyMockDSIGN 0
         , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , topLevelConfigBlock = FullBlockConfig {
-          blockConfigLedger = eraParams
-        , blockConfigBlock  = TestBlockConfig numCoreNodes
-        , blockConfigCodec  = TestBlockCodecConfig
-        }
+    , topLevelConfigLedger = eraParams
+    , topLevelConfigBlock  = TestBlockConfig numCoreNodes
+    , topLevelConfigCodec  = TestBlockCodecConfig
     }
   where
     slotLength :: SlotLength

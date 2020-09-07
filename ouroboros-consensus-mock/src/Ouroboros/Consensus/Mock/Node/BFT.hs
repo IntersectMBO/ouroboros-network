@@ -39,11 +39,9 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
                   | n <- enumCoreNodes numCoreNodes
                   ]
               }
-          , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = SimpleLedgerConfig () eraParams
-              , blockConfigBlock  = SimpleBlockConfig securityParam
-              , blockConfigCodec  = SimpleCodecConfig securityParam
-              }
+          , topLevelConfigLedger = SimpleLedgerConfig () eraParams
+          , topLevelConfigBlock  = SimpleBlockConfig securityParam
+          , topLevelConfigCodec  = SimpleCodecConfig securityParam
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

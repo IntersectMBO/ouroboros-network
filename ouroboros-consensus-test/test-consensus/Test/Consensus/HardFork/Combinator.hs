@@ -266,27 +266,25 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* (WrapPartialConsensusConfig $ consensusConfigB nid)
                 :* Nil
             }
-        , topLevelConfigBlock = FullBlockConfig {
-              blockConfigLedger = HardForkLedgerConfig {
-                  hardForkLedgerConfigK      = k
-                , hardForkLedgerConfigShape  = shape
-                , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
-                       (WrapPartialLedgerConfig $ ledgerConfigA nid)
-                    :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
-                    :* Nil
-                }
-            , blockConfigBlock = HardForkBlockConfig {
-                  hardForkBlockConfigPerEra = PerEraBlockConfig $
-                       blockConfigA nid
-                    :* blockConfigB nid
-                    :* Nil
-                }
-            , blockConfigCodec = HardForkCodecConfig {
-                  hardForkCodecConfigPerEra = PerEraCodecConfig $
-                       CCfgA
-                    :* CCfgB
-                    :* Nil
-                }
+        , topLevelConfigLedger = HardForkLedgerConfig {
+              hardForkLedgerConfigK      = k
+            , hardForkLedgerConfigShape  = shape
+            , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+                   (WrapPartialLedgerConfig $ ledgerConfigA nid)
+                :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
+                :* Nil
+            }
+        , topLevelConfigBlock = HardForkBlockConfig {
+              hardForkBlockConfigPerEra = PerEraBlockConfig $
+                   blockConfigA nid
+                :* blockConfigB nid
+                :* Nil
+            }
+        , topLevelConfigCodec = HardForkCodecConfig {
+              hardForkCodecConfigPerEra = PerEraCodecConfig $
+                   CCfgA
+                :* CCfgB
+                :* Nil
             }
         }
 

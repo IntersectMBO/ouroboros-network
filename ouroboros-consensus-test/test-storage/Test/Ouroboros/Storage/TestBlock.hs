@@ -689,14 +689,12 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           , bftSignKey = SignKeyMockDSIGN 0
           , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigLedger = eraParams
-          , blockConfigBlock  = TestBlockConfig {
-                testBlockEBBsAllowed  = chunkCanContainEBB
-              , testBlockNumCoreNodes = numCoreNodes
-              }
-          , blockConfigCodec  = TestBlockCodecConfig
+      , topLevelConfigLedger = eraParams
+      , topLevelConfigBlock  = TestBlockConfig {
+            testBlockEBBsAllowed  = chunkCanContainEBB
+          , testBlockNumCoreNodes = numCoreNodes
           }
+      , topLevelConfigCodec  = TestBlockCodecConfig
       }
   where
     slotLength :: SlotLength

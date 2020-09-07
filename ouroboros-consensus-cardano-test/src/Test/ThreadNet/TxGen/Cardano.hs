@@ -73,7 +73,7 @@ instance CardanoHardForkConstraints c => TxGen (CardanoBlock c) where
   testGenTxs (CoreNodeId i) _ncn curSlot cfg extra ls =
       pure $ maybeToList $ migrateUTxO migrationInfo curSlot lcfg ls
     where
-      lcfg = blockConfigLedger $ topLevelConfigBlock cfg
+      lcfg = topLevelConfigLedger cfg
 
       CardanoTxGenExtra
         { ctgeByronGenesisKeys
