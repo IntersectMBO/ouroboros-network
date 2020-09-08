@@ -296,12 +296,10 @@ instance Isomorphic TopLevelConfig where
         (inject       $ configCodec     tlc)
     where
       eraParams = getEraParams tlc
-      k         = configSecurityParam tlc
 
       auxLedger :: LedgerConfig blk -> LedgerConfig (HardForkBlock '[blk])
       auxLedger cfg = HardForkLedgerConfig {
-            hardForkLedgerConfigK      = k
-          , hardForkLedgerConfigShape  = History.singletonShape eraParams
+            hardForkLedgerConfigShape  = History.singletonShape eraParams
           , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
                  WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @blk) cfg )
               :* Nil

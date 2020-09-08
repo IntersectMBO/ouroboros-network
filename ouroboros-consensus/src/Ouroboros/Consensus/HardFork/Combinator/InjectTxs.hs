@@ -60,9 +60,9 @@ matchTx ::
      SListI xs
   => InPairs InjectTx xs
   -> NS GenTx xs
-  -> HardForkState_ g f xs
+  -> HardForkState f xs
   -> Either (Mismatch GenTx (Current f) xs)
-            (HardForkState_ g (Product GenTx f) xs)
+            (HardForkState (Product GenTx f) xs)
 matchTx is tx =
       fmap (HardForkState . hmap distrib)
     . matchTx' is tx

@@ -105,7 +105,7 @@ data instance Ticked (LedgerState (HardForkBlock xs)) =
     TickedHardForkLedgerState {
         tickedHardForkLedgerStateTransition :: !TransitionInfo
       , tickedHardForkLedgerStatePerEra     ::
-          !(HardForkState_ LedgerState (Ticked :.: LedgerState) xs)
+          !(HardForkState (Ticked :.: LedgerState) xs)
       }
   deriving (Generic)
 
@@ -176,11 +176,10 @@ instance CanHardFork xs
           throwError $ HardForkLedgerErrorWrongEra . MismatchEraInfo $
             Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
         Right matched ->
-          fmap (HardForkLedgerState . State.tickAllPast k) $ hsequence' $
+          fmap HardForkLedgerState $ hsequence' $
             hczipWith3 proxySingle apply cfgs errInjections matched
     where
       cfgs = distribLedgerConfig ei cfg
-      k    = hardForkLedgerConfigK cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
                (hardForkLedgerConfigShape cfg)
                transition
@@ -198,11 +197,10 @@ instance CanHardFork xs
           -- so it can't be from the wrong era
           error "reapplyLedgerBlock: can't be from other era"
         Right matched ->
-          HardForkLedgerState . State.tickAllPast k $
+          HardForkLedgerState $
             hczipWith proxySingle reapply cfgs matched
     where
       cfgs = distribLedgerConfig ei cfg
-      k    = hardForkLedgerConfigK cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
                (hardForkLedgerConfigShape cfg)
                transition
@@ -306,12 +304,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition = transition
         , tickedHardForkLedgerViewPerEra     =
-            State.dropAllPast $
-              hczipWith
-                proxySingle
-                tickedViewOne
-                cfgs
-                ticked
+            hczipWith proxySingle tickedViewOne cfgs ticked
         }
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -393,13 +386,13 @@ data AnnForecast f blk = AnnForecast {
 
 -- | Change a telescope of a forecast into a forecast of a telescope
 mkHardForkForecast :: InPairs (TranslateForecast f) xs
-                   -> Telescope (Past g) (Current (AnnForecast f)) xs
+                   -> Telescope (K Past) (Current (AnnForecast f)) xs
                    -> Forecast (HardForkLedgerView_ f xs)
 mkHardForkForecast =
     go
   where
     go :: InPairs (TranslateForecast f) xs
-       -> Telescope (Past g) (Current (AnnForecast f)) xs
+       -> Telescope (K Past) (Current (AnnForecast f)) xs
        -> Forecast (HardForkLedgerView_ f xs)
     go PNil         (TZ f)      = forecastFinalEra f
     go (PCons g _)  (TZ f)      = forecastNotFinal g f
@@ -463,7 +456,7 @@ forecastNotFinal g (Current start AnnForecast{..}) =
 
           return $ TickedHardForkLedgerView {
               tickedHardForkLedgerViewPerEra = HardForkState $
-                TS (Past start end NoSnapshot) $
+                TS (K (Past start end)) $
                 TZ (Current end (Comp translated))
               -- See documentation of 'TransitionImpossible' for motivation
             , tickedHardForkLedgerViewTransition =
@@ -489,14 +482,14 @@ forecastNotFinal g (Current start AnnForecast{..}) =
     mEnd :: Maybe Bound
     mEnd = History.mkUpperBound annForecastEraParams start <$> annForecastNext
 
-shiftView :: Past g blk
+shiftView :: K Past blk
           -> Ticked (HardForkLedgerView_ f (blk' : blks))
           -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
 shiftView past TickedHardForkLedgerView{..} = TickedHardForkLedgerView {
       tickedHardForkLedgerViewTransition = tickedHardForkLedgerViewTransition
     , tickedHardForkLedgerViewPerEra =
           HardForkState
-        . TS (past { pastSnapshot = NoSnapshot })
+        . TS past
         . getHardForkState
         $ tickedHardForkLedgerViewPerEra
     }

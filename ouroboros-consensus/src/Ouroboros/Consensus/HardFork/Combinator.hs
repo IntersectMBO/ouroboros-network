@@ -76,10 +76,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as X
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match as X
                      (Mismatch (..))
 
--- Definition of HardForkState_ (required to define serialisation code)
+-- Definition of HardForkState (required to define serialisation code)
 -- Also export functions required to define 'protocolInfo'.
 import           Ouroboros.Consensus.HardFork.Combinator.State as X
-                     (HardForkState, HardForkState_ (..), initHardForkState)
+                     (HardForkState (..), initHardForkState)
 
 -- Definition of 'InjectTx' (required to define tx injections)
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X

@@ -14,14 +14,13 @@
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
   , toTelescope
-  , toTelescope'
   ) where
 
 import           Data.Coerce
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (NP (..), NS (..), SListI, lengthSList)
+import           Data.SOP.Strict (K (..), NP (..), NS (..), SListI, lengthSList)
 
 import           Test.QuickCheck
 
@@ -83,13 +82,13 @@ arbitraryHardForkState
   :: forall f c a.
      ( Arbitrary (f ByronBlock)
      , Arbitrary (f (ShelleyBlock (ShelleyEra c)))
-     , Coercible a (HardForkState_ f f (CardanoEras c))
+     , Coercible a (HardForkState f (CardanoEras c))
      )
   => Proxy f
   -> Gen a
-arbitraryHardForkState p = toTelescope' p <$> oneof
+arbitraryHardForkState p = toTelescope p <$> oneof
     [ Left  <$> genCurrent (Proxy @ByronBlock)
-    , Right <$> ((,) <$> genPast    (Proxy @ByronBlock)
+    , Right <$> ((,) <$> genPast
                      <*> genCurrent (Proxy @(ShelleyBlock (ShelleyEra c))))
     ]
   where
@@ -99,17 +98,8 @@ arbitraryHardForkState p = toTelescope' p <$> oneof
       -> Gen (Current f blk)
     genCurrent _ = Current <$> arbitrary <*> (arbitrary @(f blk))
 
-    genPast
-      :: forall blk. Arbitrary (f blk)
-      => Proxy blk
-      -> Gen (Past f blk)
-    genPast _ = Past
-      <$> arbitrary
-      <*> arbitrary
-      <*> oneof
-            [ Snapshot <$> arbitrary <*> arbitrary @(f blk)
-            , return NoSnapshot
-            ]
+    genPast :: Gen Past
+    genPast = Past <$> arbitrary <*> arbitrary
 
 instance (c ~ MockCryptoCompatByron, Era (ShelleyEra c))
       => Arbitrary (CardanoLedgerState c) where
@@ -421,21 +411,15 @@ instance c ~ MockCryptoCompatByron
       eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock (ShelleyEra c)))
 
 {-------------------------------------------------------------------------------
-  Auxiliary functions
+  Auxiliary
 -------------------------------------------------------------------------------}
 
-toTelescope :: Coercible a (HardForkState_ g f '[x, y])
-            => proxy g
-            -> proxy f
-            -> Either (Current f x) (Past g x, Current f y) -> a
-toTelescope _ _ = coerce . HardForkState . aux
+toTelescope :: Coercible a (HardForkState f '[x, y])
+            => proxy f
+            -> Either (Current f x) (Past, Current f y) -> a
+toTelescope _ = coerce . HardForkState . aux
   where
-    aux :: Either (Current f x) (Past g x, Current f y)
-        -> Telescope (Past g) (Current f) '[x, y]
+    aux :: Either (Current f x) (Past, Current f y)
+        -> Telescope (K Past) (Current f) '[x, y]
     aux (Left fx)        = TZ fx
-    aux (Right (gx, fy)) = TS gx (TZ fy)
-
-toTelescope' :: Coercible a (HardForkState f '[x, y])
-             => proxy f
-             -> Either (Current f x) (Past f x, Current f y) -> a
-toTelescope' p = toTelescope p p
+    aux (Right (gx, fy)) = TS (K gx) (TZ fy)

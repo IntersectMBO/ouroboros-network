@@ -12,7 +12,7 @@
 
 -- | Intended for qualified import
 --
--- > import Ouroboros.Consensus.HardFork.Combinator.State (HardForkState_(..))
+-- > import Ouroboros.Consensus.HardFork.Combinator.State (HardForkState(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 module Ouroboros.Consensus.HardFork.Combinator.State (
     module X
@@ -62,9 +62,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
   GetTip
 -------------------------------------------------------------------------------}
 
-getTip :: forall g f xs. CanHardFork xs
+getTip :: forall f xs. CanHardFork xs
        => (forall blk. SingleEraBlock blk => f blk -> Point blk)
-       -> HardForkState_ g f xs -> Point (HardForkBlock xs)
+       -> HardForkState f xs -> Point (HardForkBlock xs)
 getTip getLedgerTip =
       hcollapse
     . hcmap proxySingle (K . injPoint . getLedgerTip)
@@ -80,14 +80,14 @@ getTip getLedgerTip =
   Recovery
 -------------------------------------------------------------------------------}
 
--- | Recover 'HardForkState_' from partial information
+-- | Recover 'HardForkState' from partial information
 --
 -- The primary goal of this is to make sure that for the /current/ state we
 -- really only need to store the underlying @f@. It is not strictly essential
 -- that this is possible but it helps with the unary hardfork case, and it may
 -- in general help with binary compatibility.
-recover :: forall g f xs. CanHardFork xs
-        => Telescope (Past g) f xs -> HardForkState_ g f xs
+recover :: forall f xs. CanHardFork xs
+        => Telescope (K Past) f xs -> HardForkState f xs
 recover =
     case isNonEmpty (Proxy @xs) of
       ProofNonEmpty {} ->
@@ -96,7 +96,7 @@ recover =
             (\(Pair _ past) -> past)
             recoverCurrent
         . Telescope.scanl
-            (InPairs.hpure $ ScanNext $ const $ K . pastEnd)
+            (InPairs.hpure $ ScanNext $ const $ K . pastEnd . unK)
             (K History.initBound)
   where
     recoverCurrent :: Product (K History.Bound) f blk -> Current f blk
@@ -111,7 +111,7 @@ recover =
 
 mostRecentTransitionInfo :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
-                         -> HardForkState_ g LedgerState xs
+                         -> HardForkState LedgerState xs
                          -> TransitionInfo
 mostRecentTransitionInfo HardForkLedgerConfig{..} st =
     hcollapse $
@@ -136,7 +136,7 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
 
 reconstructSummaryLedger :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
-                         -> HardForkState_ g LedgerState xs
+                         -> HardForkState LedgerState xs
                          -> History.Summary xs
 reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
     reconstructSummary
@@ -150,7 +150,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 -- It should not be stored.
 epochInfoLedger :: All SingleEraBlock xs
                 => HardForkLedgerConfig xs
-                -> HardForkState_ g LedgerState xs
+                -> HardForkState LedgerState xs
                 -> EpochInfo Identity
 epochInfoLedger cfg st =
     History.snapshotEpochInfo $
@@ -160,7 +160,7 @@ epochInfoLedger cfg st =
 epochInfoPrecomputedTransitionInfo ::
      History.Shape xs
   -> TransitionInfo
-  -> HardForkState_ g f xs
+  -> HardForkState f xs
   -> EpochInfo Identity
 epochInfoPrecomputedTransitionInfo shape transition st =
     History.snapshotEpochInfo $
@@ -216,12 +216,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     howExtend :: Translate LedgerState blk blk'
               -> History.Bound
               -> Current LedgerState blk
-              -> (Past LedgerState blk, Current LedgerState blk')
+              -> (K Past blk, Current LedgerState blk')
     howExtend f currentEnd cur = (
-          Past {
+          K Past {
               pastStart    = currentStart cur
             , pastEnd      = currentEnd
-            , pastSnapshot = Snapshot 0 (currentState cur)
             }
         , Current {
               currentStart = currentEnd

@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkLedgerView, HardForkLedgerView_ (..),
                      Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
-                     HardForkState_, Translate (..))
+                     HardForkState, Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
@@ -156,9 +156,9 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
 data instance Ticked (HardForkChainDepState xs) =
     TickedHardForkChainDepState {
         tickedHardForkChainDepStatePerEra ::
-             HardForkState_ WrapChainDepState (Ticked :.: WrapChainDepState) xs
+             HardForkState (Ticked :.: WrapChainDepState) xs
 
-        -- 'EpochInfo' constructed from the ticked 'LedgerView'
+        -- | 'EpochInfo' constructed from the ticked 'LedgerView'
       , tickedHardForkChainDepStateEpochInfo :: EpochInfo Identity
       }
 
@@ -297,7 +297,6 @@ update HardForkConsensusConfig{..}
             mismatch
       Right matched ->
            hsequence'
-         . State.tickAllPast hardForkConsensusConfigK
          . hczipWith3 proxySingle (updateEra ei slot) cfgs errInjections
          $ matched
   where
@@ -342,8 +341,7 @@ reupdate HardForkConsensusConfig{..}
             (LedgerEraInfo . chainDepStateInfo . State.currentState)
             mismatch
       Right matched ->
-           State.tickAllPast hardForkConsensusConfigK
-         . hczipWith proxySingle (reupdateEra ei slot) cfgs
+           hczipWith proxySingle (reupdateEra ei slot) cfgs
          $ matched
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra

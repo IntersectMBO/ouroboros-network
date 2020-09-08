@@ -376,8 +376,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               )
           }
       , topLevelConfigLedger = HardForkLedgerConfig {
-            hardForkLedgerConfigK      = k
-          , hardForkLedgerConfigShape  = shape
+            hardForkLedgerConfigShape  = shape
           , hardForkLedgerConfigPerEra = PerEraLedgerConfig
               (  WrapPartialLedgerConfig partialLedgerConfigByron
               :* WrapPartialLedgerConfig partialLedgerConfigShelley
@@ -463,8 +462,7 @@ ledgerConfigCardano genesisByron
                     genesisShelley  maxMajorPV
                     triggerHardFork mbLowerBound =
     HardForkLedgerConfig {
-        hardForkLedgerConfigK      = k
-      , hardForkLedgerConfigShape  = shape
+        hardForkLedgerConfigShape  = shape
       , hardForkLedgerConfigPerEra = PerEraLedgerConfig
           (  WrapPartialLedgerConfig partialLedgerConfigByron
           :* WrapPartialLedgerConfig partialLedgerConfigShelley
@@ -474,9 +472,6 @@ ledgerConfigCardano genesisByron
   where
     -- Byron
 
-    kByron :: SecurityParam
-    kByron = Byron.genesisSecurityParam genesisByron
-
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
           byronLedgerConfig = genesisByron
@@ -485,9 +480,6 @@ ledgerConfigCardano genesisByron
 
     -- Shelley
 
-    kShelley :: SecurityParam
-    kShelley = SecurityParam $ sgSecurityParam genesisShelley
-
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
@@ -495,9 +487,6 @@ ledgerConfigCardano genesisByron
           maxMajorPV
 
     -- Cardano
-
-    k :: SecurityParam
-    k = assert (kByron == kShelley) kByron
 
     shape :: History.Shape (CardanoEras c)
     shape = History.Shape $
