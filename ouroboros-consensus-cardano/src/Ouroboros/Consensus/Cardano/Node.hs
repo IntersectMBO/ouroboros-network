@@ -39,9 +39,9 @@ import           Data.SOP.Strict (NP (..), hd, unK)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
-import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Genesis as Byron.Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
-import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update as Byron.Update
 import           Cardano.Prelude (Natural, cborError)
 
 import           Ouroboros.Consensus.Block
@@ -258,10 +258,10 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
 protocolInfoCardano
   :: forall c m. (IOLike m, CardanoHardForkConstraints c)
      -- Byron
-  => Genesis.Config
+  => Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
-  -> Update.ProtocolVersion
-  -> Update.SoftwareVersion
+  -> Byron.Update.ProtocolVersion
+  -> Byron.Update.SoftwareVersion
   -> Maybe ByronLeaderCredentials
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
@@ -431,7 +431,7 @@ protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
 -------------------------------------------------------------------------------}
 
 -- | Create the initial 'LedgerState' based on the given Byron genesis config.
-initialLedgerStateCardano :: Genesis.Config -> LedgerState (CardanoBlock c)
+initialLedgerStateCardano :: Byron.Genesis.Config -> LedgerState (CardanoBlock c)
 initialLedgerStateCardano =
       HardForkLedgerState
     . initHardForkState
@@ -441,7 +441,7 @@ initialLedgerStateCardano =
 ledgerConfigCardano ::
      forall c.
      -- Byron
-     Genesis.Config
+     Byron.Genesis.Config
 
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
