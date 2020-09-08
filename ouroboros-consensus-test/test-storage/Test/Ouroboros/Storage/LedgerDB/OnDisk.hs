@@ -64,7 +64,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Ledger.Abstract as Lgr
-import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -130,7 +129,7 @@ class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
   genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
 
 type LedgerErr t = Lgr.LedgerErr (LedgerSt t)
-type LedgerCfg t = FullBlockConfig (LedgerSt t) (BlockVal t)
+type LedgerCfg t = Lgr.LedgerCfg (LedgerSt t)
 
 refValPair :: LUT t => Proxy t -> BlockVal t -> (BlockRef t, BlockVal t)
 refValPair p b = (blockRef p b, b)
@@ -166,11 +165,7 @@ instance LUT 'LedgerSimple where
   ledgerApply _ c b = runExcept . Lgr.tickThenApply c b
   blockRef      _ b = b
 
-  ledgerConfig _ dbParams = FullBlockConfig {
-        blockConfigLedger = HardFork.defaultEraParams k slotLength
-      , blockConfigBlock  = TestBlockConfig (NumCoreNodes 1) -- Ledger DB doesn't care
-      , blockConfigCodec  = TestBlockCodecConfig
-      }
+  ledgerConfig _ dbParams = HardFork.defaultEraParams k slotLength
     where
       k          = ledgerDbSecurityParam dbParams
       slotLength = slotLengthFromSec 20
@@ -552,7 +547,7 @@ data StandaloneDB m t = DB {
     , dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
 
       -- | Ledger config
-    , dbLedgerCfg :: FullBlockConfig (LedgerSt t) (BlockVal t)
+    , dbLedgerCfg :: LedgerCfg t
     }
 
 initStandaloneDB :: forall m t. (IOLike m, LUT t)

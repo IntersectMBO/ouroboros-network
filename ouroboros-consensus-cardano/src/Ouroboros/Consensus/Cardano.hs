@@ -30,8 +30,6 @@ module Ouroboros.Consensus.Cardano (
 import           Data.Kind (Type)
 import           Data.Type.Equality
 
-import           Cardano.Prelude (Natural)
-
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
@@ -99,7 +97,7 @@ data Protocol (m :: Type -> Type) blk p where
        -- WARNING: chains using different values of this parameter will be
        -- mutually incompatible.
     -> ProtVer
-    -> Natural -- ^ Max major protocol version
+    -> MaxMajorProtVer
     -> Maybe (TPraosLeaderCredentials StandardShelley)
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
 
@@ -120,7 +118,7 @@ data Protocol (m :: Type -> Type) blk p where
        -- WARNING: chains using different values of this parameter will be
        -- mutually incompatible.
     -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
-    -> Natural -- ^ Max major protocol version
+    -> MaxMajorProtVer
     -> Maybe (TPraosLeaderCredentials StandardShelley)
        -- Hard fork
     -> Maybe EpochNo

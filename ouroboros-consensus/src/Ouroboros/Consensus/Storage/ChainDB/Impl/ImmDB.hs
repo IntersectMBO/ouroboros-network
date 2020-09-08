@@ -242,7 +242,6 @@ openDB ImmDbArgs { immHasFS = SomeHasFS hasFS, ..} = do
       , prefixLen   = reconstructPrefixLen (Proxy @(Header blk))
       }
     parser = ImmDB.chunkFileParser
-               immCodecConfig
                hasFS
                (decodeDisk immCodecConfig)
                immCheckIntegrity

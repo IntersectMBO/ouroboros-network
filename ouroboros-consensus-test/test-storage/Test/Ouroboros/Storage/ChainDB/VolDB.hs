@@ -228,14 +228,13 @@ chainDiffForkTip =
 
 headerToBlockInfo ::
      (GetHeader blk, GetPrevHash blk)
-  => CodecConfig blk
-  -> Header blk
+  => Header blk
   -> VolDB.BlockInfo (HeaderHash blk)
-headerToBlockInfo cfg hdr = VolDB.BlockInfo {
+headerToBlockInfo hdr = VolDB.BlockInfo {
       bbid          = headerHash hdr
     , bslot         = blockSlot  hdr
     , bbno          = blockNo    hdr
-    , bpreBid       = fromChainHash (headerPrevHash cfg hdr)
+    , bpreBid       = fromChainHash (headerPrevHash hdr)
     , bisEBB        = headerToIsEBB hdr
     -- We don't care about those two
     , bheaderOffset = 0
@@ -244,11 +243,10 @@ headerToBlockInfo cfg hdr = VolDB.BlockInfo {
 
 headersToBlockInfo ::
      (GetHeader blk, GetPrevHash blk, Foldable f)
-  => CodecConfig blk
-  -> f (Header blk)
+  => f (Header blk)
   -> Map (HeaderHash blk) (VolDB.BlockInfo (HeaderHash blk))
-headersToBlockInfo cfg = foldMap $ \hdr ->
-    Map.singleton (headerHash hdr) (headerToBlockInfo cfg hdr)
+headersToBlockInfo = foldMap $ \hdr ->
+    Map.singleton (headerHash hdr) (headerToBlockInfo hdr)
 
 instance Arbitrary (ReachableSetup TestBlock) where
   arbitrary = do
@@ -258,13 +256,10 @@ instance Arbitrary (ReachableSetup TestBlock) where
         , (1, generateDisconnectedFork (currentChain, mbAnchorHdr))
         ]
       let blockInfo = forkBlockInfo
-                   <> headersToBlockInfo ccfg mbAnchorHdr
-                   <> headersToBlockInfo ccfg (AF.toOldestFirst currentChain)
+                   <> headersToBlockInfo mbAnchorHdr
+                   <> headersToBlockInfo (AF.toOldestFirst currentChain)
       return ReachableSetup { currentChain, forkTip, fork, blockInfo }
     where
-      ccfg :: CodecConfig TestBlock
-      ccfg = TestBlockCodecConfig
-
       generateConnectedFork (currentChain, mbAnchorHdr) = do
           (forkTip, fork, headersOnFork) <-
             generateFork (currentChain, mbAnchorHdr)
@@ -273,7 +268,7 @@ instance Arbitrary (ReachableSetup TestBlock) where
           return (
               forkTip
             , Just fork
-            , headersToBlockInfo ccfg headersOnFork
+            , headersToBlockInfo headersOnFork
             )
 
       generateDisconnectedFork (currentChain, mbAnchorHdr) = do
@@ -282,7 +277,7 @@ instance Arbitrary (ReachableSetup TestBlock) where
           return (
               forkTip
             , Nothing
-            , headersToBlockInfo ccfg disconnectedHeaders
+            , headersToBlockInfo disconnectedHeaders
             )
 
   shrink ReachableSetup { currentChain, forkTip, fork, blockInfo } =

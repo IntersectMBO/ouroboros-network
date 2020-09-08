@@ -92,7 +92,7 @@ instance HasHeader ByronSpecHeader where
       }
 
 instance GetPrevHash ByronSpecBlock where
-  headerPrevHash _cfg = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
+  headerPrevHash = fromByronSpecPrevHash id . Spec._bhPrevHash . byronSpecHeader
 
 {-------------------------------------------------------------------------------
   Config

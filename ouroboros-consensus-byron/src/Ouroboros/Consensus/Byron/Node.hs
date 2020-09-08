@@ -161,11 +161,9 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             topLevelConfigProtocol = PBftConfig {
                 pbftParams = byronPBftParams compactedGenesisConfig mSigThresh
               }
-          , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = compactedGenesisConfig
-              , blockConfigBlock  = mkByronConfig compactedGenesisConfig pVer sVer
-              , blockConfigCodec  = mkByronCodecConfig compactedGenesisConfig
-              }
+          , topLevelConfigLedger = compactedGenesisConfig
+          , topLevelConfigBlock  = mkByronConfig compactedGenesisConfig pVer sVer
+          , topLevelConfigCodec  = mkByronCodecConfig compactedGenesisConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             -- Important: don't pass the compacted genesis config to

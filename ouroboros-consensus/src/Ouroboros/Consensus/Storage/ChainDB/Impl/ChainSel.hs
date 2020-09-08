@@ -454,7 +454,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         return tipPoint
 
       -- The block @b@ fits onto the end of our current chain
-      | pointHash tipPoint == headerPrevHash (configCodec cdbTopLevelConfig) hdr -> do
+      | pointHash tipPoint == headerPrevHash hdr -> do
         -- ### Add to current chain
         trace (TryAddToCurrentChain p)
         addToCurrentChain succsOf' curChainAndLedger

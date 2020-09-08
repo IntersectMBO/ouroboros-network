@@ -144,7 +144,7 @@ injExamplesShelley Golden.Examples {..} = Golden.Examples {
       ]
 
 byronEraParams :: History.EraParams
-byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.dummyConfig
+byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.ledgerConfig
 
 shelleyEraParams :: History.EraParams
 shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis

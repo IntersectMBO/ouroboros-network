@@ -130,12 +130,12 @@ genesisBlockInfo = BlockInfo
 
 
 blockInfo :: (GetPrevHash b, HasCreator b)
-          => CodecConfig b -> b -> BlockInfo b
-blockInfo cfg b = BlockInfo
+          => b -> BlockInfo b
+blockInfo b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator b
     , biHash     = BlockHash $ blockHash b
-    , biPrevious = Just $ blockPrevHash cfg b
+    , biPrevious = Just $ blockPrevHash b
     }
 
 data NodeLabel = NodeLabel
@@ -169,16 +169,15 @@ instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
 tracesToDot :: forall b. (GetPrevHash b, HasCreator b)
-            => CodecConfig b
-            -> Map NodeId (NodeOutput b)
+            => Map NodeId (NodeOutput b)
             -> String
-tracesToDot cfg traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
+tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
     chainBlockInfos :: Chain b
                     -> Map (ChainHash b) (BlockInfo b)
     chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
-        f m b = let info = blockInfo cfg b
+        f m b = let info = blockInfo b
                 in  Map.insert (biHash info) info m
 
     blockInfos :: Map (ChainHash b) (BlockInfo b)

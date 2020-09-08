@@ -28,7 +28,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , completeLedgerConfig''
   , completeConsensusConfig'
   , completeConsensusConfig''
-  , distribFullBlockConfig
+  , distribLedgerConfig
   , distribTopLevelConfig
     -- ** Convenience re-exports
   , EpochInfo
@@ -179,27 +179,16 @@ completeConsensusConfig'' ei =
     . completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
     . unwrapPartialConsensusConfig
 
-distribFullBlockConfig :: CanHardFork xs
-                       => EpochInfo Identity
-                       -> FullBlockConfig (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
-                       -> NP WrapFullBlockConfig xs
-distribFullBlockConfig ei cfg =
-    hcpure proxySingle
-      (fn_3 (\cfgLedger cfgBlock cfgCodec -> WrapFullBlockConfig $
-           FullBlockConfig {
-               blockConfigLedger = completeLedgerConfig' ei cfgLedger
-             , blockConfigBlock  = cfgBlock
-             , blockConfigCodec  = cfgCodec
-             }))
-    `hap`
-      (getPerEraLedgerConfig $
-         hardForkLedgerConfigPerEra (blockConfigLedger cfg))
-    `hap`
-      (getPerEraBlockConfig $
-         hardForkBlockConfigPerEra (blockConfigBlock cfg))
-    `hap`
-      (getPerEraCodecConfig $
-         hardForkCodecConfigPerEra (blockConfigCodec cfg))
+distribLedgerConfig ::
+     CanHardFork xs
+  => EpochInfo Identity
+  -> LedgerConfig (HardForkBlock xs)
+  -> NP WrapLedgerConfig xs
+distribLedgerConfig ei cfg =
+    hcmap
+      proxySingle
+      (completeLedgerConfig'' ei)
+      (getPerEraLedgerConfig $ hardForkLedgerConfigPerEra cfg)
 
 distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity

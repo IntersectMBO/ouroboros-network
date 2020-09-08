@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , TPraosIsLeader (..)
   , mkShelleyGlobals
   , TPraosState
+  , MaxMajorProtVer (..)
     -- * Crypto
   , Era
   , TPraosCrypto
@@ -156,6 +157,15 @@ type TPraosValidateView era = SL.BHeader era
   Protocol proper
 -------------------------------------------------------------------------------}
 
+-- | The maximum major protocol version.
+--
+-- Must be at least the current major protocol version. For Cardano mainnet, the
+-- Shelley era has major protocol verison __2__.
+newtype MaxMajorProtVer = MaxMajorProtVer {
+      getMaxMajorProtVer :: Natural
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
 data TPraos era
 
 -- | TPraos parameters that are node independent
@@ -176,7 +186,7 @@ data TPraosParams = TPraosParams {
     , tpraosQuorum            :: !Word64
       -- | All blocks invalid after this protocol version, see
       -- 'Globals.maxMajorPV'.
-    , tpraosMaxMajorPV        :: !Natural
+    , tpraosMaxMajorPV        :: !MaxMajorProtVer
       -- | Maximum number of lovelace in the system, see
       -- 'Globals.maxLovelaceSupply'.
     , tpraosMaxLovelaceSupply :: !Word64
@@ -194,7 +204,7 @@ data TPraosParams = TPraosParams {
   deriving (Generic, NoUnexpectedThunks)
 
 mkTPraosParams
-  :: Natural   -- ^ Max major protocol version
+  :: MaxMajorProtVer
   -> SL.Nonce  -- ^ Initial nonce
   -> SL.ShelleyGenesis era
   -> TPraosParams
@@ -429,7 +439,7 @@ mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
     , securityParameter             = k
     , maxKESEvo                     = tpraosMaxKESEvo
     , quorum                        = tpraosQuorum
-    , maxMajorPV                    = tpraosMaxMajorPV
+    , maxMajorPV                    = getMaxMajorProtVer tpraosMaxMajorPV
     , maxLovelaceSupply             = tpraosMaxLovelaceSupply
     , activeSlotCoeff               = tpraosLeaderF
     , networkId                     = tpraosNetworkId

@@ -60,7 +60,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
-import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
@@ -93,8 +93,8 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     Ticked (TickedPraosLedgerView))
+import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
+                     TPraosCrypto, Ticked (TickedPraosLedgerView))
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -139,9 +139,9 @@ shelleyEraParams genesis = HardFork.EraParams {
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
   -> EpochInfo Identity
-  -> Natural
+  -> MaxMajorProtVer
   -> ShelleyLedgerConfig era
-mkShelleyLedgerConfig genesis epochInfo maxMajorPV =
+mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
         shelleyLedgerGenesis   = genesis
       , shelleyLedgerGlobals   = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
@@ -220,7 +220,7 @@ instance TPraosCrypto era
 applyHelper ::
      (TPraosCrypto era, Monad m)
   => (SL.Globals -> SL.ShelleyState era -> SL.Block era -> m (SL.ShelleyState era))
-  -> FullBlockConfig (LedgerState (ShelleyBlock era)) (ShelleyBlock era)
+  -> LedgerConfig (ShelleyBlock era)
   -> ShelleyBlock era
   -> Ticked (LedgerState (ShelleyBlock era))
   -> m (LedgerState (ShelleyBlock era))
@@ -232,7 +232,7 @@ applyHelper f cfg blk (TickedShelleyLedgerState _ oldShelleyState) = do
       , shelleyState = newShelleyState
       }
   where
-    globals = shelleyLedgerGlobals (blockConfigLedger cfg)
+    globals = shelleyLedgerGlobals cfg
 
 instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
   protocolLedgerView _cfg = TickedPraosLedgerView

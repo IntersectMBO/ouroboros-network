@@ -17,7 +17,11 @@ module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
   , CardanoHardForkConstraints
+  , MaxMajorProtVer (..)
   , TriggerHardFork (..)
+  , initialLedgerStateCardano
+  , ledgerConfigCardano
+  , mkPartialLedgerConfigShelley
     -- * SupportedNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
@@ -36,10 +40,10 @@ import           Data.SOP.Strict (NP (..), hd, unK)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
-import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Genesis as Byron.Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
-import qualified Cardano.Chain.Update as Update
-import           Cardano.Prelude (Natural, cborError)
+import qualified Cardano.Chain.Update as Byron.Update
+import           Cardano.Prelude (cborError)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -70,8 +74,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     TPraosParams (..))
+import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
+                     TPraosCrypto, TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -243,9 +247,7 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
     where
       TopLevelConfig {
           topLevelConfigProtocol = CardanoConsensusConfig _ shelleyPartialConsensusCfg
-        , topLevelConfigBlock = FullBlockConfig {
-              blockConfigBlock = CardanoBlockConfig byronBlockCfg _
-            }
+        , topLevelConfigBlock    = CardanoBlockConfig byronBlockCfg _
         } = cfg
 
       TPraosParams { tpraosSlotsPerKESPeriod } = shelleyPartialConsensusCfg
@@ -257,10 +259,10 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
 protocolInfoCardano
   :: forall c m. (IOLike m, CardanoHardForkConstraints c)
      -- Byron
-  => Genesis.Config
+  => Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
-  -> Update.ProtocolVersion
-  -> Update.SoftwareVersion
+  -> Byron.Update.ProtocolVersion
+  -> Byron.Update.SoftwareVersion
   -> Maybe ByronLeaderCredentials
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
@@ -268,7 +270,7 @@ protocolInfoCardano
      -- ^ The initial nonce for the Shelley era, typically derived from the
      -- hash of Shelley Genesis config JSON file.
   -> ProtVer
-  -> Natural
+  -> MaxMajorProtVer
   -> Maybe (TPraosLeaderCredentials (ShelleyEra c))
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
@@ -294,10 +296,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     ProtocolInfo {
         pInfoConfig = topLevelConfigByron@TopLevelConfig {
             topLevelConfigProtocol = consensusConfigByron
-          , topLevelConfigBlock = FullBlockConfig {
-                blockConfigLedger = ledgerConfigByron
-              , blockConfigBlock  = blockConfigByron
-              }
+          , topLevelConfigLedger   = ledgerConfigByron
+          , topLevelConfigBlock    = blockConfigByron
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initLedgerStateByron
@@ -322,7 +322,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     -- Shelley
 
     tpraosParams :: TPraosParams
-    tpraosParams = Shelley.mkTPraosParams maxMajorPV initialNonce genesisShelley
+    tpraosParams =
+        Shelley.mkTPraosParams
+          maxMajorPV
+          initialNonce
+          genesisShelley
 
     blockConfigShelley :: BlockConfig (ShelleyBlock (ShelleyEra c))
     blockConfigShelley =
@@ -336,12 +340,9 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     partialConsensusConfigShelley = tpraosParams
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
-    partialLedgerConfigShelley = ShelleyPartialLedgerConfig $
-        Shelley.mkShelleyLedgerConfig
+    partialLedgerConfigShelley =
+        mkPartialLedgerConfigShelley
           genesisShelley
-          -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
-          -- in the partial ledger config with the correct one.
-          History.dummyEpochInfo
           maxMajorPV
 
     kShelley :: SecurityParam
@@ -373,25 +374,23 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
               :* Nil
               )
           }
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigLedger = HardForkLedgerConfig {
-                hardForkLedgerConfigK      = k
-              , hardForkLedgerConfigShape  = shape
-              , hardForkLedgerConfigPerEra = PerEraLedgerConfig
-                  (  WrapPartialLedgerConfig partialLedgerConfigByron
-                  :* WrapPartialLedgerConfig partialLedgerConfigShelley
-                  :* Nil
-                  )
-              }
-          , blockConfigBlock =
-              CardanoBlockConfig
-                blockConfigByron
-                blockConfigShelley
-          , blockConfigCodec =
-              CardanoCodecConfig
-                (configCodec topLevelConfigByron)
-                Shelley.ShelleyCodecConfig
+      , topLevelConfigLedger = HardForkLedgerConfig {
+            hardForkLedgerConfigK      = k
+          , hardForkLedgerConfigShape  = shape
+          , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+              (  WrapPartialLedgerConfig partialLedgerConfigByron
+              :* WrapPartialLedgerConfig partialLedgerConfigShelley
+              :* Nil
+              )
           }
+      , topLevelConfigBlock =
+          CardanoBlockConfig
+            blockConfigByron
+            blockConfigShelley
+      , topLevelConfigCodec =
+          CardanoCodecConfig
+            (configCodec topLevelConfigByron)
+            Shelley.ShelleyCodecConfig
       }
 
     blockForging :: Maybe (m (BlockForging m (CardanoBlock c)))
@@ -435,6 +434,95 @@ protocolClientInfoCardano epochSlots secParam = ProtocolClientInfo {
     }
 
 {-------------------------------------------------------------------------------
+  Extra utilities
+-------------------------------------------------------------------------------}
+
+-- | Create the initial 'LedgerState' based on the given Byron genesis config.
+initialLedgerStateCardano :: Byron.Genesis.Config -> LedgerState (CardanoBlock c)
+initialLedgerStateCardano =
+      HardForkLedgerState
+    . initHardForkState
+    . flip Byron.initByronLedgerState Nothing
+
+-- | Create a 'LedgerConfig' for 'CardanoBlock'.
+ledgerConfigCardano ::
+     forall c.
+     -- Byron
+     Byron.Genesis.Config
+
+     -- Shelley
+  -> ShelleyGenesis (ShelleyEra c)
+  -> MaxMajorProtVer
+
+     -- Hard fork
+  -> TriggerHardFork
+  -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
+
+  -> CardanoLedgerConfig c
+ledgerConfigCardano genesisByron
+                    genesisShelley  maxMajorPV
+                    triggerHardFork mbLowerBound =
+    HardForkLedgerConfig {
+        hardForkLedgerConfigK      = k
+      , hardForkLedgerConfigShape  = shape
+      , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+          (  WrapPartialLedgerConfig partialLedgerConfigByron
+          :* WrapPartialLedgerConfig partialLedgerConfigShelley
+          :* Nil
+          )
+      }
+  where
+    -- Byron
+
+    kByron :: SecurityParam
+    kByron = Byron.genesisSecurityParam genesisByron
+
+    partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
+    partialLedgerConfigByron = ByronPartialLedgerConfig {
+          byronLedgerConfig = genesisByron
+        , triggerHardFork   = triggerHardFork
+        }
+
+    -- Shelley
+
+    kShelley :: SecurityParam
+    kShelley = SecurityParam $ sgSecurityParam genesisShelley
+
+    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+    partialLedgerConfigShelley =
+        mkPartialLedgerConfigShelley
+          genesisShelley
+          maxMajorPV
+
+    -- Cardano
+
+    k :: SecurityParam
+    k = assert (kByron == kShelley) kByron
+
+    shape :: History.Shape (CardanoEras c)
+    shape = History.Shape $
+      exactlyTwo
+        (Byron.byronEraParams safeBeforeByron genesisByron)
+        (Shelley.shelleyEraParams genesisShelley)
+
+    safeBeforeByron :: History.SafeBeforeEpoch
+    safeBeforeByron =
+        maybe History.NoLowerBound History.LowerBound mbLowerBound
+
+mkPartialLedgerConfigShelley ::
+     ShelleyGenesis (ShelleyEra c)
+  -> MaxMajorProtVer
+  -> PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+mkPartialLedgerConfigShelley genesisShelley maxMajorPV =
+    ShelleyPartialLedgerConfig $
+      Shelley.mkShelleyLedgerConfig
+        genesisShelley
+        -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo' in
+        -- the partial ledger config with the correct one.
+        History.dummyEpochInfo
+        maxMajorPV
+
+{-------------------------------------------------------------------------------
   Helpers
 -------------------------------------------------------------------------------}
 
@@ -449,19 +537,15 @@ projByronTopLevelConfig cfg = byronCfg
   where
     TopLevelConfig {
         topLevelConfigProtocol = CardanoConsensusConfig byronConsensusCfg _
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigBlock  = CardanoBlockConfig  byronBlockCfg  _
-          , blockConfigLedger = CardanoLedgerConfig byronLedgerCfg _
-          , blockConfigCodec  = CardanoCodecConfig  byronCodecCfg  _
-          }
+      , topLevelConfigLedger   = CardanoLedgerConfig    byronLedgerCfg _
+      , topLevelConfigBlock    = CardanoBlockConfig     byronBlockCfg  _
+      , topLevelConfigCodec    = CardanoCodecConfig     byronCodecCfg  _
       } = cfg
 
     byronCfg :: TopLevelConfig ByronBlock
     byronCfg = TopLevelConfig {
         topLevelConfigProtocol = byronConsensusCfg
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigBlock  = byronBlockCfg
-          , blockConfigLedger = byronLedgerConfig byronLedgerCfg
-          , blockConfigCodec  = byronCodecCfg
-          }
+      , topLevelConfigLedger   = byronLedgerConfig byronLedgerCfg
+      , topLevelConfigBlock    = byronBlockCfg
+      , topLevelConfigCodec    = byronCodecCfg
       }

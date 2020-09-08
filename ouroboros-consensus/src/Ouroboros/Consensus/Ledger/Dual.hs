@@ -29,8 +29,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtValidationErrorMain
-  , dualFullBlockConfigMain
-  , dualFullBlockConfigAux
   , dualTopLevelConfigMain
   , ctxtDualMain
     -- * Type class family instances
@@ -173,29 +171,13 @@ instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   Splitting the config
 -------------------------------------------------------------------------------}
 
-dualFullBlockConfigMain ::
-     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
-  -> FullBlockConfig (LedgerState m) m
-dualFullBlockConfigMain FullBlockConfig{..} = FullBlockConfig{
-      blockConfigLedger = dualLedgerConfigMain blockConfigLedger
-    , blockConfigBlock  = dualBlockConfigMain  blockConfigBlock
-    , blockConfigCodec  = dualCodecConfigMain  blockConfigCodec
-    }
-
-dualFullBlockConfigAux ::
-     FullBlockConfig (LedgerState (DualBlock m a)) (DualBlock m a)
-  -> FullBlockConfig (LedgerState a) a
-dualFullBlockConfigAux FullBlockConfig{..} = FullBlockConfig{
-      blockConfigLedger = dualLedgerConfigAux blockConfigLedger
-    , blockConfigBlock  = dualBlockConfigAux  blockConfigBlock
-    , blockConfigCodec  = dualCodecConfigAux  blockConfigCodec
-    }
-
 -- | This is only used for block production
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       topLevelConfigProtocol = topLevelConfigProtocol
-    , topLevelConfigBlock    = dualFullBlockConfigMain topLevelConfigBlock
+    , topLevelConfigLedger   = dualLedgerConfigMain topLevelConfigLedger
+    , topLevelConfigBlock    = dualBlockConfigMain  topLevelConfigBlock
+    , topLevelConfigCodec    = dualCodecConfigMain  topLevelConfigCodec
     }
 
 {-------------------------------------------------------------------------------
@@ -277,10 +259,7 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   getHeaderFields = castHeaderFields . getHeaderFields . dualHeaderMain
 
 instance Bridge m a => GetPrevHash (DualBlock m a) where
-  headerPrevHash cfg =
-        castHash
-      . headerPrevHash (dualCodecConfigMain cfg)
-      . dualHeaderMain
+  headerPrevHash = castHash . headerPrevHash . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Protocol
@@ -376,11 +355,11 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
-              (dualFullBlockConfigMain cfg)
+              (dualLedgerConfigMain cfg)
               dualBlockMain
               tickedDualLedgerStateMain
           , applyMaybeBlock
-              (dualFullBlockConfigAux cfg)
+              (dualLedgerConfigAux cfg)
               dualBlockAux
               tickedDualLedgerStateAux
               tickedDualLedgerStateAuxOrig
@@ -398,11 +377,11 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                      TickedDualLedgerState{..} =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
-                                    (dualFullBlockConfigMain cfg)
+                                    (dualLedgerConfigMain cfg)
                                     dualBlockMain
                                     tickedDualLedgerStateMain
         , dualLedgerStateAux    = reapplyMaybeBlock
-                                    (dualFullBlockConfigAux cfg)
+                                    (dualLedgerConfigAux cfg)
                                     dualBlockAux
                                     tickedDualLedgerStateAux
                                     tickedDualLedgerStateAuxOrig
@@ -712,7 +691,7 @@ type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
 --
 -- Returns state unchanged on 'Nothing'
 applyMaybeBlock :: UpdateLedger blk
-                => FullBlockConfig (LedgerState blk) blk
+                => LedgerConfig blk
                 -> Maybe blk
                 -> TickedLedgerState blk
                 -> LedgerState blk
@@ -724,10 +703,10 @@ applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
 --
 -- See also 'applyMaybeBlock'
 reapplyMaybeBlock :: UpdateLedger blk
-                  => FullBlockConfig (LedgerState blk) blk
+                  => LedgerConfig blk
                   -> Maybe blk
                   -> TickedLedgerState blk
-                -> LedgerState blk
+                  -> LedgerState blk
                   -> LedgerState blk
 reapplyMaybeBlock _   Nothing      _   st = st
 reapplyMaybeBlock cfg (Just block) tst _  = reapplyLedgerBlock cfg block tst

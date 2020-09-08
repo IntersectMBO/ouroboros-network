@@ -243,7 +243,7 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
   getHeaderFields = getBlockHeaderFields
 
 instance (SimpleCrypto c, Typeable ext) => GetPrevHash (SimpleBlock c ext) where
-  headerPrevHash _cfg = simplePrev . simpleHeaderStd
+  headerPrevHash = simplePrev . simpleHeaderStd
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => StandardHash (SimpleBlock' c ext ext')
@@ -345,8 +345,7 @@ instance MockProtocolSpecific c ext
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  applyLedgerBlock cfg =
-      updateSimpleLedgerState (blockConfigCodec cfg)
+  applyLedgerBlock _ = updateSimpleLedgerState
 
   reapplyLedgerBlock cfg =
       (mustSucceed . runExcept) .: applyLedgerBlock cfg
@@ -370,13 +369,12 @@ newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerSt
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
-                        => CodecConfig (SimpleBlock c ext)
-                        -> SimpleBlock c ext
+                        => SimpleBlock c ext
                         -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext))
-updateSimpleLedgerState cfg b (TickedSimpleLedgerState (SimpleLedgerState st)) =
-    SimpleLedgerState <$> updateMockState cfg b st
+updateSimpleLedgerState b (TickedSimpleLedgerState (SimpleLedgerState st)) =
+    SimpleLedgerState <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
                  => SlotNo

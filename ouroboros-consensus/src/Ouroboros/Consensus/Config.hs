@@ -17,10 +17,6 @@ module Ouroboros.Consensus.Config (
   , configCodec
     -- ** Additional convenience functions
   , configSecurityParam
-    -- * Block config
-  , FullBlockConfig(..)
-  , castFullBlockConfig
-  , mapLedgerCfg
     -- * Re-exports
   , module Ouroboros.Consensus.Config.SecurityParam
   ) where
@@ -42,7 +38,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- | The top-level node configuration
 data TopLevelConfig blk = TopLevelConfig {
       topLevelConfigProtocol :: !(ConsensusConfig (BlockProtocol blk))
-    , topLevelConfigBlock    :: !(FullBlockConfig (LedgerState blk) blk)
+    , topLevelConfigLedger   :: !(LedgerConfig blk)
+    , topLevelConfigBlock    :: !(BlockConfig blk)
+    , topLevelConfigCodec    :: !(CodecConfig blk)
     }
   deriving (Generic)
 
@@ -52,32 +50,24 @@ instance ( ConsensusProtocol (BlockProtocol blk)
          , NoUnexpectedThunks (CodecConfig  blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
--- | Convenience constructor for 'TopLevelConfig'
 mkTopLevelConfig :: ConsensusConfig (BlockProtocol blk)
                  -> LedgerConfig blk
                  -> BlockConfig  blk
                  -> CodecConfig  blk
                  -> TopLevelConfig blk
-mkTopLevelConfig configProtocol
-                 blockConfigLedger
-                 blockConfigBlock
-                 blockConfigCodec =
-    TopLevelConfig {
-        topLevelConfigProtocol = configProtocol
-      , topLevelConfigBlock    = FullBlockConfig{..}
-      }
+mkTopLevelConfig = TopLevelConfig
 
 configConsensus :: TopLevelConfig blk -> ConsensusConfig (BlockProtocol blk)
 configConsensus = topLevelConfigProtocol
 
 configLedger :: TopLevelConfig blk -> LedgerConfig blk
-configLedger = blockConfigLedger . topLevelConfigBlock
+configLedger = topLevelConfigLedger
 
 configBlock  :: TopLevelConfig blk -> BlockConfig  blk
-configBlock = blockConfigBlock . topLevelConfigBlock
+configBlock = topLevelConfigBlock
 
 configCodec  :: TopLevelConfig blk -> CodecConfig  blk
-configCodec = blockConfigCodec . topLevelConfigBlock
+configCodec = topLevelConfigCodec
 
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
@@ -93,45 +83,7 @@ castTopLevelConfig ::
   => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
       topLevelConfigProtocol = coerce topLevelConfigProtocol
-    , topLevelConfigBlock    = castFullBlockConfig topLevelConfigBlock
-    }
-
-{-------------------------------------------------------------------------------
-  Block config
--------------------------------------------------------------------------------}
-
-data FullBlockConfig l blk = FullBlockConfig {
-      blockConfigLedger :: !(LedgerCfg l)
-    , blockConfigBlock  :: !(BlockConfig blk)
-    , blockConfigCodec  :: !(CodecConfig blk)
-    }
-  deriving (Generic)
-
-instance ( NoUnexpectedThunks (LedgerCfg l)
-         , NoUnexpectedThunks (BlockConfig blk)
-         , NoUnexpectedThunks (CodecConfig blk)
-         ) => NoUnexpectedThunks (FullBlockConfig l blk)
-deriving instance ( Show (LedgerCfg l)
-                  , Show (BlockConfig blk)
-                  , Show (CodecConfig blk)
-                  ) => Show (FullBlockConfig l blk)
-
-castFullBlockConfig ::
-     ( LedgerCfg l ~ LedgerCfg l'
-     , Coercible (BlockConfig blk) (BlockConfig blk')
-     , Coercible (CodecConfig blk) (CodecConfig blk')
-     )
-  => FullBlockConfig l blk -> FullBlockConfig l' blk'
-castFullBlockConfig FullBlockConfig{..} = FullBlockConfig{
-      blockConfigLedger = blockConfigLedger
-    , blockConfigBlock  = coerce blockConfigBlock
-    , blockConfigCodec  = coerce blockConfigCodec
-    }
-
-mapLedgerCfg :: (LedgerCfg l -> LedgerCfg l')
-             -> FullBlockConfig l blk -> FullBlockConfig l' blk
-mapLedgerCfg f FullBlockConfig{..} = FullBlockConfig {
-      blockConfigLedger = f blockConfigLedger
-    , blockConfigBlock  = blockConfigBlock
-    , blockConfigCodec  = blockConfigCodec
+    , topLevelConfigLedger   = topLevelConfigLedger
+    , topLevelConfigBlock    = coerce topLevelConfigBlock
+    , topLevelConfigCodec    = coerce topLevelConfigCodec
     }

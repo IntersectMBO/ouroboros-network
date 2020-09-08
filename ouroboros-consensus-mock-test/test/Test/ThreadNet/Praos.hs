@@ -87,7 +87,7 @@ prop_simple_praos_convergence TestSetup
   , setupSlotLength   = slotLength
   , setupTestConfig   = testConfig
   } =
-    counterexample (tracesToDot (SimpleCodecConfig k) testOutputNodes) $
+    counterexample (tracesToDot testOutputNodes) $
     prop_general PropGeneralArgs
       { pgaBlockProperty       = prop_validSimpleBlock
       , pgaCountTxs            = countSimpleGenTxs

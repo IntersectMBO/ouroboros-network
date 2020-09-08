@@ -5,9 +5,9 @@ module Test.Consensus.Byron.Examples (
     -- * Setup
     secParam
   , windowSize
-  , CC.dummyConfig
   , cfg
   , codecConfig
+  , ledgerConfig
   , leaderCredentials
     -- * Examples
   , examples
@@ -83,12 +83,8 @@ cfg = ByronConfig {
 codecConfig :: CodecConfig ByronBlock
 codecConfig = mkByronCodecConfig CC.dummyConfig
 
-fullBlockConfig :: FullBlockConfig (LedgerState ByronBlock) ByronBlock
-fullBlockConfig = FullBlockConfig {
-      blockConfigLedger = CC.dummyConfig
-    , blockConfigBlock  = cfg
-    , blockConfigCodec  = codecConfig
-    }
+ledgerConfig :: LedgerConfig ByronBlock
+ledgerConfig = CC.dummyConfig
 
 leaderCredentials :: ByronLeaderCredentials
 leaderCredentials =
@@ -131,7 +127,7 @@ exampleBlock =
       cfg
       (BlockNo 1)
       (SlotNo 1)
-      (applyChainTick CC.dummyConfig (SlotNo 1) ledgerStateAfterEBB)
+      (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)
       [exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
@@ -199,18 +195,18 @@ emptyLedgerState = ByronLedgerState {
   where
     initState :: CC.Block.ChainValidationState
     Right initState = runExcept $
-      CC.Block.initialChainValidationState CC.dummyConfig
+      CC.Block.initialChainValidationState ledgerConfig
 
 ledgerStateAfterEBB :: LedgerState ByronBlock
 ledgerStateAfterEBB =
-      reapplyLedgerBlock fullBlockConfig exampleEBB
-    . applyChainTick CC.dummyConfig (SlotNo 0)
+      reapplyLedgerBlock ledgerConfig exampleEBB
+    . applyChainTick ledgerConfig (SlotNo 0)
     $ emptyLedgerState
 
 exampleLedgerState :: LedgerState ByronBlock
 exampleLedgerState =
-      reapplyLedgerBlock fullBlockConfig exampleBlock
-    . applyChainTick CC.dummyConfig (SlotNo 1)
+      reapplyLedgerBlock ledgerConfig exampleBlock
+    . applyChainTick ledgerConfig (SlotNo 1)
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock
@@ -234,7 +230,7 @@ exampleGenTxId :: TxId (GenTx ByronBlock)
 exampleGenTxId = ByronTxId CC.exampleTxId
 
 exampleUPIState :: CC.UPI.State
-exampleUPIState = CC.UPI.initialState CC.dummyConfig
+exampleUPIState = CC.UPI.initialState ledgerConfig
 
 exampleApplyTxErr :: CC.ApplyMempoolPayloadErr
 exampleApplyTxErr =

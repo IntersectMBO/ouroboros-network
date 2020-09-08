@@ -204,7 +204,7 @@ instance HasHeader (Header TestBlock) where
       }
 
 instance GetPrevHash TestBlock where
-  headerPrevHash _cfg (TestHeader b) =
+  headerPrevHash (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
@@ -298,15 +298,13 @@ instance IsLedger (LedgerState TestBlock) where
   applyChainTick _ _ = TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock cfg tb@TestBlock{..} (TickedTestLedger TestLedger{..})
-    | blockPrevHash ccfg tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash ccfg tb)
+  applyLedgerBlock _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+    | blockPrevHash tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb)
-    where
-      ccfg = blockConfigCodec cfg
 
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
@@ -389,11 +387,9 @@ singleNodeTestConfig = TopLevelConfig {
         , bftSignKey = SignKeyMockDSIGN 0
         , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , topLevelConfigBlock = FullBlockConfig {
-          blockConfigLedger = eraParams
-        , blockConfigBlock  = TestBlockConfig numCoreNodes
-        , blockConfigCodec  = TestBlockCodecConfig
-        }
+    , topLevelConfigLedger = eraParams
+    , topLevelConfigBlock  = TestBlockConfig numCoreNodes
+    , topLevelConfigCodec  = TestBlockCodecConfig
     }
   where
     slotLength :: SlotLength

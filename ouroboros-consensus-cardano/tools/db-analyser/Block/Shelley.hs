@@ -25,8 +25,8 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis,
-                     protocolInfoShelley)
+import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
+                     Nonce (..), ShelleyGenesis, protocolInfoShelley)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           HasAnalysis
@@ -62,7 +62,7 @@ mkShelleyProtocolInfo genesis initialNonce =
     protocolInfoShelley
       genesis
       initialNonce
-      2000
+      (MaxMajorProtVer 1000)
       (SL.ProtVer 0 0)
       Nothing
 

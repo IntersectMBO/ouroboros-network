@@ -179,11 +179,10 @@ instance CanHardFork xs
           fmap (HardForkLedgerState . State.tickAllPast k) $ hsequence' $
             hczipWith3 proxySingle apply cfgs errInjections matched
     where
-      cfgs = distribFullBlockConfig ei cfg
-      lcfg = blockConfigLedger cfg
-      k    = hardForkLedgerConfigK lcfg
+      cfgs = distribLedgerConfig ei cfg
+      k    = hardForkLedgerConfigK cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
-               (hardForkLedgerConfigShape (blockConfigLedger cfg))
+               (hardForkLedgerConfigShape cfg)
                transition
                st
 
@@ -202,28 +201,27 @@ instance CanHardFork xs
           HardForkLedgerState . State.tickAllPast k $
             hczipWith proxySingle reapply cfgs matched
     where
-      cfgs = distribFullBlockConfig ei cfg
-      lcfg = blockConfigLedger cfg
-      k    = hardForkLedgerConfigK lcfg
+      cfgs = distribLedgerConfig ei cfg
+      k    = hardForkLedgerConfigK cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
-               (hardForkLedgerConfigShape (blockConfigLedger cfg))
+               (hardForkLedgerConfigShape cfg)
                transition
                st
 
 apply :: SingleEraBlock blk
-      => WrapFullBlockConfig                               blk
+      => WrapLedgerConfig                                  blk
       -> Injection WrapLedgerErr xs                        blk
       -> Product I (Ticked :.: LedgerState)                blk
       -> (Except (HardForkLedgerError xs) :.: LedgerState) blk
-apply (WrapFullBlockConfig cfg) injectErr (Pair (I block) (Comp st)) = Comp $
+apply (WrapLedgerConfig cfg) injectErr (Pair (I block) (Comp st)) = Comp $
     withExcept (injectLedgerError injectErr) $
       applyLedgerBlock cfg block st
 
 reapply :: SingleEraBlock blk
-        => WrapFullBlockConfig                blk
+        => WrapLedgerConfig                   blk
         -> Product I (Ticked :.: LedgerState) blk
         -> LedgerState                        blk
-reapply (WrapFullBlockConfig cfg) (Pair (I block) (Comp st)) =
+reapply (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) =
     reapplyLedgerBlock cfg block st
 
 {-------------------------------------------------------------------------------

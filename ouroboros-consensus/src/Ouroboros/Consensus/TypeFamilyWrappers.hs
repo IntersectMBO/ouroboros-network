@@ -19,7 +19,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapLedgerUpdate(..)
   , WrapLedgerWarning(..)
   , WrapTipInfo(..)
-  , WrapFullBlockConfig(..)
     -- * Protocol based
   , WrapCanBeLeader(..)
   , WrapChainDepState(..)
@@ -42,7 +41,6 @@ import           Codec.Serialise (Serialise)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -66,7 +64,6 @@ newtype WrapLedgerErr             blk = WrapLedgerErr             { unwrapLedger
 newtype WrapLedgerUpdate          blk = WrapLedgerUpdate          { unwrapLedgerUpdate          :: LedgerUpdate             blk }
 newtype WrapLedgerWarning         blk = WrapLedgerWarning         { unwrapLedgerWarning         :: LedgerWarning            blk }
 newtype WrapTipInfo               blk = WrapTipInfo               { unwrapTipInfo               :: TipInfo                  blk }
-newtype WrapFullBlockConfig       blk = WrapFullBlockConfig       { unwrapFullBlockConfig       :: FullBlockConfig (LedgerState blk) blk }
 
 {-------------------------------------------------------------------------------
   Consensus based

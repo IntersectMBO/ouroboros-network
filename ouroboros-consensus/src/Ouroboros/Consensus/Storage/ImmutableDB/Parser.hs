@@ -71,8 +71,7 @@ chunkFileParser
      , hash ~ HeaderHash blk
      , HasBinaryBlockInfo blk
      )
-  => CodecConfig blk
-  -> HasFS m h
+  => HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
   -> (blk -> Bool)        -- ^ Check integrity of the block. 'False' = corrupt.
   -> ChunkFileParser
@@ -80,7 +79,7 @@ chunkFileParser
        m
        (BlockSummary hash)
        hash
-chunkFileParser cfg hasFS decodeBlock isNotCorrupt =
+chunkFileParser hasFS decodeBlock isNotCorrupt =
     ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k
@@ -152,7 +151,7 @@ chunkFileParser cfg hasFS decodeBlock isNotCorrupt =
         (BlockSummary entry (blockNo blk), prevHash)
       where
         -- Don't accidentally hold on to the block!
-        !prevHash = convertPrevHash $ blockPrevHash cfg blk
+        !prevHash = convertPrevHash $ blockPrevHash blk
         !entry    = Secondary.Entry
           { blockOffset  = Secondary.BlockOffset  offset
           , headerOffset = Secondary.HeaderOffset headerOffset

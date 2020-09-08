@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , tpraosBlockIssuerVKey
   , SL.ProtVer
   , SL.Nonce (..)
+  , MaxMajorProtVer (..)
   , SL.emptyGenesisStaking
   , validateGenesis
   ) where
@@ -33,7 +34,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 
 import qualified Cardano.Crypto.VRF as VRF
-import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -161,7 +161,7 @@ protocolInfoShelley
   -> SL.Nonce
      -- ^ The initial nonce, typically derived from the hash of Genesis config
      -- JSON file.
-  -> Natural -- ^ Max major protocol version
+  -> MaxMajorProtVer
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials era)
   -> ProtocolInfo m (ShelleyBlock era)
@@ -176,11 +176,9 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     topLevelConfig :: TopLevelConfig (ShelleyBlock era)
     topLevelConfig = TopLevelConfig {
         topLevelConfigProtocol = consensusConfig
-      , topLevelConfigBlock = FullBlockConfig {
-            blockConfigLedger = ledgerConfig
-          , blockConfigBlock  = blockConfig
-          , blockConfigCodec  = ShelleyCodecConfig
-          }
+      , topLevelConfigLedger   = ledgerConfig
+      , topLevelConfigBlock    = blockConfig
+      , topLevelConfigCodec    = ShelleyCodecConfig
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock era))
