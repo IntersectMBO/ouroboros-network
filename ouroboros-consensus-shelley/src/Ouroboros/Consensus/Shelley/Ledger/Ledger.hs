@@ -60,7 +60,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
-import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
@@ -93,8 +93,8 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     Ticked (TickedPraosLedgerView))
+import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
+                     TPraosCrypto, Ticked (TickedPraosLedgerView))
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -139,9 +139,9 @@ shelleyEraParams genesis = HardFork.EraParams {
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
   -> EpochInfo Identity
-  -> Natural
+  -> MaxMajorProtVer
   -> ShelleyLedgerConfig era
-mkShelleyLedgerConfig genesis epochInfo maxMajorPV =
+mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
         shelleyLedgerGenesis   = genesis
       , shelleyLedgerGlobals   = SL.mkShelleyGlobals genesis epochInfo maxMajorPV

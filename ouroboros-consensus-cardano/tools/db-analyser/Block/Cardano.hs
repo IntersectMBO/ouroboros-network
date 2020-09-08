@@ -25,7 +25,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis)
+import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
+                     Nonce (..), ShelleyGenesis)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -91,7 +92,7 @@ mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold initialNonce 
       shelleyConfig
       initialNonce
       (SL.ProtVer 2 0)
-      2000
+      (MaxMajorProtVer 1000)
       Nothing
       Nothing
       (TriggerHardForkAtVersion 2)

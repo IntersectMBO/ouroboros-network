@@ -387,7 +387,7 @@ mkProtocolRealTPraos genesis initialNonce protVer coreNode =
       protVer
       (Just (mkLeaderCredentials coreNode))
   where
-    maxMajorPV = 1000 -- TODO
+    maxMajorPV = MaxMajorProtVer 1000 -- TODO
 
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'

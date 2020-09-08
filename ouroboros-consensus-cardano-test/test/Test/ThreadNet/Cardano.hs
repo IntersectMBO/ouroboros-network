@@ -24,7 +24,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           Numeric.Natural (Natural)
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -646,7 +645,7 @@ prop_simple_cardano_convergence TestSetup
               genesisShelley
               -- Suitable only for this narrow context
               (fixedSizeEpochInfo epochSizeShelley)
-              maxMajorPVShelley
+              (getMaxMajorProtVer maxMajorPVShelley)
 
         genesisKeyHashes =
             Set.fromList $
@@ -805,8 +804,8 @@ mkProtocolCardanoAndHardForkTxs
 activeSlotCoeff :: Rational
 activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
 
-maxMajorPVShelley :: Natural
-maxMajorPVShelley = 100   -- arbitrary
+maxMajorPVShelley :: MaxMajorProtVer
+maxMajorPVShelley = MaxMajorProtVer 100   -- arbitrary
 
 -- | The major protocol version of Byron in this test
 --

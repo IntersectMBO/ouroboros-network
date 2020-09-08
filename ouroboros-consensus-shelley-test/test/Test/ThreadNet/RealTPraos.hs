@@ -364,6 +364,4 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
             (fixedSizeEpochInfo epochSize)
-            maxMajorPV
-          where
-            maxMajorPV = 1000   -- TODO
+            (MaxMajorProtVer 1000) -- TODO

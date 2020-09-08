@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
   , protocolClientInfoCardano
   , CardanoHardForkConstraints
+  , MaxMajorProtVer (..)
   , TriggerHardFork (..)
   , initialLedgerStateCardano
   , ledgerConfigCardano
@@ -42,7 +43,7 @@ import           Cardano.Binary (DecoderError (..), enforceSize)
 import qualified Cardano.Chain.Genesis as Byron.Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Byron.Update
-import           Cardano.Prelude (Natural, cborError)
+import           Cardano.Prelude (cborError)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -73,8 +74,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     TPraosParams (..))
+import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
+                     TPraosCrypto, TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -269,7 +270,7 @@ protocolInfoCardano
      -- ^ The initial nonce for the Shelley era, typically derived from the
      -- hash of Shelley Genesis config JSON file.
   -> ProtVer
-  -> Natural
+  -> MaxMajorProtVer
   -> Maybe (TPraosLeaderCredentials (ShelleyEra c))
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
@@ -321,7 +322,11 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
     -- Shelley
 
     tpraosParams :: TPraosParams
-    tpraosParams = Shelley.mkTPraosParams maxMajorPV initialNonce genesisShelley
+    tpraosParams =
+        Shelley.mkTPraosParams
+          maxMajorPV
+          initialNonce
+          genesisShelley
 
     blockConfigShelley :: BlockConfig (ShelleyBlock (ShelleyEra c))
     blockConfigShelley =
@@ -336,7 +341,9 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
     partialLedgerConfigShelley =
-        mkPartialLedgerConfigShelley genesisShelley maxMajorPV
+        mkPartialLedgerConfigShelley
+          genesisShelley
+          maxMajorPV
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
@@ -445,7 +452,7 @@ ledgerConfigCardano ::
 
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
-  -> Natural  -- ^ Max major protocol version
+  -> MaxMajorProtVer
 
      -- Hard fork
   -> TriggerHardFork
@@ -483,7 +490,9 @@ ledgerConfigCardano genesisByron
 
     partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
     partialLedgerConfigShelley =
-        mkPartialLedgerConfigShelley genesisShelley maxMajorPV
+        mkPartialLedgerConfigShelley
+          genesisShelley
+          maxMajorPV
 
     -- Cardano
 
@@ -502,7 +511,7 @@ ledgerConfigCardano genesisByron
 
 mkPartialLedgerConfigShelley ::
      ShelleyGenesis (ShelleyEra c)
-  -> Natural  -- ^ Max major protocol version
+  -> MaxMajorProtVer
   -> PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
 mkPartialLedgerConfigShelley genesisShelley maxMajorPV =
     ShelleyPartialLedgerConfig $
