@@ -53,7 +53,6 @@ import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence.Strict (StrictSeq)
 import           Data.Set (Set)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
@@ -76,10 +75,8 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..), (...:), (..:))
-import           Ouroboros.Consensus.Util.CBOR (decodeSeq)
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
@@ -488,9 +485,9 @@ getFilteredDelegationsAndRewardAccounts ss creds =
   Serialisation
 -------------------------------------------------------------------------------}
 
-serialisationFormatVersion0 :: VersionNumber
-serialisationFormatVersion0 = 0
-
+-- | 'serialisationFormatVersion0' used to include the 'LedgerViewHistory', but
+-- since we had to break binary backwards compatibility of the 'TPraosState', we
+-- dropped backwards compatibility with 'serialisationFormatVersion0' too.
 serialisationFormatVersion1 :: VersionNumber
 serialisationFormatVersion1 = 1
 
@@ -504,7 +501,7 @@ encodeShelleyHeaderState :: Era era
                          => HeaderState (ShelleyBlock era)
                          -> Encoding
 encodeShelleyHeaderState = encodeHeaderState
-    toCBOR
+    encode
     encodeShelleyAnnTip
 
 encodeShelleyLedgerState :: Era era => LedgerState (ShelleyBlock era) -> Encoding
@@ -520,39 +517,15 @@ decodeShelleyLedgerState ::
      forall era s. Era era
   => Decoder s (LedgerState (ShelleyBlock era))
 decodeShelleyLedgerState = decodeVersion [
-      (serialisationFormatVersion0, Decode decodeShelleyLedgerState0)
-    , (serialisationFormatVersion1, Decode decodeShelleyLedgerState1)
+      (serialisationFormatVersion1, Decode decodeShelleyLedgerState1)
     ]
   where
-    decodeShelleyLedgerState0 :: Decoder s' (LedgerState (ShelleyBlock era))
-    decodeShelleyLedgerState0 = do
-      enforceSize "LedgerState ShelleyBlock" 3
-      ledgerTip    <- decode
-      _ :: Proxy era <- decodeLedgerViewHistory
-      shelleyState <- fromCBOR
-      return ShelleyLedgerState { ledgerTip, shelleyState }
-
     decodeShelleyLedgerState1 :: Decoder s' (LedgerState (ShelleyBlock era))
     decodeShelleyLedgerState1 = do
       enforceSize "LedgerState ShelleyBlock" 2
       ledgerTip    <- decode
       shelleyState <- fromCBOR
       return ShelleyLedgerState { ledgerTip, shelleyState }
-
--- | Decode what used to be the @LedgerViewHistory@, removed as part of #1935.
---
--- Since we're no longer interested in it, ignore the resulting bytes.
---
--- But to remain binary compatible with old Shelley ledger state, we have to
--- consume the exact bytes corresponding to the ledger view history.
---
--- We return a 'Proxy' with the crypto type to avoid ambiguity.
-decodeLedgerViewHistory :: forall era s. Era era => Decoder s (Proxy era)
-decodeLedgerViewHistory = do
-    enforceSize "LedgerViewHistory" 2
-    _ :: WithOrigin SlotNo <- decode
-    _ :: StrictSeq (History.Snapshot (SL.LedgerView era)) <- decodeSeq fromCBOR
-    return (Proxy @era)
 
 encodeShelleyQuery :: Era era => Query (ShelleyBlock era) result -> Encoding
 encodeShelleyQuery query = case query of

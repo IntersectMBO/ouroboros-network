@@ -17,8 +17,6 @@ module Test.Consensus.Cardano.Examples (
   , exampleResultEraMismatchByron
   , exampleResultEraMismatchShelley
   , exampleResultAnytimeShelley
-  , exampleLedgerStateWithSnapshot
-  , exampleChainDepStateWithSnapshot
   ) where
 
 import           Data.Bifunctor (first)
@@ -60,7 +58,7 @@ import qualified Test.Consensus.Byron.Examples as Byron
 
 import qualified Test.Consensus.Shelley.Examples as Shelley
 
-import           Test.Consensus.Cardano.Generators (toTelescope')
+import           Test.Consensus.Cardano.Generators (toTelescope)
 
 {-------------------------------------------------------------------------------
   Setup
@@ -249,7 +247,7 @@ ledgerStateByron ::
      LedgerState ByronBlock
   -> LedgerState (CardanoBlock Crypto)
 ledgerStateByron stByron =
-    HardForkLedgerState $ toTelescope' (Proxy @LedgerState) (Left cur)
+    HardForkLedgerState $ toTelescope (Proxy @LedgerState) (Left cur)
   where
     cur = State.Current {
           currentStart = History.initBound
@@ -260,12 +258,11 @@ ledgerStateShelley ::
      LedgerState (ShelleyBlock StandardShelley)
   -> LedgerState (CardanoBlock Crypto)
 ledgerStateShelley stShelley =
-    HardForkLedgerState $ toTelescope' (Proxy @LedgerState) (Right (past, cur))
+    HardForkLedgerState $ toTelescope (Proxy @LedgerState) (Right (past, cur))
   where
     past = State.Past {
           pastStart    = History.initBound
         , pastEnd      = byronEndBound
-        , pastSnapshot = State.NoSnapshot
         }
     cur = State.Current {
           currentStart = History.initBound
@@ -276,7 +273,7 @@ chainDepStateByron ::
      ChainDepState (BlockProtocol ByronBlock)
   -> ChainDepState (BlockProtocol (CardanoBlock Crypto))
 chainDepStateByron stByron =
-    toTelescope' (Proxy @WrapChainDepState) (Left cur)
+    toTelescope (Proxy @WrapChainDepState) (Left cur)
   where
     cur = State.Current {
           currentStart = History.initBound
@@ -287,28 +284,39 @@ chainDepStateShelley ::
      ChainDepState (BlockProtocol (ShelleyBlock StandardShelley))
   -> ChainDepState (BlockProtocol (CardanoBlock Crypto))
 chainDepStateShelley stShelley =
-    toTelescope' (Proxy @WrapChainDepState) (Right (past, cur))
+    toTelescope (Proxy @WrapChainDepState) (Right (past, cur))
   where
     past = State.Past {
           pastStart    = History.initBound
         , pastEnd      = byronEndBound
-        , pastSnapshot = State.NoSnapshot
         }
     cur = State.Current {
           currentStart = History.initBound
         , currentState = WrapChainDepState stShelley
         }
 
+headerStateByron ::
+     HeaderState ByronBlock
+  -> HeaderState (CardanoBlock Crypto)
+headerStateByron HeaderState {..} = HeaderState {
+      headerStateTip      = annTipByron        <$> headerStateTip
+    , headerStateChainDep = chainDepStateByron  $  headerStateChainDep
+    }
+
+headerStateShelley ::
+     HeaderState (ShelleyBlock StandardShelley)
+  -> HeaderState (CardanoBlock Crypto)
+headerStateShelley HeaderState {..} = HeaderState {
+      headerStateTip      = annTipShelley        <$> headerStateTip
+    , headerStateChainDep = chainDepStateShelley  $  headerStateChainDep
+    }
+
 extLedgerStateByron ::
      ExtLedgerState ByronBlock
   -> ExtLedgerState (CardanoBlock Crypto)
 extLedgerStateByron ExtLedgerState {..} = ExtLedgerState {
       ledgerState = ledgerStateByron ledgerState
-    , headerState = HeaderState {
-          headerStateConsensus = chainDepStateByron (headerStateConsensus headerState)
-        , headerStateTips      = annTipByron <$> headerStateTips   headerState
-        , headerStateAnchor    = annTipByron <$> headerStateAnchor headerState
-        }
+    , headerState = headerStateByron headerState
     }
 
 extLedgerStateShelley ::
@@ -316,11 +324,7 @@ extLedgerStateShelley ::
   -> ExtLedgerState (CardanoBlock Crypto)
 extLedgerStateShelley ExtLedgerState {..} = ExtLedgerState {
       ledgerState = ledgerStateShelley ledgerState
-    , headerState = HeaderState {
-          headerStateConsensus = chainDepStateShelley (headerStateConsensus headerState)
-        , headerStateTips      = annTipShelley <$> headerStateTips   headerState
-        , headerStateAnchor    = annTipShelley <$> headerStateAnchor headerState
-        }
+    , headerState = headerStateShelley headerState
     }
 
 {-------------------------------------------------------------------------------
@@ -345,12 +349,6 @@ multiEraExamples = mempty {
         , ("AnytimeByron",       exampleResultAnytimeByron)
         , ("AnytimeShelley",     exampleResultAnytimeShelley)
         , ("HardFork",           exampleResultHardFork)
-        ]
-    , Golden.exampleLedgerState = labelled [
-          ("WithSnapshot", exampleLedgerStateWithSnapshot)
-        ]
-    , Golden.exampleChainDepState = labelled [
-          ("WithSnapshot", exampleChainDepStateWithSnapshot)
         ]
     }
 
@@ -420,38 +418,3 @@ exampleResultAnytimeShelley =
 exampleResultHardFork :: SomeResult (CardanoBlock Crypto)
 exampleResultHardFork =
     SomeResult (QueryHardFork GetInterpreter) (History.mkInterpreter summary)
-
-exampleLedgerStateWithSnapshot :: LedgerState (CardanoBlock Crypto)
-exampleLedgerStateWithSnapshot =
-    HardForkLedgerState $ toTelescope' (Proxy @LedgerState) (Right (past, cur))
-  where
-    (_, stByron)   = head $ Golden.exampleLedgerState Byron.examples
-    (_, stShelley) = head $ Golden.exampleLedgerState Shelley.examples
-
-    past = State.Past {
-          pastStart    = History.initBound
-        , pastEnd      = byronEndBound
-        , pastSnapshot = State.Snapshot 1 stByron
-        }
-    cur = State.Current {
-          currentStart = History.initBound
-        , currentState = stShelley
-        }
-
-exampleChainDepStateWithSnapshot ::
-    ChainDepState (BlockProtocol (CardanoBlock Crypto))
-exampleChainDepStateWithSnapshot =
-    toTelescope' (Proxy @WrapChainDepState) (Right (past, cur))
-  where
-    (_, stByron)   = head $ Golden.exampleChainDepState Byron.examples
-    (_, stShelley) = head $ Golden.exampleChainDepState Shelley.examples
-
-    past = State.Past {
-          pastStart    = History.initBound
-        , pastEnd      = byronEndBound
-        , pastSnapshot = State.Snapshot 1 (WrapChainDepState stByron)
-        }
-    cur = State.Current {
-          currentStart = History.initBound
-        , currentState = WrapChainDepState stShelley
-        }

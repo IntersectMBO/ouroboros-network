@@ -38,8 +38,8 @@ protocolInfoMockPBFT params eraParams nid =
                 pbftParams = params
               }
           , topLevelConfigLedger = SimpleLedgerConfig ledgerView eraParams
-          , topLevelConfigBlock  = SimpleBlockConfig  (pbftSecurityParam params)
-          , topLevelConfigCodec  = SimpleCodecConfig  (pbftSecurityParam params)
+          , topLevelConfigBlock  = SimpleBlockConfig
+          , topLevelConfigCodec  = SimpleCodecConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)

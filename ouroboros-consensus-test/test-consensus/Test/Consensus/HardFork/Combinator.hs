@@ -267,8 +267,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* Nil
             }
         , topLevelConfigLedger = HardForkLedgerConfig {
-              hardForkLedgerConfigK      = k
-            , hardForkLedgerConfigShape  = shape
+              hardForkLedgerConfigShape  = shape
             , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
                    (WrapPartialLedgerConfig $ ledgerConfigA nid)
                 :* (WrapPartialLedgerConfig $ ledgerConfigB nid)

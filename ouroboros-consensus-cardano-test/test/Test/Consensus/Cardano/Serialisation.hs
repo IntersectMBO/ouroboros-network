@@ -32,7 +32,7 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
 
-import           Test.Consensus.Cardano.Generators (epochSlots, k)
+import           Test.Consensus.Cardano.Generators (epochSlots)
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 
 tests :: TestTree
@@ -43,7 +43,7 @@ tests = testGroup "Cardano"
 
 testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron
 testCodecCfg =
-  CardanoCodecConfig (ByronCodecConfig epochSlots k) ShelleyCodecConfig
+  CardanoCodecConfig (ByronCodecConfig epochSlots) ShelleyCodecConfig
 
 dictNestedHdr
   :: forall a.

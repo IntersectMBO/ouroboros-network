@@ -26,7 +26,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
   , Ticked(..)
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Functor.Product
 import           Data.SOP.Strict
@@ -53,7 +52,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkLedgerView, HardForkLedgerView_ (..),
                      Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
-                     HardForkState_, Translate (..))
+                     HardForkState, Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
@@ -107,7 +106,6 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   checkIsLeader         = check
   updateChainDepState   = update
   reupdateChainDepState = reupdate
-  rewindChainDepState _ = rewind
 
   --
   -- Straight-forward extensions
@@ -158,9 +156,9 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
 data instance Ticked (HardForkChainDepState xs) =
     TickedHardForkChainDepState {
         tickedHardForkChainDepStatePerEra ::
-             HardForkState_ WrapChainDepState (Ticked :.: WrapChainDepState) xs
+             HardForkState (Ticked :.: WrapChainDepState) xs
 
-        -- 'EpochInfo' constructed from the ticked 'LedgerView'
+        -- | 'EpochInfo' constructed from the ticked 'LedgerView'
       , tickedHardForkChainDepStateEpochInfo :: EpochInfo Identity
       }
 
@@ -279,23 +277,6 @@ data HardForkValidationErr xs =
   | HardForkValidationErrWrongEra (MismatchEraInfo xs)
   deriving (Generic)
 
-rewind :: (CanHardFork xs, Serialise (HeaderHash hdr))
-       => SecurityParam
-       -> Point hdr
-       -> HardForkChainDepState xs
-       -> Maybe (HardForkChainDepState xs)
-rewind k p =
-        -- Using just the 'SlotNo' is okay: no EBBs near transition
-        State.retractToSlot (pointSlot p)
-    >=> (hsequence' . hcmap proxySingle rewindOne)
-  where
-    rewindOne :: forall blk. SingleEraBlock     blk
-              => WrapChainDepState              blk
-              -> (Maybe :.: WrapChainDepState) blk
-    rewindOne (WrapChainDepState st) = Comp $
-        WrapChainDepState <$>
-          rewindChainDepState (Proxy @(BlockProtocol blk)) k p st
-
 update :: forall xs. CanHardFork xs
        => ConsensusConfig (HardForkProtocol xs)
        -> OneEraValidateView xs
@@ -316,7 +297,6 @@ update HardForkConsensusConfig{..}
             mismatch
       Right matched ->
            hsequence'
-         . State.tickAllPast hardForkConsensusConfigK
          . hczipWith3 proxySingle (updateEra ei slot) cfgs errInjections
          $ matched
   where
@@ -361,8 +341,7 @@ reupdate HardForkConsensusConfig{..}
             (LedgerEraInfo . chainDepStateInfo . State.currentState)
             mismatch
       Right matched ->
-           State.tickAllPast hardForkConsensusConfigK
-         . hczipWith proxySingle (reupdateEra ei slot) cfgs
+           hczipWith proxySingle (reupdateEra ei slot) cfgs
          $ matched
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra

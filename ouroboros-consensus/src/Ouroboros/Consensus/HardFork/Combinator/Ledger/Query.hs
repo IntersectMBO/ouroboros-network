@@ -258,7 +258,7 @@ answerQueryAnytime HardForkLedgerConfig{..} =
     go (c :* cs) (K ps :* pss) GetEraStart ctxt = case ctxt of
       SituatedShift ctxt'   -> go cs pss GetEraStart ctxt'
       SituatedFuture _ _    -> Nothing
-      SituatedPast past _   -> Just $ pastStart past
+      SituatedPast past _   -> Just $ pastStart $ unK past
       SituatedCurrent cur _ -> Just $ currentStart cur
       SituatedNext cur _    ->
         History.mkUpperBound ps (currentStart cur) <$>

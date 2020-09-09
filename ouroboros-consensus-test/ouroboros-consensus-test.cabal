@@ -141,7 +141,6 @@ test-suite test-consensus
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
                        Test.Consensus.Node
-                       Test.Consensus.Protocol.PBFT
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
                        Test.Consensus.Util.Versioned

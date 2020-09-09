@@ -54,8 +54,6 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     reupdateChainDepState = reupdateChainDepState . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP
 
-    rewindChainDepState _proxy = rewindChainDepState (Proxy @p)
-
     chainSelConfig = mcsConfigS
 
 instance (ConsensusProtocol p, ChainSelection s)

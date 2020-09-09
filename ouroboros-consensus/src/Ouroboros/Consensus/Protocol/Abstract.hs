@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , SecurityParam(..)
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
@@ -228,34 +227,3 @@ class ( Show (ChainDepState   p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: ConsensusConfig p -> SecurityParam
-
-  -- | We require that it's possible to reverse the chain state up to @k@
-  -- blocks.
-  --
-  -- This function should attempt to rewind the chain state to the state at some
-  -- given point.
-  --
-  -- PRECONDITION: the point to rewind to must correspond to a header (or
-  -- 'GenesisPoint') that was previously applied to the chain state using
-  -- 'updateChainDepState'.
-  --
-  -- Rewinding the chain state is intended to be used when switching to a
-  -- fork, longer or equally long to the chain to which the current chain
-  -- state corresponds. So each rewinding should be followed by rolling
-  -- forward (using 'updateChainDepState') at least as many blocks that we have
-  -- rewound.
-  --
-  -- Note that repeatedly rewinding a chain state does not make it possible to
-  -- rewind it all the way to genesis (this would mean that the whole
-  -- historical chain state is accumulated or derivable from the current chain
-  -- state). For example, rewinding a chain state by @i@ blocks and then
-  -- rewinding that chain state again by @j@ where @i + j > k@ is not possible
-  -- and will yield 'Nothing'.
-  --
-  -- TODO: The Serialise instance is only required for a hack in PBFT.
-  -- Reconsider later.
-  rewindChainDepState :: Serialise (HeaderHash hdr)
-                      => proxy p
-                      -> SecurityParam
-                      -> Point hdr      -- ^ Point to rewind to
-                      -> ChainDepState p -> Maybe (ChainDepState p)

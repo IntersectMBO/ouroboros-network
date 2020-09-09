@@ -54,8 +54,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
 
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
@@ -320,7 +318,19 @@ translateChainDepStateByronToShelley
   -> PBftState bc
   -> TPraosState era
 translateChainDepStateByronToShelley TPraosConfig { tpraosParams } pbftState =
-    TPraosState.empty (PBftState.tipSlot pbftState) $
+    -- Note that the 'PBftState' doesn't know about EBBs. So if the last slot of
+    -- the Byron era were occupied by an EBB (and no regular block in that same
+    -- slot), we would pick the wrong slot here, i.e., the slot of the regular
+    -- block before the EBB.
+    --
+    -- Fortunately, this is impossible for two reasons:
+    --
+    -- 1. On mainnet we stopped producing EBBs a while before the transition.
+    -- 2. The transition happens at the start of an epoch, so if the last slot
+    --    were occupied by an EBB, it must have been the EBB at the start of the
+    --    previous epoch. This means the previous epoch must have been empty,
+    --    which is a violation of the "@k@ blocks per @2k@ slots" property.
+    TPraosState (PBftState.lastSignedSlot pbftState) $
       SL.ChainDepState
         { SL.csProtocol = SL.PrtclState Map.empty nonce nonce
         , SL.csTickn    = SL.TicknState {

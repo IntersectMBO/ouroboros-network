@@ -80,7 +80,6 @@ import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -280,18 +279,17 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   Block config
 -------------------------------------------------------------------------------}
 
-newtype instance BlockConfig (SimpleBlock c ext) =
-    SimpleBlockConfig SecurityParam
+data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
   deriving stock   (Generic)
-  deriving newtype (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Codec config
 -------------------------------------------------------------------------------}
 
--- | Only the 'SecurityParam' is required for simple blocks
-newtype instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig SecurityParam
-  deriving newtype (NoUnexpectedThunks)
+data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
+  deriving stock    (Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Hard fork history

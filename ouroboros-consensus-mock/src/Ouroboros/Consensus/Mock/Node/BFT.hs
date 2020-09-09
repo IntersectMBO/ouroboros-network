@@ -40,8 +40,8 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
                   ]
               }
           , topLevelConfigLedger = SimpleLedgerConfig () eraParams
-          , topLevelConfigBlock  = SimpleBlockConfig securityParam
-          , topLevelConfigCodec  = SimpleCodecConfig securityParam
+          , topLevelConfigBlock  = SimpleBlockConfig
+          , topLevelConfigCodec  = SimpleCodecConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

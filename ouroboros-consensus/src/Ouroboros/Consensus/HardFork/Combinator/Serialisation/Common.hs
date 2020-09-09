@@ -380,15 +380,15 @@ encodeTelescope :: SListI xs
 encodeTelescope es (HardForkState st) = mconcat [
       Enc.encodeListLen (1 + fromIntegral ix)
     , mconcat $ hcollapse $ SimpleTelescope $
-        (Telescope.bihzipWith encPast encCurrent es st)
+        (Telescope.bihzipWith (const encPast) encCurrent es st)
     ]
   where
     -- The tip of the telescope also tells us the length
     ix :: Word8
     ix = nsToIndex (Telescope.tip st)
 
-    encPast :: (f -.-> K Encoding) blk -> Past f blk -> K Encoding blk
-    encPast enc = K . encodePast (unK . apFn enc)
+    encPast :: K Past blk -> K Encoding blk
+    encPast = K . encodePast . unK
 
     encCurrent :: (f -.-> K Encoding) blk -> Current f blk  -> K Encoding blk
     encCurrent enc = K . encodeCurrent (unK . apFn enc)
@@ -402,9 +402,9 @@ decodeTelescope = \ds -> do
   where
     go :: Int
        -> NP (Decoder s :.: f) xs
-       -> Decoder s (Telescope (Past f) (Current f) xs)
+       -> Decoder s (Telescope (K Past) (Current f) xs)
     go 0 (Comp d :* _)  = TZ <$> decodeCurrent d
-    go i (Comp d :* ds) = TS <$> decodePast d <*> go (i - 1) ds
+    go i (Comp _ :* ds) = TS <$> (K <$> decodePast) <*> go (i - 1) ds
     go _ Nil            = error "decodeTelescope: invalid telescope length"
 
 {-------------------------------------------------------------------------------

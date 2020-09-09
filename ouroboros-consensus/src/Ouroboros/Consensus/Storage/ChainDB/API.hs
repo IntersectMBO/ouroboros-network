@@ -77,6 +77,7 @@ import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
 import qualified Ouroboros.Network.Block as Network
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util ((.:))
@@ -173,6 +174,10 @@ data ChainDB m blk = ChainDB {
       -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
       -- returned.
     , getPastLedger      :: Point blk -> STM m (Maybe (ExtLedgerState blk))
+
+      -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
+      -- last @k@ blocks of the current chain.
+    , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
 
       -- | Get block at the tip of the chain, if one exists
       --

@@ -17,7 +17,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
 
 import           Data.SOP.Dict
 import           Data.SOP.Strict
-import           Data.Void
 
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -35,9 +34,7 @@ data HardForkLedgerView_ f xs = HardForkLedgerView {
       hardForkLedgerViewTransition :: !TransitionInfo
 
       -- | The underlying ledger view
-      --
-      -- We do not need snapshots for the past eras, and so we use 'Void'.
-    , hardForkLedgerViewPerEra     :: !(HardForkState_ (K Void) f xs)
+    , hardForkLedgerViewPerEra     :: !(HardForkState f xs)
     }
 
 deriving instance CanHardFork xs => Show (HardForkLedgerView_ WrapLedgerView xs)
@@ -50,7 +47,7 @@ type HardForkLedgerView = HardForkLedgerView_ WrapLedgerView
 
 data instance Ticked (HardForkLedgerView_ f xs) = TickedHardForkLedgerView {
       tickedHardForkLedgerViewTransition :: TransitionInfo
-    , tickedHardForkLedgerViewPerEra     :: HardForkState_ (K Void) (Ticked :.: f) xs
+    , tickedHardForkLedgerViewPerEra     :: HardForkState (Ticked :.: f) xs
     }
 
 {-------------------------------------------------------------------------------
@@ -65,7 +62,7 @@ instance (SListI xs, Show a) => Show (HardForkLedgerView_ (K a) xs) where
           , getHardForkState hardForkLedgerViewPerEra
           )
     where
-      dictPast :: Dict (All (Compose Show (Past (K Void)))) xs
+      dictPast :: Dict (All (Compose Show (K Past))) xs
       dictPast = all_NP $ hpure Dict
 
       dictCurrent :: Dict (All (Compose Show (Current (K a)))) xs
@@ -79,7 +76,7 @@ instance (SListI xs, Show (Ticked a)) => Show (Ticked (HardForkLedgerView_ (K a)
           , getHardForkState tickedHardForkLedgerViewPerEra
           )
     where
-      dictPast :: Dict (All (Compose Show (Past (K Void)))) xs
+      dictPast :: Dict (All (Compose Show (K Past))) xs
       dictPast = all_NP $ hpure Dict
 
       dictCurrent :: Dict (All (Compose Show (Current (Ticked :.: K a)))) xs

@@ -8,11 +8,9 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
 
-import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
-import           Data.Foldable (foldl')
 import           Data.List (intercalate, unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -50,6 +48,9 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..))
+import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -256,7 +257,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     -- Set up the client
     varCandidates   <- uncheckedNewTVarM Map.empty
-    varClientState  <- uncheckedNewTVarM (Genesis, testInitExtLedger)
+    varClientState  <- uncheckedNewTVarM Genesis
     varClientResult <- uncheckedNewTVarM Nothing
     -- Candidates are removed from the candidates map when disconnecting, so
     -- we lose access to them. Therefore, store the candidate 'TVar's in a
@@ -270,13 +271,15 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     let chainDbView :: ChainDbView m TestBlock
         chainDbView = ChainDbView
-          { getCurrentChain   =
+          { getCurrentChain =
               AF.mapAnchoredFragment TestHeader . AF.anchorNewest k .
-              Chain.toAnchoredFragment . fst <$>
-              readTVar varClientState
-          , getCurrentLedger  = snd <$> readTVar varClientState
+                Chain.toAnchoredFragment <$>
+                readTVar varClientState
+          , getHeaderStateHistory =
+              computeHeaderStateHistory nodeCfg <$>
+                readTVar varClientState
           , getPastLedger     = \pt ->
-              computePastLedger nodeCfg pt . fst <$>
+              computePastLedger nodeCfg pt <$>
                 readTVar varClientState
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
@@ -310,10 +313,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       unless stop $ do
         -- Client
         whenJust (Map.lookup tick clientUpdates) $ \chainUpdates ->
-          atomically $ do
-            (chain, ledger) <- readTVar varClientState
-            writeTVar varClientState $
-              updateClientState nodeCfg chain ledger chainUpdates
+          atomically $ modifyTVar varClientState $ updateClientState chainUpdates
 
         -- Server
         whenJust (Map.lookup tick serverUpdates) $ \chainUpdates ->
@@ -373,7 +373,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     traceEvents <- getTrace
     -- Collect the return values
     atomically $ do
-      finalClientChain       <- fst <$> readTVar varClientState
+      finalClientChain       <- readTVar varClientState
       finalServerChain       <- chainState <$> readTVar varChainProducerState
       candidateFragment <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
       mbResult      <- readTVar varClientResult
@@ -426,44 +426,11 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       tick <- atomically $ LogicalClock.getCurrentTick clock
       traceWith tr (tick, ev)
 
-getAddBlock :: ChainUpdate -> Maybe TestBlock
-getAddBlock (AddBlock b)    = Just b
-getAddBlock (SwitchFork {}) = Nothing
-
-updateClientState :: TopLevelConfig TestBlock
-                  -> Chain TestBlock
-                  -> ExtLedgerState TestBlock
-                  -> [ChainUpdate]
-                  -> (Chain TestBlock, ExtLedgerState TestBlock)
-updateClientState cfg chain ledgerState chainUpdates =
-    case forwardOnlyOrNot chainUpdates of
-      -- If the updates don't contain a roll back, we can incrementally
-      -- validate the chain
-      Just bs -> (chain', ledgerState')
-        where
-          chain'       = foldl' (flip Chain.addBlock) chain bs
-          ledgerState' = runValidate $ foldLedger
-                                         (ExtLedgerCfg cfg)
-                                         bs
-                                         ledgerState
-      Nothing
-      -- There was a roll back in the updates, so validate the chain from
-      -- scratch
-        | Just chain' <- Chain.applyChainUpdates (toChainUpdates chainUpdates) chain
-        -> let ledgerState' = runValidate $ foldLedger
-                                              (ExtLedgerCfg cfg)
-                                              (Chain.toOldestFirst chain')
-                                              testInitExtLedger
-           in (chain', ledgerState')
-        | otherwise
-        -> error "Client chain update failed"
-  where
-    forwardOnlyOrNot :: [ChainUpdate] -> Maybe [TestBlock]
-    forwardOnlyOrNot = traverse getAddBlock
-
-    runValidate m = case runExcept m of
-      Left  _ -> error "Client ledger validation error"
-      Right x -> x
+updateClientState :: [ChainUpdate] -> Chain TestBlock -> Chain TestBlock
+updateClientState chainUpdates chain =
+    case Chain.applyChainUpdates (toChainUpdates chainUpdates) chain of
+      Just chain' -> chain'
+      Nothing     -> error "Client chain update failed"
 
 -- | Simulates 'ChainDB.getPastLedger'.
 computePastLedger ::
@@ -501,6 +468,17 @@ computePastLedger cfg pt chain
         = go (tickThenReapply (ExtLedgerCfg cfg) blk st) blks'
         | otherwise
         = error "point not in the list of blocks"
+
+-- | Simulates 'ChainDB.getHeaderStateHistory'.
+computeHeaderStateHistory ::
+     TopLevelConfig TestBlock
+  -> Chain TestBlock
+  -> HeaderStateHistory TestBlock
+computeHeaderStateHistory cfg =
+      HeaderStateHistory.trim (fromIntegral k)
+    . HeaderStateHistory.fromChain cfg testInitExtLedger
+  where
+    SecurityParam k = configSecurityParam cfg
 
 {-------------------------------------------------------------------------------
   ChainSyncClientSetup

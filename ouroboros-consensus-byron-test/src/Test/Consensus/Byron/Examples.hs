@@ -22,8 +22,6 @@ module Test.Consensus.Byron.Examples (
   ) where
 
 import           Control.Monad.Except (runExcept)
-import qualified Data.ByteString.Lazy.Char8 as Lazy8
-import qualified Data.Sequence.Strict as Seq
 
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
@@ -42,7 +40,6 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
@@ -168,25 +165,9 @@ exampleAnnTip = AnnTip {
     }
 
 exampleChainDepState :: ChainDepState (BlockProtocol ByronBlock)
-exampleChainDepState = withEBB
+exampleChainDepState = S.fromList signers
   where
     signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
-
-    withoutEBB = S.fromList
-      secParam
-      windowSize
-      (NotOrigin 2, Seq.fromList signers, S.NothingEbbInfo)
-
-    -- info about an arbitrary hypothetical EBB
-    exampleEbbSlot            :: SlotNo
-    exampleEbbHeaderHashBytes :: HeaderHashBytes
-    exampleEbbSlot            = 6
-    exampleEbbHeaderHashBytes = mkHeaderHashBytesForTestingOnly
-                                  (Lazy8.pack "test_golden_ChainDepState6")
-
-    withEBB = S.appendEBB secParam windowSize
-                exampleEbbSlot exampleEbbHeaderHashBytes
-                withoutEBB
 
 emptyLedgerState :: LedgerState ByronBlock
 emptyLedgerState = ByronLedgerState {
@@ -210,9 +191,7 @@ exampleLedgerState =
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock
-exampleHeaderState = (genesisHeaderState S.empty) {
-      headerStateTips = Seq.singleton exampleAnnTip
-    }
+exampleHeaderState = HeaderState (NotOrigin exampleAnnTip) exampleChainDepState
 
 exampleExtLedgerState :: ExtLedgerState ByronBlock
 exampleExtLedgerState = ExtLedgerState {

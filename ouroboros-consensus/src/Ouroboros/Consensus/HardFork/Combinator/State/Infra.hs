@@ -12,22 +12,16 @@
 module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
     -- * Initialization
     initHardForkState
-    -- * GC
-  , tickAllPast
-  , dropAllPast
     -- * Lifting 'Telescope' operations
   , tip
   , match
   , sequence
-  , bihczipWith
   , fromTZ
     -- * Situated
   , Situated(..)
   , situate
     -- * Aligning
   , align
-    -- * Rewinding
-  , retractToSlot
     -- * EpochInfo/Summary
   , reconstructSummary
   ) where
@@ -38,7 +32,6 @@ import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..), SafeZone (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -52,9 +45,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Extend (..), Retract (..), Telescope (..))
+                     (Extend (..), Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
@@ -68,41 +60,16 @@ initHardForkState st = HardForkState $ TZ $ Current {
     }
 
 {-------------------------------------------------------------------------------
-  GC
--------------------------------------------------------------------------------}
-
-tickAllPast :: SListI xs
-            => SecurityParam -> HardForkState_ g f xs -> HardForkState_ g f xs
-tickAllPast k (HardForkState st) = HardForkState $
-    Telescope.bihmap (tickPast k) id st
-
--- | Tick all past states
---
--- This is used to GC past snapshots when they exceed @k@.
-tickPast :: SecurityParam -> Past g blk -> Past g blk
-tickPast k past = past { pastSnapshot = tickSnapshot k (pastSnapshot past) }
-
-tickSnapshot :: SecurityParam -> Snapshot f blk -> Snapshot f blk
-tickSnapshot (SecurityParam k) = \case
-    Snapshot n st | n < k -> Snapshot (n + 1) st
-    _                     -> NoSnapshot
-
--- | Drop all past snapshots
-dropAllPast :: SListI xs => HardForkState_ g f xs -> HardForkState_ g' f xs
-dropAllPast (HardForkState st) = HardForkState $
-    Telescope.bihmap (\past -> past { pastSnapshot = NoSnapshot }) id st
-
-{-------------------------------------------------------------------------------
   Lift telescope operations
 -------------------------------------------------------------------------------}
 
-tip :: SListI xs => HardForkState_ g f xs -> NS f xs
+tip :: SListI xs => HardForkState f xs -> NS f xs
 tip (HardForkState st) = hmap currentState $ Telescope.tip st
 
 match :: SListI xs
       => NS h xs
-      -> HardForkState_ g f xs
-      -> Either (Mismatch h (Current f) xs) (HardForkState_ g (Product h f) xs)
+      -> HardForkState f xs
+      -> Either (Mismatch h (Current f) xs) (HardForkState (Product h f) xs)
 match ns (HardForkState t) =
     HardForkState . hmap distrib <$> Match.matchTelescope ns t
   where
@@ -110,8 +77,8 @@ match ns (HardForkState t) =
     distrib (Pair x (Current start y)) =
         Current start (Pair x y)
 
-sequence :: forall g f m xs. (SListI xs, Functor m)
-         => HardForkState_ g (m :.: f) xs -> m (HardForkState_ g f xs)
+sequence :: forall f m xs. (SListI xs, Functor m)
+         => HardForkState (m :.: f) xs -> m (HardForkState f xs)
 sequence = \(HardForkState st) -> HardForkState <$>
     Telescope.sequence (hmap distrib st)
   where
@@ -119,14 +86,7 @@ sequence = \(HardForkState st) -> HardForkState <$>
     distrib (Current start st) = Comp $
         Current start <$> unComp st
 
-bihczipWith :: forall xs h g' g f' f. All SingleEraBlock xs
-            => (forall blk. SingleEraBlock blk => h blk -> g blk -> g' blk)
-            -> (forall blk. SingleEraBlock blk => h blk -> f blk -> f' blk)
-            -> NP h xs -> HardForkState_ g f xs -> HardForkState_ g' f' xs
-bihczipWith g f ns (HardForkState st) = HardForkState $
-    Telescope.bihczipWith proxySingle (liftPast . g) (lift . f) ns st
-
-fromTZ :: HardForkState_ g f '[blk] -> f blk
+fromTZ :: HardForkState f '[blk] -> f blk
 fromTZ = currentState . Telescope.fromTZ . getHardForkState
 
 {-------------------------------------------------------------------------------
@@ -138,14 +98,14 @@ data Situated h f xs where
   SituatedCurrent :: Current f x ->    h x  -> Situated h f (x ': xs)
   SituatedNext    :: Current f x ->    h y  -> Situated h f (x ': y ': xs)
   SituatedFuture  :: Current f x -> NS h xs -> Situated h f (x ': y ': xs)
-  SituatedPast    :: Past    f x ->    h x  -> Situated h f (x ': xs)
+  SituatedPast    :: K Past    x ->    h x  -> Situated h f (x ': xs)
   SituatedShift   :: Situated h f xs        -> Situated h f (x ': xs)
 
 situate :: NS h xs -> HardForkState f xs -> Situated h f xs
 situate ns = go ns . getHardForkState
   where
     go :: NS h xs'
-       -> Telescope (Past f) (Current f) xs'
+       -> Telescope (K Past) (Current f) xs'
        -> Situated h f xs'
     go (Z    era)  (TZ cur)    = SituatedCurrent cur era
     go (S (Z era)) (TZ cur)    = SituatedNext    cur era
@@ -157,12 +117,12 @@ situate ns = go ns . getHardForkState
   Aligning
 -------------------------------------------------------------------------------}
 
-align :: forall xs h f f' f''. All SingleEraBlock xs
+align :: forall xs f f' f''. All SingleEraBlock xs
       => InPairs (Translate f) xs
       -> NP (f' -.-> f -.-> f'') xs
-      -> HardForkState_ h f'  xs -- ^ State we are aligning with
-      -> HardForkState_ f f   xs -- ^ State we are aligning
-      -> HardForkState_ f f'' xs
+      -> HardForkState f'  xs -- ^ State we are aligning with
+      -> HardForkState f   xs -- ^ State we are aligning
+      -> HardForkState f'' xs
 align fs updTip (HardForkState alignWith) (HardForkState toAlign) =
     HardForkState . unI $
       Telescope.alignExtend
@@ -179,13 +139,12 @@ align fs updTip (HardForkState alignWith) (HardForkState toAlign) =
     liftUpdTip f = lift . apFn . apFn f . currentState
 
     newCurrent :: Translate f blk blk'
-               -> Past g' blk
+               -> K Past blk
                -> Current f blk
-               -> (Past f blk, Current f blk')
-    newCurrent f pastG curF = (
-          Past    { pastStart    = currentStart curF
+               -> (K Past blk, Current f blk')
+    newCurrent f (K past) curF = (
+          K Past  { pastStart    = currentStart curF
                   , pastEnd      = curEnd
-                  , pastSnapshot = Snapshot 0 (currentState curF)
                   }
         , Current { currentStart = curEnd
                   , currentState = translateWith f
@@ -195,40 +154,7 @@ align fs updTip (HardForkState alignWith) (HardForkState toAlign) =
         )
       where
         curEnd :: Bound
-        curEnd = pastEnd pastG
-
-{-------------------------------------------------------------------------------
-  Rewinding
--------------------------------------------------------------------------------}
-
--- | Rewind until the specified slot is within the era at the tip
-retractToSlot :: forall f xs. SListI xs
-              => WithOrigin SlotNo
-              -> HardForkState f xs -> Maybe (HardForkState f xs)
-retractToSlot slot (HardForkState st) =
-    HardForkState <$>
-      Telescope.retractIf
-        (Tails.hpure retract)
-        (hmap (fn . containsSlot) (markFirst True sList))
-        st
-  where
-    markFirst :: Bool -> SList xs' -> NP (K Bool) xs'
-    markFirst _ SNil  = Nil
-    markFirst b SCons = K b :* markFirst False sList
-
-    containsSlot :: K Bool blk -> Past f blk -> K Bool blk
-    containsSlot (K isFirst) Past{..} = K $
-        case slot of
-          Origin      -> isFirst -- Assume 'Origin' in the first era
-          NotOrigin s -> boundSlot pastStart <= s && s < boundSlot pastEnd
-
-    retract :: Retract Maybe (Past f) (Current f) blk blk'
-    retract = Retract $ \past _oldCur ->
-        Current (pastStart past) <$> getSnapshot (pastSnapshot past)
-
-getSnapshot :: Snapshot f blk -> Maybe (f blk)
-getSnapshot (Snapshot _ st) = Just st
-getSnapshot NoSnapshot      = Nothing
+        curEnd = pastEnd past
 
 {-------------------------------------------------------------------------------
   Summary/EpochInfo
@@ -236,15 +162,15 @@ getSnapshot NoSnapshot      = Nothing
 
 reconstructSummary :: History.Shape xs
                    -> TransitionInfo         -- ^ At the tip
-                   -> HardForkState_ g f xs
+                   -> HardForkState f xs
                    -> History.Summary xs
 reconstructSummary (History.Shape shape) transition (HardForkState st) =
     History.Summary $ go shape st
   where
     go :: Exactly xs' EraParams
-       -> Telescope (Past g) (Current f) xs'
+       -> Telescope (K Past) (Current f) xs'
        -> NonEmpty xs' EraSummary
-    go (K params :* ss) (TS Past{..} t) =
+    go (K params :* ss) (TS (K Past{..}) t) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
     go (K params :* Nil) (TZ Current{..}) =
         -- The current era is the last. We assume it lasts until all eternity.

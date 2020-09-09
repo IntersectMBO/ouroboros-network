@@ -12,8 +12,8 @@ module Test.Consensus.Byron.Generators (
   , RegularBlock (..)
   ) where
 
+import           Control.Monad (replicateM)
 import           Data.Coerce (coerce)
-import           Data.Proxy
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
-import qualified Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes as PBftState
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Protocol
@@ -272,29 +271,10 @@ instance Arbitrary (AnnTip ByronBlock) where
 
 instance Arbitrary (PBftState PBftByronCrypto) where
   arbitrary = do
-      steps <- choose (0, 5)
-      go steps Origin PBftState.empty
-    where
-      go :: Int
-         -> WithOrigin SlotNo
-         -> PBftState PBftByronCrypto
-         -> Gen (PBftState PBftByronCrypto)
-      go steps prevSlot st
-        | 0 <- steps = return st
-        | otherwise  = do
-          let slot = withOrigin (SlotNo 0) succ prevSlot
-          ebb <- arbitrary
-          st' <-
-            if ebb then do
-              headerHashBytes <-
-                PBftState.headerHashBytes (Proxy @ByronBlock) <$> arbitrary
-              return $ PBftState.appendEBB k windowSize slot headerHashBytes st
-            else do
-              newSigner <- PBftState.PBftSigner slot <$> arbitrary
-              return $ PBftState.append k windowSize newSigner st
-          go (steps - 1) (NotOrigin slot) st'
-
-      windowSize = PBftState.WindowSize (maxRollbacks k)
+      slots <- choose (0, 10)
+      keys  <- replicateM 3 arbitrary
+      let signers = zipWith PBftState.PBftSigner (map SlotNo [0..slots]) (cycle keys)
+      return $ PBftState.fromList signers
 
 instance Arbitrary (SomeResult ByronBlock) where
   arbitrary = SomeResult GetUpdateInterfaceState  <$> arbitrary

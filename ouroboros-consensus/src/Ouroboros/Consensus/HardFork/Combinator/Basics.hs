@@ -127,8 +127,7 @@ newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
 -------------------------------------------------------------------------------}
 
 data HardForkLedgerConfig xs = HardForkLedgerConfig {
-      hardForkLedgerConfigK      :: !SecurityParam
-    , hardForkLedgerConfigShape  :: !(History.Shape xs)
+      hardForkLedgerConfigShape  :: !(History.Shape xs)
     , hardForkLedgerConfigPerEra :: !(PerEraLedgerConfig xs)
     }
   deriving (Generic)

@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbAnchor
      -- ** Past ledger states
    , ledgerDbPast
+   , ledgerDbPastLedgers
      -- ** Running updates
    , Ap(..)
    , AnnLedgerError(..)
@@ -614,6 +615,16 @@ ledgerDbPastSpec tip db
     = cpState <$> find ((== tip') . cpBlock) (ledgerDbCheckpoints db)
     | otherwise
     = Nothing
+
+-- | Apply the given function to all past ledgers in the 'LedgerDB', including
+-- the one stored at the anchor.
+--
+-- \( O(n) \)
+ledgerDbPastLedgers :: (l -> a) -> LedgerDB l r -> (a, StrictSeq a)
+ledgerDbPastLedgers f db =
+    ( f . csLedger . ledgerDbAnchor $ db
+    , fmap (f . cpState) . ledgerDbCheckpoints $ db
+    )
 
 {-------------------------------------------------------------------------------
   Updates

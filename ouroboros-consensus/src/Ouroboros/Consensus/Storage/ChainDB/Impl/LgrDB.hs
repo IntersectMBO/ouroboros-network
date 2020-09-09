@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , setCurrent
   , getCurrentState
   , getPastState
+  , getHeaderStateHistory
   , currentPoint
   , takeSnapshot
   , trimSnapshots
@@ -64,6 +65,8 @@ import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -128,9 +131,7 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
   -- use generic instance
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
-class ( -- TODO remove/replace this one once we remove it from the
-        -- 'ConsensusProtocol'.
-        Serialise      (HeaderHash  blk)
+class ( Serialise      (HeaderHash  blk)
       , EncodeDisk blk (LedgerState blk)
       , DecodeDisk blk (LedgerState blk)
       , EncodeDisk blk (AnnTip      blk)
@@ -311,6 +312,17 @@ getPastState LgrDB{..} p = do
         realPointSlot
         (pointToWithOriginRealPoint p)
         db
+
+getHeaderStateHistory ::
+     IOLike m
+  => LgrDB m blk -> STM m (HeaderStateHistory blk)
+getHeaderStateHistory LgrDB{..} = do
+    db <- readTVar varDB
+    let (anchor, snapshots) = LedgerDB.ledgerDbPastLedgers headerState db
+    return HeaderStateHistory {
+        headerStateHistorySnapshots = snapshots
+      , headerStateHistoryAnchor    = anchor
+      }
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current

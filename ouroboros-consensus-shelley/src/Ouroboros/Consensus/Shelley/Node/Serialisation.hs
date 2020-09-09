@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Shelley.Node.Serialisation () where
 import qualified Data.ByteString.Lazy as Lazy
 
 import           Cardano.Binary (fromCBOR, toCBOR)
+import           Codec.Serialise (decode, encode)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
@@ -53,10 +54,10 @@ instance Era era => DecodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
 instance Era era => EncodeDisk (ShelleyBlock era) (TPraosState era) where
-  encodeDisk _ = toCBOR
+  encodeDisk _ = encode
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
 instance Era era => DecodeDisk (ShelleyBlock era) (TPraosState era) where
-  decodeDisk _ = fromCBOR
+  decodeDisk _ = decode
 
 instance Era era => EncodeDisk (ShelleyBlock era) (AnnTip (ShelleyBlock era)) where
   encodeDisk _ = encodeShelleyAnnTip

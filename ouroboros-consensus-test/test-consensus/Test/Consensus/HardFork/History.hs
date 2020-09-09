@@ -869,7 +869,7 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               -> Exactly  (x ': xs) HF.EraParams
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
-              -> Telescope (Past (K ())) (Current (AnnForecast (K ()))) (x : xs)
+              -> Telescope (K Past) (Current (AnnForecast (K ()))) (x : xs)
     mockState start (K ps :* _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
             annForecastEraParams = ps
@@ -880,7 +880,7 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               }
           }
     mockState start (K ps :* pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
-        TS (Past start end NoSnapshot) (mockState end pss ts ess)
+        TS (K (Past start end)) (mockState end pss ts ess)
       where
         end :: HF.Bound
         end = HF.mkUpperBound ps start t
