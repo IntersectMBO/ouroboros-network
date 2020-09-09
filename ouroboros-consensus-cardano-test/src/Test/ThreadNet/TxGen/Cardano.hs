@@ -39,6 +39,7 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
+import qualified Cardano.Ledger.Val as Val
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
 import qualified Shelley.Spec.Ledger.API as SL
@@ -149,21 +150,20 @@ migrateUTxO migrationInfo curSlot lcfg lst
 
         -- Total held by 'byronAddr'
         pickedCoin :: SL.Coin
-        pickedCoin =
-            sum $ fmap (\(SL.TxOut _ coin) -> coin) picked
+        pickedCoin = foldMap (\(SL.TxOut _ coin) -> coin) picked
 
         -- NOTE: The Cardano ThreadNet tests use the
         -- ouroboros-consensus-shelley-test infra's genesis config, which sets
         -- relevant protocol params to 0.
         fee, deposits, spentCoin :: SL.Coin
-        fee       = 0
-        deposits  = 0
-        spentCoin = deposits + fee
+        fee       = SL.Coin  0
+        deposits  = SL.Coin 0
+        spentCoin = deposits <> fee
 
         unspentCoin :: SL.Coin
         unspentCoin =
             assert (pickedCoin > spentCoin) $
-            pickedCoin - spentCoin
+            pickedCoin Val.~~ spentCoin
 
         body :: SL.TxBody (ShelleyEra c)
         body = SL.TxBody
