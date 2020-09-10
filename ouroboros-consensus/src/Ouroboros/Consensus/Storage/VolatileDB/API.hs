@@ -212,6 +212,18 @@ data UnexpectedFailure =
   | forall blk. (Typeable blk, StandardHash blk) =>
       MissingBlockError (Proxy blk) (HeaderHash blk)
 
+    -- | A (parsed) block did not pass the integrity check.
+    --
+    -- This exception gets thrown when a block doesn't pass the integrity check
+    -- done for 'GetVerifiedBlock'.
+    --
+    -- NOTE: we do not check the integrity of a block when it is added to the
+    -- VolatileDB. While this exception typically means the block has been
+    -- corrupted, it could also mean the block didn't pass the check at the time
+    -- it was added.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      CorruptBlockError (Proxy blk) (HeaderHash blk)
+
 deriving instance Show UnexpectedFailure
 
 {-------------------------------------------------------------------------------

@@ -13,6 +13,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeApplications          #-}
 -- | Volatile on-disk database of blocks
 --
 -- = Logic
@@ -117,7 +118,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl (
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import           Control.Monad (when)
+import           Control.Monad (unless, when)
 import           Control.Monad.State.Strict (get, gets, lift, modify, put,
                      state)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
@@ -220,6 +221,7 @@ openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $
           , maxBlocksPerFile = volMaxBlocksPerFile
           , tracer           = volTracer
           , codecConfig      = volCodecConfig
+          , checkIntegrity   = volCheckIntegrity
           }
         volatileDB = VolatileDB {
             closeDB             = closeDBImpl             env
@@ -258,7 +260,7 @@ getBlockComponentImpl ::
   -> BlockComponent blk b
   -> HeaderHash blk
   -> m (Maybe b)
-getBlockComponentImpl env@VolatileDBEnv { codecConfig } blockComponent hash =
+getBlockComponentImpl env@VolatileDBEnv { codecConfig, checkIntegrity } blockComponent hash =
     withOpenState env $ \hasFS OpenState { currentRevMap } ->
       case Map.lookup hash currentRevMap of
         Nothing                -> return Nothing
@@ -271,27 +273,32 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig } blockComponent hash =
       -> BlockComponent blk b'
       -> m b'
     getBlockComponent hasFS ibi = \case
-        GetHash       -> return hash
-        GetSlot       -> return biSlotNo
-        GetIsEBB      -> return biIsEBB
-        GetBlockSize  -> return $ fromIntegral $ unBlockSize ibiBlockSize
-        GetHeaderSize -> return biHeaderSize
-        GetPure a     -> return a
-        GetApply f bc ->
+        GetHash          -> return hash
+        GetSlot          -> return biSlotNo
+        GetIsEBB         -> return biIsEBB
+        GetBlockSize     -> return $ fromIntegral $ unBlockSize ibiBlockSize
+        GetHeaderSize    -> return biHeaderSize
+        GetPure a        -> return a
+        GetApply f bc    ->
           getBlockComponent hasFS ibi f <*> getBlockComponent hasFS ibi bc
-        GetBlock      ->
+        GetBlock         ->
           getBlockComponent hasFS ibi GetRawBlock >>= parseBlock
-        GetRawBlock   -> withFile hasFS ibiFile ReadMode $ \hndl -> do
+        GetRawBlock      -> withFile hasFS ibiFile ReadMode $ \hndl -> do
           let size   = fromIntegral $ unBlockSize ibiBlockSize
               offset = unBlockOffset ibiBlockOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetHeader     ->
+        GetHeader        ->
           getBlockComponent hasFS ibi GetRawHeader >>= parseHeader
-        GetRawHeader  -> withFile hasFS ibiFile ReadMode $ \hndl -> do
+        GetRawHeader     -> withFile hasFS ibiFile ReadMode $ \hndl -> do
           let size   = fromIntegral biHeaderSize
               offset = unBlockOffset ibiBlockOffset + fromIntegral biHeaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)
-        GetNestedCtxt -> return ibiNestedCtxt
+        GetNestedCtxt    -> return ibiNestedCtxt
+        GetVerifiedBlock ->
+          getBlockComponent hasFS ibi GetBlock >>= \blk -> do
+            unless (checkIntegrity blk) $
+              throwM $ UnexpectedFailure $ CorruptBlockError (Proxy @blk) hash
+            return blk
       where
         InternalBlockInfo { ibiBlockInfo = BlockInfo {..}, .. } = ibi
 

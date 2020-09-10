@@ -79,6 +79,13 @@ instance Eq VolatileDB.UnexpectedFailure where
           Just Refl -> h1 == h2
       (VolatileDB.MissingBlockError {}, _) -> False
 
+      (VolatileDB.CorruptBlockError (Proxy :: Proxy blk1) h1,
+       VolatileDB.CorruptBlockError (Proxy :: Proxy blk2) h2) ->
+        case eqT @blk1 @blk2 of
+          Nothing   -> False
+          Just Refl -> h1 == h2
+      (VolatileDB.CorruptBlockError {}, _) -> False
+
 {-------------------------------------------------------------------------------
   ImmutableDB
 -------------------------------------------------------------------------------}
@@ -148,19 +155,19 @@ instance Eq ImmutableDB.UnexpectedFailure where
           Just Refl -> mb1 == mb2
       (ImmutableDB.MissingBlockError {}, _) -> False
 
+      (ImmutableDB.CorruptBlockError (pt1 :: RealPoint blk1),
+       ImmutableDB.CorruptBlockError (pt2 :: RealPoint blk2)) ->
+        case eqT @blk1 @blk2 of
+          Nothing   -> False
+          Just Refl -> pt1 == pt2
+      (ImmutableDB.CorruptBlockError {}, _) -> False
+
 {-------------------------------------------------------------------------------
   ChainDB
 -------------------------------------------------------------------------------}
 
 instance Eq ChainDbFailure where
   f1 == f2 = case (f1, f2) of
-      (ChainDB.VolatileDbCorruptBlock (br1 :: ChainDB.BlockRef blk1),
-       ChainDB.VolatileDbCorruptBlock (br2 :: ChainDB.BlockRef blk2)) ->
-        case eqT @blk1 @blk2 of
-          Nothing   -> False
-          Just Refl -> br1 == br2
-      (ChainDB.VolatileDbCorruptBlock {}, _) -> False
-
       (ChainDB.LgrDbFailure fse1, ChainDB.LgrDbFailure fse2) -> fse1 == fse2
       (ChainDB.LgrDbFailure {}, _ ) -> False
 

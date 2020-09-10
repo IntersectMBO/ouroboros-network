@@ -147,21 +147,25 @@ validBounds from (StreamToInclusive (RealPoint sto hto)) =
 --
 -- NOTE: when requesting multiple components, we will not optimise/cache them.
 data BlockComponent blk a where
-  GetBlock      :: BlockComponent blk blk
-  GetRawBlock   :: BlockComponent blk ByteString
-  GetHeader     :: BlockComponent blk (Header blk)
-  GetRawHeader  :: BlockComponent blk ByteString
-  GetHash       :: BlockComponent blk (HeaderHash blk)
-  GetSlot       :: BlockComponent blk SlotNo
-  GetIsEBB      :: BlockComponent blk IsEBB
-  GetBlockSize  :: BlockComponent blk Word32
-  GetHeaderSize :: BlockComponent blk Word16
-  GetNestedCtxt :: BlockComponent blk (SomeBlock (NestedCtxt Header) blk)
-  GetPure       :: a
-                -> BlockComponent blk a
-  GetApply      :: BlockComponent blk (a -> b)
-                -> BlockComponent blk a
-                -> BlockComponent blk b
+  -- | Verify the integrity of the block by checking its signature and/or
+  -- hashes. The interpreter should throw an exception when the block does not
+  -- pass the check.
+  GetVerifiedBlock :: BlockComponent blk blk
+  GetBlock         :: BlockComponent blk blk
+  GetRawBlock      :: BlockComponent blk ByteString
+  GetHeader        :: BlockComponent blk (Header blk)
+  GetRawHeader     :: BlockComponent blk ByteString
+  GetHash          :: BlockComponent blk (HeaderHash blk)
+  GetSlot          :: BlockComponent blk SlotNo
+  GetIsEBB         :: BlockComponent blk IsEBB
+  GetBlockSize     :: BlockComponent blk Word32
+  GetHeaderSize    :: BlockComponent blk Word16
+  GetNestedCtxt    :: BlockComponent blk (SomeBlock (NestedCtxt Header) blk)
+  GetPure          :: a
+                   -> BlockComponent blk a
+  GetApply         :: BlockComponent blk (a -> b)
+                   -> BlockComponent blk a
+                   -> BlockComponent blk b
 
 instance Functor (BlockComponent blk) where
   fmap f = (GetPure f <*>)

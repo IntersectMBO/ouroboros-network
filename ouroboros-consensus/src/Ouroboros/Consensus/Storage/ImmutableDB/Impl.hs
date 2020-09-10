@@ -263,6 +263,7 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempR
     let dbEnv = ImmutableDBEnv {
             hasFS            = hasFS
           , varInternalState = stVar
+          , checkIntegrity   = immCheckIntegrity
           , chunkInfo        = immChunkInfo
           , tracer           = immTracer
           , registry         = immRegistry
@@ -427,11 +428,12 @@ getBlockComponentImpl dbEnv blockComponent pt =
           chunkInfo
           chunk
           codecConfig
+          checkIntegrity
           eHnd
           (WithBlockSize actualBlockSize entry)
           blockComponent
   where
-    ImmutableDBEnv { chunkInfo, codecConfig } = dbEnv
+    ImmutableDBEnv { chunkInfo, codecConfig, checkIntegrity } = dbEnv
 
 appendBlockImpl ::
      forall m blk.

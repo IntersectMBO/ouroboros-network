@@ -59,6 +59,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 data ImmutableDBEnv m blk = forall h. Eq h => ImmutableDBEnv {
       hasFS            :: !(HasFS m h)
     , varInternalState :: !(StrictMVar m (InternalState m blk h))
+    , checkIntegrity   :: !(blk -> Bool)
     , chunkInfo        :: !ChunkInfo
     , tracer           :: !(Tracer m (TraceEvent blk))
     , registry         :: !(ResourceRegistry m)

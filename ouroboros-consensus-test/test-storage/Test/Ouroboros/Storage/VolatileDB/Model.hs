@@ -268,19 +268,20 @@ getBlockComponentModel blockComponent hash dbm@DBModel { codecConfig } =
   where
     go :: forall b'. blk -> BlockComponent blk b' -> b'
     go blk = \case
-        GetBlock      -> blk
-        GetRawBlock   -> blockBytes
-        GetHeader     -> getHeader blk
-        GetRawHeader  -> extractHeader binaryBlockInfo blockBytes
-        GetHash       -> blockHash blk
-        GetSlot       -> blockSlot blk
-        GetIsEBB      -> blockToIsEBB blk
-        GetBlockSize  -> fromIntegral $ BL.length blockBytes
-        GetHeaderSize -> headerSize binaryBlockInfo
-        GetNestedCtxt -> case unnest (getHeader blk) of
-                           DepPair nestedCtxt _ -> SomeBlock nestedCtxt
-        GetPure a     -> a
-        GetApply f bc -> go blk f $ go blk bc
+        GetVerifiedBlock -> blk  -- We don't verify
+        GetBlock         -> blk
+        GetRawBlock      -> blockBytes
+        GetHeader        -> getHeader blk
+        GetRawHeader     -> extractHeader binaryBlockInfo blockBytes
+        GetHash          -> blockHash blk
+        GetSlot          -> blockSlot blk
+        GetIsEBB         -> blockToIsEBB blk
+        GetBlockSize     -> fromIntegral $ BL.length blockBytes
+        GetHeaderSize    -> headerSize binaryBlockInfo
+        GetNestedCtxt    -> case unnest (getHeader blk) of
+                              DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+        GetPure a        -> a
+        GetApply f bc    -> go blk f $ go blk bc
       where
         binaryBlockInfo = getBinaryBlockInfo blk
         blockBytes = CBOR.toLazyByteString $ encodeDisk codecConfig blk

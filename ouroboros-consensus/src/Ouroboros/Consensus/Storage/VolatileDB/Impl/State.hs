@@ -70,6 +70,7 @@ data VolatileDBEnv m blk = forall h. Eq h => VolatileDBEnv {
       hasFS            :: !(HasFS m h)
     , varInternalState :: !(RAWLock m (InternalState blk h))
     , maxBlocksPerFile :: !BlocksPerFile
+    , checkIntegrity   :: !(blk -> Bool)
     , codecConfig      :: !(CodecConfig blk)
     , tracer           :: !(Tracer m (TraceEvent blk))
     }

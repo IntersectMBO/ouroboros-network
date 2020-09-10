@@ -435,13 +435,14 @@ iteratorNextImpl dbEnv ith@IteratorHandle { ithHasFS, ithVarState } registry blo
               chunkInfo
               itsChunk
               codecConfig
+              checkIntegrity
               itsChunkHandle
               entry
               blockComponent
           stepIterator registry currentChunkInfo ith
           return $ IteratorResult b
   where
-    ImmutableDBEnv { codecConfig, chunkInfo } = dbEnv
+    ImmutableDBEnv { codecConfig, chunkInfo, checkIntegrity } = dbEnv
 
 iteratorHasNextImpl ::
      IOLike m
@@ -571,30 +572,35 @@ extractBlockComponent ::
   -> ChunkInfo
   -> ChunkNo
   -> CodecConfig blk
+  -> (blk -> Bool)
   -> Handle h
   -> WithBlockSize (Secondary.Entry blk)
   -> BlockComponent blk b
   -> m b
-extractBlockComponent hasFS chunkInfo chunk ccfg eHnd (WithBlockSize blockSize entry) =
-    go
+extractBlockComponent hasFS chunkInfo chunk ccfg checkIntegrity eHnd
+                      (WithBlockSize blockSize entry) = go
   where
     go :: forall b'. BlockComponent blk b' -> m b'
     go = \case
-        GetHash         -> return headerHash
-        GetSlot         -> return slotNo
-        GetIsEBB        -> return $ isBlockOrEBB blockOrEBB
-        GetBlockSize    -> return blockSize
-        GetHeaderSize   -> return $ fromIntegral $ Secondary.unHeaderSize headerSize
-        GetRawBlock     -> readBlock
-        GetRawHeader    -> readHeader
-        GetNestedCtxt   -> readNestedCtxt
-        GetBlock        -> do rawBlk <- go GetRawBlock
-                              parseBlock rawBlk
-        GetHeader       -> do rawHdr <- go GetRawHeader
-                              ctxt   <- readNestedCtxt
-                              parseHeader ctxt rawHdr
-        GetPure a       -> return a
-        GetApply f bc   -> go f <*> go bc
+        GetHash          -> return headerHash
+        GetSlot          -> return slotNo
+        GetIsEBB         -> return $ isBlockOrEBB blockOrEBB
+        GetBlockSize     -> return blockSize
+        GetHeaderSize    -> return $ fromIntegral $ Secondary.unHeaderSize headerSize
+        GetRawBlock      -> readBlock
+        GetRawHeader     -> readHeader
+        GetNestedCtxt    -> readNestedCtxt
+        GetBlock         -> do rawBlk <- go GetRawBlock
+                               parseBlock rawBlk
+        GetHeader        -> do rawHdr <- go GetRawHeader
+                               ctxt   <- readNestedCtxt
+                               parseHeader ctxt rawHdr
+        GetVerifiedBlock -> do blk <- go GetBlock
+                               unless (checkIntegrity blk) $
+                                 throwUnexpectedFailure $ CorruptBlockError pt
+                               return blk
+        GetPure a        -> return a
+        GetApply f bc    -> go f <*> go bc
 
     Secondary.Entry {
           blockOffset

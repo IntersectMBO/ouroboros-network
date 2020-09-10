@@ -38,7 +38,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM_, forever, unless, void)
+import           Control.Monad (forM_, forever, void)
 import           Control.Tracer
 import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
@@ -65,8 +65,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     BlockRef (..), ChainDbFailure (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                      (addBlockSync)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
@@ -161,13 +160,10 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
               GenesisHash -> error "genesis block on current chain"
         slotNoAtImmutableDBTip <- atomically $ ImmutableDB.getTipSlot cdbImmutableDB
         assert (pointSlot pt >= slotNoAtImmutableDBTip) $ return ()
-        blk <- VolatileDB.getKnownBlockComponent cdbVolatileDB GetBlock hash
-        -- When we found a corrupt block, shut down the node. This exception
-        -- will make sure we restart with validation enabled.
-        unless (cdbCheckIntegrity blk) $
-          let blockRef = BlockRef (blockPoint blk) (headerToIsEBB (getHeader blk))
-          in throwM $ VolatileDbCorruptBlock blockRef
-
+        -- When the block is corrupt, the function below will throw an
+        -- exception. This exception will make sure that we shut down the node
+        -- and that the next time we start, validation will be enabled.
+        blk <- VolatileDB.getKnownBlockComponent cdbVolatileDB GetVerifiedBlock hash
         -- We're the only one modifying the ImmutableDB, so the tip cannot
         -- have changed since we last checked it.
         ImmutableDB.appendBlock cdbImmutableDB blk

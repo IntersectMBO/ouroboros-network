@@ -57,7 +57,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , traverseReader
     -- * Recovery
   , ChainDbFailure(..)
-  , BlockRef(..)
   , IsEBB(..)
     -- * Exceptions
   , ChainDbError(..)
@@ -667,12 +666,6 @@ traverseReader f rdr = Reader
   Recovery
 -------------------------------------------------------------------------------}
 
--- | Reference to a block used in 'ChainDbFailure'.
-data BlockRef blk = BlockRef
-  { blockRefPoint :: !(Point blk)
-  , blockRefIsEBB :: !IsEBB
-  } deriving (Eq, Show)
-
 -- | Database failure
 --
 -- This exception wraps any kind of unexpected problem with the on-disk
@@ -683,16 +676,8 @@ data BlockRef blk = BlockRef
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
 data ChainDbFailure =
-    -- | A block got corrupted in the volatile DB
-    --
-    -- This exception gets thrown when, while copying blocks from the volatile
-    -- DB to the immutable DB, a block doesn't pass the integrity check
-    -- (hash/signature check).
-    forall blk. (Typeable blk, StandardHash blk) =>
-      VolatileDbCorruptBlock (BlockRef blk)
-
     -- | The ledger DB threw a file-system error
-  | LgrDbFailure FsError
+    LgrDbFailure FsError
 
     -- | Block missing from the chain DB
     --
@@ -705,9 +690,8 @@ deriving instance Show ChainDbFailure
 
 instance Exception ChainDbFailure where
   displayException = \case
-      VolatileDbCorruptBlock {} -> corruption
-      LgrDbFailure fse          -> fsError fse
-      ChainDbMissingBlock {}    -> corruption
+      LgrDbFailure fse       -> fsError fse
+      ChainDbMissingBlock {} -> corruption
     where
       corruption =
         "The database got corrupted, full validation will be enabled for the next startup"

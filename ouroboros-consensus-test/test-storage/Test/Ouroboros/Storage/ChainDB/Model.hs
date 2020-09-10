@@ -534,21 +534,22 @@ getBlockComponent
   :: forall blk b. ModelSupportsBlock blk
   => blk -> BlockComponent blk b -> b
 getBlockComponent blk = \case
-    GetBlock      -> blk
-    GetRawBlock   -> serialise blk
+    GetVerifiedBlock -> blk  -- We don't verify it
+    GetBlock         -> blk
+    GetRawBlock      -> serialise blk
 
-    GetHeader     -> getHeader blk
-    GetRawHeader  -> serialise $ getHeader blk
+    GetHeader        -> getHeader blk
+    GetRawHeader     -> serialise $ getHeader blk
 
-    GetHash       -> blockHash blk
-    GetSlot       -> blockSlot blk
-    GetIsEBB      -> headerToIsEBB (getHeader blk)
-    GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
-    GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
-    GetNestedCtxt -> case unnest (getHeader blk) of
-                       DepPair nestedCtxt _ -> SomeBlock nestedCtxt
-    GetPure a     -> a
-    GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
+    GetHash          -> blockHash blk
+    GetSlot          -> blockSlot blk
+    GetIsEBB         -> headerToIsEBB (getHeader blk)
+    GetBlockSize     -> fromIntegral $ Lazy.length $ serialise blk
+    GetHeaderSize    -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
+    GetNestedCtxt    -> case unnest (getHeader blk) of
+                          DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+    GetPure a        -> a
+    GetApply f bc    -> getBlockComponent blk f $ getBlockComponent blk bc
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.

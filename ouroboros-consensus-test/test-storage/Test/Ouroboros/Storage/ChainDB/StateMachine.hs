@@ -224,8 +224,9 @@ data Success blk it rdr
 -- values of it (and combinations!) is not so simple. Therefore, we just
 -- always request all block components.
 allComponents :: BlockComponent blk (AllComponents blk)
-allComponents = (,,,,,,,,,)
-    <$> GetBlock
+allComponents = (,,,,,,,,,,)
+    <$> GetVerifiedBlock
+    <*> GetBlock
     <*> GetHeader
     <*> GetRawBlock
     <*> GetRawHeader
@@ -239,6 +240,7 @@ allComponents = (,,,,,,,,,)
 -- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
 type AllComponents blk =
   ( blk
+  , blk
   , Header blk
   , ByteString
   , ByteString

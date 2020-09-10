@@ -447,18 +447,19 @@ extractBlockComponent ::
   -> BlockComponent blk b
   -> b
 extractBlockComponent ccfg blk = \case
-    GetBlock      -> blk
-    GetRawBlock   -> rawBlk
-    GetHeader     -> getHeader blk
-    GetRawHeader  -> rawHdr
-    GetHash       -> blockHash blk
-    GetSlot       -> blockSlot blk
-    GetIsEBB      -> blockToIsEBB blk
-    GetBlockSize  -> fromIntegral $ Lazy.length rawBlk
-    GetHeaderSize -> fromIntegral $ Lazy.length rawHdr
-    GetNestedCtxt -> nestedCtxt
-    GetPure a     -> a
-    GetApply f bc ->
+    GetVerifiedBlock -> blk  -- We don't verify
+    GetBlock         -> blk
+    GetRawBlock      -> rawBlk
+    GetHeader        -> getHeader blk
+    GetRawHeader     -> rawHdr
+    GetHash          -> blockHash blk
+    GetSlot          -> blockSlot blk
+    GetIsEBB         -> blockToIsEBB blk
+    GetBlockSize     -> fromIntegral $ Lazy.length rawBlk
+    GetHeaderSize    -> fromIntegral $ Lazy.length rawHdr
+    GetNestedCtxt    -> nestedCtxt
+    GetPure a        -> a
+    GetApply f bc    ->
       extractBlockComponent ccfg blk f $
       extractBlockComponent ccfg blk bc
   where

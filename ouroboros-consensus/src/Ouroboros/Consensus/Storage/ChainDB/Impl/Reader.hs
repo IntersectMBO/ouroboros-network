@@ -278,22 +278,23 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     getBlockComponentFromHeader
       :: forall b'. Header blk -> BlockComponent blk b' -> m b'
     getBlockComponentFromHeader hdr = \case
-        GetBlock      -> getBlockComponent GetBlock
-        GetRawBlock   -> getBlockComponent GetRawBlock
-        GetHeader     -> return $ hdr
-        GetRawHeader  -> return $ rawHdr
-        GetHash       -> return $ headerHash hdr
-        GetSlot       -> return $ blockSlot hdr
-        GetIsEBB      -> return $ headerToIsEBB hdr
-        GetBlockSize  -> getBlockComponent GetBlockSize
+        GetVerifiedBlock -> getBlockComponent GetVerifiedBlock
+        GetBlock         -> getBlockComponent GetBlock
+        GetRawBlock      -> getBlockComponent GetRawBlock
+        GetHeader        -> return $ hdr
+        GetRawHeader     -> return $ rawHdr
+        GetHash          -> return $ headerHash hdr
+        GetSlot          -> return $ blockSlot hdr
+        GetIsEBB         -> return $ headerToIsEBB hdr
+        GetBlockSize     -> getBlockComponent GetBlockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap because we keep the
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
-        GetHeaderSize -> return $ fromIntegral $ Lazy.length rawHdr
-        GetNestedCtxt -> return nestedCtxt
-        GetPure a     -> return a
-        GetApply f bc ->
+        GetHeaderSize    -> return $ fromIntegral $ Lazy.length rawHdr
+        GetNestedCtxt    -> return nestedCtxt
+        GetPure a        -> return a
+        GetApply f bc    ->
           getBlockComponentFromHeader hdr f <*>
           getBlockComponentFromHeader hdr bc
       where
