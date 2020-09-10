@@ -42,7 +42,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
                      (getBlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -127,7 +126,7 @@ streamImpl ::
 streamImpl dbEnv registry blockComponent = \from to ->
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
       unless (validBounds from to) $
-        lift $ throwUserError $ InvalidIteratorRangeError from to
+        lift $ throwApiMisuse $ InvalidIteratorRangeError from to
 
       endChunkSlot <- checkUpperBound currentIndex currentTip to
 
@@ -146,7 +145,7 @@ streamImpl dbEnv registry blockComponent = \from to ->
         -- have the same slot number, we need to look at the hashes.
         -- 'validateBounds' doesn't have enough information to do that.
         when (startChunkSlot > endChunkSlot) $
-          throwUserError $ InvalidIteratorRangeError from to
+          throwApiMisuse $ InvalidIteratorRangeError from to
 
         let ChunkSlot startChunk startRelSlot = startChunkSlot
             startIsEBB = relativeSlotIsEBB startRelSlot
@@ -680,8 +679,8 @@ extractBlockComponent hasFS chunkInfo chunk ccfg eHnd (WithBlockSize blockSize e
           | Lazy.null trailing
           -> return $ f fullBytes
           | otherwise
-          -> throwUnexpectedError $
+          -> throwUnexpectedFailure $
                TrailingDataError (fsPathChunkFile chunk) pt trailing
         Left err
-          -> throwUnexpectedError $
+          -> throwUnexpectedFailure $
                ParseError (fsPathChunkFile chunk) pt err

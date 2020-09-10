@@ -47,17 +47,16 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, callStack, popCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (lastMaybe, takeUntil)
+import           Ouroboros.Consensus.Util.CallStack
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
-import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
+                     (throwApiMisuse)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
-                     (ImmutableDBError (..), MissingBlock (..), UserError (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile)
 import           Ouroboros.Consensus.Storage.Serialisation
 
@@ -165,10 +164,10 @@ newtype IteratorModel blk = IteratorModel [blk]
   Helpers
 ------------------------------------------------------------------------------}
 
-throwUserError ::
+throwApiMisuse ::
      (MonadError ImmutableDBError m, HasCallStack)
-  => UserError -> m a
-throwUserError e = throwError $ UserError e (popCallStack callStack)
+  => ApiMisuse -> m a
+throwApiMisuse e = throwError $ ApiMisuse e prettyCallStack
 
 computeBlockSize :: EncodeDisk blk blk => CodecConfig blk -> blk -> Word64
 computeBlockSize ccfg =
@@ -502,7 +501,7 @@ appendBlockModel blk dbm@DBModel { dbmSlots } = do
           NotOrigin (CompareTip blockTip) <= (CompareTip <$> dbmTip dbm)
 
     when inThePast $
-      throwUserError $
+      throwApiMisuse $
         AppendBlockNotNewerThanTipError
           (blockRealPoint blk)
           (tipToPoint (dbmTip dbm))
@@ -521,7 +520,7 @@ streamModel ::
                     (IteratorId, DBModel blk))
 streamModel from to dbm = swizzle $ do
     unless (validBounds from to) $
-      liftLeft $ throwUserError $ InvalidIteratorRangeError from to
+      liftLeft $ throwApiMisuse $ InvalidIteratorRangeError from to
 
     -- The real implementation checks the end bound first, so we do the
     -- same to get the same errors
@@ -538,7 +537,7 @@ streamModel from to dbm = swizzle $ do
     --  stream from the regular block to the EBB in the same slot, so do that
     --  now, like in the real implementation.
     when ((CompareTip <$> fromTip) > NotOrigin (CompareTip toTip)) $
-      liftLeft $ throwUserError $ InvalidIteratorRangeError from to
+      liftLeft $ throwApiMisuse $ InvalidIteratorRangeError from to
 
     let blks =
             applyUpperBound to

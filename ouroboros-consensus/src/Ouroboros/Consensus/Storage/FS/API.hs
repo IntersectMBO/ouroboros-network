@@ -31,13 +31,13 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word
-import           GHC.Stack
 
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Util.CallStack
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -182,7 +182,7 @@ hGetExactly hasFS h n = go n []
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
             , fsErrorNo     = Nothing
-            , fsErrorStack  = callStack
+            , fsErrorStack  = prettyCallStack
             , fsLimitation  = False
             }
         -- We know the length <= remainingBytes, so this can't underflow
@@ -210,7 +210,7 @@ hGetExactlyAt hasFS h n offset = go n offset []
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactlyAt found eof before reading " ++ show n ++ " bytes"
             , fsErrorNo     = Nothing
-            , fsErrorStack  = callStack
+            , fsErrorStack  = prettyCallStack
             , fsLimitation  = False
             }
         -- We know the length <= remainingBytes, so this can't underflow.

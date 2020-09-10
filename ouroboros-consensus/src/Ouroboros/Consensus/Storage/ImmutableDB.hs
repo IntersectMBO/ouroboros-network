@@ -4,5 +4,4 @@ module Ouroboros.Consensus.Storage.ImmutableDB (
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API as X
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as X
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error as X
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl as X

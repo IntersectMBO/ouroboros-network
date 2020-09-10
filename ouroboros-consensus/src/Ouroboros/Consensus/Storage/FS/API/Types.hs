@@ -54,7 +54,6 @@ import           Foreign.C.Error (Errno (..))
 import qualified Foreign.C.Error as C
 import           GHC.Generics (Generic)
 import qualified GHC.IO.Exception as GHC
-import           GHC.Stack
 import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
@@ -62,6 +61,7 @@ import qualified System.IO.Error as IO
 import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
                      UseIsNormalFormNamed (..))
 
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -218,7 +218,7 @@ data FsError = FsError {
     , fsErrorNo     :: Maybe Errno
 
       -- | Call stack
-    , fsErrorStack  :: CallStack
+    , fsErrorStack  :: PrettyCallStack
 
       -- | Is this error due to a limitation of the mock file system?
       --
@@ -268,7 +268,7 @@ prettyFsError FsError{..} = concat [
     , ": "
     , fsErrorString
     , " at "
-    , prettyCallStack fsErrorStack
+    , show fsErrorStack
     ]
 
 hasMountPoint :: FsError -> Bool
@@ -294,7 +294,7 @@ ioToFsError fep ioErr = FsError
       -- So we use the underlying field directly.
     , fsErrorString = GHC.ioe_description ioErr
     , fsErrorNo     = Errno <$> GHC.ioe_errno ioErr
-    , fsErrorStack  = callStack
+    , fsErrorStack  = prettyCallStack
     , fsLimitation  = False
     }
 

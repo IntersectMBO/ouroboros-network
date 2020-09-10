@@ -142,7 +142,7 @@ whenOpen dbm k
     | open dbm
     = return k
     | otherwise
-    = throwError $ UserError $ ClosedDBError Nothing
+    = throwError $ ApiMisuse $ ClosedDBError Nothing
 
 getDBFileIds :: DBModel blk -> [FileId]
 getDBFileIds = Map.keys . fileIndex

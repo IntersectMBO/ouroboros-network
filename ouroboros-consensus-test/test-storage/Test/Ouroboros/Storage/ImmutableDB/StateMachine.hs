@@ -87,6 +87,7 @@ import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
+import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 
 {-------------------------------------------------------------------------------
@@ -289,13 +290,7 @@ unmigrate HasFS { listDirectory, renameFile } = do
 
 -- | Responses are either successful termination or an error.
 newtype Resp it = Resp { getResp :: Either ImmutableDBError (Success it) }
-  deriving (Functor, Foldable, Traversable, Show)
-
--- | The 'Eq' instance for 'Resp' uses 'sameImmutableDBError'.
-instance Eq it => Eq (Resp it) where
-  Resp (Left  e) == Resp (Left  e') = sameImmutableDBError e e'
-  Resp (Right a) == Resp (Right a') = a == a'
-  _              == _               = False
+  deriving (Eq, Functor, Foldable, Traversable, Show)
 
 -- | Run the pure command against the given database.
 runPure ::
@@ -807,16 +802,16 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
         tipBefore <- getImmutableDB env >>= atomically . getTip
         res       <- withErrors varErrors errors $ tryImmutableDB $ run env cmd
         case res of
-          -- If the command resulted in a 'UserError', we didn't even get the
+          -- If the command resulted in a 'ApiMisuse', we didn't even get the
           -- chance to run into a simulated error. Note that we still
           -- truncate, because we can't predict whether we'll get a
-          -- 'UserError' or an 'UnexpectedError', as it depends on the
+          -- 'ApiMisuse' or an 'UnexpectedFailure', as it depends on the
           -- simulated error.
-          Left (UserError {})       ->
+          Left (ApiMisuse {})       ->
             truncateAndReopen cmd tipBefore
 
           -- We encountered a simulated error
-          Left (UnexpectedError {}) ->
+          Left (UnexpectedFailure {}) ->
             truncateAndReopen cmd tipBefore
 
           -- TODO track somewhere which/how many errors were *actually* thrown
@@ -930,15 +925,15 @@ failed f = C.predicate $ \ev -> case eventMockResp ev of
     Resp (Right _) -> Right $ failed f
 
 -- | Convenience combinator for creating classifiers for commands failed with
--- a @UserError@.
-failedUserError :: (    Event m Symbolic
-                     -> UserError
+-- a @ApiMisuse@.
+failedApiMisuse :: (    Event m Symbolic
+                     -> ApiMisuse
                      -> Either Tag (EventPred m)
                    )
                 -> EventPred m
-failedUserError f = failed $ \ev e -> case e of
-    UserError ue _ -> f ev ue
-    _              -> Right $ failedUserError f
+failedApiMisuse f = failed $ \ev e -> case e of
+    ApiMisuse am _ -> f ev am
+    _              -> Right $ failedApiMisuse f
 
 -- | Convenience combinator for creating classifiers for commands for which an
 -- error is simulated.
@@ -1009,12 +1004,12 @@ tag = C.classify
       _ -> Right tagGetBlockComponentNewerThanTip
 
     tagAppendBlockNotNewerThanTipError :: EventPred m
-    tagAppendBlockNotNewerThanTipError = failedUserError $ \_ e -> case e of
+    tagAppendBlockNotNewerThanTipError = failedApiMisuse $ \_ e -> case e of
       AppendBlockNotNewerThanTipError {} -> Left TagAppendBlockNotNewerThanTipError
       _                                  -> Right tagAppendBlockNotNewerThanTipError
 
     tagInvalidIteratorRangeError :: EventPred m
-    tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of
+    tagInvalidIteratorRangeError = failedApiMisuse $ \_ e -> case e of
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
       _                            -> Right tagInvalidIteratorRangeError
 

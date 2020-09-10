@@ -21,7 +21,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -29,6 +28,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
@@ -57,7 +57,7 @@ getReader
   -> m r
 getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
-      ChainDbClosed   -> throwM $ ClosedDBError callStack
+      ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
       ChainDbOpen env -> do
         readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen

@@ -43,7 +43,6 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack (callStack)
 
 import qualified Generics.SOP as SOP
 
@@ -79,6 +78,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork, invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -105,6 +105,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
+import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 
 import           Test.Util.ChunkInfo
@@ -599,7 +600,7 @@ runPure cfg = \case
       | Model.isOpen m
       = first (Resp . fmap toSuccess) (f m)
       | otherwise
-      = (Resp (Left (ClosedDBError callStack)), m)
+      = (Resp (Left (ClosedDBError prettyCallStack)), m)
 
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f

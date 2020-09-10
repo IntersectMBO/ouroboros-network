@@ -40,8 +40,8 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (Tip)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -157,7 +157,7 @@ getOpenState ImmutableDBEnv {..} = do
     -- somebody's appending to the ImmutableDB at the same time.
     internalState <- readMVarSTM varInternalState
     case internalState of
-       DbClosed         -> throwUserError ClosedDBError
+       DbClosed         -> throwApiMisuse ClosedDBError
        DbOpen openState -> return (SomePair hasFS openState)
 
 -- | Shorthand
@@ -168,7 +168,7 @@ type ModifyOpenState m blk h =
 --
 -- In case the database is closed, a 'ClosedDBError' is thrown.
 --
--- In case an 'UnexpectedError' is thrown, the database is closed to prevent
+-- In case an 'UnexpectedFailure' is thrown, the database is closed to prevent
 -- further appending to a database in a potentially inconsistent state.
 --
 -- The action is run in the 'ModifyOpenState' monad, which is a 'StateT'
@@ -196,7 +196,7 @@ modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
       DbOpen ost -> return ost
       DbClosed   -> do
         putMVar varInternalState DbClosed
-        throwUserError ClosedDBError
+        throwApiMisuse ClosedDBError
 
     putSt :: OpenState m blk h -> ExitCase (OpenState m blk h) -> m ()
     putSt ost ec = do
@@ -219,7 +219,7 @@ modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
           -- down the node anway, so it is safe to close the ImmutableDB here.
           ExitCaseAbort         -> DbClosed
           ExitCaseException ex
-            | Just (UserError {}) <- fromException ex
+            | Just (ApiMisuse {}) <- fromException ex
             -> DbOpen ost
             | otherwise
             -> DbClosed
@@ -228,7 +228,7 @@ modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
 --
 -- In case the database is closed, a 'ClosedDBError' is thrown.
 --
--- In case an 'UnexpectedError' is thrown while the action is being run, the
+-- In case an 'UnexpectedFailure' is thrown while the action is being run, the
 -- database is closed to prevent further appending to a database in a
 -- potentially inconsistent state.
 withOpenState ::
@@ -249,7 +249,7 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     open :: m (OpenState m blk h)
     open = atomically (readMVarSTM varInternalState) >>= \case
       DbOpen ost -> return ost
-      DbClosed   -> throwUserError ClosedDBError
+      DbClosed   -> throwApiMisuse ClosedDBError
 
     -- close doesn't take the state that @open@ returned, because the state
     -- may have been updated by someone else since we got it (remember we're
@@ -258,12 +258,12 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     close :: ExitCase (Either ImmutableDBError r)
           -> m ()
     close ec = case ec of
-      ExitCaseAbort                               -> return ()
-      ExitCaseException _ex                       -> return ()
-      ExitCaseSuccess (Right _)                   -> return ()
+      ExitCaseAbort                                 -> return ()
+      ExitCaseException _ex                         -> return ()
+      ExitCaseSuccess (Right _)                     -> return ()
       -- In case of an ImmutableDBError, close when unexpected
-      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
-      ExitCaseSuccess (Left (UserError {}))       -> return ()
+      ExitCaseSuccess (Left (UnexpectedFailure {})) -> shutDown
+      ExitCaseSuccess (Left (ApiMisuse {}))         -> return ()
 
     shutDown :: m ()
     shutDown = swapMVar varInternalState DbClosed >>= \case

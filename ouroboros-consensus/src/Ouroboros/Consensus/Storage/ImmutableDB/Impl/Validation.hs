@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unChunkNo, unsafeEpochNoToChunkNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -447,8 +446,8 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     -- a primary or a secondary index file
     isInvalidFileError :: ImmutableDBError -> Maybe ()
     isInvalidFileError = \case
-      UnexpectedError (InvalidFileError {}) -> Just ()
-      _                                     -> Nothing
+      UnexpectedFailure (InvalidFileError {}) -> Just ()
+      _                                       -> Nothing
 
     -- | When reading the entries from the secondary index file, we need to
     -- pass in a value of type 'IsEBB' so we know whether the first entry

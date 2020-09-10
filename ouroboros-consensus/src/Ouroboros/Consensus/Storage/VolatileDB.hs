@@ -3,5 +3,4 @@ module Ouroboros.Consensus.Storage.VolatileDB (
   ) where
 
 import           Ouroboros.Consensus.Storage.VolatileDB.API as X
-import           Ouroboros.Consensus.Storage.VolatileDB.Error as X
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl as X

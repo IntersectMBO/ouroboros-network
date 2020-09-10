@@ -67,6 +67,7 @@ import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
+import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
@@ -502,7 +503,7 @@ idemPotentCloseDB db =
       (closeDB db)
       (const (return ()))
   where
-    isClosedDBError (UserError (ClosedDBError _)) = Just ()
+    isClosedDBError (ApiMisuse (ClosedDBError _)) = Just ()
     isClosedDBError _                             = Nothing
 
 runDB :: HasCallStack => VolatileDBEnv -> Cmd -> IO Success
@@ -716,7 +717,7 @@ tag ls = C.classify
 
     tagIsClosedError :: EventPred
     tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
-      Resp (Left (UserError (ClosedDBError _))) -> Left TagClosedError
+      Resp (Left (ApiMisuse (ClosedDBError _))) -> Left TagClosedError
       _                                         -> Right tagIsClosedError
 
     tagGarbageCollectThenReOpen :: EventPred

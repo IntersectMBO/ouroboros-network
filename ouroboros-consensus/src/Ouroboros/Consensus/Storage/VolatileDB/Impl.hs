@@ -146,7 +146,6 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.VolatileDB.API
-import           Ouroboros.Consensus.Storage.VolatileDB.Error
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
@@ -322,9 +321,9 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig } blockComponent hash =
               | Lazy.null trailing
               -> return $ f fullBytes
               | otherwise
-              -> throwM $ UnexpectedError $ TrailingDataError ibiFile pt trailing
+              -> throwM $ UnexpectedFailure $ TrailingDataError ibiFile pt trailing
             Left err
-              -> throwM $ UnexpectedError $ ParseError ibiFile pt err
+              -> throwM $ UnexpectedFailure $ ParseError ibiFile pt err
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file
@@ -559,5 +558,5 @@ getterSTM ::
 getterSTM fromSt VolatileDBEnv { varInternalState } = do
     mSt <- RAWLock.read varInternalState
     case mSt of
-      DbClosed  -> throwM $ UserError $ ClosedDBError Nothing
+      DbClosed  -> throwM $ ApiMisuse $ ClosedDBError Nothing
       DbOpen st -> return $ fromSt st

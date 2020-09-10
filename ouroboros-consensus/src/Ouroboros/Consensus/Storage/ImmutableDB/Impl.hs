@@ -39,7 +39,7 @@
 --
 -- = Errors
 --
--- Whenever an 'UnexpectedError' is thrown during an operation, e.g.,
+-- Whenever an 'UnexpectedFailure' is thrown during an operation, e.g.,
 -- 'appendBlock', the database will be automatically closed because we can not
 -- guarantee a consistent state in the face of file system errors.
 --
@@ -124,7 +124,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -459,7 +458,7 @@ appendBlockImpl dbEnv blk =
             NotOrigin (CompareTip blockTip) > (CompareTip <$> initialTip)
 
       unless blockAfterTip $ lift $
-        throwUserError $
+        throwApiMisuse $
           AppendBlockNotNewerThanTipError
             (blockRealPoint blk)
             (tipToPoint initialTip)

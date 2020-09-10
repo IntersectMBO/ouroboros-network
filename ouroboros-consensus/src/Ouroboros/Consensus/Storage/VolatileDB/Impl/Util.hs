@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.VolatileDB.Error
+import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 
 {------------------------------------------------------------------------------
@@ -74,7 +74,7 @@ filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 ------------------------------------------------------------------------------}
 
 wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwM . UnexpectedError . FileSystemError
+wrapFsError = handle $ throwM . UnexpectedFailure . FileSystemError
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the

@@ -66,7 +66,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 import           Control.Monad (void)
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -79,12 +78,13 @@ import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
@@ -716,22 +716,6 @@ instance Exception ChainDbFailure where
       fsError :: FsError -> String
       fsError = displayException
 
-instance Eq ChainDbFailure where
-  VolatileDbCorruptBlock (a1 :: BlockRef blk) == VolatileDbCorruptBlock (a2 :: BlockRef blk') =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2
-  VolatileDbCorruptBlock {} == _ = False
-
-  LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
-  LgrDbFailure {} == _               = False
-
-  ChainDbMissingBlock (a1 :: RealPoint blk) == ChainDbMissingBlock (a2 :: RealPoint blk') =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> a1 == a2
-  ChainDbMissingBlock {} == _ = False
-
 {-------------------------------------------------------------------------------
   Exceptions
 -------------------------------------------------------------------------------}
@@ -745,7 +729,7 @@ data ChainDbError =
     -- This will be thrown when performing any operation on the ChainDB except
     -- for 'isOpen' and 'closeDB'. The 'CallStack' of the operation on the
     -- ChainDB is included in the error.
-    ClosedDBError CallStack
+    ClosedDBError PrettyCallStack
 
     -- | The reader is closed.
     --
@@ -764,19 +748,6 @@ data ChainDbError =
   deriving (Typeable)
 
 deriving instance Show ChainDbError
-
-instance Eq ChainDbError where
-  ClosedDBError _ == ClosedDBError _ = True
-  ClosedDBError _ == _               = False
-
-  ClosedReaderError == ClosedReaderError = True
-  ClosedReaderError == _                 = False
-
-  InvalidIteratorRange (fr :: StreamFrom blk) to == InvalidIteratorRange (fr' :: StreamFrom blk') to' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> fr == fr' && to == to'
-  InvalidIteratorRange _ _ == _ = False
 
 instance Exception ChainDbError where
   displayException = \case

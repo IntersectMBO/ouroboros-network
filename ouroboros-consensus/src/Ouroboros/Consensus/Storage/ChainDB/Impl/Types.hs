@@ -65,7 +65,6 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
@@ -80,6 +79,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -118,7 +118,7 @@ getEnv :: forall m blk r. (IOLike m, HasCallStack)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
 getEnv1 :: (IOLike m, HasCallStack)
@@ -142,7 +142,7 @@ getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 -- | Variant of 'getEnv1' that works in 'STM'.
 getEnvSTM1 ::
@@ -152,7 +152,7 @@ getEnvSTM1 ::
   -> a -> STM m r
 getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
     ChainDbOpen env -> f env a
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)

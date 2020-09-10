@@ -55,7 +55,6 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.VolatileDB.API
-import           Ouroboros.Consensus.Storage.VolatileDB.Error
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
@@ -146,7 +145,7 @@ modifyOpenState appendOrWrite
       DbOpen ost -> return ost
       DbClosed   -> do
         release varInternalState DbClosed
-        throwM $ UserError $ ClosedDBError Nothing
+        throwM $ ApiMisuse $ ClosedDBError Nothing
 
     putSt :: OpenState blk h -> ExitCase (OpenState blk h) -> m ()
     putSt ost ec = case closeOrRelease of
@@ -162,7 +161,7 @@ modifyOpenState appendOrWrite
           -- background.
           _mbCurState <-
             RAWLock.poison varInternalState $ \_st ->
-              UserError (ClosedDBError (Just ex))
+              ApiMisuse (ClosedDBError (Just ex))
           closeOpenHandles hasFS ost
         Right ost' -> release varInternalState (DbOpen ost')
       where
@@ -185,7 +184,7 @@ modifyOpenState appendOrWrite
             -- we don't use, but we use @IOLike m => m@ here.
             -> error "impossible"
           ExitCaseException ex
-            | Just (UserError {}) <- fromException ex
+            | Just (ApiMisuse {}) <- fromException ex
             -> Right ost
             | otherwise
             -> Left ex
@@ -216,10 +215,10 @@ writeOpenState = modifyOpenState Write
 --
 -- In case the database is closed, a 'ClosedDBError' is thrown.
 --
--- In case an 'UnexpectedError' is thrown while the action is being run, the
+-- In case an 'UnexpectedFailure' is thrown while the action is being run, the
 -- database is closed to prevent further appending to a database in a
--- potentially inconsistent state. All other exceptions will leave the
--- database open.
+-- potentially inconsistent state. All other exceptions will leave the database
+-- open.
 withOpenState ::
      forall blk m r. IOLike m
   => VolatileDBEnv m blk
@@ -237,7 +236,7 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
         DbOpen ost -> return ost
         DbClosed   -> do
           atomically $ RAWLock.unsafeReleaseReadAccess varInternalState
-          throwM $ UserError (ClosedDBError Nothing)
+          throwM $ ApiMisuse (ClosedDBError Nothing)
 
     close ::
          OpenState blk h
@@ -252,7 +251,7 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
             -- caused it is thrown.
             mbCurState <-
               RAWLock.poison varInternalState $ \_st ->
-                UserError (ClosedDBError (Just ex))
+                ApiMisuse (ClosedDBError (Just ex))
             -- Close the open handles
             wrapFsError $ case mbCurState of
               -- The handles in the most recent state
@@ -272,12 +271,12 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
       where
         shouldClose :: Maybe SomeException
         shouldClose = case ec of
-          ExitCaseAbort                                  -> Nothing
-          ExitCaseException _ex                          -> Nothing
-          ExitCaseSuccess (Right _)                      -> Nothing
+          ExitCaseAbort                                    -> Nothing
+          ExitCaseException _ex                            -> Nothing
+          ExitCaseSuccess (Right _)                        -> Nothing
           -- In case of a VolatileDBError, close when unexpected
-          ExitCaseSuccess (Left ex@(UnexpectedError {})) -> Just (toException ex)
-          ExitCaseSuccess (Left (UserError {}))          -> Nothing
+          ExitCaseSuccess (Left ex@(UnexpectedFailure {})) -> Just (toException ex)
+          ExitCaseSuccess (Left (ApiMisuse {}))            -> Nothing
 
     access :: OpenState blk h -> m r
     access = action hasFS

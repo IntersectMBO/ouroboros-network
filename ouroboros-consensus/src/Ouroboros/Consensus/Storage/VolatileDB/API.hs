@@ -1,18 +1,24 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
 module Ouroboros.Consensus.Storage.VolatileDB.API (
     -- * API
     VolatileDB (..)
     -- * Types
   , BlockInfo (..)
+    -- * Errors
+  , VolatileDBError (..)
+  , ApiMisuse (..)
+  , UnexpectedFailure (..)
     -- * Derived functionality
   , withDB
   , getIsMember
@@ -20,6 +26,8 @@ module Ouroboros.Consensus.Storage.VolatileDB.API (
   , getKnownBlockComponent
   ) where
 
+import qualified Codec.CBOR.Read as CBOR
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Maybe (isJust)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
@@ -36,8 +44,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
-
-import           Ouroboros.Consensus.Storage.VolatileDB.Error
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath)
 
 {-------------------------------------------------------------------------------
   API
@@ -47,9 +54,9 @@ data VolatileDB m blk = VolatileDB {
       -- | Close the VolatileDB.
       --
       -- NOTE: idempotent after a manual closure, but not after an automatic
-      -- closure in case of an 'UnexpectedError'. In that case, closing it
+      -- closure in case of an 'UnexpectedFailure'. In that case, closing it
       -- again will cause a 'ClosedDBError' wrapping the original
-      -- 'UnexpectedError' to be thrown.
+      -- 'UnexpectedFailure' to be thrown.
       closeDB             :: HasCallStack => m ()
       -- | Return the request block component for the block with the given
       -- hash. When not in the VolatileDB, 'Nothing' is returned.
@@ -154,6 +161,59 @@ data BlockInfo blk = BlockInfo {
     }
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
+{------------------------------------------------------------------------------
+  Errors
+------------------------------------------------------------------------------}
+
+-- | Errors which might arise when working with this database.
+data VolatileDBError =
+    -- | An error thrown because of incorrect usage of the VolatileDB
+    -- by the user.
+    ApiMisuse ApiMisuse
+
+    -- | An unexpected failure thrown because something went wrong.
+  | UnexpectedFailure UnexpectedFailure
+  deriving (Show)
+
+instance Exception VolatileDBError where
+  displayException = \case
+      ApiMisuse {} ->
+        "VolatileDB incorrectly used, indicative of a bug"
+      UnexpectedFailure (FileSystemError fse) ->
+        displayException fse
+      UnexpectedFailure {} ->
+        "The VolatileDB got corrupted, full validation will be enabled for the next startup"
+
+data ApiMisuse =
+    -- | The VolatileDB was closed. In case it was automatically closed
+    -- because an unexpected error was thrown during a read operation or any
+    -- exception was thrown during a write operation, that exception is
+    -- embedded.
+    ClosedDBError (Maybe SomeException)
+  deriving (Show)
+
+data UnexpectedFailure =
+    FileSystemError FsError
+
+    -- | A block failed to parse
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
+
+    -- | When parsing a block we got some trailing data
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
+
+    -- | Block missing
+    --
+    -- This exception gets thrown when a block that we /know/ it should be in
+    -- the VolatileDB, nonetheless was not found.
+    --
+    -- This exception will be thrown by @getKnownBlockComponent@.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      MissingBlockError (Proxy blk) (HeaderHash blk)
+
+deriving instance Show UnexpectedFailure
+
 {-------------------------------------------------------------------------------
   Derived functionality
 -------------------------------------------------------------------------------}
@@ -202,5 +262,5 @@ mustExist ::
   -> Maybe b
   -> Either VolatileDBError b
 mustExist _ hash = \case
-    Nothing -> Left  $ UnexpectedError $ MissingBlockError (Proxy @blk) hash
+    Nothing -> Left  $ UnexpectedFailure $ MissingBlockError (Proxy @blk) hash
     Just b  -> Right $ b

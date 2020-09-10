@@ -1,15 +1,16 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DeriveTraversable         #-}
+{-# LANGUAGE DerivingStrategies        #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.API (
     -- * API
     ImmutableDB (..)
@@ -25,6 +26,14 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API (
   , tipToAnchor
   , blockToTip
   , CompareTip (..)
+    -- * Errors
+  , ImmutableDBError (..)
+  , ApiMisuse (..)
+  , throwApiMisuse
+  , UnexpectedFailure (..)
+  , throwUnexpectedFailure
+  , MissingBlock (..)
+  , missingBlockPoint
     -- * Wrappers that preserve 'HasCallStack'
   , closeDB
   , getTip
@@ -43,24 +52,28 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API (
   , getTipSlot
   ) where
 
+import qualified Codec.CBOR.Read as CBOR
 import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
                      throwError)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Either (isRight)
 import           Data.Function (on)
+import           Data.List.NonEmpty (NonEmpty)
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath)
+import           Ouroboros.Consensus.Storage.FS.CRC (CRC)
 
 {-------------------------------------------------------------------------------
   API
@@ -88,7 +101,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 -- always point to a filled slot or an EBB that is present.
 --
 -- The database can be explicitly closed, but can also be automatically closed
--- in case of an 'UnexpectedError'.
+-- in case of an 'UnexpectedFailure'.
 data ImmutableDB m blk = ImmutableDB {
       -- | Close the database.
       --
@@ -287,6 +300,112 @@ instance Ord (CompareTip blk) where
       compareIsEBB _        _        = EQ
 
 {-------------------------------------------------------------------------------
+  Errors
+-------------------------------------------------------------------------------}
+
+-- | Errors that might arise when working with this database.
+data ImmutableDBError
+  = ApiMisuse ApiMisuse PrettyCallStack
+    -- ^ An error thrown because of incorrect usage of the immutable database
+    -- by the user.
+  | UnexpectedFailure UnexpectedFailure
+    -- ^ An unexpected error thrown because something went wrong on a lower
+    -- layer.
+  deriving (Generic, Show)
+
+instance Exception ImmutableDBError where
+  displayException = \case
+      ApiMisuse {} ->
+        "ImmutableDB incorrectly used, indicative of a bug"
+      UnexpectedFailure (FileSystemError fse) ->
+        displayException fse
+      UnexpectedFailure {} ->
+        "The ImmutableDB got corrupted, full validation will be enabled for the next startup"
+
+data ApiMisuse =
+    -- | When trying to append a new block, it was not newer than the current
+    -- tip, i.e., the slot was older than or equal to the current tip's slot.
+    --
+    -- The 'RealPoint' corresponds to the new block and the 'Point' to the
+    -- current tip.
+    forall blk. (Typeable blk, StandardHash blk) =>
+      AppendBlockNotNewerThanTipError (RealPoint blk) (Point blk)
+
+    -- | When the chosen iterator range was invalid, i.e. the @start@ (first
+    -- parameter) came after the @end@ (second parameter).
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      InvalidIteratorRangeError (StreamFrom blk) (StreamTo blk)
+
+    -- | When performing an operation on a closed DB that is only allowed when
+    -- the database is open.
+  | ClosedDBError
+
+    -- | When performing an operation on an open DB that is only allowed when
+    -- the database is closed.
+  | OpenDBError
+
+deriving instance Show ApiMisuse
+
+throwApiMisuse :: (MonadThrow m, HasCallStack) => ApiMisuse -> m a
+throwApiMisuse e = throwM $ ApiMisuse e prettyCallStack
+
+data UnexpectedFailure =
+    -- | An IO operation on the file-system threw an error.
+    FileSystemError FsError -- An FsError already stores the callstack
+
+    -- | When loading an epoch or index file, its contents did not pass
+    -- validation.
+  | InvalidFileError FsPath String PrettyCallStack
+
+    -- | A missing epoch or index file.
+  | MissingFileError FsPath PrettyCallStack
+
+    -- | There was a checksum mismatch when reading the block with the given
+    -- point. The first 'CRC' is the expected one, the second one the actual
+    -- one.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ChecksumMismatchError (RealPoint blk) CRC CRC FsPath PrettyCallStack
+
+    -- | A block failed to parse
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
+
+    -- | When parsing a block we got some trailing data
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
+
+    -- | Block missing
+    --
+    -- This exception gets thrown when a block that we /know/ it should be in
+    -- the ImmutableDB, nonetheless was not found.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      MissingBlockError (MissingBlock blk)
+
+deriving instance Show UnexpectedFailure
+
+throwUnexpectedFailure :: MonadThrow m => UnexpectedFailure -> m a
+throwUnexpectedFailure = throwM . UnexpectedFailure
+
+-- | This type can be part of an exception, but also returned as part of an
+-- 'Either', because it can be expected in some cases.
+data MissingBlock blk
+    -- | There is no block in the slot of the given point.
+  = EmptySlot (RealPoint blk)
+    -- | The block and/or EBB in the slot of the given point have a different
+    -- hash.
+  | WrongHash (RealPoint blk) (NonEmpty (HeaderHash blk))
+    -- | The requested point is in the future, i.e., its slot is greater than
+    -- that of the tip. We record the tip as the second argument.
+  | NewerThanTip (RealPoint blk) (Point blk)
+  deriving (Eq, Show, Generic)
+
+-- | Return the 'RealPoint' of the block that was missing.
+missingBlockPoint :: MissingBlock blk -> RealPoint blk
+missingBlockPoint (EmptySlot pt)      = pt
+missingBlockPoint (WrongHash pt _)    = pt
+missingBlockPoint (NewerThanTip pt _) = pt
+
+{-------------------------------------------------------------------------------
   Wrappers that preserve 'HasCallStack'
 
   @ghc@ really should do this for us :-/
@@ -350,7 +469,7 @@ getKnownBlockComponent ::
   -> m b
 getKnownBlockComponent db blockComponent pt =
     getBlockComponent db blockComponent pt >>= \case
-      Left missing -> throwUnexpectedError $ MissingBlockError missing
+      Left missing -> throwUnexpectedFailure $ MissingBlockError missing
       Right b      -> return b
 
 -- | Open an iterator with the given point as lower exclusive bound and the
@@ -401,7 +520,7 @@ streamAfterKnownPoint ::
   -> m (Iterator m blk b)
 streamAfterKnownPoint db registry blockComponent fromPt =
     streamAfterPoint db registry blockComponent fromPt >>=
-      either (throwUnexpectedError . MissingBlockError) return
+      either (throwUnexpectedFailure . MissingBlockError) return
 
 streamAll ::
      (MonadSTM m, MonadThrow m, HasHeader blk, HasCallStack)

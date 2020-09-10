@@ -31,19 +31,19 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           GHC.Stack (HasCallStack, callStack)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Block hiding (hashSize)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
 
 {------------------------------------------------------------------------------
   Utilities
@@ -110,7 +110,7 @@ removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
 
 -- | Rewrap 'FsError' in a 'ImmutableDBError'.
 wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwUnexpectedError . FileSystemError
+wrapFsError = handle $ throwUnexpectedFailure . FileSystemError
 
 -- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
@@ -135,9 +135,9 @@ runGet file get bl = case Get.runGetOrFail get bl of
       | Lazy.null unconsumed
       -> return primary
       | otherwise
-      -> throwUnexpectedError $ InvalidFileError file "left-over bytes" callStack
+      -> throwUnexpectedFailure $ InvalidFileError file "left-over bytes" prettyCallStack
     Left (_, _, msg)
-      -> throwUnexpectedError $ InvalidFileError file msg callStack
+      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
 
 -- | Same as 'runGet', but allows unconsumed input and returns it.
 runGetWithUnconsumed
@@ -150,7 +150,7 @@ runGetWithUnconsumed file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       -> return (unconsumed, primary)
     Left (_, _, msg)
-      -> throwUnexpectedError $ InvalidFileError file msg callStack
+      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
 
 -- | Check whether the given checksums match. If not, throw a
 -- 'ChecksumMismatchError'.
@@ -165,5 +165,5 @@ checkChecksum chunkFile pt expected actual
     | expected == actual
     = return ()
     | otherwise
-    = throwUnexpectedError $
-        ChecksumMismatchError pt expected actual chunkFile callStack
+    = throwUnexpectedFailure $
+        ChecksumMismatchError pt expected actual chunkFile prettyCallStack

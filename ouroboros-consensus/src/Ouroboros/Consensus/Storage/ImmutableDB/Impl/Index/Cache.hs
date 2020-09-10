@@ -51,13 +51,13 @@ import qualified Data.Vector as Vector
 import           Data.Void (Void)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Cardano.Prelude (forceElemsToWHNF, unsafeNoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB (..),
                      StandardHash)
 import           Ouroboros.Consensus.Util (takeUntil, whenJust)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -66,10 +66,10 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
+                     (UnexpectedFailure (..), throwUnexpectedFailure)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-import           Ouroboros.Consensus.Storage.ImmutableDB.Error
-                     (UnexpectedError (..), throwUnexpectedError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -768,10 +768,10 @@ readEntries cacheEnv chunk toRead =
     -- We don't know which of the two things happened, but the former is more
     -- likely, so we mention that file in the error message.
     noEntry :: SecondaryOffset -> m a
-    noEntry secondaryOffset = throwUnexpectedError $ InvalidFileError
+    noEntry secondaryOffset = throwUnexpectedFailure $ InvalidFileError
       (fsPathSecondaryIndexFile chunk)
       ("no entry missing for " <> show secondaryOffset)
-      callStack
+      prettyCallStack
 
 readAllEntries
   :: forall m blk h. (HasCallStack, ConvertRawHash blk, IOLike m)

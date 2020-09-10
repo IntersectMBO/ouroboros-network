@@ -199,7 +199,6 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-                       Ouroboros.Consensus.Storage.ImmutableDB.Error
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
@@ -217,7 +216,6 @@ library
                        Ouroboros.Consensus.Storage.Serialisation
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
-                       Ouroboros.Consensus.Storage.VolatileDB.Error
                        Ouroboros.Consensus.Storage.VolatileDB.Impl
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.Index
