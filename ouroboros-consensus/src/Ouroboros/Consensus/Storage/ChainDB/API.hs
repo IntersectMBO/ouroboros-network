@@ -26,10 +26,6 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , addBlockWaitWrittenToDisk
   , addBlock
   , addBlock_
-    -- * Useful utilities
-  , getBlock
-  , streamBlocks
-  , newBlockReader
     -- * Serialised block/header with its point
   , WithPoint(..)
   , getSerialisedBlockWithPoint
@@ -400,31 +396,6 @@ addBlock chainDB blk = do
 -- new tip of the ChainDB.
 addBlock_ :: IOLike m => ChainDB m blk -> blk -> m ()
 addBlock_  = void .: addBlock
-
-{-------------------------------------------------------------------------------
-  Useful utilities
--------------------------------------------------------------------------------}
-
--- These are all variants of ChainDB methods instantiated to a specific
--- BlockComponent.
-
--- | Get block at the specified point (if it exists).
-getBlock :: ChainDB m blk -> RealPoint blk -> m (Maybe blk)
-getBlock ChainDB { getBlockComponent } pt = getBlockComponent GetBlock pt
-
-streamBlocks ::
-     ChainDB m blk
-  -> ResourceRegistry m
-  -> StreamFrom blk
-  -> StreamTo blk
-  -> m (Either (UnknownRange blk) (Iterator m blk blk))
-streamBlocks ChainDB { stream } rr = stream rr GetBlock
-
-newBlockReader ::
-     ChainDB m blk
-  -> ResourceRegistry m
-  -> m (Reader m blk blk)
-newBlockReader ChainDB { newReader } rr = newReader rr GetBlock
 
 {-------------------------------------------------------------------------------
   Serialised block/header with its point

@@ -223,7 +223,7 @@ fromChainDbEnv CDB{..} = IteratorEnv {
     , itTracer          = contramap TraceIteratorEvent cdbTracer
     }
 
--- | See 'streamBlocks'.
+-- | See 'stream'.
 newIterator ::
      forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => IteratorEnv m blk
