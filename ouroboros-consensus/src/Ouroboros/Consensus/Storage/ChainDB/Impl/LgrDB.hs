@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -130,14 +131,15 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
   -- use generic instance
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
-class ( Serialise      (HeaderHash  blk)
-      , EncodeDisk blk (LedgerState blk)
-      , DecodeDisk blk (LedgerState blk)
-      , EncodeDisk blk (AnnTip      blk)
-      , DecodeDisk blk (AnnTip      blk)
-      , EncodeDisk blk (ChainDepState (BlockProtocol blk))
-      , DecodeDisk blk (ChainDepState (BlockProtocol blk))
-      ) => LgrDbSerialiseConstraints blk
+type LgrDbSerialiseConstraints blk =
+  ( Serialise      (HeaderHash  blk)
+  , EncodeDisk blk (LedgerState blk)
+  , DecodeDisk blk (LedgerState blk)
+  , EncodeDisk blk (AnnTip      blk)
+  , DecodeDisk blk (AnnTip      blk)
+  , EncodeDisk blk (ChainDepState (BlockProtocol blk))
+  , DecodeDisk blk (ChainDepState (BlockProtocol blk))
+  )
 
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)

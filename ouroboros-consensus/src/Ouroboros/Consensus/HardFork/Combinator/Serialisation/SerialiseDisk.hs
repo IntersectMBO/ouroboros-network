@@ -22,7 +22,6 @@ import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
-instance SerialiseHFC xs => LgrDbSerialiseConstraints (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   'ReconstructNestedCtxt'

@@ -32,8 +32,7 @@ import           Ouroboros.Consensus.Shelley.Protocol
 instance Era era => HasBinaryBlockInfo (ShelleyBlock era) where
   getBinaryBlockInfo = shelleyBinaryBlockInfo
 
-instance Era era => LgrDbSerialiseConstraints (ShelleyBlock era)
-instance Era era => SerialiseDiskConstraints  (ShelleyBlock era)
+instance Era era => SerialiseDiskConstraints (ShelleyBlock era)
 
 instance Era era => EncodeDisk (ShelleyBlock era) (ShelleyBlock era) where
   encodeDisk _ = encodeShelleyBlock

@@ -713,8 +713,7 @@ instance HasBinaryBlockInfo TestBlock where
       , headerSize   = testBlockHeaderSize tb
       }
 
-instance LgrDbSerialiseConstraints TestBlock
-instance SerialiseDiskConstraints  TestBlock
+instance SerialiseDiskConstraints TestBlock
 
 instance EncodeDisk TestBlock TestBlock
 instance DecodeDisk TestBlock (Lazy.ByteString -> TestBlock) where
