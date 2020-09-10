@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..), (...:), (..:))
 import           Ouroboros.Consensus.Util.Versioned
 
-import qualified Control.State.Transition as STS
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
@@ -445,7 +444,7 @@ instance Era era => BasicEnvelopeValidation (ShelleyBlock era) where
 
 instance Era era => ValidateEnvelope (ShelleyBlock era) where
   type OtherHeaderEnvelopeError (ShelleyBlock era) =
-    STS.PredicateFailure (STS.CHAIN era)
+    STS.ChainPredicateFailure era
 
   additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
       SL.chainChecks globals pparams (shelleyHeaderRaw hdr)

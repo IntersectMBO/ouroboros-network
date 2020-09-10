@@ -90,7 +90,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as Era (Shelley)
+import qualified Cardano.Ledger.Shelley as Era (Shelley)
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 

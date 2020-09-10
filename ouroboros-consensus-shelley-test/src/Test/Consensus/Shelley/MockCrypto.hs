@@ -18,7 +18,7 @@ import           Cardano.Crypto.KES (MockKES)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Era as Era (Era (Crypto))
-import           Shelley.Spec.Ledger.BaseTypes (Shelley)
+import           Cardano.Ledger.Shelley (Shelley)
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 

@@ -81,6 +81,7 @@ import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
+import qualified Shelley.Spec.Ledger.STS.Utxow as STS
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as SL
@@ -228,7 +229,7 @@ examples = Golden.Examples {
     proposedPParamsUpdates :: SL.ProposedPPUpdates StandardShelley
     proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
         (mkKeyHash 0)
-        (SL.emptyPParamsUpdate {SL._keyDeposit = SJust 100})
+        (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
 
 examplePoolDistr :: forall era. TPraosCrypto era => SL.PoolDistr era
 examplePoolDistr = SL.PoolDistr $ Map.fromList [
@@ -304,7 +305,7 @@ exampleTx = SL.Tx txBody witnessSet (SJust metadata)
             SL.DCertDeleg (SL.RegKey (keyToCredential exampleStakeKey))
           , SL.DCertPool (SL.RegPool examplePoolParams)
           , SL.DCertMir $ SL.MIRCert SL.ReservesMIR $ Map.fromList [
-              (keyToCredential (mkDSIGNKeyPair 2), 110)
+              (keyToCredential (mkDSIGNKeyPair 2), SL.Coin 110)
             ]
           ])
         (SL.Wdrl $ Map.fromList [

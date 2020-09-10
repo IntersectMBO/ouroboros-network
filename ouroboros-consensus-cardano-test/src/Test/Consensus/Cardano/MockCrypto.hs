@@ -13,7 +13,7 @@ import           Cardano.Crypto.Hash (Blake2b_224, Blake2b_256)
 import           Cardano.Crypto.KES (MockKES)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
-import           Shelley.Spec.Ledger.BaseTypes (Shelley)
+import           Cardano.Ledger.Shelley (Shelley)
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)

@@ -81,34 +81,34 @@ instance Serialise Spec.VKeyGenesis
 instance Serialise Spec.Vote
 instance Serialise Spec.Wit
 
-instance Serialise (Spec.PredicateFailure Spec.ADDVOTE)
-instance Serialise (Spec.PredicateFailure Spec.ADELEG)
-instance Serialise (Spec.PredicateFailure Spec.ADELEGS)
-instance Serialise (Spec.PredicateFailure Spec.APPLYVOTES)
-instance Serialise (Spec.PredicateFailure Spec.BBODY)
-instance Serialise (Spec.PredicateFailure Spec.BUPI)
-instance Serialise (Spec.PredicateFailure Spec.CHAIN)
-instance Serialise (Spec.PredicateFailure Spec.DELEG)
-instance Serialise (Spec.PredicateFailure Spec.EPOCH)
-instance Serialise (Spec.PredicateFailure Spec.PBFT)
-instance Serialise (Spec.PredicateFailure Spec.PVBUMP)
-instance Serialise (Spec.PredicateFailure Spec.SDELEG)
-instance Serialise (Spec.PredicateFailure Spec.SDELEGS)
-instance Serialise (Spec.PredicateFailure Spec.SIGCNT)
-instance Serialise (Spec.PredicateFailure Spec.UPEND)
-instance Serialise (Spec.PredicateFailure Spec.UPIEC)
-instance Serialise (Spec.PredicateFailure Spec.UPIEND)
-instance Serialise (Spec.PredicateFailure Spec.UPIREG)
-instance Serialise (Spec.PredicateFailure Spec.UPIVOTE)
-instance Serialise (Spec.PredicateFailure Spec.UPIVOTES)
-instance Serialise (Spec.PredicateFailure Spec.UPPVV)
-instance Serialise (Spec.PredicateFailure Spec.UPREG)
-instance Serialise (Spec.PredicateFailure Spec.UPSVV)
-instance Serialise (Spec.PredicateFailure Spec.UPV)
-instance Serialise (Spec.PredicateFailure Spec.UPVOTE)
-instance Serialise (Spec.PredicateFailure Spec.UTXO)
-instance Serialise (Spec.PredicateFailure Spec.UTXOW)
-instance Serialise (Spec.PredicateFailure Spec.UTXOWS)
+instance Serialise Spec.AddvotePredicateFailure
+instance Serialise Spec.AdelegPredicateFailure
+instance Serialise Spec.AdelegsPredicateFailure
+instance Serialise Spec.ApplyVotesPredicateFailure
+instance Serialise Spec.BbodyPredicateFailure
+instance Serialise Spec.BupiPredicateFailure
+instance Serialise Spec.ChainPredicateFailure
+instance Serialise Spec.DelegPredicateFailure
+instance Serialise Spec.EpochPredicateFailure
+instance Serialise Spec.PbftPredicateFailure
+instance Serialise Spec.PvbumpPredicateFailure
+instance Serialise Spec.SdelegPredicateFailure
+instance Serialise Spec.SdelegsPredicateFailure
+instance Serialise Spec.SigcntPredicateFailure
+instance Serialise Spec.UpendPredicateFailure
+instance Serialise Spec.UpiecPredicateFailure
+instance Serialise Spec.UpiendPredicateFailure
+instance Serialise Spec.UpiregPredicateFailure
+instance Serialise Spec.UpivotePredicateFailure
+instance Serialise Spec.UpivotesPredicateFailure
+instance Serialise Spec.UppvvPredicateFailure
+instance Serialise Spec.UpregPredicateFailure
+instance Serialise Spec.UpsvvPredicateFailure
+instance Serialise Spec.UpvPredicateFailure
+instance Serialise Spec.UpvotePredicateFailure
+instance Serialise Spec.UtxoPredicateFailure
+instance Serialise Spec.UtxowPredicateFailure
+instance Serialise Spec.UtxowsPredicateFailure
 
 instance Serialise a => Serialise (Spec.Sig       a)
 instance Serialise a => Serialise (Spec.Threshold a)
@@ -147,12 +147,12 @@ deriving instance Generic Spec.UTxO
 
 deriving instance Generic (Spec.Threshold a)
 
-deriving instance Generic (Spec.PredicateFailure Spec.BBODY)
-deriving instance Generic (Spec.PredicateFailure Spec.BUPI)
-deriving instance Generic (Spec.PredicateFailure Spec.CHAIN)
-deriving instance Generic (Spec.PredicateFailure Spec.EPOCH)
-deriving instance Generic (Spec.PredicateFailure Spec.PBFT)
-deriving instance Generic (Spec.PredicateFailure Spec.SIGCNT)
+deriving instance Generic Spec.BbodyPredicateFailure
+deriving instance Generic Spec.BupiPredicateFailure
+deriving instance Generic Spec.ChainPredicateFailure
+deriving instance Generic Spec.EpochPredicateFailure
+deriving instance Generic Spec.PbftPredicateFailure
+deriving instance Generic Spec.SigcntPredicateFailure
 
 {-------------------------------------------------------------------------------
   Orphans for generic types
