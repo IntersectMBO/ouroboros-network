@@ -123,6 +123,7 @@ import           Control.Monad.State.Strict (get, gets, lift, modify, put,
                      state)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity (Identity)
 import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
@@ -135,6 +136,7 @@ import           System.FilePath ((</>))
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
@@ -159,9 +161,9 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
   Opening the database
 ------------------------------------------------------------------------------}
 
-data VolatileDbArgs m blk = VolatileDbArgs {
-      volCheckIntegrity   :: blk -> Bool
-    , volCodecConfig      :: CodecConfig blk
+data VolatileDbArgs f m blk = VolatileDbArgs {
+      volCheckIntegrity   :: HKD f (blk -> Bool)
+    , volCodecConfig      :: HKD f (CodecConfig blk)
     , volHasFS            :: SomeHasFS m
     , volMaxBlocksPerFile :: BlocksPerFile
     , volTracer           :: Tracer m (TraceEvent blk)
@@ -169,20 +171,14 @@ data VolatileDbArgs m blk = VolatileDbArgs {
     }
 
 -- | Default arguments when using the 'IO' monad
---
--- The following fields must still be defined:
---
--- * 'volCheckIntegrity'
--- * 'volCodecConfig'
-defaultArgs :: FilePath -> VolatileDbArgs IO blk
+defaultArgs :: FilePath -> VolatileDbArgs Defaults IO blk
 defaultArgs fp = VolatileDbArgs {
-      volHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "volatile")
+      volCheckIntegrity   = NoDefault
+    , volCodecConfig      = NoDefault
+    , volHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "volatile")
     , volMaxBlocksPerFile = mkBlocksPerFile 1000
     , volTracer           = nullTracer
     , volValidationPolicy = NoValidation
-      -- Fields without a default
-    , volCheckIntegrity   = error "no default for volCheckIntegrity"
-    , volCodecConfig      = error "no default for volCodecConfig"
     }
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the VolatileDB.
@@ -202,7 +198,7 @@ openDB ::
      , GetPrevHash blk
      , VolatileDbSerialiseConstraints blk
      )
-  => VolatileDbArgs m blk
+  => VolatileDbArgs Identity m blk
   -> m (VolatileDB m blk)
 openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])

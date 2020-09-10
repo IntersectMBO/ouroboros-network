@@ -30,6 +30,7 @@ import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
+import           Data.Functor.Identity (Identity)
 import           Data.List (delete, partition, sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -187,7 +188,7 @@ closeOpenIterators varIters = do
     its <- atomically $ readTVar varIters <* writeTVar varIters []
     mapM_ iteratorClose (unWithEq <$> its)
 
-open :: ImmutableDbArgs IO TestBlock -> IO ImmutableDBState
+open :: ImmutableDbArgs Identity IO TestBlock -> IO ImmutableDBState
 open args = do
     (db, internal) <- openDBInternal args
     return ImmutableDBState { db, internal }
@@ -782,7 +783,7 @@ data ImmutableDBEnv = ImmutableDBEnv {
       -- by an iterator. As this is not allowed by the MockFS implementation, we
       -- first close all open iterators in these cases.
     , varDB     :: StrictMVar IO ImmutableDBState
-    , args      :: ImmutableDbArgs IO TestBlock
+    , args      :: ImmutableDbArgs Identity IO TestBlock
     }
 
 getImmutableDB :: ImmutableDBEnv -> IO (ImmutableDB IO TestBlock)

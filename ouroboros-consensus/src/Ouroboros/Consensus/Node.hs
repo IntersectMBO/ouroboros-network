@@ -38,6 +38,7 @@ import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.Random (newStdGen, randomIO, randomRIO)
@@ -120,7 +121,7 @@ data RunNodeArgs blk = RunNodeArgs {
     , rnProtocolInfo :: ProtocolInfo IO blk
 
       -- | Customise the 'ChainDbArgs'
-    , rnCustomiseChainDbArgs :: ChainDbArgs IO blk -> ChainDbArgs IO blk
+    , rnCustomiseChainDbArgs :: ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk
 
       -- | Customise the 'NodeArgs'
     , rnCustomiseNodeArgs :: NodeArgs IO RemoteConnectionId LocalConnectionId blk
@@ -374,13 +375,13 @@ openChainDB
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
+  -> (ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> IO (ChainDB IO blk)
 openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
     ChainDB.openDB args
   where
-    args :: ChainDbArgs IO blk
+    args :: ChainDbArgs Identity IO blk
     args = customiseArgs $
              mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
              (nodeImmutableDbChunkInfo cfg)
@@ -396,7 +397,7 @@ mkChainDbArgs
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChunkInfo
-  -> ChainDbArgs IO blk
+  -> ChainDbArgs Identity IO blk
 mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
               chunkInfo = (ChainDB.defaultArgs dbPath) {
       ChainDB.cdbMaxBlocksPerFile      = mkBlocksPerFile 1000

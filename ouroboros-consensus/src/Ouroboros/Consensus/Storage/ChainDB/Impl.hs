@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
 import           Control.Monad (when)
 import           Control.Tracer
 import           Data.Functor ((<&>))
+import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
@@ -80,7 +81,7 @@ withDB
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> (ChainDB m blk -> m a)
   -> m a
 withDB args = bracket (fst <$> openDBInternal args True) API.closeDB
@@ -94,7 +95,7 @@ openDB
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> m (ChainDB m blk)
 openDB args = fst <$> openDBInternal args True
 
@@ -107,7 +108,7 @@ openDBInternal
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = do

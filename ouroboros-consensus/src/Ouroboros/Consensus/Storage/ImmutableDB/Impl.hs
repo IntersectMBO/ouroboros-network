@@ -111,6 +111,7 @@ import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      runWithTempRegistry)
@@ -141,36 +142,28 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
   Opening the database
 ------------------------------------------------------------------------------}
 
-data ImmutableDbArgs m blk = ImmutableDbArgs {
+data ImmutableDbArgs f m blk = ImmutableDbArgs {
       immCacheConfig      :: Index.CacheConfig
-    , immCheckIntegrity   :: blk -> Bool
-    , immChunkInfo        :: ChunkInfo
-    , immCodecConfig      :: CodecConfig blk
+    , immCheckIntegrity   :: HKD f (blk -> Bool)
+    , immChunkInfo        :: HKD f ChunkInfo
+    , immCodecConfig      :: HKD f (CodecConfig blk)
     , immHasFS            :: SomeHasFS m
-    , immRegistry         :: ResourceRegistry m
+    , immRegistry         :: HKD f (ResourceRegistry m)
     , immTracer           :: Tracer m (TraceEvent blk)
     , immValidationPolicy :: ValidationPolicy
     }
 
 -- | Default arguments when using the 'IO' monad
---
--- The following fields must still be defined:
---
--- * 'immCheckIntegrity'
--- * 'immChunkInfo'
--- * 'immCodecConfig'
--- * 'immRegistry'
-defaultArgs :: FilePath -> ImmutableDbArgs IO blk
+defaultArgs :: FilePath -> ImmutableDbArgs Defaults IO blk
 defaultArgs fp = ImmutableDbArgs {
-      immHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
-    , immCacheConfig      = cacheConfig
+      immCacheConfig      = cacheConfig
+    , immCheckIntegrity   = NoDefault
+    , immChunkInfo        = NoDefault
+    , immCodecConfig      = NoDefault
+    , immHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
+    , immRegistry         = NoDefault
     , immTracer           = nullTracer
     , immValidationPolicy = ValidateMostRecentChunk
-      -- Fields without a default
-    , immCheckIntegrity   = error "no default for immCheckIntegrity"
-    , immChunkInfo        = error "no default for immChunkInfo"
-    , immCodecConfig      = error "no default for immCodecConfig"
-    , immRegistry         = error "no default for immRegistry"
     }
   where
     -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
@@ -229,7 +222,7 @@ openDB ::
      , ImmutableDbSerialiseConstraints blk
      , HasCallStack
      )
-  => ImmutableDbArgs m blk
+  => ImmutableDbArgs Identity m blk
   -> m (ImmutableDB m blk)
 openDB args = fst <$> openDBInternal args
 
@@ -244,7 +237,7 @@ openDBInternal ::
      , ImmutableDbSerialiseConstraints blk
      , HasCallStack
      )
-  => ImmutableDbArgs m blk
+  => ImmutableDbArgs Identity m blk
   -> m (ImmutableDB m blk, Internal m blk)
 openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])

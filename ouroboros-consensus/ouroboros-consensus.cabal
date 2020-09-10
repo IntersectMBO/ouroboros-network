@@ -148,6 +148,7 @@ library
                        Ouroboros.Consensus.TypeFamilyWrappers
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
+                       Ouroboros.Consensus.Util.Args
                        Ouroboros.Consensus.Util.Assert
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR

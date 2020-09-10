@@ -22,6 +22,7 @@ import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Classes
+import           Data.Functor.Identity (Identity)
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
@@ -474,7 +475,7 @@ shrinkCmd _ cmd = case cmd of
 data VolatileDBEnv = VolatileDBEnv
   { varErrors :: StrictTVar IO Errors
   , varDB     :: StrictMVar IO (VolatileDB IO Block)
-  , args      :: VolatileDbArgs IO Block
+  , args      :: VolatileDbArgs Identity IO Block
   }
 
 -- | Opens a new VolatileDB and stores it in 'varDB'.

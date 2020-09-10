@@ -41,6 +41,7 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity (Identity)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -662,7 +663,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -- ^ ledger updates tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> CoreNodeId
-           -> ChainDbArgs m blk
+           -> ChainDbArgs Identity m blk
     mkArgs
       clock registry
       cfg initLedger

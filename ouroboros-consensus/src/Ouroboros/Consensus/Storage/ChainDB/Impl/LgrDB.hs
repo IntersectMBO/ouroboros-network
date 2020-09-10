@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -148,34 +149,26 @@ type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)
   Initialization
 -------------------------------------------------------------------------------}
 
-data LgrDbArgs m blk = LgrDbArgs {
-      lgrTopLevelConfig :: TopLevelConfig blk
+data LgrDbArgs f m blk = LgrDbArgs {
+      lgrDiskPolicy     :: HKD f DiskPolicy
+    , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
     , lgrHasFS          :: SomeHasFS m
-    , lgrParams         :: LedgerDbParams
-    , lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: m (ExtLedgerState blk)
-    , lgrTracer         :: Tracer m (TraceEvent (RealPoint blk))
+    , lgrParams         :: HKD f LedgerDbParams
+    , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB blk)
+    , lgrTracer         :: Tracer m (TraceEvent (RealPoint blk))
     }
 
 -- | Default arguments
---
--- The following arguments must still be defined:
---
--- * 'lgrTopLevelConfig'
--- * 'lgrParams'
--- * 'lgrMemPolicy'
--- * 'lgrGenesis'
-defaultArgs :: FilePath -> LgrDbArgs IO blk
+defaultArgs :: FilePath -> LgrDbArgs Defaults IO blk
 defaultArgs fp = LgrDbArgs {
-      lgrHasFS          = SomeHasFS $ ioHasFS $ MountPoint (fp </> "ledger")
-      -- Fields without a default
-    , lgrTopLevelConfig = error "no default for lgrTopLevelConfig"
-    , lgrParams         = error "no default for lgrParams"
-    , lgrDiskPolicy     = error "no default for lgrDiskPolicy"
-    , lgrGenesis        = error "no default for lgrGenesis"
-    , lgrTracer         = nullTracer
+      lgrDiskPolicy     = NoDefault
+    , lgrGenesis        = NoDefault
+    , lgrHasFS          = SomeHasFS $ ioHasFS $ MountPoint (fp </> "ledger")
+    , lgrParams         = NoDefault
+    , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
+    , lgrTracer         = nullTracer
     }
 
 -- | Open the ledger DB
@@ -188,7 +181,7 @@ openDB :: forall m blk.
           , LgrDbSerialiseConstraints blk
           , HasCallStack
           )
-       => LgrDbArgs m blk
+       => LgrDbArgs Identity m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (TraceReplayEvent (RealPoint blk) ())
        -- ^ Used to trace the progress while replaying blocks against the
@@ -231,7 +224,7 @@ initFromDisk
      , LgrDbSerialiseConstraints blk
      , HasCallStack
      )
-  => LgrDbArgs m blk
+  => LgrDbArgs Identity m blk
   -> Tracer m (TraceReplayEvent (RealPoint blk) ())
   -> ImmutableDB m blk
   -> m (LedgerDB blk, Word64)
@@ -261,7 +254,7 @@ initFromDisk LgrDbArgs { lgrHasFS = SomeHasFS hasFS, .. } replayTracer immutable
 mkLgrDB :: StrictTVar m (LedgerDB blk)
         -> StrictTVar m (Set (RealPoint blk))
         -> (RealPoint blk -> m blk)
-        -> LgrDbArgs m blk
+        -> LgrDbArgs Identity m blk
         -> LgrDB m blk
 mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
   where

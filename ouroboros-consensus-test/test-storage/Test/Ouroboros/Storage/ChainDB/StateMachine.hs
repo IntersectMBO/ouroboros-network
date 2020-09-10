@@ -33,6 +33,7 @@ import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
+import           Data.Functor.Identity (Identity)
 import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -300,13 +301,13 @@ data ChainDBEnv m blk = ChainDBEnv {
   , varCurSlot      :: StrictTVar m SlotNo
   , varNextId       :: StrictTVar m Id
   , varVolatileDbFs :: StrictTVar m MockFS
-  , args            :: ChainDbArgs m blk
+  , args            :: ChainDbArgs Identity m blk
     -- ^ Needed to reopen a ChainDB, i.e., open a new one.
   }
 
 open
   :: (IOLike m, TestConstraints blk)
-  => ChainDbArgs m blk -> m (ChainDBState m blk)
+  => ChainDbArgs Identity m blk -> m (ChainDBState m blk)
 open args = do
     (chainDB, internal) <- openDBInternal args False
     addBlockAsync       <- async (intAddBlockRunner internal)
@@ -1594,7 +1595,7 @@ mkArgs :: IOLike m
        -> StrictTVar m SlotNo
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
-       -> ChainDbArgs m Blk
+       -> ChainDbArgs Identity m Blk
 mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
        (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- HasFS instances
