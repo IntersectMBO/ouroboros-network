@@ -53,6 +53,7 @@ instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
+    exportSnapshot _ = putStrLn "TODO Byron not supported"
 
 type ByronBlockArgs = Args ByronBlock
 

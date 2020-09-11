@@ -117,6 +117,14 @@ parseAnalysis = asum [
           long "show-ebbs"
         , help "Show all EBBs and their predecessors"
         ]
+    , flag' MeasureLedgerValidation $ mconcat [
+          long "measure-ledger-validation"
+        , help "Measure header and block (re)validation"
+        ]
+    , flag' CreateLedgerSnapshot $ mconcat [
+          long "create-ledger-snapshot"
+        , help "TODO"
+        ]
     , pure OnlyValidation
     ]
 

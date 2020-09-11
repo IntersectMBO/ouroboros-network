@@ -12,10 +12,13 @@ module Block.Cardano (
   , CardanoBlockArgs
   ) where
 
+import qualified Codec.CBOR.Write as CBOR
+import           Control.Monad (void)
 import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
 import           Options.Applicative
 
+import           Cardano.Binary (toCBOR)
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
@@ -25,6 +28,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+
+import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
@@ -64,6 +72,12 @@ instance HasAnalysis (CardanoBlock TPraosStandardCrypto) where
     Cardano.BlockShelley sh -> blockTxSizes sh
   knownEBBs _ = Map.mapKeys castHeaderHash . Map.map castChainHash $
     knownEBBs (Proxy @ByronBlock)
+  exportSnapshot (Cardano.LedgerStateShelley st) =
+      withFile hasFS (mkFsPath ["snapshot"]) (WriteMode AllowExisting) $ \h ->
+        void $ hPut hasFS h $ CBOR.toBuilder (toCBOR (Shelley.shelleyState st))
+    where
+      hasFS = ioHasFS (MountPoint "")
+  exportSnapshot _ = putStrLn "TODO Byron not supported"
 
 type CardanoBlockArgs = Args (CardanoBlock TPraosStandardCrypto)
 

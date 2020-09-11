@@ -10,6 +10,7 @@ import           Data.Map.Strict (Map)
 import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Storage.ChainDB (ImmDbSerialiseConstraints)
@@ -28,3 +29,4 @@ class ( ImmDbSerialiseConstraints blk
     countTxOutputs  :: blk -> Int
     blockTxSizes    :: blk -> [SizeInBytes]
     knownEBBs       :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
+    exportSnapshot  :: LedgerState blk -> IO ()

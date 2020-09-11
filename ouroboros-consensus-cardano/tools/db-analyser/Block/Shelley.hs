@@ -48,6 +48,7 @@ instance HasAnalysis (ShelleyBlock TPraosStandardCrypto) where
       SL.Block _ (SL.TxSeq txs) ->
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
     knownEBBs = const Map.empty
+    exportSnapshot _ = putStrLn "TODO Shelley not supported"
 
 type ShelleyBlockArgs = Args (ShelleyBlock TPraosStandardCrypto)
 
