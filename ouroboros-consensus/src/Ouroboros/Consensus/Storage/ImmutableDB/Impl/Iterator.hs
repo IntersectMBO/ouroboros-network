@@ -42,10 +42,9 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
                      (getBlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..), BlockSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
@@ -64,8 +63,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 data IteratorHandle m blk h = IteratorHandle {
       ithHasFS    :: !(HasFS m h)
       -- ^ Bundled HasFS instance because of the existential @h@.
-    , ithIndex    :: !(Index m blk h)
-      -- ^ Bundled Index instance because of the existential @h@.
     , ithVarState :: !(StrictTVar m (IteratorStateOrExhausted m blk h))
       -- ^ The state of the iterator
     , ithEndChunk :: !ChunkNo
@@ -115,6 +112,7 @@ streamImpl ::
      , DecodeDisk blk (Lazy.ByteString -> blk)
      , DecodeDiskDep (NestedCtxt Header) blk
      , ReconstructNestedCtxt Header blk
+     , ConvertRawHash blk
      , HasCallStack
      )
   => ImmutableDBEnv m blk
@@ -128,14 +126,14 @@ streamImpl dbEnv registry blockComponent = \from to ->
       unless (validBounds from to) $
         lift $ throwApiMisuse $ InvalidIteratorRangeError from to
 
-      endChunkSlot <- checkUpperBound currentIndex currentTip to
+      endChunkSlot <- checkUpperBound hasFS currentTip to
 
       --  When the lower bound is exclusive, we do the same as when it is
       --  inclusive. We set up the iterator to point at the lower bound. Only at
       --  the very end of this function do we advance it to the block after it,
       --  in the case of an exclusive lower bound.
       (secondaryOffset, startChunkSlot) <-
-        checkLowerBound currentIndex currentTip from
+        checkLowerBound hasFS currentTip from
 
       lift $ do
         -- 'validBounds' will catch nearly all invalid ranges, except for one:
@@ -156,7 +154,6 @@ streamImpl dbEnv registry blockComponent = \from to ->
         iteratorState <-
           iteratorStateForChunk
             hasFS
-            currentIndex
             registry
             currentChunkInfo
             endHash
@@ -168,7 +165,6 @@ streamImpl dbEnv registry blockComponent = \from to ->
 
         let ith = IteratorHandle {
                 ithHasFS    = hasFS
-              , ithIndex    = currentIndex
               , ithVarState = varIteratorState
               , ithEndChunk = chunkIndex endChunkSlot
               , ithEndHash  = endHash
@@ -179,7 +175,7 @@ streamImpl dbEnv registry blockComponent = \from to ->
         -- first.
         case from of
           StreamFromExclusive (BlockPoint {}) ->
-            stepIterator registry currentChunkInfo ith
+            stepIterator registry chunkInfo currentChunkInfo ith
           _otherwise -> return ()
 
         return $ mkIterator ith
@@ -190,14 +186,14 @@ streamImpl dbEnv registry blockComponent = \from to ->
     -- a 'MissingBlock' otherwise), and return the corresponding 'ChunkSlot'.
     checkUpperBound ::
          HasCallStack
-      => Index m blk h
+      => HasFS m h
       -> WithOrigin (Tip blk)  -- ^ Current tip
       -> StreamTo blk
       -> ExceptT (MissingBlock blk) m ChunkSlot
       -- ^ We can't return 'TipInfo' here because the secondary index does
       -- not give us block numbers
-    checkUpperBound index currentTip (StreamToInclusive endPt) = do
-        (chunkSlot, _, _) <- getSlotInfo chunkInfo index currentTip endPt
+    checkUpperBound hasFS currentTip (StreamToInclusive endPt) = do
+        (chunkSlot, _, _) <- getSlotInfo hasFS chunkInfo currentTip endPt
         return chunkSlot
 
     -- | Check the lower bound: check whether it exists in the database (return
@@ -212,20 +208,20 @@ streamImpl dbEnv registry blockComponent = \from to ->
     -- that the lower bound is <= the tip.
     checkLowerBound ::
          HasCallStack
-      => Index m blk h
+      => HasFS m h
       -> WithOrigin (Tip blk)  -- ^ Current tip
       -> StreamFrom blk
       -> ExceptT (MissingBlock blk) m (SecondaryOffset, ChunkSlot)
-    checkLowerBound index currentTip = \case
+    checkLowerBound hasFS currentTip = \case
         StreamFromInclusive startPt -> do
           (chunkSlot, _, secondaryOffset) <-
-            getSlotInfo chunkInfo index currentTip startPt
+            getSlotInfo hasFS chunkInfo currentTip startPt
           return (secondaryOffset, chunkSlot)
         StreamFromExclusive startPt -> case pointToWithOriginRealPoint startPt of
-          Origin             -> lift $ findFirstBlock index
+          Origin             -> lift $ findFirstBlock hasFS
           NotOrigin startPt' -> do
             (chunkSlot, _, secondaryOffset) <-
-              getSlotInfo chunkInfo index currentTip startPt'
+              getSlotInfo hasFS chunkInfo currentTip startPt'
             return (secondaryOffset, chunkSlot)
 
     mkIterator :: IteratorHandle m blk h -> Iterator m blk b
@@ -241,12 +237,12 @@ streamImpl dbEnv registry blockComponent = \from to ->
     -- PRECONDITION: the ImmutableDB is not empty.
     findFirstBlock ::
          HasCallStack
-      => Index m blk h
+      => HasFS m h
       -> m (SecondaryOffset, ChunkSlot)
-    findFirstBlock index = go firstChunkNo
+    findFirstBlock hasFS = go firstChunkNo
       where
         go :: ChunkNo -> m (SecondaryOffset, ChunkSlot)
-        go chunk = Index.readFirstFilledSlot index chunk >>= \case
+        go chunk = Primary.readFirstFilledSlot hasFS chunkInfo chunk >>= \case
           Nothing      -> go (nextChunkNo chunk)
           Just relSlot -> return (0, chunkSlotForRelativeSlot chunk relSlot)
 
@@ -263,9 +259,10 @@ streamImpl dbEnv registry blockComponent = \from to ->
 -- the 'SecondaryOffset' is for the slot. The secondary index is read to check
 -- the hash and to return the 'Secondary.Entry'.
 getSlotInfo ::
-     forall m blk h. (HasCallStack, IOLike m, HasHeader blk)
-  => ChunkInfo
-  -> Index m blk h
+     forall m blk h.
+     (HasCallStack, IOLike m, HasHeader blk, ConvertRawHash blk)
+  => HasFS m h
+  -> ChunkInfo
   -> WithOrigin (Tip blk)  -- ^ Current tip
   -> RealPoint blk
   -> ExceptT (MissingBlock blk) m
@@ -273,7 +270,7 @@ getSlotInfo ::
              , (Secondary.Entry blk, BlockSize)
              , SecondaryOffset
              )
-getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
+getSlotInfo hasFS chunkInfo currentTip pt@(RealPoint slot hash) = do
     let (chunk, mIfBoundary, ifRegular) =
           chunkSlotForUnknownBlock chunkInfo slot
 
@@ -290,7 +287,7 @@ getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
     -- the secondary index file with the hash we have.
     toRead :: NonEmpty (IsEBB, SecondaryOffset) <- case mIfBoundary of
       Just ifBoundary -> do
-        offsets <- lift $ Index.readOffsets index chunk
+        offsets <- lift $ Primary.readOffsets hasFS chunk
                             (chunkRelative <$> Two ifBoundary ifRegular)
         case offsets of
           Two Nothing Nothing                   ->
@@ -302,7 +299,7 @@ getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
           Two Nothing (Just blkOffset)          ->
             return ((IsNotEBB, blkOffset) NE.:| [])
       Nothing -> do
-        offset <- lift $ Index.readOffset index chunk (chunkRelative ifRegular)
+        offset <- lift $ Primary.readOffset hasFS chunk (chunkRelative ifRegular)
         case offset of
           Nothing        ->
             throwError $ EmptySlot pt
@@ -310,7 +307,7 @@ getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
             return ((IsNotEBB, blkOffset) NE.:| [])
 
     entriesWithBlockSizes :: NonEmpty (Secondary.Entry blk, BlockSize) <-
-      lift $ Index.readEntries index chunk toRead
+      lift $ Secondary.readEntries hasFS chunk toRead
 
     -- Return the entry from the secondary index file that matches the
     -- expected hash.
@@ -339,13 +336,15 @@ getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
 --
 -- PRECONDITION: the iterator is not exhausted.
 stepIterator ::
-     forall m blk h. (HasCallStack, IOLike m, HasHeader blk)
+     forall m blk h.
+     (HasCallStack, IOLike m, HasHeader blk, ConvertRawHash blk)
   => ResourceRegistry m
+  -> ChunkInfo
   -> CurrentChunkInfo
   -> IteratorHandle m blk h
   -> m ()
-stepIterator registry currentChunkInfo
-             ith@IteratorHandle { ithHasFS, ithIndex, ithVarState, ithEndChunk, ithEndHash } =
+stepIterator registry chunkInfo currentChunkInfo
+             ith@IteratorHandle { ithHasFS, ithVarState, ithEndChunk, ithEndHash } =
     atomically (readTVar ithVarState) >>= \case
       IteratorStateExhausted ->
         error "precondition violated: iterator must not be exhausted"
@@ -372,7 +371,7 @@ stepIterator registry currentChunkInfo
          ChunkNo    -- ^ The chunk to open
       -> m (IteratorState m blk h)
     openNextChunk chunk =
-      Index.readFirstFilledSlot ithIndex chunk >>= \case
+      Primary.readFirstFilledSlot ithHasFS chunkInfo chunk >>= \case
         -- This chunk is empty, look in the next one.
         --
         -- We still haven't encountered the end bound, so this loop must end
@@ -393,7 +392,6 @@ stepIterator registry currentChunkInfo
 
           iteratorStateForChunk
             ithHasFS
-            ithIndex
             registry
             currentChunkInfo
             ithEndHash
@@ -409,6 +407,7 @@ iteratorNextImpl ::
      , DecodeDisk blk (Lazy.ByteString -> blk)
      , DecodeDiskDep (NestedCtxt Header) blk
      , ReconstructNestedCtxt Header blk
+     , ConvertRawHash blk
      )
   => ImmutableDBEnv m blk
   -> IteratorHandle m blk h
@@ -439,7 +438,7 @@ iteratorNextImpl dbEnv ith@IteratorHandle { ithHasFS, ithVarState } registry blo
               itsChunkHandle
               entry
               blockComponent
-          stepIterator registry currentChunkInfo ith
+          stepIterator registry chunkInfo currentChunkInfo ith
           return $ IteratorResult b
   where
     ImmutableDBEnv { codecConfig, chunkInfo, checkIntegrity } = dbEnv
@@ -489,9 +488,8 @@ iteratorCloseImpl IteratorHandle { ithVarState } = do
         void $ unsafeRelease itsChunkKey
 
 iteratorStateForChunk ::
-     (HasCallStack, HasHeader blk, IOLike m)
+     (HasCallStack, HasHeader blk, ConvertRawHash blk, IOLike m)
   => HasFS m h
-  -> Index m blk h
   -> ResourceRegistry m
   -> CurrentChunkInfo
   -> HeaderHash blk
@@ -502,7 +500,7 @@ iteratorStateForChunk ::
   -> IsEBB
      -- ^ Whether the first expected block will be an EBB or not.
   -> m (IteratorState m blk h)
-iteratorStateForChunk hasFS index registry
+iteratorStateForChunk hasFS registry
                       (CurrentChunkInfo curChunk curChunkOffset) endHash
                       chunk secondaryOffset firstIsEBB = do
     -- Open the chunk file. Allocate the handle in the registry so that it
@@ -541,7 +539,7 @@ iteratorStateForChunk hasFS index registry
       then return (unBlockOffset curChunkOffset)
       else hGetSize eHnd
 
-    entries <- Index.readAllEntries index secondaryOffset chunk
+    entries <- Secondary.readAllEntries hasFS secondaryOffset chunk
       ((== endHash) . Secondary.headerHash) chunkFileSize firstIsEBB
 
     case NE.nonEmpty entries of

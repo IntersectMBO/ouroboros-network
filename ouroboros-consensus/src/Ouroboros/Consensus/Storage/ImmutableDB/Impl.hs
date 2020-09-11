@@ -123,8 +123,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..), HeaderOffset (..), HeaderSize (..))
@@ -273,7 +271,7 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
         putMVar varInternalState DbClosed
-        cleanUp hasFS openState
+        closeOpenHandles hasFS openState
         traceWith tracer DBClosed
 
 deleteAfterImpl ::
@@ -285,20 +283,17 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer, chunkInfo } newTip =
   -- We're not using 'Index' in this function but truncating the index files
   -- directly.
   modifyOpenState dbEnv $ \hasFS -> do
-    st@OpenState { currentIndex, currentTip } <- get
+    st@OpenState { currentTip } <- get
 
     when ((CompareTip <$> newTip) < (CompareTip <$> currentTip)) $ do
       lift $ lift $ do
         traceWith tracer $ DeletingAfter newTip
         -- Release the open handles, as we might have to remove files that are
         -- currently opened.
-        cleanUp hasFS st
+        closeOpenHandles hasFS st
         truncateTo hasFS st newTipChunkSlot
-        -- Reset the index, as it can contain stale information. Also restarts
-        -- the background thread expiring unused past chunks.
-        Index.restart currentIndex newChunk
 
-      ost <- lift $ mkOpenState hasFS currentIndex newChunk newTip allowExisting
+      ost <- lift $ mkOpenState hasFS newChunk newTip allowExisting
       put ost
   where
     newTipChunkSlot :: WithOrigin ChunkSlot
@@ -312,7 +307,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer, chunkInfo } newTip =
 
     truncateTo ::
          HasFS m h
-      -> OpenState m blk h
+      -> OpenState blk h
       -> WithOrigin ChunkSlot
       -> m ()
     truncateTo hasFS OpenState {} = \case
@@ -361,6 +356,7 @@ getBlockComponentImpl ::
      , ReconstructNestedCtxt Header blk
      , DecodeDisk blk (Lazy.ByteString -> blk)
      , DecodeDiskDep (NestedCtxt Header) blk
+     , ConvertRawHash blk
      , IOLike m
      )
   => ImmutableDBEnv m blk
@@ -369,7 +365,7 @@ getBlockComponentImpl ::
   -> m (Either (MissingBlock blk) b)
 getBlockComponentImpl dbEnv blockComponent pt =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
-      slotInfo <- getSlotInfo chunkInfo currentIndex currentTip pt
+      slotInfo <- getSlotInfo hasFS chunkInfo currentTip pt
       let (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) = slotInfo
           chunkFile = fsPathChunkFile chunk
           Secondary.Entry { blockOffset } = entry
@@ -412,6 +408,7 @@ appendBlockImpl ::
      , GetHeader blk
      , EncodeDisk blk blk
      , HasBinaryBlockInfo blk
+     , ConvertRawHash blk
      , IOLike m
      , HasCallStack
      )
@@ -420,11 +417,7 @@ appendBlockImpl ::
   -> m ()
 appendBlockImpl dbEnv blk =
     modifyOpenState dbEnv $ \hasFS -> do
-      OpenState {
-          currentTip   = initialTip
-        , currentIndex = index
-        , currentChunk = initialChunk
-        } <- get
+      OpenState { currentTip = initialTip, currentChunk = initialChunk} <- get
 
       -- Check that we're not appending to the past
       let blockAfterTip =
@@ -442,7 +435,7 @@ appendBlockImpl dbEnv blk =
         let newChunksToStart :: Int
             newChunksToStart = fromIntegral $ countChunks chunk initialChunk
         replicateM_ newChunksToStart $
-          startNewChunk hasFS index chunkInfo initialChunk
+          startNewChunk hasFS chunkInfo initialChunk
 
       -- We may have updated the state with 'startNewChunk', so get the
       -- (possibly) updated state.
@@ -478,7 +471,8 @@ appendBlockImpl dbEnv blk =
           (blockSize, crc) <- hPutAllCRC hasFS currentChunkHandle bytes
 
           -- Write to the secondary index file
-          let entry = Secondary.Entry {
+          let entry :: Secondary.Entry blk
+              entry = Secondary.Entry {
                   blockOffset  = currentChunkOffset
                 , headerOffset = HeaderOffset headerOffset
                 , headerSize   = HeaderSize headerSize
@@ -488,11 +482,10 @@ appendBlockImpl dbEnv blk =
                 }
           entrySize <-
             fromIntegral <$>
-              Index.appendEntry
-                index
-                chunk
+              Secondary.appendEntry
+                hasFS
                 currentSecondaryHandle
-                (WithBlockSize (fromIntegral blockSize) entry)
+                entry
 
           -- Write to the primary index file
           let backfillOffsets =
@@ -501,7 +494,7 @@ appendBlockImpl dbEnv blk =
                   nextFreeRelSlot
                   currentSecondaryOffset
               offsets = backfillOffsets <> [currentSecondaryOffset + entrySize]
-          Index.appendOffsets index currentPrimaryHandle offsets
+          Primary.appendOffsets hasFS currentPrimaryHandle offsets
 
           return (blockSize, entrySize)
 
@@ -531,11 +524,10 @@ appendBlockImpl dbEnv blk =
 startNewChunk ::
      forall m h blk. (HasCallStack, IOLike m, Eq h)
   => HasFS m h
-  -> Index m blk h
   -> ChunkInfo
   -> ChunkNo  -- ^ Chunk containing the tip
   -> ModifyOpenState m blk h ()
-startNewChunk hasFS index chunkInfo tipChunk = do
+startNewChunk hasFS chunkInfo tipChunk = do
     st@OpenState {..} <- get
 
     -- We have to take care when starting multiple new chunks in a row. In the
@@ -563,10 +555,10 @@ startNewChunk hasFS index chunkInfo tipChunk = do
                             currentSecondaryOffset
 
     lift $ lift $
-      Index.appendOffsets index currentPrimaryHandle backfillOffsets
+      Primary.appendOffsets hasFS currentPrimaryHandle backfillOffsets
       `finally` closeOpenHandles hasFS st
 
     st' <- lift $
-      mkOpenState hasFS index (nextChunkNo currentChunk) currentTip MustBeNew
+      mkOpenState hasFS (nextChunkNo currentChunk) currentTip MustBeNew
 
     put st'
