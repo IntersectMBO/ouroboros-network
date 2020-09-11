@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit Praos

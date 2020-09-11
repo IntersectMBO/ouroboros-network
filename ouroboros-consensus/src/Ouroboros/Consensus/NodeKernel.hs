@@ -488,7 +488,7 @@ mkCurrentBlockContext
   -> AnchoredFragment (Header blk)
      -- ^ the current chain fragment
      --
-     -- Recall that the anchor point is the tip of the ImmDB.
+     -- Recall that the anchor point is the tip of the ImmutableDB.
   -> Either (TraceForgeEvent blk) (BlockContext blk)
      -- ^ the event records the cause of the failure
 mkCurrentBlockContext currentSlot c = case c of

@@ -58,20 +58,20 @@ import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
+                     (ImmutableDBError (..), UnexpectedFailure (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathPrimaryIndexFile, runGet)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-                     (ImmutableDBError (..), UnexpectedError (..))
 
 {------------------------------------------------------------------------------
   SecondaryOffset
@@ -246,8 +246,8 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
           -- Reached end of file, no filled slot
           return Nothing
         (NoMoreRelativeSlots, Just _) ->
-          throwM $ UnexpectedError $
-            InvalidFileError primaryIndexFile "Index file too large" callStack
+          throwM $ UnexpectedFailure $
+            InvalidFileError primaryIndexFile "Index file too large" prettyCallStack
         (NextRelativeSlot slot, Just offset)
           | offset == 0 -> go pHnd (nextRelativeSlot slot)
           | otherwise   -> return $ Just slot

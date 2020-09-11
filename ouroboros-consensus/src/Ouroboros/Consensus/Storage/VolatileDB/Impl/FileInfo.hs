@@ -2,27 +2,28 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Information about the files stored by the volatile DB
 --
 -- Intended for qualified import.
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (
     FileInfo      -- opaque
-  , FileBlockInfo -- opaque
     -- * Construction
   , empty
   , addBlock
-  , fromParsedInfo
-  , mkFileBlockInfo
+  , fromParsedBlockInfos
     -- * Queries
+  , maxSlotNo
+  , hashes
   , canGC
-  , blockIds
   , isFull
-  , maxSlotInFiles
+  , maxSlotNoInFiles
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -30,85 +31,72 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo (..))
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 
 {-------------------------------------------------------------------------------
   Types
 -------------------------------------------------------------------------------}
 
--- | The internal information the db keeps for each file
-data FileInfo blockId = MkFileInfo {
-      fLatestSlot :: !MaxSlotNo
-    , fContents   :: !(Map BlockOffset (FileBlockInfo blockId))
-    } deriving (Show, Generic, NoUnexpectedThunks)
+-- | The internal information the VolatileDB keeps for each file.
+data FileInfo blk = FileInfo {
+      maxSlotNo :: !MaxSlotNo
+    , hashes    :: !(Set (HeaderHash blk))
+    }
+  deriving (Generic)
 
--- | Information about a block in a file
-data FileBlockInfo blockId = FileBlockInfo {
-      fsBlockSize :: !BlockSize
-    , fsBlockId   :: !blockId
-    } deriving (Show, Generic, NoUnexpectedThunks)
+deriving instance StandardHash blk => Show (FileInfo blk)
+deriving instance StandardHash blk => NoUnexpectedThunks (FileInfo blk)
 
 {-------------------------------------------------------------------------------
   Construction
 -------------------------------------------------------------------------------}
 
-empty :: FileInfo blockId
-empty = MkFileInfo {
-      fLatestSlot = NoMaxSlotNo
-    , fContents   = Map.empty
+empty :: FileInfo blk
+empty = FileInfo {
+      maxSlotNo = NoMaxSlotNo
+    , hashes  = Set.empty
     }
 
 -- | Adds a block to a 'FileInfo'.
-addBlock :: SlotNo
-         -> BlockOffset
-         -> FileBlockInfo blockId
-         -> FileInfo blockId
-         -> FileInfo blockId
-addBlock slotNo blockOffset blockInfo MkFileInfo { fLatestSlot, fContents } =
-    MkFileInfo {
-        fLatestSlot = fLatestSlot `max` MaxSlotNo slotNo
-      , fContents   = Map.insert blockOffset blockInfo fContents
+addBlock :: StandardHash blk => SlotNo -> HeaderHash blk -> FileInfo blk -> FileInfo blk
+addBlock slotNo hash FileInfo { maxSlotNo, hashes } =
+    FileInfo {
+        maxSlotNo = maxSlotNo `max` MaxSlotNo slotNo
+      , hashes    = Set.insert hash hashes
       }
 
 -- | Construct a 'FileInfo' from the parser result.
-fromParsedInfo :: forall blockId. ParsedInfo blockId -> FileInfo blockId
-fromParsedInfo parsedInfo = MkFileInfo maxSlotNo contents
+fromParsedBlockInfos ::
+     forall blk. StandardHash blk
+  => [ParsedBlockInfo blk] -> FileInfo blk
+fromParsedBlockInfos parsedBlockInfos = FileInfo {
+      maxSlotNo = foldMap parsedBlockInfoToMaxSlotNo parsedBlockInfos
+    , hashes    = Set.fromList $ map (biHash . pbiBlockInfo) parsedBlockInfos
+    }
   where
-    maxSlotNo = foldMap parsedBlockInfoToMaxSlotNo parsedInfo
-
-    parsedBlockInfoToMaxSlotNo :: ParsedBlockInfo blockId -> MaxSlotNo
-    parsedBlockInfoToMaxSlotNo = MaxSlotNo . bslot . pbiBlockInfo
-
-    contents :: Map BlockOffset (FileBlockInfo blockId)
-    contents = Map.fromList
-      [ (pbiBlockOffset, FileBlockInfo pbiBlockSize (bbid pbiBlockInfo))
-      | ParsedBlockInfo { pbiBlockOffset, pbiBlockSize, pbiBlockInfo } <- parsedInfo
-      ]
-
-mkFileBlockInfo :: BlockSize -> blockId -> FileBlockInfo blockId
-mkFileBlockInfo = FileBlockInfo
+    parsedBlockInfoToMaxSlotNo :: ParsedBlockInfo blk -> MaxSlotNo
+    parsedBlockInfoToMaxSlotNo = MaxSlotNo . biSlotNo . pbiBlockInfo
 
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
 
 -- | Checks if this file can be GCed.
-canGC :: FileInfo blockId
-      -> SlotNo -- ^ The slot number of any block in the immutable DB.
-      -> Bool
-canGC MkFileInfo { fLatestSlot } slot =
-    case fLatestSlot of
+canGC ::
+     FileInfo blk
+  -> SlotNo -- ^ The slot which we want to GC
+  -> Bool
+canGC FileInfo { maxSlotNo } slot =
+    case maxSlotNo of
       NoMaxSlotNo      -> True
       MaxSlotNo latest -> latest < slot
 
--- | All @blockId@ in this file.
-blockIds :: FileInfo blockId -> [blockId]
-blockIds MkFileInfo { fContents } = fsBlockId <$> Map.elems fContents
-
 -- | Has this file reached its maximum size?
-isFull :: BlocksPerFile -> FileInfo blockId -> Bool
-isFull maxBlocksPerFile MkFileInfo { fContents } =
-    fromIntegral (Map.size fContents) >= unBlocksPerFile maxBlocksPerFile
+isFull :: BlocksPerFile -> FileInfo blk -> Bool
+isFull maxBlocksPerFile FileInfo { hashes } =
+    fromIntegral (Set.size hashes) >= unBlocksPerFile maxBlocksPerFile
 
-maxSlotInFiles :: [FileInfo blockId] -> MaxSlotNo
-maxSlotInFiles = foldMap fLatestSlot
+maxSlotNoInFiles :: [FileInfo blk] -> MaxSlotNo
+maxSlotNoInFiles = foldMap maxSlotNo

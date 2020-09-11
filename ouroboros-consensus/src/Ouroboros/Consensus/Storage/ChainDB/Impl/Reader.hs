@@ -21,7 +21,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -29,20 +28,17 @@ import           Ouroboros.Network.Block (ChainUpdate (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDB, ChainDbError (..), Reader (..), getPoint)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
-                     ImmDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
+                     ChainDbError (..), Reader (..), getPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
-                     (VolDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   Accessing the environment
@@ -61,7 +57,7 @@ getReader
   -> m r
 getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
-      ChainDbClosed   -> throwM $ ClosedDBError callStack
+      ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
       ChainDbOpen env -> do
         readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen
@@ -82,59 +78,54 @@ getReader1 h readerKey f a = getReader h readerKey (\env -> f env a)
   Reader
 -------------------------------------------------------------------------------}
 
-newReader
-  :: forall m blk b.
+newReader ::
+     forall m blk b.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
+     , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
   -> ResourceRegistry m
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> m (Reader m blk b)
 newReader h registry blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
     readerKey  <- atomically $ updateTVar cdbNextReaderKey $ \r -> (succ r, r)
     varReader <- newTVarM ReaderInit
-    let readerHandle = mkReaderHandle cdbImmDB varReader
+    let readerHandle = mkReaderHandle varReader
     atomically $ modifyTVar cdbReaders $ Map.insert readerKey readerHandle
     let reader = makeNewReader h readerKey varReader registry blockComponent
     traceWith cdbTracer $ TraceReaderEvent NewReader
     return reader
   where
-    mkReaderHandle
-      :: ImmDB m blk
-      -> StrictTVar m (ReaderState m blk b)
-      -> ReaderHandle m blk
-    mkReaderHandle cdbImmDB varReader = ReaderHandle
+    mkReaderHandle :: StrictTVar m (ReaderState m blk b) -> ReaderHandle m blk
+    mkReaderHandle varReader = ReaderHandle
       { rhClose      = do
           -- This is only called by 'closeAllReaders'. We just release the
           -- resources. We don't check whether the Reader is still open.
           -- We don't have to remove the reader from the 'cdbReaders',
           -- 'closeAllReaders' will empty that map already.
           readerState <- atomically $ readTVar varReader
-          closeReaderState cdbImmDB readerState
+          closeReaderState readerState
       , rhSwitchFork = \ipoint newChain -> modifyTVar varReader $
           switchFork ipoint newChain
       }
 
-makeNewReader
-  :: forall m blk b.
+makeNewReader ::
+     forall m blk b.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
+     , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
   => ChainDbHandle m blk
   -> ReaderKey
   -> StrictTVar m (ReaderState m blk b)
   -> ResourceRegistry m
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> Reader m blk b
 makeNewReader h readerKey varReader registry blockComponent = Reader {..}
   where
@@ -162,30 +153,28 @@ makeNewReader h readerKey varReader registry blockComponent = Reader {..}
 --
 -- Unlike 'closeAllReaders', this is meant to be called by the user of the
 -- ChainDB.Reader.
-close
-  :: forall m blk b. IOLike m
+close ::
+     forall m blk b. IOLike m
   => ReaderKey
   -> StrictTVar m (ReaderState m blk b)
   -> ChainDbEnv m blk
   -> m ()
-close readerKey varReader CDB { cdbReaders, cdbImmDB } = do
+close readerKey varReader CDB { cdbReaders } = do
     -- If the ReaderKey is not present in the map, the Reader must have been
     -- closed already.
     atomically $ modifyTVar cdbReaders $ Map.delete readerKey
     readerState <- atomically $ readTVar varReader
-    closeReaderState cdbImmDB readerState
+    closeReaderState readerState
 
--- | Close the given 'ReaderState' by closing any 'ImmDB.Iterator' it might
--- contain.
-closeReaderState
-  :: MonadCatch m
-  => ImmDB.ImmDB m blk -> ReaderState m blk b -> m ()
-closeReaderState immDB = \case
-     ReaderInit            -> return ()
-     ReaderInMem _         -> return ()
+-- | Close the given 'ReaderState' by closing any 'ImmutableDB.Iterator' it
+-- might contain.
+closeReaderState :: MonadCatch m => ReaderState m blk b -> m ()
+closeReaderState = \case
+     ReaderInit                  -> return ()
+     ReaderInMem _               -> return ()
      -- IMPORTANT: the main reason we're closing readers: to close this open
      -- iterator, which contains a reference to a file handle.
-     ReaderInImmDB _ immIt -> ImmDB.iteratorClose immDB immIt
+     ReaderInImmutableDB _ immIt -> ImmutableDB.iteratorClose immIt
 
 -- | Helper for 'readerInstruction' and 'readerInstructionBlocking'.
 --
@@ -196,24 +185,23 @@ closeReaderState immDB = \case
 --
 -- The returned 'ChainUpdate' contains a 'b', as defined by 'BlockComponent'.
 --
--- When in the 'ReaderInImmDB' state, we never have to block, as we can just
--- stream the next block/header from the ImmutableDB.
+-- When in the 'ReaderInImmutableDB' state, we never have to block, as we can
+-- just stream the next block/header from the ImmutableDB.
 --
 -- When in the 'ReaderInMem' state, we may have to block when we have reached
 -- the end of the current chain.
-instructionHelper
-  :: forall m blk b f.
+instructionHelper ::
+     forall m blk b f.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
-     , ImmDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
+     , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
   -> StrictTVar m (ReaderState m blk b)
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
        -> STM m (f     (ChainUpdate blk (Header blk))))
      -- ^ How to turn a transaction that may or may not result in a new
@@ -225,15 +213,15 @@ instructionHelper
 instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     -- In one transaction: check in which state we are, if in the
     -- @ReaderInMem@ state, just call 'instructionSTM', otherwise,
-    -- return the contents of the 'ReaderInImmDB' state.
-    inImmDBOrRes <- atomically $ do
+    -- return the contents of the 'ReaderInImmutableDB' state.
+    inImmutableDBOrRes <- atomically $ do
       curChain <- readTVar cdbChain
       readTVar varReader >>= \case
         -- Just return the contents of the state and end the transaction in
         -- these two cases.
         ReaderInit
           -> return $ Left (RollBackTo GenesisPoint, Nothing)
-        ReaderInImmDB rollState immIt
+        ReaderInImmutableDB rollState immIt
           -> return $ Left (rollState, Just immIt)
 
         ReaderInMem   rollState
@@ -251,26 +239,26 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
             -- will try to keep the point on the fragment in case we switch to
             -- a fork.
           -> return $ Left (rollState, Nothing)
-    case inImmDBOrRes of
+    case inImmutableDBOrRes of
       -- We were able to obtain the result inside the transaction as we were
       -- in the 'ReaderInMem' state. We only got a header, which we must first
       -- convert to the right block component.
       Right fupdate -> headerUpdateToBlockComponentUpdate fupdate
-      -- We were in the 'ReaderInImmDB' state or we need to switch to it.
+      -- We were in the 'ReaderInImmutableDB' state or we need to switch to it.
       Left (rollState, mbImmIt) -> do
         immIt <- case mbImmIt of
           Just immIt -> return immIt
           -- We were in the 'ReaderInMem' state but have to switch to the
-          -- 'ReaderInImmDB' state.
+          -- 'ReaderInImmutableDB' state.
           Nothing    -> do
             trace $ ReaderNoLongerInMem rollState
-            ImmDB.streamAfterKnownBlock cdbImmDB registry
+            ImmutableDB.streamAfterKnownPoint cdbImmutableDB registry
               ((,) <$> getPoint <*> blockComponent)
               (readerRollStatePoint rollState)
         case rollState of
-          RollForwardFrom pt -> rollForwardImmDB immIt pt
+          RollForwardFrom pt -> rollForwardImmutableDB immIt pt
           RollBackTo      pt -> do
-            let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt
+            let readerState' = ReaderInImmutableDB (RollForwardFrom pt) immIt
             atomically $ writeTVar varReader readerState'
             return $ pure $ RollBack pt
   where
@@ -288,77 +276,79 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
     -- on the 'BlockComponent' that's requested, we might have to read the
     -- whole block.
     getBlockComponentFromHeader
-      :: forall b'. Header blk -> BlockComponent (ChainDB m blk) b' -> m b'
+      :: forall b'. Header blk -> BlockComponent blk b' -> m b'
     getBlockComponentFromHeader hdr = \case
-        GetBlock      -> getBlockComponent GetBlock
-        GetRawBlock   -> getBlockComponent GetRawBlock
-        GetHeader     -> return $ return hdr
-        GetRawHeader  -> return $ rawHdr
-        GetHash       -> return $ headerHash hdr
-        GetSlot       -> return $ blockSlot hdr
-        GetIsEBB      -> return $ headerToIsEBB hdr
-        GetBlockSize  -> getBlockComponent GetBlockSize
+        GetVerifiedBlock -> getBlockComponent GetVerifiedBlock
+        GetBlock         -> getBlockComponent GetBlock
+        GetRawBlock      -> getBlockComponent GetRawBlock
+        GetHeader        -> return $ hdr
+        GetRawHeader     -> return $ rawHdr
+        GetHash          -> return $ headerHash hdr
+        GetSlot          -> return $ blockSlot hdr
+        GetIsEBB         -> return $ headerToIsEBB hdr
+        GetBlockSize     -> getBlockComponent GetBlockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap because we keep the
         -- serialisation in memory as an annotation, and the following way is
         -- less stateful
-        GetHeaderSize -> return $ fromIntegral $ Lazy.length rawHdr
-        -- We don't know with which bytes the block starts, forward it.
-        -- TODO When we replace 'GetNestedCtxt' with the proper type, we can
-        -- probably return the right value here.
-        GetNestedCtxt -> getBlockComponent GetNestedCtxt
-        GetPure a     -> return a
-        GetApply f bc ->
+        GetHeaderSize    -> return $ fromIntegral $ Lazy.length rawHdr
+        GetNestedCtxt    -> return nestedCtxt
+        GetPure a        -> return a
+        GetApply f bc    ->
           getBlockComponentFromHeader hdr f <*>
           getBlockComponentFromHeader hdr bc
       where
-        -- | Use the 'ImmDB' and 'VolDB' to read the 'BlockComponent' from
+        -- | Use the 'ImmutableDB' and 'VolatileDB' to read the 'BlockComponent' from
         -- disk (or memory).
-        getBlockComponent :: forall c. BlockComponent (ChainDB m blk) c -> m c
+        getBlockComponent :: forall c. BlockComponent blk c -> m c
         getBlockComponent bc =
-          Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerRealPoint hdr)
+          Query.getAnyKnownBlockComponent cdbImmutableDB cdbVolatileDB bc (headerRealPoint hdr)
 
         rawHdr :: Lazy.ByteString
-        rawHdr = case unnest hdr of
+        nestedCtxt :: SomeBlock (NestedCtxt Header) blk
+        (nestedCtxt, rawHdr) = case unnest hdr of
           DepPair ctxt h ->
-            toLazyByteString $ encodeDiskDep codecConfig ctxt h
+            ( SomeBlock ctxt
+            , toLazyByteString $ encodeDiskDep codecConfig ctxt h
+            )
 
-    next
-      :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
+    next ::
+         ImmutableDB.Iterator m blk (Point blk, b)
       -> m (Maybe (Point blk, b))
-    next immIt = ImmDB.iteratorNext cdbImmDB immIt <&> \case
-      ImmDB.IteratorResult  b -> Just b
-      ImmDB.IteratorExhausted -> Nothing
+    next immIt = ImmutableDB.iteratorNext  immIt <&> \case
+      ImmutableDB.IteratorResult  b -> Just b
+      ImmutableDB.IteratorExhausted -> Nothing
 
-    rollForwardImmDB
-      :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
+    rollForwardImmutableDB ::
+         ImmutableDB.Iterator m blk (Point blk, b)
       -> Point blk
       -> m (f (ChainUpdate blk b))
-    rollForwardImmDB immIt pt = next immIt >>= \case
+    rollForwardImmutableDB immIt pt = next immIt >>= \case
       Just (pt', b) -> do
-        let readerState' = ReaderInImmDB (RollForwardFrom pt') immIt
+        let readerState' = ReaderInImmutableDB (RollForwardFrom pt') immIt
         atomically $ writeTVar varReader readerState'
         return $ pure $ AddBlock b
       Nothing  -> do
         -- Even though an iterator is automatically closed internally when
         -- exhausted, we close it again (idempotent), but this time to
         -- unregister the associated clean-up action.
-        ImmDB.iteratorClose cdbImmDB immIt
+        ImmutableDB.iteratorClose immIt
         -- The iterator is exhausted: we've reached the end of the
         -- ImmutableDB, or actually what was the end of the ImmutableDB at the
         -- time of opening the iterator. We must now check whether that is
         -- still the end (blocks might have been added to the ImmutableDB in
         -- the meantime).
-        pointAtImmDBTip <- ImmDB.getPointAtTip cdbImmDB
-        let slotNoAtImmDBTip = pointSlot pointAtImmDBTip
-        case pointSlot pt `compare` slotNoAtImmDBTip of
+        pointAtImmutableDBTip
+          <- atomically $ ImmutableDB.getTipPoint cdbImmutableDB
+        let slotNoAtImmutableDBTip = pointSlot pointAtImmutableDBTip
+        case pointSlot pt `compare` slotNoAtImmutableDBTip of
           -- The ImmutableDB somehow rolled back
           GT -> error "reader streamed beyond tip of the ImmutableDB"
 
           -- The tip is still the same, so switch to the in-memory chain
-          EQ | pt == pointAtImmDBTip
+          EQ | pt == pointAtImmutableDBTip
              -> do
-            trace $ ReaderSwitchToMem pt slotNoAtImmDBTip
+            trace $ ReaderSwitchToMem pt slotNoAtImmutableDBTip
             fupdate <- atomically $ fromMaybeSTM $ do
               curChain <- readTVar cdbChain
               instructionSTM
@@ -378,15 +368,15 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
           -- 2. (LT): the tip of the ImmutableDB has progressed since we
           --    opened the iterator.
           _  -> do
-            trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+            trace $ ReaderNewImmIterator pt slotNoAtImmutableDBTip
+            immIt' <- ImmutableDB.streamAfterKnownPoint cdbImmutableDB registry
               ((,) <$> getPoint <*> blockComponent) pt
             -- Try again with the new iterator
-            rollForwardImmDB immIt' pt
+            rollForwardImmutableDB immIt' pt
 
 -- | 'readerInstruction' for when the reader is in the 'ReaderInMem' state.
-instructionSTM
-  :: forall stm blk. (MonadSTMTx stm, HasHeader (Header blk))
+instructionSTM ::
+     forall stm blk. (MonadSTMTx stm, HasHeader (Header blk))
   => ReaderRollState blk
      -- ^ The current 'ReaderRollState' of the reader
   -> AnchoredFragment (Header blk)
@@ -410,17 +400,16 @@ instructionSTM rollState curChain saveRollState =
     invariant =
       AF.withinFragmentBounds (castPoint (readerRollStatePoint rollState))
 
-forward
-  :: forall m blk b.
+forward ::
+     forall m blk b.
      ( IOLike m
      , HasCallStack
      , HasHeader blk
      , HasHeader (Header blk)
-     , ImmDbSerialiseConstraints blk
      )
   => ResourceRegistry m
   -> StrictTVar m (ReaderState m blk b)
-  -> BlockComponent (ChainDB m blk) b
+  -> BlockComponent blk b
   -> ChainDbEnv m blk
   -> [Point blk]
   -> m (Maybe (Point blk))
@@ -430,17 +419,18 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
     -- written to the ImmutableDB too.
     (curChain, readerState) <- atomically $
       (,) <$> readTVar cdbChain <*> readTVar varReader
-    slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
-    findFirstPointOnChain curChain readerState slotNoAtImmDBTip pts
+    slotNoAtImmutableDBTip <- atomically $
+      ImmutableDB.getTipSlot cdbImmutableDB
+    findFirstPointOnChain curChain readerState slotNoAtImmutableDBTip pts
   where
-    findFirstPointOnChain
-      :: HasCallStack
+    findFirstPointOnChain ::
+         HasCallStack
       => AnchoredFragment (Header blk)
       -> ReaderState m blk b
       -> WithOrigin SlotNo
       -> [Point blk]
       -> m (Maybe (Point blk))
-    findFirstPointOnChain curChain readerState slotNoAtImmDBTip = \case
+    findFirstPointOnChain curChain readerState slotNoAtImmutableDBTip = \case
       []     -> return Nothing
       pt:pts
         | AF.withinFragmentBounds (castPoint pt) curChain
@@ -465,7 +455,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
               -- requesting a rollback to genesis.
               -> return $ Just pt
 
-            ReaderInImmDB rollState immIt
+            ReaderInImmutableDB rollState immIt
               | rollState == RollBackTo pt
               -- If we already have to roll back to the given point in the
               -- ImmutableDB, the state doesn't have to change, saving us from
@@ -480,7 +470,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
               -- update the state from 'RollForwardFrom' to 'RollBackTo'.
               -> do
                 atomically $ writeTVar varReader $
-                  ReaderInImmDB (RollBackTo pt) immIt
+                  ReaderInImmutableDB (RollBackTo pt) immIt
                 return $ Just pt
 
             _otherwise -> case pointToWithOriginRealPoint pt of
@@ -490,18 +480,18 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
                 return $ Just pt
 
               NotOrigin pt' -> do
-                inImmDB <- ImmDB.hasBlock cdbImmDB pt'
-                if inImmDB then do
-                  immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+                inImmutableDB <- ImmutableDB.hasBlock cdbImmutableDB pt'
+                if inImmutableDB then do
+                  immIt <- ImmutableDB.streamAfterKnownPoint cdbImmutableDB registry
                     ((,) <$> getPoint <*> blockComponent) pt
-                  updateState $ ReaderInImmDB (RollBackTo pt) immIt
+                  updateState $ ReaderInImmutableDB (RollBackTo pt) immIt
                   return $ Just pt
                 else
                   -- The point is not in the current chain, try the next point
-                  findFirstPointOnChain curChain readerState slotNoAtImmDBTip pts
+                  findFirstPointOnChain curChain readerState slotNoAtImmutableDBTip pts
 
     -- | Update the state of the reader to the given state. If the current
-    -- state is 'ReaderInImmDB', close the ImmutableDB iterator to avoid
+    -- state is 'ReaderInImmutableDB', close the ImmutableDB iterator to avoid
     -- leaking the file handles.
     updateState :: ReaderState m blk b -> m ()
     updateState newReaderState = join $ atomically $
@@ -509,9 +499,9 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
         (newReaderState, ) $ case readerState of
           -- Return a continuation (that we'll 'join') that closes the
           -- previous iterator.
-          ReaderInImmDB _ immIt -> ImmDB.iteratorClose cdbImmDB immIt
-          ReaderInit            -> return ()
-          ReaderInMem   _       -> return ()
+          ReaderInImmutableDB _ immIt -> ImmutableDB.iteratorClose immIt
+          ReaderInit                  -> return ()
+          ReaderInMem _               -> return ()
 
 -- | Update the given 'ReaderState' to account for switching the current
 -- chain to the given fork (which might just be an extension of the
@@ -519,8 +509,8 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
 --
 -- PRECONDITION: the intersection point must be within the fragment bounds
 -- of the new chain
-switchFork
-  :: forall m blk b. (HasHeader blk, HasHeader (Header blk))
+switchFork ::
+     forall m blk b. (HasHeader blk, HasHeader (Header blk))
   => Point blk  -- ^ Intersection point between old and new chain
   -> AnchoredFragment (Header blk)  -- ^ The new chain
   -> ReaderState m blk b -> ReaderState m blk b
@@ -529,11 +519,11 @@ switchFork ipoint newChain readerState =
       case readerState of
         -- If the reader is still in the initial state, switching to a fork
         -- won't affect it.
-        ReaderInit       -> readerState
+        ReaderInit             -> readerState
         -- If the reader is still reading from the ImmutableDB, switching to a
         -- fork won't affect it.
-        ReaderInImmDB {} -> readerState
-        ReaderInMem   rollState ->
+        ReaderInImmutableDB {} -> readerState
+        ReaderInMem rollState  ->
             case pointSlot readerPoint `compare` pointSlot ipoint of
               -- If the reader point is more recent than the intersection point,
               -- we have to roll back the reader to the intersection point.
@@ -570,7 +560,7 @@ switchFork ipoint newChain readerState =
               -- reader point is still on the current fragment, as headers older
               -- than @k@ might have been moved from the fragment to the
               -- ImmutableDB. This will be noticed when the next instruction is
-              -- requested; we'll switch to the 'ReaderInImmDB' state.
+              -- requested; we'll switch to the 'ReaderInImmutableDB' state.
               LT -> readerState
           where
             readerPoint = readerRollStatePoint rollState

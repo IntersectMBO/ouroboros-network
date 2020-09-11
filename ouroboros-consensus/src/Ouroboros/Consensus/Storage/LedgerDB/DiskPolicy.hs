@@ -55,11 +55,11 @@ data DiskPolicy = DiskPolicy {
       --
       -- * The distance in terms of blocks applied to the /oldest/ ledger
       --   snapshot in memory. During normal operation, this is the number of
-      --   blocks written to the imm DB since the last snapshot. On startup, it
-      --   is computed by counting how many immutable blocks we had to reapply
-      --   to get to the chain tip. This is useful, as it allows the policy to
-      --   decide to take a snapshot /on node startup/ if a lot of blocks had to
-      --   be replayed.
+      --   blocks written to the ImmutableDB since the last snapshot. On
+      --   startup, it is computed by counting how many immutable blocks we had
+      --   to reapply to get to the chain tip. This is useful, as it allows the
+      --   policy to decide to take a snapshot /on node startup/ if a lot of
+      --   blocks had to be replayed.
       --
       -- See also 'defaultDiskPolicy'
     , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool

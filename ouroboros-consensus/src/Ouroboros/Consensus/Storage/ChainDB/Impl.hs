@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceReaderEvent (..)
-  , TraceCopyToImmDBEvent (..)
+  , TraceCopyToImmutableDBEvent (..)
   , TraceGCEvent (..)
   , TraceValidationEvent (..)
   , TraceInitChainSelEvent (..)
@@ -25,9 +25,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceIteratorEvent (..)
   , LgrDB.TraceLedgerReplayEvent
     -- * Re-exported for convenience
-  , ImmDB.ImmDbSerialiseConstraints
+  , ImmutableDB.ImmutableDbSerialiseConstraints
   , LgrDB.LgrDbSerialiseConstraints
-  , VolDB.VolDbSerialiseConstraints
+  , VolatileDB.VolatileDbSerialiseConstraints
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
 import           Control.Monad (when)
 import           Control.Tracer
 import           Data.Functor ((<&>))
+import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
@@ -59,13 +60,13 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Args as Args
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Background
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel as ChainSel
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator as Iterator
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -80,7 +81,7 @@ withDB
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> (ChainDB m blk -> m a)
   -> m a
 withDB args = bracket (fst <$> openDBInternal args True) API.closeDB
@@ -94,7 +95,7 @@ openDB
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> m (ChainDB m blk)
 openDB args = fst <$> openDBInternal args True
 
@@ -107,25 +108,28 @@ openDBInternal
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
-  => ChainDbArgs m blk
+  => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = do
-    immDB <- ImmDB.openDB argsImmDb
-    immDbTipPoint <- ImmDB.getPointAtTip immDB
-    let immDbTipChunk = chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
-    traceWith tracer $ TraceOpenEvent $ OpenedImmDB immDbTipPoint immDbTipChunk
+    immutableDB <- ImmutableDB.openDB argsImmutableDb
+    immutableDbTipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
+    let immutableDbTipChunk =
+          chunkIndexOfPoint (Args.cdbChunkInfo args) immutableDbTipPoint
+    traceWith tracer $
+      TraceOpenEvent $
+        OpenedImmutableDB immutableDbTipPoint immutableDbTipChunk
 
-    volDB   <- VolDB.openDB argsVolDb
-    traceWith tracer $ TraceOpenEvent OpenedVolDB
+    volatileDB <- VolatileDB.openDB argsVolatileDb
+    traceWith tracer $ TraceOpenEvent OpenedVolatileDB
     let lgrReplayTracer =
           LgrDB.decorateReplayTracer
-            immDbTipPoint
+            immutableDbTipPoint
             (contramap TraceLedgerReplayEvent tracer)
     (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
-                            immDB
-                            (Query.getAnyKnownBlock immDB volDB)
+                            immutableDB
+                            (Query.getAnyKnownBlock immutableDB volatileDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
     varInvalid      <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
@@ -133,14 +137,14 @@ openDBInternal args launchBgTasks = do
 
 
     chainAndLedger <- ChainSel.initialChainSelection
-      immDB
-      volDB
-      lgrDB
-      tracer
-      (Args.cdbTopLevelConfig args)
-      varInvalid
-      varFutureBlocks
-      (Args.cdbCheckInFuture args)
+                        immutableDB
+                        volatileDB
+                        lgrDB
+                        tracer
+                        (Args.cdbTopLevelConfig args)
+                        varInvalid
+                        varFutureBlocks
+                        (Args.cdbCheckInFuture args)
 
     let chain  = VF.validatedFragment chainAndLedger
         ledger = VF.validatedLedger   chainAndLedger
@@ -156,8 +160,8 @@ openDBInternal args launchBgTasks = do
     varKillBgThreads   <- newTVarM $ return ()
     blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
-    let env = CDB { cdbImmDB           = immDB
-                  , cdbVolDB           = volDB
+    let env = CDB { cdbImmutableDB     = immutableDB
+                  , cdbVolatileDB      = volatileDB
                   , cdbLgrDB           = lgrDB
                   , cdbChain           = varChain
                   , cdbIterators       = varIterators
@@ -200,7 +204,7 @@ openDBInternal args launchBgTasks = do
           , isOpen                = isOpen  h
           }
         testing = Internal
-          { intCopyToImmDB             = getEnv  h Background.copyToImmDB
+          { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
           , intAddBlockRunner          = getEnv  h Background.addBlockRunner
@@ -216,8 +220,7 @@ openDBInternal args launchBgTasks = do
     return (chainDB, testing)
   where
     tracer = Args.cdbTracer args
-    (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
-
+    (argsImmutableDb, argsVolatileDb, argsLgrDb, _) = Args.fromChainDbArgs args
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case
@@ -248,8 +251,8 @@ closeDB (CDBHandle varState) = do
       killBgThreads <- atomically $ readTVar cdbKillBgThreads
       killBgThreads
 
-      ImmDB.closeDB cdbImmDB
-      VolDB.closeDB cdbVolDB
+      ImmutableDB.closeDB cdbImmutableDB
+      VolatileDB.closeDB cdbVolatileDB
 
       chain <- atomically $ readTVar cdbChain
 
@@ -264,7 +267,7 @@ closeDB (CDBHandle varState) = do
 -- | Lift 'chunkIndexOfSlot' to 'Point'
 --
 -- Returns 'firstChunkNo' in case of 'GenesisPoint'.
-chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> ImmDB.ChunkNo
+chunkIndexOfPoint :: ImmutableDB.ChunkInfo -> Point blk -> ImmutableDB.ChunkNo
 chunkIndexOfPoint chunkInfo = \case
-    GenesisPoint      -> ImmDB.firstChunkNo
-    BlockPoint slot _ -> ImmDB.chunkIndexOfSlot chunkInfo slot
+    GenesisPoint      -> ImmutableDB.firstChunkNo
+    BlockPoint slot _ -> ImmutableDB.chunkIndexOfSlot chunkInfo slot

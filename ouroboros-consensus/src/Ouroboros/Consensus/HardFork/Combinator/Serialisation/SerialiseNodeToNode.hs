@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util ((.:))
 
 instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs)

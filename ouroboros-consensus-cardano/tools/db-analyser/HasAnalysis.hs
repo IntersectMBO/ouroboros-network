@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-
+{-# LANGUAGE TypeFamilies #-}
 module HasAnalysis (
     HasAnalysis (..)
   ) where
@@ -11,7 +8,7 @@ import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
+import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   HasAnalysis

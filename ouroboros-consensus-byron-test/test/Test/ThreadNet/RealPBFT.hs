@@ -232,12 +232,12 @@ tests = testGroup "RealPBFT" $
     , testProperty "BlockFetch live lock due to an EBB at the ImmutableDB tip, Issue #1435" $
           once $
           let ncn = NumCoreNodes 4 in
-          -- c0's ImmDB is T > U > V. Note that U is an EBB and U and V are
-          -- both in slot 50. When its BlockFetchServer tries to stream T and
-          -- U using a ChainDB.Iterator, instead of looking in the
+          -- c0's ImmutableDB is T > U > V. Note that U is an EBB and U and V
+          -- are both in slot 50. When its BlockFetchServer tries to stream T
+          -- and U using a ChainDB.Iterator, instead of looking in the
           -- ImmutableDB, we end up looking in the VolatileDB and incorrectly
-          -- return ForkTooOld. The client keeps on requesting this block
-          -- range, resulting in a live lock.
+          -- return ForkTooOld. The client keeps on requesting this block range,
+          -- resulting in a live lock.
           prop_simple_real_pbft_convergence TestSetup
             { setupEBBs       = ProduceEBBs
             , setupK          = SecurityParam 5
@@ -253,7 +253,7 @@ tests = testGroup "RealPBFT" $
             , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
             }
     , testProperty "ImmutableDB is leaking file handles, #1543" $
-          -- The failure was: c0 leaks one ImmDB file handle (for path
+          -- The failure was: c0 leaks one ImmutableDB file handle (for path
           -- @00000.epoch@, read only, offset at 0).
           --
           -- The test case seems somewhat fragile, since the 'slotLength' value

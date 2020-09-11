@@ -12,15 +12,12 @@ module Ouroboros.Consensus.Storage.FS.CRC (
   , computeCRC
     -- * File system functions with CRC functionality
   , hPutAllCRC
-  , hPutCRC
   , hGetExactlyAtCRC
   , hGetAllAtCRC
   ) where
 
 import           Control.Monad (foldM)
 import qualified Data.ByteString as BS
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Coerce
 import qualified Data.Digest.CRC32 as Digest
@@ -40,7 +37,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..))
   Wrap functionality from digest
 -------------------------------------------------------------------------------}
 
-newtype CRC = CRC Word32
+newtype CRC = CRC { getCRC :: Word32 }
   deriving (Eq, Show, Generic, NoUnexpectedThunks, Storable)
 
 initCRC :: CRC
@@ -70,14 +67,6 @@ hPutAllCRC hasFS h = foldM putChunk (0, initCRC) . BL.toChunks
       let !written' = written + chunkSize
           !crc'     = updateCRC chunk crc
       return (written', crc')
-
--- | Variation on 'hPut' that also computes a CRC
-hPutCRC :: forall m h. (HasCallStack, Monad m)
-        => HasFS m h
-        -> Handle h
-        -> Builder
-        -> m (Word64, CRC)
-hPutCRC hasFS g = hPutAllCRC hasFS g . BS.toLazyByteString
 
 -- | Variation on 'hGetExactlyAt' that also computes a CRC
 hGetExactlyAtCRC :: forall m h. (HasCallStack, MonadThrow m)

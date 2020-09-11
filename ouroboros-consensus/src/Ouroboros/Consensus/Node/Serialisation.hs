@@ -12,10 +12,10 @@
 -- We separate @NodeToNode@ from @NodeToClient@ to be very explicit about what
 -- gets sent where.
 --
--- Unlike in "Ouroboros.Consensus.Storage.ChainDB.Serialisation", we don't
--- separate the encoder from the decoder, because the reasons don't apply: we
--- always need both directions and we don't have access to the bytestrings
--- that could be used for the annotations (we use CBOR-in-CBOR in those cases).
+-- Unlike in "Ouroboros.Consensus.Storage.Serialisation", we don't separate the
+-- encoder from the decoder, because the reasons don't apply: we always need
+-- both directions and we don't have access to the bytestrings that could be
+-- used for the annotations (we use CBOR-in-CBOR in those cases).
 module Ouroboros.Consensus.Node.Serialisation (
     SerialiseNodeToNode (..)
   , SerialiseNodeToClient (..)

@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
@@ -138,7 +138,7 @@ newtype instance GenTx ByronToCardano        = GenTxB2C   { unGenTxB2C   :: GenT
 newtype instance TxId (GenTx ByronToCardano) = GenTxIdB2C { unGenTxIdB2C :: GenTxId ByronBlock   } deriving (Eq, Show)
 newtype instance Query ByronToCardano a      = QueryB2C   { unQueryB2C   :: Query   ByronBlock a } deriving (Eq, Show)
 
-data instance NestedCtxt_ ByronToCardano f a where
+newtype instance NestedCtxt_ ByronToCardano f a where
   NestedCtxt_B2C :: NestedCtxt_ ByronBlock     f a
                  -> NestedCtxt_ ByronToCardano f a
 
@@ -418,7 +418,7 @@ newtype instance GenTx CardanoToByron        = GenTxC2B   { unGenTxC2B   :: GenT
 newtype instance TxId (GenTx CardanoToByron) = GenTxIdC2B { unGenTxIdC2B :: GenTxId ByronBlock   } deriving (Eq, Show)
 newtype instance Query CardanoToByron a      = QueryC2B   { unQueryC2B   :: Query   ByronBlock a } deriving (Eq, Show)
 
-data instance NestedCtxt_ CardanoToByron f a where
+newtype instance NestedCtxt_ CardanoToByron f a where
   NestedCtxt_C2B :: NestedCtxt_ ByronBlock     f a
                  -> NestedCtxt_ CardanoToByron f a
 

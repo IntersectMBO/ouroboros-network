@@ -1,6 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   ( ChainDbArgs (..)
@@ -10,57 +12,60 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   , fromChainDbArgs
   ) where
 
+import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
-import           Control.Tracer (Tracer, contramap)
+import           Control.Tracer (Tracer, contramap, nullTracer)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ChunkInfo)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Arguments
 -------------------------------------------------------------------------------}
 
-data ChainDbArgs m blk = ChainDbArgs {
+data ChainDbArgs f m blk = ChainDbArgs {
 
       -- HasFS instances
-      cdbHasFSImmDb       :: SomeHasFS m
-    , cdbHasFSVolDb       :: SomeHasFS m
-    , cdbHasFSLgrDB       :: SomeHasFS m
+      cdbHasFSImmutableDB       :: SomeHasFS m
+    , cdbHasFSVolatileDB        :: SomeHasFS m
+    , cdbHasFSLgrDB             :: SomeHasFS m
 
       -- Policy
-    , cdbImmValidation    :: ImmDB.ValidationPolicy
-    , cdbVolValidation    :: VolDB.BlockValidationPolicy
-    , cdbBlocksPerFile    :: VolDB.BlocksPerFile
-    , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy       :: LgrDB.DiskPolicy
+    , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
+    , cdbVolatileDbValidation   :: VolatileDB.BlockValidationPolicy
+    , cdbMaxBlocksPerFile       :: VolatileDB.BlocksPerFile
+    , cdbParamsLgrDB            :: HKD f LgrDB.LedgerDbParams
+    , cdbDiskPolicy             :: HKD f LgrDB.DiskPolicy
 
       -- Integration
-    , cdbTopLevelConfig   :: TopLevelConfig blk
-    , cdbChunkInfo        :: ChunkInfo
-    , cdbCheckIntegrity   :: blk -> Bool
-    , cdbGenesis          :: m (ExtLedgerState blk)
-    , cdbCheckInFuture    :: CheckInFuture m blk
-    , cdbImmDbCacheConfig :: ImmDB.CacheConfig
+    , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
+    , cdbChunkInfo              :: HKD f ChunkInfo
+    , cdbCheckIntegrity         :: HKD f (blk -> Bool)
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk))
+    , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
+    , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
       -- Misc
-    , cdbTracer           :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger      :: Tracer m (LgrDB.LedgerDB blk)
-    , cdbRegistry         :: ResourceRegistry m
-    , cdbGcDelay          :: DiffTime
-    , cdbGcInterval       :: DiffTime
-    , cdbBlocksToAddSize  :: Word
+    , cdbTracer                 :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger            :: Tracer m (LgrDB.LedgerDB blk)
+    , cdbRegistry               :: HKD f (ResourceRegistry m)
+    , cdbGcDelay                :: DiffTime
+    , cdbGcInterval             :: DiffTime
+    , cdbBlocksToAddSize        :: Word
       -- ^ Size of the queue used to store asynchronously added blocks. This
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
@@ -69,11 +74,9 @@ data ChainDbArgs m blk = ChainDbArgs {
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
 -- LedgerDB.
-data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
-      cdbsTracer          :: Tracer m (TraceEvent blk)
-    , cdbsRegistry        :: ResourceRegistry m
-      -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
-      -- using it for ChainDB-specific things. Revisit these arguments.
+data ChainDbSpecificArgs f m blk = ChainDbSpecificArgs {
+      cdbsBlocksToAddSize :: Word
+    , cdbsCheckInFuture   :: HKD f (CheckInFuture m blk)
     , cdbsGcDelay         :: DiffTime
       -- ^ Delay between copying a block to the ImmutableDB and triggering a
       -- garbage collection for the corresponding slot on the VolatileDB.
@@ -84,8 +87,10 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
     , cdbsGcInterval      :: DiffTime
       -- ^ Batch all scheduled GCs so that at most one GC happens every
       -- 'cdbsGcInterval'.
-    , cdbsCheckInFuture   :: CheckInFuture m blk
-    , cdbsBlocksToAddSize :: Word
+    , cdbsRegistry        :: HKD f (ResourceRegistry m)
+      -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
+      -- using it for ChainDB-specific things. Revisit these arguments.
+    , cdbsTracer          :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments
@@ -110,64 +115,65 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 --   have, because of batching) < the number of blocks sync in @gcInterval@.
 --   E.g., when syncing at 1k-2k blocks/s, this means 10k-20k blocks. During
 --   normal operation, we receive 1 block/20s, meaning at most 1 block.
-defaultSpecificArgs :: ChainDbSpecificArgs m blk
-defaultSpecificArgs = ChainDbSpecificArgs{
-      cdbsGcDelay         = secondsToDiffTime 60
+defaultSpecificArgs :: Monad m => ChainDbSpecificArgs Defaults m blk
+defaultSpecificArgs = ChainDbSpecificArgs {
+      cdbsBlocksToAddSize = 10
+    , cdbsCheckInFuture   = NoDefault
+    , cdbsGcDelay         = secondsToDiffTime 60
     , cdbsGcInterval      = secondsToDiffTime 10
-    , cdbsBlocksToAddSize = 10
-      -- Fields without a default
-    , cdbsTracer          = error "no default for cdbsTracer"
-    , cdbsRegistry        = error "no default for cdbsRegistry"
-    , cdbsCheckInFuture   = error "no default for cdbsCheckInFuture"
+    , cdbsRegistry        = NoDefault
+    , cdbsTracer          = nullTracer
     }
 
 -- | Default arguments for use within IO
 --
--- See 'ImmDB.defaultArgs', 'VolDB.defaultArgs', 'LgrDB.defaultArgs', and
--- 'defaultSpecificArgs' for a list of which fields are not given a default
+-- See 'ImmutableDB.defaultArgs', 'VolatileDB.defaultArgs', 'LgrDB.defaultArgs',
+-- and 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
-defaultArgs :: FilePath -> ChainDbArgs IO blk
-defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
-                               (VolDB.defaultArgs fp)
-                               (LgrDB.defaultArgs fp)
+defaultArgs :: FilePath -> ChainDbArgs Defaults IO blk
+defaultArgs fp = toChainDbArgs (ImmutableDB.defaultArgs fp)
+                               (VolatileDB.defaultArgs  fp)
+                               (LgrDB.defaultArgs       fp)
                                defaultSpecificArgs
 
 
--- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolDbArgs, 'LgrDbArgs',
--- and 'ChainDbSpecificArgs'.
-fromChainDbArgs :: ChainDbArgs m blk
-                -> ( ImmDB.ImmDbArgs     m blk
-                   , VolDB.VolDbArgs     m blk
-                   , LgrDB.LgrDbArgs     m blk
-                   , ChainDbSpecificArgs m blk
-                   )
+-- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
+-- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
+fromChainDbArgs ::
+     forall m blk f. MapHKD f
+  => ChainDbArgs f m blk
+  -> ( ImmutableDB.ImmutableDbArgs f m blk
+     , VolatileDB.VolatileDbArgs   f m blk
+     , LgrDB.LgrDbArgs             f m blk
+     , ChainDbSpecificArgs         f m blk
+     )
 fromChainDbArgs ChainDbArgs{..} = (
-      ImmDB.ImmDbArgs {
-          immCodecConfig        = configCodec cdbTopLevelConfig
-        , immChunkInfo          = cdbChunkInfo
-        , immValidation         = cdbImmValidation
-        , immCheckIntegrity     = cdbCheckIntegrity
-        , immHasFS              = cdbHasFSImmDb
-        , immTracer             = contramap TraceImmDBEvent cdbTracer
-        , immCacheConfig        = cdbImmDbCacheConfig
-        , immRegistry           = cdbRegistry
+      ImmutableDB.ImmutableDbArgs {
+          immCacheConfig      = cdbImmutableDbCacheConfig
+        , immCheckIntegrity   = cdbCheckIntegrity
+        , immChunkInfo        = cdbChunkInfo
+        , immCodecConfig      = mapHKD (Proxy @(f (CodecConfig blk))) configCodec cdbTopLevelConfig
+        , immHasFS            = cdbHasFSImmutableDB
+        , immRegistry         = cdbRegistry
+        , immTracer           = contramap TraceImmutableDBEvent cdbTracer
+        , immValidationPolicy = cdbImmutableDbValidation
         }
-    , VolDB.VolDbArgs {
-          volHasFS              = cdbHasFSVolDb
-        , volCheckIntegrity     = cdbCheckIntegrity
-        , volBlocksPerFile      = cdbBlocksPerFile
-        , volCodecConfig        = configCodec cdbTopLevelConfig
-        , volValidation         = cdbVolValidation
-        , volTracer             = contramap TraceVolDBEvent cdbTracer
+    , VolatileDB.VolatileDbArgs {
+          volCheckIntegrity   = cdbCheckIntegrity
+        , volCodecConfig      = mapHKD (Proxy @(f (CodecConfig blk))) configCodec cdbTopLevelConfig
+        , volHasFS            = cdbHasFSVolatileDB
+        , volMaxBlocksPerFile = cdbMaxBlocksPerFile
+        , volValidationPolicy = cdbVolatileDbValidation
+        , volTracer           = contramap TraceVolatileDBEvent cdbTracer
         }
     , LgrDB.LgrDbArgs {
-          lgrTopLevelConfig       = cdbTopLevelConfig
-        , lgrHasFS                = cdbHasFSLgrDB
-        , lgrParams               = cdbParamsLgrDB
-        , lgrDiskPolicy           = cdbDiskPolicy
-        , lgrGenesis              = cdbGenesis
-        , lgrTracer               = contramap TraceLedgerEvent cdbTracer
-        , lgrTraceLedger          = cdbTraceLedger
+          lgrTopLevelConfig   = cdbTopLevelConfig
+        , lgrHasFS            = cdbHasFSLgrDB
+        , lgrParams           = cdbParamsLgrDB
+        , lgrDiskPolicy       = cdbDiskPolicy
+        , lgrGenesis          = cdbGenesis
+        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
+        , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -179,41 +185,42 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     )
 
--- | Internal: construct 'ChainDbArgs' from 'ImmDbArgs', 'VolDbArgs,
+-- | Internal: construct 'ChainDbArgs' from 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
 --
 -- Useful in 'defaultArgs'
-toChainDbArgs :: ImmDB.ImmDbArgs     m blk
-              -> VolDB.VolDbArgs     m blk
-              -> LgrDB.LgrDbArgs     m blk
-              -> ChainDbSpecificArgs m blk
-              -> ChainDbArgs         m blk
-toChainDbArgs ImmDB.ImmDbArgs{..}
-              VolDB.VolDbArgs{..}
-              LgrDB.LgrDbArgs{..}
-              ChainDbSpecificArgs{..} = ChainDbArgs{
+toChainDbArgs ::
+     ImmutableDB.ImmutableDbArgs f m blk
+  -> VolatileDB.VolatileDbArgs   f m blk
+  -> LgrDB.LgrDbArgs             f m blk
+  -> ChainDbSpecificArgs         f m blk
+  -> ChainDbArgs                 f m blk
+toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
+              VolatileDB.VolatileDbArgs {..}
+              LgrDB.LgrDbArgs {..}
+              ChainDbSpecificArgs {..} = ChainDbArgs{
       -- HasFS instances
-      cdbHasFSImmDb           = immHasFS
-    , cdbHasFSVolDb           = volHasFS
-    , cdbHasFSLgrDB           = lgrHasFS
+      cdbHasFSImmutableDB       = immHasFS
+    , cdbHasFSVolatileDB        = volHasFS
+    , cdbHasFSLgrDB             = lgrHasFS
       -- Policy
-    , cdbImmValidation        = immValidation
-    , cdbVolValidation        = volValidation
-    , cdbBlocksPerFile        = volBlocksPerFile
-    , cdbParamsLgrDB          = lgrParams
-    , cdbDiskPolicy           = lgrDiskPolicy
+    , cdbImmutableDbValidation  = immValidationPolicy
+    , cdbVolatileDbValidation   = volValidationPolicy
+    , cdbMaxBlocksPerFile       = volMaxBlocksPerFile
+    , cdbParamsLgrDB            = lgrParams
+    , cdbDiskPolicy             = lgrDiskPolicy
       -- Integration
-    , cdbTopLevelConfig       = lgrTopLevelConfig
-    , cdbChunkInfo            = immChunkInfo
-    , cdbCheckIntegrity       = immCheckIntegrity
-    , cdbGenesis              = lgrGenesis
-    , cdbCheckInFuture        = cdbsCheckInFuture
-    , cdbImmDbCacheConfig     = immCacheConfig
+    , cdbTopLevelConfig         = lgrTopLevelConfig
+    , cdbChunkInfo              = immChunkInfo
+    , cdbCheckIntegrity         = immCheckIntegrity
+    , cdbGenesis                = lgrGenesis
+    , cdbCheckInFuture          = cdbsCheckInFuture
+    , cdbImmutableDbCacheConfig = immCacheConfig
       -- Misc
-    , cdbTracer               = cdbsTracer
-    , cdbTraceLedger          = lgrTraceLedger
-    , cdbRegistry             = immRegistry
-    , cdbGcDelay              = cdbsGcDelay
-    , cdbGcInterval           = cdbsGcInterval
-    , cdbBlocksToAddSize      = cdbsBlocksToAddSize
+    , cdbTracer                 = cdbsTracer
+    , cdbTraceLedger            = lgrTraceLedger
+    , cdbRegistry               = immRegistry
+    , cdbGcDelay                = cdbsGcDelay
+    , cdbGcInterval             = cdbsGcInterval
+    , cdbBlocksToAddSize        = cdbsBlocksToAddSize
     }

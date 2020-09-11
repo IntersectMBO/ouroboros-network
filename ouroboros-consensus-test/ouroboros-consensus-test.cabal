@@ -207,8 +207,8 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.GcSchedule
                        Test.Ouroboros.Storage.ChainDB.Model
                        Test.Ouroboros.Storage.ChainDB.Model.Test
+                       Test.Ouroboros.Storage.ChainDB.Paths
                        Test.Ouroboros.Storage.ChainDB.StateMachine
-                       Test.Ouroboros.Storage.ChainDB.VolDB
                        Test.Ouroboros.Storage.FS
                        Test.Ouroboros.Storage.FS.StateMachine
                        Test.Ouroboros.Storage.ImmutableDB
@@ -219,8 +219,8 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
+                       Test.Ouroboros.Storage.Orphans
                        Test.Ouroboros.Storage.TestBlock
-                       Test.Ouroboros.Storage.Util
                        Test.Ouroboros.Storage.VolatileDB
                        Test.Ouroboros.Storage.VolatileDB.Mock
                        Test.Ouroboros.Storage.VolatileDB.Model

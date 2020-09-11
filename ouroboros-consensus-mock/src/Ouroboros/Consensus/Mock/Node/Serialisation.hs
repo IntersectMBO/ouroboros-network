@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Local shorthand to make the instances more readable
 type MockBlock ext = SimpleBlock SimpleMockCrypto ext
@@ -44,11 +44,8 @@ type MockBlock ext = SimpleBlock SimpleMockCrypto ext
 instance (Serialise ext, Typeable ext) => HasBinaryBlockInfo (MockBlock ext) where
   getBinaryBlockInfo = simpleBlockBinaryBlockInfo
 
-instance (Serialise ext, Typeable ext) => ImmDbSerialiseConstraints (MockBlock ext)
-instance RunMockBlock SimpleMockCrypto ext => LgrDbSerialiseConstraints (MockBlock ext)
-instance (Serialise ext, Typeable ext) => VolDbSerialiseConstraints (MockBlock ext)
 instance (Serialise ext, RunMockBlock SimpleMockCrypto ext)
-      => SerialiseDiskConstraints  (MockBlock ext)
+      => SerialiseDiskConstraints (MockBlock ext)
 
 instance Serialise ext => EncodeDisk (MockBlock ext) (MockBlock ext)
 instance Serialise ext => DecodeDisk (MockBlock ext) (Lazy.ByteString -> MockBlock ext) where

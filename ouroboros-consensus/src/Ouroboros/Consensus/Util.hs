@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -29,6 +30,7 @@ module Ouroboros.Consensus.Util (
   , dropLast
   , firstJust
   , allEqual
+  , takeUntil
     -- * Safe variants of existing base functions
   , lastMaybe
   , safeMaximum
@@ -57,6 +59,7 @@ module Ouroboros.Consensus.Util (
   , pairSnd
     -- * Miscellaneous
   , fib
+  , rightToMaybe
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
@@ -173,6 +176,26 @@ allEqual :: Eq a => [a] -> Bool
 allEqual []       = True
 allEqual [_]      = True
 allEqual (x:y:zs) = x == y && allEqual (y:zs)
+
+-- | Take items until the condition is true. If the condition is true for an
+-- item, include that item as the last item in the returned list. If the
+-- condition was never true, the original list is returned.
+--
+-- > takeUntil (== 3) [1,2,3,4]
+-- [1,2,3]
+-- > takeUntil (== 2) [0,1,0]
+-- [0,1,0]
+-- > takeUntil (== 2) [2,2,3]
+-- [2]
+takeUntil :: (a -> Bool) -> [a] -> [a]
+takeUntil p = \case
+    []
+      -> []
+    x:xs
+      | p x
+      -> [x]
+      | otherwise
+      -> x:takeUntil p xs
 
 {-------------------------------------------------------------------------------
   Safe variants of existing base functions
@@ -310,3 +333,7 @@ fib n = round $ phi ** fromIntegral n / sq5
     sq5, phi :: Double
     sq5 = sqrt 5
     phi = (1 + sq5) / 2
+
+rightToMaybe :: Either a b -> Maybe b
+rightToMaybe (Left _)  = Nothing
+rightToMaybe (Right x) = Just x

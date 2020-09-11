@@ -18,7 +18,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
   ( -- * Launch background tasks
     launchBgTasks
     -- * Copying blocks from the VolatileDB to the ImmutableDB
-  , copyToImmDB
+  , copyToImmutableDB
   , copyAndSnapshotRunner
   , updateLedgerSnapshots
      -- * Executing garbage collection
@@ -38,7 +38,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM_, forever, unless, void)
+import           Control.Monad (forM_, forever, void)
 import           Control.Tracer
 import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
@@ -65,20 +65,15 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockRef (..),
-                     ChainDbFailure (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                      (addBlockSync)
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (ImmDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
-                     (VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -90,9 +85,7 @@ launchBgTasks
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -134,19 +127,17 @@ launchBgTasks cdb@CDB{..} replayed = do
 --
 -- NOTE: this function /can/ run concurrently with all other functions, just
 -- not with itself.
-copyToImmDB
-  :: forall m blk.
+copyToImmutableDB ::
+     forall m blk.
      ( IOLike m
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , VolDbSerialiseConstraints blk
-     , ImmDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk
   -> m (WithOrigin SlotNo)
-copyToImmDB CDB{..} = withCopyLock $ do
+copyToImmutableDB CDB{..} = withCopyLock $ do
     toCopy <- atomically $ do
       curChain <- readTVar cdbChain
       let nbToCopy = max 0 (AF.length curChain - fromIntegral k)
@@ -161,36 +152,32 @@ copyToImmDB CDB{..} = withCopyLock $ do
       -- is longer than @k@. However, in the tests, we will be calling this
       -- function manually, which means it might be called when there are no
       -- blocks to copy.
-      then trace NoBlocksToCopyToImmDB
+      then trace NoBlocksToCopyToImmutableDB
       else forM_ toCopy $ \pt -> do
         let hash = case pointHash pt of
               BlockHash h -> h
               -- There is no actual genesis block that can occur on a chain
               GenesisHash -> error "genesis block on current chain"
-        -- This call is cheap
-        slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
-        assert (pointSlot pt >= slotNoAtImmDBTip) $ return ()
-        blk <- VolDB.getKnownBlock cdbVolDB hash
-        -- When we found a corrupt block, shut down the node. This exception
-        -- will make sure we restart with validation enabled.
-        unless (cdbCheckIntegrity blk) $
-          let blockRef = BlockRef (blockPoint blk) (headerToIsEBB (getHeader blk))
-          in throwM $ VolDbCorruptBlock blockRef
-
+        slotNoAtImmutableDBTip <- atomically $ ImmutableDB.getTipSlot cdbImmutableDB
+        assert (pointSlot pt >= slotNoAtImmutableDBTip) $ return ()
+        -- When the block is corrupt, the function below will throw an
+        -- exception. This exception will make sure that we shut down the node
+        -- and that the next time we start, validation will be enabled.
+        blk <- VolatileDB.getKnownBlockComponent cdbVolatileDB GetVerifiedBlock hash
         -- We're the only one modifying the ImmutableDB, so the tip cannot
         -- have changed since we last checked it.
-        ImmDB.appendBlock cdbImmDB blk
+        ImmutableDB.appendBlock cdbImmutableDB blk
         -- TODO the invariant of 'cdbChain' is shortly violated between
         -- these two lines: the tip was updated on the line above, but the
         -- anchor point is only updated on the line below.
         atomically $ removeFromChain pt
-        trace $ CopiedBlockToImmDB pt
+        trace $ CopiedBlockToImmutableDB pt
 
-    -- Get the /possibly/ updated tip of the ImmDB
-    ImmDB.getSlotNoAtTip cdbImmDB
+    -- Get the /possibly/ updated tip of the ImmutableDB
+    atomically $ ImmutableDB.getTipSlot cdbImmutableDB
   where
     SecurityParam k = configSecurityParam cdbTopLevelConfig
-    trace = traceWith (contramap TraceCopyToImmDBEvent cdbTracer)
+    trace = traceWith (contramap TraceCopyToImmutableDBEvent cdbTracer)
 
     -- | Remove the header corresponding to the given point from the beginning
     -- of the current chain fragment.
@@ -215,13 +202,14 @@ copyToImmDB CDB{..} = withCopyLock $ do
 
     mustBeUnlocked :: forall b. HasCallStack => Maybe b -> b
     mustBeUnlocked = fromMaybe
-                   $ error "copyToImmDB running concurrently with itself"
+                   $ error "copyToImmutableDB running concurrently with itself"
 
--- | Copy blocks from the VolDB to ImmDB and take snapshots of the LgrDB
+-- | Copy blocks from the VolatileDB to ImmutableDB and take snapshots of the
+-- LgrDB
 --
 -- We watch the chain for changes. Whenever the chain is longer than @k@, then
--- the headers older than @k@ are copied from the VolDB to the ImmDB (using
--- 'copyToImmDB'). Once that is complete,
+-- the headers older than @k@ are copied from the VolatileDB to the ImmutableDB
+-- (using 'copyToImmutableDB'). Once that is complete,
 --
 -- * We periodically take a snapshot of the LgrDB (depending on its config).
 --   When enough blocks (depending on its config) have been replayed during
@@ -229,17 +217,17 @@ copyToImmDB CDB{..} = withCopyLock $ do
 --   start of this function.
 --   NOTE: After this initial snapshot we do not take a snapshot of the LgrDB
 --   until the chain has changed again, irrespective of the LgrDB policy.
--- * Schedule GC of the VolDB ('scheduleGC') for the 'SlotNo' of the most
+-- * Schedule GC of the VolatileDB ('scheduleGC') for the 'SlotNo' of the most
 --   recent block that was copied.
 --
 -- It is important that we only take LgrDB snapshots when are are /sure/ they
--- have been copied to the ImmDB, since the LgrDB assumes that all snapshots
--- correspond to immutable blocks. (Of course, data corruption can occur and we
--- can handle it by reverting to an older LgrDB snapshot, but we should need
--- this only in exceptional circumstances.)
+-- have been copied to the ImmutableDB, since the LgrDB assumes that all
+-- snapshots correspond to immutable blocks. (Of course, data corruption can
+-- occur and we can handle it by reverting to an older LgrDB snapshot, but we
+-- should need this only in exceptional circumstances.)
 --
--- We do not store any state of the VolDB GC. If the node shuts down before GC
--- can happen, when we restart the node and schedule the /next/ GC, it will
+-- We do not store any state of the VolatileDB GC. If the node shuts down before
+-- GC can happen, when we restart the node and schedule the /next/ GC, it will
 -- /imply/ any previously scheduled GC, since GC is driven by slot number
 -- ("garbage collect anything older than @x@").
 copyAndSnapshotRunner
@@ -248,9 +236,7 @@ copyAndSnapshotRunner
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
-     , ImmDbSerialiseConstraints blk
      , LgrDbSerialiseConstraints blk
-     , VolDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
   -> GcSchedule m
@@ -275,11 +261,11 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
         check $ fromIntegral (AF.length curChain) > k
         return $ fromIntegral (AF.length curChain) - k
 
-      -- Copy blocks to imm DB
+      -- Copy blocks to ImmutableDB
       --
       -- This is a synchronous operation: when it returns, the blocks have been
       -- copied to disk (though not flushed, necessarily).
-      copyToImmDB cdb >>= scheduleGC'
+      copyToImmutableDB cdb >>= scheduleGC'
 
       now <- getMonotonicTime
       let distance' = distance + numToWrite
@@ -329,7 +315,7 @@ updateLedgerSnapshots CDB{..} = do
 -- @putBlock@ and @getBlock@.
 garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()
 garbageCollect CDB{..} slotNo = do
-    VolDB.garbageCollect cdbVolDB slotNo
+    VolatileDB.garbageCollect cdbVolatileDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
       modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . invalidBlockSlotNo)
@@ -529,7 +515,6 @@ addBlockRunner
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , VolDbSerialiseConstraints blk
      , HasCallStack
      )
   => ChainDbEnv m blk

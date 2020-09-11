@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Block.Abstract (
@@ -238,7 +239,7 @@ decodeRawHash p = fromShortRawHash p <$> Serialise.decode
 -- @SomeBlock f blk@ is isomorphic to @Some (f blk)@, but is more convenient
 -- in partial applications.
 data SomeBlock (f :: Type -> Type -> Type) blk where
-  SomeBlock :: f blk a -> SomeBlock f blk
+  SomeBlock :: !(f blk a) -> SomeBlock f blk
 
 {-------------------------------------------------------------------------------
   Custom patterns for WithOrigin

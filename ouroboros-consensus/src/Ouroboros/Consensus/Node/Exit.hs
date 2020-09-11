@@ -18,11 +18,10 @@ import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..),
                      FsErrorType (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-                     (ImmutableDBError)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Types as ImmDB
-import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
-import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 
@@ -112,35 +111,34 @@ toExitReason e
     = WrongDatabase
     | Just (e' :: ChainDbFailure) <- fromException e
     = case e' of
-        ImmDbFailure ue -> immDbUnexpectedError ue
-        VolDbFailure ue -> volDbUnexpectedError ue
         LgrDbFailure fe -> fsError fe
         _               -> DatabaseCorruption
 
-    -- The three exceptions below will always be wrapped in a
+    | Just (e' :: VolatileDBError) <- fromException e
+    = case e' of
+        VolatileDB.UnexpectedFailure uf -> volatileDbUnexpectedFailure uf
+        _                               -> Other
+    -- The two exceptions below will always be wrapped in a
     -- 'ChainDbFailure', but we include them just in case.
     | Just (e' :: ImmutableDBError) <- fromException e
     = case e' of
-        ImmDB.UnexpectedError ue -> immDbUnexpectedError ue
-        _                        -> Other
-    | Just (e' :: VolatileDBError) <- fromException e
-    = case e' of
-        VolDB.UnexpectedError ue -> volDbUnexpectedError ue
-        _                        -> Other
+        ImmutableDB.UnexpectedFailure uf -> immutableDbUnexpectedFailure uf
+        _                                -> Other
     | Just (e' :: FsError) <- fromException e
     = fsError e'
 
     | otherwise
     = Other
   where
-    immDbUnexpectedError :: ImmDB.UnexpectedError -> ExitReason
-    immDbUnexpectedError = \case
-      ImmDB.FileSystemError fe -> fsError fe
-      _                        -> DatabaseCorruption
+    immutableDbUnexpectedFailure :: ImmutableDB.UnexpectedFailure -> ExitReason
+    immutableDbUnexpectedFailure = \case
+      ImmutableDB.FileSystemError fe -> fsError fe
+      _                              -> DatabaseCorruption
 
-    volDbUnexpectedError :: VolDB.UnexpectedError -> ExitReason
-    volDbUnexpectedError = \case
-      VolDB.FileSystemError fe -> fsError fe
+    volatileDbUnexpectedFailure :: VolatileDB.UnexpectedFailure -> ExitReason
+    volatileDbUnexpectedFailure = \case
+      VolatileDB.FileSystemError fe -> fsError fe
+      _                             -> DatabaseCorruption
 
     fsError :: FsError -> ExitReason
     fsError FsError { fsErrorType } = case fsErrorType of

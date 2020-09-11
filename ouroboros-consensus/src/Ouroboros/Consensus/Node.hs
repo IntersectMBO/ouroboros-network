@@ -38,6 +38,7 @@ import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.Random (newStdGen, randomIO, randomRIO)
@@ -120,7 +121,7 @@ data RunNodeArgs blk = RunNodeArgs {
     , rnProtocolInfo :: ProtocolInfo IO blk
 
       -- | Customise the 'ChainDbArgs'
-    , rnCustomiseChainDbArgs :: ChainDbArgs IO blk -> ChainDbArgs IO blk
+    , rnCustomiseChainDbArgs :: ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk
 
       -- | Customise the 'NodeArgs'
     , rnCustomiseNodeArgs :: NodeArgs IO RemoteConnectionId LocalConnectionId blk
@@ -181,10 +182,10 @@ run runargs@RunNodeArgs{..} =
               -- override the default value /and/ the user-customised value of
               -- the 'ChainDB.cdbImmValidation' and the
               -- 'ChainDB.cdbVolValidation' fields.
-            = (rnCustomiseChainDbArgs args)
-              { ChainDB.cdbImmValidation = ValidateAllChunks
-              , ChainDB.cdbVolValidation = ValidateAll
-              }
+            = (rnCustomiseChainDbArgs args) {
+                  ChainDB.cdbImmutableDbValidation = ValidateAllChunks
+                , ChainDB.cdbVolatileDbValidation  = ValidateAll
+                }
 
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
@@ -374,16 +375,16 @@ openChainDB
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
+  -> (ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> IO (ChainDB IO blk)
 openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
     ChainDB.openDB args
   where
-    args :: ChainDbArgs IO blk
+    args :: ChainDbArgs Identity IO blk
     args = customiseArgs $
              mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-             (nodeImmDbChunkInfo cfg)
+             (nodeImmutableDbChunkInfo cfg)
 
 mkChainDbArgs
   :: forall blk. RunNode blk
@@ -396,21 +397,21 @@ mkChainDbArgs
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChunkInfo
-  -> ChainDbArgs IO blk
+  -> ChainDbArgs Identity IO blk
 mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-              chunkInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile      = mkBlocksPerFile 1000
-    , ChainDB.cdbChunkInfo          = chunkInfo
-    , ChainDB.cdbGenesis            = return initLedger
-    , ChainDB.cdbDiskPolicy         = defaultDiskPolicy k
-    , ChainDB.cdbCheckIntegrity     = nodeCheckIntegrity cfg
-    , ChainDB.cdbParamsLgrDB        = ledgerDbDefaultParams k
-    , ChainDB.cdbTopLevelConfig     = cfg
-    , ChainDB.cdbRegistry           = registry
-    , ChainDB.cdbTracer             = tracer
-    , ChainDB.cdbImmValidation      = ValidateMostRecentChunk
-    , ChainDB.cdbVolValidation      = NoValidation
-    , ChainDB.cdbCheckInFuture      = inFuture
+              chunkInfo = (ChainDB.defaultArgs dbPath) {
+      ChainDB.cdbMaxBlocksPerFile      = mkBlocksPerFile 1000
+    , ChainDB.cdbChunkInfo             = chunkInfo
+    , ChainDB.cdbGenesis               = return initLedger
+    , ChainDB.cdbDiskPolicy            = defaultDiskPolicy k
+    , ChainDB.cdbCheckIntegrity        = nodeCheckIntegrity cfg
+    , ChainDB.cdbParamsLgrDB           = ledgerDbDefaultParams k
+    , ChainDB.cdbTopLevelConfig        = cfg
+    , ChainDB.cdbRegistry              = registry
+    , ChainDB.cdbTracer                = tracer
+    , ChainDB.cdbImmutableDbValidation = ValidateMostRecentChunk
+    , ChainDB.cdbVolatileDbValidation  = NoValidation
+    , ChainDB.cdbCheckInFuture         = inFuture
     }
   where
     k = configSecurityParam cfg

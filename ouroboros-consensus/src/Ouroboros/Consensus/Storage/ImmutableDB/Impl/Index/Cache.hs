@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
   ( -- * Environment
@@ -42,6 +43,7 @@ import           Data.Functor ((<&>))
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
 import           Data.Maybe (fromMaybe)
+import           Data.Proxy (Proxy (..))
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Vector (Vector)
@@ -49,12 +51,13 @@ import qualified Data.Vector as Vector
 import           Data.Void (Void)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Cardano.Prelude (forceElemsToWHNF, unsafeNoUnexpectedThunks)
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB (..),
+                     StandardHash)
+import           Ouroboros.Consensus.Util (takeUntil, whenJust)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -63,6 +66,8 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
+                     (UnexpectedFailure (..), throwUnexpectedFailure)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -71,12 +76,11 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as P
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
+                     (TraceCacheEvent (..), WithBlockSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathChunkFile, fsPathPrimaryIndexFile,
-                     fsPathSecondaryIndexFile, throwUnexpectedError)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
-                     TraceCacheEvent (..), UnexpectedError (..),
-                     WithBlockSize (..))
+                     fsPathSecondaryIndexFile)
 
 -- TODO property and/or q-s-m tests comparing with 'fileBackedIndex'
 
@@ -96,20 +100,20 @@ data CacheConfig = CacheConfig
   deriving (Eq, Show)
 
 -- | Short-hand we use internally
-type Entry hash = WithBlockSize (Secondary.Entry hash)
+type Entry blk = WithBlockSize (Secondary.Entry blk)
 
 -- | The cached primary and secondary indices of the current chunk.
 --
 -- We use sequences (as opposed to vectors) to allow for efficient appending
 -- in addition to (reasonably) efficient indexing.
-data CurrentChunkInfo hash = CurrentChunkInfo
+data CurrentChunkInfo blk = CurrentChunkInfo
   { currentChunkNo      :: !ChunkNo
   , currentChunkOffsets :: !(StrictSeq SecondaryOffset)
-  , currentChunkEntries :: !(StrictSeq (Entry hash))
+  , currentChunkEntries :: !(StrictSeq (Entry blk))
   }
   deriving (Generic, NoUnexpectedThunks, Show)
 
-emptyCurrentChunkInfo :: ChunkNo -> CurrentChunkInfo hash
+emptyCurrentChunkInfo :: ChunkNo -> CurrentChunkInfo blk
 emptyCurrentChunkInfo chunk = CurrentChunkInfo
   { currentChunkNo      = chunk
   , currentChunkOffsets = Seq.singleton 0
@@ -121,7 +125,7 @@ emptyCurrentChunkInfo chunk = CurrentChunkInfo
 -- TODO don't bother with the conversion? Use vectors for past chunks at start
 -- up. Chunks that become past chunks because we advance to new chunks, we can
 -- just leave in memory as seqs?
-toPastChunkInfo :: CurrentChunkInfo hash -> PastChunkInfo hash
+toPastChunkInfo :: CurrentChunkInfo blk -> PastChunkInfo blk
 toPastChunkInfo CurrentChunkInfo{..} =
     PastChunkInfo
       { pastChunkOffsets =
@@ -136,9 +140,9 @@ toPastChunkInfo CurrentChunkInfo{..} =
 --
 -- We use vectors to allow for efficient indexing. We don't need to append to
 -- them, as they are in the past and thus immutable.
-data PastChunkInfo hash = PastChunkInfo
+data PastChunkInfo blk = PastChunkInfo
   { pastChunkOffsets :: !PrimaryIndex
-  , pastChunkEntries :: !(Vector (Entry hash))
+  , pastChunkEntries :: !(Vector (Entry blk))
   }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -150,11 +154,11 @@ newtype LastUsed = LastUsed Time
   deriving newtype (Eq, Ord, Show, NoUnexpectedThunks)
 
 -- | The data stored in the cache.
-data Cached hash = Cached
+data Cached blk = Cached
   { currentChunk     :: !ChunkNo
     -- ^ The current chunk of the ImmutableDB, i.e., the chunk we're still
     -- appending entries too.
-  , currentChunkInfo :: !(CurrentChunkInfo hash)
+  , currentChunkInfo :: !(CurrentChunkInfo blk)
     -- ^ We always cache the current chunk.
     --
     -- When clients are in sync with our chain, they will only request blocks
@@ -172,7 +176,7 @@ data Cached hash = Cached
     -- - In the event of running for a million years, we're unlikely to have a problem anyway,
     --   since we only really cache _recent_ chunks. So the fact that they clash with the
     --   chunks from a million years ago isn't likely to be an issue.
-  , pastChunksInfo   :: !(IntPSQ LastUsed (PastChunkInfo hash))
+  , pastChunksInfo   :: !(IntPSQ LastUsed (PastChunkInfo blk))
     -- ^ Cached chunks from the past.
     --
     -- A LRU-cache (least recently used). Whenever a we get a cache hit
@@ -194,7 +198,7 @@ data Cached hash = Cached
 
 checkInvariants
   :: Word32  -- ^ Maximum number of past chunks to cache
-  -> Cached hash
+  -> Cached blk
   -> Maybe String
 checkInvariants pastChunksToCache Cached {..} = either Just (const Nothing) $ do
     forM_ (PSQ.keys pastChunksInfo) $ \pastChunk ->
@@ -225,9 +229,9 @@ checkInvariants pastChunksToCache Cached {..} = either Just (const Nothing) $ do
 addPastChunkInfo
   :: ChunkNo
   -> LastUsed
-  -> PastChunkInfo hash
-  -> Cached hash
-  -> Cached hash
+  -> PastChunkInfo blk
+  -> Cached blk
+  -> Cached blk
 addPastChunkInfo chunk lastUsed pastChunkInfo cached =
     assert (chunk < currentChunk cached) $
     -- NOTE: in case of multiple concurrent cache misses of the same chunk,
@@ -262,8 +266,8 @@ addPastChunkInfo chunk lastUsed pastChunkInfo cached =
 -- If a past chunk was evicted, its chunk number is returned.
 evictIfNecessary
   :: Word32  -- ^ Maximum number of past chunks to cache
-  -> Cached hash
-  -> (Cached hash, Maybe ChunkNo)
+  -> Cached blk
+  -> (Cached blk, Maybe ChunkNo)
 evictIfNecessary maxNbPastChunks cached
     | nbPastChunks > maxNbPastChunks
     = assert (nbPastChunks == maxNbPastChunks + 1) $
@@ -289,8 +293,8 @@ evictIfNecessary maxNbPastChunks cached
 lookupPastChunkInfo
   :: ChunkNo
   -> LastUsed
-  -> Cached hash
-  -> Maybe (PastChunkInfo hash, Cached hash)
+  -> Cached blk
+  -> Maybe (PastChunkInfo blk, Cached blk)
 lookupPastChunkInfo chunk lastUsed cached@Cached { pastChunksInfo } =
     case PSQ.alter lookupAndUpdateLastUsed (chunkNoToInt chunk) pastChunksInfo of
       (Nothing, _) -> Nothing
@@ -299,8 +303,8 @@ lookupPastChunkInfo chunk lastUsed cached@Cached { pastChunksInfo } =
           cached' = cached { pastChunksInfo = pastChunksInfo' }
   where
     lookupAndUpdateLastUsed
-      :: Maybe (LastUsed, PastChunkInfo hash)
-      -> (Maybe (PastChunkInfo hash), Maybe (LastUsed, PastChunkInfo hash))
+      :: Maybe (LastUsed, PastChunkInfo blk)
+      -> (Maybe (PastChunkInfo blk), Maybe (LastUsed, PastChunkInfo blk))
     lookupAndUpdateLastUsed = \case
       Nothing                -> (Nothing, Nothing)
       Just (_lastUsed, info) -> (Just info, Just (lastUsed, info))
@@ -308,9 +312,9 @@ lookupPastChunkInfo chunk lastUsed cached@Cached { pastChunksInfo } =
 openChunk
   :: ChunkNo
   -> LastUsed
-  -> CurrentChunkInfo hash
-  -> Cached hash
-  -> Cached hash
+  -> CurrentChunkInfo blk
+  -> Cached blk
+  -> Cached blk
 openChunk chunk lastUsed newCurrentChunkInfo cached
     | currentChunk == chunk
     = cached
@@ -340,8 +344,8 @@ openChunk chunk lastUsed newCurrentChunkInfo cached
 
 emptyCached
   :: ChunkNo -- ^ The current chunk
-  -> CurrentChunkInfo hash
-  -> Cached hash
+  -> CurrentChunkInfo blk
+  -> Cached blk
 emptyCached currentChunk currentChunkInfo = Cached
     { currentChunk
     , currentChunkInfo
@@ -350,12 +354,11 @@ emptyCached currentChunk currentChunkInfo = Cached
     }
 
 -- | Environment used by functions operating on the cached index.
-data CacheEnv m hash h = CacheEnv
+data CacheEnv m blk h = CacheEnv
   { hasFS       :: HasFS m h
-  , hashInfo    :: HashInfo hash
   , registry    :: ResourceRegistry m
   , tracer      :: Tracer m TraceCacheEvent
-  , cacheVar    :: StrictMVar m (Cached hash)
+  , cacheVar    :: StrictMVar m (Cached blk)
   , cacheConfig :: CacheConfig
   , bgThreadVar :: StrictMVar m (Maybe (Thread m Void))
     -- ^ Nothing if no thread running
@@ -367,20 +370,19 @@ data CacheEnv m hash h = CacheEnv
 --
 -- PRECONDITION: 'pastChunksToCache' (in 'CacheConfig') > 0
 newEnv
-  :: (HasCallStack, IOLike m, NoUnexpectedThunks hash)
+  :: (HasCallStack, IOLike m, ConvertRawHash blk, StandardHash blk)
   => HasFS m h
-  -> HashInfo hash
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
   -> CacheConfig
   -> ChunkInfo
   -> ChunkNo  -- ^ Current chunk
-  -> m (CacheEnv m hash h)
-newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
+  -> m (CacheEnv m blk h)
+newEnv hasFS registry tracer cacheConfig chunkInfo chunk = do
     when (pastChunksToCache == 0) $
       error "pastChunksToCache must be > 0"
 
-    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
+    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo chunk
     cacheVar <- newMVarWithInvariants $ emptyCached chunk currentChunkInfo
     bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
@@ -410,7 +412,7 @@ newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
 -- the cache.
 expireUnusedChunks
   :: (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  => CacheEnv m blk h
   -> m Void
 expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
     forever $ do
@@ -429,8 +431,8 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
     -- returned as a 'Just'.
     garbageCollect
       :: Time
-      -> Cached hash
-      -> (Cached hash, Maybe TraceCacheEvent)
+      -> Cached blk
+      -> (Cached blk, Maybe TraceCacheEvent)
     garbageCollect now cached@Cached { pastChunksInfo, nbPastChunks } =
         case expiredPastChunks of
           [] -> (cached,  Nothing)
@@ -486,15 +488,14 @@ readPrimaryIndex hasFS chunkInfo chunk = do
     firstRelativeSlot = firstBlockOrEBB chunkInfo chunk
 
 readSecondaryIndex
-  :: (HasCallStack, IOLike m)
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
   => HasFS m h
-  -> HashInfo hash
   -> ChunkNo
   -> IsEBB
-  -> m [Entry hash]
-readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo chunk firstIsEBB = do
+  -> m [Entry blk]
+readSecondaryIndex hasFS@HasFS { hGetSize } chunk firstIsEBB = do
     !chunkFileSize <- withFile hasFS chunkFile ReadMode hGetSize
-    Secondary.readAllEntries hasFS hashInfo secondaryOffset
+    Secondary.readAllEntries hasFS secondaryOffset
       chunk stopCondition chunkFileSize firstIsEBB
   where
     chunkFile = fsPathChunkFile chunk
@@ -504,19 +505,18 @@ readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo chunk firstIsEBB = do
     stopCondition = const False
 
 loadCurrentChunkInfo
-  :: (HasCallStack, IOLike m)
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
   => HasFS m h
   -> ChunkInfo
-  -> HashInfo hash
   -> ChunkNo
-  -> m (CurrentChunkInfo hash)
-loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk = do
+  -> m (CurrentChunkInfo blk)
+loadCurrentChunkInfo hasFS chunkInfo chunk = do
     -- We're assuming that when the primary index file exists, the secondary
     -- index file will also exist
     chunkExists <- doesFileExist hasFS primaryIndexFile
     if chunkExists then do
       (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
-      entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
+      entries <- readSecondaryIndex hasFS chunk firstIsEBB
       return CurrentChunkInfo
         { currentChunkNo      = chunk
         , currentChunkOffsets =
@@ -530,25 +530,24 @@ loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk = do
     primaryIndexFile = fsPathPrimaryIndexFile chunk
 
 loadPastChunkInfo
-  :: (HasCallStack, IOLike m)
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
   => HasFS m h
   -> ChunkInfo
-  -> HashInfo hash
   -> ChunkNo
-  -> m (PastChunkInfo hash)
-loadPastChunkInfo hasFS chunkInfo hashInfo chunk = do
+  -> m (PastChunkInfo blk)
+loadPastChunkInfo hasFS chunkInfo chunk = do
     (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
-    entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
+    entries <- readSecondaryIndex hasFS chunk firstIsEBB
     return PastChunkInfo
       { pastChunkOffsets = primaryIndex
       , pastChunkEntries = Vector.fromList $ forceElemsToWHNF entries
       }
 
 getChunkInfo
-  :: (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
-  -> m (Either (CurrentChunkInfo hash) (PastChunkInfo hash))
+  -> m (Either (CurrentChunkInfo blk) (PastChunkInfo blk))
 getChunkInfo cacheEnv chunk = do
     lastUsed <- LastUsed <$> getMonotonicTime
     -- Make sure we don't leave an empty MVar in case of an exception.
@@ -576,7 +575,7 @@ getChunkInfo cacheEnv chunk = do
       Just hit -> return hit
       Nothing  -> do
         -- Cache miss, load both entire indices for the chunk from disk.
-        pastChunkInfo <- loadPastChunkInfo hasFS chunkInfo hashInfo chunk
+        pastChunkInfo <- loadPastChunkInfo hasFS chunkInfo chunk
         -- Loading the chunk might have taken some time, so obtain the time
         -- again.
         lastUsed' <- LastUsed <$> getMonotonicTime
@@ -588,7 +587,7 @@ getChunkInfo cacheEnv chunk = do
           traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
         return $ Right pastChunkInfo
   where
-    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
+    CacheEnv { hasFS, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
     CacheConfig { pastChunksToCache } = cacheConfig
 
 {------------------------------------------------------------------------------
@@ -598,7 +597,7 @@ getChunkInfo cacheEnv chunk = do
 -- | Stops the background expiration thread.
 --
 -- This operation is idempotent.
-close :: IOLike m => CacheEnv m hash h -> m ()
+close :: IOLike m => CacheEnv m blk h -> m ()
 close CacheEnv { bgThreadVar } =
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread -> do
       mapM_ cancelThread mbBgThread
@@ -610,12 +609,12 @@ close CacheEnv { bgThreadVar } =
 -- PRECONDITION: the background thread expiring unused past chunks must have
 -- been terminated.
 restart
-  :: IOLike m
-  => CacheEnv m hash h
+  :: (ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo  -- ^ The new current chunk
   -> m ()
 restart cacheEnv chunk = do
-    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
+    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo chunk
     void $ swapMVar cacheVar $ emptyCached chunk currentChunkInfo
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
       case mbBgThread of
@@ -625,15 +624,15 @@ restart cacheEnv chunk = do
             expireUnusedChunks cacheEnv
           return $ Just bgThread
   where
-    CacheEnv { hasFS, hashInfo, registry, cacheVar, bgThreadVar, chunkInfo } = cacheEnv
+    CacheEnv { hasFS, registry, cacheVar, bgThreadVar, chunkInfo } = cacheEnv
 
 {------------------------------------------------------------------------------
   On the primary index
 ------------------------------------------------------------------------------}
 
 readOffsets
-  :: (HasCallStack, Traversable t, IOLike m)
-  => CacheEnv m hash h
+  :: (HasCallStack, ConvertRawHash blk, Traversable t, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
   -> t RelativeSlot
   -> m (t (Maybe SecondaryOffset))
@@ -669,8 +668,8 @@ readOffsets cacheEnv chunk relSlots =
       = Nothing
 
 readFirstFilledSlot
-  :: (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
   -> m (Maybe RelativeSlot)
 readFirstFilledSlot cacheEnv chunk =
@@ -691,8 +690,8 @@ readFirstFilledSlot cacheEnv chunk =
 -- | This is called when a new chunk is started, which means we need to update
 -- 'Cached' to reflect this.
 openPrimaryIndex
-  :: (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
   -> AllowExisting
   -> m (Handle h)
@@ -703,7 +702,7 @@ openPrimaryIndex cacheEnv chunk allowExisting = do
     flip onException (hClose pHnd) $ do
       newCurrentChunkInfo <- case allowExisting of
         MustBeNew     -> return $ emptyCurrentChunkInfo chunk
-        AllowExisting -> loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
+        AllowExisting -> loadCurrentChunkInfo hasFS chunkInfo chunk
       mbEvicted <- updateMVar cacheVar $
         evictIfNecessary pastChunksToCache .
         openChunk chunk lastUsed newCurrentChunkInfo
@@ -712,13 +711,13 @@ openPrimaryIndex cacheEnv chunk allowExisting = do
         traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
       return pHnd
   where
-    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
+    CacheEnv { hasFS, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
     HasFS { hClose } = hasFS
     CacheConfig { pastChunksToCache } = cacheConfig
 
 appendOffsets
   :: (HasCallStack, Foldable f, IOLike m)
-  => CacheEnv m hash h
+  => CacheEnv m blk h
   -> Handle h
   -> f SecondaryOffset
   -> m ()
@@ -727,7 +726,7 @@ appendOffsets CacheEnv { hasFS, cacheVar } pHnd offsets = do
     updateMVar_ cacheVar addCurrentChunkOffsets
   where
     -- Lenses would be nice here
-    addCurrentChunkOffsets :: Cached hash -> Cached hash
+    addCurrentChunkOffsets :: Cached blk -> Cached blk
     addCurrentChunkOffsets cached@Cached { currentChunkInfo } = cached
       { currentChunkInfo = currentChunkInfo
         { currentChunkOffsets = currentChunkOffsets currentChunkInfo <>
@@ -740,12 +739,13 @@ appendOffsets CacheEnv { hasFS, cacheVar } pHnd offsets = do
 ------------------------------------------------------------------------------}
 
 readEntries
-  :: forall m hash h t. (HasCallStack, Traversable t, IOLike m)
-  => CacheEnv m hash h
+  :: forall m blk h t.
+     (HasCallStack, ConvertRawHash blk, Traversable t, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
   -> t (IsEBB, SecondaryOffset)
-  -> m (t (Secondary.Entry hash, BlockSize))
-readEntries cacheEnv@CacheEnv { hashInfo } chunk toRead =
+  -> m (t (Secondary.Entry blk, BlockSize))
+readEntries cacheEnv chunk toRead =
     getChunkInfo cacheEnv chunk >>= \case
       Left CurrentChunkInfo { currentChunkEntries } ->
         forM toRead $ \(_isEBB, secondaryOffset) ->
@@ -760,7 +760,7 @@ readEntries cacheEnv@CacheEnv { hashInfo } chunk toRead =
   where
     indexForOffset :: SecondaryOffset -> Int
     indexForOffset secondaryOffset = fromIntegral $
-      secondaryOffset `div` Secondary.entrySize (hashSize hashInfo)
+      secondaryOffset `div` Secondary.entrySize (Proxy @blk)
 
     -- There was no entry in the secondary index for the given
     -- 'SecondaryOffset'. Either the secondary index is incomplete, /or/, the
@@ -768,21 +768,21 @@ readEntries cacheEnv@CacheEnv { hashInfo } chunk toRead =
     -- We don't know which of the two things happened, but the former is more
     -- likely, so we mention that file in the error message.
     noEntry :: SecondaryOffset -> m a
-    noEntry secondaryOffset = throwUnexpectedError $ InvalidFileError
+    noEntry secondaryOffset = throwUnexpectedFailure $ InvalidFileError
       (fsPathSecondaryIndexFile chunk)
       ("no entry missing for " <> show secondaryOffset)
-      callStack
+      prettyCallStack
 
 readAllEntries
-  :: (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> SecondaryOffset
   -> ChunkNo
-  -> (Secondary.Entry hash -> Bool)
+  -> (Secondary.Entry blk -> Bool)
   -> Word64
   -> IsEBB
-  -> m [WithBlockSize (Secondary.Entry hash)]
-readAllEntries cacheEnv@CacheEnv { hashInfo } secondaryOffset chunk stopCondition
+  -> m [WithBlockSize (Secondary.Entry blk)]
+readAllEntries cacheEnv secondaryOffset chunk stopCondition
                _chunkFileSize _firstIsEBB =
     getChunkInfo cacheEnv chunk <&> \case
       Left CurrentChunkInfo { currentChunkEntries } ->
@@ -794,22 +794,22 @@ readAllEntries cacheEnv@CacheEnv { hashInfo } secondaryOffset chunk stopConditio
   where
     toDrop :: Int
     toDrop = fromIntegral $
-      secondaryOffset `div` Secondary.entrySize (hashSize hashInfo)
+      secondaryOffset `div` Secondary.entrySize (Proxy @blk)
 
 appendEntry
-  :: forall m hash h. (HasCallStack, IOLike m)
-  => CacheEnv m hash h
+  :: forall m blk h. (HasCallStack, ConvertRawHash blk, IOLike m)
+  => CacheEnv m blk h
   -> ChunkNo
   -> Handle h
-  -> Entry hash
+  -> Entry blk
   -> m Word64
-appendEntry CacheEnv { hasFS, hashInfo, cacheVar } chunk sHnd entry = do
-    nbBytes <- Secondary.appendEntry hasFS hashInfo sHnd (withoutBlockSize entry)
+appendEntry CacheEnv { hasFS, cacheVar } chunk sHnd entry = do
+    nbBytes <- Secondary.appendEntry hasFS sHnd (withoutBlockSize entry)
     updateMVar_ cacheVar addCurrentChunkEntry
     return nbBytes
   where
     -- Lenses would be nice here
-    addCurrentChunkEntry :: Cached hash -> Cached hash
+    addCurrentChunkEntry :: Cached blk -> Cached blk
     addCurrentChunkEntry cached@Cached { currentChunk, currentChunkInfo }
       | currentChunk /= chunk
       = error $
@@ -822,27 +822,3 @@ appendEntry CacheEnv { hasFS, hashInfo, cacheVar } chunk sHnd entry = do
                 currentChunkEntries currentChunkInfo Seq.|> entry
             }
           }
-
-{------------------------------------------------------------------------------
-  Helpers
-------------------------------------------------------------------------------}
-
--- | Take items until the condition is true. If the condition is true for an
--- item, include that item as the last item in the returned list. If the
--- condition was never true, the original list is returned.
---
--- > takeUntil (== 3) [1,2,3,4]
--- [1,2,3]
--- > takeUntil (== 2) [0,1,0]
--- [0,1,0]
--- > takeUntil (== 2) [2,2,3]
--- [2]
-takeUntil :: (a -> Bool) -> [a] -> [a]
-takeUntil p = \case
-  []
-    -> []
-  x:xs
-    | p x
-    -> [x]
-    | otherwise
-    -> x:takeUntil p xs

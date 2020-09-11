@@ -3,8 +3,6 @@ module Test.Ouroboros.Storage
   ( tests
   ) where
 
-import           GHC.Stack (HasCallStack)
-
 import qualified Test.Ouroboros.Storage.ChainDB as ChainDB
 import qualified Test.Ouroboros.Storage.FS as FS
 import qualified Test.Ouroboros.Storage.ImmutableDB as ImmutableDB
@@ -16,7 +14,7 @@ import           Test.Tasty (TestTree, testGroup)
 -- The list of all tests
 --
 
-tests :: HasCallStack => FilePath -> TestTree
+tests :: FilePath -> TestTree
 tests tmpDir = testGroup "Storage" $
     -- The FS tests fail for darwin on CI, see #352. So disable them for now.
     [ FS.tests tmpDir | not darwin ] <>

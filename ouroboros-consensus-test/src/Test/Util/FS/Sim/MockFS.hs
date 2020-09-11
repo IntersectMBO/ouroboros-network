@@ -69,11 +69,11 @@ import qualified Data.Set as S
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Util.CallStack
 
 import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 import qualified Test.Util.FS.Sim.FsTree as FS
@@ -199,7 +199,7 @@ seekFilePtr MockFS{..} (Handle h _) seekMode o = do
           , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
       HandleOpen OpenHandle{..} -> do
@@ -235,7 +235,7 @@ seekFilePtr MockFS{..} (Handle h _) seekMode o = do
                        , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek past EOF not supported"
                        , fsErrorNo     = Nothing
-                       , fsErrorStack  = callStack
+                       , fsErrorStack  = prettyCallStack
                        , fsLimitation  = True
                        }
     errAppend  fp  = FsError {
@@ -243,7 +243,7 @@ seekFilePtr MockFS{..} (Handle h _) seekMode o = do
                        , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek in append mode not supported"
                        , fsErrorNo     = Nothing
-                       , fsErrorStack  = callStack
+                       , fsErrorStack  = prettyCallStack
                        , fsLimitation  = True
                        }
     errNegative fp = FsError {
@@ -251,7 +251,7 @@ seekFilePtr MockFS{..} (Handle h _) seekMode o = do
                        , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek past beginning of file"
                        , fsErrorNo     = Nothing
-                       , fsErrorStack  = callStack
+                       , fsErrorStack  = prettyCallStack
                        , fsLimitation  = False
                        }
 
@@ -323,7 +323,7 @@ withOpenHandleModify h f =
           , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
 
@@ -345,7 +345,7 @@ withOpenHandleRead h f =
           , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
 
@@ -370,7 +370,7 @@ checkFsTree' = go
           , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "expected directory"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
     go (Left (FsExpectedFile fp)) =
@@ -379,7 +379,7 @@ checkFsTree' = go
           , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "expected file"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
     go (Left (FsMissing fp _)) =
@@ -390,7 +390,7 @@ checkFsTree' = go
           , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "file exists"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
     go (Right a) =
@@ -406,7 +406,7 @@ checkFsTree ma = do
                    , fsErrorPath   = fsToFsErrorPathUnmounted fp
                    , fsErrorString = "does not exist"
                    , fsErrorNo     = Nothing
-                   , fsErrorStack  = callStack
+                   , fsErrorStack  = prettyCallStack
                    , fsLimitation  = False
                    }
       Right a -> return a
@@ -421,7 +421,7 @@ checkDoesNotExist fs fp = do
              , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "already exists"
              , fsErrorNo     = Nothing
-             , fsErrorStack  = callStack
+             , fsErrorStack  = prettyCallStack
              , fsLimitation  = False
              }
       else return ()
@@ -460,7 +460,7 @@ hOpen fp openMode = do
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "hOpen: directories not supported"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
     modifyMockFS $ \fs -> do
@@ -473,7 +473,7 @@ hOpen fp openMode = do
           , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "more than one concurrent writer not supported"
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = True
           }
       when (openMode == ReadMode) $ void $
@@ -537,7 +537,7 @@ hGetSome h n =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot hGetSome in " <> mode <> " mode"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 
@@ -568,7 +568,7 @@ hGetSomeAt h n o =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot hGetSomeAt in " <> mode <> " mode"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 
@@ -577,7 +577,7 @@ hGetSomeAt h n o =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "hGetSomeAt offset past EOF not supported"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 
@@ -604,7 +604,7 @@ hPutSome h toWrite =
                        , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "handle is read-only"
                        , fsErrorNo     = Nothing
-                       , fsErrorStack  = callStack
+                       , fsErrorStack  = prettyCallStack
                        , fsLimitation  = False
                        }
 
@@ -660,7 +660,7 @@ hTruncate h sz =
                     , fsErrorPath   = fsToFsErrorPathUnmounted openFilePath
                     , fsErrorString = "truncate cannot make the file larger"
                     , fsErrorNo     = Nothing
-                    , fsErrorStack  = callStack
+                    , fsErrorStack  = prettyCallStack
                     , fsLimitation  = True
                     }
                 (False, RW{}) ->
@@ -669,7 +669,7 @@ hTruncate h sz =
                     , fsErrorPath   = fsToFsErrorPathUnmounted openFilePath
                     , fsErrorString = "truncate only supported in append mode"
                     , fsErrorNo     = Nothing
-                    , fsErrorStack  = callStack
+                    , fsErrorStack  = prettyCallStack
                     , fsLimitation  = True
                     }
                 (False, Append) ->
@@ -712,7 +712,7 @@ createDirectoryIfMissing createParents dir = do
         , fsErrorPath   = fsToFsErrorPathUnmounted dir
         , fsErrorString = "a file with that name already exists"
         , fsErrorNo     = Nothing
-        , fsErrorStack  = callStack
+        , fsErrorStack  = prettyCallStack
         , fsLimitation  = False
         }
     else modifyMockFS $ \fs -> do
@@ -774,7 +774,7 @@ removeFile fp =
              , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "cannot remove the root directory"
              , fsErrorNo     = Nothing
-             , fsErrorStack  = callStack
+             , fsErrorStack  = prettyCallStack
              , fsLimitation  = True
              }
       _ | fp `S.member` openFilePaths fs
@@ -783,7 +783,7 @@ removeFile fp =
              , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "cannot remove an open file"
              , fsErrorNo     = Nothing
-             , fsErrorStack  = callStack
+             , fsErrorStack  = prettyCallStack
              , fsLimitation  = True
              }
       _ -> do
@@ -813,7 +813,7 @@ renameFile fpOld fpNew =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot rename opened file"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 
@@ -822,7 +822,7 @@ renameFile fpOld fpNew =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "is a directory"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 
@@ -831,7 +831,7 @@ renameFile fpOld fpNew =
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "files must be in the same directory"
       , fsErrorNo     = Nothing
-      , fsErrorStack  = callStack
+      , fsErrorStack  = prettyCallStack
       , fsLimitation  = True
       }
 

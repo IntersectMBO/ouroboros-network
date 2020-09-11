@@ -1,12 +1,5 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards  #-}
 
 -- | Database analyse tool.
 module Main (main) where
@@ -26,8 +19,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
 import           Block.Byron (ByronBlockArgs)
@@ -44,12 +37,12 @@ main = do
       CardanoBlock args -> analyse cmdLine args
 
 data CmdLine = CmdLine {
-    dbDir      :: FilePath
-  , verbose    :: Bool
-  , onlyImmDB  :: Bool
-  , validation :: Maybe ValidateBlocks
-  , blockType  :: BlockType
-  , analysis   :: AnalysisName
+    dbDir           :: FilePath
+  , verbose         :: Bool
+  , onlyImmutableDB :: Bool
+  , validation      :: Maybe ValidateBlocks
+  , blockType       :: BlockType
+  , analysis        :: AnalysisName
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -75,7 +68,7 @@ parseCmdLine = CmdLine
           , help "Enable verbose logging"
           ])
     <*> switch (mconcat [
-            long "onlyImmDB"
+            long "onlyImmutableDB"
           , help "Validate only the Immutable DB (e.g. do not do ledger validation)"
           ])
     <*> parseValidationPolicy
@@ -153,8 +146,8 @@ getCmdLine = execParser opts
   Analyse
 -------------------------------------------------------------------------------}
 
-analyse
-  :: (Node.RunNode blk, Show (Header blk), HasAnalysis blk)
+analyse ::
+     (Node.RunNode blk, Show (Header blk), HasAnalysis blk)
   => CmdLine
   -> Args blk
   -> IO ()
@@ -163,24 +156,24 @@ analyse CmdLine {..} args =
       tracer <- mkTracer verbose
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
-      let chunkInfo  = Node.nodeImmDbChunkInfo cfg
+      let chunkInfo  = Node.nodeImmutableDbChunkInfo cfg
           args' = Node.mkChainDbArgs tracer registry InFuture.dontCheck
                     dbDir cfg initLedger chunkInfo
           chainDbArgs = args' {
-              ChainDB.cdbImmValidation = immValidationPolicy
-            , ChainDB.cdbVolValidation = volValidationPolicy
+              ChainDB.cdbImmutableDbValidation = immValidationPolicy
+            , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
             }
-          (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
-      if onlyImmDB then
-        ImmDB.withImmDB immDbArgs $ \immDB -> do
-          runAnalysis analysis cfg (Left immDB) registry
-          immDbTipPoint <- ImmDB.getPointAtTip immDB
-          putStrLn $ "ImmDB tip: " ++ show immDbTipPoint
+          (immutableDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+      if onlyImmutableDB then
+        ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs) $ \immutableDB -> do
+          runAnalysis analysis cfg (Left immutableDB) registry
+          tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
+          putStrLn $ "ImmutableDB tip: " ++ show tipPoint
       else
         ChainDB.withDB chainDbArgs $ \chainDB -> do
           runAnalysis analysis cfg (Right chainDB) registry
-          chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
-          putStrLn $ "ChainDB tip: " ++ show chainDbTipPoint
+          tipPoint <- atomically $ ChainDB.getTipPoint chainDB
+          putStrLn $ "ChainDB tip: " ++ show tipPoint
   where
     mkTracer False = return nullTracer
     mkTracer True  = do
@@ -191,13 +184,13 @@ analyse CmdLine {..} args =
         putStrLn $ concat ["[", show diff, "] ", show ev]
 
     immValidationPolicy = case (analysis, validation) of
-      (_, Just ValidateAllBlocks)      -> ImmDB.ValidateAllChunks
-      (_, Just MinimumBlockValidation) -> ImmDB.ValidateMostRecentChunk
-      (OnlyValidation, _ )             -> ImmDB.ValidateAllChunks
-      _                                -> ImmDB.ValidateMostRecentChunk
+      (_, Just ValidateAllBlocks)      -> ImmutableDB.ValidateAllChunks
+      (_, Just MinimumBlockValidation) -> ImmutableDB.ValidateMostRecentChunk
+      (OnlyValidation, _ )             -> ImmutableDB.ValidateAllChunks
+      _                                -> ImmutableDB.ValidateMostRecentChunk
 
     volValidationPolicy = case (analysis, validation) of
-      (_, Just ValidateAllBlocks)      -> VolDB.ValidateAll
-      (_, Just MinimumBlockValidation) -> VolDB.NoValidation
-      (OnlyValidation, _ )             -> VolDB.ValidateAll
-      _                                -> VolDB.NoValidation
+      (_, Just ValidateAllBlocks)      -> VolatileDB.ValidateAll
+      (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
+      (OnlyValidation, _ )             -> VolatileDB.ValidateAll
+      _                                -> VolatileDB.NoValidation

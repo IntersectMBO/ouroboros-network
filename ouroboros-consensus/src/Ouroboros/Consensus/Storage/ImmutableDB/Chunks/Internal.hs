@@ -38,7 +38,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
   , assertChunkCanContainEBB
   ) where
 
-import           Control.Exception (Exception, throw)
+import           Control.Exception
 import           Control.Monad
 import           Data.Word
 import           GHC.Generics (Generic)

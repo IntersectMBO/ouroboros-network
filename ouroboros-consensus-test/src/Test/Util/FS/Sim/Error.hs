@@ -47,12 +47,11 @@ import           Data.List (dropWhileEnd, intercalate)
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.Word (Word64)
 
-import           GHC.Stack (HasCallStack, callStack)
-
 import           Test.QuickCheck (Arbitrary (..), Gen)
 import qualified Test.QuickCheck as QC
 
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike hiding (handle)
 
 import           Ouroboros.Consensus.Storage.FS.API
@@ -553,7 +552,7 @@ withErr errorsVar path action msg getter setter = do
         , fsErrorPath   = fsToFsErrorPathUnmounted path
         , fsErrorString = "simulated error: " <> msg
         , fsErrorNo     = Nothing
-        , fsErrorStack  = callStack
+        , fsErrorStack  = prettyCallStack
         , fsLimitation  = False
         }
 
@@ -586,7 +585,7 @@ hGetSome' errorsVar hGetSomeWrapped handle n =
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSome"
         , fsErrorNo     = Nothing
-        , fsErrorStack  = callStack
+        , fsErrorStack  = prettyCallStack
         , fsLimitation  = False
         }
       Just (Right partial) ->
@@ -605,7 +604,7 @@ hGetSomeAt' errorsVar hGetSomeAtWrapped handle n offset =
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSomeAt"
         , fsErrorNo     = Nothing
-        , fsErrorStack  = callStack
+        , fsErrorStack  = prettyCallStack
         , fsLimitation  = False
         }
       Just (Right partial) ->
@@ -631,7 +630,7 @@ hPutSome' errorsVar hPutSomeWrapped handle bs =
               Nothing   -> ""
               Just corr -> " with corruption: " <> show corr
           , fsErrorNo     = Nothing
-          , fsErrorStack  = callStack
+          , fsErrorStack  = prettyCallStack
           , fsLimitation  = False
           }
       Just (Right partial)          ->

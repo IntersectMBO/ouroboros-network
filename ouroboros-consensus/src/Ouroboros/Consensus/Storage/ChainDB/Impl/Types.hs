@@ -51,7 +51,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceReaderEvent (..)
-  , TraceCopyToImmDBEvent (..)
+  , TraceCopyToImmutableDBEvent (..)
   , TraceGCEvent (..)
   , TraceValidationEvent (..)
   , TraceInitChainSelEvent (..)
@@ -65,7 +65,6 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
@@ -80,6 +79,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -87,22 +87,22 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
                      StreamTo, UnknownRange)
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB,
-                     ImmDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB,
-                     VolDbSerialiseConstraints)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB,
+                     ImmutableDbSerialiseConstraints)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
+                     VolatileDbSerialiseConstraints)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 -- | All the serialisation related constraints needed by the ChainDB.
-class ( ImmDbSerialiseConstraints blk
+class ( ImmutableDbSerialiseConstraints blk
       , LgrDbSerialiseConstraints blk
-      , VolDbSerialiseConstraints blk
+      , VolatileDbSerialiseConstraints blk
         -- Needed for Reader
       , EncodeDiskDep (NestedCtxt Header) blk
       ) => SerialiseDiskConstraints blk
@@ -118,7 +118,7 @@ getEnv :: forall m blk r. (IOLike m, HasCallStack)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
 getEnv1 :: (IOLike m, HasCallStack)
@@ -142,7 +142,7 @@ getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 -- | Variant of 'getEnv1' that works in 'STM'.
 getEnvSTM1 ::
@@ -152,7 +152,7 @@ getEnvSTM1 ::
   -> a -> STM m r
 getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
     ChainDbOpen env -> f env a
-    ChainDbClosed   -> throwM $ ClosedDBError callStack
+    ChainDbClosed   -> throwM $ ClosedDBError prettyCallStack
 
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)
@@ -160,8 +160,8 @@ data ChainDbState m blk
   deriving (Generic, NoUnexpectedThunks)
 
 data ChainDbEnv m blk = CDB
-  { cdbImmDB           :: !(ImmDB m blk)
-  , cdbVolDB           :: !(VolDB m blk)
+  { cdbImmutableDB     :: !(ImmutableDB m blk)
+  , cdbVolatileDB      :: !(VolatileDB m blk)
   , cdbLgrDB           :: !(LgrDB m blk)
   , cdbChain           :: !(StrictTVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
@@ -219,10 +219,10 @@ data ChainDbEnv m blk = CDB
   , cdbNextIteratorKey :: !(StrictTVar m IteratorKey)
   , cdbNextReaderKey   :: !(StrictTVar m ReaderKey)
   , cdbCopyLock        :: !(StrictMVar m ())
-    -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
+    -- ^ Lock used to ensure that 'copyToImmutableDB' is not executed more than
     -- once concurrently.
     --
-    -- Note that 'copyToImmDB' can still be executed concurrently with all
+    -- Note that 'copyToImmutableDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer          :: !(Tracer m (TraceEvent blk))
   , cdbTraceLedger     :: !(Tracer m (LgrDB.LedgerDB blk))
@@ -237,7 +237,7 @@ data ChainDbEnv m blk = CDB
     -- garbage collections.
   , cdbKillBgThreads   :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
-  , cdbChunkInfo       :: !ImmDB.ChunkInfo
+  , cdbChunkInfo       :: !ImmutableDB.ChunkInfo
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbCheckInFuture   :: !(CheckInFuture m blk)
   , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
@@ -274,7 +274,7 @@ instance (IOLike m, LedgerSupportsProtocol blk)
 -------------------------------------------------------------------------------}
 
 data Internal m blk = Internal
-  { intCopyToImmDB           :: m (WithOrigin SlotNo)
+  { intCopyToImmutableDB     :: m (WithOrigin SlotNo)
     -- ^ Copy the blocks older than @k@ from to the VolatileDB to the
     -- ImmutableDB and update the in-memory chain fragment correspondingly.
     --
@@ -349,28 +349,29 @@ data ReaderState m blk b
     -- ^ The 'Reader' is in its initial state. Its 'ReaderRollState' is
     -- @'RollBackTo' 'genesisPoint'@.
     --
-    -- This is equivalent to having a 'ReaderInImmDB' with the same
+    -- This is equivalent to having a 'ReaderInImmutableDB' with the same
     -- 'ReaderRollState' and an iterator streaming after genesis. Opening such
     -- an iterator has a cost (index files will have to be read). However, in
-    -- most cases, right after opening a Reader, the user of the Reader will
-    -- try to move it forward, moving it from genesis to a more recent point
-    -- on the chain. So we incur the cost of opening the iterator while not
-    -- even using it.
+    -- most cases, right after opening a Reader, the user of the Reader will try
+    -- to move it forward, moving it from genesis to a more recent point on the
+    -- chain. So we incur the cost of opening the iterator while not even using
+    -- it.
     --
     -- Therefore, we have this extra initial state, that avoids this cost.
     -- When the user doesn't move the Reader forward, an iterator is opened.
-  | ReaderInImmDB !(ReaderRollState blk)
-                  !(ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
+  | ReaderInImmutableDB
+      !(ReaderRollState blk)
+      !(ImmutableDB.Iterator m blk (Point blk, b))
     -- ^ The 'Reader' is reading from the ImmutableDB.
     --
     -- Note that the iterator includes 'Point blk' in addition to @b@, as it
     -- is needed to keep track of where the iterator is.
     --
-    -- INVARIANT: for all @ReaderInImmDB rollState immIt@: the predecessor of
-    -- the next block streamed by @immIt@ must be the block identified by
+    -- INVARIANT: for all @ReaderInImmutableDB rollState immIt@: the predecessor
+    -- of the next block streamed by @immIt@ must be the block identified by
     -- @readerRollStatePoint rollState@. In other words: the iterator is
     -- positioned /on/ @readerRollStatePoint rollState@.
-  | ReaderInMem   !(ReaderRollState blk)
+  | ReaderInMem !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoUnexpectedThunks)
 
@@ -478,17 +479,17 @@ getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
 
 -- | Trace type for the various events of the ChainDB.
 data TraceEvent blk
-  = TraceAddBlockEvent     (TraceAddBlockEvent           blk)
-  | TraceReaderEvent       (TraceReaderEvent             blk)
-  | TraceCopyToImmDBEvent  (TraceCopyToImmDBEvent        blk)
-  | TraceGCEvent           (TraceGCEvent                 blk)
-  | TraceInitChainSelEvent (TraceInitChainSelEvent       blk)
-  | TraceOpenEvent         (TraceOpenEvent               blk)
-  | TraceIteratorEvent     (TraceIteratorEvent           blk)
-  | TraceLedgerEvent       (LgrDB.TraceEvent (RealPoint  blk))
-  | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
-  | TraceImmDBEvent        (ImmDB.TraceEvent             blk)
-  | TraceVolDBEvent        (VolDB.TraceEvent             blk)
+  = TraceAddBlockEvent          (TraceAddBlockEvent           blk)
+  | TraceReaderEvent            (TraceReaderEvent             blk)
+  | TraceCopyToImmutableDBEvent (TraceCopyToImmutableDBEvent  blk)
+  | TraceGCEvent                (TraceGCEvent                 blk)
+  | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
+  | TraceOpenEvent              (TraceOpenEvent               blk)
+  | TraceIteratorEvent          (TraceIteratorEvent           blk)
+  | TraceLedgerEvent            (LgrDB.TraceEvent (RealPoint  blk))
+  | TraceLedgerReplayEvent      (LgrDB.TraceLedgerReplayEvent blk)
+  | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
+  | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)
   deriving (Generic)
 
 deriving instance
@@ -516,12 +517,12 @@ data TraceOpenEvent blk =
       (Point blk)  -- ^ Tip of the current chain
 
     -- | The ImmutableDB was opened.
-  | OpenedImmDB
-      (Point blk)    -- ^ Immutable tip
-      ImmDB.ChunkNo  -- ^ Chunk number of the immutable tip
+  | OpenedImmutableDB
+      (Point blk)          -- ^ Immutable tip
+      ImmutableDB.ChunkNo  -- ^ Chunk number of the immutable tip
 
     -- | The VolatileDB was opened.
-  | OpenedVolDB
+  | OpenedVolatileDB
 
     -- | The LedgerDB was opened.
   | OpenedLgrDB
@@ -561,7 +562,7 @@ data TraceAddBlockEvent blk =
     IgnoreBlockOlderThanK (RealPoint blk)
 
     -- | A block that is already in the Volatile DB was ignored.
-  | IgnoreBlockAlreadyInVolDB (RealPoint blk)
+  | IgnoreBlockAlreadyInVolatileDB (RealPoint blk)
 
     -- | A block that is know to be invalid was ignored.
   | IgnoreInvalidBlock (RealPoint blk) (InvalidBlockReason blk)
@@ -575,7 +576,7 @@ data TraceAddBlockEvent blk =
   | BlockInTheFuture (RealPoint blk) SlotNo
 
     -- | A block was added to the Volatile DB
-  | AddedBlockToVolDB (RealPoint blk) BlockNo IsEBB
+  | AddedBlockToVolatileDB (RealPoint blk) BlockNo IsEBB
 
     -- | The block fits onto the current chain, we'll try to use it to extend
     -- our chain.
@@ -690,18 +691,18 @@ data TraceReaderEvent blk =
     -- | A new reader was created.
     NewReader
 
-    -- | The reader was in the 'ReaderInMem' state but its point is no longer
-    -- on the in-memory chain fragment, so it has to switch to the
-    -- 'ReaderInImmDB' state.
+    -- | The reader was in the 'ReaderInMem' state but its point is no longer on
+    -- the in-memory chain fragment, so it has to switch to the
+    -- 'ReaderInImmutableDB' state.
   | ReaderNoLongerInMem (ReaderRollState blk)
 
-    -- | The reader was in the 'ReaderInImmDB' state and is switched to the
-    -- 'ReaderInMem' state.
+    -- | The reader was in the 'ReaderInImmutableDB' state and is switched to
+    -- the 'ReaderInMem' state.
   | ReaderSwitchToMem
       (Point blk)          -- ^ Point at which the reader is
       (WithOrigin SlotNo)  -- ^ Slot number at the tip of the ImmutableDB
 
-    -- | The reader is in the 'ReaderInImmDB' state but the iterator is
+    -- | The reader is in the 'ReaderInImmutableDB' state but the iterator is
     -- exhausted while the ImmutableDB has grown, so we open a new iterator to
     -- stream these blocks too.
   | ReaderNewImmIterator
@@ -710,10 +711,10 @@ data TraceReaderEvent blk =
   deriving (Generic, Eq, Show)
 
 
-data TraceCopyToImmDBEvent blk
-  = CopiedBlockToImmDB (Point blk)
+data TraceCopyToImmutableDBEvent blk
+  = CopiedBlockToImmutableDB (Point blk)
     -- ^ A block was successfully copied to the ImmutableDB.
-  | NoBlocksToCopyToImmDB
+  | NoBlocksToCopyToImmutableDB
     -- ^ There are no block to copy to the ImmutableDB.
   deriving (Generic, Eq, Show)
 
@@ -726,38 +727,42 @@ data TraceGCEvent blk
   deriving (Generic, Eq, Show)
 
 data TraceIteratorEvent blk
+    -- | An unknown range was requested, see 'UnknownRange'.
   = UnknownRangeRequested (UnknownRange blk)
-    -- ^ An unknown range was requested, see 'UnknownRange'.
-  | StreamFromVolDB
+
+    -- | Stream only from the VolatileDB.
+  | StreamFromVolatileDB
       (StreamFrom blk)
       (StreamTo   blk)
       [RealPoint  blk]
 
-    -- ^ Stream only from the VolatileDB.
-  | StreamFromImmDB
+    -- | Stream only from the ImmutableDB.
+  | StreamFromImmutableDB
       (StreamFrom blk)
       (StreamTo   blk)
 
-    -- ^ Stream only from the ImmutableDB.
+    -- | Stream from both the VolatileDB and the ImmutableDB.
   | StreamFromBoth
       (StreamFrom blk)
       (StreamTo   blk)
       [RealPoint  blk]
 
-    -- ^ Stream from both the VolatileDB and the ImmutableDB.
-  | BlockMissingFromVolDB (RealPoint blk)
-    -- ^ A block is no longer in the VolatileDB because it has been garbage
+    -- | A block is no longer in the VolatileDB because it has been garbage
     -- collected. It might now be in the ImmutableDB if it was part of the
     -- current chain.
-  | BlockWasCopiedToImmDB (RealPoint blk)
-    -- ^ A block that has been garbage collected from the VolatileDB is now
+  | BlockMissingFromVolatileDB (RealPoint blk)
+
+    -- | A block that has been garbage collected from the VolatileDB is now
     -- found and streamed from the ImmutableDB.
-  | BlockGCedFromVolDB    (RealPoint blk)
-    -- ^ A block is no longer in the VolatileDB and isn't in the ImmutableDB
+  | BlockWasCopiedToImmutableDB (RealPoint blk)
+
+    -- | A block is no longer in the VolatileDB and isn't in the ImmutableDB
     -- either; it wasn't part of the current chain.
-  | SwitchBackToVolDB
-    -- ^ We have stream one or more blocks from the ImmutableDB that were part
+  | BlockGCedFromVolatileDB    (RealPoint blk)
+
+    -- | We have streamed one or more blocks from the ImmutableDB that were part
     -- of the VolatileDB when initialising the iterator. Now, we have to look
     -- back in the VolatileDB again because the ImmutableDB doesn't have the
     -- next block we're looking for.
+  | SwitchBackToVolatileDB
   deriving (Generic, Eq, Show)

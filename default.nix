@@ -23,7 +23,7 @@ let
     inherit pkgs;
     byron-db-converter = haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
     db-analyser = haskellPackages.ouroboros-consensus-cardano.components.exes.db-analyser;
-    onlyImmDB = false;
+    onlyImmutableDB = false;
   };
 
   self = {

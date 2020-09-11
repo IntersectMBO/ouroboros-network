@@ -1,4 +1,5 @@
 {-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -30,6 +31,9 @@ import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Type.Equality
+import           Data.Typeable (Typeable)
+
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
 import           Ouroboros.Consensus.Block.Abstract (SomeBlock (..))
 import           Ouroboros.Consensus.Util.DepPair
@@ -144,6 +148,16 @@ deriving instance (HasNestedContent f blk, forall a. Show (g a))
 -------------------------------------------------------------------------------}
 
 deriving instance HasNestedContent f blk => Show (SomeBlock (NestedCtxt f) blk)
+
+-- | We can write a manual instance using the following quantified constraint:
+--
+-- > forall a. NoUnexpectedThunks (f blk a)
+--
+-- However, this constraint would have to be propagated all the way up, which
+-- is rather verbose and annoying (standalone deriving has to be used), hence
+-- we use 'UseIsNormalForm' for convenience.
+deriving via UseIsNormalForm (SomeBlock (NestedCtxt f) blk)
+  instance (Typeable f, Typeable blk) => NoUnexpectedThunks (SomeBlock (NestedCtxt f) blk)
 
 instance SameDepIndex (NestedCtxt_ blk f)
       => Eq (SomeBlock (NestedCtxt f) blk) where

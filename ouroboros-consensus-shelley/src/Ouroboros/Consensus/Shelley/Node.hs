@@ -376,7 +376,7 @@ instance TPraosCrypto era => RunNode (ShelleyBlock era) where
       headerSize = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
 
   -- We fix the chunk size to 10k
-  nodeImmDbChunkInfo =
+  nodeImmutableDbChunkInfo =
       simpleChunkInfo
     . EpochSize
     . (* 10)

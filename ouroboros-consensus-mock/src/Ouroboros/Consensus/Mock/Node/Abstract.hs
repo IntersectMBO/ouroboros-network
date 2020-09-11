@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 
-import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Protocol specific functionality required to run consensus with mock blocks
 class ( MockProtocolSpecific c ext

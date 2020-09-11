@@ -41,6 +41,7 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity (Identity)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -99,11 +100,11 @@ import           Ouroboros.Consensus.Util.STM
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -662,38 +663,38 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -- ^ ledger updates tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> CoreNodeId
-           -> ChainDbArgs m blk
+           -> ChainDbArgs Identity m blk
     mkArgs
       clock registry
       cfg initLedger
       invalidTracer addTracer selTracer updatesTracer
-      nodeDBs _coreNodeId = ChainDbArgs
-        { -- HasFS instances
-          cdbHasFSImmDb           = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb           = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB           = SomeHasFS $ simHasFS (nodeDBsLgr nodeDBs)
+      nodeDBs _coreNodeId = ChainDbArgs {
+          -- HasFS instances
+          cdbHasFSImmutableDB       = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
+        , cdbHasFSVolatileDB        = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB             = SomeHasFS $ simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbImmValidation        = ImmDB.ValidateAllChunks
-        , cdbVolValidation        = VolDB.ValidateAll
-        , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
-        , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
-        , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
+        , cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
+        , cdbVolatileDbValidation   = VolatileDB.ValidateAll
+        , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
+        , cdbParamsLgrDB            = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
+        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
-        , cdbTopLevelConfig       = cfg
-        , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize0
-        , cdbCheckIntegrity       = nodeCheckIntegrity cfg
-        , cdbGenesis              = return initLedger
-        , cdbCheckInFuture        = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
+        , cdbTopLevelConfig         = cfg
+        , cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize0
+        , cdbCheckIntegrity         = nodeCheckIntegrity cfg
+        , cdbGenesis                = return initLedger
+        , cdbCheckInFuture          = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
                                       (OracularClock.finiteSystemTime clock)
-        , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
+        , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer               = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger          = nullDebugTracer
-        , cdbRegistry             = registry
+        , cdbTracer                 = instrumentationTracer <> nullDebugTracer
+        , cdbTraceLedger            = nullDebugTracer
+        , cdbRegistry               = registry
           -- TODO vary these
-        , cdbGcDelay              = 0
-        , cdbGcInterval           = 1
-        , cdbBlocksToAddSize      = 2
+        , cdbGcDelay                = 0
+        , cdbGcInterval             = 1
+        , cdbBlocksToAddSize        = 2
         }
       where
         prj af = case AF.headBlockNo af of
@@ -707,7 +708,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith invalidTracer (p, e)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+              (ChainDB.AddedBlockToVolatileDB p bno IsNotEBB)
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent
@@ -1353,7 +1354,7 @@ data NodeInfo blk db ev = NodeInfo
 -- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
   { nodeEventsAdds        :: ev (SlotNo, RealPoint blk, BlockNo)
-    -- ^ every 'AddedBlockToVolDB' excluding EBBs
+    -- ^ every 'AddedBlockToVolatileDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk)
     -- ^ every 'TraceForgeEvent'
   , nodeEventsHeaderAdds  :: ev (SlotNo, RealPoint blk, BlockNo)

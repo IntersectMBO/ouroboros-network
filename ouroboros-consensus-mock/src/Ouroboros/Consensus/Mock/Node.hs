@@ -61,7 +61,7 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
       hdrSize  = fromIntegral (Lazy.length (serialise hdr))
       bodySize = simpleBodySize (simpleHeaderStd hdr)
 
-  nodeImmDbChunkInfo = \cfg -> simpleChunkInfo $
+  nodeImmutableDbChunkInfo = \cfg -> simpleChunkInfo $
       EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
 
   nodeCheckIntegrity = \_ _ -> True

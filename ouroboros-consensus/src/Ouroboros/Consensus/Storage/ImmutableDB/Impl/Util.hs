@@ -1,25 +1,20 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-  ( -- * Utilities
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (
+    -- * Utilities
     Two (..)
   , renderFile
   , fsPathChunkFile
   , fsPathPrimaryIndexFile
   , fsPathSecondaryIndexFile
-  , throwUserError
-  , throwUnexpectedError
   , wrapFsError
-  , tryImmDB
+  , tryImmutableDB
   , parseDBFile
-  , validateIteratorRange
   , dbFilesOnDisk
   , removeFilesStartingFrom
   , runGet
@@ -27,8 +22,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , checkChecksum
   ) where
 
-import           Control.Monad (forM_, when)
-import           Control.Monad.Except (runExceptT, throwError)
+import           Control.Monad (forM_)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
@@ -37,21 +31,19 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           GHC.Stack (HasCallStack, callStack)
 import           Text.Read (readMaybe)
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Block hiding (hashSize)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
   Utilities
@@ -116,15 +108,9 @@ removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
     forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
       removeFile (fsPathSecondaryIndexFile i)
 
-throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
-throwUserError e = throwM $ UserError e callStack
-
-throwUnexpectedError :: MonadThrow m => UnexpectedError -> m a
-throwUnexpectedError = throwM . UnexpectedError
-
 -- | Rewrap 'FsError' in a 'ImmutableDBError'.
 wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwUnexpectedError . FileSystemError
+wrapFsError = handle $ throwUnexpectedFailure . FileSystemError
 
 -- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
@@ -133,48 +119,8 @@ wrapFsError = handle $ throwUnexpectedError . FileSystemError
 -- This should be used whenever you want to run an action on the ImmutableDB
 -- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
-tryImmDB = try . wrapFsError
-
--- | Check whether the given iterator range is valid.
---
--- \"Valid\" means:
---
--- * The start slot <= the end slot
--- * The start slot is <= the tip
--- * The end slot is <= the tip
---
--- The @hash@ is ignored.
---
--- See 'Ouroboros.Consensus.Storage.ImmutableDB.API.streamBinaryBlobs'.
-validateIteratorRange
-  :: forall m hash. Monad m
-  => ChunkInfo
-  -> ImmTip
-  -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
-  -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
-  -> m (Either ImmutableDBError ())
-validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
-    case (mbStart, mbEnd) of
-      (Just (start, _), Just (end, _)) ->
-        when (start > end) $
-          throwError $ UserError (InvalidIteratorRangeError start end) callStack
-      _ -> return ()
-
-    whenJust mbStart $ \(start, _) -> do
-      let isNewer = isNewerThanTip start
-      when isNewer $
-        throwError $ UserError (ReadFutureSlotError start tip) callStack
-
-    whenJust mbEnd $ \(end, _) -> do
-      let isNewer = isNewerThanTip end
-      when isNewer $
-        throwError $ UserError (ReadFutureSlotError end tip) callStack
-  where
-    isNewerThanTip :: SlotNo -> Bool
-    isNewerThanTip slot = case tip of
-      Origin      -> True
-      NotOrigin b -> slot > slotNoOfBlockOrEBB chunkInfo b
+tryImmutableDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
+tryImmutableDB = try . wrapFsError
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
 -- it failed or when there was unconsumed input.
@@ -189,9 +135,9 @@ runGet file get bl = case Get.runGetOrFail get bl of
       | Lazy.null unconsumed
       -> return primary
       | otherwise
-      -> throwUnexpectedError $ InvalidFileError file "left-over bytes" callStack
+      -> throwUnexpectedFailure $ InvalidFileError file "left-over bytes" prettyCallStack
     Left (_, _, msg)
-      -> throwUnexpectedError $ InvalidFileError file msg callStack
+      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
 
 -- | Same as 'runGet', but allows unconsumed input and returns it.
 runGetWithUnconsumed
@@ -204,20 +150,20 @@ runGetWithUnconsumed file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       -> return (unconsumed, primary)
     Left (_, _, msg)
-      -> throwUnexpectedError $ InvalidFileError file msg callStack
+      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
 
 -- | Check whether the given checksums match. If not, throw a
 -- 'ChecksumMismatchError'.
-checkChecksum
-  :: (HasCallStack, MonadThrow m)
+checkChecksum ::
+     (HasCallStack, HasHeader blk, MonadThrow m)
   => FsPath
-  -> BlockOrEBB
+  -> RealPoint blk
   -> CRC  -- ^ Expected checksum
   -> CRC  -- ^ Actual checksum
   -> m ()
-checkChecksum chunkFile blockOrEBB expected actual
+checkChecksum chunkFile pt expected actual
     | expected == actual
     = return ()
     | otherwise
-    = throwUnexpectedError $
-      ChecksumMismatchError blockOrEBB expected actual chunkFile callStack
+    = throwUnexpectedFailure $
+        ChecksumMismatchError pt expected actual chunkFile prettyCallStack

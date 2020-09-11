@@ -1,10 +1,12 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- | In-memory model implementation of 'VolatileDB'
 module Test.Ouroboros.Storage.VolatileDB.Model
     ( DBModel (..)
@@ -26,13 +28,12 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , getDBFiles
     , getCurrentFile
     , blockIndex
-    , blockIds
+    , blockHashes
     , BlocksInFile (..)
     ) where
 
+import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except (MonadError, throwError)
-import           Data.ByteString.Builder
-import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -45,60 +46,66 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
-                     BlockComponent (..), PrefixLen (..), extractHeader,
-                     takePrefix)
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     extractHeader)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
-import           Ouroboros.Consensus.Storage.VolatileDB.API
+import           Ouroboros.Consensus.Storage.Serialisation
+                     (BinaryBlockInfo (..), EncodeDisk (..),
+                     HasBinaryBlockInfo (..))
+import           Ouroboros.Consensus.Storage.VolatileDB
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl (extractBlockInfo)
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId,
+                     unBlocksPerFile)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
                      parseFd)
 
 import           Test.Ouroboros.Storage.TestBlock (Corruptions,
                      FileCorruption (..))
 
-data DBModel blockId = DBModel {
+data DBModel blk = DBModel {
       blocksPerFile :: BlocksPerFile
       -- ^ How many blocks each file has (should follow the real
       -- implementation).
     , open          :: Bool
       -- ^ Indicates if the DB is open.
-    , fileIndex     :: Map FileId (BlocksInFile blockId)
+    , fileIndex     :: Map FileId (BlocksInFile blk)
       -- ^ What each file contains in the real implementation.
       --
       -- INVARIANT: the map is never empty.
       --
       -- INVARIANT: the 'BlocksInFile' associated with the highest 'FileId'
       -- has always fewer than 'blocksPerFile' blocks.
-    , prefixLen     :: PrefixLen
+    , codecConfig   :: CodecConfig blk
     }
-  deriving (Show, Generic)
+  deriving (Generic)
 
-initDBModel :: BlocksPerFile -> PrefixLen -> DBModel blockId
-initDBModel blocksPerFile prefixLen = DBModel {
+deriving instance (Show blk, Show (CodecConfig blk)) => Show (DBModel blk)
+
+initDBModel :: BlocksPerFile -> CodecConfig blk -> DBModel blk
+initDBModel blocksPerFile codecConfig = DBModel {
       blocksPerFile = blocksPerFile
     , open          = True
     , fileIndex     = Map.singleton 0 emptyFile
-    , prefixLen     = prefixLen
+    , codecConfig   = codecConfig
     }
 
-blockIndex
-  :: Ord blockId
-  => DBModel blockId
-  -> Map blockId (BlockInfo blockId, ByteString)
+blockIndex :: HasHeader blk => DBModel blk -> Map (HeaderHash blk) blk
 blockIndex = foldMap fileToBlockIndex . fileIndex
 
-blockIds :: DBModel blockId -> [blockId]
-blockIds = concatMap fileBlockIds . fileIndex
+blockHashes :: HasHeader blk => DBModel blk -> [HeaderHash blk]
+blockHashes = concatMap fileHashes . fileIndex
 
-getBlockToPredecessor
-  :: Ord blockId
-  => DBModel blockId -> Map blockId (WithOrigin blockId)
-getBlockToPredecessor = foldMap fileBlockToPredecessor . fileIndex
+getBlockToPredecessor ::
+     (HasHeader blk, GetPrevHash blk)
+  => DBModel blk
+  -> Map (HeaderHash blk) (ChainHash blk)
+getBlockToPredecessor DBModel { fileIndex } =
+    foldMap fileBlockToPredecessor fileIndex
 
-getCurrentFile :: DBModel blockId -> FsPath
+getCurrentFile :: DBModel blk -> FsPath
 getCurrentFile = filePath . getCurrentFileId
 
-getCurrentFileId :: DBModel blockId -> FileId
+getCurrentFileId :: DBModel blk -> FileId
 getCurrentFileId =
       -- Relies on the first invariant of 'fileIndex'
       maybe (error "empty fileIndex") (fst . fst)
@@ -106,7 +113,7 @@ getCurrentFileId =
     . fileIndex
 
 -- | Restore the invariants of 'fileIndex'
-restoreInvariants :: DBModel blockId -> DBModel blockId
+restoreInvariants :: DBModel blk -> DBModel blk
 restoreInvariants dbm = case fst <$> Map.maxViewWithKey fileIndex of
     Nothing
       -> dbm {
@@ -126,20 +133,21 @@ restoreInvariants dbm = case fst <$> Map.maxViewWithKey fileIndex of
   where
     DBModel { blocksPerFile, fileIndex } = dbm
 
-whenOpen :: MonadError VolatileDBError m
-         => DBModel blockId
-         -> a
-         -> m a
+whenOpen ::
+     MonadError VolatileDBError m
+  => DBModel blk
+  -> a
+  -> m a
 whenOpen dbm k
     | open dbm
     = return k
     | otherwise
-    = throwError $ UserError $ ClosedDBError Nothing
+    = throwError $ ApiMisuse $ ClosedDBError Nothing
 
-getDBFileIds :: DBModel blockId -> [FileId]
+getDBFileIds :: DBModel blk -> [FileId]
 getDBFileIds = Map.keys . fileIndex
 
-getDBFiles :: DBModel blockId -> [FsPath]
+getDBFiles :: DBModel blk -> [FsPath]
 getDBFiles = map filePath . getDBFileIds
 
 {------------------------------------------------------------------------------
@@ -148,191 +156,195 @@ getDBFiles = map filePath . getDBFileIds
 
 -- | The blocks in a file, in the same order as they would be written to the
 -- file in the real implementation.
-newtype BlocksInFile blockId = BlocksInFile {
-      getBlocksInFile :: [(BlockInfo blockId, ByteString)]
+newtype BlocksInFile blk = BlocksInFile {
+      getBlocksInFile :: [blk]
     }
   deriving (Show, Generic)
 
-emptyFile :: BlocksInFile blockId
+emptyFile :: BlocksInFile blk
 emptyFile = BlocksInFile []
 
-nbBlocksInFile :: BlocksInFile blockid -> Int
+nbBlocksInFile :: BlocksInFile blk -> Int
 nbBlocksInFile = length . getBlocksInFile
 
-appendBlock
-  :: BlockInfo blockId -> ByteString
-  -> BlocksInFile blockId
-  -> BlocksInFile blockId
-appendBlock blockInfo bytes (BlocksInFile blocks) =
-    BlocksInFile (blocks ++ [(blockInfo, bytes)])
+appendBlock :: blk -> BlocksInFile blk -> BlocksInFile blk
+appendBlock blk (BlocksInFile blks) =
+    BlocksInFile (blks ++ [blk])
 
 -- | The highest slot number in this file.
-fileMaxSlotNo :: BlocksInFile blockId -> MaxSlotNo
-fileMaxSlotNo = foldMap (MaxSlotNo . bslot . fst) . getBlocksInFile
+fileMaxSlotNo :: HasHeader blk => BlocksInFile blk -> MaxSlotNo
+fileMaxSlotNo = foldMap (MaxSlotNo . blockSlot) . getBlocksInFile
 
-fileToBlockIndex
-  :: Ord blockId
-  => BlocksInFile blockId
-  -> Map blockId (BlockInfo blockId, ByteString)
+fileToBlockIndex ::
+     HasHeader blk
+  => BlocksInFile blk
+  -> Map (HeaderHash blk) blk
 fileToBlockIndex = Map.fromList . map addKey . getBlocksInFile
   where
-    addKey v@(blockInfo, _) = (bbid blockInfo, v)
+    addKey blk = (blockHash blk, blk)
 
-fileBlockIds :: BlocksInFile blockId -> [blockId]
-fileBlockIds = map (bbid . fst) . getBlocksInFile
+fileHashes :: HasHeader blk => BlocksInFile blk -> [HeaderHash blk]
+fileHashes = map blockHash . getBlocksInFile
 
-fileBlockToPredecessor
-  :: Ord blockId
-  => BlocksInFile blockId
-  -> Map blockId (WithOrigin blockId)
-fileBlockToPredecessor (BlocksInFile blocks) = Map.fromList
-    [ (bbid, bpreBid)
-    | (BlockInfo { bbid, bpreBid }, _) <- blocks
+fileBlockToPredecessor ::
+     (HasHeader blk, GetPrevHash blk)
+  => BlocksInFile blk
+  -> Map (HeaderHash blk) (ChainHash blk)
+fileBlockToPredecessor (BlocksInFile blks) = Map.fromList
+    [ (blockHash blk, blockPrevHash blk)
+    | blk <- blks
     ]
 
-fileSize :: Integral a => BlocksInFile blockId -> a
-fileSize = fromIntegral . sum . map (BL.length . snd) . getBlocksInFile
+fileSize ::
+     (Integral a, EncodeDisk blk blk)
+  => CodecConfig blk
+  -> BlocksInFile blk
+  -> a
+fileSize ccfg = sum . map (blockSize ccfg) . getBlocksInFile
 
 -- | Only include blocks that come before the given offset.
 --
--- > fileTruncateTo (fileSize blocks) == blocks
-fileTruncateTo :: Word64 -> BlocksInFile blockId -> BlocksInFile blockId
-fileTruncateTo validUntil = BlocksInFile . go 0 . getBlocksInFile
+-- > fileTruncateTo ccfg (fileSize blocks) blocks == blocks
+fileTruncateTo ::
+     forall blk. EncodeDisk blk blk
+  => CodecConfig blk
+  -> Word64
+  -> BlocksInFile blk
+  -> BlocksInFile blk
+fileTruncateTo ccfg validUntil = BlocksInFile . go 0 . getBlocksInFile
   where
     -- Invariant: offset <= validUntil
-    go
-      :: Word64
-      -> [(BlockInfo blockId, ByteString)]
-      -> [(BlockInfo blockId, ByteString)]
+    go :: Word64 -> [blk] -> [blk]
     go offset = \case
       []
         -> []
-      b@(_, bytes):bs
-        | let newOffset = offset + fromIntegral (BL.length bytes)
+      blk:blks
+        | let newOffset = offset + blockSize ccfg blk
         , newOffset <= validUntil
-        -> b:go newOffset bs
+        -> blk : go newOffset blks
         | otherwise
         -> []
+
+blockSize :: (Integral a, EncodeDisk blk blk) => CodecConfig blk -> blk -> a
+blockSize ccfg =
+      fromIntegral
+    . BL.length
+    . CBOR.toLazyByteString
+    . encodeDisk ccfg
 
 {------------------------------------------------------------------------------
   Model API
 ------------------------------------------------------------------------------}
 
-closeModel :: DBModel blockId -> DBModel blockId
+closeModel :: DBModel blk -> DBModel blk
 closeModel dbm = dbm { open = False }
 
-isOpenModel :: DBModel blockId -> Bool
+isOpenModel :: DBModel blk -> Bool
 isOpenModel = open
 
-reOpenModel :: DBModel blockId -> DBModel blockId
+reOpenModel :: DBModel blk -> DBModel blk
 reOpenModel dbm
     | open dbm
     = dbm
     | otherwise
     = restoreInvariants $ dbm { open = True }
 
-getBlockComponentModel
-  :: Ord blockId
-  => BlockComponent (VolatileDB blockId m) b
-  -> blockId
-  -> DBModel blockId
+getBlockComponentModel ::
+     forall blk b.
+     ( HasHeader blk
+     , GetHeader blk
+     , HasBinaryBlockInfo blk
+     , EncodeDisk blk blk
+     , HasNestedContent Header blk
+     )
+  => BlockComponent blk b
+  -> HeaderHash blk
+  -> DBModel blk
   -> Either VolatileDBError (Maybe b)
-getBlockComponentModel blockComponent blockId dbm = whenOpen dbm $
-    (extractBlockComponent (prefixLen dbm) blockComponent) <$>
-    Map.lookup blockId (blockIndex dbm)
-
-extractBlockComponent
-  :: forall m blockId b.
-     PrefixLen
-  -> BlockComponent (VolatileDB blockId m) b
-  -> (BlockInfo blockId, ByteString)
-  -> b
-extractBlockComponent prefixLen bc0 (BlockInfo {..}, bytes) = go bc0
+getBlockComponentModel blockComponent hash dbm@DBModel { codecConfig } =
+    whenOpen dbm $
+      flip go blockComponent <$>
+        Map.lookup hash (blockIndex dbm)
   where
-    go :: forall b'. BlockComponent (VolatileDB blockId m) b' -> b'
-    go = \case
-      GetBlock      -> ()
-      GetRawBlock   -> bytes
-      GetHeader     -> ()
-      GetRawHeader  -> header
-      GetHash       -> bbid
-      GetSlot       -> bslot
-      GetIsEBB      -> bisEBB
-      GetBlockSize  -> fromIntegral $ BL.length bytes
-      GetHeaderSize -> bheaderSize
-      GetNestedCtxt -> takePrefix prefixLen bytes
-      GetPure a     -> a
-      GetApply f bc -> go f $ go bc
+    go :: forall b'. blk -> BlockComponent blk b' -> b'
+    go blk = \case
+        GetVerifiedBlock -> blk  -- We don't verify
+        GetBlock         -> blk
+        GetRawBlock      -> blockBytes
+        GetHeader        -> getHeader blk
+        GetRawHeader     -> extractHeader binaryBlockInfo blockBytes
+        GetHash          -> blockHash blk
+        GetSlot          -> blockSlot blk
+        GetIsEBB         -> blockToIsEBB blk
+        GetBlockSize     -> fromIntegral $ BL.length blockBytes
+        GetHeaderSize    -> headerSize binaryBlockInfo
+        GetNestedCtxt    -> case unnest (getHeader blk) of
+                              DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+        GetPure a        -> a
+        GetApply f bc    -> go blk f $ go blk bc
+      where
+        binaryBlockInfo = getBinaryBlockInfo blk
+        blockBytes = CBOR.toLazyByteString $ encodeDisk codecConfig blk
 
-    header =
-      extractHeader
-        BinaryBlockInfo {
-            headerOffset = bheaderOffset
-          , headerSize   = bheaderSize
-          }
-        bytes
-
-putBlockModel
-  :: forall blockId. Ord blockId
-  => BlockInfo blockId
-  -> Builder
-  -> DBModel blockId
-  -> Either VolatileDBError (DBModel blockId)
-putBlockModel blockInfo@BlockInfo { bbid } builder dbm = whenOpen dbm $
-    case Map.lookup bbid (blockIndex dbm) of
+putBlockModel ::
+     forall blk. HasHeader blk
+  => blk
+  -> DBModel blk
+  -> Either VolatileDBError (DBModel blk)
+putBlockModel blk dbm = whenOpen dbm $
+    case Map.lookup (blockHash blk) (blockIndex dbm) of
       -- Block already stored
       Just _  -> dbm
       Nothing -> restoreInvariants $ dbm {
           -- The invariants guarantee that @getCurrentFileId dbm@ is in
           -- @fileIndex@.
           fileIndex  = Map.adjust
-            (appendBlock blockInfo bytes)
+            (appendBlock blk)
             (getCurrentFileId dbm)
             fileIndex
         }
   where
     DBModel { fileIndex } = dbm
 
-    bytes = toLazyByteString builder
-
-garbageCollectModel
-  :: forall blockId.
-     SlotNo
-  -> DBModel blockId
-  -> Either VolatileDBError (DBModel blockId)
+garbageCollectModel ::
+     forall blk. HasHeader blk
+  => SlotNo
+  -> DBModel blk
+  -> Either VolatileDBError (DBModel blk)
 garbageCollectModel slot dbm = whenOpen dbm $
      dbm { fileIndex = fileIndex' }
   where
     (_garbageCollected, fileIndex') = Map.partitionWithKey canGC (fileIndex dbm)
 
-    canGC :: FileId -> BlocksInFile blockId -> Bool
+    canGC :: FileId -> BlocksInFile blk -> Bool
     canGC fileId file =
       fileId /= getCurrentFileId dbm &&
       fileMaxSlotNo file < MaxSlotNo slot
 
-filterByPredecessorModel
-  :: forall blockId. Ord blockId
-  => DBModel blockId
-  -> Either VolatileDBError (WithOrigin blockId -> Set blockId)
+filterByPredecessorModel ::
+     forall blk. (HasHeader blk, GetPrevHash blk)
+  => DBModel blk
+  -> Either VolatileDBError (ChainHash blk -> Set (HeaderHash blk))
 filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
     fromMaybe Set.empty $ Map.lookup predecessor successors
   where
-    successors :: Map (WithOrigin blockId) (Set blockId)
+    successors :: Map (ChainHash blk) (Set (HeaderHash blk))
     successors = Map.foldrWithKey'
-      (\blockId predecessor ->
-        Map.insertWith (<>) predecessor (Set.singleton blockId))
+      (\hash prevHash ->
+        Map.insertWith (<>) prevHash (Set.singleton hash))
       Map.empty
       (getBlockToPredecessor dbm)
 
-getBlockInfoModel
-  :: Ord blockId
-  => DBModel blockId
-  -> Either VolatileDBError (blockId -> Maybe (BlockInfo blockId))
-getBlockInfoModel dbm = whenOpen dbm $ \blockId ->
-    fst <$> Map.lookup blockId (blockIndex dbm)
+getBlockInfoModel ::
+     (HasHeader blk, GetPrevHash blk, HasBinaryBlockInfo blk)
+  => DBModel blk
+  -> Either VolatileDBError (HeaderHash blk -> Maybe (BlockInfo blk))
+getBlockInfoModel dbm = whenOpen dbm $ \hash ->
+    extractBlockInfo <$> Map.lookup hash (blockIndex dbm)
 
-getMaxSlotNoModel
-  :: DBModel blockId
+getMaxSlotNoModel ::
+     HasHeader blk
+  => DBModel blk
   -> Either VolatileDBError MaxSlotNo
 getMaxSlotNoModel dbm = whenOpen dbm $
     foldMap fileMaxSlotNo $ fileIndex dbm
@@ -341,35 +353,41 @@ getMaxSlotNoModel dbm = whenOpen dbm $
   Corruptions
 ------------------------------------------------------------------------------}
 
-runCorruptionsModel :: Corruptions -> DBModel blockId -> DBModel blockId
+runCorruptionsModel ::
+     EncodeDisk blk blk
+  => Corruptions
+  -> DBModel blk
+  -> DBModel blk
 runCorruptionsModel corrs dbm = foldr (uncurry runCorruption) dbm corrs
 
-runCorruption
-  :: FileCorruption
+runCorruption ::
+     EncodeDisk blk blk
+  => FileCorruption
   -> FsPath
-  -> DBModel blockId
-  -> DBModel blockId
-runCorruption corruption file dbm@DBModel { fileIndex } = case corruption of
-    DeleteFile      -> dbm {
-          fileIndex = Map.delete fileId fileIndex
-        }
-    DropLastBytes n -> dbm {
-          fileIndex = Map.adjust (fileTruncateTo validBytes) fileId fileIndex
-        }
-      where
-        validBytes | n > size  = 0
-                   | otherwise = size - n
-    -- When we simulate corruption, we will do a bitflip in the filesystem. In
-    -- the model, this corresponds to truncation, forcing the implementation
-    -- to detect the corruption and to truncate accordingly.
-    Corrupt offset  -> dbm {
-          fileIndex = Map.adjust (fileTruncateTo validBytes) fileId fileIndex
-        }
-      where
-        validBytes = offset `mod` size
+  -> DBModel blk
+  -> DBModel blk
+runCorruption corruption file dbm@DBModel { fileIndex, codecConfig = ccfg } =
+    case corruption of
+      DeleteFile      -> dbm {
+            fileIndex = Map.delete fileId fileIndex
+          }
+      DropLastBytes n -> dbm {
+            fileIndex = Map.adjust (fileTruncateTo ccfg validBytes) fileId fileIndex
+          }
+        where
+          validBytes | n > size  = 0
+                     | otherwise = size - n
+      -- When we simulate corruption, we will do a bitflip in the filesystem. In
+      -- the model, this corresponds to truncation, forcing the implementation
+      -- to detect the corruption and to truncate accordingly.
+      Corrupt offset  -> dbm {
+            fileIndex = Map.adjust (fileTruncateTo ccfg validBytes) fileId fileIndex
+          }
+        where
+          validBytes = offset `mod` size
   where
     fileId = unsafeParseFd file
-    size   = fileSize (fileIndex Map.! fileId)
+    size   = fileSize ccfg (fileIndex Map.! fileId)
 
 unsafeParseFd :: FsPath -> FileId
 unsafeParseFd file = fromMaybe

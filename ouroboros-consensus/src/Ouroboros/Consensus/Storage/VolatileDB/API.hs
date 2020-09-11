@@ -1,17 +1,39 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE DerivingVia      #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE TypeFamilies     #-}
-module Ouroboros.Consensus.Storage.VolatileDB.API
-  ( VolatileDB(..)
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+module Ouroboros.Consensus.Storage.VolatileDB.API (
+    -- * API
+    VolatileDB (..)
+    -- * Types
+  , BlockInfo (..)
+    -- * Errors
+  , VolatileDBError (..)
+  , ApiMisuse (..)
+  , UnexpectedFailure (..)
+    -- * Derived functionality
   , withDB
-
-  , module Ouroboros.Consensus.Storage.VolatileDB.Types
+  , getIsMember
+  , getPredecessor
+  , getKnownBlockComponent
   ) where
 
-import           Data.ByteString.Builder (Builder)
+import qualified Codec.CBOR.Read as CBOR
+import qualified Data.ByteString.Lazy as Lazy
+import           Data.Maybe (isJust)
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
+import           Data.Typeable (Typeable)
+import           Data.Word (Word16)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (OnlyCheckIsWHNF (..))
@@ -21,38 +43,33 @@ import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     DB (..))
-import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath)
 
--- | Open the database using the given function, perform the given action
--- using the database, and closes the database using its 'closeDB' function,
--- in case of success or when an exception was raised.
-withDB :: (HasCallStack, MonadThrow m)
-       => m (VolatileDB blockId m)
-          -- ^ How to open the database
-       -> (VolatileDB blockId m -> m a)
-          -- ^ Action to perform using the database
-       -> m a
-withDB openDB = bracket openDB closeDB
+{-------------------------------------------------------------------------------
+  API
+-------------------------------------------------------------------------------}
 
-data VolatileDB blockId m = VolatileDB {
+data VolatileDB m blk = VolatileDB {
       -- | Close the VolatileDB.
       --
       -- NOTE: idempotent after a manual closure, but not after an automatic
-      -- closure in case of an 'UnexpectedError'. In that case, closing it
+      -- closure in case of an 'UnexpectedFailure'. In that case, closing it
       -- again will cause a 'ClosedDBError' wrapping the original
-      -- 'UnexpectedError' to be thrown.
+      -- 'UnexpectedFailure' to be thrown.
       closeDB             :: HasCallStack => m ()
       -- | Return the request block component for the block with the given
-      -- @blockId@. When not in the VolatileDB, 'Nothing' is returned.
+      -- hash. When not in the VolatileDB, 'Nothing' is returned.
     , getBlockComponent   :: forall b. HasCallStack
-                          => BlockComponent (VolatileDB blockId m) b
-                          -> blockId
+                          => BlockComponent blk b
+                          -> HeaderHash blk
                           -> m (Maybe b)
-    , putBlock            :: HasCallStack => BlockInfo blockId -> Builder -> m ()
+      -- | Store the given block in the VolatileDB.
+      --
+      -- Returns after the block has been written to disk.
+    , putBlock            :: HasCallStack => blk -> m ()
       -- | Return a function that returns the successors of the block with the
-      -- given @blockId@.
+      -- given hash.
       --
       -- This function will return a non-empty set for any block of which a
       -- predecessor has been added to the VolatileDB and will return an empty
@@ -61,11 +78,11 @@ data VolatileDB blockId m = VolatileDB {
       --
       -- Note that it is not required that the given block has been added to
       -- the VolatileDB.
-    , filterByPredecessor :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
+    , filterByPredecessor :: HasCallStack => STM m (ChainHash blk -> Set (HeaderHash blk))
       -- | Return a function that returns the 'BlockInfo' of the block with
-      -- the given @blockId@ or 'Nothing' if the @blockId@ is not found in the
+      -- the given hash or 'Nothing' if the block is not found in the
       -- VolatileDB.
-    , getBlockInfo        :: HasCallStack => STM m (blockId -> Maybe (BlockInfo blockId))
+    , getBlockInfo        :: HasCallStack => STM m (HeaderHash blk -> Maybe (BlockInfo blk))
       -- | Try to remove all blocks with a slot number less than the given
       -- one.
       --
@@ -125,12 +142,137 @@ data VolatileDB blockId m = VolatileDB {
     , garbageCollect      :: HasCallStack => SlotNo -> m ()
       -- | Return the highest slot number ever stored by the VolatileDB.
     , getMaxSlotNo        :: HasCallStack => STM m MaxSlotNo
-} deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB blockId m)
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB m blk)
 
+{------------------------------------------------------------------------------
+  Types
+------------------------------------------------------------------------------}
 
-instance DB (VolatileDB blockId m) where
-  -- The VolatileDB doesn't have the ability to parse blocks and headers, it
-  -- only returns raw blocks and headers.
-  type DBBlock      (VolatileDB blockId m) = ()
-  type DBHeader     (VolatileDB blockId m) = ()
-  type DBHeaderHash (VolatileDB blockId m) = blockId
+-- | The information that the user has to provide for each new block.
+data BlockInfo blk = BlockInfo {
+      biHash         :: !(HeaderHash blk)
+    , biSlotNo       :: !SlotNo
+    , biBlockNo      :: !BlockNo
+    , biPrevHash     :: !(ChainHash blk)
+    , biIsEBB        :: !IsEBB
+    , biHeaderOffset :: !Word16
+    , biHeaderSize   :: !Word16
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+{------------------------------------------------------------------------------
+  Errors
+------------------------------------------------------------------------------}
+
+-- | Errors which might arise when working with this database.
+data VolatileDBError =
+    -- | An error thrown because of incorrect usage of the VolatileDB
+    -- by the user.
+    ApiMisuse ApiMisuse
+
+    -- | An unexpected failure thrown because something went wrong.
+  | UnexpectedFailure UnexpectedFailure
+  deriving (Show)
+
+instance Exception VolatileDBError where
+  displayException = \case
+      ApiMisuse {} ->
+        "VolatileDB incorrectly used, indicative of a bug"
+      UnexpectedFailure (FileSystemError fse) ->
+        displayException fse
+      UnexpectedFailure {} ->
+        "The VolatileDB got corrupted, full validation will be enabled for the next startup"
+
+data ApiMisuse =
+    -- | The VolatileDB was closed. In case it was automatically closed
+    -- because an unexpected error was thrown during a read operation or any
+    -- exception was thrown during a write operation, that exception is
+    -- embedded.
+    ClosedDBError (Maybe SomeException)
+  deriving (Show)
+
+data UnexpectedFailure =
+    FileSystemError FsError
+
+    -- | A block failed to parse
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
+
+    -- | When parsing a block we got some trailing data
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
+
+    -- | Block missing
+    --
+    -- This exception gets thrown when a block that we /know/ it should be in
+    -- the VolatileDB, nonetheless was not found.
+    --
+    -- This exception will be thrown by @getKnownBlockComponent@.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      MissingBlockError (Proxy blk) (HeaderHash blk)
+
+    -- | A (parsed) block did not pass the integrity check.
+    --
+    -- This exception gets thrown when a block doesn't pass the integrity check
+    -- done for 'GetVerifiedBlock'.
+    --
+    -- NOTE: we do not check the integrity of a block when it is added to the
+    -- VolatileDB. While this exception typically means the block has been
+    -- corrupted, it could also mean the block didn't pass the check at the time
+    -- it was added.
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      CorruptBlockError (Proxy blk) (HeaderHash blk)
+
+deriving instance Show UnexpectedFailure
+
+{-------------------------------------------------------------------------------
+  Derived functionality
+-------------------------------------------------------------------------------}
+
+-- | Open the database using the given function, perform the given action
+-- using the database, and closes the database using its 'closeDB' function,
+-- in case of success or when an exception was raised.
+withDB ::
+     (HasCallStack, MonadThrow m)
+  => m (VolatileDB m blk)
+     -- ^ How to open the database
+  -> (VolatileDB m blk -> m a)
+     -- ^ Action to perform using the database
+  -> m a
+withDB openDB = bracket openDB closeDB
+
+getIsMember ::
+     Functor (STM m)
+  => VolatileDB m blk
+  -> STM m (HeaderHash blk -> Bool)
+getIsMember = fmap (isJust .) . getBlockInfo
+
+getPredecessor ::
+     Functor (STM m)
+  => VolatileDB m blk
+  -> STM m (HeaderHash blk -> Maybe (ChainHash blk))
+getPredecessor = fmap (fmap biPrevHash .) . getBlockInfo
+
+getKnownBlockComponent ::
+     (MonadThrow m, HasHeader blk)
+  => VolatileDB m blk
+  -> BlockComponent blk b
+  -> HeaderHash blk
+  -> m b
+getKnownBlockComponent db blockComponent hash = do
+    mBlock <- mustExist db hash <$>
+      getBlockComponent db blockComponent hash
+    case mBlock of
+      Right b  -> return b
+      Left err -> throwM err
+
+mustExist ::
+     forall proxy blk b. (StandardHash blk, Typeable blk)
+  => proxy blk
+  -> HeaderHash blk
+  -> Maybe b
+  -> Either VolatileDBError b
+mustExist _ hash = \case
+    Nothing -> Left  $ UnexpectedFailure $ MissingBlockError (Proxy @blk) hash
+    Just b  -> Right $ b

@@ -249,6 +249,23 @@ instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
 
 {-------------------------------------------------------------------------------
+  NestedCtxt
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ TestBlock f a where
+  CtxtTestBlock :: NestedCtxt_ TestBlock f (f TestBlock)
+
+deriving instance Show (NestedCtxt_ TestBlock f a)
+
+instance TrivialDependency (NestedCtxt_ TestBlock f) where
+  type TrivialIndex (NestedCtxt_ TestBlock f) = f TestBlock
+  hasSingleIndex CtxtTestBlock CtxtTestBlock = Refl
+  indexIsTrivial = CtxtTestBlock
+
+instance SameDepIndex (NestedCtxt_ TestBlock f)
+instance HasNestedContent f TestBlock
+
+{-------------------------------------------------------------------------------
   Test infrastructure: ledger state
 -------------------------------------------------------------------------------}
 
