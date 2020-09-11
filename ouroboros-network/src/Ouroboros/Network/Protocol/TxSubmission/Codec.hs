@@ -58,8 +58,8 @@ timeLimitsTxSubmission = ProtocolTimeLimits stateToLimit
     stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency (TokTxIds TokBlocking))    = waitForever
-    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = shortWait
-    stateToLimit (ClientAgency TokTxs)                    = shortWait
+    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = waitForever
+    stateToLimit (ClientAgency TokTxs)                    = waitForever
     stateToLimit (ServerAgency TokIdle)                   = waitForever
 
 
