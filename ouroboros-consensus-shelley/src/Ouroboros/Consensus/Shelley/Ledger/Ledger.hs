@@ -298,7 +298,7 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     :: Set (Either SL.Coin (SL.Credential 'SL.Staking era))
     -> Query (ShelleyBlock era) (NonMyopicMemberRewards era)
   GetCurrentPParams
-    :: Query (ShelleyBlock era) SL.PParams
+    :: Query (ShelleyBlock era) (SL.PParams era)
   GetProposedPParamsUpdates
     :: Query (ShelleyBlock era) (SL.ProposedPPUpdates era)
   GetStakeDistribution
@@ -456,7 +456,7 @@ instance Era era => ValidateEnvelope (ShelleyBlock era) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getPParams :: SL.ShelleyState era -> SL.PParams
+getPParams :: SL.ShelleyState era -> SL.PParams era
 getPParams = SL.esPp . SL.nesEs
 
 getProposedPPUpdates :: SL.ShelleyState era -> SL.ProposedPPUpdates era

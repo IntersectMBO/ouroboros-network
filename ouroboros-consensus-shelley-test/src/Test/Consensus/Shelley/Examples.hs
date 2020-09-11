@@ -33,7 +33,6 @@ import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
-import           Data.Ratio ((%))
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
@@ -74,7 +73,6 @@ import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.MetaData as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
@@ -397,7 +395,6 @@ exampleNewEpochState = SL.NewEpochState {
     , nesEs     = epochState
     , nesRu     = SJust rewardUpdate
     , nesPd     = examplePoolDistr
-    , nesOsched = overlaySchedule
     }
   where
     epochState :: SL.EpochState era
@@ -442,15 +439,6 @@ exampleNewEpochState = SL.NewEpochState {
 
     nonMyopic :: SL.NonMyopic era
     nonMyopic = SL.emptyNonMyopic
-
-    overlaySchedule :: SL.OverlaySchedule era
-    overlaySchedule =
-        SL.overlayScheduleHelper
-          (EpochSize 2)
-          (SlotNo 0)
-          (Set.fromList [mkKeyHash 1, mkKeyHash 2])
-          (SL.truncateUnitInterval (9 % 10))
-          (SL.mkActiveSlotCoeff (SL.truncateUnitInterval (5 % 100)))
 
 exampleLedgerState :: LedgerState (ShelleyBlock StandardShelley)
 exampleLedgerState = ShelleyLedgerState {
