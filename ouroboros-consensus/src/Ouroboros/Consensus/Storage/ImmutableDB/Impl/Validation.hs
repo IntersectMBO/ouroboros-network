@@ -19,7 +19,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
 import           Control.Exception (assert)
 import           Control.Monad (forM_, unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
-import           Control.Tracer (Tracer, contramap, traceWith)
+import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe, mapMaybe)
@@ -31,8 +31,7 @@ import qualified Streaming.Prelude as S
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     WithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -41,9 +40,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unChunkNo, unsafeEpochNoToChunkNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
-                     (cachedIndex)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index,
+                     fileBackedIndex)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -65,7 +63,6 @@ data ValidateEnv m blk h = ValidateEnv {
       hasFS          :: !(HasFS m h)
     , chunkInfo      :: !ChunkInfo
     , tracer         :: !(Tracer m (TraceEvent blk))
-    , cacheConfig    :: !Index.CacheConfig
     , codecConfig    :: !(CodecConfig blk)
     , checkIntegrity :: !(blk -> Bool)
     }
@@ -83,19 +80,10 @@ validateAndReopen ::
      , HasCallStack
      )
   => ValidateEnv m blk h
-  -> ResourceRegistry m
-     -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
   -> WithTempRegistry (OpenState m blk h) m (OpenState m blk h)
-validateAndReopen validateEnv registry valPol = wrapFsError $ do
+validateAndReopen validateEnv valPol = wrapFsError $ do
     (chunk, tip) <- lift $ validate validateEnv valPol
-    index        <- lift $ cachedIndex
-                      hasFS
-                      registry
-                      cacheTracer
-                      cacheConfig
-                      chunkInfo
-                      chunk
     case tip of
       Origin -> assert (chunk == firstChunkNo) $ do
         lift $ traceWith tracer NoValidLastLocation
@@ -104,8 +92,10 @@ validateAndReopen validateEnv registry valPol = wrapFsError $ do
         lift $ traceWith tracer $ ValidatedLastLocation chunk tip'
         mkOpenState hasFS index chunk tip AllowExisting
   where
-    ValidateEnv { hasFS, tracer, cacheConfig, chunkInfo } = validateEnv
-    cacheTracer = contramap TraceCacheEvent tracer
+    ValidateEnv { hasFS, tracer, chunkInfo } = validateEnv
+
+    index :: Index m blk h
+    index = fileBackedIndex hasFS chunkInfo
 
 -- | Execute the 'ValidationPolicy'.
 --

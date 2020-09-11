@@ -10,30 +10,22 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
   , readEntry
     -- * File-backed index
   , fileBackedIndex
-    -- * Cached index
-  , cachedIndex
-  , CacheConfig (..)
   ) where
 
-import           Control.Tracer (Tracer)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
-import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB, StandardHash)
+import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting,
                      Handle)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
-                     (CacheConfig (..))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache as Cache
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -41,7 +33,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
-                     (TraceCacheEvent, WithBlockSize (..))
+                     (WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Index
@@ -163,41 +155,3 @@ fileBackedIndex hasFS chunkInfo = Index
     , close               = return ()
     , restart             = \_newCurChunk -> return ()
     }
-
-{------------------------------------------------------------------------------
-  Cached index
-------------------------------------------------------------------------------}
-
--- | Caches the current chunk's indices as well as a number of past chunk's
--- indices.
---
--- Spawns a background thread to expire past chunks from the cache that
--- haven't been used for a while.
-cachedIndex
-  :: forall m blk h. (IOLike m, ConvertRawHash blk, StandardHash blk)
-  => HasFS m h
-  -> ResourceRegistry m
-  -> Tracer m TraceCacheEvent
-  -> CacheConfig
-  -> ChunkInfo
-  -> ChunkNo  -- ^ Current chunk
-  -> m (Index m blk h)
-cachedIndex hasFS registry tracer cacheConfig chunkInfo chunk = do
-    cacheEnv <- Cache.newEnv
-                  hasFS
-                  registry
-                  tracer
-                  cacheConfig
-                  chunkInfo
-                  chunk
-    return Index
-      { readOffsets         = Cache.readOffsets         cacheEnv
-      , readFirstFilledSlot = Cache.readFirstFilledSlot cacheEnv
-      , openPrimaryIndex    = Cache.openPrimaryIndex    cacheEnv
-      , appendOffsets       = Cache.appendOffsets       cacheEnv
-      , readEntries         = Cache.readEntries         cacheEnv
-      , readAllEntries      = Cache.readAllEntries      cacheEnv
-      , appendEntry         = Cache.appendEntry         cacheEnv
-      , close               = Cache.close               cacheEnv
-      , restart             = Cache.restart             cacheEnv
-      }

@@ -70,8 +70,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB hiding (streamAll)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-                     (CacheConfig (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 
 import           Test.Util.ChunkInfo
@@ -211,10 +209,8 @@ run env@ImmutableDBEnv {
         varDB
       , varNextId
       , varIters
-      , args = ImmutableDbArgs {
-            immRegistry = registry
-          , immHasFS = SomeHasFS hasFS
-          }
+      , registry
+      , args = ImmutableDbArgs { immHasFS = SomeHasFS hasFS }
       } cmd =
     readMVar varDB >>= \ImmutableDBState { db, internal } -> case cmd of
       GetTip               -> ImmTip          <$> atomically (getTip            db)
@@ -784,6 +780,7 @@ data ImmutableDBEnv = ImmutableDBEnv {
       -- first close all open iterators in these cases.
     , varDB     :: StrictMVar IO ImmutableDBState
     , args      :: ImmutableDbArgs Identity IO TestBlock
+    , registry  :: ResourceRegistry IO
     }
 
 getImmutableDB :: ImmutableDBEnv -> IO (ImmutableDB IO TestBlock)
@@ -827,16 +824,12 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    ImmutableDbArgs { immRegistry } = args
-
     truncateAndReopen cmd tipBefore = tryImmutableDB $ do
       -- Close all open iterators as we will perform truncation
       closeOpenIterators varIters
       -- Close the database in case no errors occurred and it wasn't
       -- closed already. This is idempotent anyway.
       getImmutableDB env >>= closeDB
-      -- Release any handles that weren't closed because of a simulated error.
-      releaseAll immRegistry
       reopen env ValidateAllChunks
       getInternal env >>= flip deleteAfter tipBefore
       -- If the cmd deleted things, we must do it here to have a deterministic
@@ -1158,40 +1151,37 @@ showLabelledExamples' mbReplay numTests focus chunkInfo = do
 showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
-prop_sequential :: Index.CacheConfig -> SmallChunkInfo -> Property
-prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
+prop_sequential :: SmallChunkInfo -> Property
+prop_sequential (SmallChunkInfo chunkInfo) =
     forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-      (hist, prop) <- QC.run $ test cacheConfig chunkInfo cmds
+      (hist, prop) <- QC.run $ test chunkInfo cmds
       prettyCommands smUnused hist
         $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
         $ prop
   where
     smUnused = sm unusedEnv $ initDBModel chunkInfo TestBlockCodecConfig
 
-test :: Index.CacheConfig
-     -> ChunkInfo
+test :: ChunkInfo
      -> QSM.Commands (At CmdErr IO) (At Resp IO)
      -> IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
-test cacheConfig chunkInfo cmds = do
+test chunkInfo cmds = do
     fsVar              <- uncheckedNewTVarM Mock.empty
     varErrors          <- uncheckedNewTVarM mempty
     varNextId          <- uncheckedNewTVarM 0
     varIters           <- uncheckedNewTVarM []
     (tracer, getTrace) <- recordingTracerIORef
 
-    withRegistry $ \registry -> do
-      let hasFS = mkSimErrorHasFS fsVar varErrors
-          args  = ImmutableDbArgs {
-              immCacheConfig      = cacheConfig
-            , immCheckIntegrity   = testBlockIsValid
-            , immChunkInfo        = chunkInfo
-            , immCodecConfig      = TestBlockCodecConfig
-            , immHasFS            = SomeHasFS hasFS
-            , immRegistry         = registry
-            , immTracer           = tracer
-            , immValidationPolicy = ValidateMostRecentChunk
-            }
+    let hasFS = mkSimErrorHasFS fsVar varErrors
+        args  = ImmutableDbArgs {
+            immCheckIntegrity   = testBlockIsValid
+          , immChunkInfo        = chunkInfo
+          , immCodecConfig      = TestBlockCodecConfig
+          , immHasFS            = SomeHasFS hasFS
+          , immTracer           = tracer
+          , immValidationPolicy = ValidateMostRecentChunk
+          }
 
+    withRegistry $ \registry -> do
       (hist, model, res, trace) <- bracket
         (open args >>= newMVar)
         -- Note: we might be closing a different ImmutableDB than the one we
@@ -1205,6 +1195,7 @@ test cacheConfig chunkInfo cmds = do
                 , varIters
                 , varDB
                 , args
+                , registry
                 }
               sm' = sm env (initDBModel chunkInfo TestBlockCodecConfig)
 
@@ -1249,15 +1240,3 @@ tests = testGroup "ImmutableDB q-s-m"
 
 unusedEnv :: ImmutableDBEnv
 unusedEnv = error "ImmutableDBEnv used during command generation"
-
-instance Arbitrary Index.CacheConfig where
-  arbitrary = do
-    pastChunksToCache <- frequency
-      -- Pick small values so that we exercise cache eviction
-      [ (1, return 1)
-      , (1, return 2)
-      , (1, choose (3, 10))
-      ]
-    -- TODO create a Cmd that advances time, so this is being exercised too.
-    expireUnusedAfter <- (fromIntegral :: Int -> DiffTime) <$> choose (1, 100)
-    return Index.CacheConfig {..}

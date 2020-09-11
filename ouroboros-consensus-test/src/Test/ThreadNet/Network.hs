@@ -101,7 +101,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -686,7 +685,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbGenesis                = return initLedger
         , cdbCheckInFuture          = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
                                       (OracularClock.finiteSystemTime clock)
-        , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer                 = instrumentationTracer <> nullDebugTracer
         , cdbTraceLedger            = nullDebugTracer

@@ -95,7 +95,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -1620,7 +1619,6 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbCheckInFuture          = InFuture.miracle
                                     (readTVar varCurSlot)
                                     maxClockSkew
-    , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc
     , cdbTracer                 = tracer

@@ -202,7 +202,6 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator

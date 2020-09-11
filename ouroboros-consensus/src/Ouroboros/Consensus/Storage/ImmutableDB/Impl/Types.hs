@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (
   , ChunkFileError (..)
     -- * Tracing
   , TraceEvent(..)
-  , TraceCacheEvent(..)
   ) where
 
 import           Data.Text (Text)
@@ -132,20 +131,4 @@ data TraceEvent blk =
     -- Closing the DB
   | DBAlreadyClosed
   | DBClosed
-    -- Events traced by the index cache
-  | TraceCacheEvent !TraceCacheEvent
-  deriving (Eq, Generic, Show)
-
--- | The argument with type 'Word32' is the number of past chunk currently in
--- the cache.
-data TraceCacheEvent =
-    TraceCurrentChunkHit   ChunkNo   Word32
-  | TracePastChunkHit      ChunkNo   Word32
-  | TracePastChunkMiss     ChunkNo   Word32
-  | TracePastChunkEvict    ChunkNo   Word32
-    -- ^ The least recently used past chunk was evicted because the cache
-    -- was full.
-  | TracePastChunksExpired [ChunkNo] Word32
-    -- ^ Past chunks were expired from the cache because they haven't been
-    -- used for a while.
   deriving (Eq, Generic, Show)

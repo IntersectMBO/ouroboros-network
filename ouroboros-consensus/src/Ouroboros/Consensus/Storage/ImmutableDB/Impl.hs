@@ -92,7 +92,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl (
   , ValidationPolicy (..)
   , ChunkFileError (..)
   , TraceEvent (..)
-  , Index.CacheConfig (..)
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -113,8 +112,7 @@ import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     runWithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry (runWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
@@ -143,12 +141,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
 ------------------------------------------------------------------------------}
 
 data ImmutableDbArgs f m blk = ImmutableDbArgs {
-      immCacheConfig      :: Index.CacheConfig
-    , immCheckIntegrity   :: HKD f (blk -> Bool)
+      immCheckIntegrity   :: HKD f (blk -> Bool)
     , immChunkInfo        :: HKD f ChunkInfo
     , immCodecConfig      :: HKD f (CodecConfig blk)
     , immHasFS            :: SomeHasFS m
-    , immRegistry         :: HKD f (ResourceRegistry m)
     , immTracer           :: Tracer m (TraceEvent blk)
     , immValidationPolicy :: ValidationPolicy
     }
@@ -156,28 +152,13 @@ data ImmutableDbArgs f m blk = ImmutableDbArgs {
 -- | Default arguments when using the 'IO' monad
 defaultArgs :: FilePath -> ImmutableDbArgs Defaults IO blk
 defaultArgs fp = ImmutableDbArgs {
-      immCacheConfig      = cacheConfig
-    , immCheckIntegrity   = NoDefault
+      immCheckIntegrity   = NoDefault
     , immChunkInfo        = NoDefault
     , immCodecConfig      = NoDefault
     , immHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
-    , immRegistry         = NoDefault
     , immTracer           = nullTracer
     , immValidationPolicy = ValidateMostRecentChunk
     }
-  where
-    -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
-    -- At the time of writing (1/2020), there are 166 epochs, and we store one
-    -- epoch per chunk, so even one year from now, we will be able to cache all
-    -- chunks' indices in the chain.
-    --
-    -- If this number were too low, i.e., less than the number of chunks that
-    -- that clients are requesting blocks from, we would constantly evict and
-    -- reparse indices, causing a much higher CPU load.
-    cacheConfig = Index.CacheConfig {
-          pastChunksToCache = 250
-        , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
-        }
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the ImmutableDB.
 type ImmutableDbSerialiseConstraints blk =
@@ -245,11 +226,10 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempR
             hasFS          = hasFS
           , chunkInfo      = immChunkInfo
           , tracer         = immTracer
-          , cacheConfig    = immCacheConfig
           , codecConfig    = immCodecConfig
           , checkIntegrity = immCheckIntegrity
           }
-    ost <- validateAndReopen validateEnv immRegistry immValidationPolicy
+    ost <- validateAndReopen validateEnv immValidationPolicy
 
     stVar <- lift $ newMVar (DbOpen ost)
 
@@ -259,8 +239,6 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempR
           , checkIntegrity   = immCheckIntegrity
           , chunkInfo        = immChunkInfo
           , tracer           = immTracer
-          , registry         = immRegistry
-          , cacheConfig      = immCacheConfig
           , codecConfig      = immCodecConfig
           }
         db = ImmutableDB {
