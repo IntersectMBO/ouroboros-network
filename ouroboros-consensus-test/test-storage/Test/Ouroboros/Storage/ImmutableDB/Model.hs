@@ -178,11 +178,11 @@ computeBlockSize ccfg =
     . encodeDisk ccfg
 
 lookupBlock ::
-     HasHeader blk
+     (HasHeader blk, GetHeader blk)
   => RealPoint blk
   -> DBModel blk
   -> Either (MissingBlock blk) blk
-lookupBlock pt@(RealPoint slot hash) DBModel { dbmSlots } =
+lookupBlock pt@(RealPoint slot hash) dbm@DBModel { dbmSlots } =
     case Map.lookup slot dbmSlots of
       Just (InSlotBlock blk)
         | blockHash blk == hash
@@ -202,6 +202,9 @@ lookupBlock pt@(RealPoint slot hash) DBModel { dbmSlots } =
         | otherwise
         -> throwError $ WrongHash pt (NE.fromList [blockHash ebb, blockHash blk])
       Nothing
+        | NotOrigin slot > (tipSlotNo <$> dbmTip dbm)
+        -> throwError $ NewerThanTip pt (tipToPoint (dbmTip dbm))
+        | otherwise
         -> throwError $ EmptySlot pt
 
 -- | Rolls back the chain so that the given 'Tip' is the new tip.
@@ -477,21 +480,14 @@ getBlockComponentModel ::
      , EncodeDisk blk blk
      , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
-     , HasCallStack
      )
   => BlockComponent blk b
   -> RealPoint blk
   -> DBModel blk
-  -> Either ImmutableDBError (Either (MissingBlock blk) b)
-getBlockComponentModel blockComponent pt dbm = do
-    -- Check that the slot is not in the future
-    when (NotOrigin (realPointSlot pt) > (tipSlotNo <$> dbmTip dbm)) $
-      throwUserError $
-        ReadBlockNewerThanTipError pt (tipToPoint (dbmTip dbm))
-
-    return $
-      flip (extractBlockComponent ccfg) blockComponent
-        <$> lookupBlock pt dbm
+  -> Either (MissingBlock blk) b
+getBlockComponentModel blockComponent pt dbm =
+    flip (extractBlockComponent ccfg) blockComponent
+      <$> lookupBlock pt dbm
   where
     DBModel { dbmCodecConfig = ccfg } = dbm
 
@@ -526,13 +522,6 @@ streamModel ::
 streamModel from to dbm = swizzle $ do
     unless (validBounds from to) $
       liftLeft $ throwUserError $ InvalidIteratorRangeError from to
-
-    -- Check that the slot is not in the future
-    case to of
-      StreamToInclusive pt ->
-        when (NotOrigin (realPointSlot pt) > (tipSlotNo <$> dbmTip dbm)) $
-          liftLeft $ throwUserError $
-            ReadBlockNewerThanTipError pt (tipToPoint (dbmTip dbm))
 
     -- The real implementation checks the end bound first, so we do the
     -- same to get the same errors

@@ -40,7 +40,7 @@ openDBMock chunkInfo ccfg = do
     immutableDB dbVar = ImmutableDB {
           closeDB_                = return ()
         , getTip_                 = querySTM     $ getTipModel
-        , getBlockComponent_      = queryE      .: getBlockComponentModel
+        , getBlockComponent_      = query       .: getBlockComponentModel
         , appendBlock_            = updateE_     . appendBlockModel
         , stream_                 = updateEE  ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         }
@@ -80,8 +80,3 @@ openDBMock chunkInfo ccfg = do
 
         querySTM :: (DBModel blk -> a) -> STM m a
         querySTM f = fmap f $ readTVar dbVar
-
-        queryE :: (DBModel blk -> Either ImmutableDBError a) -> m a
-        queryE f = query f >>= \case
-          Left  e -> throwM e
-          Right a -> return a

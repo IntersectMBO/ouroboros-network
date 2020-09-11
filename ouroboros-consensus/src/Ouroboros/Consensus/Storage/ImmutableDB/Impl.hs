@@ -397,45 +397,40 @@ getBlockComponentImpl ::
   -> RealPoint blk
   -> m (Either (MissingBlock blk) b)
 getBlockComponentImpl dbEnv blockComponent pt =
-    withOpenState dbEnv $ \hasFS OpenState{..} -> do
+    withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
+      slotInfo <- getSlotInfo chunkInfo currentIndex currentTip pt
+      let (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) = slotInfo
+          chunkFile = fsPathChunkFile chunk
+          Secondary.Entry { blockOffset } = entry
 
-      when (NotOrigin (realPointSlot pt) > (tipSlotNo <$> currentTip)) $
-        throwUserError $ ReadBlockNewerThanTipError pt (tipToPoint currentTip)
+      -- TODO don't open the 'chunkFile' unless we need to. In practice,
+      -- we only use this to read (raw) blocks or (raw) headers, which
+      -- does require opening the 'chunkFile'. Related: #2227.
+      lift $ withFile hasFS chunkFile ReadMode $ \eHnd -> do
 
-      runExceptT $ do
-        slotInfo <- getSlotInfo chunkInfo currentIndex pt
-        let (ChunkSlot chunk _, (entry, blockSize), _secondaryOffset) = slotInfo
-            chunkFile = fsPathChunkFile chunk
-            Secondary.Entry { blockOffset } = entry
+        actualBlockSize <- case blockSize of
+          Secondary.BlockSize size
+            -> return size
+          -- See the 'GetBlock' case for more info about
+          -- 'Secondary.LastEntry'.
+          Secondary.LastEntry
+            | chunk == currentChunk
+            -> return $ fromIntegral $ currentChunkOffset - blockOffset
+            | otherwise
+            -> do
+              -- With cached indices, we'll never hit this case.
+              offsetAfterLastBlock <- hGetSize hasFS eHnd
+              return $ fromIntegral $
+                offsetAfterLastBlock - unBlockOffset blockOffset
 
-        -- TODO don't open the 'chunkFile' unless we need to. In practice,
-        -- we only use this to read (raw) blocks or (raw) headers, which
-        -- does require opening the 'chunkFile'. Related: #2227.
-        lift $ withFile hasFS chunkFile ReadMode $ \eHnd -> do
-
-          actualBlockSize <- case blockSize of
-            Secondary.BlockSize size
-              -> return size
-            -- See the 'GetBlock' case for more info about
-            -- 'Secondary.LastEntry'.
-            Secondary.LastEntry
-              | chunk == currentChunk
-              -> return $ fromIntegral $ currentChunkOffset - blockOffset
-              | otherwise
-              -> do
-                -- With cached indices, we'll never hit this case.
-                offsetAfterLastBlock <- hGetSize hasFS eHnd
-                return $ fromIntegral $
-                  offsetAfterLastBlock - unBlockOffset blockOffset
-
-          extractBlockComponent
-            hasFS
-            chunkInfo
-            chunk
-            codecConfig
-            eHnd
-            (WithBlockSize actualBlockSize entry)
-            blockComponent
+        extractBlockComponent
+          hasFS
+          chunkInfo
+          chunk
+          codecConfig
+          eHnd
+          (WithBlockSize actualBlockSize entry)
+          blockComponent
   where
     ImmutableDBEnv { chunkInfo, codecConfig } = dbEnv
 

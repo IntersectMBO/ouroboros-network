@@ -114,9 +114,6 @@ data ImmutableDB m blk = ImmutableDB {
       -- 'Point', either because the slot was empty or because the block stored
       -- with that slot had a different hash.
       --
-      -- Throws a 'ReadBlockNewerThanTipError' if the requested slot is in the
-      -- future, i.e > the result of 'getTip'.
-      --
       -- Throws a 'ClosedDBError' if the database is closed.
     , getBlockComponent_ ::
            forall b. HasCallStack
@@ -142,9 +139,6 @@ data ImmutableDB m blk = ImmutableDB {
       -- operation: a node serving blocks might get requests to stream blocks
       -- that are not in the database. The latter exception indicates incorrect
       -- usage and should not happen during normal operation.
-      --
-      -- Throws a 'ReadBlockNewerThanTipError' if the start or end 'SlotNo' are
-      -- in the future.
       --
       -- Throws a 'ClosedDBError' if the database is closed.
       --
@@ -363,9 +357,6 @@ getKnownBlockComponent db blockComponent pt =
 -- current tip as the inclusive upper bound.
 --
 -- Returns a 'MissingBlock' when the point is not in the ImmutableDB.
---
--- Throws a 'ReadBlockNewerThanTipError' if the requested slot is in the future,
--- i.e > the result of 'getTip'.
 streamAfterPoint ::
      (MonadSTM m, HasHeader blk, HasCallStack)
   => ImmutableDB m blk
@@ -383,9 +374,8 @@ streamAfterPoint db registry blockComponent fromPt = runExceptT $ do
         return emptyIterator
 
       (NotOrigin fromPt', Origin) ->
-        -- Asked to stream after a block while the ImmutableDB is empty, clearly
-        -- the block is missing.
-        throwError $ EmptySlot fromPt'
+        -- Asked to stream after a block while the ImmutableDB is empty
+        throwError $ NewerThanTip fromPt' GenesisPoint
 
       (NotOrigin fromPt', NotOrigin tipPt') | fromPt' == tipPt' ->
         -- Nothing to stream after the tip
@@ -422,18 +412,12 @@ streamAll ::
 streamAll db registry blockComponent =
     streamAfterKnownPoint db registry blockComponent GenesisPoint
 
--- | Will return 'False' instead of throwing 'ReadBlockNewerThanTipError'.
 hasBlock ::
      (MonadSTM m, HasCallStack)
   => ImmutableDB m blk
   -> RealPoint blk
   -> m Bool
-hasBlock db pt = do
-    tip <- atomically $ getTip db
-    if NotOrigin (realPointSlot pt) > (tipSlotNo <$> tip) then
-      return False
-    else
-      isRight <$> getBlockComponent db (pure ()) pt
+hasBlock db pt = isRight <$> getBlockComponent db (pure ()) pt
 
 getTipPoint ::
      (MonadSTM m, HasCallStack)

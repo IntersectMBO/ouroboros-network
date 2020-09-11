@@ -304,7 +304,7 @@ runPure ::
   -> (Resp IteratorId, DBModel TestBlock)
 runPure = \case
     GetTip               -> ok ImmTip          $ query     getTipModel
-    GetBlockComponent pt -> ok ErAllComponents $ queryE   (getBlockComponentModel allComponents pt)
+    GetBlockComponent pt -> ok ErAllComponents $ query    (getBlockComponentModel allComponents pt)
     AppendBlock blk      -> ok Unit            $ updateE_ (appendBlockModel blk)
     Stream f t           -> ok Iter            $ updateEE (streamModel f t)
     StreamAll            -> ok IterResults     $ query    (streamAllModel allComponents)
@@ -317,7 +317,6 @@ runPure = \case
     Migrate _            -> ok ImmTip          $ update    reopenModel
   where
     query  f m = (Right (f m), m)
-    queryE f m = (f m, m)
 
     update   f m = first Right (f m)
     update_  f m = (Right (), f m)
@@ -882,9 +881,9 @@ data Tag =
 
   | TagGetBlockComponentWrongHash
 
-  | TagAppendBlockNotNewerThanTipError
+  | TagGetBlockComponentNewerThanTip
 
-  | TagReadBlockNewerThanTipError
+  | TagAppendBlockNotNewerThanTipError
 
   | TagInvalidIteratorRangeError
 
@@ -960,8 +959,8 @@ tag = C.classify
     , tagGetBlockComponentFoundEBB
     , tagGetBlockComponentEmptySlot
     , tagGetBlockComponentWrongHash
+    , tagGetBlockComponentNewerThanTip
     , tagAppendBlockNotNewerThanTipError
-    , tagReadBlockNewerThanTipError
     , tagInvalidIteratorRangeError
     , tagIteratorStreamedN Map.empty
     , tagCorruption
@@ -1003,15 +1002,16 @@ tag = C.classify
         Left TagGetBlockComponentWrongHash
       _ -> Right tagGetBlockComponentWrongHash
 
+    tagGetBlockComponentNewerThanTip :: EventPred m
+    tagGetBlockComponentNewerThanTip = successful $ \ev r -> case r of
+      ErAllComponents (Left (NewerThanTip {})) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
+        Left TagGetBlockComponentNewerThanTip
+      _ -> Right tagGetBlockComponentNewerThanTip
+
     tagAppendBlockNotNewerThanTipError :: EventPred m
     tagAppendBlockNotNewerThanTipError = failedUserError $ \_ e -> case e of
       AppendBlockNotNewerThanTipError {} -> Left TagAppendBlockNotNewerThanTipError
       _                                  -> Right tagAppendBlockNotNewerThanTipError
-
-    tagReadBlockNewerThanTipError :: EventPred m
-    tagReadBlockNewerThanTipError = failedUserError $ \_ e -> case e of
-      ReadBlockNewerThanTipError {} -> Left TagReadBlockNewerThanTipError
-      _                             -> Right tagReadBlockNewerThanTipError
 
     tagInvalidIteratorRangeError :: EventPred m
     tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of

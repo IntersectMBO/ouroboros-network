@@ -75,14 +75,6 @@ data UserError =
     forall blk. (Typeable blk, StandardHash blk) =>
       AppendBlockNotNewerThanTipError (RealPoint blk) (Point blk)
 
-    -- | When trying to read a block with the given point, its slot was newer
-    -- than the current tip.
-    --
-    -- The 'RealPoint' is the requested block and the 'Point' to the current
-    -- tip.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ReadBlockNewerThanTipError (RealPoint blk) (Point blk)
-
     -- | When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
   | forall blk. (Typeable blk, StandardHash blk) =>
@@ -109,12 +101,6 @@ sameUserError e1 e2 = case (e1, e2) of
         Nothing   -> False
         Just Refl -> pt1 == pt2 && ct1 == ct2
     (AppendBlockNotNewerThanTipError {}, _) -> False
-    (ReadBlockNewerThanTipError (pt1 :: RealPoint blk1) ct1,
-     ReadBlockNewerThanTipError (pt2 :: RealPoint blk2) ct2) ->
-      case eqT @blk1 @blk2 of
-        Nothing   -> False
-        Just Refl -> pt1 == pt2 && ct1 == ct2
-    (ReadBlockNewerThanTipError {}, _) -> False
     (InvalidIteratorRangeError (f1 :: StreamFrom blk1) t1,
      InvalidIteratorRangeError (f2 :: StreamFrom blk2) t2) ->
       case eqT @blk1 @blk2 of
@@ -217,9 +203,13 @@ data MissingBlock blk
     -- | The block and/or EBB in the slot of the given point have a different
     -- hash.
   | WrongHash (RealPoint blk) (NonEmpty (HeaderHash blk))
+    -- | The requested point is in the future, i.e., its slot is greater than
+    -- that of the tip. We record the tip as the second argument.
+  | NewerThanTip (RealPoint blk) (Point blk)
   deriving (Eq, Show, Generic)
 
 -- | Return the 'RealPoint' of the block that was missing.
 missingBlockPoint :: MissingBlock blk -> RealPoint blk
-missingBlockPoint (EmptySlot pt)   = pt
-missingBlockPoint (WrongHash pt _) = pt
+missingBlockPoint (EmptySlot pt)      = pt
+missingBlockPoint (WrongHash pt _)    = pt
+missingBlockPoint (NewerThanTip pt _) = pt

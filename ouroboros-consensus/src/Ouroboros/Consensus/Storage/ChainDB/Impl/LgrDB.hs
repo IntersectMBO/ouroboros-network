@@ -447,27 +447,19 @@ streamAPI immutableDB = StreamAPI streamAfter
                 => WithOrigin (RealPoint blk)
                 -> (Maybe (m (NextBlock (RealPoint blk) blk)) -> m a)
                 -> m a
-    streamAfter tip k = do
-      immTipSlot <- atomically $ ImmutableDB.getTipSlot immutableDB
-      if pointSlot tip' > immTipSlot then
-        -- If we don't handle this, we might get a 'ReadBlockNewerThanTipError'
-        k snapshotTooRecent
-      else
-        withRegistry $ \registry -> do
-          eItr <-
-            ImmutableDB.streamAfterPoint
-              immutableDB
-              registry
-              GetBlock
-              tip'
-          case eItr of
-            Left _err -> k snapshotTooRecent
-            Right itr -> k $ streamUsing itr
+    streamAfter tip k = withRegistry $ \registry -> do
+        eItr <-
+          ImmutableDB.streamAfterPoint
+            immutableDB
+            registry
+            GetBlock
+            tip'
+        case eItr of
+          -- Snapshot is too recent
+          Left _err -> k $ Nothing
+          Right itr -> k $ streamUsing itr
       where
         tip' = withOriginRealPointToPoint tip
-
-    snapshotTooRecent :: Maybe (m (NextBlock (RealPoint blk) blk))
-    snapshotTooRecent = Nothing
 
     streamUsing ::
          ImmutableDB.Iterator m blk blk

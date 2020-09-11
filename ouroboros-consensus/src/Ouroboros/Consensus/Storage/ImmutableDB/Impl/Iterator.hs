@@ -135,7 +135,8 @@ streamImpl dbEnv registry blockComponent = \from to ->
       --  inclusive. We set up the iterator to point at the lower bound. Only at
       --  the very end of this function do we advance it to the block after it,
       --  in the case of an exclusive lower bound.
-      (secondaryOffset, startChunkSlot) <- checkLowerBound currentIndex from
+      (secondaryOffset, startChunkSlot) <-
+        checkLowerBound currentIndex currentTip from
 
       lift $ do
         -- 'validBounds' will catch nearly all invalid ranges, except for one:
@@ -186,10 +187,8 @@ streamImpl dbEnv registry blockComponent = \from to ->
   where
     ImmutableDBEnv { chunkInfo } = dbEnv
 
-    -- | Check the upper bound: check whether it is not newer than the current
-    -- tip (throw a 'ReadBlockNewerThanTipError' error otherwise), check whether
-    -- it exists in the database (return a 'MissingBlock' otherwise), and return
-    -- the corresponding 'ChunkSlot'.
+    -- | Check the upper bound: check whether it exists in the database (return
+    -- a 'MissingBlock' otherwise), and return the corresponding 'ChunkSlot'.
     checkUpperBound ::
          HasCallStack
       => Index m blk h
@@ -199,15 +198,7 @@ streamImpl dbEnv registry blockComponent = \from to ->
       -- ^ We can't return 'TipInfo' here because the secondary index does
       -- not give us block numbers
     checkUpperBound index currentTip (StreamToInclusive endPt) = do
-        lift $ case currentTip of
-          NotOrigin (Tip { tipSlotNo })
-            | realPointSlot endPt <= tipSlotNo
-            -> return ()
-          _otherwise
-            -> throwUserError $
-                 ReadBlockNewerThanTipError endPt (tipToPoint currentTip)
-
-        (chunkSlot, _, _secondaryOffset) <- getSlotInfo chunkInfo index endPt
+        (chunkSlot, _, _) <- getSlotInfo chunkInfo index currentTip endPt
         return chunkSlot
 
     -- | Check the lower bound: check whether it exists in the database (return
@@ -223,16 +214,19 @@ streamImpl dbEnv registry blockComponent = \from to ->
     checkLowerBound ::
          HasCallStack
       => Index m blk h
+      -> WithOrigin (Tip blk)  -- ^ Current tip
       -> StreamFrom blk
       -> ExceptT (MissingBlock blk) m (SecondaryOffset, ChunkSlot)
-    checkLowerBound index = \case
+    checkLowerBound index currentTip = \case
         StreamFromInclusive startPt -> do
-          (chunkSlot, _, secondaryOffset) <- getSlotInfo chunkInfo index startPt
+          (chunkSlot, _, secondaryOffset) <-
+            getSlotInfo chunkInfo index currentTip startPt
           return (secondaryOffset, chunkSlot)
         StreamFromExclusive startPt -> case pointToWithOriginRealPoint startPt of
           Origin             -> lift $ findFirstBlock index
           NotOrigin startPt' -> do
-            (chunkSlot, _, secondaryOffset) <- getSlotInfo chunkInfo index startPt'
+            (chunkSlot, _, secondaryOffset) <-
+              getSlotInfo chunkInfo index currentTip startPt'
             return (secondaryOffset, chunkSlot)
 
     mkIterator :: IteratorHandle m blk h -> Iterator m blk b
@@ -258,8 +252,9 @@ streamImpl dbEnv registry blockComponent = \from to ->
           Just relSlot -> return (0, chunkSlotForRelativeSlot chunk relSlot)
 
 -- | Get information about the block or EBB at the given slot with the given
--- hash. If no such block exists, because the slot is empty or it contains a
--- block and/or EBB with a different hash, return a 'MissingBlock'.
+-- hash. If no such block exists, because the slot is empty, it contains a block
+-- and/or EBB with a different hash, or it is newer than the current tip, return
+-- a 'MissingBlock'.
 --
 -- Return the 'ChunkSlot' corresponding to the block or EBB, the corresponding
 -- entry (and 'BlockSize') from the secondary index file, and the
@@ -268,23 +263,27 @@ streamImpl dbEnv registry blockComponent = \from to ->
 -- The primary index is read to find out whether the slot is filled and what
 -- the 'SecondaryOffset' is for the slot. The secondary index is read to check
 -- the hash and to return the 'Secondary.Entry'.
---
--- PRECONDITION: the bound is in the past.
---
--- PRECONDITION: the database is not empty.
 getSlotInfo ::
      forall m blk h. (HasCallStack, IOLike m, HasHeader blk)
   => ChunkInfo
   -> Index m blk h
+  -> WithOrigin (Tip blk)  -- ^ Current tip
   -> RealPoint blk
   -> ExceptT (MissingBlock blk) m
              ( ChunkSlot
              , (Secondary.Entry blk, BlockSize)
              , SecondaryOffset
              )
-getSlotInfo chunkInfo index pt@(RealPoint slot hash) = do
+getSlotInfo chunkInfo index currentTip pt@(RealPoint slot hash) = do
     let (chunk, mIfBoundary, ifRegular) =
           chunkSlotForUnknownBlock chunkInfo slot
+
+    case currentTip of
+      NotOrigin (Tip { tipSlotNo })
+        | slot <= tipSlotNo
+        -> return ()
+      _otherwise
+        -> throwError $ NewerThanTip pt (tipToPoint currentTip)
 
     -- Obtain the offsets in the secondary index file from the primary index
     -- file. The block /could/ still correspond to an EBB, a regular block or
