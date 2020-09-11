@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -9,6 +10,7 @@ module Analysis (
   , AnalysisEnv (..)
   ) where
 
+import qualified Control.Foldl as L
 import           Control.Monad.Except
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
@@ -16,8 +18,12 @@ import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -44,16 +50,19 @@ data AnalysisName =
   | ShowBlockHeaderSize
   | ShowBlockTxsSize
   | ShowEBBs
+  | MeasureLedgerValidation
   | OnlyValidation
   deriving Show
 
 runAnalysis :: HasAnalysis blk => AnalysisName -> Analysis blk
-runAnalysis ShowSlotBlockNo     = showSlotBlockNo
-runAnalysis CountTxOutputs      = countTxOutputs
-runAnalysis ShowBlockHeaderSize = showHeaderSize
-runAnalysis ShowBlockTxsSize    = showBlockTxsSize
-runAnalysis ShowEBBs            = showEBBs
-runAnalysis OnlyValidation      = \_ -> return ()
+runAnalysis = \case
+    ShowSlotBlockNo         -> showSlotBlockNo
+    CountTxOutputs          -> countTxOutputs
+    ShowBlockHeaderSize     -> showHeaderSize
+    ShowBlockTxsSize        -> showBlockTxsSize
+    ShowEBBs                -> showEBBs
+    MeasureLedgerValidation -> measureLedgerValidation
+    OnlyValidation          -> \_ -> return ()
 
 type Analysis blk = AnalysisEnv blk -> IO ()
 
@@ -167,6 +176,92 @@ showEBBs AnalysisEnv { cfg, db, registry } = do
               ]
           _otherwise ->
             return () -- Skip regular blocks
+
+{-------------------------------------------------------------------------------
+  Analysis: measure ledger validation time
+-------------------------------------------------------------------------------}
+
+measureLedgerValidation :: forall blk. HasAnalysis blk => Analysis blk
+measureLedgerValidation AnalysisEnv { cfg, initLedger, db, registry } = do
+    -- putStrLn $ intercalate "," [
+    --     "slot"
+    --   , "applyChainTick"
+    --   , "tickHeaderState"
+    --   , "applyLedgerBlock"
+    --   , "reapplyLedgerBlock"
+    --   , "validateHeader"
+    --   , "revalidateHeader"
+    --   ]
+    start <- getMonotonicTime
+    (nbBlocks, _) <-
+      processAll db registry GetBlock (0, initLedger) ((=<<) . process)
+    stop  <- getMonotonicTime
+    putStrLn $
+      "Validated " <> show nbBlocks <>
+      " blocks in " <> show (stop `diffTime` start)
+  where
+    lcfg :: LedgerConfig blk
+    lcfg = configLedger cfg
+
+    pcfg :: ConsensusConfig (BlockProtocol blk)
+    pcfg = configConsensus cfg
+
+    fbcfg :: FullBlockConfig (LedgerState blk) blk
+    fbcfg = topLevelConfigBlock cfg
+
+    process :: (Int, ExtLedgerState blk) -> blk -> IO (Int, ExtLedgerState blk)
+    process !(!nbBlocks, !(ExtLedgerState !ledger !header)) !blk = do
+        let !slot = blockSlot blk
+            !hdr = getHeader blk
+
+        (tickedLedgerState, applyChainTickTime) <-
+          measure $ applyChainTick lcfg slot ledger
+
+        (tickedLedgerView, _) <-
+          measure $ protocolLedgerView lcfg tickedLedgerState
+
+        (tickedHeaderState, tickHeaderStateTime) <-
+          measure $ tickHeaderState pcfg tickedLedgerView slot header
+
+        (ledger', applyLedgerBlockTime) <-
+          measure $
+            case runExcept (applyLedgerBlock fbcfg blk tickedLedgerState) of
+              Right st -> st
+              Left  e  ->
+                error $
+                  "applyLedgerBlock failed for " <> show slot <> ": " <> show e
+
+        (_, reapplyLedgerBlockTime) <-
+          measure $ reapplyLedgerBlock fbcfg blk tickedLedgerState
+
+        (header', validateHeaderTime) <-
+          measure $
+            case runExcept (validateHeader cfg tickedLedgerView hdr tickedHeaderState) of
+              Right st -> st
+              Left  e  ->
+                error $
+                  "validateHeader failed for " <> show slot <> ": " <> show e
+
+        (_, revalidateHeaderTime) <-
+          measure $ revalidateHeader cfg tickedLedgerView hdr tickedHeaderState
+
+        putStrLn $ intercalate "," $ show (unSlotNo slot) : map show [
+            applyChainTickTime
+          , tickHeaderStateTime
+          , applyLedgerBlockTime
+          , reapplyLedgerBlockTime
+          , validateHeaderTime
+          , revalidateHeaderTime
+          ]
+
+        return (succ nbBlocks, ExtLedgerState ledger' header')
+
+    measure :: a -> IO (a, DiffTime)
+    measure x = do
+      start <- getMonotonicTime
+      res   <- evaluate x
+      stop  <- getMonotonicTime
+      return (res, stop `diffTime` start)
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
