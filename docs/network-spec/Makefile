@@ -6,7 +6,7 @@
 
 # Document name
 ifndef DOCNAME
-	DOCNAME = network
+	DOCNAME = network-spec
 endif
 
 # You want latexmk to *always* run, because make does not have all the info.
@@ -36,7 +36,7 @@ all: $(DOCNAME).pdf
 $(DOCNAME).pdf: $(DOCNAME).tex ../../ouroboros-network/test/messages.cddl
 	latexmk -bibtex -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
 
-watch: network.tex miniprotocols.tex ../../ouroboros-network/test/messages.cddl
+watch: network-spec.tex miniprotocols.tex ../../ouroboros-network/test/messages.cddl
 	latexmk -bibtex -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
 
 clean:
