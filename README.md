@@ -14,6 +14,27 @@
 * The [`byron-proxy`](https://github.com/input-output-hk/cardano-byron-proxy) is a network protocol proxy between Byron and Shelley.
   It now lives in a seaprate repository.
 
+## Ouroboros-Network Documentation
+
+We have two documents which describe various levels of the networking layer of
+the Cardano Shelley implementation:
+
+* _Introduction to the design of Data Diffusion and Networking of Cardano Shelley_
+
+  This document explains the technical requirements and key constraints for the networking
+  layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is
+  a design document.
+
+* _The Shelley Networking Protocol_
+  
+  This document is a technical specification of the networking protocol.  It
+  includes serialisation formats, necessary details of multiplexer and
+  technical specifications of mini-protocols used by either _node-to-node_ and
+  _node-to-client_ flavors of the protocol. 
+
+The latest versions of the two documents can be found
+[here](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest).
+
 ## Ouroboros-Network API
 
 The API consisists of three layers:
