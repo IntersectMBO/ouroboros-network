@@ -12,17 +12,38 @@
 * `ouroboros-network`- ouroboros network package which implements protocols
   which to run ouroboros family of protocols, multiplexing layer.
 * The [`byron-proxy`](https://github.com/input-output-hk/cardano-byron-proxy) is a network protocol proxy between Byron and Shelley.
-  It now lives in a seaprate repository.
+  It now lives in a separate repository.
+
+## Ouroboros-Network Documentation
+
+We have two documents which describe various levels of the networking layer of
+the Cardano Shelley implementation:
+
+* _Introduction to the design of Data Diffusion and Networking of Cardano Shelley_
+
+  This document explains the technical requirements and key constraints for the networking
+  layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is
+  a design document.
+
+* _The Shelley Networking Protocol_
+  
+  This document is a technical specification of the networking protocol.  It
+  includes serialisation formats, necessary details of multiplexer and
+  technical specifications of mini-protocols used by either _node-to-node_ and
+  _node-to-client_ flavors of the protocol. 
+
+The latest versions of the two documents can be found
+[here](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest).
 
 ## Ouroboros-Network API
 
-The API consisists of three layers:
+The API consists of three layers:
 
 • mini-protocol api's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol`; this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
 
-• callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protoicol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
+• callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
 
-• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
+• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotiated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
 
 ## Demo application
 
