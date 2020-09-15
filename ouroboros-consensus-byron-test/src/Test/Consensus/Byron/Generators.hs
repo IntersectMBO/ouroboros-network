@@ -261,7 +261,7 @@ instance Arbitrary CC.Del.Map where
   arbitrary = CC.Del.fromList <$> arbitrary
 
 instance Arbitrary (LedgerState ByronBlock) where
-  arbitrary = ByronLedgerState <$> arbitrary
+  arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary
 
 instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip

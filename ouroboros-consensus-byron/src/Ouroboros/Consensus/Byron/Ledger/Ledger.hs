@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -48,7 +49,7 @@ import           Data.ByteString (ByteString)
 import           Data.Kind (Type)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
+import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Block as CC
@@ -82,8 +83,9 @@ import           Ouroboros.Consensus.Byron.Ledger.Serialisation
   LedgerState
 -------------------------------------------------------------------------------}
 
-newtype instance LedgerState ByronBlock = ByronLedgerState {
-      byronLedgerState :: CC.ChainValidationState
+data instance LedgerState ByronBlock = ByronLedgerState {
+      byronLedgerTipBlockNo :: !(WithOrigin BlockNo)
+    , byronLedgerState      :: !CC.ChainValidationState
     }
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
@@ -95,7 +97,8 @@ initByronLedgerState :: Gen.Config
                      -> Maybe CC.UTxO -- ^ Optionally override UTxO
                      -> LedgerState ByronBlock
 initByronLedgerState genesis mUtxo = ByronLedgerState {
-      byronLedgerState = override mUtxo initState
+      byronLedgerState      = override mUtxo initState
+    , byronLedgerTipBlockNo = Origin
     }
   where
     initState :: CC.ChainValidationState
@@ -213,7 +216,7 @@ instance LedgerSupportsProtocol ByronBlock where
   --
   -- To create a forecast, take the delegation state from the given ledger
   -- state, and apply the updates that should be applied by the given slot.
-  ledgerViewForecastAt cfg (ByronLedgerState st) = Forecast at $ \for ->
+  ledgerViewForecastAt cfg (ByronLedgerState _tipBlkNo st) = Forecast at $ \for ->
       toTickedPBftLedgerView <$> if
         | for == lastSlot ->
           return $ CC.getDelegationMap st
@@ -291,20 +294,24 @@ applyByronBlock :: CC.ValidationMode
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyByronBlock validationMode
                 cfg
-                (ByronBlock blk _ (ByronHash blkHash))
+                blk@(ByronBlock raw _ (ByronHash blkHash))
                 ls =
-    case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
+    case raw of
+      CC.ABOBBlock    raw' -> applyABlock validationMode cfg raw' blkHash blkNo ls
+      CC.ABOBBoundary raw' -> applyABoundaryBlock        cfg raw'         blkNo ls
+  where
+    blkNo :: BlockNo
+    blkNo = blockNo blk
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config
             -> CC.ABlock ByteString
             -> CC.HeaderHash
+            -> BlockNo
             -> Ticked (LedgerState (ByronBlock))
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABlock validationMode cfg blk blkHash TickedByronLedgerState{..} =
-    ByronLedgerState <$>
+applyABlock validationMode cfg blk blkHash blkNo TickedByronLedgerState{..} =
+    ByronLedgerState (NotOrigin blkNo) <$>
       CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
 
 -- | Apply boundary block
@@ -313,10 +320,11 @@ applyABlock validationMode cfg blk blkHash TickedByronLedgerState{..} =
 -- modify the delegation history.
 applyABoundaryBlock :: Gen.Config
                     -> CC.ABoundaryBlock ByteString
+                    -> BlockNo
                     -> Ticked (LedgerState ByronBlock)
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABoundaryBlock cfg blk TickedByronLedgerState{..} =
-    ByronLedgerState <$>
+applyABoundaryBlock cfg blk blkNo TickedByronLedgerState{..} =
+    ByronLedgerState (NotOrigin blkNo) <$>
       CC.validateBoundary cfg blk tickedByronLedgerState
 
 {-------------------------------------------------------------------------------
@@ -341,10 +349,16 @@ encodeByronHeaderState = encodeHeaderState
     encodeByronAnnTip
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
-encodeByronLedgerState ByronLedgerState{..} = encode byronLedgerState
+encodeByronLedgerState ByronLedgerState{..} = mconcat [
+      encodeListLen 2
+    , encode byronLedgerTipBlockNo
+    , encode byronLedgerState
+    ]
 
 decodeByronLedgerState :: Decoder s (LedgerState ByronBlock)
-decodeByronLedgerState = ByronLedgerState <$> decode
+decodeByronLedgerState = do
+    enforceSize "ByronLedgerState" 2
+    ByronLedgerState <$> decode <*> decode
 
 encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of
