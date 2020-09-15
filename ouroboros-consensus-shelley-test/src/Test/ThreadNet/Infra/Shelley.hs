@@ -294,7 +294,7 @@ mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
       where
         nbCoreNodes = fromIntegral (length coreNodes)
 
-    pparams :: SL.PParams
+    pparams :: SL.PParams era
     pparams = SL.emptyPParams
       { SL._d               =
           SL.unitIntervalFromRational $ decentralizationParamToRational d

@@ -294,7 +294,6 @@ translateLedgerStateByronToShelleyWrapper =
       , shelleyState =
           SL.translateToShelleyLedgerState
             (shelleyLedgerGenesis cfgShelley)
-            (shelleyLedgerGlobals cfgShelley)
             epochNo
             (byronLedgerState ledgerByron)
       }
@@ -352,10 +351,8 @@ translateLedgerViewByronToShelleyWrapper ::
        (ShelleyBlock era)
 translateLedgerViewByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-      TranslateForecast $ \epochNo _forecastFor _finalByronView ->
+      TranslateForecast $ \_epochNo _forecastFor _finalByronView ->
         WrapTickedLedgerView $
           TickedPraosLedgerView $
             SL.mkInitialShelleyLedgerView
               (shelleyLedgerGenesis cfgShelley)
-              (shelleyLedgerGlobals cfgShelley)
-              epochNo

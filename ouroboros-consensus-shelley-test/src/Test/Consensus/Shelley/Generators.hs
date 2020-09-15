@@ -131,29 +131,23 @@ instance Era era => Arbitrary (SomeBlock (NestedCtxt f) (ShelleyBlock era)) wher
   Generators for cardano-ledger-specs
 -------------------------------------------------------------------------------}
 
-instance Arbitrary (SL.PParams' SL.StrictMaybe) where
+instance Arbitrary (SL.PParams' SL.StrictMaybe era) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
 instance (TPraosCrypto era, CanMock era) => Arbitrary (SL.LedgerView era) where
   arbitrary = do
       lvProtParams   <- genPParams (Proxy @era)
-      lvOverlaySched <- arbitrary
       lvPoolDistr    <- arbitrary
       lvGenDelegs    <- arbitrary
       pure SL.LedgerView{..}
 
   shrink lv =
       -- TODO shrink for lvProtParams
-      [ lv{SL.lvOverlaySched = x} | x <- shrink lvOverlaySched ] ++
       [ lv{SL.lvPoolDistr    = x} | x <- shrink lvPoolDistr    ] ++
       [ lv{SL.lvGenDelegs    = x} | x <- shrink lvGenDelegs    ]
     where
-      SL.LedgerView
-        { lvOverlaySched
-        , lvPoolDistr
-        , lvGenDelegs
-        } = lv
+      SL.LedgerView { lvPoolDistr, lvGenDelegs } = lv
 
 instance Era era => Arbitrary (SL.ChainDepState era) where
   arbitrary = genericArbitraryU

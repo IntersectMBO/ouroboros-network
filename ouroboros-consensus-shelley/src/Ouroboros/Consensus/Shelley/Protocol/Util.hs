@@ -4,6 +4,7 @@
 -- package from cardano-ledger-specs.
 module Ouroboros.Consensus.Shelley.Protocol.Util (
     isNewEpoch
+  , firstSlotOfEpochOfSlot
   ) where
 
 import           Cardano.Slotting.EpochInfo
@@ -28,3 +29,12 @@ isNewEpoch ei newSlot referenceWO = runIdentity $ do
     reference = fromWithOrigin genesisSlotNo referenceWO
     -- TODO
     genesisSlotNo = SlotNo 0
+
+-- | Return the first slot in the epoch of the given slot.
+firstSlotOfEpochOfSlot ::
+     EpochInfo Identity
+  -> SlotNo
+  -> SlotNo
+firstSlotOfEpochOfSlot ei slot = runIdentity $ do
+    epoch <- epochInfoEpoch ei slot
+    epochInfoFirst ei epoch

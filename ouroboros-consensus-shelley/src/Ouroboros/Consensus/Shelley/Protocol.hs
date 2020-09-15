@@ -378,7 +378,7 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
 
   checkIsLeader cfg TPraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
-      case SL.lookupInOverlaySchedule slot (SL.lvOverlaySched lv) of
+      case SL.lookupInOverlaySchedule firstSlot gkeys d asc slot of
         -- Slot isn't in the overlay schedule, so we're in Praos
         Nothing
           | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
@@ -412,7 +412,11 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
               -> Nothing
     where
       chainState = tickedTPraosStateChainDepState cs
-      lv         = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
+      lv         = getTickedPraosLedgerView $ tickedTPraosStateLedgerView cs
+      d          = SL._d $ SL.lvProtParams lv
+      asc        = tpraosLeaderF $ tpraosParams cfg
+      firstSlot  = firstSlotOfEpochOfSlot (tpraosEpochInfo cfg) slot
+      gkeys      = Map.keys dlgMap
       eta0       = STS.ticknStateEpochNonce $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0

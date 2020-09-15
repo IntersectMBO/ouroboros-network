@@ -27,7 +27,6 @@ module Ouroboros.Consensus.Shelley.Node (
   , validateGenesis
   ) where
 
-import           Control.Monad.Reader (runReader)
 import           Data.Bifunctor (first)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
@@ -60,7 +59,6 @@ import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
@@ -237,7 +235,6 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       initialUtxo
       (SL.word64ToCoin (SL.sgMaxLovelaceSupply genesis) Val.~~ SL.balance initialUtxo)
       (SL.sgGenDelegs genesis)
-      oSched
       (SL.sgProtocolParams genesis)
       initialNonce
 
@@ -246,16 +243,6 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState
       }
-
-    runShelleyBase :: SL.ShelleyBase a -> a
-    runShelleyBase sb = runReader sb (shelleyLedgerGlobals ledgerConfig)
-
-    oSched :: SL.OverlaySchedule era
-    oSched = runShelleyBase $
-      SL.overlaySchedule
-        initialEpochNo
-        (Map.keysSet (SL.sgGenDelegs genesis))
-        (SL.sgProtocolParams genesis)
 
     -- Register the initial staking.
     --

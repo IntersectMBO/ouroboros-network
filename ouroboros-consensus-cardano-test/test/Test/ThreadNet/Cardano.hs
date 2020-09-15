@@ -14,8 +14,7 @@ module Test.ThreadNet.Cardano (
 
 import           Control.Exception (assert)
 import           Control.Monad (guard, replicateM)
-import           Control.Monad.Identity (runIdentity)
-import           Control.Monad.Reader (runReaderT)
+import           Control.Monad.Identity (Identity (runIdentity))
 import           Data.Functor ((<&>))
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, maybeToList)
@@ -625,31 +624,23 @@ prop_simple_cardano_convergence TestSetup
         -- TODO: This function conceptually should be simpler if we created a
         -- sufficiently accurate 'EpochInfo' and so didn't need the shift. But
         -- doing so (eg by constructing a HardFork @Summary@) is currently
-        -- significantly involved than this workaround.
+        -- significantly more involved than this workaround.
         overlayOffsets :: Word64 -> Set SlotNo
         overlayOffsets i =
             -- Shift to account for the initial Byron era.
-            Set.mapMonotonic (Util.addSlots numByronSlots) $
-
-            Map.keysSet $
-            SL.overlayScheduleToMap $
-            runIdentity $ flip runReaderT shelleyGlobals $
-            SL.overlaySchedule
-              @(ShelleyEra Crypto)
-              (EpochNo i)   -- NB 0 <-> the first /Shelley/ epoch
-              genesisKeyHashes
-              (sgProtocolParams genesisShelley)   -- notably contains setupD
-
-        shelleyGlobals =
-            SL.mkShelleyGlobals
-              genesisShelley
-              -- Suitable only for this narrow context
-              (fixedSizeEpochInfo epochSizeShelley)
-              (getMaxMajorProtVer maxMajorPVShelley)
-
-        genesisKeyHashes =
+            Set.mapMonotonic (Util.addSlots numByronSlots) .
             Set.fromList $
-            map (Shelley.mkKeyHash . Shelley.cnGenesisKey) coreNodes
+            -- Note: this is only correct if each epoch uses the same value for @d@
+            SL.overlaySlots
+              (runIdentity $ epochInfoFirst epochInfo (EpochNo i))
+              -- notably contains setupD
+              (SL._d (sgProtocolParams genesisShelley))
+                -- NB 0 <-> the first /Shelley/ epoch
+              (runIdentity $ epochInfoSize epochInfo (EpochNo i))
+
+    -- Suitable only for this narrow context
+    epochInfo :: EpochInfo Identity
+    epochInfo = fixedSizeEpochInfo epochSizeShelley
 
     numByronSlots :: Word64
     numByronSlots = numByronEpochs * unEpochSize epochSizeByron
