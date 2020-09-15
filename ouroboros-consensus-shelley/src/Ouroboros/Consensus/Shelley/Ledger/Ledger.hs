@@ -340,6 +340,12 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     :: Query (ShelleyBlock era) (SL.PParams era)
   GetProposedPParamsUpdates
     :: Query (ShelleyBlock era) (SL.ProposedPPUpdates era)
+  -- | This gets the stake distribution, but not in terms of _active_ stake
+  -- (which we need for the leader schedule), but rather in terms of _total_
+  -- stake, which is relevant for rewards. It is used by the wallet to show
+  -- saturation levels to the end user. We should consider refactoring this, to
+  -- an endpoint that provides all the information that the wallet wants about
+  -- pools, in an extensible fashion.
   GetStakeDistribution
     :: Query (ShelleyBlock era) (SL.PoolDistr era)
   GetFilteredUTxO
@@ -385,7 +391,7 @@ instance TPraosCrypto era => QueryLedger (ShelleyBlock era) where
           SL.getNonMyopicMemberRewards globals (shelleyLedgerState st) creds
       GetCurrentPParams -> getPParams $ shelleyLedgerState st
       GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyLedgerState st
-      GetStakeDistribution -> SL.nesPd $ shelleyLedgerState st
+      GetStakeDistribution -> SL.poolsByTotalStakeFraction globals (shelleyLedgerState st)
       GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyLedgerState st) addrs
       GetUTxO -> SL.getUTxO $ shelleyLedgerState st
       GetCurrentEpochState -> getCurrentEpochState $ shelleyLedgerState st
