@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     ShelleyLedgerError (..)
   , ShelleyTip (..)
   , shelleyTipToPoint
+  , ShelleyTransition(..)
   , LedgerState (..)
   , Ticked(..)
   , QueryLedger (..)
@@ -167,9 +168,18 @@ shelleyTipToPoint (NotOrigin tip) = BlockPoint (shelleyTipSlotNo tip)
                                                (shelleyTipHash   tip)
 
 data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
-      shelleyLedgerTip   :: !(WithOrigin (ShelleyTip era))
-    , shelleyLedgerState :: !(SL.ShelleyState era)
+      shelleyLedgerTip        :: !(WithOrigin (ShelleyTip era))
+    , shelleyLedgerState      :: !(SL.ShelleyState era)
+    , shelleyLedgerTransition :: !ShelleyTransition
     }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+-- | Hardfork point from Shelley to the next ledger
+--
+-- Placeholder type until we properly address #2471
+data ShelleyTransition =
+    -- | Transition point not yet known
+    ShelleyTransitionUnknown
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 shelleyLedgerTipPoint :: LedgerState (ShelleyBlock era) -> Point (ShelleyBlock era)
@@ -206,7 +216,7 @@ untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
   type LedgerErr (LedgerState (ShelleyBlock era)) = ShelleyLedgerError era
 
-  applyChainTick cfg slotNo (ShelleyLedgerState tip bhState) =
+  applyChainTick cfg slotNo (ShelleyLedgerState tip bhState _) =
       TickedShelleyLedgerState {
           untickedShelleyLedgerTip = tip
         , tickedShelleyLedgerState = SL.applyTickTransition
@@ -248,12 +258,13 @@ applyHelper f cfg blk (TickedShelleyLedgerState _ oldShelleyState) = do
     newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
 
     return ShelleyLedgerState {
-        shelleyLedgerTip   = NotOrigin ShelleyTip {
-                                 shelleyTipBlockNo = blockNo   blk
-                               , shelleyTipSlotNo  = blockSlot blk
-                               , shelleyTipHash    = blockHash blk
-                               }
-      , shelleyLedgerState = newShelleyState
+        shelleyLedgerTip        = NotOrigin ShelleyTip {
+                                      shelleyTipBlockNo = blockNo   blk
+                                    , shelleyTipSlotNo  = blockSlot blk
+                                    , shelleyTipHash    = blockHash blk
+                                    }
+      , shelleyLedgerState      = newShelleyState
+      , shelleyLedgerTransition = ShelleyTransitionUnknown
       }
   where
     globals = shelleyLedgerGlobals cfg
@@ -560,13 +571,29 @@ decodeShelleyTip = do
       , shelleyTipHash
       }
 
+encodeShelleyTransition :: ShelleyTransition -> Encoding
+encodeShelleyTransition ShelleyTransitionUnknown = mconcat [
+      CBOR.encodeWord8 0
+    ]
+
+decodeShelleyTransition :: Decoder s ShelleyTransition
+decodeShelleyTransition = do
+    tag <- CBOR.decodeWord8
+    case tag of
+      0 -> return $ ShelleyTransitionUnknown
+      _ -> fail $ "decodeShelleyTransition: invalid tag " <> show tag
+
 encodeShelleyLedgerState :: Era era => LedgerState (ShelleyBlock era) -> Encoding
 encodeShelleyLedgerState
-    ShelleyLedgerState { shelleyLedgerTip, shelleyLedgerState } =
+    ShelleyLedgerState { shelleyLedgerTip
+                       , shelleyLedgerState
+                       , shelleyLedgerTransition
+                       } =
     encodeVersion serialisationFormatVersion2 $ mconcat [
         CBOR.encodeListLen 2
       , encodeWithOrigin encodeShelleyTip shelleyLedgerTip
       , toCBOR shelleyLedgerState
+      , encodeShelleyTransition shelleyLedgerTransition
       ]
 
 decodeShelleyLedgerState ::
@@ -579,9 +606,14 @@ decodeShelleyLedgerState = decodeVersion [
     decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock era))
     decodeShelleyLedgerState2 = do
       enforceSize "LedgerState ShelleyBlock" 2
-      shelleyLedgerTip   <- decodeWithOrigin decodeShelleyTip
-      shelleyLedgerState <- fromCBOR
-      return ShelleyLedgerState { shelleyLedgerTip, shelleyLedgerState }
+      shelleyLedgerTip        <- decodeWithOrigin decodeShelleyTip
+      shelleyLedgerState      <- fromCBOR
+      shelleyLedgerTransition <- decodeShelleyTransition
+      return ShelleyLedgerState {
+          shelleyLedgerTip
+        , shelleyLedgerState
+        , shelleyLedgerTransition
+        }
 
 encodeShelleyQuery :: Era era => Query (ShelleyBlock era) result -> Encoding
 encodeShelleyQuery query = case query of

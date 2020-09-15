@@ -16,8 +16,9 @@
 
 -- | Instances requires for consensus/ledger integration
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
+    ByronTransition(..)
     -- * Ledger integration
-    initByronLedgerState
+  , initByronLedgerState
   , byronEraParams
   , byronEraParamsNeverHardForks
     -- * Serialisation
@@ -86,7 +87,16 @@ import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 data instance LedgerState ByronBlock = ByronLedgerState {
       byronLedgerTipBlockNo :: !(WithOrigin BlockNo)
     , byronLedgerState      :: !CC.ChainValidationState
+    , byronLedgerTransition :: !ByronTransition
     }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+-- | Transition from Byron to Shelley
+--
+-- Placeholder type until we properly address #2455
+data ByronTransition =
+    -- | Transition point not yet known
+    ByronTransitionUnknown
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance UpdateLedger ByronBlock
@@ -99,6 +109,7 @@ initByronLedgerState :: Gen.Config
 initByronLedgerState genesis mUtxo = ByronLedgerState {
       byronLedgerState      = override mUtxo initState
     , byronLedgerTipBlockNo = Origin
+    , byronLedgerTransition = ByronTransitionUnknown
     }
   where
     initState :: CC.ChainValidationState
@@ -216,7 +227,7 @@ instance LedgerSupportsProtocol ByronBlock where
   --
   -- To create a forecast, take the delegation state from the given ledger
   -- state, and apply the updates that should be applied by the given slot.
-  ledgerViewForecastAt cfg (ByronLedgerState _tipBlkNo st) = Forecast at $ \for ->
+  ledgerViewForecastAt cfg (ByronLedgerState _tipBlkNo st _) = Forecast at $ \for ->
       toTickedPBftLedgerView <$> if
         | for == lastSlot ->
           return $ CC.getDelegationMap st
@@ -310,9 +321,13 @@ applyABlock :: CC.ValidationMode
             -> BlockNo
             -> Ticked (LedgerState (ByronBlock))
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABlock validationMode cfg blk blkHash blkNo TickedByronLedgerState{..} =
-    ByronLedgerState (NotOrigin blkNo) <$>
-      CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
+applyABlock validationMode cfg blk blkHash blkNo TickedByronLedgerState{..} = do
+    st' <- CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
+    return ByronLedgerState {
+          byronLedgerTipBlockNo = NotOrigin blkNo
+        , byronLedgerState      = st'
+        , byronLedgerTransition = ByronTransitionUnknown -- TODO (#2455)
+        }
 
 -- | Apply boundary block
 --
@@ -323,9 +338,13 @@ applyABoundaryBlock :: Gen.Config
                     -> BlockNo
                     -> Ticked (LedgerState ByronBlock)
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
-applyABoundaryBlock cfg blk blkNo TickedByronLedgerState{..} =
-    ByronLedgerState (NotOrigin blkNo) <$>
-      CC.validateBoundary cfg blk tickedByronLedgerState
+applyABoundaryBlock cfg blk blkNo TickedByronLedgerState{..} = do
+    st' <- CC.validateBoundary cfg blk tickedByronLedgerState
+    return ByronLedgerState {
+        byronLedgerTipBlockNo = NotOrigin blkNo
+      , byronLedgerState      = st'
+      , byronLedgerTransition = ByronTransitionUnknown -- TODO (#2455)
+      }
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -348,17 +367,33 @@ encodeByronHeaderState = encodeHeaderState
     encodeByronChainDepState
     encodeByronAnnTip
 
+encodeByronTransition :: ByronTransition -> Encoding
+encodeByronTransition ByronTransitionUnknown = mconcat [
+      CBOR.encodeWord8 0
+    ]
+
+decodeByronTransition :: Decoder s ByronTransition
+decodeByronTransition = do
+    tag <- CBOR.decodeWord8
+    case tag of
+      0 -> return $ ByronTransitionUnknown
+      _ -> fail $ "decodeByronTransition: invalid tag " <> show tag
+
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
 encodeByronLedgerState ByronLedgerState{..} = mconcat [
-      encodeListLen 2
+      encodeListLen 3
     , encode byronLedgerTipBlockNo
     , encode byronLedgerState
+    , encodeByronTransition byronLedgerTransition
     ]
 
 decodeByronLedgerState :: Decoder s (LedgerState ByronBlock)
 decodeByronLedgerState = do
-    enforceSize "ByronLedgerState" 2
-    ByronLedgerState <$> decode <*> decode
+    enforceSize "ByronLedgerState" 3
+    ByronLedgerState
+      <$> decode
+      <*> decode
+      <*> decodeByronTransition
 
 encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of

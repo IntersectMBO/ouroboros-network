@@ -306,6 +306,8 @@ translateLedgerStateByronToShelleyWrapper =
             (shelleyLedgerGenesis cfgShelley)
             epochNo
             (byronLedgerState ledgerByron)
+      , shelleyLedgerTransition =
+          ShelleyTransitionUnknown
       }
 
 translateChainDepStateByronToShelleyWrapper

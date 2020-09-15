@@ -173,6 +173,7 @@ emptyLedgerState :: LedgerState ByronBlock
 emptyLedgerState = ByronLedgerState {
       byronLedgerTipBlockNo = Origin
     , byronLedgerState      = initState
+    , byronLedgerTransition = ByronTransitionUnknown
     }
   where
     initState :: CC.Block.ChainValidationState
