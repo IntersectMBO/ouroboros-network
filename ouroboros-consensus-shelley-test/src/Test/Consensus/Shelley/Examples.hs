@@ -442,8 +442,12 @@ exampleNewEpochState = SL.NewEpochState {
 
 exampleLedgerState :: LedgerState (ShelleyBlock StandardShelley)
 exampleLedgerState = ShelleyLedgerState {
-      shelleyLedgerTipPoint = blockPoint exampleBlock
-    , shelleyLedgerState    = exampleNewEpochState
+      shelleyLedgerTip   = NotOrigin ShelleyTip {
+                               shelleyTipSlotNo  = blockSlot exampleBlock
+                             , shelleyTipBlockNo = blockNo   exampleBlock
+                             , shelleyTipHash    = blockHash exampleBlock
+                             }
+    , shelleyLedgerState = exampleNewEpochState
     }
 
 exampleHeaderState :: HeaderState (ShelleyBlock StandardShelley)

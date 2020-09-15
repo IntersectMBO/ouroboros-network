@@ -204,8 +204,8 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
     initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {
-        shelleyLedgerTipPoint = GenesisPoint
-      , shelleyLedgerState    = SL.chainNes initShelleyState
+        shelleyLedgerTip   = Origin
+      , shelleyLedgerState = SL.chainNes initShelleyState
       }
 
     initChainDepState :: TPraosState era

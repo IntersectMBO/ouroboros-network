@@ -269,10 +269,19 @@ translateHeaderHashByronToShelley =
 translatePointByronToShelley ::
      forall era.  (Era era, HASH (Era.Crypto era) ~ Blake2b_256)
   => Point ByronBlock
-  -> Point (ShelleyBlock era)
-translatePointByronToShelley = \case
-    GenesisPoint   -> GenesisPoint
-    BlockPoint s h -> BlockPoint s (translateHeaderHashByronToShelley h)
+  -> WithOrigin BlockNo
+  -> WithOrigin (ShelleyTip era)
+translatePointByronToShelley point bNo =
+    case (point, bNo) of
+      (GenesisPoint, Origin) ->
+        Origin
+      (BlockPoint s h, NotOrigin n) -> NotOrigin ShelleyTip {
+          shelleyTipSlotNo  = s
+        , shelleyTipBlockNo = n
+        , shelleyTipHash    = translateHeaderHashByronToShelley h
+        }
+      _otherwise ->
+        error "translatePointByronToShelley: invalid Byron state"
 
 translateLedgerStateByronToShelleyWrapper ::
      ( Era era
@@ -288,9 +297,10 @@ translateLedgerStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
     Translate   $ \epochNo ledgerByron ->
       ShelleyLedgerState {
-        shelleyLedgerTipPoint =
-          translatePointByronToShelley $
-            ledgerTipPoint (Proxy @ByronBlock) ledgerByron
+        shelleyLedgerTip =
+          translatePointByronToShelley
+            (ledgerTipPoint (Proxy @ByronBlock) ledgerByron)
+            (byronLedgerTipBlockNo ledgerByron)
       , shelleyLedgerState =
           SL.translateToShelleyLedgerState
             (shelleyLedgerGenesis cfgShelley)
