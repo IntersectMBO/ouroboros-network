@@ -107,9 +107,22 @@ instance Era era => Arbitrary (TPraosState era) where
         ]
       TPraosState lastSlot <$> arbitrary
 
+instance CanMock era => Arbitrary (ShelleyTip era) where
+  arbitrary = ShelleyTip
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary ShelleyTransition where
+  arbitrary = oneof [
+        pure ShelleyTransitionUnknown
+        -- TODO: Add case once we implement this type properly (#2471)
+      ]
+
 instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
+    <*> arbitrary
     <*> arbitrary
 
 instance CanMock era => Arbitrary (AnnTip (ShelleyBlock era)) where

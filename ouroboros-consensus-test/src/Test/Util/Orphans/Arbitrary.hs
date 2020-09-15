@@ -31,6 +31,15 @@ import           Test.Util.Time
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
 
+instance Arbitrary a => Arbitrary (WithOrigin a) where
+  arbitrary = oneof [
+        pure Origin
+      , NotOrigin <$> arbitrary
+      ]
+
+  shrink Origin        = []
+  shrink (NotOrigin x) = Origin : map NotOrigin (shrink x)
+
 instance Arbitrary NumCoreNodes where
   arbitrary = NumCoreNodes <$> choose (minNumCoreNodes, 5)
   shrink (NumCoreNodes n) = NumCoreNodes <$> (filter (>= minNumCoreNodes) $ shrink n)

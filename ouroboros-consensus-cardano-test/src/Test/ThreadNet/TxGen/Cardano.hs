@@ -50,7 +50,8 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
-import           Ouroboros.Consensus.Shelley.Ledger.Ledger (tickedShelleyState)
+import           Ouroboros.Consensus.Shelley.Ledger.Ledger
+                     (tickedShelleyLedgerState)
 
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
@@ -283,7 +284,7 @@ getUTxOShelley tls =
     SL._utxoState $
     SL.esLState $
     SL.nesEs $
-    tickedShelleyState tls
+    tickedShelleyLedgerState tls
 
 ejectShelleyTickedLedgerState ::
      Ticked (LedgerState (CardanoBlock c))

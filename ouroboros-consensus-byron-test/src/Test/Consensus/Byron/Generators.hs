@@ -260,8 +260,13 @@ instance Arbitrary ByronNodeToClientVersion where
 instance Arbitrary CC.Del.Map where
   arbitrary = CC.Del.fromList <$> arbitrary
 
+instance Arbitrary ByronTransition where
+  arbitrary = oneof [
+        pure ByronTransitionUnknown
+        -- TODO: Add case once we implement this type properly (#2455)
+      ]
 instance Arbitrary (LedgerState ByronBlock) where
-  arbitrary = ByronLedgerState <$> arbitrary
+  arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
 instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip
