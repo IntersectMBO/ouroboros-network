@@ -317,7 +317,7 @@ prop_simple_real_tpraos_convergence TestSetup
                   -- Handle the corner case where the test has enough scheduled
                   -- slots to reach the epoch transition but the last several
                   -- slots end up empty.
-                  Shelley.tickedShelleyState $
+                  Shelley.tickedShelleyLedgerState $
                   applyChainTick ledgerConfig sentinel lsUnticked
 
               msg =

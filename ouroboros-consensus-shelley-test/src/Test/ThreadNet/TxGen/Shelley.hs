@@ -84,14 +84,14 @@ genTx
   -> TickedLedgerState (ShelleyBlock (MockShelley h))
   -> Gen.GenEnv (MockShelley h)
   -> Gen (Maybe (GenTx (ShelleyBlock (MockShelley h))))
-genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyState } genEnv =
+genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
     either (const Nothing) (Just . mkShelleyTx) <$> Gen.tryGenTx
       genEnv
       ledgerEnv
       (utxoSt, dpState)
   where
     epochState :: SL.EpochState (MockShelley h)
-    epochState = SL.nesEs tickedShelleyState
+    epochState = SL.nesEs tickedShelleyLedgerState
 
     ledgerEnv :: STS.LedgerEnv (MockShelley h)
     ledgerEnv = STS.LedgerEnv {

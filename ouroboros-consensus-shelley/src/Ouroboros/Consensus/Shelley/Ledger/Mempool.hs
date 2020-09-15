@@ -96,7 +96,7 @@ instance TPraosCrypto era => LedgerSupportsMempool (ShelleyBlock era) where
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
   reapplyTx = applyShelleyTx
 
-  maxTxCapacity TickedShelleyLedgerState { tickedShelleyState = shelleyState } =
+  maxTxCapacity TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
       fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
     where
       SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
@@ -168,10 +168,10 @@ applyShelleyTx
   -> TickedLedgerState (ShelleyBlock era)
   -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
 applyShelleyTx cfg slot (ShelleyTx _ tx) st =
-    (\state -> st { tickedShelleyState = state }) <$>
+    (\state -> st { tickedShelleyLedgerState = state }) <$>
        SL.overShelleyState
         (SL.applyTxs globals mempoolEnv (Seq.singleton tx))
-        (tickedShelleyState st)
+        (tickedShelleyLedgerState st)
   where
     globals    = shelleyLedgerGlobals cfg
-    mempoolEnv = SL.mkMempoolEnv (tickedShelleyState st) slot
+    mempoolEnv = SL.mkMempoolEnv (tickedShelleyLedgerState st) slot

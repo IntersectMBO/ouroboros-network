@@ -288,10 +288,10 @@ translateLedgerStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
     Translate   $ \epochNo ledgerByron ->
       ShelleyLedgerState {
-        ledgerTip =
+        shelleyLedgerTipPoint =
           translatePointByronToShelley $
             ledgerTipPoint (Proxy @ByronBlock) ledgerByron
-      , shelleyState =
+      , shelleyLedgerState =
           SL.translateToShelleyLedgerState
             (shelleyLedgerGenesis cfgShelley)
             epochNo
