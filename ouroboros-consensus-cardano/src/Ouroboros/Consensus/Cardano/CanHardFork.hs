@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -20,8 +21,9 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , CardanoHardForkConstraints
   ) where
 
+import           Control.Monad
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -30,6 +32,8 @@ import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 
 import           Ouroboros.Consensus.Block
@@ -116,22 +120,73 @@ byronTransition :: PartialLedgerConfig ByronBlock
                 -> Word16   -- ^ Shelley major protocol version
                 -> LedgerState ByronBlock
                 -> Maybe EpochNo
-byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion =
-      latest
-    . mapMaybe Byron.Inspect.isStableCandidate
-    . filter bumpsMajorProtocolVersion
+byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
+      takeAny
+    . mapMaybe isTransitionToShelley
     . Byron.Inspect.protocolUpdates byronLedgerConfig
+    $ state
   where
-    bumpsMajorProtocolVersion :: Byron.Inspect.ProtocolUpdate -> Bool
-    bumpsMajorProtocolVersion Byron.Inspect.ProtocolUpdate{..} =
-           shelleyMajorVersion
-        == CC.Update.pvMajor protocolUpdateVersion
+    ByronTransitionInfo transitionInfo = byronLedgerTransition state
 
-    -- 'tryBumpVersion' assumes head of the list of stable proposals is the
-    -- newest, so we do too
-    latest :: [a] -> Maybe a
-    latest (newest:_) = Just newest
-    latest []         = Nothing
+    genesis = byronLedgerConfig
+    k       = CC.Genesis.gdK $ CC.Genesis.configGenesisData genesis
+
+    isTransitionToShelley :: Byron.Inspect.ProtocolUpdate -> Maybe EpochNo
+    isTransitionToShelley update = do
+        guard $ CC.Update.pvMajor version == shelleyMajorVersion
+        case Byron.Inspect.protocolUpdateState update of
+          Byron.Inspect.UpdateCandidate _becameCandidateSlotNo adoptedIn -> do
+            becameCandidateBlockNo <- Map.lookup version transitionInfo
+            guard $ isReallyStable becameCandidateBlockNo
+            return adoptedIn
+          Byron.Inspect.UpdateStableCandidate adoptedIn ->
+            -- If the Byron ledger thinks it's stable, it's _definitely_ stable
+            return adoptedIn
+          _otherwise ->
+            -- The proposal isn't yet a candidate, never mind a stable one
+            mzero
+      where
+        version :: CC.Update.ProtocolVersion
+        version = Byron.Inspect.protocolUpdateVersion update
+
+    -- Normally, stability in the ledger is defined in terms of slots, not
+    -- blocks. Byron considers the proposal to be stable after the slot is more
+    -- than @2k@ old. That is not wrong: after @2k@, the block indeed is stable.
+    --
+    -- Unfortunately, this means that the /conclusion about stability itself/
+    -- is /not/ stable: if we were to switch to a denser fork, we might change
+    -- our mind (on the sparse chain we thought the block was already stable,
+    -- but on the dense chain we conclude it is it not yet stable).
+    --
+    -- It is unclear at the moment if this presents a problem; the HFC assumes
+    -- monotonicity of timing info, in the sense that that any slot/time
+    -- conversions are either unknown or else not subject to rollback.
+    -- The problem sketched above might mean that we can go from "conversion
+    -- known" to "conversion unknown", but then when we go back again to
+    -- "conversion known", we /are/ guaranteed that we'd get the same answer.
+    --
+    -- Rather than trying to analyse this subtle problem, we instead base
+    -- stability on block numbers; after the block is `k` deep, we know for sure
+    -- that it is stable, and moreover, no matter which chain we switch to, that
+    -- will remain to be the case.
+    --
+    -- The Byron 'UpdateState' records the 'SlotNo' of the block in which the
+    -- proposal became a candidate (i.e., when the last required endorsement
+    -- came in). That doesn't tell us very much, we need to know the block
+    -- number; that's precisely what the 'ByronTransition' part of the Byron
+    -- state tells us.
+    isReallyStable :: BlockNo -> Bool
+    isReallyStable (BlockNo bno) = distance >= CC.unBlockCount k
+      where
+        distance :: Word64
+        distance = case byronLedgerTipBlockNo state of
+                     Origin                  -> bno + 1
+                     NotOrigin (BlockNo tip) -> tip - bno
+
+    -- We only expect a single proposal that updates to Shelley, but in case
+    -- there are multiple, any one will do
+    takeAny :: [a] -> Maybe a
+    takeAny = listToMaybe
 
 {-------------------------------------------------------------------------------
   SingleEraBlock Byron

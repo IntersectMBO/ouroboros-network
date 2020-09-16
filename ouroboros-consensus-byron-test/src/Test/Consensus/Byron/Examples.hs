@@ -22,6 +22,7 @@ module Test.Consensus.Byron.Examples (
   ) where
 
 import           Control.Monad.Except (runExcept)
+import qualified Data.Map.Strict as Map
 
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
@@ -173,7 +174,7 @@ emptyLedgerState :: LedgerState ByronBlock
 emptyLedgerState = ByronLedgerState {
       byronLedgerTipBlockNo = Origin
     , byronLedgerState      = initState
-    , byronLedgerTransition = ByronTransitionUnknown
+    , byronLedgerTransition = ByronTransitionInfo Map.empty
     }
   where
     initState :: CC.Block.ChainValidationState

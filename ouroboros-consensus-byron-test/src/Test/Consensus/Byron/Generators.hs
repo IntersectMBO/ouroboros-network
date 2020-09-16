@@ -14,6 +14,7 @@ module Test.Consensus.Byron.Generators (
 
 import           Control.Monad (replicateM)
 import           Data.Coerce (coerce)
+import qualified Data.Map.Strict as Map
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
@@ -261,10 +262,8 @@ instance Arbitrary CC.Del.Map where
   arbitrary = CC.Del.fromList <$> arbitrary
 
 instance Arbitrary ByronTransition where
-  arbitrary = oneof [
-        pure ByronTransitionUnknown
-        -- TODO: Add case once we implement this type properly (#2455)
-      ]
+  arbitrary = ByronTransitionInfo . Map.fromList <$> arbitrary
+
 instance Arbitrary (LedgerState ByronBlock) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
