@@ -6,6 +6,7 @@ module Main (main) where
 
 import           Data.Foldable (asum)
 import           Options.Applicative
+import           System.IO
 
 import           Control.Tracer (Tracer (..), nullTracer)
 
@@ -181,7 +182,8 @@ analyse CmdLine {..} args =
       return $ Tracer $ \ev -> do
         traceTime <- getMonotonicTime
         let diff = diffTime traceTime startTime
-        putStrLn $ concat ["[", show diff, "] ", show ev]
+        hPutStrLn stderr $ concat ["[", show diff, "] ", show ev]
+        hFlush stderr
 
     immValidationPolicy = case (analysis, validation) of
       (_, Just ValidateAllBlocks)      -> ImmutableDB.ValidateAllChunks
