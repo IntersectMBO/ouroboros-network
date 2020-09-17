@@ -557,8 +557,13 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       st <- readTVar muxStatus
       case st of
            MuxReady -> readTMVar completionVar
-           MuxStopped  -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux stopped"))
-           MuxFailed _ -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxShutdown "Mux Failed"))
+           MuxStopped -> (readTMVar completionVar)
+             <|> (return $ Left $ toException (MuxError MuxCleanShutdown ""))
+           MuxFailed e -> (readTMVar completionVar)
+             <|> (return $ Left $ toException $
+                   case fromException e of
+                     Just e'@MuxError { errorType } ->
+                       e' { errorType = MuxShutdown (Just errorType) }
+                     Nothing ->
+                       MuxError (MuxShutdown Nothing) (show e))
 

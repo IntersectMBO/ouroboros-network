@@ -11,8 +11,7 @@ author:              IOHK Engineering Team
 maintainer:          operations@iohk.io
 category:            Network
 build-type:          Simple
-extra-source-files:
-  ChangeLog.md
+-- extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
