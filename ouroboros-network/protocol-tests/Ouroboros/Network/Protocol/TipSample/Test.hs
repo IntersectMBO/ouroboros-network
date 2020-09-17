@@ -168,16 +168,6 @@ instance Eq tip => Eq (AnyMessageAndAgency (TipSample tip)) where
     _ == _ =
       False
 
-instance Show tip => Show (AnyMessageAndAgency (TipSample tip)) where
-    show (AnyMessageAndAgency agency msg) =
-      concat
-        ["AnyMessageAndAgency ("
-        , show agency
-        , ") ("
-        , show msg
-        , ")"
-        ]
-
 instance Arbitrary tip => Arbitrary (AnyMessageAndAgency (TipSample tip)) where
     arbitrary = oneof
       [ (\n slotNo -> AnyMessageAndAgency (ClientAgency TokIdle) (MsgFollowTip n slotNo))

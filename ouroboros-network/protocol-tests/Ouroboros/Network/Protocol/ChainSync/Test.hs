@@ -381,9 +381,6 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip
       serialiseBlock :: BlockHeader -> Serialised BlockHeader
       serialiseBlock = Serialised . S.serialise
 
-instance (StandardHash header, Show header, Show tip) => Show (AnyMessageAndAgency (ChainSync header tip)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance ( StandardHash header
          , Eq header
          , Eq tip

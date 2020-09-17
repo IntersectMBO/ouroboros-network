@@ -259,9 +259,6 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query)) where
 instance ShowQuery Query where
   showResult QueryPoint = show
 
-instance Show (AnyMessageAndAgency (LocalStateQuery Block Query)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance  Eq (AnyMessage (LocalStateQuery Block Query)) where
 
   (==) (AnyMessage (MsgAcquire pt))

@@ -272,9 +272,6 @@ instance Arbitrary (AnyMessageAndAgency (TxSubmission TxId Tx)) where
         pure MsgDone
     ]
 
-instance Show (AnyMessageAndAgency (TxSubmission TxId Tx)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission txid tx)) where
 
   (==) (AnyMessage (MsgRequestTxIds TokBlocking ackNo  reqNo))

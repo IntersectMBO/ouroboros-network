@@ -309,9 +309,6 @@ instance Eq (AnyMessage PingPong) where
   AnyMessage MsgDone == AnyMessage MsgDone = True
   _                  ==                  _ = False
 
-instance Show (AnyMessageAndAgency PingPong) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 prop_codec_PingPong :: AnyMessageAndAgency PingPong -> Bool
 prop_codec_PingPong =
     prop_codec

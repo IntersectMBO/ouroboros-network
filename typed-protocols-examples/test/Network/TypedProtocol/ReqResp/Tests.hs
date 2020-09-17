@@ -200,10 +200,6 @@ instance (Eq req, Eq resp) => Eq (AnyMessage (ReqResp req resp)) where
   (AnyMessage MsgDone)      == (AnyMessage MsgDone)      = True
   _                         == _                         = False
 
-instance (Show req, Show resp) =>
-         Show (AnyMessageAndAgency (ReqResp req resp)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 prop_codec_ReqResp :: AnyMessageAndAgency (ReqResp String String) -> Bool
 prop_codec_ReqResp =
     prop_codec
