@@ -128,7 +128,7 @@ driverWithLimits tracer timeoutFn
                 -> m ()
     sendMessage stok msg = do
       send (encode stok msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg (AnyMessageAndAgency stok msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
@@ -143,7 +143,7 @@ driverWithLimits tracer timeoutFn
                                        channel trailing decoder
       case result of
         Just (Right x@(SomeMessage msg, _trailing')) -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
+          traceWith tracer (TraceRecvMsg (AnyMessageAndAgency stok msg))
           return x
         Just (Left (Just failure)) -> throwM (DecoderFailure stok failure)
         Just (Left Nothing)        -> throwM (ExceededSizeLimit stok)

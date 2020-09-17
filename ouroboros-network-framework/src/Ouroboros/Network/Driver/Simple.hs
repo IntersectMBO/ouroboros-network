@@ -78,10 +78,10 @@ import Control.Tracer (Tracer (..), traceWith, contramap)
 -- | Structured 'Tracer' output for 'runPeer' and derivitives.
 --
 data TraceSendRecv ps where
-     TraceSendMsg :: AnyMessage ps -> TraceSendRecv ps
-     TraceRecvMsg :: AnyMessage ps -> TraceSendRecv ps
+     TraceSendMsg :: AnyMessageAndAgency ps -> TraceSendRecv ps
+     TraceRecvMsg :: AnyMessageAndAgency ps -> TraceSendRecv ps
 
-instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
+instance Show (AnyMessageAndAgency ps) => Show (TraceSendRecv ps) where
   show (TraceSendMsg msg) = "Send " ++ show msg
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
@@ -132,7 +132,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                 -> m ()
     sendMessage stok msg = do
       send (encode stok msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg (AnyMessageAndAgency stok msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
@@ -143,7 +143,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
       result  <- runDecoderWithChannel channel trailing decoder
       case result of
         Right x@(SomeMessage msg, _trailing') -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
+          traceWith tracer (TraceRecvMsg (AnyMessageAndAgency stok msg))
           return x
         Left failure ->
           throwM (DecoderFailure stok failure)

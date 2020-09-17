@@ -57,9 +57,6 @@ instance (Arbitrary req, Arbitrary resp) => Arbitrary (AnyMessageAndAgency (ReqR
     , pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
 
-instance (Show req, Show resp) => Show (AnyMessageAndAgency (ReqResp req resp)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance (Eq req, Eq resp) => Eq (AnyMessage (ReqResp req resp)) where
   AnyMessage (MsgReq r1)  == AnyMessage (MsgReq r2)  = r1 == r2
   AnyMessage (MsgResp r1) == AnyMessage (MsgResp r2) = r1 == r2

@@ -39,9 +39,6 @@ instance Arbitrary (AnyMessageAndAgency PingPong) where
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
 
-instance Show (AnyMessageAndAgency PingPong) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance Eq (AnyMessage PingPong) where
   AnyMessage MsgPing == AnyMessage MsgPing = True
   AnyMessage MsgPong == AnyMessage MsgPong = True
