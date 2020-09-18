@@ -250,7 +250,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         SendMsgRequestTxIdsBlocking
           (numTxsToAcknowledge st)
           numTxIdsToRequest
-          accum                      -- result if the client reports we're done
+          (pure accum)               -- result if the client reports we're done
           (\txids -> do
               traceWith tracer (EventRequestTxIdsBlocking st (numTxsToAcknowledge st) numTxIdsToRequest)
               handleReply accum Zero st {

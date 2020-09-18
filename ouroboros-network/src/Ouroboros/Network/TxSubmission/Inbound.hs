@@ -80,6 +80,8 @@ data TraceTxSubmissionInbound txid tx =
     TraceTxSubmissionCollected !Int
     -- | Just processed transaction pass/fail breakdown.
   | TraceTxSubmissionProcessed !ProcessedTxCount
+    -- | Server received 'MsgDone'
+  | TraceTxInboundTerminated
   deriving (Eq, Show)
 
 data TxSubmissionProtocolError =
@@ -220,7 +222,8 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
               SendMsgRequestTxIdsBlocking
                 (numTxsToAcknowledge st)
                 numTxIdsToRequest
-                ()        -- Our result if the client terminates the protocol
+                -- Our result if the client terminates the protocol
+                (traceWith tracer TraceTxInboundTerminated)
                 ( collectAndContinueWithState (handleReply Zero) st {
                     numTxsToAcknowledge    = 0,
                     requestedTxIdsInFlight = numTxIdsToRequest
