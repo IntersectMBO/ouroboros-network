@@ -64,7 +64,7 @@ data ServerStIdle (n :: N) txid tx m a where
   SendMsgRequestTxIdsBlocking
     :: Word16                               -- ^ number of txids to acknowledge
     -> Word16                               -- ^ number of txids to request
-    -> a                                    -- ^ Result if done
+    -> m a                                  -- ^ Result if done
     -> (NonEmpty (txid, TxSizeInBytes)
         -> m (ServerStIdle Z txid tx m a))
     -> ServerStIdle        Z txid tx m a
@@ -121,7 +121,7 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
         (ClientAgency (TokTxIds TokBlocking)) $ \msg ->
         case msg of
           MsgDone ->
-            SenderDone TokDone kDone
+            SenderEffect (SenderDone TokDone <$> kDone)
 
           MsgReplyTxIds (BlockingReply txids) ->
             SenderEffect (go <$> k txids)

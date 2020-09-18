@@ -31,7 +31,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
@@ -65,7 +65,10 @@ data TxSubmissionMempoolWriter txid tx idx m =
        mempoolAddTxs :: [tx] -> m [txid]
     }
 
-data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
+-- TODO: extend tracing issue #2615
+data TraceTxSubmissionInbound txid tx
+    -- | Server received 'MsgDone'
+    = ClientTerminated
   deriving Show
 
 data TxSubmissionProtocolError =
@@ -165,7 +168,7 @@ txSubmissionInbound
   -> TxSubmissionMempoolWriter txid tx idx m
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
+txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where
@@ -206,7 +209,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
               SendMsgRequestTxIdsBlocking
                 (numTxsToAcknowledge st)
                 numTxIdsToRequest
-                ()        -- Our result if the client terminates the protocol
+                -- Our result if the client terminates the protocol
+                (traceWith tracer ClientTerminated)
                 ( collectAndContinueWithState (handleReply Zero) st {
                     numTxsToAcknowledge    = 0,
                     requestedTxIdsInFlight = numTxIdsToRequest
