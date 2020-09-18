@@ -473,7 +473,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
         , recvMsgIntersectNotFound = \theirTip' ->
-            return $ terminate $
+            terminate $
               mkResult
                 (ourTipFromChain ourFrag)
                 (Their theirTip')
@@ -884,15 +884,17 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
     -- | Gracefully terminate the connection with the upstream node with the
     -- given result.
-    terminate :: ChainSyncClientResult -> Consensus (ClientPipelinedStIdle 'Z) blk m
-    terminate = SendMsgDone
+    terminate :: ChainSyncClientResult -> m (Consensus (ClientPipelinedStIdle 'Z) blk m)
+    terminate res = do
+      traceWith tracer (TraceTermination res)
+      pure (SendMsgDone res)
 
     -- | Same as 'terminate', but first 'drainThePipe'.
     terminateAfterDrain :: Nat n -> ChainSyncClientResult -> m (Consensus (ClientPipelinedStIdle n) blk m)
     terminateAfterDrain n result =
           continueWithState ()
         $ drainThePipe n
-        $ Stateful $ const $ return $ terminate result
+        $ Stateful $ const $ terminate result
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
@@ -1233,6 +1235,8 @@ data TraceChainSyncClientEvent blk
     -- candidate's chain.
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
+  | TraceTermination ChainSyncClientResult
+    -- ^ The client has terminated.
 
 deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))
