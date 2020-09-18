@@ -160,6 +160,16 @@ deriving instance Functor     (WithProtocolTemperature pt)
 deriving instance Foldable    (WithProtocolTemperature pt)
 deriving instance Traversable (WithProtocolTemperature pt)
 
+instance Applicative (WithProtocolTemperature Hot) where
+    pure = WithHot
+    (<*>) (WithHot f) = fmap f
+instance Applicative (WithProtocolTemperature Warm) where
+    pure = WithWarm
+    (<*>) (WithWarm f) = fmap f
+instance Applicative (WithProtocolTemperature Established) where
+    pure = WithEstablished
+    (<*>) (WithEstablished f) = fmap f
+
 instance Semigroup a => Semigroup (WithProtocolTemperature pt a) where
     WithHot a <> WithHot b = WithHot (a <> b)
     WithWarm a <> WithWarm b = WithWarm (a <> b)
@@ -229,15 +239,15 @@ projectBundle TokEstablished = withoutProtocolTemperature . withEstablished
 
 instance Applicative Bundle where
     pure a = Bundle (WithHot a) (WithWarm a) (WithEstablished a)
-    Bundle (WithHot hotFn)
-           (WithWarm warmFn)
-           (WithEstablished establishedFn)
-      <*> Bundle (WithHot hot)
-                 (WithWarm warm)
-                 (WithEstablished established) =
-          Bundle (WithHot $ hotFn hot)
-                 (WithWarm $ warmFn warm)
-                 (WithEstablished $ establishedFn established)
+    Bundle hotFn
+           warmFn
+           establishedFn
+      <*> Bundle hot
+                 warm
+                 established =
+          Bundle (hotFn <*> hot)
+                 (warmFn <*> warm)
+                 (establishedFn <*> established)
 
 --
 -- Useful type synonyms
@@ -326,37 +336,13 @@ mkMuxApplicationBundle
     -> Bundle (ControlMessageSTM m)
     -> OuroborosBundle mode addr bytes m a b
     -> MuxBundle       mode      bytes m a b
-mkMuxApplicationBundle connectionId
-                       (Bundle
-                         hotControlMessageSTM
-                         warmControlMessageSTM
-                         establishedControlMessageSTM)
-                       (Bundle
-                           hotApp
-                           warmApp
-                           establishedApp) =
-    Bundle {
-        withHot =
-          mkApplication hotControlMessageSTM hotApp,
-
-        withWarm =
-          mkApplication warmControlMessageSTM warmApp,
-
-        withEstablished =
-          mkApplication establishedControlMessageSTM establishedApp
-    }
+mkMuxApplicationBundle connectionId controlMessageBundle appBundle =
+    mkApplication <$> controlMessageBundle <*> appBundle
   where
-    mkApplication :: WithProtocolTemperature pt (ControlMessageSTM m)
-                  -> WithProtocolTemperature pt (MuxProtocolBundle mode addr bytes m a b)
-                  -> WithProtocolTemperature pt [MiniProtocol mode bytes m a b]
-    mkApplication (WithHot scheduleStop) (WithHot app) =
-      WithHot $ app connectionId scheduleStop
-
-    mkApplication (WithWarm scheduleStop) (WithWarm app) =
-      WithWarm $ app connectionId scheduleStop
-
-    mkApplication (WithEstablished scheduleStop) (WithEstablished app) =
-      WithEstablished $ app connectionId scheduleStop
+    mkApplication :: (ControlMessageSTM m)
+                  -> (MuxProtocolBundle mode addr bytes m a b)
+                  -> [MiniProtocol mode bytes m a b]
+    mkApplication controlMessageSTM app = app connectionId controlMessageSTM
 
 
 toMuxRunMiniProtocol :: forall mode m a b.
