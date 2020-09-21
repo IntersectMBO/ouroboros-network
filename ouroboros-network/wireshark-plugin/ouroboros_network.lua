@@ -56,7 +56,7 @@ local txsubmission_msg_codes = {
 	[1] = "MsgReplyTxIds",
 	[2] = "MsgRequestTxs",
 	[3] = "MsgReplyTxs",
-	[4] = "TokBlocking"
+	[4] = "MsgDone"
 }
 
 local on_txsubmission_msg = ProtoField.uint8("ouroboros.txsubmsg", "TxSubmission Message", base.DEC, txsubmission_msg_codes, nil, "TxSubmission Message Types")
