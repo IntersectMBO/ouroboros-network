@@ -473,10 +473,14 @@ tracePropertyInFlight =
 
     -- check that by the end of the trace there are no requests in flight
     checkTrace (Just _) _ []
-      = property False
+      = counterexample
+          "tracePropertyInFlight: fetch requests in flight"
+          False
     checkTrace Nothing reqsInFlight []
       | reqsInFlight > 0
-      = property False
+      = counterexample
+          ("traceProeprtyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
+          False
       | otherwise
       = property True
 
