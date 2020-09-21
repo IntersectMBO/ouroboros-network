@@ -21,7 +21,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
-import           Control.Exception (AssertionFailed (..))
+import           Control.Exception (AssertionFailed (..), throw)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -41,9 +41,11 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.Examples
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Mux (continueForever)
+import           Ouroboros.Network.Mux (ControlMessage (..), continueForever)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Testing.ConcreteBlock
+
+import           Test.Ouroboros.Network.Utils
 
 
 --
@@ -64,6 +66,8 @@ tests = testGroup "BlockFetch"
   --TODO: test where for any given delta-Q, check that we do achieve full
   -- pipelining to keep the server busy and get decent enough batching of
   -- requests (testing the high/low watermark mechanism).
+  , testProperty "termination"
+                 prop_terminate
   ]
 
 
@@ -106,14 +110,14 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
    .&&. tracePropertyInFlight trace
 
   where
-    simulation :: SimM s ()
+    simulation :: IOSim s ()
     simulation =
       blockFetchExample1
         (contramap TraceFetchDecision       dynamicTracer)
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (SimM s)))
+        (continueForever (Proxy :: Proxy (IOSim s)))
         common' forks
 
     -- TODO: consider making a specific generator for anchored fragment forks
@@ -167,14 +171,14 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
    .&&. tracePropertyInFlight trace
 
   where
-    simulation :: forall s. SimM s ()
+    simulation :: forall s. IOSim s ()
     simulation =
       blockFetchExample1
         (contramap TraceFetchDecision       dynamicTracer)
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (SimM s)))
+        (continueForever (Proxy :: Proxy (IOSim s)))
         (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
         forks
 
@@ -606,6 +610,50 @@ _unit_bracketSyncWithFetchClient step = do
                 Just (Left e) -> throwIO e
                 _             -> return ()
             return res
+
+-- | Check that the client can terminate using `ControlMessage` mechanism.
+--
+-- The 'awaitDelay' of @100 * delay@ is a bit arbitrary.  It would be nicer to
+-- make a proper calucation what should it be.  At the moment this test shows
+-- that the block fetch protocol can exit within some large time limit.
+--
+prop_terminate :: TestChainFork -> Delay -> Property
+prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Delay delay) =
+    let tr = runSimTrace simulation
+        trace :: [FetchRequestTrace]
+        trace  = selectTraceEventsDynamic tr
+    in counterexample
+        ("Trace: \n" ++ unlines (map show trace))
+        (case traceResult True tr of
+           Left e  -> throw e
+           Right x -> counterexample "block-fetch was unstoppable" x)
+  where
+    simulation :: forall s. IOSim s Bool
+    simulation = do
+      controlMessageVar <- newTVarIO Continue
+      result <-
+        race
+          (do
+            let terminateDelay =
+                  realToFrac (Chain.length forkChain) * delay / 2
+            threadDelay terminateDelay
+            atomically (writeTVar controlMessageVar Terminate)
+            let awaitDelay = delay * 100
+            threadDelay awaitDelay)
+          (blockFetchExample0
+            (contramap TraceFetchDecision       dynamicTracer)
+            (contramap TraceFetchClientState    dynamicTracer)
+            (contramap TraceFetchClientSendRecv dynamicTracer)
+            (Just delay) (Just delay)
+            (readTVar controlMessageVar)
+            (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
+            fork')
+      return $ case result of
+        Left _ -> False
+        Right _ -> True
+
+    fork'  = chainToAnchoredFragment forkChain
+
 
 
 --

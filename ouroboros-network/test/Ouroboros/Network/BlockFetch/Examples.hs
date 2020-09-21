@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.BlockFetch.Examples (
+    blockFetchExample0,
     blockFetchExample1,
     mockBlockFetchServer1,
     exampleFixedPeerGSVs,
@@ -55,6 +56,91 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
 
 import           Ouroboros.Network.Testing.ConcreteBlock
+
+
+-- | Run a single block fetch protocol until the chain is downloaded.
+--
+blockFetchExample0 :: forall m.
+                      (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
+                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
+                   => Tracer m [TraceLabelPeer Int
+                                 (FetchDecision [Point BlockHeader])]
+                   -> Tracer m (TraceLabelPeer Int
+                                 (TraceFetchClientState BlockHeader))
+                   -> Tracer m (TraceLabelPeer Int
+                                 (TraceSendRecv (BlockFetch Block)))
+                   -> Maybe DiffTime -- ^ client's channel delay
+                   -> Maybe DiffTime -- ^ servers's channel delay
+                   -> ControlMessageSTM m
+                   -> AnchoredFragment Block -- ^ Fixed current chain
+                   -> AnchoredFragment Block -- ^ Fixed candidate chain
+                   -> m ()
+blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
+                   clientDelay serverDelay
+                   controlMessageSTM
+                   currentChain candidateChain = do
+
+    registry    <- newFetchClientRegistry
+    blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
+
+    (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
+                <- runFetchClientAndServerAsync
+                    (contramap (TraceLabelPeer peerno) clientMsgTracer)
+                    (contramap (TraceLabelPeer peerno) serverMsgTracer)
+                    clientDelay serverDelay
+                    registry peerno
+                    (blockFetchClient NodeToNodeV_1 controlMessageSTM)
+                    (mockBlockFetchServer1 (unanchorFragment candidateChain))
+
+    fetchAsync  <- async $ blockFetch registry blockHeap
+    driverAsync <- async $ driver blockHeap
+
+    -- Order of shutdown here is important for this example: must kill off the
+    -- fetch thread before the peer threads.
+    _ <- waitAnyCancel $ [ fetchAsync, driverAsync,
+                           clientAsync, serverAsync,
+                           syncClientAsync, keepAliveAsync]
+    return ()
+
+  where
+    peerno = 1 :: Int
+
+    serverMsgTracer = nullTracer
+
+    currentChainHeaders =
+      AnchoredFragment.mapAnchoredFragment blockHeader currentChain
+
+    candidateChainHeaders =
+      Map.fromList $ zip [1..] $
+      map (AnchoredFragment.mapAnchoredFragment blockHeader) [candidateChain]
+
+    anchoredChainPoints c = anchorPoint c
+                          : map blockPoint (AnchoredFragment.toOldestFirst c)
+
+    blockFetch :: FetchClientRegistry Int BlockHeader Block m
+               -> TestFetchedBlockHeap m Block
+               -> m ()
+    blockFetch registry blockHeap =
+        blockFetchLogic
+          decisionTracer clientStateTracer
+          (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
+          registry
+          (BlockFetchConfiguration {
+            bfcMaxConcurrencyBulkSync = 1,
+            bfcMaxConcurrencyDeadline = 2,
+            bfcMaxRequestsInflight    = 10,
+            bfcDecisionLoopInterval   = 0.01,
+            bfcSalt                   = 0
+          })
+        >> return ()
+
+    driver :: TestFetchedBlockHeap m Block -> m ()
+    driver blockHeap = do
+      atomically $ do
+        heap <- getTestFetchedBlocks blockHeap
+        check $
+          all (\c -> AnchoredFragment.headPoint c `Set.member` heap)
+              [candidateChain]
 
 
 --
