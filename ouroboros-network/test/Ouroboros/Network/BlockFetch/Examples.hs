@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.List (foldl')
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -40,6 +41,7 @@ import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
+import           Ouroboros.Network.Mux (continueForever)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
@@ -92,7 +94,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         (contramap (TraceLabelPeer peerno) clientMsgTracer)
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
                         registry peerno
-                        (blockFetchClient NodeToNodeV_1)
+                        (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy m)))
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]

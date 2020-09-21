@@ -18,6 +18,7 @@ module Ouroboros.Network.Mux
   , ControlMessage (..)
   , ControlMessageSTM
   , continueForever
+  , timeoutWithControlMessage
 
     -- * Re-exports
     -- | from "Network.Mux"
@@ -78,6 +79,28 @@ continueForever :: Applicative (STM m)
           => proxy m
           -> ControlMessageSTM m
 continueForever _ = pure Continue
+
+
+-- | First to finish synchronisation between 'Terminate' state of
+-- 'ControlMessage' and an stm action.
+--
+-- This should return @STM m (Maybe a)@ but 'STM' is a non-injective type
+-- family, and we would need to pass @Proxy m@ to fix an ambiuous type (or use
+-- 'AllowAmbiguousTypes' extension).
+--
+timeoutWithControlMessage :: MonadSTM m
+                          => ControlMessageSTM m
+                          -> STM m a
+                          -> m (Maybe a)
+timeoutWithControlMessage controlMessageSTM stm =
+    atomically $
+      do
+        cntrlMsg <- controlMessageSTM
+        case cntrlMsg of
+          Terminate -> return Nothing
+          Continue  -> retry
+          Quiesce   -> retry
+      `orElse` (Just <$> stm)
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw

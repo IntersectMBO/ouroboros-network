@@ -15,6 +15,7 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
 import           Data.List
 import qualified Data.Map as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Text.Read (readMaybe)
@@ -296,7 +297,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
               codecBlockFetch
               channel
-              (blockFetchClient NodeToNodeV_1 clientCtx)
+              (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO)) clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO

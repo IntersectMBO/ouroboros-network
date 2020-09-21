@@ -27,8 +27,11 @@ import           Control.Exception (assert)
 
 import qualified Data.Set as Set
 
+import           Control.Tracer (traceWith)
+
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Network.Mux (ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
@@ -42,7 +45,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , FetchClientStateVars (fetchClientInFlightVar)
                    , FetchRequest(..)
                    , PeerFetchInFlight(..)
-                   , TraceFetchClientState
+                   , TraceFetchClientState (..)
                    , fetchClientCtxStateVars
                    , acknowledgeFetchRequest
                    , startedFetchBatch
@@ -73,14 +76,15 @@ type BlockFetchClient header block m a =
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
-blockFetchClient :: forall header block m void.
+blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion
+                 -> ControlMessageSTM m
                  -> FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m void
-blockFetchClient _version
+                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
+blockFetchClient _version controlMessageSTM
                  FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
@@ -95,7 +99,7 @@ blockFetchClient _version
     senderIdle :: forall n.
                   Nat n
                -> PeerSender (BlockFetch block) AsClient
-                             BFIdle n () m void
+                             BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
     -- results to collect. If so, go round and collect any more. If not, block
@@ -122,7 +126,7 @@ blockFetchClient _version
     senderAwait :: forall n.
                    Nat n
                 -> PeerSender (BlockFetch block) AsClient
-                              BFIdle n () m void
+                              BFIdle n () m ()
     senderAwait outstanding =
       SenderEffect $ do
       -- Atomically grab our next request and update our tracking state.
@@ -135,11 +139,16 @@ blockFetchClient _version
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (request, gsvs, inflightlimits) <-
-        acknowledgeFetchRequest tracer stateVars
+      result <-
+          acknowledgeFetchRequest tracer controlMessageSTM stateVars
 
-      return $ senderActive outstanding gsvs inflightlimits
-                            (fetchRequestFragments request)
+      case result of
+        Nothing -> do
+          traceWith tracer (ClientTerminating $ natToInt outstanding)
+          return $ senderTerminate outstanding
+        Just (request, gsvs, inflightlimits) ->
+          return $ senderActive outstanding gsvs inflightlimits
+                                (fetchRequestFragments request)
 
     senderActive :: forall n.
                     Nat n
@@ -147,7 +156,7 @@ blockFetchClient _version
                  -> PeerFetchInFlightLimits
                  -> [AnchoredFragment header]
                  -> PeerSender (BlockFetch block) AsClient
-                               BFIdle n () m void
+                               BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
@@ -187,6 +196,20 @@ blockFetchClient _version
 
     -- And when we run out, go back to idle.
     senderActive outstanding _ _ [] = senderIdle outstanding
+
+
+    -- Terminate the sender; 'controlMessageSTM' returned 'Terminate'.
+    senderTerminate :: forall n.
+                       Nat n
+                    -> PeerSender (BlockFetch block) AsClient
+                                  BFIdle n () m ()
+    senderTerminate Zero =
+      SenderYield (ClientAgency TokIdle)
+                  MsgClientDone
+                  (SenderDone TokDone ())
+    senderTerminate (Succ n) =
+      SenderCollect Nothing
+                    (\_ -> senderTerminate n)
 
 
     receiverBusy :: ChainRange header
