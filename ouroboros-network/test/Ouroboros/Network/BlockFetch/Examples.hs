@@ -16,7 +16,7 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.List (foldl')
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -41,7 +41,7 @@ import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
-import           Ouroboros.Network.Mux (continueForever)
+import           Ouroboros.Network.Mux (ControlMessageSTM)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
@@ -80,10 +80,15 @@ blockFetchExample1 :: forall m.
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceSendRecv (BlockFetch Block)))
+                   -> Maybe DiffTime -- ^ client's channel delay
+                   -> Maybe DiffTime -- ^ server's channel delay
+                   -> ControlMessageSTM m
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
 blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
+                   clientDelay serverDelay
+                   controlMessageSTM
                    currentChain candidateChains = do
 
     registry    <- newFetchClientRegistry
@@ -93,8 +98,9 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                     [ runFetchClientAndServerAsync
                         (contramap (TraceLabelPeer peerno) clientMsgTracer)
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
+                        clientDelay serverDelay
                         registry peerno
-                        (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy m)))
+                        (blockFetchClient NodeToNodeV_1 controlMessageSTM)
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
@@ -244,6 +250,8 @@ runFetchClientAndServerAsync
                    ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Tracer m (TraceSendRecv (BlockFetch block))
+                -> Maybe DiffTime -- ^ client's channel delay
+                -> Maybe DiffTime -- ^ server's channel delay
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
@@ -251,17 +259,20 @@ runFetchClientAndServerAsync
                 -> BlockFetchServer block m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
+                             clientDelay  serverDelay
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
 
     clientAsync <- async $ runFetchClient
                              clientTracer
                              registry peerid
-                             clientChannel client
+                             (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
+                             client
 
     serverAsync <- async $ runFetchServer
                              serverTracer
-                             serverChannel server
+                             (fromMaybe id (delayChannel <$> serverDelay) serverChannel)
+                             server
 
     -- we are tagging messages with the current peerid, not the target
     -- one, this is different than what's intended but it's fine to do that in

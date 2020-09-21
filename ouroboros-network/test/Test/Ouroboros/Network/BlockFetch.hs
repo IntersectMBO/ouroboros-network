@@ -16,6 +16,7 @@ import           Data.List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -40,6 +41,7 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.Examples
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mux (continueForever)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -89,13 +91,7 @@ tests = testGroup "BlockFetch"
 --
 prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
 prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
-    let trace = selectTraceEventsDynamic $
-                runSimTrace $
-                  blockFetchExample1
-                    (contramap TraceFetchDecision       dynamicTracer)
-                    (contramap TraceFetchClientState    dynamicTracer)
-                    (contramap TraceFetchClientSendRecv dynamicTracer)
-                    common' forks
+    let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
 
@@ -110,6 +106,16 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
    .&&. tracePropertyInFlight trace
 
   where
+    simulation :: SimM s ()
+    simulation =
+      blockFetchExample1
+        (contramap TraceFetchDecision       dynamicTracer)
+        (contramap TraceFetchClientState    dynamicTracer)
+        (contramap TraceFetchClientSendRecv dynamicTracer)
+        Nothing Nothing
+        (continueForever (Proxy :: Proxy (SimM s)))
+        common' forks
+
     -- TODO: consider making a specific generator for anchored fragment forks
     common' = chainToAnchoredFragment common
     fork1'  = chainToAnchoredFragment fork1
@@ -138,15 +144,11 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
+-- TODO: 'prop_blockFetchStaticWithOverlap' fails if we introduce delays. issue #2622
+--
 prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
 prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
-    let trace = selectTraceEventsDynamic $
-                runSimTrace $
-                  blockFetchExample1
-                    (contramap TraceFetchDecision       dynamicTracer)
-                    (contramap TraceFetchClientState    dynamicTracer)
-                    (contramap TraceFetchClientSendRecv dynamicTracer)
-                    (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis) forks
+    let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
 
@@ -165,6 +167,17 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
    .&&. tracePropertyInFlight trace
 
   where
+    simulation :: forall s. SimM s ()
+    simulation =
+      blockFetchExample1
+        (contramap TraceFetchDecision       dynamicTracer)
+        (contramap TraceFetchClientState    dynamicTracer)
+        (contramap TraceFetchClientSendRecv dynamicTracer)
+        Nothing Nothing
+        (continueForever (Proxy :: Proxy (SimM s)))
+        (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
+        forks
+
     -- TODO: consider making a specific generator for anchored fragment forks
     fork1'  = chainToAnchoredFragment fork1
     fork2'  = chainToAnchoredFragment fork2
