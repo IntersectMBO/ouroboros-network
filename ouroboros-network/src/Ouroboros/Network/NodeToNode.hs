@@ -285,24 +285,22 @@ nodeToNodeProtocols MiniProtocolParameters {
         -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
         -- blocks (currently '10').  This is currently hard coded in
         -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
-        -- @maxInFlightReqsPerPeer = 10@ is specified).  In the future the
+        -- @maxInFlightReqsPerPeer = 100@ is specified).  In the future the
         -- block fetch client will count bytes rather than blocks.  By far
         -- the largest (and the only pipelined message) in 'block-fetch'
-        -- protocol is 'MsgBlock'.  We put a hard limit of 2Mb on each block.
+        -- protocol is 'MsgBlock'.  Current block size limit is 64KB and
+        -- `blockFetchPipeliningMax` below is set to `100`.  This means that
+        -- overall queue limit must be:
         --
-        -- - size of 'MsgBlock'
-        --   ```
-        --       1               -- encodeListLen 2
-        --     + 1               -- encodeWord 4
-        --     + 2 * 1024 * 1024 -- block size limit
-        --     = 2_097_154
-        --   ```
+        -- ```
+        -- 100 * 64KB = 6.4MB
+        -- ```
         --
-        -- So the overall limit is `10 * 2_097_154 = 20_971_540` (i.e. aroudn
-        -- '20Mb'), we add 10% safety margin:
+        -- In the byron era this limit was set to `10 * 2MB`, we keep the more
+        -- relaxed limit here.
         --
-        maximumIngressQueue = addSafetyMargin $
-          fromIntegral blockFetchPipeliningMax * 2_097_154
+        maximumIngressQueue = addSafetyMargin $ fromIntegral $
+          max (10 * 2_097_154) (blockFetchPipeliningMax * 65535)
       }
 
     txSubmissionProtocolLimits = MiniProtocolLimits {
