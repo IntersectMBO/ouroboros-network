@@ -54,7 +54,7 @@ Table~\ref{segment-header} shows the layout of the data segments of the multiple
 The segment header contains the following data:
 \begin{description}
 \item[Transmission Time]
-  The transmission time is a time stamp based the wall clock of the peer with a
+  The transmission time is a time stamp based the lower 32 bits of the sender's monotonic clock with a
   resolution of one microsecond.
 \item[Mini Protocol ID] The unique ID of the mini protocol as in Table~\ref{mini-protocol-id}.
 \item[Payload Length] The payload length is the size of the segment payload in Bytes.
@@ -93,7 +93,7 @@ Note that, the messages within a segment must all belong to the same mini protoc
 The demultiplexer eagerly reads data from its ingress.
 There is a fixed size buffer between the egress of the demultiplexer and the ingress of
 the mini protocols.
-Each mini protocol implements its own mechanism for flow control which guaranties that this buffer
+Each mini protocol implements its own mechanism for flow control which guarantees that this buffer
 never overflows (See Section~\ref{pipelining}.).
 If the demultiplexer detects an overflow of the buffer, it means that the peer violated the
 protocol and the MUX/DEMUX layer shuts down the connection to the peer.
@@ -180,8 +180,9 @@ A connection passes through several stages during its life cycle.
   1  & DeltaQ                                & Yes  & Yes \\ \hline
   2  & Chain-Sync instantiated to headers    & Yes  & No \\ \hline
   3  & Block-Fetch                           & Yes  & No  \\ \hline
-  4  & Transaction-Submission                & No   & Yes  \\ \hline
+  4  & TxSubmission                          & Yes  & No   \\ \hline
   5  & Chain-Sync instantiated to blocks     & No   & Yes  \\ \hline
+  6  & Local TxSubmission                    & No   & Yes  \\ \hline
 \end{tabular}
 \caption{Mini Protocol IDs}
 \label{mini-protocol-id}
