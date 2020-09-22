@@ -56,15 +56,18 @@ import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 
 import           Ouroboros.Consensus.Shelley.Ledger
+import qualified Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
-
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as Era
+
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.ByronTranslation as SL
+import qualified Shelley.Spec.Ledger.Genesis as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 
@@ -189,12 +192,58 @@ byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
     takeAny = listToMaybe
 
 {-------------------------------------------------------------------------------
+  Figure out the transition point for Shelley
+-------------------------------------------------------------------------------}
+
+shelleyTransition ::
+     forall era.
+     PartialLedgerConfig (ShelleyBlock era)
+  -> Word16   -- ^ Next era's major protocol version
+  -> LedgerState (ShelleyBlock era)
+  -> Maybe EpochNo
+shelleyTransition ShelleyPartialLedgerConfig{..}
+                  transitionMajorVersion
+                  state =
+      takeAny
+    . mapMaybe isTransition
+    . Shelley.Inspect.protocolUpdates genesis
+    $ state
+  where
+    ShelleyTransitionInfo{..} = shelleyLedgerTransition state
+
+    -- 'shelleyLedgerConfig' contains a dummy 'EpochInfo' but this does not
+    -- matter for extracting the genesis config
+    genesis :: SL.ShelleyGenesis era
+    genesis = shelleyLedgerGenesis shelleyLedgerConfig
+
+    k :: Word64
+    k = SL.sgSecurityParam genesis
+
+    isTransition :: Shelley.Inspect.ProtocolUpdate era -> Maybe EpochNo
+    isTransition Shelley.Inspect.ProtocolUpdate{..} = do
+         SL.ProtVer major _minor <- proposalVersion
+         guard $ fromIntegral major == transitionMajorVersion
+         guard $ proposalReachedQuorum
+         guard $ shelleyAfterVoting >= fromIntegral k
+         return proposalEpoch
+       where
+         Shelley.Inspect.UpdateProposal{..} = protocolUpdateProposal
+         Shelley.Inspect.UpdateState{..}    = protocolUpdateState
+
+    -- In principle there could be multiple proposals that all change the
+    -- major protocol version. In practice this can't happen because each
+    -- delegate can only vote for one proposal, but the types don't guarantee
+    -- this. We don't need to worry about this, and just pick any of them.
+    takeAny :: [a] -> Maybe a
+    takeAny = listToMaybe
+
+{-------------------------------------------------------------------------------
   SingleEraBlock Byron
 -------------------------------------------------------------------------------}
 
 instance SingleEraBlock ByronBlock where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
-      case triggerHardFork pcfg of
+      case byronTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
         TriggerHardForkAtVersion shelleyMajorVersion ->
@@ -228,8 +277,8 @@ data TriggerHardFork =
 -- condition for the hard fork to Shelley, as we don't have to modify the
 -- ledger config for standalone Byron.
 data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
-      byronLedgerConfig :: !(LedgerConfig ByronBlock)
-    , triggerHardFork   :: !TriggerHardFork
+      byronLedgerConfig    :: !(LedgerConfig ByronBlock)
+    , byronTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -244,8 +293,15 @@ instance HasPartialLedgerConfig ByronBlock where
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto era => SingleEraBlock (ShelleyBlock era) where
-  -- No transition from Shelley to Goguen yet
-  singleEraTransition _cfg _eraParams _eraStart _st = Nothing
+  singleEraTransition pcfg _eraParams _eraStart ledgerState =
+      case shelleyTriggerHardFork pcfg of
+        TriggerHardForkNever                         -> Nothing
+        TriggerHardForkAtEpoch   epoch               -> Just epoch
+        TriggerHardForkAtVersion shelleyMajorVersion ->
+            shelleyTransition
+              pcfg
+              shelleyMajorVersion
+              ledgerState
 
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Shelley"
@@ -259,7 +315,7 @@ instance TPraosCrypto era => HasPartialConsensusConfig (TPraos era) where
   -- 'ChainSelConfig' is ()
   partialChainSelConfig _ _ = ()
 
-newtype ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
+data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       -- | We cache the non-partial ledger config containing a dummy
       -- 'EpochInfo' that needs to be replaced with the correct one.
       --
@@ -267,7 +323,8 @@ newtype ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       -- 'completeLedgerConfig' is called, as 'mkShelleyLedgerConfig' does
       -- some rather expensive computations that shouldn't be repeated too
       -- often (e.g., 'sgActiveSlotCoeff').
-      getShelleyPartialLedgerConfig :: ShelleyLedgerConfig era
+      shelleyLedgerConfig    :: !(ShelleyLedgerConfig era)
+    , shelleyTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -275,7 +332,7 @@ instance TPraosCrypto era => HasPartialLedgerConfig (ShelleyBlock era) where
   type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
 
   -- Replace the dummy 'EpochInfo' with the real one
-  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg) =
+  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
               SL.epochInfo = epochInfo
@@ -362,7 +419,7 @@ translateLedgerStateByronToShelleyWrapper =
             epochNo
             (byronLedgerState ledgerByron)
       , shelleyLedgerTransition =
-          ShelleyTransitionUnknown
+          ShelleyTransitionInfo{shelleyAfterVoting = 0}
       }
 
 translateChainDepStateByronToShelleyWrapper

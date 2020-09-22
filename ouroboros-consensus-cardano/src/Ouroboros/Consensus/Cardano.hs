@@ -132,7 +132,8 @@ data Protocol (m :: Type -> Type) blk p where
        -- taken place.
        --
        -- The @Nothing@ case is useful for test and possible alternative nets.
-    -> TriggerHardFork
+    -> TriggerHardFork -- ^ Transition from Byron to Shelley
+    -> TriggerHardFork -- ^ Transition from Shelley to ShelleyMA
     -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
@@ -156,11 +157,11 @@ protocolInfo (ProtocolShelley genesis initialNonce protVer maxMajorPV mbLeaderCr
 protocolInfo (ProtocolCardano
                genesisByron mthr prv swv mbLeaderCredentialsByron
                genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
-               mbLowerBound hardCodedTransition) =
+               mbLowerBound byronTransition shelleyTransition) =
     protocolInfoCardano
       genesisByron mthr prv swv mbLeaderCredentialsByron
       genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
-      mbLowerBound hardCodedTransition
+      mbLowerBound byronTransition shelleyTransition
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

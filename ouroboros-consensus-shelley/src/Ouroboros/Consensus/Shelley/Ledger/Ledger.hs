@@ -59,6 +59,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
@@ -74,6 +75,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.HardFork.History.Util
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
@@ -174,13 +176,29 @@ data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
     }
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
--- | Hardfork point from Shelley to the next ledger
---
--- Placeholder type until we properly address #2471
-data ShelleyTransition =
-    -- | Transition point not yet known
-    ShelleyTransitionUnknown
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+-- | Information required to determine the hard fork point from Shelley to the
+-- next ledger
+newtype ShelleyTransition = ShelleyTransitionInfo {
+      -- | The number of blocks in this epoch past the voting deadline
+      --
+      -- We record this to make sure that we can tell the HFC about hard forks
+      -- if and only if we are certain:
+      --
+      -- 1. Blocks that came in within an epoch after the 4k/f voting deadline
+      --    are not relevant (10k/f - 2 * 3k/f).
+      -- 2. Since there are slots between blocks, we are probably only sure that
+      --    there will be no more relevant block when we have seen the first
+      --    block after the deadline.
+      -- 3. If we count how many blocks we have seen post deadline, and we have
+      --    reached k of them, we know that that last pre-deadline block won't
+      --    be rolled back anymore.
+      -- 4. At this point we can look at the ledger state and see which
+      --    proposals we accepted in the voting period, if any, and notify the
+      --    HFC is one of them indicates a transition.
+      shelleyAfterVoting :: Word32
+    }
+  deriving stock   (Eq, Show, Generic)
+  deriving newtype (NoUnexpectedThunks)
 
 shelleyLedgerTipPoint :: LedgerState (ShelleyBlock era) -> Point (ShelleyBlock era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
@@ -203,8 +221,9 @@ instance GetTip (Ticked (LedgerState (ShelleyBlock era))) where
 
 -- | Ticking only affects the state itself
 data instance Ticked (LedgerState (ShelleyBlock era)) = TickedShelleyLedgerState {
-      untickedShelleyLedgerTip :: !(WithOrigin (ShelleyTip era))
-    , tickedShelleyLedgerState :: !(SL.ShelleyState era)
+      untickedShelleyLedgerTip        :: !(WithOrigin (ShelleyTip era))
+    , untickedShelleyLedgerTransition :: !ShelleyTransition
+    , tickedShelleyLedgerState        :: !(SL.ShelleyState era)
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -216,13 +235,18 @@ untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
   type LedgerErr (LedgerState (ShelleyBlock era)) = ShelleyLedgerError era
 
-  applyChainTick cfg slotNo (ShelleyLedgerState tip bhState _) =
+  applyChainTick cfg slotNo ShelleyLedgerState{
+                                shelleyLedgerTip
+                              , shelleyLedgerState
+                              , shelleyLedgerTransition
+                              } =
       TickedShelleyLedgerState {
-          untickedShelleyLedgerTip = tip
-        , tickedShelleyLedgerState = SL.applyTickTransition
-                                       (shelleyLedgerGlobals cfg)
-                                       bhState
-                                       slotNo
+          untickedShelleyLedgerTip        = shelleyLedgerTip
+        , untickedShelleyLedgerTransition = shelleyLedgerTransition
+        , tickedShelleyLedgerState        = SL.applyTickTransition
+                                              (shelleyLedgerGlobals cfg)
+                                              shelleyLedgerState
+                                              slotNo
         }
 
 instance TPraosCrypto era
@@ -254,20 +278,47 @@ applyHelper ::
   -> ShelleyBlock era
   -> Ticked (LedgerState (ShelleyBlock era))
   -> m (LedgerState (ShelleyBlock era))
-applyHelper f cfg blk (TickedShelleyLedgerState _ oldShelleyState) = do
-    newShelleyState <- f globals oldShelleyState (shelleyBlockRaw blk)
+applyHelper f cfg blk TickedShelleyLedgerState{
+                          untickedShelleyLedgerTransition
+                        , tickedShelleyLedgerState
+                        } = do
+    newShelleyState <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
 
     return ShelleyLedgerState {
-        shelleyLedgerTip        = NotOrigin ShelleyTip {
-                                      shelleyTipBlockNo = blockNo   blk
-                                    , shelleyTipSlotNo  = blockSlot blk
-                                    , shelleyTipHash    = blockHash blk
-                                    }
-      , shelleyLedgerState      = newShelleyState
-      , shelleyLedgerTransition = ShelleyTransitionUnknown
+        shelleyLedgerTip = NotOrigin ShelleyTip {
+            shelleyTipBlockNo = blockNo   blk
+          , shelleyTipSlotNo  = blockSlot blk
+          , shelleyTipHash    = blockHash blk
+          }
+      , shelleyLedgerState =
+          newShelleyState
+      , shelleyLedgerTransition = ShelleyTransitionInfo {
+            shelleyAfterVoting =
+              if blockSlot blk < votingDeadline then
+                0
+              else
+                succ (shelleyAfterVoting untickedShelleyLedgerTransition)
+          }
       }
   where
     globals = shelleyLedgerGlobals cfg
+    swindow = SL.stabilityWindow globals
+
+    ei :: EpochInfo Identity
+    ei = SL.epochInfo (shelleyLedgerGlobals cfg)
+
+    -- The start of the next epoch is within the safe zone, always.
+    startOfNextEpoch :: SlotNo
+    startOfNextEpoch = runIdentity $ do
+        blockEpoch <- epochInfoEpoch ei (blockSlot blk)
+        let nextEpoch = succ blockEpoch
+        epochInfoFirst ei nextEpoch
+
+    -- The block must come in strictly before the voting deadline
+    -- See Fig 13, "Protocol Parameter Update Inference Rules", of the
+    -- Shelley specification.
+    votingDeadline :: SlotNo
+    votingDeadline = subSlots (2 * swindow) startOfNextEpoch
 
 instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
   protocolLedgerView _cfg = TickedPraosLedgerView
@@ -578,16 +629,14 @@ decodeShelleyTip = do
       }
 
 encodeShelleyTransition :: ShelleyTransition -> Encoding
-encodeShelleyTransition ShelleyTransitionUnknown = mconcat [
-      CBOR.encodeWord8 0
+encodeShelleyTransition ShelleyTransitionInfo{shelleyAfterVoting} = mconcat [
+      CBOR.encodeWord32 shelleyAfterVoting
     ]
 
 decodeShelleyTransition :: Decoder s ShelleyTransition
 decodeShelleyTransition = do
-    tag <- CBOR.decodeWord8
-    case tag of
-      0 -> return $ ShelleyTransitionUnknown
-      _ -> fail $ "decodeShelleyTransition: invalid tag " <> show tag
+    shelleyAfterVoting <- CBOR.decodeWord32
+    return ShelleyTransitionInfo{shelleyAfterVoting}
 
 encodeShelleyLedgerState :: Era era => LedgerState (ShelleyBlock era) -> Encoding
 encodeShelleyLedgerState

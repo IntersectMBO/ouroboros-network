@@ -275,11 +275,12 @@ protocolInfoCardano
   -> Maybe (TPraosLeaderCredentials (ShelleyEra c))
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
-  -> TriggerHardFork
+  -> TriggerHardFork -- ^ Transition from Byron to Shelley
+  -> TriggerHardFork -- ^ Transition from Shelley to ShelleyMA
   -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                     genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
-                    mbLowerBound triggerHardFork =
+                    mbLowerBound byronTriggerHardFork shelleyTriggerHardFork =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig = cfg
@@ -314,8 +315,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
 
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig = ledgerConfigByron
-        , triggerHardFork   = triggerHardFork
+          byronLedgerConfig    = ledgerConfigByron
+        , byronTriggerHardFork = byronTriggerHardFork
         }
 
     kByron :: SecurityParam
@@ -346,6 +347,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
         mkPartialLedgerConfigShelley
           genesisShelley
           maxMajorPV
+          shelleyTriggerHardFork
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
@@ -455,13 +457,22 @@ ledgerConfigCardano ::
   -> MaxMajorProtVer
 
      -- Hard fork
-  -> TriggerHardFork
-  -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
+  -> TriggerHardFork -- ^ transition from Byron to Shelley
+  -> Maybe EpochNo   -- ^ lower bound on first Shelley epoch
+  -> TriggerHardFork -- ^ transition from Shelley to ShelleyMA
 
   -> CardanoLedgerConfig c
-ledgerConfigCardano genesisByron
-                    genesisShelley  maxMajorPV
-                    triggerHardFork mbLowerBound =
+ledgerConfigCardano
+    -- Byron
+    genesisByron
+    -- Shelley
+    genesisShelley
+    maxMajorPV
+    -- HFC
+    byronTriggerHardFork
+    mbLowerBound
+    shelleyTriggerHardFork
+  =
     HardForkLedgerConfig {
         hardForkLedgerConfigShape  = shape
       , hardForkLedgerConfigPerEra = PerEraLedgerConfig
@@ -475,8 +486,8 @@ ledgerConfigCardano genesisByron
 
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig = genesisByron
-        , triggerHardFork   = triggerHardFork
+          byronLedgerConfig    = genesisByron
+        , byronTriggerHardFork = byronTriggerHardFork
         }
 
     -- Shelley
@@ -486,6 +497,7 @@ ledgerConfigCardano genesisByron
         mkPartialLedgerConfigShelley
           genesisShelley
           maxMajorPV
+          shelleyTriggerHardFork
 
     -- Cardano
 
@@ -502,15 +514,19 @@ ledgerConfigCardano genesisByron
 mkPartialLedgerConfigShelley ::
      ShelleyGenesis (ShelleyEra c)
   -> MaxMajorProtVer
+  -> TriggerHardFork
   -> PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
-mkPartialLedgerConfigShelley genesisShelley maxMajorPV =
-    ShelleyPartialLedgerConfig $
-      Shelley.mkShelleyLedgerConfig
-        genesisShelley
-        -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo' in
-        -- the partial ledger config with the correct one.
-        History.dummyEpochInfo
-        maxMajorPV
+mkPartialLedgerConfigShelley genesisShelley maxMajorPV shelleyTriggerHardFork =
+    ShelleyPartialLedgerConfig {
+          shelleyLedgerConfig =
+            Shelley.mkShelleyLedgerConfig
+              genesisShelley
+              -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
+              -- in the partial ledger config with the correct one.
+              History.dummyEpochInfo
+              maxMajorPV
+        , shelleyTriggerHardFork = shelleyTriggerHardFork
+        }
 
 {-------------------------------------------------------------------------------
   Helpers

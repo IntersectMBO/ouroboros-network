@@ -448,6 +448,7 @@ prop_simple_cardano_convergence TestSetup
                   (coreNodes !! fromIntegral nid)
                   (guard setupByronLowerBound *> Just numByronEpochs)
                   (TriggerHardForkAtVersion shelleyMajorVersion)
+                  (TriggerHardForkAtVersion shelleyMaMajorVersion)
             , mkRekeyM = Nothing
             }
 
@@ -711,12 +712,13 @@ mkProtocolCardanoAndHardForkTxs
   -> Shelley.CoreNode (ShelleyEra c)
      -- Hard fork
   -> Maybe EpochNo
-  -> TriggerHardFork
+  -> TriggerHardFork -- ^ Byron to Shelley
+  -> TriggerHardFork -- ^ Shelley to ShelleyMA
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
     genesisShelley initialNonce coreNodeShelley
-    mbLowerBound triggerHardFork =
+    mbLowerBound byronTransition shelleyTransition =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
       , tniProtocolInfo = pInfo
@@ -755,7 +757,8 @@ mkProtocolCardanoAndHardForkTxs
         (Just leaderCredentialsShelley)
         -- Hard fork
         mbLowerBound
-        triggerHardFork
+        byronTransition
+        shelleyTransition
 
     -- Byron
 
@@ -812,6 +815,12 @@ byronMajorVersion = 0
 -- See 'byronMajorVersion'
 shelleyMajorVersion :: Num a => a
 shelleyMajorVersion = byronMajorVersion + 1
+
+-- | The major protocol version of ShelleyMA in this test
+--
+-- See 'MajorVersionbyronMajorVersion
+shelleyMaMajorVersion :: Num a => a
+shelleyMaMajorVersion = shelleyMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --

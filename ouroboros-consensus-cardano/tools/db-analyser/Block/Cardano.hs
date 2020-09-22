@@ -96,6 +96,7 @@ mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold initialNonce 
       Nothing
       Nothing
       (TriggerHardForkAtVersion 2)
+      (TriggerHardForkAtVersion 3)
 
 castHeaderHash ::
      HeaderHash ByronBlock
