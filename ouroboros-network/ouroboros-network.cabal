@@ -250,6 +250,7 @@ test-suite test-network
                        Test.AnchoredFragment
                        Test.Chain
                        Test.ChainFragment
+                       Test.Ouroboros.Network.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
