@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Network.Mux.Types (
       MiniProtocolBundle (..)
@@ -136,6 +137,9 @@ data MiniProtocolDirection (mode :: MuxMode) where
     ResponderDirectionOnly :: MiniProtocolDirection ResponderMode
     InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
     ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
+
+deriving instance Eq (MiniProtocolDirection (mode :: MuxMode))
+deriving instance Ord (MiniProtocolDirection (mode :: MuxMode))
 
 --
 -- Mux internal types
