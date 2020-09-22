@@ -254,6 +254,7 @@ test-suite test-network
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
+                       Test.Ouroboros.Network.TxSubmission
                        Test.Mux
                        Test.Pipe
                        Test.Socket
@@ -292,6 +293,7 @@ test-suite test-network
                        cardano-prelude,
                        cardano-slotting,
                        contra-tracer,
+                       nothunks,
 
                        io-sim,
                        io-sim-classes,
