@@ -3,7 +3,12 @@
 module Test.Ouroboros.Network.Utils where
 
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadSay
+import           Control.Tracer (Tracer (..))
+
 import           Test.QuickCheck
+
+import           Debug.Trace (traceShowM)
 
 
 newtype Delay = Delay { getDelay :: DiffTime }
@@ -20,3 +25,13 @@ instance Arbitrary Delay where
     shrink (Delay delay) | delay >= 0.1 = [ Delay (delay - 0.1) ]
                          | otherwise    = []
 
+
+--
+-- Debugging tools
+--
+
+debugTracer :: ( Show a, Applicative m) => Tracer m a
+debugTracer = Tracer traceShowM
+
+sayTracer :: ( Show a, MonadSay m) => Tracer m a
+sayTracer = Tracer (say . show)
