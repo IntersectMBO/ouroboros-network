@@ -19,7 +19,7 @@ diffTimeToMicroseconds = (`div` 1000000) . diffTimeToPicoseconds
 microsecondsToDiffTime :: Integer -> DiffTime
 microsecondsToDiffTime = picosecondsToDiffTime . (* 1000000)
 
--- | This is a slightly pecluliar operation: it returns the number of
+-- | This is a slightly peculiar operation: it returns the number of
 -- microseconds since an arbitrary epoch, modulo 2^32. This number of
 -- microseconds wraps every ~35 minutes.
 --
