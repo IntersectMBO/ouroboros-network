@@ -31,6 +31,7 @@ module Control.Monad.IOSim.Internal (
   EventlogMarker (..),
   ThreadId,
   ThreadLabel,
+  LabeledThread (..),
   Trace (..),
   TraceEvent (..),
   liftST,
@@ -509,6 +510,21 @@ newtype ClockId   = ClockId   Int deriving (Eq, Ord, Enum, Show)
 
 type ThreadLabel = String
 
+data LabeledThread = LabeledThread {
+    labeledThreadId    :: ThreadId,
+    labeledThreadLabel :: Maybe ThreadLabel
+  }
+  deriving (Eq, Ord, Show)
+
+labeledThreads :: Map ThreadId (Thread s a) -> [LabeledThread]
+labeledThreads threadMap =
+    -- @Map.foldr'@ (and alikes) are not strict enough, to not ratain the
+    -- original thread map we need to evaluate the spine of the list.
+    -- TODO: https://github.com/haskell/containers/issues/749
+    Map.foldr'
+      (\Thread { threadId, threadLabel } !acc -> LabeledThread threadId threadLabel : acc)
+      [] threadMap
+
 
 -- | 'Trace' is a recursive data type, it is the trace of a 'IOSim' computation.
 -- The trace will contain information about thread sheduling, blocking on
@@ -522,9 +538,9 @@ type ThreadLabel = String
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
 data Trace a = Trace !Time !ThreadId !(Maybe ThreadLabel) !TraceEvent (Trace a)
-             | TraceMainReturn    !Time a             ![ThreadId]
-             | TraceMainException !Time SomeException ![ThreadId]
-             | TraceDeadlock      !Time               ![ThreadId]
+             | TraceMainReturn    !Time a             ![LabeledThread]
+             | TraceMainException !Time SomeException ![LabeledThread]
+             | TraceDeadlock      !Time               ![LabeledThread]
   deriving Show
 
 data TraceEvent
@@ -634,7 +650,7 @@ schedule thread@Thread{
         -- the main thread is done, so we're done
         -- even if other threads are still running
         return $ Trace time tid tlbl EventThreadFinished
-               $ TraceMainReturn time x (Map.keys threads)
+               $ TraceMainReturn time x (labeledThreads threads)
 
       ForkFrame -> do
         -- this thread is done
@@ -666,7 +682,7 @@ schedule thread@Thread{
           -- An unhandled exception in the main thread terminates the program
           return (Trace time tid tlbl (EventThrow e) $
                   Trace time tid tlbl (EventThreadUnhandled e) $
-                  TraceMainException time e (Map.keys threads))
+                  TraceMainException time e (labeledThreads threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
@@ -925,6 +941,7 @@ schedule thread@Thread{
           return $ Trace time tid tlbl (EventThrowTo e tid')
                  $ trace
 
+
 threadInterruptible :: Thread s a -> Bool
 threadInterruptible thread =
     case threadMasking thread of
@@ -1024,7 +1041,7 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
-      Nothing -> return (TraceDeadlock time (Map.keys threads))
+      Nothing -> return (TraceDeadlock time (labeledThreads threads))
 
       Just (tmids, time', fired, timers') -> assert (time' >= time) $ do
 
