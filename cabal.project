@@ -1,4 +1,4 @@
-index-state: 2020-07-15T00:00:00Z
+index-state: 2020-09-15T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -124,56 +124,56 @@ package small-steps-test
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: d8f35c3c725be67148681227f9d64876f5909120
-  --sha256: 09v1m9km3arzxaqlyaw576w69fwfi02q7nm5ias162sfzzg8za4x
+  tag: c9230a97f033187157002ba00fa0c5753f381593
+  --sha256: 1iqjziw0pad0l78lz6l5dhvfk7wqkffbwln2g62vrqsshl1gb08y
   subdir:   contra-tracer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: 0c5b0a6619fadf22f4d62a12154e181a6d035c1c
-  --sha256: 0qjn7xsw5py05zmq9935z91719v5i4apsizwhkwppi8dahbanrs4
+  tag: 2a101186441ee0e60d4fcc4abd94c1a4a5cc4e9e
+  --sha256: 020bzlaaxzjf75scc43jbxdblc9pv6cfw8f6s66q64cvndfspx98
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: 0c5b0a6619fadf22f4d62a12154e181a6d035c1c
-  --sha256: 0qjn7xsw5py05zmq9935z91719v5i4apsizwhkwppi8dahbanrs4
+  tag: 2a101186441ee0e60d4fcc4abd94c1a4a5cc4e9e
+  --sha256: 020bzlaaxzjf75scc43jbxdblc9pv6cfw8f6s66q64cvndfspx98
   subdir: test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 13f44ad35d2762dbf98b3d3be56b7ba2adf515f4
-  --sha256: 0sl7adyrjf3w6025gvljxyr222s53avin0sv0gzhdypmj9wg5ml6
+  tag: c43b26869c8fa7f95e078a010303012dd72e43d5
+  --sha256: 0ndq2vb8ngms5d3g41vhqny8gmnv0mya2al33pgiwkciylq5a64i
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 13f44ad35d2762dbf98b3d3be56b7ba2adf515f4
-  --sha256: 0sl7adyrjf3w6025gvljxyr222s53avin0sv0gzhdypmj9wg5ml6
+  tag: c43b26869c8fa7f95e078a010303012dd72e43d5
+  --sha256: 0ndq2vb8ngms5d3g41vhqny8gmnv0mya2al33pgiwkciylq5a64i
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 13f44ad35d2762dbf98b3d3be56b7ba2adf515f4
-  --sha256: 0sl7adyrjf3w6025gvljxyr222s53avin0sv0gzhdypmj9wg5ml6
+  tag: c43b26869c8fa7f95e078a010303012dd72e43d5
+  --sha256: 0ndq2vb8ngms5d3g41vhqny8gmnv0mya2al33pgiwkciylq5a64i
   subdir: cardano-crypto-class
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 13f44ad35d2762dbf98b3d3be56b7ba2adf515f4
-  --sha256: 0sl7adyrjf3w6025gvljxyr222s53avin0sv0gzhdypmj9wg5ml6
+  tag: c43b26869c8fa7f95e078a010303012dd72e43d5
+  --sha256: 0ndq2vb8ngms5d3g41vhqny8gmnv0mya2al33pgiwkciylq5a64i
   subdir: cardano-crypto-praos
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 13f44ad35d2762dbf98b3d3be56b7ba2adf515f4
-  --sha256: 0sl7adyrjf3w6025gvljxyr222s53avin0sv0gzhdypmj9wg5ml6
+  tag: c43b26869c8fa7f95e078a010303012dd72e43d5
+  --sha256: 0ndq2vb8ngms5d3g41vhqny8gmnv0mya2al33pgiwkciylq5a64i
   subdir: slotting
 
 source-repository-package
