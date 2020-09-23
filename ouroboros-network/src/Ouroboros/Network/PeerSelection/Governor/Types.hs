@@ -18,7 +18,6 @@ import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
-import           GHC.Stack
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPeerInfo(..))
@@ -40,7 +39,7 @@ type PickPolicy peeraddr m = Map peeraddr KnownPeerInfo
 
 
 -- | Check pre-conditions and post-conditions on the pick policies
-pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
+pickPeers :: (Ord peeraddr, Functor m)
           => (Map peeraddr a -> Int -> m (Set peeraddr))
           ->  Map peeraddr a -> Int -> m (Set peeraddr)
 pickPeers pick available num =
