@@ -634,20 +634,29 @@ prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Delay delay) =
       result <-
         race
           (do
+            threadId <- myThreadId
+            labelThread threadId "control-message"
             let terminateDelay =
                   realToFrac (Chain.length forkChain) * delay / 2
             threadDelay terminateDelay
             atomically (writeTVar controlMessageVar Terminate)
             let awaitDelay = delay * 100
             threadDelay awaitDelay)
-          (blockFetchExample0
-            (contramap TraceFetchDecision       dynamicTracer)
-            (contramap TraceFetchClientState    dynamicTracer)
-            (contramap TraceFetchClientSendRecv dynamicTracer)
-            (Just delay) (Just delay)
-            (readTVar controlMessageVar)
-            (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
-            fork')
+          (do
+            threadId <- myThreadId
+            labelThread threadId "block-fetch"
+            blockFetchExample0
+              (contramap TraceFetchDecision       dynamicTracer)
+              (contramap TraceFetchClientState    dynamicTracer)
+              (contramap TraceFetchClientSendRecv dynamicTracer)
+              (Just delay) (Just delay)
+              (readTVar controlMessageVar)
+              (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
+              fork')
+      -- `IOSim` on `Windows` is using `defaultRegisterTimeout`.  It does not
+      -- cancel forked threads.   The timeout which leaves running thread comes
+      -- from 'runPipelinedPeerWithLimits'.
+      -- threadDelay 60
       return $ case result of
         Left _ -> False
         Right _ -> True

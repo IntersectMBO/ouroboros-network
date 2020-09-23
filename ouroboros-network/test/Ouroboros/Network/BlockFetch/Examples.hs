@@ -92,8 +92,14 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     (blockFetchClient NodeToNodeV_1 controlMessageSTM)
                     (mockBlockFetchServer1 (unanchorFragment candidateChain))
 
-    fetchAsync  <- async $ blockFetch registry blockHeap
-    driverAsync <- async $ driver blockHeap
+    fetchAsync  <- async $ do
+      threadId <- myThreadId
+      labelThread threadId "block-fetch-logic"
+      blockFetch registry blockHeap
+    driverAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId "driver"
+      driver blockHeap
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
@@ -190,8 +196,14 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
-    fetchAsync  <- async $ blockFetch registry blockHeap
-    driverAsync <- async $ driver blockHeap
+    fetchAsync  <- async $ do
+      threadId <- myThreadId
+      labelThread threadId "block-fetch-logic"
+      blockFetch registry blockHeap
+    driverAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId "block-fetch-driver"
+      driver blockHeap
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
@@ -329,7 +341,8 @@ runFetchServer tracer channel server =
 
 runFetchClientAndServerAsync
                :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m, Ord peerid,
+                   MonadST m, MonadTime m, MonadTimer m,
+                   Ord peerid, Show peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block),
                    Typeable block,
@@ -349,26 +362,38 @@ runFetchClientAndServerAsync clientTracer serverTracer
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
 
-    clientAsync <- async $ runFetchClient
-                             clientTracer
-                             registry peerid
-                             (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
-                             client
+    clientAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId ("block-fetch-client-" ++ show peerid)
+      runFetchClient
+        clientTracer
+        registry peerid
+        (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
+        client
 
-    serverAsync <- async $ runFetchServer
-                             serverTracer
-                             (fromMaybe id (delayChannel <$> serverDelay) serverChannel)
-                             server
+    serverAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId ("block-fetch-server-" ++ show peerid)
+      runFetchServer
+        serverTracer
+        (fromMaybe id (delayChannel <$> serverDelay) serverChannel)
+        server
 
     -- we are tagging messages with the current peerid, not the target
     -- one, this is different than what's intended but it's fine to do that in
     -- these examples;
-    syncClientAsync <- async $ bracketSyncWithFetchClient
-                                 registry peerid
-                                 (forever (threadDelay 1000) >> return ())
-    keepAliveAsync <- async $ bracketKeepAliveClient
-                                 registry peerid
-                                 (\_ -> forever (threadDelay 1000) >> return ())
+    syncClientAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId ("registry-" ++ show peerid)
+      bracketSyncWithFetchClient
+        registry peerid
+        (forever (threadDelay 1000) >> return ())
+    keepAliveAsync <- async $ do
+      threadId <- myThreadId
+      labelThread threadId ("keep-alive-" ++ show peerid)
+      bracketKeepAliveClient
+        registry peerid
+        (\_ -> forever (threadDelay 1000) >> return ())
 
     return (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
 
