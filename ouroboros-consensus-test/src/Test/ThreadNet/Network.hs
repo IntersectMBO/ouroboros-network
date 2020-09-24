@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -640,14 +641,89 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> m ()
     forkTxProducer coreNodeId registry clock cfg nodeSeed getExtLedger mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
-        ledger <- atomically $ ledgerState <$> getExtLedger
+        (ledger, remainingCapacity) <- atomically $ do
+          ledger   <- ledgerState <$> getExtLedger
+          capacity <- getMempoolCapacityBytes <$> getCapacity mempool
+          size     <- (msNumBytes . snapshotMempoolSize) <$> getSnapshot mempool
+          pure (ledger, max size capacity - size)
+
         -- Combine the node's seed with the current slot number, to make sure
         -- we generate different transactions in each slot.
-        let txs = runGen
+        let randomTxs = runGen
                 (nodeSeed `combineWith` unSlotNo curSlotNo)
                 (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledger)
 
-        void $ addTxs mempool txs
+        let NumCoreNodes n = numCoreNodes
+
+            numOtherNodes :: TxSizeInBytes
+            numOtherNodes = max (fromIntegral n) 1 - 1
+
+            -- How many bytes might all nodes' 'tniCrucialTxs' collectively
+            -- require.
+            maxCrucialTxsBytes :: TxSizeInBytes
+            maxCrucialTxsBytes =
+                -- ASSUMPTION Conseratively, any node's individual crucial
+                -- transactions are < 1 kilobyte.
+                --
+                -- ASSUMPTION At any time we need to be able to add at most one
+                -- crucial transaction per node in the net.
+                fromIntegral n * 1024
+
+            -- How many bytes of random txs will an individual node attempt to
+            -- add at once
+            maxRandomTxBatchBytes :: TxSizeInBytes
+            maxRandomTxBatchBytes = 1024
+
+            -- How many bytes of random txs will an individual node attempt to
+            -- add in a single slot
+            --
+            -- NOTE It's double maxRandomTxBatchBytes because the mempool might
+            -- have been full when it tried to add in the previous slot.
+            maxRandomTxSlotBytes :: TxSizeInBytes
+            maxRandomTxSlotBytes = 2 * maxRandomTxBatchBytes
+
+            -- How much headroom this node will attempt to reserve
+            reservedRoomBytes :: TxSizeInBytes
+            reservedRoomBytes =
+                maxCrucialTxsBytes + numOtherNodes * maxRandomTxSlotBytes
+
+            -- Take the largest prefix of the randomly generated transactions
+            -- that fits in the unreserved remaining capacity of the mempool.
+            --
+            -- NOTE Random transactions are unimportant, so it's fine to
+            -- throttle/discard them. Crucial transactions are indeed crucial,
+            -- especially as of PR 2543, which introduced explicit
+            -- synchronization via 'blockOnCrucial' that makes the block forge
+            -- wait until current crucial transactions have been resolved, ie
+            -- added to or rejected by the mempool.
+            --
+            -- NOTE Under the assumption that the TxSub mini protocol is
+            -- promptly propagating txs, we also limit the size of random
+            -- transactions that can be added at once, regardless of how full
+            -- the mempool is. This is because, if every node adds enough
+            -- random txs to exactly meet the limit we impose here, but no node
+            -- forges a block, then the propagation of the latest random txs
+            -- will push other node's mempools past the limit.
+            go :: [GenTx blk] -> TxSizeInBytes -> [GenTx blk] -> [GenTx blk]
+            go !accTxs !accSize = \case
+                []        -> stop
+                tx : txs ->
+                    if wouldFillOurs || mightFillOthers
+                    then stop
+                    else go (tx : accTxs) accSize' txs
+                  where
+                    accSize' = accSize + getTxSize mempool tx
+
+                    -- Avoid filling our own mempool.
+                    wouldFillOurs =
+                        reservedRoomBytes + accSize' > remainingCapacity
+
+                    -- Avoid potentially filling other nodes' mempools.
+                    mightFillOthers = accSize' > maxRandomTxBatchBytes
+              where
+                stop = reverse accTxs
+
+        void $ addTxs mempool $ go [] 0 randomTxs
 
     mkArgs :: OracularClock m
            -> ResourceRegistry m
