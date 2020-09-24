@@ -41,6 +41,7 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Either (isRight)
 import           Data.Functor.Identity (Identity)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
@@ -573,22 +574,44 @@ runThreadNetwork systemTime ThreadNetworkArgs
     -- reason, this thread will add it again.
     --
     forkCrucialTxs
-      :: forall fingerprint.
-         (Eq fingerprint, HasCallStack)
+      :: HasCallStack
       => OracularClock m
       -> SlotNo
       -> ResourceRegistry m
       -> (SlotNo -> STM m ())
-      -> (fingerprint, STM m fingerprint)
-      -- ^ How to get the fingerprint of the current ledger state
+      -> LedgerConfig blk
+      -> STM m (LedgerState blk)
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs clock s0 registry unblockForge (initialLdgr, getLdgr) mempool txs0 =
+    forkCrucialTxs clock s0 registry unblockForge lcfg getLdgr mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
-        let loop (slot, mempFp, ldgrFp) = do
-              _ <- addTxs mempool txs0
+        let wouldBeValid slot st tx =
+                isRight $ Exc.runExcept $ applyTx lcfg slot tx st
+
+            checkSt slot snap =
+                any (wouldBeValid slot (snapshotLedgerState snap)) txs0
+
+        let loop (slot, ledger, mempFp) = do
+              (snap1, snap2) <- atomically $ do
+                snap1 <- getSnapshotFor mempool $
+                  -- This node would include these crucial txs if it leads in
+                  -- this slot.
+                  ForgeInKnownSlot slot $ applyChainTick lcfg slot ledger
+                snap2 <- getSnapshotFor mempool $
+                  -- Other nodes might include these crucial txs when leading
+                  -- in the next slot.
+                  ForgeInKnownSlot (succ slot) $ applyChainTick lcfg (succ slot) ledger
+                -- This loop will repeat for the next slot, so we only need to
+                -- check for this one and the next.
+                pure (snap1, snap2)
+
+              -- Don't attempt to add them if we're sure they'll be invalid.
+              -- That just risks blocking on a full mempool unnecessarily.
+              when (checkSt slot snap1 || checkSt (succ slot) snap2) $ do
+                _ <- addTxs mempool txs0
+                pure ()
 
               -- See 'unblockForge' in 'forkNode'
               atomically $ unblockForge slot
@@ -598,19 +621,20 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 slotChanged = do
                   let slot' = succ slot
                   _ <- OracularClock.blockUntilSlot clock slot'
-                  pure (slot', mempFp, ldgrFp)
+                  pure (slot', ledger, mempFp)
 
                 -- a new tx (e.g. added by TxSubmission) might render a crucial
                 -- transaction valid
                 mempChanged = do
                   let getMemp = (map snd . snapshotTxs) <$> getSnapshot mempool
                   (mempFp', _) <- atomically $ blockUntilChanged id mempFp getMemp
-                  pure (slot, mempFp', ldgrFp)
+                  pure (slot, ledger, mempFp')
 
                 -- a new ledger state might render a crucial transaction valid
                 ldgrChanged = do
-                  (ldgrFp', _) <- atomically $ blockUntilChanged id ldgrFp getLdgr
-                  pure (slot, mempFp, ldgrFp')
+                  let prj = ledgerTipPoint (Proxy @blk)
+                  (ledger', _) <- atomically $ blockUntilChanged prj (prj ledger) getLdgr
+                  pure (slot, ledger', mempFp)
 
               -- wake up when any of those change
               --
@@ -624,7 +648,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
               void $ syncWithLedger mempool
 
               loop fps'
-        loop (s0, [], initialLdgr)
+        ledger0 <- atomically $ getLdgr
+        loop (s0, ledger0, [])
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -1005,11 +1030,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
         joinSlot
         registry
         unblockForge
-        -- a fingerprint for the ledger
-        ( GenesisPoint
-        ,     (ledgerTipPoint (Proxy @blk) . ledgerState)
-          <$> ChainDB.getCurrentLedger chainDB
-        )
+        (configLedger pInfoConfig)
+        (ledgerState <$> ChainDB.getCurrentLedger chainDB)
         mempool
         txs0
 
