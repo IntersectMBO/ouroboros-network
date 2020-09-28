@@ -23,6 +23,7 @@ packages: ./typed-protocols
           ./ntp-client
           ./Win32-network
           ./cardano-client
+          ./quickcheck-randomized
 
 constraints:
   ip < 1.5,
