@@ -162,7 +162,6 @@ library
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.MonadSTM.RAWLock
                        Ouroboros.Consensus.Util.MonadSTM.StrictMVar
-                       Ouroboros.Consensus.Util.OptNP
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry

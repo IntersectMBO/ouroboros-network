@@ -386,7 +386,7 @@ mkProtocolRealTPraos genesis initialNonce protVer coreNode =
       initialNonce
       maxMajorPV
       protVer
-      (Just (mkLeaderCredentials coreNode))
+      [mkLeaderCredentials coreNode]
   where
     maxMajorPV = MaxMajorProtVer 1000 -- TODO
 

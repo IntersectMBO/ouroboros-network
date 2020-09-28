@@ -61,7 +61,7 @@ mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
           (Just $ PBftSignatureThreshold pbftSignatureThreshold)
           theProposedProtocolVersion
           theProposedSoftwareVersion
-          (Just leaderCredentials)
+          [leaderCredentials]
 
 mkLeaderCredentials
   :: HasCallStack

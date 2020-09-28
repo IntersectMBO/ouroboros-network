@@ -47,7 +47,6 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
@@ -804,20 +803,16 @@ runThreadNetwork systemTime ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      origBlockForging <-
-        fromMaybe
-          (error "runThreadNetwork: cannot produce blocks")
-          pInfoBlockForging
-
       let customForgeBlock ::
-               TopLevelConfig blk
+               BlockForging m blk
+            -> TopLevelConfig blk
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
             -> [GenTx blk]
             -> IsLeader (BlockProtocol blk)
             -> m blk
-          customForgeBlock cfg' currentBno currentSlot tickedLdgSt txs prf = do
+          customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt txs prf = do
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
             -- EBBs are only ever possible in the first era
@@ -888,7 +883,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   void $ ChainDB.addBlock chainDB ebb
                   pure blk
 
-      let blockForging = origBlockForging { forgeBlock = customForgeBlock }
+      blockForging <- forM pInfoBlockForging $ \initBlockForging -> do
+        bf <- initBlockForging
+        return bf { forgeBlock = customForgeBlock bf }
 
       -- This variable holds the number of the earliest slot in which the
       -- crucial txs have not yet been added. In other words, it holds the
@@ -972,7 +969,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , btime
             , chainDB
             , initChainDB             = nodeInitChainDB
-            , blockForging            = Just blockForging
+            , blockForging            = blockForging
             , blockFetchSize          = nodeBlockFetchSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride

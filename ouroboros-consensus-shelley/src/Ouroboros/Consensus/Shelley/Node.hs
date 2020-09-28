@@ -72,12 +72,10 @@ data TPraosLeaderCredentials era = TPraosLeaderCredentials {
   , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
   }
 
-tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials era) -> BlockIssuerVKey era
-tpraosBlockIssuerVKey mbCredentials =
-    case tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
-           <$> mbCredentials of
-      Nothing   -> NotABlockIssuer
-      Just vkey -> BlockIssuerVKey vkey
+tpraosBlockIssuerVKey ::
+     TPraosLeaderCredentials era -> SL.VKey 'SL.BlockIssuer era
+tpraosBlockIssuerVKey =
+    tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
 
 {-------------------------------------------------------------------------------
   BlockForging
@@ -149,14 +147,14 @@ protocolInfoShelley
      -- JSON file.
   -> MaxMajorProtVer
   -> SL.ProtVer
-  -> Maybe (TPraosLeaderCredentials era)
+  -> [TPraosLeaderCredentials era]
   -> ProtocolInfo m (ShelleyBlock era)
-protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
+protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
+      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> credentialss
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock era)
@@ -187,7 +185,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey mbCredentials)
+          (tpraosBlockIssuerVKey <$> credentialss)
 
     initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {

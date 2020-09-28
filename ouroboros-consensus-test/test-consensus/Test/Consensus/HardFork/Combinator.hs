@@ -51,7 +51,6 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -239,11 +238,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
             }
-        , pInfoBlockForging = Just $ return
-              $ hardForkBlockForging
-              $ OptCons blockForgingA
-              $ OptCons blockForgingB
-              $ OptNil
+        , pInfoBlockForging =
+            [ return $ hardForkBlockForging $     Z blockForgingA
+            , return $ hardForkBlockForging $ S $ Z blockForgingB
+            ]
         }
 
     initLedgerState :: LedgerState BlockA

@@ -21,7 +21,7 @@ import           Control.Monad (join)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 
@@ -1292,13 +1292,13 @@ mkRekeyUpd
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
-  case pInfoBlockForging pInfo of
+  case listToMaybe (pInfoBlockForging pInfo) of
     Nothing -> Nothing
     Just _  ->
       let genSK = genesisSecretFor genesisConfig genesisSecrets cid
           creds' = updSignKey genSK bcfg cid (coerce eno) newSK
           blockForging' = byronBlockForging creds'
-          pInfo' = pInfo { pInfoBlockForging = Just (return blockForging') }
+          pInfo' = pInfo { pInfoBlockForging = [return blockForging'] }
 
       in Just TestNodeInitialization
         { tniCrucialTxs = [dlgTx (blcDlgCert creds')]

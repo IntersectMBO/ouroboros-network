@@ -82,9 +82,9 @@ dualByronBlockForging creds = BlockForging {
 protocolInfoDualByron :: forall m. Monad m
                       => ByronSpecGenesis
                       -> PBftParams
-                      -> Maybe CoreNodeId -- ^ Are we a core node?
+                      -> [CoreNodeId] -- ^ Are we a core node?
                       -> ProtocolInfo m DualByronBlock
-protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
+protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PBftConfig {
@@ -112,7 +112,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
            , headerState = genesisHeaderState S.empty
            }
       , pInfoBlockForging =
-           return . dualByronBlockForging . byronLeaderCredentials <$> mLeader
+           return . dualByronBlockForging . byronLeaderCredentials
+             <$> credss
       }
   where
     initUtxo :: Impl.UTxO

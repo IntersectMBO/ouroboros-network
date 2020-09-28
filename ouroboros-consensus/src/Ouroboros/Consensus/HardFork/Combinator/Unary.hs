@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -197,6 +196,10 @@ instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
+instance Isomorphic WrapCanBeLeader where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
 instance Isomorphic WrapCannotForge where
   project = defaultProjectNS
   inject  = defaultInjectNS
@@ -206,12 +209,12 @@ instance Isomorphic WrapChainDepState where
   inject  = defaultInjectSt
 
 instance Isomorphic WrapForgeStateInfo where
-  project = OptNP.fromSingleton . getPerEraForgeStateInfo . unwrapForgeStateInfo
-  inject  = WrapForgeStateInfo . PerEraForgeStateInfo . OptNP.singleton
+  project = defaultProjectNS
+  inject  = defaultInjectNS
 
 instance Isomorphic WrapForgeStateUpdateError where
-  project = OptNP.fromSingleton . getPerEraForgeStateUpdateError . unwrapForgeStateUpdateError
-  inject  = WrapForgeStateUpdateError . PerEraForgeStateUpdateError . OptNP.singleton
+  project = defaultProjectNS
+  inject  = defaultInjectNS
 
 instance Isomorphic WrapTipInfo where
   project = defaultProjectNS
@@ -539,10 +542,6 @@ instance Isomorphic WrapEnvelopeErr where
       aux :: WrapEnvelopeErr b
           -> OtherHeaderEnvelopeError (HardForkBlock '[b])
       aux = HardForkEnvelopeErrFromEra . OneEraEnvelopeErr . Z
-
-instance Isomorphic WrapCanBeLeader where
-  project = OptNP.fromSingleton . unwrapCanBeLeader
-  inject  = WrapCanBeLeader . OptNP.singleton
 
 instance Isomorphic WrapLedgerView where
   project = State.fromTZ . hardForkLedgerViewPerEra . unwrapLedgerView

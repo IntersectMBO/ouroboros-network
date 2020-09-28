@@ -153,9 +153,9 @@ protocolInfoByron :: forall m. Monad m
                   -> Maybe PBftSignatureThreshold
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion
-                  -> Maybe ByronLeaderCredentials
+                  -> [ByronLeaderCredentials]
                   -> ProtocolInfo m ByronBlock
-protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
+protocolInfoByron genesisConfig mSigThresh pVer sVer leaderCredss =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PBftConfig {
@@ -173,7 +173,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
           , headerState = genesisHeaderState S.empty
           }
       , pInfoBlockForging =
-          return . byronBlockForging <$> mLeader
+          return . byronBlockForging <$> leaderCredss
       }
   where
     compactedGenesisConfig = compactGenesisConfig genesisConfig

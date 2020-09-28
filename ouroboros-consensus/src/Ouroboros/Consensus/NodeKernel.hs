@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
 import           Ouroboros.Consensus.Util.IOLike
@@ -121,7 +120,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , chainDB                 :: ChainDB m blk
     , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
-    , blockForging            :: Maybe (BlockForging m blk)
+    , blockForging            :: [BlockForging m blk]
     , maxTxCapacityOverride   :: MaxTxCapacityOverride
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
@@ -147,7 +146,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
 
     st <- initInternalState args
 
-    whenJust blockForging $ forkBlockForging maxTxCapacityOverride st
+    mapM_ (forkBlockForging maxTxCapacityOverride st) blockForging
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              mempool } = st

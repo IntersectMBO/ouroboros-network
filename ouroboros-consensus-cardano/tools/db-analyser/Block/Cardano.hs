@@ -88,12 +88,12 @@ mkCardanoProtocolInfo byronConfig shelleyConfig signatureThreshold initialNonce 
       signatureThreshold
       (Update.ProtocolVersion 2 0 0)
       (Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2)
-      Nothing
+      []
       shelleyConfig
       initialNonce
       (SL.ProtVer 2 0)
       (MaxMajorProtVer 1000)
-      Nothing
+      []
       Nothing
       (TriggerHardForkAtVersion 2)
       (TriggerHardForkAtVersion 3)

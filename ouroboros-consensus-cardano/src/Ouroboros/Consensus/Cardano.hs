@@ -84,7 +84,7 @@ data Protocol (m :: Type -> Type) blk p where
     -> Maybe PBftSignatureThreshold
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
-    -> Maybe ByronLeaderCredentials
+    -> [ByronLeaderCredentials]
     -> Protocol m ByronBlockHFC ProtocolByron
 
   -- | Run TPraos against the real Shelley ledger
@@ -98,7 +98,7 @@ data Protocol (m :: Type -> Type) blk p where
        -- mutually incompatible.
     -> ProtVer
     -> MaxMajorProtVer
-    -> Maybe (TPraosLeaderCredentials StandardShelley)
+    -> [TPraosLeaderCredentials StandardShelley]
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
 
   -- | Run the protocols of /the/ Cardano block
@@ -108,7 +108,7 @@ data Protocol (m :: Type -> Type) blk p where
     -> Maybe PBftSignatureThreshold
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
-    -> Maybe ByronLeaderCredentials
+    -> [ByronLeaderCredentials]
        -- Shelley
     -> ShelleyGenesis StandardShelley
     -> Nonce
@@ -119,7 +119,7 @@ data Protocol (m :: Type -> Type) blk p where
        -- mutually incompatible.
     -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
     -> MaxMajorProtVer
-    -> Maybe (TPraosLeaderCredentials StandardShelley)
+    -> [TPraosLeaderCredentials StandardShelley]
        -- Hard fork
     -> Maybe EpochNo
        -- ^ maybe lower bound on first Shelley epoch
