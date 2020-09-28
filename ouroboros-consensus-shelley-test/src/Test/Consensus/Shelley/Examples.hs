@@ -448,7 +448,7 @@ exampleLedgerState = ShelleyLedgerState {
                                   , shelleyTipHash    = blockHash exampleBlock
                                   }
     , shelleyLedgerState      = exampleNewEpochState
-    , shelleyLedgerTransition = ShelleyTransitionUnknown
+    , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
     }
 
 exampleHeaderState :: HeaderState (ShelleyBlock StandardShelley)

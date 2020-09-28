@@ -31,6 +31,8 @@ module Ouroboros.Consensus.Util (
   , firstJust
   , allEqual
   , takeUntil
+  , groupOn
+  , groupSplit
     -- * Safe variants of existing base functions
   , lastMaybe
   , safeMaximum
@@ -196,6 +198,31 @@ takeUntil p = \case
       -> [x]
       | otherwise
       -> x:takeUntil p xs
+
+-- | Variation on 'groupBy' that records the matched element
+--
+-- >    groupOn signum [-3..3]
+-- > == [ (-1, [-3, -2,-1])
+-- >    , ( 0, [0])
+-- >    , ( 1, [1, 2, 3])
+-- >    ]
+groupOn :: forall a b. Eq b => (a -> b) -> [a] -> [(b, [a])]
+groupOn f = groupSplit (\a -> (f a, a))
+
+-- | Generalization of 'groupOn' where we specify both what to compare
+-- and what to collect
+groupSplit :: forall a b c. Eq b => (a -> (b, c)) -> [a] -> [(b, [c])]
+groupSplit f = \case
+    []   -> []
+    a:as -> let (b, c) = f a in go b [c] as
+  where
+    go :: b -> [c] -> [a] -> [(b, [c])]
+    go b acc []     = [(b, reverse acc)]
+    go b acc (a:as)
+        | b' == b   = go b (c:acc) as
+        | otherwise = (b, reverse acc) : go b' [c] as
+      where
+        (b', c) = f a
 
 {-------------------------------------------------------------------------------
   Safe variants of existing base functions

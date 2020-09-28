@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -67,6 +66,7 @@ import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -206,7 +206,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     initLedgerState = ShelleyLedgerState {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      = SL.chainNes initShelleyState
-      , shelleyLedgerTransition = ShelleyTransitionUnknown
+      , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
     initChainDepState :: TPraosState era
@@ -327,15 +327,6 @@ protocolClientInfoShelley =
       -- No particular codec configuration is needed for Shelley
       pClientInfoCodecConfig = ShelleyCodecConfig
     }
-
-{-------------------------------------------------------------------------------
-  Inspection
--------------------------------------------------------------------------------}
-
--- TODO: This should be updated as soon as we start preparing for the
--- hard fork transition out of Shelley.
-instance InspectLedger (ShelleyBlock era) where
-  -- Use defaults
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance
