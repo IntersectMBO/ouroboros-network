@@ -16,7 +16,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException)
 
-import           Ouroboros.Network.PeerSelection.Types
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -67,7 +67,7 @@ belowTarget actions
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
                                 `Map.restrictKeys` availableToConnect
-                                 Map.\\ establishedPeers
+                                 Map.\\ (EstablishedPeers.toMap establishedPeers)
                                 `Map.withoutKeys` inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
@@ -98,7 +98,7 @@ belowTarget actions
   = GuardedSkip Nothing
   where
     numEstablishedPeers, numConnectInProgress :: Int
-    numEstablishedPeers  = Map.size establishedPeers
+    numEstablishedPeers  = EstablishedPeers.size establishedPeers
     numConnectInProgress = Set.size inProgressPromoteCold
     availableToConnect   = KnownPeers.availableToConnect knownPeers
 
@@ -151,10 +151,8 @@ jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {est
       return $ Completion $ \st _now -> Decision {
         decisionTrace = TracePromoteColdDone peeraddr,
         decisionState = st {
-                          establishedPeers      = Map.insert peeraddr peerconn
+                          establishedPeers      = EstablishedPeers.insert peeraddr peerconn
                                                     (establishedPeers st),
-                          establishedStatus     = Map.insert peeraddr PeerWarm
-                                                    (establishedStatus st),
                           inProgressPromoteCold = Set.delete peeraddr
                                                     (inProgressPromoteCold st),
                           knownPeers            = KnownPeers.resetFailCount
@@ -197,7 +195,7 @@ aboveTarget actions
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
   | let numEstablishedPeers, numActivePeers, numPeersToDemote :: Int
-        numEstablishedPeers = Map.size establishedPeers
+        numEstablishedPeers = EstablishedPeers.size establishedPeers
         numActivePeers      = Set.size activePeers
         -- One constraint on how many to demote is the difference in the
         -- number we have now vs the target. The other constraint is that
@@ -216,7 +214,7 @@ aboveTarget actions
 
       let availableToDemote :: Map peeraddr KnownPeerInfo
           availableToDemote = KnownPeers.toMap knownPeers
-                               `Map.intersection` establishedPeers
+                               `Map.intersection` EstablishedPeers.toMap establishedPeers
                                `Map.withoutKeys` activePeers
                                `Map.withoutKeys` inProgressDemoteWarm
                                `Map.withoutKeys` inProgressPromoteWarm
@@ -225,7 +223,7 @@ aboveTarget actions
                             availableToDemote
                             numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
-          selectedToDemote' = establishedPeers
+          selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
       return $ \_now -> Decision {
@@ -276,10 +274,8 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
       return $ Completion $ \st _now -> Decision {
         decisionTrace = TraceDemoteWarmDone peeraddr,
         decisionState = st {
-                          establishedPeers     = Map.delete peeraddr
+                          establishedPeers     = EstablishedPeers.delete peeraddr
                                                    (establishedPeers st),
-                          establishedStatus    = Map.delete peeraddr
-                                                   (establishedStatus st),
                           inProgressDemoteWarm = Set.delete peeraddr
                                                    (inProgressDemoteWarm st)
                         },

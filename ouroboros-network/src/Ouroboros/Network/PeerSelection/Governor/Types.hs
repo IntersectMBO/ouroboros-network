@@ -19,6 +19,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
 
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPeerInfo(..))
 import           Ouroboros.Network.PeerSelection.Types
@@ -217,8 +219,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- |
        --
-       establishedPeers     :: !(Map peeraddr peerconn),
-       establishedStatus    :: !(Map peeraddr PeerStatus),
+       establishedPeers     :: !(EstablishedPeers peeraddr peerconn),
 
        -- |
        --
@@ -261,8 +262,7 @@ emptyPeerSelectionState =
       localRootPeers       = Map.empty,
       publicRootPeers      = Set.empty,
       knownPeers           = KnownPeers.empty,
-      establishedPeers     = Map.empty,
-      establishedStatus    = Map.empty,
+      establishedPeers     = EstablishedPeers.empty,
       activePeers          = Set.empty,
       publicRootBackoffs   = 0,
       publicRootRetryTime  = Time 0,
@@ -283,9 +283,9 @@ assertPeerSelectionState PeerSelectionState{..} =
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
- . assert (Set.isSubsetOf activePeersSet establishedPeersSet)
+ . assert (Set.isSubsetOf activePeersSet establishedReadySet)
  . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
- . assert (Map.keysSet establishedStatus == establishedPeersSet)
+ . assert (EstablishedPeers.invariant establishedPeers)
    -- The localRootPeers and publicRootPeers must not overlap.
  . assert (Set.null (Set.intersection localRootPeersSet publicRootPeers))
     -- The localRootPeers are a subset of the knownPeers,
@@ -328,7 +328,8 @@ assertPeerSelectionState PeerSelectionState{..} =
   where
     localRootPeersSet   = Map.keysSet localRootPeers
     knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
-    establishedPeersSet = Map.keysSet establishedPeers
+    establishedReadySet = Map.keysSet (EstablishedPeers.establishedReady establishedPeers)
+    establishedPeersSet = Map.keysSet (EstablishedPeers.toMap establishedPeers)
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet
