@@ -17,6 +17,7 @@ import           Control.Concurrent.JobPool (Job(..))
 import           Control.Exception (SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -59,7 +60,7 @@ belowTarget actions
           -- The numPeersToPromote is positive due to the first guard.
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
-                                `Map.intersection` establishedPeers
+                                `Map.intersection` EstablishedPeers.establishedReady establishedPeers
                                 `Map.withoutKeys` activePeers
                                 `Map.withoutKeys` inProgressPromoteWarm
                                 `Map.withoutKeys` inProgressDemoteWarm
@@ -71,7 +72,7 @@ belowTarget actions
                              availableToPromote
                              numPeersToPromote
       let selectedToPromote' :: Map peeraddr peerconn
-          selectedToPromote' = establishedPeers
+          selectedToPromote' = EstablishedPeers.establishedReady establishedPeers
                                  `Map.restrictKeys` selectedToPromote
       return $ \_now -> Decision {
         decisionTrace = TracePromoteWarmPeers
@@ -90,7 +91,7 @@ belowTarget actions
   = GuardedSkip Nothing
   where
     numEstablishedPeers, numActivePeers, numPromoteInProgress :: Int
-    numEstablishedPeers  = Map.size establishedPeers
+    numEstablishedPeers  = EstablishedPeers.size establishedPeers
     numActivePeers       = Set.size activePeers
     numPromoteInProgress = Set.size inProgressPromoteWarm
     numDemoteInProgress  = Set.size inProgressDemoteWarm
@@ -125,14 +126,15 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       -- the responsibility of activatePeerConnection
       activatePeerConnection peerconn
       return $ Completion $ \st _now ->
-        assert (peeraddr `Map.member` establishedPeers st)
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st)
         Decision {
           decisionTrace = TracePromoteWarmDone peeraddr,
           decisionState = st {
                             activePeers           = Set.insert peeraddr
                                                       (activePeers st),
-                            establishedStatus     = Map.insert peeraddr PeerHot
-                                                      (establishedStatus st),
+                            establishedPeers      = EstablishedPeers.updateStatus
+                                                      peeraddr PeerHot
+                                                      (establishedPeers st),
                             inProgressPromoteWarm = Set.delete peeraddr
                                                       (inProgressPromoteWarm st)
                           },
@@ -186,7 +188,7 @@ aboveTarget actions
                             availableToDemote
                             numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
-          selectedToDemote' = establishedPeers
+          selectedToDemote' = EstablishedPeers.establishedReady establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
       return $ \_now -> Decision {
@@ -235,14 +237,14 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
     job = do
       deactivatePeerConnection peerconn
       return $ Completion $ \st _now ->
-        assert (peeraddr `Map.member` establishedPeers st)
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st)
         Decision {
           decisionTrace = TraceDemoteHotDone peeraddr,
           decisionState = st {
                             activePeers         = Set.delete peeraddr
                                                     (activePeers st),
-                            establishedStatus   = Map.insert peeraddr PeerWarm
-                                                    (establishedStatus st),
+                            establishedPeers    = EstablishedPeers.updateStatus peeraddr PeerWarm
+                                                    (establishedPeers st),
                             inProgressDemoteHot = Set.delete peeraddr
                                                     (inProgressDemoteHot st)
                           },

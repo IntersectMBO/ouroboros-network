@@ -21,6 +21,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Exception (Exception(..), SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -281,7 +282,7 @@ aboveTarget PeerSelectionPolicy {
         protectedRootPeers    = Map.keysSet localRootPeers
                              <> Set.drop numRootPeersCanForget publicRootPeers
         availableToForget     = KnownPeers.toMap knownPeers
-                                   Map.\\ establishedPeers
+                                   Map.\\ (EstablishedPeers.toMap establishedPeers)
                                   `Map.withoutKeys` protectedRootPeers
                                   `Map.withoutKeys` inProgressPromoteCold
 
@@ -320,7 +321,7 @@ aboveTarget PeerSelectionPolicy {
   where
     numKnownPeers, numEstablishedPeers :: Int
     numKnownPeers        = KnownPeers.size knownPeers
-    numEstablishedPeers  = Map.size establishedPeers
+    numEstablishedPeers  = EstablishedPeers.size establishedPeers
 
 
 -------------------------------
