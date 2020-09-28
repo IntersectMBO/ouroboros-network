@@ -341,7 +341,7 @@ and runs an independent client instance and a independent server instance for ev
 other node it communicates with.
 (See Figure~\ref{node-diagram-concurrency}.)
 
-The chain synchronisation protocol polymorphic.
+The chain synchronisation protocol is polymorphic.
 The (full)-node to client protocol uses an instance of the chain synchronisation protocol
 that transfers full blocks, while the node-to-node instance only transfers block headers.
 In the node-to-node case, the block fetch protocol (Section \ref{block-fetch-protocol})
@@ -553,7 +553,7 @@ It is advised that the consumer always starts with \FindIntersect{} in a fresh c
 and it is free to use \FindIntersect{} at any time later as seems beneficial.
 If the consumer does not know anything about the producer's chain,
 it can start the search with the following list of points:
-$\langle point(b), point(b-1), point(b-2), point(b-4), point (p-8),\ldots \rangle$
+$\langle point(b), point(b-1), point(b-2), point(b-4), point (b-8),\ldots \rangle$
 where $point(b-i)$ is the point of the $i$th predecessor of block $b$ and
 $b$ is the head of the consumer fork.
 Maximum depth of a fork in Ouroboros is bounded and the intersection will always be found with a small number of
