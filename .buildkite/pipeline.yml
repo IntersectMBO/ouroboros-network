@@ -1,14 +1,4 @@
 steps:
-  - label: 'stack-cabal-sync'
-    command: 'nix-shell ./nix -A iohkNix.stack-cabal-sync-shell --run scripts/buildkite/stack-cabal-sync.sh'
-    agents:
-      system: x86_64-linux
-
-  - label: 'check-cabal-project'
-    command: 'nix-build ./nix -A iohkNix.checkCabalProject -o check-cabal-project.sh && ./check-cabal-project.sh'
-    agents:
-      system: x86_64-linux
-
   - label: 'Check Stylish Haskell'
     command: 'nix-shell --run scripts/buildkite/check-stylish.sh'
     agents:
