@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -48,6 +49,8 @@ import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Kind (Type)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
@@ -57,6 +60,7 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as Gen
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update.Validation.Endorsement as UPE
 import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
@@ -91,12 +95,21 @@ data instance LedgerState ByronBlock = ByronLedgerState {
     }
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
--- | Transition from Byron to Shelley
---
--- Placeholder type until we properly address #2455
+-- | Information required to determine the transition from Byron to Shelley
 data ByronTransition =
-    -- | Transition point not yet known
-    ByronTransitionUnknown
+    -- | Per candidate proposal, the 'BlockNo' in which it became a candidate
+    --
+    -- The HFC needs to know when a candidate proposal becomes stable. We cannot
+    -- reliably do this using 'SlotNo': doing so would mean that if we were to
+    -- switch to a denser fork, something that was previously deemed stable is
+    -- suddenly not deemed stable anymore (although in actuality it still is).
+    -- We therefore must do this based on 'BlockNo' instead, but unfortunately
+    -- the Byron ledger does not record this information. Therefore, we record
+    -- it here instead.
+    --
+    -- Invariant: the domain of this map should equal the set of candidate
+    -- proposals.
+    ByronTransitionInfo (Map Update.ProtocolVersion BlockNo)
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance UpdateLedger ByronBlock
@@ -109,7 +122,7 @@ initByronLedgerState :: Gen.Config
 initByronLedgerState genesis mUtxo = ByronLedgerState {
       byronLedgerState      = override mUtxo initState
     , byronLedgerTipBlockNo = Origin
-    , byronLedgerTransition = ByronTransitionUnknown
+    , byronLedgerTransition = ByronTransitionInfo Map.empty
     }
   where
     initState :: CC.ChainValidationState
@@ -148,8 +161,9 @@ getByronTip state =
 -------------------------------------------------------------------------------}
 
 -- | The ticked Byron ledger state
-newtype instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
-      tickedByronLedgerState :: CC.ChainValidationState
+data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
+      tickedByronLedgerState        :: !CC.ChainValidationState
+    , untickedByronLedgerTransition :: !ByronTransition
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -160,6 +174,8 @@ instance IsLedger (LedgerState ByronBlock) where
       TickedByronLedgerState {
           tickedByronLedgerState =
             CC.applyChainTick cfg (toByronSlotNo slotNo) byronLedgerState
+        , untickedByronLedgerTransition =
+            byronLedgerTransition
         }
 
 {-------------------------------------------------------------------------------
@@ -323,10 +339,33 @@ applyABlock :: CC.ValidationMode
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyABlock validationMode cfg blk blkHash blkNo TickedByronLedgerState{..} = do
     st' <- CC.validateBlock cfg validationMode blk blkHash tickedByronLedgerState
+
+    let updState :: UPI.State
+        updState = CC.cvsUpdateState st'
+
+        -- Transition info as it would look like if all entries were new
+        ifNew :: Map Update.ProtocolVersion BlockNo
+        ifNew = Map.fromList $ map aux (UPI.candidateProtocolUpdates updState)
+          where
+            aux :: UPE.CandidateProtocolUpdate
+                -> (Update.ProtocolVersion, BlockNo)
+            aux candidate = (UPE.cpuProtocolVersion candidate, blkNo)
+
+        transition' :: ByronTransition
+        transition' =
+            case untickedByronLedgerTransition of
+              ByronTransitionInfo oldEntries -> ByronTransitionInfo $
+                -- Candidates that have /just/ become candidates
+                let newEntries :: Map Update.ProtocolVersion BlockNo
+                    newEntries = ifNew `Map.difference` oldEntries
+
+                -- Remove any entries that aren't candidates anymore
+                in (oldEntries `Map.intersection` ifNew) `Map.union` newEntries
+
     return ByronLedgerState {
           byronLedgerTipBlockNo = NotOrigin blkNo
         , byronLedgerState      = st'
-        , byronLedgerTransition = ByronTransitionUnknown -- TODO (#2455)
+        , byronLedgerTransition = transition'
         }
 
 -- | Apply boundary block
@@ -343,7 +382,7 @@ applyABoundaryBlock cfg blk blkNo TickedByronLedgerState{..} = do
     return ByronLedgerState {
         byronLedgerTipBlockNo = NotOrigin blkNo
       , byronLedgerState      = st'
-      , byronLedgerTransition = ByronTransitionUnknown -- TODO (#2455)
+      , byronLedgerTransition = untickedByronLedgerTransition
       }
 
 {-------------------------------------------------------------------------------
@@ -367,17 +406,58 @@ encodeByronHeaderState = encodeHeaderState
     encodeByronChainDepState
     encodeByronAnnTip
 
+-- | Encode transition info
+--
+-- We encode the absence of any info separately. This gives us a bit more
+-- wiggle room to change our mind about what we store in snapshots, as they
+-- typically don't contain any transition info.
+--
+-- Implementation note: we should have encoded the absence of data with the
+-- inclusion of a list length. We didn't, so the decoder is a bit awkward :/
+--
+-- TODO: If we break compatibility anyway, we might decide to clean this up.
 encodeByronTransition :: ByronTransition -> Encoding
-encodeByronTransition ByronTransitionUnknown = mconcat [
-      CBOR.encodeWord8 0
-    ]
+encodeByronTransition (ByronTransitionInfo bNos)
+  | Map.null bNos = CBOR.encodeWord8 0
+  | otherwise     =
+         CBOR.encodeListLen (fromIntegral (Map.size bNos))
+      <> mconcat (map aux (Map.toAscList bNos))
+  where
+    aux :: (Update.ProtocolVersion, BlockNo) -> Encoding
+    aux (Update.ProtocolVersion { pvMajor, pvMinor, pvAlt }, bno) = mconcat [
+          CBOR.encodeListLen 4
+        , encode pvMajor
+        , encode pvMinor
+        , encode pvAlt
+        , encode bno
+        ]
 
+-- | Decode Byron transition info
+--
+-- See comments for 'encodeByronTransition'.
 decodeByronTransition :: Decoder s ByronTransition
 decodeByronTransition = do
-    tag <- CBOR.decodeWord8
-    case tag of
-      0 -> return $ ByronTransitionUnknown
-      _ -> fail $ "decodeByronTransition: invalid tag " <> show tag
+    ttype <- CBOR.peekTokenType
+    fmap ByronTransitionInfo $ case ttype of
+      CBOR.TypeUInt -> do
+        tag <- CBOR.decodeWord8
+        case tag of
+          0          -> return $ Map.empty
+          _otherwise -> fail "decodeByronTransition: unexpected tag"
+      CBOR.TypeListLen -> do
+        size <- CBOR.decodeListLen
+        Map.fromAscList <$> replicateM size aux
+      _otherwise ->
+        fail "decodeByronTransition: unexpected token type"
+  where
+    aux :: Decoder s (Update.ProtocolVersion, BlockNo)
+    aux = do
+        enforceSize "decodeByronTransition.aux" 4
+        pvMajor <- decode
+        pvMinor <- decode
+        pvAlt   <- decode
+        bno     <- decode
+        return (Update.ProtocolVersion { pvMajor, pvMinor, pvAlt }, bno)
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
 encodeByronLedgerState ByronLedgerState{..} = mconcat [

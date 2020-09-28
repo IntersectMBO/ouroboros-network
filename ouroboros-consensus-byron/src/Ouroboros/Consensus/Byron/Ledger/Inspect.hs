@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Byron.Ledger.Inspect (
     -- * Layer around the Byron protocol update inteface
   , ProtocolUpdate(..)
   , UpdateState(..)
-  , isStableCandidate
   , protocolUpdates
   ) where
 
@@ -94,19 +93,16 @@ data UpdateState =
     -- We record the 'SlotNo' of the slot in which the required threshold of
     -- endorsement was met. At this point a further @2k@ slots need to pass
     -- before the update becomes a stable candidate and can be adopted.
-  | UpdateCandidate SlotNo
+    --
+    -- We additionally record the 'EpochNo' in which the candidate will be
+    -- adopted, /if/ it becomes stable.
+  | UpdateCandidate SlotNo EpochNo
 
     -- | The endorsements are stable. The update will be accepted.
     --
     -- We record the 'EpochNo' of the epoch in which it will become active.
   | UpdateStableCandidate EpochNo
   deriving (Show, Eq)
-
-isStableCandidate :: ProtocolUpdate -> Maybe EpochNo
-isStableCandidate ProtocolUpdate{..} =
-    case protocolUpdateState of
-      UpdateStableCandidate e -> Just e
-      _otherwise              -> Nothing
 
 -- | All proposal updates, from new to old
 protocolUpdates ::
@@ -212,7 +208,7 @@ protocolUpdates genesis st = concat [
           protocolUpdateVersion = version
         , protocolUpdateState   =
             if not (isStable slot)
-              then UpdateCandidate slot
+              then UpdateCandidate slot  (cpuEpoch slot)
               else UpdateStableCandidate (cpuEpoch slot)
         }
       where
