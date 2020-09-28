@@ -105,7 +105,7 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 shelleyBlockForging
   :: forall m era. (TPraosCrypto era, IOLike m)
   => TPraosParams
-  -> TPraosLeaderCredentials era
+  -> [TPraosLeaderCredentials era]
   -> m (BlockForging m (ShelleyBlock era))
 shelleyBlockForging TPraosParams {..}
                     TPraosLeaderCredentials {
@@ -162,14 +162,14 @@ protocolInfoShelley
      -- JSON file.
   -> MaxMajorProtVer
   -> SL.ProtVer
-  -> Maybe (TPraosLeaderCredentials era)
+  -> [TPraosLeaderCredentials era]
   -> ProtocolInfo m (ShelleyBlock era)
-protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
+protocolInfoShelley genesis initialNonce maxMajorPV protVer credentials =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
+      , pInfoBlockForging = shelleyBlockForging tpraosParams credentials
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock era)
@@ -200,7 +200,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey mbCredentials)
+          (tpraosBlockIssuerVKey <$> credentials)
 
     initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {

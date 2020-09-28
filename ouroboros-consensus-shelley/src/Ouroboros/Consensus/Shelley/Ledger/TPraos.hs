@@ -6,6 +6,8 @@
 -- TODO where to put this?
 module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
 
+import qualified Data.Map.Strict as Map
+
 import           Cardano.Crypto.VRF (certifiedOutput)
 
 import           Ouroboros.Consensus.Block
@@ -13,6 +15,7 @@ import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Keys as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -40,14 +43,10 @@ instance TPraosCrypto era => BlockSupportsProtocol (ShelleyBlock era) where
       hdrBody = SL.bhbody shdr
 
       selfIssued :: SelfIssued
-      selfIssued = case shelleyBlockIssuerVKey cfg of
-        NotABlockIssuer
-          -> NotSelfIssued
-        BlockIssuerVKey vkey
-          | vkey == SL.bheaderVk hdrBody
-          -> SelfIssued
-          | otherwise
-          -> NotSelfIssued
+      selfIssued = if SL.hashKey (SL.bheaderVk hdrBody)
+                        `Map.member` shelleyBlockIssuerVKeys cfg
+                   then SelfIssued
+                   else NotSelfIssued
 
 -- TODO correct place for these two?
 type instance Signed (Header (ShelleyBlock era)) = SL.BHBody era
