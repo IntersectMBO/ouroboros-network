@@ -511,3 +511,5 @@ pattern LedgerStateShelley st <-
     HardForkLedgerState
       (State.HardForkState
         (Telescope.TS _ (Telescope.TZ (State.Current { currentState = st }))))
+
+{-# COMPLETE LedgerStateByron, LedgerStateShelley #-}
