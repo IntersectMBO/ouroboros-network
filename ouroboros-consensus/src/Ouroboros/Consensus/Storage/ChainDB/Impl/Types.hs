@@ -89,8 +89,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      StreamTo, UnknownRange)
 import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
-                     LgrDbSerialiseConstraints)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB',
+                     LgrDB, LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB,
                      ImmutableDbSerialiseConstraints)
@@ -225,7 +225,7 @@ data ChainDbEnv m blk = CDB
     -- Note that 'copyToImmutableDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer          :: !(Tracer m (TraceEvent blk))
-  , cdbTraceLedger     :: !(Tracer m (LgrDB.LedgerDB blk))
+  , cdbTraceLedger     :: !(Tracer m (LedgerDB' blk))
   , cdbRegistry        :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
@@ -486,7 +486,7 @@ data TraceEvent blk
   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
   | TraceOpenEvent              (TraceOpenEvent               blk)
   | TraceIteratorEvent          (TraceIteratorEvent           blk)
-  | TraceLedgerEvent            (LgrDB.TraceEvent (RealPoint  blk))
+  | TraceLedgerEvent            (LgrDB.TraceEvent             blk)
   | TraceLedgerReplayEvent      (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
   | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)

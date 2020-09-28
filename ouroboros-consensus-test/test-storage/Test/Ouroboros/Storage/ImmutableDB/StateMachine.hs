@@ -1094,7 +1094,6 @@ instance ToExpr ChunkSize
 instance ToExpr ChunkNo
 instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot
-instance ToExpr BlockNo
 instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
           ToExpr h, ToExpr i, ToExpr j)
       => ToExpr (a, b, c, d, e, f, g, h, i, j) where

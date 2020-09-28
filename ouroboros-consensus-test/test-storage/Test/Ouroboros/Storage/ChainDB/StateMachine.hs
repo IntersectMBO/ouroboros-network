@@ -1145,12 +1145,7 @@ deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (ReaderState blk)
 
-deriving instance ( ToExpr (HeaderState blk)
-                  , ToExpr (LedgerState blk)
-                  )
-                 => ToExpr (ExtLedgerState blk)
 deriving instance ToExpr Fingerprint
-deriving instance ToExpr BlockNo
 deriving instance ToExpr ReaderNext
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
@@ -1167,15 +1162,17 @@ deriving instance ( ToExpr (HeaderHash blk)
                   )
                  => ToExpr (InvalidBlockReason blk)
 deriving instance ( ToExpr blk
-                  , ToExpr (HeaderHash  blk)
-                  , ToExpr (HeaderState blk)
+                  , ToExpr (HeaderHash blk)
+                  , ToExpr (ChainDepState (BlockProtocol blk))
+                  , ToExpr (TipInfo blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
 deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash  blk)
-                  , ToExpr (HeaderState blk)
+                  , ToExpr (ChainDepState (BlockProtocol blk))
+                  , ToExpr (TipInfo blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
@@ -1194,9 +1191,7 @@ deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (TipInfoIsEBB Blk)
-deriving instance ToExpr (AnnTip Blk)
 deriving instance ToExpr (LedgerState Blk)
-deriving instance ToExpr (HeaderState Blk)
 deriving instance ToExpr (HeaderError Blk)
 deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)

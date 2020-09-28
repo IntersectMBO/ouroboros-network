@@ -174,28 +174,29 @@ data ReadIncrementalErr =
 --
 -- NOTE: This currently expects the file to contain precisely one value; see also
 -- 'withStreamIncrementalOffsets'.
-readIncremental :: forall m h a. IOLike m
-                => HasFS m h
+readIncremental :: forall m a. IOLike m
+                => SomeHasFS m
                 -> (forall s . CBOR.D.Decoder s a)
                 -> FsPath
                 -> m (Either ReadIncrementalErr a)
-readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
+readIncremental = \(SomeHasFS hasFS) decoder fp -> withLiftST $ \liftST -> do
     withFile hasFS fp ReadMode $ \h ->
-      go liftST h =<< liftST (CBOR.R.deserialiseIncremental decoder)
+      go hasFS liftST h =<< liftST (CBOR.R.deserialiseIncremental decoder)
   where
-    go :: (forall x. ST s x -> m x)
+    go :: HasFS m h
+       -> (forall x. ST s x -> m x)
        -> Handle h
        -> CBOR.R.IDecode s a
        -> m (Either ReadIncrementalErr a)
-    go liftST h (CBOR.R.Partial k) = do
+    go hasFS@HasFS{..} liftST h (CBOR.R.Partial k) = do
         bs   <- hGetSome h (fromIntegral defaultChunkSize)
         dec' <- liftST $ k (checkEmpty bs)
-        go liftST h dec'
-    go _ _ (CBOR.R.Done leftover _ a) =
+        go hasFS liftST h dec'
+    go _ _ _ (CBOR.R.Done leftover _ a) =
         return $ if BS.null leftover
                    then Right a
                    else Left $ TrailingBytes leftover
-    go _ _ (CBOR.R.Fail _ _ err) =
+    go _ _ _ (CBOR.R.Fail _ _ err) =
         return $ Left $ ReadFailed err
 
     checkEmpty :: ByteString -> Maybe ByteString
