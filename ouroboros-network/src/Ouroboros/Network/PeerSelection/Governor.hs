@@ -473,7 +473,7 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
     loop !st = assertPeerSelectionState st $ do
       blockedAt <- getMonotonicTime
       let knownPeers' = KnownPeers.setCurrentTime blockedAt (knownPeers st)
-          st'         = st { knownPeers = knownPeers' }
+          st'         = st { knownPeers       = knownPeers' }
 
       timedDecision <- evalGuardedDecisions blockedAt st'
 

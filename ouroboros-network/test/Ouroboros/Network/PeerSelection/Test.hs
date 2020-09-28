@@ -50,6 +50,7 @@ import           Network.Mux.Timeout
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Types
@@ -722,7 +723,7 @@ prop_governor_connstatus (GovernorMockEnvironmentWAD env) =
 
         lastTestStatus =
           listToMaybe
-            [ Governor.establishedStatus st
+            [ EstablishedPeers.establishedStatus (Governor.establishedPeers st)
             | (_, GovernorDebug (TraceGovernorState _ _ st)) <- reverse trace ]
 
 

@@ -29,7 +29,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     -- ** Tracking when we can (re)connect
     minConnectTime,
     setConnectTime,
-    availableToConnect,
+    availableToConnect
   ) where
 
 import qualified Data.List as List
@@ -86,28 +86,28 @@ data KnownPeers peeraddr = KnownPeers {
 
        -- | All the known peers.
        --
-       allPeers           :: !(Map peeraddr KnownPeerInfo),
+       allPeers            :: !(Map peeraddr KnownPeerInfo),
 
        -- | The subset of known peers that we would be allowed to gossip with
        -- now. This is because we have not gossiped with them recently.
        --
-       availableForGossip :: !(Set peeraddr),
+       availableForGossip  :: !(Set peeraddr),
 
        -- | The subset of known peers that we cannot gossip with now. It keeps
        -- track of the next time we are allowed to gossip with them.
        --
-       nextGossipTimes    :: !(OrdPSQ peeraddr Time ()),
+       nextGossipTimes     :: !(OrdPSQ peeraddr Time ()),
 
        -- | The subset of known peers that we would be allowed to try to
        -- establish a connection to now. This is because we have not connected
        -- with them before or because any failure backoff time has expired.
        --
-       availableToConnect :: !(Set peeraddr),
+       availableToConnect  :: !(Set peeraddr),
 
        -- | The subset of known peers that we cannot connect to for the moment.
        -- It keeps track of the next time we are allowed to make the next
        -- connection attempt.
-       nextConnectTimes   :: !(OrdPSQ peeraddr Time ())
+       nextConnectTimes    :: !(OrdPSQ peeraddr Time ())
      }
   deriving Show
 
@@ -130,12 +130,6 @@ invariant KnownPeers{..} =
     <> Set.fromList (PSQ.keys nextConnectTimes)
     == Map.keysSet allPeers
 
-       -- The connect set and psq do not overlap
- && Set.null
-      (Set.intersection
-         availableToConnect
-        (Set.fromList (PSQ.keys nextConnectTimes)))
-
 
 -------------------------------
 -- Basic container operations
@@ -144,11 +138,11 @@ invariant KnownPeers{..} =
 empty :: KnownPeers peeraddr
 empty =
     KnownPeers {
-      allPeers           = Map.empty,
-      availableForGossip = Set.empty,
-      nextGossipTimes    = PSQ.empty,
-      availableToConnect = Set.empty,
-      nextConnectTimes   = PSQ.empty
+      allPeers            = Map.empty,
+      availableForGossip  = Set.empty,
+      nextGossipTimes     = PSQ.empty,
+      availableToConnect  = Set.empty,
+      nextConnectTimes    = PSQ.empty
     }
 
 size :: KnownPeers peeraddr -> Int
@@ -260,10 +254,10 @@ setCurrentTime now knownPeers@KnownPeers {
                    } =
   let knownPeers' =
         knownPeers {
-          availableForGossip = availableForGossip',
-          nextGossipTimes    = nextGossipTimes',
-          availableToConnect = availableToConnect',
-          nextConnectTimes   = nextConnectTimes'
+          availableForGossip  = availableForGossip',
+          nextGossipTimes     = nextGossipTimes',
+          availableToConnect  = availableToConnect',
+          nextConnectTimes    = nextConnectTimes'
         }
    in assert (invariant knownPeers') knownPeers'
   where
