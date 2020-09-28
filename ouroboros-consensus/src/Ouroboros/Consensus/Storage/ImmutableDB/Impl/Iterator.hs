@@ -77,23 +77,27 @@ data IteratorStateOrExhausted m hash h =
   deriving (Generic, NoUnexpectedThunks)
 
 data IteratorState m blk h = IteratorState {
-      itsChunk        :: !ChunkNo
+      itsChunk           :: !ChunkNo
       -- ^ The current chunk the iterator is streaming from.
-    , itsChunkHandle  :: !(Handle h)
+    , itsChunkHandle     :: !(Handle h)
       -- ^ A handle to the chunk file corresponding with 'itsChunk'.
-    , itsChunkKey     :: !(ResourceKey m)
-      -- ^ The 'ResourceKey' corresponding to the 'itsChunkHandle'. We use it to
+    , itsSecondaryHandle :: !(Handle h)
+      -- ^ A handle to the secondary index file corresponding with 'itsChunk'.
+    , itsChunkKey        :: !(ResourceKey m)
+      -- ^ The 'ResourceKey' corresponding to 'itsChunkHandle'. We use it to
       -- release the handle from the 'ResourceRegistry'.
       --
       -- NOTE: if we only close the handle but don't release the resource, the
       -- registry will still hold on to the (closed) handle/resource.
-    , itsChunkEntries :: !(NonEmpty (WithBlockSize (Secondary.Entry blk)))
-      -- ^ The entries from the secondary index corresponding to the current
-      -- chunk. The first entry in the list is the next one to stream.
+    , itsSecondaryKey    :: !(ResourceKey m)
+      -- ^ The 'ResourceKey' corresponding to 'itsSecondarHandle'. We use it to
+      -- release the handle from the 'ResourceRegistry'.
       --
-      -- Invariant: all the entries in this list must be included in the stream.
-      -- In other words, entries corresponding to blocks after the end bound are
-      -- not included in this list.
+      -- NOTE: if we only close the handle but don't release the resource, the
+      -- registry will still hold on to the (closed) handle/resource.
+    , itsNextEntry       :: !(WithBlockSize (Secondary.Entry blk))
+      -- ^ The next entry from the secondary index corresponding to the current
+      -- chunk to stream.
     }
   deriving (Generic)
 
