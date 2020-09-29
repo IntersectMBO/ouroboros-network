@@ -82,7 +82,11 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
                gsv' <- atomically $ do
                    m <- readTVar dqCtx
                    assert (peer `M.member` m) $ do
-                     let (gsv', m') = M.updateLookupWithKey (\_ a -> Just $ sample <> a) peer m
+                     let (gsv', m') = M.updateLookupWithKey
+                             (\_ a -> if sampleTime a == Time 0 -- Ignore the initial dummy value
+                                         then Just sample
+                                         else Just $ sample <> a
+                             ) peer m
                      writeTVar dqCtx m'
                      return $ fromJust gsv'
                traceWith tracer $ AddSample peer rtt gsv'
