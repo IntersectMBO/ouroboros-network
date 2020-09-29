@@ -28,6 +28,7 @@ import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
+import qualified Data.Text as Text
 import           Data.Word (Word32)
 import           System.Random (StdGen)
 
@@ -287,9 +288,13 @@ forkBlockForging
     -> BlockForging m blk
     -> m ()
 forkBlockForging maxTxCapacityOverride IS{..} blockForging =
-    void $ onKnownSlotChange registry btime "NodeKernel.blockForging" $
-      withEarlyExit_ . go
+    void $ onKnownSlotChange registry btime threadLabel $
+        withEarlyExit_ . go
   where
+    threadLabel :: String
+    threadLabel =
+        "NodeKernel.blockForging." <> Text.unpack (forgeLabel blockForging)
+
     go :: SlotNo -> WithEarlyExit m ()
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
@@ -364,7 +369,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         proof <- do
           shouldForge <- lift $
             checkShouldForge blockForging
-              (forgeStateInfoTracer tracers)
+              (contramap (TraceLabelCreds (forgeLabel blockForging))
+                (forgeStateInfoTracer tracers))
               cfg
               currentSlot
               tickedChainDepState
@@ -453,7 +459,10 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         trace $ TraceAdoptedBlock currentSlot newBlock txs
 
     trace :: TraceForgeEvent blk -> WithEarlyExit m ()
-    trace = lift . traceWith (forgeTracer tracers)
+    trace =
+          lift
+        . traceWith (forgeTracer tracers)
+        . TraceLabelCreds (forgeLabel blockForging)
 
     -- Compute maximum block transaction capacity
     --

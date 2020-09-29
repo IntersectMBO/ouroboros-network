@@ -1345,6 +1345,7 @@ updSignKey genSK extCfg cid eno newSK =
         blcSignKey    = sk'
       , blcDlgCert    = newCert
       , blcCoreNodeId = cid
+      , blcLabel      = "Updated Byron credentials"
       }
   where
     newCert =

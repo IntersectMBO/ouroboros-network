@@ -130,7 +130,7 @@ exampleBlock =
       (fakeMkIsLeader leaderCredentials)
   where
     -- | Normally, we'd have to use 'checkIsLeader' to produce this proof.
-    fakeMkIsLeader (ByronLeaderCredentials signKey dlgCert _) = PBftIsLeader {
+    fakeMkIsLeader (ByronLeaderCredentials signKey dlgCert _ _) = PBftIsLeader {
           pbftIsLeaderSignKey = SignKeyByronDSIGN signKey
         , pbftIsLeaderDlgCert = dlgCert
         }

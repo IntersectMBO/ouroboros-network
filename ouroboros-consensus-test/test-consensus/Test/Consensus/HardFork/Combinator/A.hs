@@ -278,7 +278,8 @@ forgeBlockA tlc bno sno (TickedLedgerStateA st) _txs _ = BlkA {
 
 blockForgingA :: Monad m => BlockForging m BlockA
 blockForgingA = BlockForging {
-     canBeLeader      = ()
+     forgeLabel       = "BlockA"
+   , canBeLeader      = ()
    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
    , checkCanForge    = \_ _ _ _ _ -> return ()
    , forgeBlock       = return .....: forgeBlockA

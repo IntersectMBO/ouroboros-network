@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -65,7 +66,8 @@ dualByronBlockForging
   => ByronLeaderCredentials
   -> BlockForging m DualByronBlock
 dualByronBlockForging creds = BlockForging {
-      canBeLeader      = canBeLeader
+      forgeLabel       = forgeLabel
+    , canBeLeader      = canBeLeader
     , updateForgeState = fmap castForgeStateUpdateInfo . updateForgeState
     , checkCanForge    = checkCanForge . dualTopLevelConfigMain
     , forgeBlock       = return .....: forgeDualByronBlock
@@ -180,6 +182,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
             (Spec.Test.elaborateDCert
                (Impl.configProtocolMagicId concreteGenesis)
                abstractDCert)
+            "byronLeaderCredentials"
       where
         -- PBFT constructs the core node ID by the implicit ordering of
         -- the hashes of the verification keys in the genesis config. Here

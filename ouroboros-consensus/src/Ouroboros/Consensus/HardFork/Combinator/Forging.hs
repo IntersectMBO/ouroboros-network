@@ -56,10 +56,11 @@ hardForkBlockForging ::
   -> BlockForging m (HardForkBlock xs)
 hardForkBlockForging blockForging =
     BlockForging {
-        canBeLeader      = hardForkCanBeLeader      blockForging
-      , updateForgeState = hardForkUpdateForgeState blockForging
-      , checkCanForge    = hardForkCheckCanForge    blockForging
-      , forgeBlock       = hardForkForgeBlock       blockForging
+        forgeLabel       = hcollapse $ hmap (K . forgeLabel) blockForging
+      , canBeLeader      = hardForkCanBeLeader               blockForging
+      , updateForgeState = hardForkUpdateForgeState          blockForging
+      , checkCanForge    = hardForkCheckCanForge             blockForging
+      , forgeBlock       = hardForkForgeBlock                blockForging
       }
 
 hardForkCanBeLeader ::

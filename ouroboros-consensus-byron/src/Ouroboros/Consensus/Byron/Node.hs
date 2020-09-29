@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Byron.Node (
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
+import           Data.Text (Text)
 import           Data.Void (Void)
 
 import qualified Cardano.Chain.Delegation as Delegation
@@ -59,11 +60,19 @@ import           Ouroboros.Consensus.Byron.Protocol
   Credentials
 -------------------------------------------------------------------------------}
 
+-- | Credentials needed to produce blocks in the Byron era.
 data ByronLeaderCredentials = ByronLeaderCredentials {
       blcSignKey    :: Crypto.SigningKey
     , blcDlgCert    :: Delegation.Certificate
+      -- | Only core nodes can produce blocks. The 'CoreNodeId' is used to
+      -- determine the order (round-robin) in which core nodes produce blocks.
     , blcCoreNodeId :: CoreNodeId
-    } deriving Show
+      -- | Identifier for this set of credentials.
+      --
+      -- Useful when the node is running with multiple sets of credentials.
+    , blcLabel      :: Text
+    }
+  deriving (Show)
 
 -- | Make the 'ByronLeaderCredentials', with a couple sanity checks:
 --
@@ -75,8 +84,9 @@ mkByronLeaderCredentials ::
      Genesis.Config
   -> Crypto.SigningKey
   -> Delegation.Certificate
+  -> Text
   -> Either ByronLeaderCredentialsError ByronLeaderCredentials
-mkByronLeaderCredentials gc sk cert = do
+mkByronLeaderCredentials gc sk cert lbl = do
     guard (Delegation.delegateVK cert == Crypto.toVerification sk)
       ?! NodeSigningKeyDoesNotMatchDelegationCertificate
 
@@ -88,6 +98,7 @@ mkByronLeaderCredentials gc sk cert = do
       blcSignKey     = sk
     , blcDlgCert     = cert
     , blcCoreNodeId  = nid
+    , blcLabel       = lbl
     }
   where
     (?!) :: Maybe a -> e -> Either e a
@@ -114,7 +125,8 @@ byronBlockForging
   => ByronLeaderCredentials
   -> BlockForging m ByronBlock
 byronBlockForging creds = BlockForging {
-      canBeLeader
+      forgeLabel       = blcLabel creds
+    , canBeLeader
     , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader () ->
                              pbftCheckCanForge
@@ -128,7 +140,7 @@ byronBlockForging creds = BlockForging {
     canBeLeader = mkPBftCanBeLeader creds
 
 mkPBftCanBeLeader :: ByronLeaderCredentials -> CanBeLeader (PBft PBftByronCrypto)
-mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid) = PBftCanBeLeader {
+mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid _) = PBftCanBeLeader {
       pbftCanBeLeaderCoreNodeId = nid
     , pbftCanBeLeaderSignKey    = SignKeyByronDSIGN sk
     , pbftCanBeLeaderDlgCert    = cert

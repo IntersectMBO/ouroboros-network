@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Shelley.Node (
 import           Data.Bifunctor (first)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.Text (Text)
 import qualified Data.Text as Text
 
 import qualified Cardano.Crypto.VRF as VRF
@@ -64,13 +65,17 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 -------------------------------------------------------------------------------}
 
 data TPraosLeaderCredentials era = TPraosLeaderCredentials {
-    -- | The unevolved signing KES key (at evolution 0).
-    --
-    -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
-    -- automatically, whereas 'TPraosCanBeLeader' does not change.
-    tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
-  , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
-  }
+      -- | The unevolved signing KES key (at evolution 0).
+      --
+      -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
+      -- automatically, whereas 'TPraosCanBeLeader' does not change.
+      tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
+    , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
+      -- | Identifier for this set of credentials.
+      --
+      -- Useful when the node is running with multiple sets of credentials.
+    , tpraosLeaderCredentialsLabel       :: Text
+    }
 
 tpraosBlockIssuerVKey ::
      TPraosLeaderCredentials era -> SL.VKey 'SL.BlockIssuer era
@@ -96,10 +101,12 @@ shelleyBlockForging TPraosParams {..}
                     TPraosLeaderCredentials {
                         tpraosLeaderCredentialsInitSignKey = initSignKey
                       , tpraosLeaderCredentialsCanBeLeader = canBeLeader
+                      , tpraosLeaderCredentialsLabel       = label
                       } = do
     hotKey <- HotKey.mkHotKey initSignKey startPeriod tpraosMaxKESEvo
     return BlockForging {
-        canBeLeader      = canBeLeader
+        forgeLabel       = label
+      , canBeLeader      = canBeLeader
       , updateForgeState = \curSlot ->
                                ForgeStateUpdateInfo <$>
                                  HotKey.evolve hotKey (slotToPeriod curSlot)

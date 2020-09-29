@@ -916,7 +916,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                                 traceWith headerAddTracer
                                   (RealPoint s h, blockNo hdr)
                     _ -> pure ()
-                , forgeTracer           = Tracer $ \ev -> do
+                , forgeTracer           = Tracer $ \(TraceLabelCreds _ ev) -> do
                     traceWith (nodeEventsForges nodeInfoEvents) ev
                     case ev of
                       TraceNodeIsLeader s -> atomically $ blockOnCrucial s

@@ -75,6 +75,7 @@ mkLeaderCredentials genesisConfig genesisSecrets (CoreNodeId i) =
         genesisConfig
         dlgKey
         dlgCert
+        "ThreadNet"
   where
     dlgKey :: Crypto.SigningKey
     dlgKey = fromMaybe (error "dlgKey") $

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -12,9 +13,11 @@ module Ouroboros.Consensus.Node.Tracers
   , showTracers
     -- * Specific tracers
   , TraceForgeEvent (..)
+  , TraceLabelCreds (..)
   ) where
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
+import           Data.Text (Text)
 
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
@@ -55,9 +58,9 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , txOutboundTracer              :: f (TraceLabelPeer remotePeer (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk)))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
-  , forgeTracer                   :: f (TraceForgeEvent blk)
+  , forgeTracer                   :: f (TraceLabelCreds (TraceForgeEvent blk))
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
-  , forgeStateInfoTracer         :: f (ForgeStateInfo blk)
+  , forgeStateInfoTracer          :: f (TraceLabelCreds (ForgeStateInfo blk))
   , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
   }
 
@@ -323,3 +326,10 @@ deriving instance ( LedgerSupportsProtocol blk
                   , Show (ForgeStateUpdateError blk)
                   , Show (CannotForge blk)
                   ) => Show (TraceForgeEvent blk)
+
+-- | Label a forge-related trace event with the label associated with its
+-- credentials.
+--
+-- This is useful when a node is running with multiple sets of credentials.
+data TraceLabelCreds a = TraceLabelCreds Text a
+  deriving (Eq, Show, Functor)

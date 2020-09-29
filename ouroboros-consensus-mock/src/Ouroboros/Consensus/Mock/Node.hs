@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -83,7 +84,8 @@ simpleBlockForging ::
   -> ForgeExt c ext
   -> BlockForging m (SimpleBlock c ext)
 simpleBlockForging canBeLeader forgeExt = BlockForging {
-      canBeLeader      = canBeLeader
+      forgeLabel       = "simpleBlockForging"
+    , canBeLeader      = canBeLeader
     , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \_ _ _ _ _ -> return ()
     , forgeBlock       = return .....: forgeSimple forgeExt

@@ -426,7 +426,8 @@ instance Functor m => Isomorphic (BlockForging m) where
   project :: forall blk. NoHardForks blk
           => BlockForging m (HardForkBlock '[blk]) -> BlockForging m blk
   project BlockForging {..} = BlockForging {
-        canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+        forgeLabel       = forgeLabel
+      , canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
       , updateForgeState = \sno -> project <$> updateForgeState sno
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (project' (Proxy @(WrapCannotForge blk))) $
@@ -465,7 +466,8 @@ instance Functor m => Isomorphic (BlockForging m) where
   inject :: forall blk. NoHardForks blk
          => BlockForging m blk -> BlockForging m (HardForkBlock '[blk])
   inject BlockForging {..} = BlockForging {
-        canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+        forgeLabel       = forgeLabel
+      , canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
       , updateForgeState = \sno -> inject <$> updateForgeState sno
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (inject' (Proxy @(WrapCannotForge blk))) $
