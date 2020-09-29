@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -326,32 +327,39 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
 
         trace $ TraceLedgerState currentSlot bcPrevPoint
 
-        -- Check if we are not too far ahead of the chain
-        --
-        -- TODO: This check is not strictly necessary, but omitting it breaks
-        -- the consensus tests at the moment.
-        -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
-        case runExcept $ forecastFor
+        -- We require the ticked ledger view in order to construct the ticked
+        -- 'ChainDepState'.
+        ledgerView <-
+          case runExcept $ forecastFor
                            (ledgerViewForecastAt
                               (configLedger cfg)
                               (ledgerState unticked))
                            currentSlot of
-          Left err -> do
-            -- There are so many empty slots between the tip of our chain and
-            -- the current slot that we cannot get an ledger view anymore
-            -- In principle, this is no problem; we can still produce a block
-            -- (we use the ticked ledger state). However, we probably don't
-            -- /want/ to produce a block in this case; we are most likely
-            -- missing a blocks on our chain.
-            trace $ TraceNoLedgerView currentSlot err
-            exitEarly
-          Right _ ->
-            return ()
+            Left err -> do
+              -- There are so many empty slots between the tip of our chain and
+              -- the current slot that we cannot get an ledger view anymore
+              -- In principle, this is no problem; we can still produce a block
+              -- (we use the ticked ledger state). However, we probably don't
+              -- /want/ to produce a block in this case; we are most likely
+              -- missing a blocks on our chain.
+              trace $ TraceNoLedgerView currentSlot err
+              exitEarly
+            Right lv ->
+              return lv
 
         trace $ TraceLedgerView currentSlot
 
-        -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let ticked = applyChainTick (ExtLedgerCfg cfg) currentSlot unticked
+        -- Tick the 'ChainDepState' for the 'SlotNo' we're producing a block
+        -- for. We only need the ticked 'ChainDepState' to check the whether
+        -- we're a leader. This is much cheaper than ticking the entire
+        -- 'ExtLedgerState'.
+        let tickedChainDepState :: Ticked (ChainDepState (BlockProtocol blk))
+            tickedChainDepState =
+                tickChainDepState
+                  (configConsensus cfg)
+                  ledgerView
+                  currentSlot
+                  (headerStateChainDep (headerState unticked))
 
         -- Check if we are the leader
         proof <- do
@@ -360,7 +368,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               (forgeStateInfoTracer tracers)
               cfg
               currentSlot
-              (tickedHeaderStateChainDep $ tickedHeaderState ticked)
+              tickedChainDepState
           case shouldForge of
             ForgeStateUpdateError err -> do
               trace $ TraceForgeStateUpdateError currentSlot err
@@ -376,6 +384,14 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot
 
+        -- Tick the ledger state for the 'SlotNo' we're producing a block for
+        let tickedLedgerState :: Ticked (LedgerState blk)
+            tickedLedgerState =
+              applyChainTick
+                (configLedger cfg)
+                currentSlot
+                (ledgerState unticked)
+
         -- Get a snapshot of the mempool that is consistent with the ledger
         --
         -- NOTE: It is possible that due to adoption of new blocks the
@@ -388,10 +404,10 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
                                mempool
                                (ForgeInKnownSlot
                                   currentSlot
-                                  (tickedLedgerState ticked))
+                                  tickedLedgerState)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (computeMaxTxCapacity (tickedLedgerState ticked))
+                              (computeMaxTxCapacity tickedLedgerState)
 
         -- Actually produce the block
         newBlock <- lift $
@@ -399,7 +415,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             cfg
             bcBlockNo
             currentSlot
-            (tickedLedgerState ticked)
+            tickedLedgerState
             txs
             proof
         trace $ TraceForgedBlock
