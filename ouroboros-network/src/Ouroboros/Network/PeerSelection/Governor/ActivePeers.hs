@@ -8,6 +8,7 @@ module Ouroboros.Network.PeerSelection.Governor.ActivePeers
   , jobDemoteActivePeer
   ) where
 
+import           Data.Semigroup (Min(..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -49,6 +50,9 @@ belowTarget actions
                           targetNumberOfActivePeers
                         }
             }
+  | Map.null (EstablishedPeers.establishedReady establishedPeers)
+  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers)
+
     -- Are we below the target for number of active peers?
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
 
@@ -91,7 +95,7 @@ belowTarget actions
   = GuardedSkip Nothing
   where
     numEstablishedPeers, numActivePeers, numPromoteInProgress :: Int
-    numEstablishedPeers  = EstablishedPeers.size establishedPeers
+    numEstablishedPeers  = Map.size (EstablishedPeers.establishedReady establishedPeers)
     numActivePeers       = Set.size activePeers
     numPromoteInProgress = Set.size inProgressPromoteWarm
     numDemoteInProgress  = Set.size inProgressDemoteWarm
