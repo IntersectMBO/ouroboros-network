@@ -21,8 +21,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.PParams as SL (ProtVer)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 

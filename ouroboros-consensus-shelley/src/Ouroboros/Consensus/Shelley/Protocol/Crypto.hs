@@ -19,14 +19,15 @@ import           Cardano.Ledger.Crypto (Crypto (..))
 import           Cardano.Ledger.Era (Era)
 import           Cardano.Ledger.Shelley (Shelley)
 
-import           Shelley.Spec.Ledger.API (BHBody, TxBody)
+import           Shelley.Spec.Ledger.API (BHBody, Hash, TxBody)
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
-import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.Keys as SL (DSignable, KESignable,
+                     VRFSignable)
 import           Shelley.Spec.Ledger.OCert (OCertSignable)
 
 class ( Era era
       , SL.DSignable    era (OCertSignable era)
-      , SL.DSignable    era (SL.Hash era (TxBody era))
+      , SL.DSignable    era (Hash era (TxBody era))
       , SL.KESignable   era (BHBody era)
       , SL.VRFSignable  era Seed
       ) => TPraosCrypto era

@@ -55,12 +55,10 @@ import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.StabilityWindow as SL
+import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff,
+                     mkNonceFromNumber)
+import qualified Shelley.Spec.Ledger.OverlaySchedule as SL (overlaySlots)
 
 import           Ouroboros.Consensus.Shelley.Node
 

@@ -67,15 +67,11 @@ import           Ouroboros.Consensus.Util.Versioned
 import           Cardano.Ledger.Crypto (VRF)
 import           Cardano.Ledger.Era (Era (Crypto))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
+import qualified Shelley.Spec.Ledger.BlockChain as SL (checkLeaderValue, mkSeed,
+                     seedEta, seedL)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
-import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
-import qualified Shelley.Spec.Ledger.StabilityWindow as SL
-import qualified Shelley.Spec.Ledger.STS.Tickn as STS
+import qualified Shelley.Spec.Ledger.STS.Tickn as SL (ticknStateEpochNonce)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
@@ -416,8 +412,8 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
       d          = SL._d $ SL.lvProtParams lv
       asc        = tpraosLeaderF $ tpraosParams cfg
       firstSlot  = firstSlotOfEpochOfSlot (tpraosEpochInfo cfg) slot
-      gkeys      = Map.keys dlgMap
-      eta0       = STS.ticknStateEpochNonce $ SL.csTickn chainState
+      gkeys      = Map.keysSet dlgMap
+      eta0       = SL.ticknStateEpochNonce $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0

@@ -48,22 +48,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
-import qualified Cardano.Ledger.Val as Val
+import           Cardano.Ledger.Val ((<->))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.Coin as SL
-import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.STS.Chain as SL
-import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
-import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
-import qualified Shelley.Spec.Ledger.STS.Tickn as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
@@ -234,7 +221,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
       Origin
       initialEpochNo
       initialUtxo
-      (SL.word64ToCoin (SL.sgMaxLovelaceSupply genesis) Val.~~ SL.balance initialUtxo)
+      (SL.word64ToCoin (SL.sgMaxLovelaceSupply genesis) <-> SL.balance initialUtxo)
       (SL.sgGenDelegs genesis)
       (SL.sgProtocolParams genesis)
       initialNonce

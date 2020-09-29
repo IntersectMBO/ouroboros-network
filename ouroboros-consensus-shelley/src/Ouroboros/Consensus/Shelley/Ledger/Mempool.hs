@@ -41,8 +41,8 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL
+import           Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
+import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger

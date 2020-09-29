@@ -65,12 +65,13 @@ import           Test.Util.Time (dawnOfTime)
 import           Cardano.Ledger.Crypto (DSIGN, KES, VRF)
 import           Cardano.Ledger.Era (Era (Crypto))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Tx as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
+                     unitIntervalFromRational)
+import qualified Shelley.Spec.Ledger.Keys as SL (signedDSIGN)
+import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
+import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
+                     emptyPParamsUpdate)
+import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..), ShelleyBlock,
                      mkShelleyTx)

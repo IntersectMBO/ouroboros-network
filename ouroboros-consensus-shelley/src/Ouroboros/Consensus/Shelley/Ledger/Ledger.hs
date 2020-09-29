@@ -87,12 +87,9 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.StabilityWindow as SL
-import qualified Shelley.Spec.Ledger.STS.Chain as STS
-import qualified Shelley.Spec.Ledger.UTxO as SL
+import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts,
+                     proposals)
+import qualified Shelley.Spec.Ledger.STS.Chain as SL (ChainPredicateFailure)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
@@ -540,7 +537,7 @@ instance Era era => BasicEnvelopeValidation (ShelleyBlock era) where
 
 instance Era era => ValidateEnvelope (ShelleyBlock era) where
   type OtherHeaderEnvelopeError (ShelleyBlock era) =
-    STS.ChainPredicateFailure era
+    SL.ChainPredicateFailure era
 
   additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
       SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
@@ -572,9 +569,9 @@ getFilteredDelegationsAndRewardAccounts :: SL.ShelleyState era
 getFilteredDelegationsAndRewardAccounts ss creds =
     (filteredDelegations, filteredRwdAcnts)
   where
-    dstate = getDState ss
-    filteredDelegations = Map.restrictKeys (SL._delegations dstate) creds
-    filteredRwdAcnts = Map.restrictKeys (SL._rewards dstate) creds
+    SL.DState { _rewards = rewards, _delegations = delegations } = getDState ss
+    filteredDelegations = Map.restrictKeys delegations creds
+    filteredRwdAcnts = Map.restrictKeys rewards creds
 
 {-------------------------------------------------------------------------------
   Serialisation
