@@ -53,7 +53,7 @@ import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
 import           Ouroboros.Consensus.Util.Condense
 
-import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Cardano.Ledger.Crypto (HASH)
 import           Cardano.Ledger.Era (Era (Crypto))

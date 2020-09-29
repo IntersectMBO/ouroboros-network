@@ -33,9 +33,8 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (UnitInterval,
+                     mkNonceFromNumber, unitIntervalToRational)
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley

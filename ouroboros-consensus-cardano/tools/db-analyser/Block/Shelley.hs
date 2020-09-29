@@ -17,8 +17,7 @@ import qualified Data.Map.Strict as Map
 import           Options.Applicative
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 

@@ -39,14 +39,15 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
-import qualified Cardano.Ledger.Val as Val
-import qualified Shelley.Spec.Ledger.Address as SL
+import           Cardano.Ledger.Val ((<->))
+import qualified Shelley.Spec.Ledger.Address as SL (BootstrapAddress (..))
 import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
+                     (makeBootstrapWitness)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.Tx as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval)
+import qualified Shelley.Spec.Ledger.Keys as SL (hashWithSerialiser,
+                     signedDSIGN)
+import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
@@ -164,7 +165,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
         unspentCoin :: SL.Coin
         unspentCoin =
             assert (pickedCoin > spentCoin) $
-            pickedCoin Val.~~ spentCoin
+            pickedCoin <-> spentCoin
 
         body :: SL.TxBody (ShelleyEra c)
         body = SL.TxBody

@@ -11,8 +11,7 @@ import           Data.Word (Word64)
 import           Ouroboros.Consensus.Block
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.Keys as SL (verifySignedKES)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Protocol

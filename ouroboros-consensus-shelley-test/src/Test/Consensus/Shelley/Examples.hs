@@ -61,27 +61,33 @@ import           Ouroboros.Consensus.Util.Time
 
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, VRF)
 import           Cardano.Ledger.Era (Era (Crypto))
+import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (mkNonceFromNumber,
+                     textToUrl)
+import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
-import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.Hashing as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.MetaData as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.Rewards as SL
-import qualified Shelley.Spec.Ledger.STS.Ledger as STS
-import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
-import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
-import qualified Shelley.Spec.Ledger.STS.Tickn as STS
-import qualified Shelley.Spec.Ledger.STS.Utxow as STS
-import qualified Shelley.Spec.Ledger.Tx as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL
+                     (IndividualPoolStake (..))
+import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
+                     emptySnapShots)
+import qualified Shelley.Spec.Ledger.Hashing as SL (hashAnnotated)
+import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
+                     signedKES)
+import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
+                     emptyPPUPState)
+import qualified Shelley.Spec.Ledger.MetaData as SL (MetaData (..),
+                     MetaDatum (..), hashMetaData)
+import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
+                     emptyPParamsUpdate)
+import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)
+import qualified Shelley.Spec.Ledger.STS.Ledger as SL
+                     (LedgerPredicateFailure (..))
+import qualified Shelley.Spec.Ledger.STS.Ledgers as SL
+                     (LedgersPredicateFailure (..))
+import qualified Shelley.Spec.Ledger.STS.Utxow as SL
+                     (UtxowPredicateFailure (..))
+import qualified Shelley.Spec.Ledger.Tx as SL (addrWits)
+import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessesVKey)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as SL
                      (AllIssuerKeys (..), genesisId, mkOCert)
 import           Test.Shelley.Spec.Ledger.Orphans ()
@@ -353,9 +359,9 @@ exampleApplyTxErr :: ApplyTxErr (ShelleyBlock StandardShelley)
 exampleApplyTxErr =
       ApplyTxError
     $ pure
-    $ STS.LedgerFailure
-    $ STS.UtxowFailure
-    $ STS.InvalidWitnessesUTXOW [SL.asWitness (SL.vKey exampleStakeKey)]
+    $ SL.LedgerFailure
+    $ SL.UtxowFailure
+    $ SL.InvalidWitnessesUTXOW [SL.asWitness (SL.vKey exampleStakeKey)]
 
 exampleAnnTip :: AnnTip (ShelleyBlock StandardShelley)
 exampleAnnTip = AnnTip {
@@ -369,14 +375,14 @@ exampleChainDepState = TPraosState (NotOrigin 1) (mkPrtclState 1)
   where
     mkPrtclState :: Word64 -> SL.ChainDepState StandardShelley
     mkPrtclState seed = SL.ChainDepState
-      { SL.csProtocol = STS.PrtclState
+      { SL.csProtocol = SL.PrtclState
           (Map.fromList [
               (mkKeyHash 1, 1)
             , (mkKeyHash 2, 2)
             ])
           (SL.mkNonceFromNumber seed)
           (SL.mkNonceFromNumber seed)
-      , SL.csTickn = STS.TicknState
+      , SL.csTickn = SL.TicknState
           SL.NeutralNonce
           (SL.mkNonceFromNumber seed)
       , SL.csLabNonce =

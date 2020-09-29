@@ -12,7 +12,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config

@@ -64,12 +64,6 @@ import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as Era
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.ByronTranslation as SL
-import qualified Shelley.Spec.Ledger.Genesis as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
-import qualified Shelley.Spec.Ledger.STS.Tickn as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 

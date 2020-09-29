@@ -19,7 +19,7 @@ import           Options.Applicative
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
-import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))

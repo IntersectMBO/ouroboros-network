@@ -21,8 +21,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.STS.Ledger as STS
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 
@@ -85,7 +84,7 @@ genTx
   -> Gen.GenEnv (MockShelley h)
   -> Gen (Maybe (GenTx (ShelleyBlock (MockShelley h))))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
-    either (const Nothing) (Just . mkShelleyTx) <$> Gen.tryGenTx
+    Just . mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
       (utxoSt, dpState)
@@ -93,8 +92,8 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
     epochState :: SL.EpochState (MockShelley h)
     epochState = SL.nesEs tickedShelleyLedgerState
 
-    ledgerEnv :: STS.LedgerEnv (MockShelley h)
-    ledgerEnv = STS.LedgerEnv {
+    ledgerEnv :: SL.LedgerEnv (MockShelley h)
+    ledgerEnv = SL.LedgerEnv {
         ledgerSlotNo   = slotNo
       , ledgerIx       = 0 -- TODO Ix
       , ledgerPp       = SL.esPp epochState
@@ -129,9 +128,8 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
         setPPUs $
         Gen.defaultConstants
           { Gen.frequencyMIRCert = 0
-          , Gen.genTxRetries     = 1000
-                -- At time of writing, about 85 retries have been enough for
-                -- any individual invocation; most need much fewer.
+          , Gen.genTxStableUtxoSize = 100
+          , Gen.genTxUtxoIncrement = 3
           }
       where
         -- Testing with certificates requires additional handling in the
