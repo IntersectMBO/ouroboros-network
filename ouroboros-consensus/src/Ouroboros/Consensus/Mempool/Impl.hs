@@ -510,6 +510,7 @@ implSnapshotFromIS is = MempoolSnapshot {
     , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     , snapshotSlotNo      = isSlotNo is
+    , snapshotLedgerState = isLedgerState is
     }
 
 implSnapshotGetTxs :: InternalState blk

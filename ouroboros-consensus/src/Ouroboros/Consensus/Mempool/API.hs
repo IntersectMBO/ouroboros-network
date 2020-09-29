@@ -310,6 +310,9 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
 
     -- | The block number of the "virtual block" under construction
   , snapshotSlotNo      :: SlotNo
+
+    -- | The ledger state after all transactions in the snapshot
+  , snapshotLedgerState :: TickedLedgerState blk
   }
 
 -- | The size of a mempool.
