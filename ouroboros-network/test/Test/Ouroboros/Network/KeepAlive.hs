@@ -8,7 +8,6 @@
 
 module Test.Ouroboros.Network.KeepAlive (tests) where
 
-import           Control.Arrow ((&&&))
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -18,17 +17,14 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.IOSim ( runSimTrace, selectTraceEventsSay
-                                     , traceResult )
+import           Control.Monad.IOSim
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map.Strict as M
+import           Data.Typeable (Typeable)
 import           System.Random
-import           Text.Printf
 
 
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.DeltaQ
@@ -129,7 +125,9 @@ runKeepAliveClientAndServer (NetworkDelay nd) seed tracer controlMessageSTM regi
     serverAsync <- async $ runKeepAliveServer serverChannel
     return (clientAsync, serverAsync)
 
-newtype NetworkDelay = NetworkDelay DiffTime deriving Show
+newtype NetworkDelay = NetworkDelay {
+      unNetworkDelay :: DiffTime
+    } deriving Show
 
 instance Arbitrary NetworkDelay where
     arbitrary = do
@@ -149,10 +147,11 @@ prop_keepAlive_convergenceM
         , MonadTimer m
         , MonadThrow (STM m)
         )
-    => NetworkDelay
+    => Tracer m (TraceKeepAliveClient String)
+    -> NetworkDelay
     -> Int
-    -> m Property
-prop_keepAlive_convergenceM (NetworkDelay nd) seed = do
+    -> m ()
+prop_keepAlive_convergenceM tracer (NetworkDelay nd) seed = do
     registry <- newFetchClientRegistry
     controlMessageV <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageV
@@ -160,88 +159,44 @@ prop_keepAlive_convergenceM (NetworkDelay nd) seed = do
         timeConstant = 1000 -- Same as in PeerGSV's <> definition
         keepAliveInterval = 10
 
-    (c_aid, s_aid) <- runKeepAliveClientAndServer (NetworkDelay nd) seed verboseTracer controlMessageSTM
+    (c_aid, s_aid) <- runKeepAliveClientAndServer (NetworkDelay nd) seed tracer controlMessageSTM
                           registry clientId (KeepAliveInterval keepAliveInterval)
     threadDelay $ timeConstant * keepAliveInterval
-    dqLive <- atomically $ readPeerGSVs registry
 
     atomically $ writeTVar controlMessageV Terminate
     void $ wait c_aid
     void $ wait s_aid
 
     -- XXX Must be larger than the KeepAliveInterval timeout or we leak threads in the SIM
+    -- Can be removed after #2631 is merged.
     threadDelay (keepAliveInterval + 128)
-    case M.lookup clientId dqLive of
-         Nothing  -> return $ property False
-         Just gsv -> do
-             dqDead <- atomically $ readPeerGSVs registry
-
-             return $ property $ (not $ M.member "client" dqDead) && gsvCheck gsv
-
-  where
-    gsvCheck :: PeerGSV -> Bool
-    gsvCheck PeerGSV{outboundGSV, inboundGSV} =
-        gCheck outboundGSV && gCheck inboundGSV
-
-    gCheck :: GSV -> Bool
-    gCheck (GSV g _ _) =
-        let low = 0.95 * nd / 2
-            high = 1.05 * nd / 2 in
-        g >= low && g <= high
 
 -- Test that our estimate of PeerGSV's G terms converge to
 -- a given constant delay.
 prop_keepAlive_convergence :: NetworkDelay -> Int -> Property
-prop_keepAlive_convergence nd seed = do
-    let (_output, r_e) = (selectTraceEventsSay &&& traceResult True)
-                             (runSimTrace $ prop_keepAlive_convergenceM nd seed)
-    ioProperty $ do
-        --printf "new testcase %s\n" (show nd)
-        --mapM_ (printf "%s\n") _output
-        case r_e of
-             Left  _ -> return $ property False
-             Right r -> return r
+prop_keepAlive_convergence nd seed =
+    let trace = selectTraceEventsDynamic $ runSimTrace $ prop_keepAlive_convergenceM dynamicTracer nd seed in
+    verifyConvergence trace
+  where
+    verifyConvergence :: [TraceKeepAliveClient String] -> Property
+    verifyConvergence [] = property False
+    verifyConvergence [e] = property $ validTrace lastG e
+    verifyConvergence (e:es) =
+        if validTrace validG e then verifyConvergence es
+                               else property False
 
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !Time
-    , wtatWithinThread :: !String
-    , wtatEvent        :: !a
-    }
+    validTrace :: (GSV -> Bool) -> TraceKeepAliveClient String -> Bool
+    validTrace vg (AddSample _ rtt PeerGSV{outboundGSV, inboundGSV}) =
+        unNetworkDelay nd == rtt && vg outboundGSV && vg inboundGSV
 
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+    validG :: GSV -> Bool
+    validG (GSV g _ _) = g >= 0 && g < 2 * unNetworkDelay nd
 
-verboseTracer :: forall a m.
-                       ( MonadAsync m
-                       , MonadFork m
-                       , MonadMask m
-                       , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
-                       , MonadThrow (STM m)
-                       , MonadMonotonicTime m
-                       , MonadTimer m
-                       , Eq (Async m ())
-                       , Show a
-                       )
-               => Tracer m a
-verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+    lastG :: GSV -> Bool
+    lastG (GSV g _ _) =
+        let low = 0.95 * (unNetworkDelay nd) / 2
+            high = 1.05 * (unNetworkDelay nd) / 2 in
+        g >= low && g <= high
 
-threadAndTimeTracer :: forall a m.
-                       ( MonadAsync m
-                       , MonadFork m
-                       , MonadMask m
-                       , MonadSay m
-                       , MonadST m
-                       , MonadSTM m
-                       , MonadThrow (STM m)
-                       , MonadMonotonicTime m
-                       , MonadTimer m
-                       , Eq (Async m ())
-                       )
-                    => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = Tracer $ \s -> do
-    !now <- getMonotonicTime
-    !tid <- myThreadId
-    traceWith tr $ WithThreadAndTime now (show tid) s
+dynamicTracer :: Typeable a => Tracer (IOSim s) a
+dynamicTracer = Tracer traceM
