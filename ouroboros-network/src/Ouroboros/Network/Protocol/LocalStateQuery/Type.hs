@@ -161,9 +161,10 @@ instance Show (ClientHasAgency (st :: LocalStateQuery block query)) where
   show TokIdle     = "TokIdle"
   show TokAcquired = "TokAcquired"
 
-instance Show (ServerHasAgency (st :: LocalStateQuery block query)) where
-  show TokAcquiring    = "TokAcquiring"
-  show (TokQuerying _) = "TokQuerying"
+instance (forall result. Show (query result))
+    => Show (ServerHasAgency (st :: LocalStateQuery block query)) where
+  show TokAcquiring        = "TokAcquiring"
+  show (TokQuerying query) = "TokQuerying " ++ show query
 
 -- | To implement 'Show' for:
 --

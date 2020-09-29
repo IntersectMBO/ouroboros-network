@@ -137,9 +137,6 @@ instance Arbitrary (AnyMessageAndAgency KeepAlive) where
       , pure $ AnyMessageAndAgency (ClientAgency TokClient) MsgDone
       ]
 
-instance Show (AnyMessageAndAgency KeepAlive) where
-    show (AnyMessageAndAgency _ msg) = show msg
-
 instance Eq (AnyMessage KeepAlive) where
     AnyMessage (MsgKeepAlive cookieA)         == AnyMessage (MsgKeepAlive cookieB)         = cookieA == cookieB
     AnyMessage (MsgKeepAliveResponse cookieA) == AnyMessage (MsgKeepAliveResponse cookieB) = cookieA == cookieB

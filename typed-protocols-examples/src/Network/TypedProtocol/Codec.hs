@@ -298,6 +298,13 @@ data AnyMessageAndAgency ps where
                       -> Message ps (st :: ps) (st' :: ps)
                       -> AnyMessageAndAgency ps
 
+-- requires @UndecidableInstances@ and @QuantifiedConstraints@.
+instance (forall st st'. ( Show (Message ps st st')
+                         , Show (ClientHasAgency st)
+                         , Show (ServerHasAgency st)
+                         ))
+         => Show (AnyMessageAndAgency ps) where
+  show (AnyMessageAndAgency agency msg) = show (agency, msg)
 
 -- | The 'Codec' round-trip property: decode after encode gives the same
 -- message. Every codec must satisfy this property.

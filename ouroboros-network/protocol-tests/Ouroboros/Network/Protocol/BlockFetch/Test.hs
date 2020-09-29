@@ -351,10 +351,6 @@ genBlockFetch genBlock genChainRange = oneof
 instance Arbitrary (AnyMessageAndAgency (BlockFetch Block)) where
   arbitrary = genBlockFetch arbitrary arbitrary
 
-instance (StandardHash block, Show block) =>
-         Show (AnyMessageAndAgency (BlockFetch block)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance (StandardHash block, Eq block) =>
          Eq (AnyMessage (BlockFetch block)) where
   AnyMessage (MsgRequestRange r1) == AnyMessage (MsgRequestRange r2) = r1 == r2

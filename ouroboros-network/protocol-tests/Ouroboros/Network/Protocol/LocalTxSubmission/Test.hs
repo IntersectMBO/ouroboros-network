@@ -196,10 +196,6 @@ instance Arbitrary (AnyMessageAndAgency (LocalTxSubmission Tx Reject)) where
         pure MsgDone
     ]
 
-instance (Show tx, Show reject) =>
-          Show (AnyMessageAndAgency (LocalTxSubmission tx reject)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance (Eq tx, Eq reject) =>
           Eq (AnyMessage (LocalTxSubmission tx reject)) where
 

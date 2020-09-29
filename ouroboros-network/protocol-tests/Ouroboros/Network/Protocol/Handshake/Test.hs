@@ -553,9 +553,6 @@ instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
 
   _ == _ = False
 
-instance Show (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   arbitrary = oneof
     [     AnyMessageAndAgency (ClientAgency TokPropose)

@@ -153,7 +153,11 @@ type ClientCodecs blk  m =
 -- Implementation mode: currently none of the consensus encoders/decoders do
 -- anything different based on the version, so @_version@ is unused; it's just
 -- that not all codecs are used, depending on the version number.
-defaultCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
+defaultCodecs :: forall m blk.
+                 ( MonadST m
+                 , SerialiseNodeToClientConstraints blk
+                 , ShowQuery (Query blk)
+                 )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
               -> DefaultCodecs blk m
@@ -196,7 +200,11 @@ defaultCodecs ccfg version = Codecs {
 -- | Protocol codecs for the node-to-client protocols which serialise
 -- / deserialise blocks in /chain-sync/ protocol.
 --
-clientCodecs :: forall m blk. (MonadST m, SerialiseNodeToClientConstraints blk)
+clientCodecs :: forall m blk.
+                ( MonadST m
+                , SerialiseNodeToClientConstraints blk
+                , ShowQuery (Query blk)
+                )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
              -> ClientCodecs blk m
@@ -325,6 +333,7 @@ mkApps
      , ShowProxy (ApplyTxErr blk)
      , ShowProxy (Query blk)
      , ShowProxy (GenTx blk)
+     , ShowQuery (Query blk)
      )
   => Tracers m peer blk e
   -> Codecs blk e m bCS bTX bSQ
