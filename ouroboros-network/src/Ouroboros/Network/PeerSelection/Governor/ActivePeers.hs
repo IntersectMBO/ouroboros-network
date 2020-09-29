@@ -8,6 +8,7 @@ module Ouroboros.Network.PeerSelection.Governor.ActivePeers
   , jobDemoteActivePeer
   ) where
 
+import           Data.Semigroup (Min(..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -53,14 +54,15 @@ belowTarget actions
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
 
     -- Are there any warm peers we could pick to promote?
-  , numEstablishedPeers - numActivePeers
-                        - numPromoteInProgress - numDemoteInProgress > 0
+  , numEstablishedReadyPeers - numActivePeers
+                             - numPromoteInProgress - numDemoteInProgress > 0
   = Guarded Nothing $ do
           -- The availableToPromote is non-empty due to the second guard.
           -- The numPeersToPromote is positive due to the first guard.
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
-                                `Map.intersection` EstablishedPeers.allPeers establishedPeers
+                                `Map.intersection` EstablishedPeers.readyPeers
+                                                     establishedPeers
                                 `Map.withoutKeys` activePeers
                                 `Map.withoutKeys` inProgressPromoteWarm
                                 `Map.withoutKeys` inProgressDemoteWarm
@@ -87,11 +89,16 @@ belowTarget actions
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
+    -- If we could promote except that there are no peers currently available
+    -- then we return the next wakeup time (if any)
+  | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
+  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers)
+
   | otherwise
   = GuardedSkip Nothing
   where
-    numEstablishedPeers, numActivePeers, numPromoteInProgress :: Int
-    numEstablishedPeers  = EstablishedPeers.size establishedPeers
+    numEstablishedReadyPeers, numActivePeers, numPromoteInProgress :: Int
+    numEstablishedReadyPeers = EstablishedPeers.sizeReady establishedPeers
     numActivePeers       = Set.size activePeers
     numPromoteInProgress = Set.size inProgressPromoteWarm
     numDemoteInProgress  = Set.size inProgressDemoteWarm
