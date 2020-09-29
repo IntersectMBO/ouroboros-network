@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Inspect (
   , UpdateProposal(..)
   , UpdateState(..)
   , protocolUpdates
+  , ShelleyLedgerUpdate (..)
   ) where
 
 import           Control.Monad
