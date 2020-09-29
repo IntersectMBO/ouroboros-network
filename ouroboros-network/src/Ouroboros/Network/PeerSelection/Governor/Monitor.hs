@@ -86,6 +86,11 @@ jobs jobPool st =
 reconnectDelay :: DiffTime
 reconnectDelay = 10
 
+-- | Activation delay after a peer was asynchronously demoted to warm state.
+--
+activateDelay :: DiffTime
+activateDelay = 60
+
 
 -- | Monitor connections.
 --
@@ -115,7 +120,10 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
             -- Note that we do not use establishedStatus' which
             -- has the synchronous ones that are supposed to be
             -- handled elsewhere. We just update the async ones:
-            establishedPeers1  = EstablishedPeers.updateStatuses
+            establishedPeers1  = EstablishedPeers.setActivateTime
+                                  (Map.keysSet demotedToWarm)
+                                  (activateDelay `addTime` now)
+                               . EstablishedPeers.updateStatuses
                                   demotedToWarm
                                . EstablishedPeers.deletePeers
                                   (Map.keysSet demotedToCold)
