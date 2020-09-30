@@ -28,7 +28,6 @@ module Test.Consensus.HardFork.Infra (
 
 import           Control.Monad.Except
 import           Data.Kind (Type)
-import           Data.SOP.Dict (Dict (..))
 import           Data.SOP.Strict
 import           Data.Word
 import           Test.QuickCheck
@@ -75,11 +74,7 @@ data Eras :: [Type] -> Type where
     -- We guarantee to have at least one era
     Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
 
-instance Show (Eras xs) where
-  show (Eras np) =
-      npToSListI np $
-        case allComposeShowK (Proxy @xs) (Proxy @Era) of
-          Dict -> show np
+deriving instance Show (Eras xs)
 
 chooseEras :: forall r. (forall xs. (SListI xs, IsNonEmpty xs) => Eras xs -> Gen r) -> Gen r
 chooseEras k = do
@@ -87,14 +82,14 @@ chooseEras k = do
     exactlyReplicate n () $ renumber
   where
     renumber :: Exactly xs () -> Gen r
-    renumber Nil        = error "renumber: empty list of eras"
-    renumber e@(_ :* _) =
-        npToSListI e $
+    renumber ExactlyNil           = error "renumber: empty list of eras"
+    renumber e@(ExactlyCons _ _) =
+        npToSListI (getExactly e) $
           k (Eras $ go 0 e)
       where
         go :: Word64 -> Exactly (x ': xs) () -> Exactly (x ': xs) Era
-        go n (K () :* Nil)         = K (Era n True)  :* Nil
-        go n (K () :* e'@(_ :* _)) = K (Era n False) :* go (n + 1) e'
+        go n (ExactlyCons () ExactlyNil)           = ExactlyCons (Era n True)  ExactlyNil
+        go n (ExactlyCons () e'@(ExactlyCons _ _)) = ExactlyCons (Era n False) (go (n + 1) e')
 
 erasMapStateM :: forall m s a xs. Monad m
               => (Era -> s -> m (a, s))
@@ -102,10 +97,10 @@ erasMapStateM :: forall m s a xs. Monad m
 erasMapStateM f (Eras eras) = go eras
   where
     go :: Exactly xs' Era -> s -> m (Exactly xs' a)
-    go Nil         _ = return Nil
-    go (K x :* xs) s = do
+    go ExactlyNil         _ = return ExactlyNil
+    go (ExactlyCons x xs) s = do
         (a, s') <- f x s
-        (K a :*) <$> go xs s'
+        (ExactlyCons a) <$> go xs s'
 
 erasUnfoldAtMost :: forall m xs a. Monad m
                  => (Era -> HF.Bound -> m (a, HF.EraEnd))
@@ -116,14 +111,14 @@ erasUnfoldAtMost f (Eras eras) = go eras
           Exactly (x ': xs') Era
        -> HF.Bound
        -> m (NonEmpty (x ': xs') a)
-    go (K e :* es) s = do
+    go (ExactlyCons e es) s = do
         (a, ms) <- f e s
         case ms of
           HF.EraUnbounded -> return $ NonEmptyOne a
           HF.EraEnd s'    ->
             case es of
-              _ :* _ -> NonEmptyCons a <$> go es s'
-              Nil    -> return $ NonEmptyOne a
+              ExactlyCons _ _ -> NonEmptyCons a <$> go es s'
+              ExactlyNil      -> return $ NonEmptyOne a
 
 {-------------------------------------------------------------------------------
   Era-specific generators

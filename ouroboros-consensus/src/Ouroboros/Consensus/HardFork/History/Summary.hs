@@ -53,8 +53,7 @@ import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Kind (Type)
 import           Data.Proxy
-import           Data.SOP.Dict (Dict (..))
-import           Data.SOP.Strict (K (..), NP (..), SListI, lengthSList)
+import           Data.SOP.Strict (SListI, lengthSList)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -65,7 +64,6 @@ import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Util
@@ -256,13 +254,8 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 -- the hard fork combinator. So far this is a list of block types, since most
 -- of consensus is indexed by block types.
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
+  deriving (Show)
   deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
-
-instance Show (Shape xs) where
-  show (Shape np) =
-      npToSListI np $
-        case allComposeShowK (Proxy @xs) (Proxy @EraParams) of
-          Dict -> show np
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]
@@ -326,12 +319,12 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
     -- CASE (ii) from 'EraParams' Haddock
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
-    go lo (K params :* ss) (AtMostCons epoch fs) =
+    go lo (ExactlyCons params ss) (AtMostCons epoch fs) =
         NonEmptyCons (EraSummary lo (EraEnd hi) params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
     -- CASE (i) or (iii) from 'EraParams' Haddock
-    go lo (K params@EraParams{..} :* _) AtMostNil =
+    go lo (ExactlyCons params@EraParams{..} _) AtMostNil =
         NonEmptyOne (EraSummary lo hi params)
       where
         hi :: EraEnd
@@ -389,8 +382,8 @@ invariantShape = \(Shape shape) ->
   where
     go :: EpochNo -- Lower bound on the start of the era
        -> Exactly xs EraParams -> Except String ()
-    go _           Nil                    = return ()
-    go lowerBound (K curParams :* shape') = do
+    go _           ExactlyNil                    = return ()
+    go lowerBound (ExactlyCons curParams shape') = do
         nextLowerBound <-
           case safeBeforeEpoch (eraSafeZone curParams) of
             Nothing ->

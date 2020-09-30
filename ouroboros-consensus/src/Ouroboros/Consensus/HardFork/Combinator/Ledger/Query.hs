@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Util.Counting (getExactly)
 import           Ouroboros.Consensus.Util.DepPair
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -244,7 +245,7 @@ answerQueryAnytime ::
   -> Situated h LedgerState xs
   -> result
 answerQueryAnytime HardForkLedgerConfig{..} =
-    go cfgs (getShape hardForkLedgerConfigShape)
+    go cfgs (getExactly (getShape hardForkLedgerConfigShape))
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
 

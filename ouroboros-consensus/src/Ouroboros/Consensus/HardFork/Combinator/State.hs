@@ -41,6 +41,7 @@ import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.Counting (getExactly)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -119,7 +120,7 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
         proxySingle
         getTransition
         cfgs
-        (History.getShape hardForkLedgerConfigShape)
+        (getExactly (History.getShape hardForkLedgerConfigShape))
         (Telescope.tip (getHardForkState st))
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -187,7 +188,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
            proxySingle
            (fn .: whenExtend)
            pcfgs
-           (History.getShape hardForkLedgerConfigShape))
+           (getExactly (History.getShape hardForkLedgerConfigShape)))
     $ st
   where
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra

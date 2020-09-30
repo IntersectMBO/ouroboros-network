@@ -50,6 +50,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Counting (getExactly)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -328,7 +329,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           proxySingle
           forecastOne
           pcfgs
-          (History.getShape hardForkLedgerConfigShape)
+          (getExactly (History.getShape hardForkLedgerConfigShape))
           (getHardForkState st))
     where
       ei    = State.epochInfoLedger ledgerCfg st
@@ -565,7 +566,7 @@ instance CanHardFork xs => InspectLedger (HardForkBlock xs) where
                 (HardForkLedgerState after) =
       inspectHardForkLedger
         pcfgs
-        shape
+        (getExactly shape)
         cfgs
         (Telescope.tip (getHardForkState before))
         (Telescope.tip (getHardForkState after))

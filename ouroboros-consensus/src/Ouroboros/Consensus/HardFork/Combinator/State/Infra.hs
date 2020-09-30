@@ -170,12 +170,12 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
     go :: Exactly xs' EraParams
        -> Telescope (K Past) (Current f) xs'
        -> NonEmpty xs' EraSummary
-    go (K params :* ss) (TS (K Past{..}) t) =
+    go (ExactlyCons params ss) (TS (K Past{..}) t) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
-    go (K params :* Nil) (TZ Current{..}) =
+    go (ExactlyCons params ExactlyNil) (TZ Current{..}) =
         -- The current era is the last. We assume it lasts until all eternity.
         NonEmptyOne (EraSummary currentStart EraUnbounded params)
-    go (K params :* K nextParams :* _) (TZ Current{..}) =
+    go (ExactlyCons params (ExactlyCons nextParams _)) (TZ Current{..}) =
         case transition of
           TransitionKnown epoch ->
             -- We haven't reached the next era yet, but the transition is
@@ -219,7 +219,7 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
                               (boundSlot currentStart)
               }
 
-    go Nil t = case t of {}
+    go ExactlyNil t = case t of {}
 
     -- Apply safe zone from the specified 'SlotNo'
     --
