@@ -137,6 +137,7 @@ class ( MonadSTM m
   race                  :: m a -> m b -> m (Either a b)
   race_                 :: m a -> m b -> m ()
   concurrently          :: m a -> m b -> m (a,b)
+  concurrently_         :: m a -> m b -> m ()
 
   asyncWithUnmask       :: ((forall b . m b -> m b) ->  m a) -> m (Async m a)
 
@@ -194,6 +195,8 @@ class ( MonadSTM m
   concurrently    left right = withAsync left  $ \a ->
                                withAsync right $ \b ->
                                  waitBoth a b
+
+  concurrently_   left right = void $ concurrently left right
 
 -- | Similar to 'Async.Concurrently' but which works for any 'MonadAsync'
 -- instance.
@@ -296,6 +299,7 @@ instance MonadAsync IO where
   race                  = Async.race
   race_                 = Async.race_
   concurrently          = Async.concurrently
+  concurrently_         = Async.concurrently_
 
   asyncWithUnmask       = Async.asyncWithUnmask
 
