@@ -109,7 +109,7 @@ data ByronTransition =
     --
     -- Invariant: the domain of this map should equal the set of candidate
     -- proposals.
-    ByronTransitionInfo (Map Update.ProtocolVersion BlockNo)
+    ByronTransitionInfo !(Map Update.ProtocolVersion BlockNo)
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance UpdateLedger ByronBlock
