@@ -7,17 +7,19 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- | Type-level counting
 --
 -- Intended for unqualified import.
 module Ouroboros.Consensus.Util.Counting (
-    Exactly
+    Exactly(.., ExactlyNil, ExactlyCons)
   , AtMost(..)
   , NonEmpty(..)
     -- * Working with 'Exactly'
@@ -46,6 +48,7 @@ module Ouroboros.Consensus.Util.Counting (
 
 import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
+import           Data.SOP.Dict
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Util.SOP
@@ -54,7 +57,7 @@ import           Ouroboros.Consensus.Util.SOP
   Types
 -------------------------------------------------------------------------------}
 
-type Exactly xs a = NP (K a) xs
+newtype Exactly xs a = Exactly { getExactly :: NP (K a) xs }
 
 -- | At most one value for each type level index
 data AtMost :: [Type] -> Type -> Type where
@@ -81,51 +84,122 @@ deriving instance Foldable    (NonEmpty xs)
 deriving instance Traversable (NonEmpty xs)
 
 {-------------------------------------------------------------------------------
+  Pattern synonyms for 'Exactly'
+-------------------------------------------------------------------------------}
+
+-- | Internal: view on 'Exactly'
+--
+-- Used for the pattern synonyms only.
+data ExactlyView xs a where
+  ENil  :: ExactlyView '[] a
+  ECons :: a -> Exactly xs a -> ExactlyView (x : xs) a
+
+-- | Internal: construct the view on 'Exactly'
+--
+-- Used for the pattern synonyms only.
+exactlyView :: Exactly xs a -> ExactlyView xs a
+exactlyView (Exactly (K x :* xs)) = ECons x (Exactly xs)
+exactlyView (Exactly Nil)         = ENil
+
+{-# COMPLETE ExactlyNil, ExactlyCons #-}
+
+pattern ExactlyCons ::
+     ()
+  => xs' ~ (x ': xs)
+  => a -> Exactly xs a -> Exactly xs' a
+pattern ExactlyCons x xs <- (exactlyView -> ECons x xs)
+  where
+    ExactlyCons x xs = Exactly (K x :* (getExactly xs))
+
+pattern ExactlyNil ::
+     ()
+  => xs ~ '[]
+  => Exactly xs a
+pattern ExactlyNil <- (exactlyView -> ENil)
+  where
+    ExactlyNil = Exactly Nil
+
+{-------------------------------------------------------------------------------
+  Type class instances for 'Exactly'
+
+  For 'AtMost' and 'NonEmpty' we can just derive these, but for 'Exactly'
+  we need to do a bit more work.
+-------------------------------------------------------------------------------}
+
+instance Functor (Exactly xs) where
+  fmap f (Exactly xs) = npToSListI xs $ Exactly $
+      hmap (mapKK f) xs
+
+instance Foldable (Exactly xs) where
+  foldMap f (Exactly xs) = npToSListI xs $
+      foldMap f (hcollapse xs)
+
+instance Traversable (Exactly xs) where
+  traverse f (Exactly xs) = npToSListI xs $ fmap Exactly $
+      hsequence' $ hmap (\(K x) -> Comp $ K <$> f x) xs
+
+instance Show a => Show (Exactly xs a) where
+  show (Exactly xs) = npToSListI xs $
+      case dict of
+        Dict -> show xs
+    where
+      dict :: SListI xs => Dict (All (Compose Show (K a))) xs
+      dict = all_NP (hpure Dict)
+
+instance Eq a => Eq (Exactly xs a) where
+  Exactly xs == Exactly xs' = npToSListI xs $
+      case dict of
+        Dict -> xs == xs'
+    where
+      dict :: SListI xs => Dict (All (Compose Eq (K a))) xs
+      dict = all_NP (hpure Dict)
+
+{-------------------------------------------------------------------------------
   Working with 'Exactly'
 -------------------------------------------------------------------------------}
 
 -- | Singleton
 exactlyOne :: a -> Exactly '[x] a
-exactlyOne a = K a :* Nil
+exactlyOne a = Exactly $ K a :* Nil
 
 -- | From a pair
 exactlyTwo :: a -> a -> Exactly '[x, y] a
-exactlyTwo a1 a2 = K a1 :* K a2 :* Nil
+exactlyTwo a1 a2 = Exactly $ K a1 :* K a2 :* Nil
 
 -- | Analogue of 'head'
 exactlyHead :: Exactly (x ': xs) a -> a
-exactlyHead = unK . hd
+exactlyHead = unK . hd . getExactly
 
 -- | Analogue of 'tail'
 exactlyTail :: Exactly (x ': xs) a -> Exactly xs a
-exactlyTail = tl
+exactlyTail = Exactly . tl . getExactly
 
 -- | Analogue of 'zip'
 exactlyZip :: Exactly xs a -> Exactly xs b -> Exactly xs (a, b)
-exactlyZip np np' =
+exactlyZip (Exactly np) (Exactly np') = Exactly $
     npToSListI np $
       hzipWith (\(K x) (K y) -> K (x, y)) np np'
 
 -- | Analogue of 'zip' where the length of second argument is unknown
 exactlyZipFoldable :: Foldable t => Exactly xs a -> t b -> AtMost xs (a, b)
-exactlyZipFoldable = \as bs -> go as (Foldable.toList bs)
+exactlyZipFoldable = \(Exactly as) bs -> go as (Foldable.toList bs)
   where
-    go :: Exactly xs a -> [b] -> AtMost xs (a, b)
+    go :: NP (K a) xs -> [b] -> AtMost xs (a, b)
     go _           []     = AtMostNil
     go Nil         _      = AtMostNil
     go (K a :* as) (b:bs) = AtMostCons (a, b) $ go as bs
 
 exactlyWeaken :: Exactly xs a -> AtMost xs a
-exactlyWeaken = go
+exactlyWeaken = go . getExactly
   where
-    go :: Exactly xs a -> AtMost xs a
+    go :: NP (K a) xs -> AtMost xs a
     go Nil         = AtMostNil
     go (K x :* xs) = AtMostCons x (go xs)
 
 exactlyWeakenNonEmpty :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
-exactlyWeakenNonEmpty = go
+exactlyWeakenNonEmpty = go . getExactly
   where
-    go :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
+    go :: NP (K a) (x ': xs) -> NonEmpty (x ': xs) a
     go (K x :* Nil)         = NonEmptyOne x
     go (K x :* xs@(_ :* _)) = NonEmptyCons x (go xs)
 
@@ -133,9 +207,9 @@ exactlyWeakenNonEmpty = go
 --
 -- In CPS style because the @xs@ type parameter is not statically known.
 exactlyReplicate :: forall a r. Word -> a -> (forall xs. Exactly xs a -> r) -> r
-exactlyReplicate = go
+exactlyReplicate = \n a k -> go n a (k . Exactly)
   where
-    go :: Word -> a -> (forall xs. Exactly xs a -> r) -> r
+    go :: Word -> a -> (forall xs. NP (K a) xs -> r) -> r
     go 0 _ k = k Nil
     go n a k = go (n - 1) a $ \xs -> k (K a :* xs)
 

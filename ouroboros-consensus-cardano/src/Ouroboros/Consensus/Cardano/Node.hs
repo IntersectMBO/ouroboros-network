@@ -36,7 +36,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as Map
-import           Data.SOP.Strict (NP (..), hd, unK)
+import           Data.SOP.Strict (NP (..))
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -57,7 +57,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
+import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
@@ -229,7 +229,7 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
   nodeImmutableDbChunkInfo =
         simpleChunkInfo
       . History.eraEpochSize
-      . unK . hd
+      . exactlyHead
       . History.getShape
       . hardForkLedgerConfigShape
       . configLedger

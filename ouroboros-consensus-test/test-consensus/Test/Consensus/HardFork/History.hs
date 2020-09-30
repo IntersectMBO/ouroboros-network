@@ -566,7 +566,7 @@ chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
     shift _ AtMostNil =
         -- No more transitions on the chain
         AtMostNil
-    shift (K era :* Nil) (AtMostCons transition AtMostNil) =
+    shift (ExactlyCons era ExactlyNil) (AtMostCons transition AtMostNil) =
         -- case (i)
         case transition of
           Nothing -> AtMostNil
@@ -576,12 +576,12 @@ chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
                        , " in final era "
                        , show era
                        ]
-    shift (_ :* (_ :* _)) (AtMostCons transition AtMostNil) =
+    shift (ExactlyCons _ (ExactlyCons _ _)) (AtMostCons transition AtMostNil) =
         -- case (ii)
         case transition of
           Nothing -> AtMostNil
           Just t  -> AtMostCons t AtMostNil
-    shift (K era :* eras@(_ :* _)) (AtMostCons transition ts) =
+    shift (ExactlyCons era eras@(ExactlyCons _ _)) (AtMostCons transition ts) =
         -- case (iii)
         case transition of
           Nothing -> error $ concat [
@@ -628,9 +628,9 @@ stepTime typ Time{..} =
     case (typ, timeNextEra, exactlyTail timeEras) of
       (Tick, Nothing, _) ->
         Time timeEvent' Nothing timeEras
-      (Tick, Just e, timeEras'@(_ :* _)) | reachedNextEra e ->
+      (Tick, Just e, timeEras'@(ExactlyCons _ _)) | reachedNextEra e ->
         Time timeEvent' Nothing timeEras'
-      (Tick, Just e, Nil) | reachedNextEra e ->
+      (Tick, Just e, ExactlyNil) | reachedNextEra e ->
         error "stepTime: unexpected confirmation in final era"
       (Tick, Just e, _) -> -- not (reachedNextEra e)
         Time timeEvent' (Just e) timeEras
@@ -679,7 +679,7 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
           | Just _ <- timeNextEra =
               -- We already generated a transition
               Nothing
-          | Nil <- exactlyTail timeEras =
+          | ExactlyNil <- exactlyTail timeEras =
               -- We are in the final era
               Nothing
           | Nothing <- mNextLo =
@@ -731,18 +731,18 @@ activeSafeZone (HF.Shape shape) (Chain chain) (HF.Transitions transitions) =
        -> AtMost         xs  EpochNo
        -> (Maybe EpochNo, HF.SafeZone)
     -- No transition is yet known for the last era on the chain
-    go (K ps :* _) (NonEmptyOne _) AtMostNil =
+    go (ExactlyCons ps _) (NonEmptyOne _) AtMostNil =
         (Nothing, HF.eraSafeZone ps)
     -- Transition /is/ known for the last era on the chain
-    go (_ :* pss) (NonEmptyOne _) (AtMostCons t AtMostNil) =
+    go (ExactlyCons _ pss) (NonEmptyOne _) (AtMostCons t AtMostNil) =
         (Just t, HF.eraSafeZone (exactlyHead pss))
     -- Find the last era on chain
-    go (_ :* pss) (NonEmptyCons _ ess) AtMostNil =
+    go (ExactlyCons _ pss) (NonEmptyCons _ ess) AtMostNil =
         -- We need to convince ghc there is another era
         case ess of
           NonEmptyCons{} -> go pss ess AtMostNil
           NonEmptyOne{}  -> go pss ess AtMostNil
-    go (_ :* pss) (NonEmptyCons _ ess) (AtMostCons _ ts) =
+    go (ExactlyCons _ pss) (NonEmptyCons _ ess) (AtMostCons _ ts) =
         go pss ess ts
 
     -- Impossible cases
@@ -870,7 +870,7 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
               -> Telescope (K Past) (Current (AnnForecast (K ()))) (x : xs)
-    mockState start (K ps :* _) ts (NonEmptyOne es) =
+    mockState start (ExactlyCons ps _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
             annForecastEraParams = ps
           , annForecastNext      = atMostHead ts
@@ -879,7 +879,7 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
           }
-    mockState start (K ps :* pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
+    mockState start (ExactlyCons ps pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
         TS (K (Past start end)) (mockState end pss ts ess)
       where
         end :: HF.Bound

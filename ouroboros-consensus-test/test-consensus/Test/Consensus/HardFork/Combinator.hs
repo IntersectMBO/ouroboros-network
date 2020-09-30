@@ -22,7 +22,6 @@
 module Test.Consensus.HardFork.Combinator (tests) where
 
 import qualified Data.Map as Map
-import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -399,7 +398,7 @@ instance RunNode TestBlock where
   nodeImmutableDbChunkInfo =
         simpleChunkInfo
       . eraEpochSize
-      . unK . hd
+      . exactlyHead
       . History.getShape
       . hardForkLedgerConfigShape
       . configLedger
