@@ -12,11 +12,15 @@ module Control.Monad.Class.MonadAsync
   , MonadAsyncSTM (..)
   , AsyncCancelled(..)
   , ExceptionInLinkedThread(..)
-  , Concurrently (..)
   , link
   , linkTo
   , linkOnly
   , linkToOnly
+
+  , mapConcurrently, forConcurrently
+  , mapConcurrently_, forConcurrently_
+  , replicateConcurrently, replicateConcurrently_
+  , Concurrently (..)
   ) where
 
 import           Prelude hiding (read)
@@ -32,8 +36,11 @@ import qualified Control.Concurrent.Async as Async
 import qualified Control.Exception as E
 import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
-import           Data.Proxy
+
+import           Data.Foldable (fold)
+import           Data.Functor (void)
 import           Data.Kind (Type)
+import           Data.Proxy
 
 class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
   {-# MINIMAL waitCatchSTM, pollSTM #-}
@@ -224,6 +231,26 @@ instance ( Monoid a
          , MonadAsync m
          ) => Monoid (Concurrently m a) where
     mempty = pure mempty
+
+
+mapConcurrently :: (Traversable t, MonadAsync m) => (a -> m b) -> t a -> m (t b)
+mapConcurrently f = runConcurrently . traverse (Concurrently . f)
+
+forConcurrently :: (Traversable t, MonadAsync m) => t a -> (a -> m b) -> m (t b)
+forConcurrently = flip mapConcurrently
+
+mapConcurrently_ :: (Foldable f, MonadAsync m) => (a -> m b) -> f a -> m ()
+mapConcurrently_ f = runConcurrently . foldMap (Concurrently . void . f)
+
+forConcurrently_ :: (Foldable f, MonadAsync m) => f a -> (a -> m b) -> m ()
+forConcurrently_ = flip mapConcurrently_
+
+replicateConcurrently :: MonadAsync m => Int -> m a -> m [a]
+replicateConcurrently cnt = runConcurrently . sequenceA . replicate cnt . Concurrently
+
+replicateConcurrently_ :: MonadAsync m => Int -> m a -> m ()
+replicateConcurrently_ cnt = runConcurrently . fold . replicate cnt . Concurrently . void
+
 
 --
 -- Instance for IO uses the existing async library implementations
