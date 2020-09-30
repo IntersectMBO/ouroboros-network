@@ -508,6 +508,10 @@ streamAfterPoint db registry blockComponent fromPt = runExceptT $ do
         -- Asked to stream after a block while the ImmutableDB is empty
         throwError $ NewerThanTip fromPt' GenesisPoint
 
+      (NotOrigin fromPt', NotOrigin _) | pointSlot fromPt > pointSlot tipPt ->
+        -- Lower bound is newer than the tip, nothing to stream
+        throwError $ NewerThanTip fromPt' tipPt
+
       (NotOrigin fromPt', NotOrigin tipPt') | fromPt' == tipPt' ->
         -- Nothing to stream after the tip
         return emptyIterator
