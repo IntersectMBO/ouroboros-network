@@ -348,7 +348,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           sharedRegistry
           clock
           -- traces when/why the mini protocol instances start and stop
-          nullDebugTracer
+          (nullDebugEdgeTracer uedge)
           (version, blockVersion)
           (codecConfig, calcMessageDelay)
           vertexStatusVars
@@ -674,7 +674,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
         void $ addTxs mempool txs
 
-    mkArgs :: OracularClock m
+    mkArgs :: CoreNodeId
+           -> OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
@@ -690,6 +691,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
            -> CoreNodeId
            -> ChainDbArgs Identity m blk
     mkArgs
+      coreNodeId
       clock registry
       cfg initLedger
       invalidTracer addTracer selTracer updatesTracer
@@ -713,8 +715,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
                                       (OracularClock.finiteSystemTime clock)
         , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer                 = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger            = nullDebugTracer
+        , cdbTracer                 = instrumentationTracer <> nullDebugTracer coreNodeId
+        , cdbTraceLedger            = nullDebugTracer coreNodeId
         , cdbRegistry               = registry
           -- TODO vary these
         , cdbGcDelay                = 0
@@ -793,6 +795,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           selTracer       = wrapTracer $ nodeEventsSelects nodeInfoEvents
           headerAddTracer = wrapTracer $ nodeEventsHeaderAdds nodeInfoEvents
       let chainDbArgs = mkArgs
+            coreNodeId
             clock registry
             pInfoConfig pInfoInitLedger
             invalidTracer
@@ -927,7 +930,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 }
 
           -- traces the node's local events other than those from the -- ChainDB
-          tracers = instrumentationTracers <> nullDebugTracers
+          tracers = instrumentationTracers <> nullDebugTracers coreNodeId
 
       let -- use a backoff delay of exactly one slot length (which the
           -- 'OracularClock' always knows) for the following reasons
@@ -1000,7 +1003,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   nodeKernel
                   -- these tracers report every message sent/received by this
                   -- node
-                  nullDebugProtocolTracers
+                  (nullDebugProtocolTracers coreNodeId)
                   (customNodeToNodeCodecs pInfoConfig)
                   -- see #1882, tests that can't cope with timeouts.
                   (pure $ NTN.ChainSyncTimeout
@@ -1530,8 +1533,14 @@ mkTestOutput vertexInfos = do
 -------------------------------------------------------------------------------}
 
 -- | Occurs throughout in positions that might be useful for debugging.
-nullDebugTracer :: (Applicative m, Show a) => Tracer m a
-nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
+nullDebugTracer :: (Applicative m, Show a) => CoreNodeId -> Tracer m a
+nullDebugTracer (CoreNodeId i) =
+    nullTracer `asTypeOf` showTracing (contramap (\s -> show i <> " " <> s) debugTracer)
+
+-- | Occurs throughout in positions that might be useful for debugging.
+nullDebugEdgeTracer :: (Applicative m, Show a) => (CoreNodeId, CoreNodeId) -> Tracer m a
+nullDebugEdgeTracer (CoreNodeId i, CoreNodeId j) =
+    nullTracer `asTypeOf` showTracing (contramap (\s -> show i <> " " <> show j <> " " <> s) debugTracer)
 
 -- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracers ::
@@ -1540,8 +1549,9 @@ nullDebugTracers ::
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
-  => Tracers m peer Void blk
-nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
+  => CoreNodeId -> Tracers m peer Void blk
+nullDebugTracers (CoreNodeId i) =
+    nullTracers `asTypeOf` showTracers (contramap (\s -> show i <> " " <> s) debugTracer)
 
 -- | Occurs throughout in positions that might be useful for debugging.
 nullDebugProtocolTracers ::
@@ -1550,9 +1560,9 @@ nullDebugProtocolTracers ::
      , TracingConstraints blk
      , Show peer
      )
-  => NTN.Tracers m peer blk failure
-nullDebugProtocolTracers =
-  NTN.nullTracers `asTypeOf` NTN.showTracers debugTracer
+  => CoreNodeId -> NTN.Tracers m peer blk failure
+nullDebugProtocolTracers (CoreNodeId i) =
+    NTN.nullTracers `asTypeOf` NTN.showTracers (contramap (\s -> show i <> " " <> s) debugTracer)
 
 -- These constraints are when using @showTracer(s) debugTracer@ instead of
 -- @nullTracer(s)@.
