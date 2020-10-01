@@ -4,11 +4,9 @@
 module Test.ThreadNet.RealTPraos (tests) where
 
 import Test.ThreadNet.Util.NodeTopology
-{-
 import qualified Data.Set as Set
 import Test.ThreadNet.Util.Seed
 import Data.String (fromString)
--}
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
@@ -77,8 +75,8 @@ data TestSetup = TestSetup
 minK :: Word64
 minK = 5   -- Less than this increases risk of CP violations
 
-maxK :: Word64
-maxK = 10   -- More than this wastes execution time
+--maxK :: Word64
+--maxK = 10   -- More than this wastes execution time
 
 activeSlotCoeff :: Rational
 activeSlotCoeff = 0.5   -- TODO this is high
@@ -170,11 +168,25 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
     if 0 == n then 0 else
     max 1 $ n `div` 5
 
+repro :: TestSetup
+repro = TestSetup {
+    setupD = DecentralizationParam (2 / 5)
+  , setupD2 = DecentralizationParam (2 / 5)
+  , setupInitialNonce = Nonce $ fromString $ "50826b21b9425d8ec67bfee595a3d81cb7f277b4cb5c72db0a34b97eef3a3cdc"
+  , setupK = SecurityParam 5
+  , setupTestConfig = TestConfig {
+      initSeed = Seed (-4488399573397301335)
+    , nodeTopology = NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0,CoreNodeId 1])])
+    , numCoreNodes = NumCoreNodes 3, numSlots = NumSlots 161
+    }
+  , setupVersion = (NodeToNodeV_1,Shelley.ShelleyNodeToNodeVersion1)
+  }
+
 tests :: TestTree
 tests = testGroup "RealTPraos ThreadNet" $
-{-    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
+    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
     ]
-    `asTypeOf` -}
+    `asTypeOf`
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       if enabled

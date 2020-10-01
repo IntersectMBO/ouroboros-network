@@ -12,7 +12,10 @@ main = defaultMainWithIohkNightly tests
 
 tests :: TestTree
 tests =
-  testGroup "shelley"
+  testGroup "shelley" $
+  [ Test.ThreadNet.RealTPraos.tests
+  ]
+  `asTypeOf`
   [ Test.Consensus.Shelley.Golden.tests
   , Test.Consensus.Shelley.Serialisation.tests
   , Test.ThreadNet.RealTPraos.tests
