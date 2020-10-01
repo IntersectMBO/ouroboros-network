@@ -263,7 +263,7 @@ data TriggerHardFork =
   | TriggerHardForkAtEpoch !EpochNo
     -- | Never trigger a hard fork
   | TriggerHardForkNever
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger
 -- config. Standalone Byron uses the regular ledger config. This means that
