@@ -269,7 +269,7 @@ prop_simple_real_tpraos_convergence TestSetup
         -- @Quorum@-many nodes were still proposing this test's original update
         -- as of the epoch boundary. However, we keep the test simple and just
         -- avoid introducing any other proposals.
-        if includingDUpdateTx then DoNotGeneratePPUs else DoGeneratePPUs
+        DoNotGeneratePPUs `asTypeOf` if includingDUpdateTx then DoNotGeneratePPUs else DoGeneratePPUs
 
     -- The slot immediately after the end of this test.
     sentinel :: SlotNo
