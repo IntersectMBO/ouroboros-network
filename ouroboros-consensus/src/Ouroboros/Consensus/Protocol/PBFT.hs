@@ -415,10 +415,8 @@ append :: PBftCrypto c
        -> PBftWindowParams
        -> (SlotNo, PBftVerKeyHash c)
        -> PBftState c -> PBftState c
-append PBftConfig{..} PBftWindowParams{..} =
+append PBftConfig{} PBftWindowParams{..} =
     S.append windowSize . uncurry S.PBftSigner
-  where
-    PBftParams{..} = pbftParams
 
 {-------------------------------------------------------------------------------
   PBFT specific types
