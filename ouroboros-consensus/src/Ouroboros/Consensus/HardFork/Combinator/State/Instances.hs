@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
   SOP class instances
@@ -45,9 +46,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
   other SOP type; in particular, they deal with lifting functions to 'Current'.
 -------------------------------------------------------------------------------}
 
-type instance Prod    HardForkState   = NP
-type instance SListIN HardForkState   = SListI
-type instance AllN    HardForkState c = All c
+type instance Prod       HardForkState   = NP
+type instance SListIN    HardForkState   = SListI
+type instance AllN       HardForkState c = All c
+type instance CollapseTo HardForkState a = a
 
 instance HAp HardForkState where
   hap np (HardForkState st) = HardForkState $
@@ -58,6 +60,9 @@ instance HSequence HardForkState where
                                               hctraverse' p (liftM f) st
   htraverse' = hctraverse' (Proxy @Top)
   hsequence' = htraverse' unComp
+
+instance HCollapse HardForkState where
+  hcollapse = hcollapse . hmap currentState . Telescope.tip . getHardForkState
 
 {-------------------------------------------------------------------------------
   Eq, Show, NoUnexpectedThunks
