@@ -26,7 +26,6 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF,
                      unsafeNoUnexpectedThunks)
 
-import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
@@ -198,10 +197,13 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             -- txids. Since this is the only thing to do now, we make this a
             -- blocking call.
             let numTxIdsToRequest = maxTxIdsToRequest `min` maxUnacked
-            assert (requestedTxIdsInFlight st == 0
+            (if (requestedTxIdsInFlight st == 0
                   && Seq.null (unacknowledgedTxIds st)
                   && Map.null (availableTxids st)
-                  && Map.null (bufferedTxs st)) $
+                  && Map.null (bufferedTxs st)) then id else error (show (requestedTxIdsInFlight st
+                  , Seq.length (unacknowledgedTxIds st)
+                  , Map.size (availableTxids st)
+                  , Map.size (bufferedTxs st)))) $
               pure $
               SendMsgRequestTxIdsBlocking
                 (numTxsToAcknowledge st)
