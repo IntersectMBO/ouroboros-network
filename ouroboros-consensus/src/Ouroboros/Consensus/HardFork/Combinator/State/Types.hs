@@ -14,12 +14,14 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Types (
 
 import           Prelude hiding (sequence)
 
+import           Control.Monad.Except
 import           Data.SOP.Strict (K)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ticked
 
@@ -67,16 +69,16 @@ newtype Translate f x y = Translate {
 --
 -- Typically @f@ will be 'WrapLedgerView'.
 --
--- In addition to the 'EpochNo' of the transition, this is also told the
+-- In addition to the 'Bound' of the transition, this is also told the
 -- 'SlotNo' we're constructing a forecast for. This enables the translation
 -- function to take into account any scheduled changes that the final ledger
 -- view in the preceding era might have.
-newtype TranslateForecast f x y = TranslateForecast {
+newtype TranslateForecast f g x y = TranslateForecast {
       translateForecastWith ::
-           EpochNo  -- 'EpochNo' of the transition
+           Bound    -- 'Bound' of the transition (start of the new era)
         -> SlotNo   -- 'SlotNo' we're constructing a forecast for
-        -> Ticked (f x)
-        -> Ticked (f y)
+        -> f x
+        -> Except OutsideForecastRange (Ticked (g y))
     }
 
 -- | Knowledge in a particular era of the transition to the next era

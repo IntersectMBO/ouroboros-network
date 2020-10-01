@@ -427,10 +427,10 @@ chainDepState_AtoB = InPairs.ignoringBoth $ Translate $ \_ _ ->
 ledgerView_AtoB ::
       RequiringBoth
         WrapLedgerConfig
-        (TranslateForecast WrapLedgerView)
+        (TranslateForecast LedgerState WrapLedgerView)
         BlockA
         BlockB
-ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ ->
+ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ -> return $
     WrapTickedLedgerView TickedTrivial
 
 injectTx_AtoB ::

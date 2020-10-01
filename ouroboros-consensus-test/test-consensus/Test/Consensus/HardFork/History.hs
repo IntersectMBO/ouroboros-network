@@ -861,23 +861,24 @@ mockHardForkLedgerView :: SListI xs
                        -> Forecast (HardForkLedgerView_ (K ()) xs)
 mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
-      (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ ->
+      (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ -> return $
          TickedK TickedTrivial)
-      (mockState HF.initBound pss ts ess)
+      (HardForkState (mockState HF.initBound pss ts ess))
   where
     mockState :: HF.Bound
               -> Exactly  (x ': xs) HF.EraParams
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
-              -> Telescope (K Past) (Current (AnnForecast (K ()))) (x : xs)
+              -> Telescope (K Past) (Current (AnnForecast (K ()) (K ()))) (x : xs)
     mockState start (ExactlyCons ps _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
-            annForecastEraParams = ps
-          , annForecastNext      = atMostHead ts
-          , annForecast          = Forecast {
-                forecastAt  = tip es
+            annForecast      = Forecast {
+                forecastAt  = tip es -- forecast at tip of ledger
               , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
+          , annForecastState = K ()
+          , annForecastTip   = tip es
+          , annForecastEnd   = HF.mkUpperBound ps start <$> atMostHead ts
           }
     mockState start (ExactlyCons ps pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
         TS (K (Past start end)) (mockState end pss ts ess)
