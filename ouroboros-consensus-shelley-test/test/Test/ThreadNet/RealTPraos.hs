@@ -79,7 +79,7 @@ activeSlotCoeff = 0.5   -- TODO this is high
 instance Arbitrary TestSetup where
   arbitrary = do
       setupD  <- arbitrary
-      setupD2 <- arbitrary
+      setupD2 <- pure setupD
 
       setupInitialNonce <- frequency
         [ (1, pure SL.NeutralNonce)
