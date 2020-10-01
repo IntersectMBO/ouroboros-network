@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Block.Forging (
 
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Kind (Type)
+import           Data.Text (Text)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -76,12 +77,18 @@ castForgeStateUpdateInfo =
 -- record because they might contain an @EpochInfo Identity@, which will be
 -- incorrect when used as part of the hard fork combinator.
 data BlockForging m blk = BlockForging {
+      -- | Identifier used in the trace messages produced for this
+      -- 'BlockForging' record.
+      --
+      -- Useful when the node is running with multiple sets of credentials.
+      forgeLabel :: Text
+
       -- | Proof that the node can be a leader
       --
       -- NOTE: the other fields of this record may refer to this value (or a
       -- value derived from it) in their closure, which means one should not
       -- override this field independently from the others.
-      canBeLeader :: CanBeLeader (BlockProtocol blk)
+    , canBeLeader :: CanBeLeader (BlockProtocol blk)
 
       -- | Update the forge state.
       --

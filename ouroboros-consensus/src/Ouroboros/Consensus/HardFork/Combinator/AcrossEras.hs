@@ -21,29 +21,30 @@
 module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Value for /each/ era
     PerEraConsensusConfig(..)
-  , PerEraChainSelConfig(..)
-  , PerEraLedgerConfig(..)
   , PerEraBlockConfig(..)
+  , PerEraChainSelConfig(..)
   , PerEraCodecConfig(..)
-  , PerEraForgeStateInfo(..)
-  , PerEraForgeStateUpdateError(..)
+  , PerEraLedgerConfig(..)
     -- * Value for /one/ era
+  , OneEraApplyTxErr(..)
   , OneEraBlock(..)
-  , OneEraHeader(..)
-  , OneEraHash(..)
-  , OneEraTipInfo(..)
+  , OneEraCanBeLeader(..)
+  , OneEraCannotForge(..)
   , OneEraEnvelopeErr(..)
-  , OneEraValidationErr(..)
+  , OneEraForgeStateInfo(..)
+  , OneEraForgeStateUpdateError(..)
+  , OneEraGenTx(..)
+  , OneEraGenTxId(..)
+  , OneEraHash(..)
+  , OneEraHeader(..)
+  , OneEraIsLeader(..)
   , OneEraLedgerError(..)
   , OneEraLedgerUpdate(..)
   , OneEraLedgerWarning(..)
-  , OneEraValidateView(..)
   , OneEraSelectView(..)
-  , OneEraIsLeader(..)
-  , OneEraCannotForge(..)
-  , OneEraGenTx(..)
-  , OneEraGenTxId(..)
-  , OneEraApplyTxErr(..)
+  , OneEraTipInfo(..)
+  , OneEraValidateView(..)
+  , OneEraValidationErr(..)
     -- * Value for two /different/ eras
   , MismatchEraInfo(..)
   , mismatchOneEra
@@ -75,7 +76,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-import           Ouroboros.Consensus.Util.OptNP (OptNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
@@ -88,36 +88,34 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
   Value for /each/ era
 -------------------------------------------------------------------------------}
 
-newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusConfig :: NP WrapPartialConsensusConfig xs }
-newtype PerEraChainSelConfig  xs = PerEraChainSelConfig  { getPerEraChainSelConfig  :: NP WrapChainSelConfig         xs }
-newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
 newtype PerEraBlockConfig     xs = PerEraBlockConfig     { getPerEraBlockConfig     :: NP BlockConfig                xs }
+newtype PerEraChainSelConfig  xs = PerEraChainSelConfig  { getPerEraChainSelConfig  :: NP WrapChainSelConfig         xs }
 newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig     :: NP CodecConfig                xs }
-
--- | We might not be a leader, but /when/ we need the 'ForgeStateInfo', e.g.,
--- in 'checkIsLeader', then 'ForgeStateInfo' will be non-empty.
-newtype PerEraForgeStateInfo        xs = PerEraForgeStateInfo        { getPerEraForgeStateInfo        :: OptNP 'False WrapForgeStateInfo        xs }
-newtype PerEraForgeStateUpdateError xs = PerEraForgeStateUpdateError { getPerEraForgeStateUpdateError :: OptNP 'False WrapForgeStateUpdateError xs }
+newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusConfig :: NP WrapPartialConsensusConfig xs }
+newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
 
 {-------------------------------------------------------------------------------
   Value for /one/ era
 -------------------------------------------------------------------------------}
 
-newtype OneEraBlock         xs = OneEraBlock         { getOneEraBlock         :: NS I                 xs }
-newtype OneEraHeader        xs = OneEraHeader        { getOneEraHeader        :: NS Header            xs }
-newtype OneEraTipInfo       xs = OneEraTipInfo       { getOneEraTipInfo       :: NS WrapTipInfo       xs }
-newtype OneEraEnvelopeErr   xs = OneEraEnvelopeErr   { getOneEraEnvelopeErr   :: NS WrapEnvelopeErr   xs }
-newtype OneEraValidationErr xs = OneEraValidationErr { getOneEraValidationErr :: NS WrapValidationErr xs }
-newtype OneEraLedgerError   xs = OneEraLedgerError   { getOneEraLedgerError   :: NS WrapLedgerErr     xs }
-newtype OneEraLedgerUpdate  xs = OneEraLedgerUpdate  { getOneEraLedgerUpdate  :: NS WrapLedgerUpdate  xs }
-newtype OneEraLedgerWarning xs = OneEraLedgerWarning { getOneEraLedgerWarning :: NS WrapLedgerWarning xs }
-newtype OneEraValidateView  xs = OneEraValidateView  { getOneEraValidateView  :: NS WrapValidateView  xs }
-newtype OneEraSelectView    xs = OneEraSelectView    { getOneEraSelectView    :: NS WrapSelectView    xs }
-newtype OneEraIsLeader      xs = OneEraIsLeader      { getOneEraIsLeader      :: NS WrapIsLeader      xs }
-newtype OneEraCannotForge   xs = OneEraCannotForge   { getOneEraCannotForge   :: NS WrapCannotForge   xs }
-newtype OneEraGenTx         xs = OneEraGenTx         { getOneEraGenTx         :: NS GenTx             xs }
-newtype OneEraGenTxId       xs = OneEraGenTxId       { getOneEraGenTxId       :: NS WrapGenTxId       xs }
-newtype OneEraApplyTxErr    xs = OneEraApplyTxErr    { getOneEraApplyTxErr    :: NS WrapApplyTxErr    xs }
+newtype OneEraApplyTxErr            xs = OneEraApplyTxErr            { getOneEraApplyTxErr            :: NS WrapApplyTxErr            xs }
+newtype OneEraBlock                 xs = OneEraBlock                 { getOneEraBlock                 :: NS I                         xs }
+newtype OneEraCanBeLeader           xs = OneEraCanBeLeader           { getOneEraCanBeLeader           :: NS WrapCanBeLeader           xs }
+newtype OneEraCannotForge           xs = OneEraCannotForge           { getOneEraCannotForge           :: NS WrapCannotForge           xs }
+newtype OneEraEnvelopeErr           xs = OneEraEnvelopeErr           { getOneEraEnvelopeErr           :: NS WrapEnvelopeErr           xs }
+newtype OneEraForgeStateInfo        xs = OneEraForgeStateInfo        { getOneEraForgeStateInfo        :: NS WrapForgeStateInfo        xs }
+newtype OneEraForgeStateUpdateError xs = OneEraForgeStateUpdateError { getOneEraForgeStateUpdateError :: NS WrapForgeStateUpdateError xs }
+newtype OneEraGenTx                 xs = OneEraGenTx                 { getOneEraGenTx                 :: NS GenTx                     xs }
+newtype OneEraGenTxId               xs = OneEraGenTxId               { getOneEraGenTxId               :: NS WrapGenTxId               xs }
+newtype OneEraHeader                xs = OneEraHeader                { getOneEraHeader                :: NS Header                    xs }
+newtype OneEraIsLeader              xs = OneEraIsLeader              { getOneEraIsLeader              :: NS WrapIsLeader              xs }
+newtype OneEraLedgerError           xs = OneEraLedgerError           { getOneEraLedgerError           :: NS WrapLedgerErr             xs }
+newtype OneEraLedgerUpdate          xs = OneEraLedgerUpdate          { getOneEraLedgerUpdate          :: NS WrapLedgerUpdate          xs }
+newtype OneEraLedgerWarning         xs = OneEraLedgerWarning         { getOneEraLedgerWarning         :: NS WrapLedgerWarning         xs }
+newtype OneEraSelectView            xs = OneEraSelectView            { getOneEraSelectView            :: NS WrapSelectView            xs }
+newtype OneEraTipInfo               xs = OneEraTipInfo               { getOneEraTipInfo               :: NS WrapTipInfo               xs }
+newtype OneEraValidateView          xs = OneEraValidateView          { getOneEraValidateView          :: NS WrapValidateView          xs }
+newtype OneEraValidationErr         xs = OneEraValidationErr         { getOneEraValidationErr         :: NS WrapValidationErr         xs }
 
 {-------------------------------------------------------------------------------
   Hash
@@ -235,38 +233,38 @@ getSameValue values =
 deriving via LiftNamedNP "PerEraBlockConfig" BlockConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraBlockConfig xs)
 
+deriving via LiftNamedNP "PerEraChainSelConfig" WrapChainSelConfig xs
+         instance CanHardFork xs => NoUnexpectedThunks (PerEraChainSelConfig xs)
+
 deriving via LiftNamedNP "PerEraCodecConfig" CodecConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraCodecConfig xs)
 
 deriving via LiftNamedNP "PerEraConsensusConfig" WrapPartialConsensusConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraConsensusConfig xs)
 
-deriving via LiftNamedNP "PerEraChainSelConfig" WrapChainSelConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraChainSelConfig xs)
-
 deriving via LiftNamedNP "PerEraLedgerConfig" WrapPartialLedgerConfig xs
          instance CanHardFork xs => NoUnexpectedThunks (PerEraLedgerConfig xs)
-
-deriving via LiftNamedNS "OneEraHeader" Header xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraHeader xs)
 
 deriving via LiftNamedNS "OneEraEnvelopeErr" WrapEnvelopeErr xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraEnvelopeErr xs)
 
-deriving via LiftNamedNS "OneEraTipInfo" WrapTipInfo xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraTipInfo xs)
+deriving via LiftNamedNS "OneEraGenTx" GenTx xs
+         instance CanHardFork xs => NoUnexpectedThunks (OneEraGenTx xs)
 
 deriving via LiftNamedNS "OneEraGenTxId" WrapGenTxId xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraGenTxId xs)
 
+deriving via LiftNamedNS "OneEraHeader" Header xs
+         instance CanHardFork xs => NoUnexpectedThunks (OneEraHeader xs)
+
 deriving via LiftNamedNS "OneEraLedgerError" WrapLedgerErr xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraLedgerError xs)
 
+deriving via LiftNamedNS "OneEraTipInfo" WrapTipInfo xs
+         instance CanHardFork xs => NoUnexpectedThunks (OneEraTipInfo xs)
+
 deriving via LiftNamedNS "OneEraValidationErr" WrapValidationErr xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraValidationErr xs)
-
-deriving via LiftNamedNS "OneEraGenTx" GenTx xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraGenTx xs)
 
 deriving via LiftNamedMismatch "MismatchEraInfo" SingleEraInfo LedgerEraInfo xs
          instance CanHardFork xs => NoUnexpectedThunks (MismatchEraInfo xs)
@@ -276,9 +274,9 @@ deriving via LiftNamedMismatch "MismatchEraInfo" SingleEraInfo LedgerEraInfo xs
 -------------------------------------------------------------------------------}
 
 deriving via LiftNP WrapChainSelConfig xs instance CanHardFork xs => Eq (PerEraChainSelConfig xs)
-deriving via LiftNS GenTx              xs instance CanHardFork xs => Eq (OneEraGenTx          xs)
 deriving via LiftNS WrapApplyTxErr     xs instance CanHardFork xs => Eq (OneEraApplyTxErr     xs)
 deriving via LiftNS WrapEnvelopeErr    xs instance CanHardFork xs => Eq (OneEraEnvelopeErr    xs)
+deriving via LiftNS GenTx              xs instance CanHardFork xs => Eq (OneEraGenTx          xs)
 deriving via LiftNS WrapGenTxId        xs instance CanHardFork xs => Eq (OneEraGenTxId        xs)
 deriving via LiftNS WrapLedgerErr      xs instance CanHardFork xs => Eq (OneEraLedgerError    xs)
 deriving via LiftNS WrapLedgerUpdate   xs instance CanHardFork xs => Eq (OneEraLedgerUpdate   xs)
@@ -288,16 +286,15 @@ deriving via LiftNS WrapValidationErr  xs instance CanHardFork xs => Eq (OneEraV
 
 deriving via LiftNS WrapGenTxId xs instance CanHardFork xs => Ord (OneEraGenTxId xs)
 
-deriving via LiftNP WrapChainSelConfig xs instance CanHardFork xs => Show (PerEraChainSelConfig xs)
-deriving via LiftNS WrapEnvelopeErr    xs instance CanHardFork xs => Show (OneEraEnvelopeErr    xs)
-deriving via LiftNS WrapLedgerErr      xs instance CanHardFork xs => Show (OneEraLedgerError    xs)
-deriving via LiftNS WrapLedgerUpdate   xs instance CanHardFork xs => Show (OneEraLedgerUpdate   xs)
-deriving via LiftNS WrapLedgerWarning  xs instance CanHardFork xs => Show (OneEraLedgerWarning  xs)
-deriving via LiftNS WrapTipInfo        xs instance CanHardFork xs => Show (OneEraTipInfo        xs)
-deriving via LiftNS WrapValidationErr  xs instance CanHardFork xs => Show (OneEraValidationErr  xs)
-
-deriving via LiftOptNP 'False WrapForgeStateInfo        xs instance CanHardFork xs => Show (PerEraForgeStateInfo        xs)
-deriving via LiftOptNP 'False WrapForgeStateUpdateError xs instance CanHardFork xs => Show (PerEraForgeStateUpdateError xs)
+deriving via LiftNP WrapChainSelConfig        xs instance CanHardFork xs => Show (PerEraChainSelConfig        xs)
+deriving via LiftNS WrapEnvelopeErr           xs instance CanHardFork xs => Show (OneEraEnvelopeErr           xs)
+deriving via LiftNS WrapForgeStateInfo        xs instance CanHardFork xs => Show (OneEraForgeStateInfo        xs)
+deriving via LiftNS WrapForgeStateUpdateError xs instance CanHardFork xs => Show (OneEraForgeStateUpdateError xs)
+deriving via LiftNS WrapLedgerErr             xs instance CanHardFork xs => Show (OneEraLedgerError           xs)
+deriving via LiftNS WrapLedgerUpdate          xs instance CanHardFork xs => Show (OneEraLedgerUpdate          xs)
+deriving via LiftNS WrapLedgerWarning         xs instance CanHardFork xs => Show (OneEraLedgerWarning         xs)
+deriving via LiftNS WrapTipInfo               xs instance CanHardFork xs => Show (OneEraTipInfo               xs)
+deriving via LiftNS WrapValidationErr         xs instance CanHardFork xs => Show (OneEraValidationErr         xs)
 
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Eq   (MismatchEraInfo xs)
 deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraBlock xs => Show (MismatchEraInfo xs)
@@ -306,10 +303,10 @@ deriving via LiftMismatch SingleEraInfo LedgerEraInfo xs instance All SingleEraB
   Show instances used in tests only
 -------------------------------------------------------------------------------}
 
+deriving via LiftNS WrapApplyTxErr  xs instance CanHardFork xs => Show (OneEraApplyTxErr  xs)
 deriving via LiftNS I               xs instance CanHardFork xs => Show (OneEraBlock       xs)
-deriving via LiftNS Header          xs instance CanHardFork xs => Show (OneEraHeader      xs)
+deriving via LiftNS WrapCannotForge xs instance CanHardFork xs => Show (OneEraCannotForge xs)
 deriving via LiftNS GenTx           xs instance CanHardFork xs => Show (OneEraGenTx       xs)
 deriving via LiftNS WrapGenTxId     xs instance CanHardFork xs => Show (OneEraGenTxId     xs)
-deriving via LiftNS WrapApplyTxErr  xs instance CanHardFork xs => Show (OneEraApplyTxErr  xs)
-deriving via LiftNS WrapCannotForge xs instance CanHardFork xs => Show (OneEraCannotForge xs)
+deriving via LiftNS Header          xs instance CanHardFork xs => Show (OneEraHeader      xs)
 deriving via LiftNS WrapSelectView  xs instance CanHardFork xs => Show (OneEraSelectView  xs)

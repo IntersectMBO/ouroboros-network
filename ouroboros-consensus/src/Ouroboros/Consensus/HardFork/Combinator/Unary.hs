@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -197,6 +196,10 @@ instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
+instance Isomorphic WrapCanBeLeader where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
 instance Isomorphic WrapCannotForge where
   project = defaultProjectNS
   inject  = defaultInjectNS
@@ -206,12 +209,12 @@ instance Isomorphic WrapChainDepState where
   inject  = defaultInjectSt
 
 instance Isomorphic WrapForgeStateInfo where
-  project = OptNP.fromSingleton . getPerEraForgeStateInfo . unwrapForgeStateInfo
-  inject  = WrapForgeStateInfo . PerEraForgeStateInfo . OptNP.singleton
+  project = defaultProjectNS
+  inject  = defaultInjectNS
 
 instance Isomorphic WrapForgeStateUpdateError where
-  project = OptNP.fromSingleton . getPerEraForgeStateUpdateError . unwrapForgeStateUpdateError
-  inject  = WrapForgeStateUpdateError . PerEraForgeStateUpdateError . OptNP.singleton
+  project = defaultProjectNS
+  inject  = defaultInjectNS
 
 instance Isomorphic WrapTipInfo where
   project = defaultProjectNS
@@ -423,7 +426,8 @@ instance Functor m => Isomorphic (BlockForging m) where
   project :: forall blk. NoHardForks blk
           => BlockForging m (HardForkBlock '[blk]) -> BlockForging m blk
   project BlockForging {..} = BlockForging {
-        canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+        forgeLabel       = forgeLabel
+      , canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
       , updateForgeState = \sno -> project <$> updateForgeState sno
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (project' (Proxy @(WrapCannotForge blk))) $
@@ -462,7 +466,8 @@ instance Functor m => Isomorphic (BlockForging m) where
   inject :: forall blk. NoHardForks blk
          => BlockForging m blk -> BlockForging m (HardForkBlock '[blk])
   inject BlockForging {..} = BlockForging {
-        canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
+        forgeLabel       = forgeLabel
+      , canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
       , updateForgeState = \sno -> inject <$> updateForgeState sno
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (inject' (Proxy @(WrapCannotForge blk))) $
@@ -539,10 +544,6 @@ instance Isomorphic WrapEnvelopeErr where
       aux :: WrapEnvelopeErr b
           -> OtherHeaderEnvelopeError (HardForkBlock '[b])
       aux = HardForkEnvelopeErrFromEra . OneEraEnvelopeErr . Z
-
-instance Isomorphic WrapCanBeLeader where
-  project = OptNP.fromSingleton . unwrapCanBeLeader
-  inject  = WrapCanBeLeader . OptNP.singleton
 
 instance Isomorphic WrapLedgerView where
   project = State.fromTZ . hardForkLedgerViewPerEra . unwrapLedgerView

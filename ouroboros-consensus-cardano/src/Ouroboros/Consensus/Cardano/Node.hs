@@ -36,7 +36,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as Map
-import           Data.SOP.Strict (NP (..))
+import           Data.SOP.Strict (NP (..), NS (..))
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
@@ -264,7 +263,7 @@ protocolInfoCardano
   -> Maybe PBftSignatureThreshold
   -> Byron.Update.ProtocolVersion
   -> Byron.Update.SoftwareVersion
-  -> Maybe ByronLeaderCredentials
+  -> [ByronLeaderCredentials]
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
   -> Nonce
@@ -272,14 +271,14 @@ protocolInfoCardano
      -- hash of Shelley Genesis config JSON file.
   -> ProtVer
   -> MaxMajorProtVer
-  -> Maybe (TPraosLeaderCredentials (ShelleyEra c))
+  -> [TPraosLeaderCredentials (ShelleyEra c)]
      -- Hard fork
   -> Maybe EpochNo  -- ^ lower bound on first Shelley epoch
   -> TriggerHardFork -- ^ Transition from Byron to Shelley
   -> TriggerHardFork -- ^ Transition from Shelley to ShelleyMA
   -> ProtocolInfo m (CardanoBlock c)
-protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
-                    genesisShelley initialNonce protVer maxMajorPV mbCredsShelley
+protocolInfoCardano genesisByron mSigThresh pVer sVer credssByron
+                    genesisShelley initialNonce protVer maxMajorPV credssShelley
                     mbLowerBound byronTriggerHardFork shelleyTriggerHardFork =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
@@ -294,7 +293,15 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
                   WrapChainDepState $
                     headerStateChainDep initHeaderStateByron
           }
-      , pInfoBlockForging = blockForging
+      , pInfoBlockForging = mconcat [
+            [ return $ hardForkBlockForging $ Z $ byronBlockForging credsByron
+            | credsByron <- credssByron
+            ]
+          , [ hardForkBlockForging . S . Z
+                <$> shelleyBlockForging tpraosParams credsShelley
+            | credsShelley <- credssShelley
+            ]
+          ]
       }
   where
     -- Byron
@@ -308,7 +315,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
             ledgerState = initLedgerStateByron
           , headerState = initHeaderStateByron
           }
-      } = protocolInfoByron @m genesisByron mSigThresh pVer sVer mbCredsByron
+      } = protocolInfoByron @m genesisByron mSigThresh pVer sVer credssByron
 
     partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
     partialConsensusConfigByron = consensusConfigByron
@@ -336,7 +343,7 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
         Shelley.mkShelleyBlockConfig
           protVer
           genesisShelley
-          (tpraosBlockIssuerVKey mbCredsShelley)
+          (tpraosBlockIssuerVKey <$> credssShelley)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -395,33 +402,6 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer mbCredsByron
             (configCodec topLevelConfigByron)
             Shelley.ShelleyCodecConfig
       }
-
-    blockForging :: Maybe (m (BlockForging m (CardanoBlock c)))
-    blockForging = case (mbCredsByron, mbCredsShelley) of
-        (Nothing, Nothing) -> Nothing
-
-        (Just credsByron, Just credsShelley) -> Just $ do
-          blockForgingShelley <- shelleyBlockForging tpraosParams credsShelley
-          return
-            $ hardForkBlockForging
-            $ OptCons (byronBlockForging credsByron)
-            $ OptCons blockForgingShelley
-            $ OptNil
-
-        (Nothing, Just credsShelley) -> Just $ do
-          blockForgingShelley <- shelleyBlockForging tpraosParams credsShelley
-          return
-            $ hardForkBlockForging
-            $ OptSkip
-            $ OptCons blockForgingShelley
-            $ OptNil
-
-        (Just credsByron, Nothing) -> Just $
-          return
-            $ hardForkBlockForging
-            $ OptCons (byronBlockForging credsByron)
-            $ OptSkip
-            $ OptNil
 
 protocolClientInfoCardano
   :: forall c.

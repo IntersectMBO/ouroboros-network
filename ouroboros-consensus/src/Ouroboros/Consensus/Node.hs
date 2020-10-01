@@ -420,13 +420,13 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> Maybe (IO (BlockForging IO blk))
+  -> [IO (BlockForging IO blk)]
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
-    mBlockForging <- sequence mInitBlockForging
+mkNodeArgs registry cfg initBlockForging tracers btime chainDB = do
+    blockForging <- sequence initBlockForging
     bfsalt <- randomIO -- Per-node specific value used by blockfetch when ranking peers.
     keepAliveRng <- newStdGen
     return NodeArgs
@@ -435,7 +435,7 @@ mkNodeArgs registry cfg mInitBlockForging tracers btime chainDB = do
       , cfg
       , btime
       , chainDB
-      , blockForging            = mBlockForging
+      , blockForging            = blockForging
       , initChainDB             = nodeInitChainDB
       , blockFetchSize          = nodeBlockFetchSize
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride

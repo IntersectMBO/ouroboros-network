@@ -62,7 +62,7 @@ mkShelleyProtocolInfo genesis initialNonce =
       initialNonce
       (MaxMajorProtVer 1000)
       (SL.ProtVer 0 0)
-      Nothing
+      []
 
 countOutputs :: TPraosCrypto era => SL.Tx era -> Int
 countOutputs tx = length $ SL._outputs $ SL._body tx

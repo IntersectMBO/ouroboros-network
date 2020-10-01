@@ -38,8 +38,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.OptNP (OptNP)
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -203,21 +201,20 @@ tick cfg@HardForkConsensusConfig{..}
 {-------------------------------------------------------------------------------
   Leader check
 
-  NOTE: The precondition to `align` is satisfied: the consensus state will never
+  NOTE: The precondition to 'align' is satisfied: the consensus state will never
   be ahead (but possibly behind) the ledger state, which we tick first.
 -------------------------------------------------------------------------------}
 
 -- | We are a leader if we have a proof from one of the eras
 type HardForkIsLeader xs = OneEraIsLeader xs
 
--- | CanBeLeader instance for 'HardForkProtocol'
---
--- We allow an optional 'CanBeLeader' proof /per era/, to make it possible to
--- configure a node to, say, be able to produce Shelley but not Byron blocks.
--- However, we do not allow /all/ eras to be empty (since, in that case, we
--- /cannot/ be a leader).
-type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
+-- | We have one or more 'BlockForging's, and thus 'CanBeLeader' proofs, for
+-- each era in which we can forge blocks.
+type HardForkCanBeLeader xs = OneEraCanBeLeader xs
 
+-- | POSTCONDITION: if the result is @Just isLeader@, then 'HardForkCanBeLeader'
+-- and the ticked 'ChainDepState' must be in the same era. The returned
+-- @isLeader@ will be from the same era.
 check :: forall xs. (CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
@@ -225,39 +222,36 @@ check :: forall xs. (CanHardFork xs, HasCallStack)
       -> Ticked (ChainDepState (HardForkProtocol xs))
       -> Maybe (HardForkIsLeader xs)
 check HardForkConsensusConfig{..}
-      canBeLeader
+      (OneEraCanBeLeader canBeLeader)
       slot
       (TickedHardForkChainDepState chainDepState ei) =
-    distrib $
-        hczipWith3
+    case State.match canBeLeader chainDepState of
+      -- Not a leader in this era
+      Left _mismatch -> Nothing
+      Right matched  -> undistrib $
+        hczipWith
           proxySingle
           checkOne
           cfgs
-          (OptNP.toNP canBeLeader)
-          (State.tip chainDepState)
+          (State.tip matched)
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
-    checkOne :: SingleEraBlock                 blk
-             => WrapPartialConsensusConfig     blk
-             -> (Maybe :.: WrapCanBeLeader)    blk
-             -> (Ticked :.: WrapChainDepState) blk
-             -> (Maybe :.: WrapIsLeader)       blk
-    checkOne cfg'
-             (Comp mCanBeLeader)
-             (Comp chainDepState') = Comp $
-        case mCanBeLeader of
-          Nothing           -> Nothing
-          Just canBeLeader' -> WrapIsLeader <$>
+    checkOne ::
+         SingleEraBlock                                         blk
+      => WrapPartialConsensusConfig                             blk
+      -> Product WrapCanBeLeader (Ticked :.: WrapChainDepState) blk
+      -> (Maybe :.: WrapIsLeader)                               blk
+    checkOne cfg' (Pair canBeLeader' (Comp chainDepState')) = Comp $
+          WrapIsLeader <$>
             checkIsLeader
               (completeConsensusConfig' ei cfg')
               (unwrapCanBeLeader canBeLeader')
               slot
               (unwrapTickedChainDepState chainDepState')
 
-    distrib :: NS (Maybe :.: WrapIsLeader) xs
-            -> Maybe (HardForkIsLeader xs)
-    distrib = hcollapse . hzipWith inj injections
+    undistrib :: NS (Maybe :.: WrapIsLeader) xs -> Maybe (HardForkIsLeader xs)
+    undistrib = hcollapse . hzipWith inj injections
       where
         inj :: Injection WrapIsLeader xs blk
             -> (Maybe :.: WrapIsLeader) blk

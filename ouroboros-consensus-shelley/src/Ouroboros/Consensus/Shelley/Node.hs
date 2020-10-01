@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Shelley.Node (
 import           Data.Bifunctor (first)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.Text (Text)
 import qualified Data.Text as Text
 
 import qualified Cardano.Crypto.VRF as VRF
@@ -64,20 +65,22 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 -------------------------------------------------------------------------------}
 
 data TPraosLeaderCredentials era = TPraosLeaderCredentials {
-    -- | The unevolved signing KES key (at evolution 0).
-    --
-    -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
-    -- automatically, whereas 'TPraosCanBeLeader' does not change.
-    tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
-  , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
-  }
+      -- | The unevolved signing KES key (at evolution 0).
+      --
+      -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
+      -- automatically, whereas 'TPraosCanBeLeader' does not change.
+      tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
+    , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
+      -- | Identifier for this set of credentials.
+      --
+      -- Useful when the node is running with multiple sets of credentials.
+    , tpraosLeaderCredentialsLabel       :: Text
+    }
 
-tpraosBlockIssuerVKey :: Maybe (TPraosLeaderCredentials era) -> BlockIssuerVKey era
-tpraosBlockIssuerVKey mbCredentials =
-    case tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
-           <$> mbCredentials of
-      Nothing   -> NotABlockIssuer
-      Just vkey -> BlockIssuerVKey vkey
+tpraosBlockIssuerVKey ::
+     TPraosLeaderCredentials era -> SL.VKey 'SL.BlockIssuer era
+tpraosBlockIssuerVKey =
+    tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
 
 {-------------------------------------------------------------------------------
   BlockForging
@@ -98,10 +101,12 @@ shelleyBlockForging TPraosParams {..}
                     TPraosLeaderCredentials {
                         tpraosLeaderCredentialsInitSignKey = initSignKey
                       , tpraosLeaderCredentialsCanBeLeader = canBeLeader
+                      , tpraosLeaderCredentialsLabel       = label
                       } = do
     hotKey <- HotKey.mkHotKey initSignKey startPeriod tpraosMaxKESEvo
     return BlockForging {
-        canBeLeader      = canBeLeader
+        forgeLabel       = label
+      , canBeLeader      = canBeLeader
       , updateForgeState = \curSlot ->
                                ForgeStateUpdateInfo <$>
                                  HotKey.evolve hotKey (slotToPeriod curSlot)
@@ -149,14 +154,14 @@ protocolInfoShelley
      -- JSON file.
   -> MaxMajorProtVer
   -> SL.ProtVer
-  -> Maybe (TPraosLeaderCredentials era)
+  -> [TPraosLeaderCredentials era]
   -> ProtocolInfo m (ShelleyBlock era)
-protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
+protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
+      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> credentialss
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock era)
@@ -187,7 +192,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey mbCredentials)
+          (tpraosBlockIssuerVKey <$> credentialss)
 
     initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {

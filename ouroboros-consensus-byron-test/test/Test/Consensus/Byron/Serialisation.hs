@@ -107,7 +107,7 @@ testCfg = pInfoConfig protocolInfo
         (Just (PBftSignatureThreshold 0.5))
         (CC.Update.ProtocolVersion 1 0 0)
         (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
-        Nothing
+        []
 
 -- | Matches the values used for the generators.
 testCodecCfg :: CodecConfig ByronBlock

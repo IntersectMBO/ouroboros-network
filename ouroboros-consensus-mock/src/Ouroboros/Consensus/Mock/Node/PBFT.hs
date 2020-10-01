@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -43,7 +44,7 @@ protocolInfoMockPBFT params eraParams nid =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoBlockForging = Just (return (pbftBlockForging canBeLeader))
+      , pInfoBlockForging = [return (pbftBlockForging canBeLeader)]
       }
   where
     canBeLeader :: PBftCanBeLeader PBftMockCrypto
@@ -83,7 +84,8 @@ pbftBlockForging ::
   => PBftCanBeLeader c'
   -> BlockForging m (SimplePBftBlock c c')
 pbftBlockForging canBeLeader = BlockForging {
-      canBeLeader
+      forgeLabel       = "pbftBlockForging"
+    , canBeLeader
     , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
                            return $

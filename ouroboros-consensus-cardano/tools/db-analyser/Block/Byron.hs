@@ -146,4 +146,4 @@ mkByronProtocolInfo genesisConfig signatureThreshold =
       signatureThreshold
       (Update.ProtocolVersion 1 0 0)
       (Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2)
-      Nothing
+      []

@@ -157,7 +157,7 @@ setupTestOutput setup@SetupDualPBft{..} =
           protocolInfoDualByron
             setupGenesis
             (setupParams setup)
-            (Just coreNodeId)
+            [coreNodeId]
       , mkRekeyM = Nothing -- TODO
       }
   where

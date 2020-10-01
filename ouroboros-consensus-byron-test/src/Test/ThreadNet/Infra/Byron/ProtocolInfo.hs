@@ -61,7 +61,7 @@ mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
           (Just $ PBftSignatureThreshold pbftSignatureThreshold)
           theProposedProtocolVersion
           theProposedSoftwareVersion
-          (Just leaderCredentials)
+          [leaderCredentials]
 
 mkLeaderCredentials
   :: HasCallStack
@@ -75,6 +75,7 @@ mkLeaderCredentials genesisConfig genesisSecrets (CoreNodeId i) =
         genesisConfig
         dlgKey
         dlgCert
+        "ThreadNet"
   where
     dlgKey :: Crypto.SigningKey
     dlgKey = fromMaybe (error "dlgKey") $

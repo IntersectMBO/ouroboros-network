@@ -15,13 +15,12 @@ module Ouroboros.Consensus.HardFork.Combinator.Forging (
 import           Data.Functor.Product
 import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -31,114 +30,121 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 -- | If we cannot forge, it's because the current era could not forge
 type HardForkCannotForge xs = OneEraCannotForge xs
 
 type instance CannotForge (HardForkBlock xs) = HardForkCannotForge xs
 
--- | When we can lead in an era, we also have a 'ForgeStateInfo' for that era
--- (through 'BlockForging'). This means that when the hard fork combinator can
--- be a leader, it must at least have one 'ForgeStateInfo'. Hence
--- 'PerEraForgeStateInfo' is defined to be @OptNP False@.
-type HardForkForgeStateInfo xs = PerEraForgeStateInfo xs
+-- | For each era in which we want to forge blocks, we have a 'BlockForging',
+-- and thus 'ForgeStateInfo'.
+type HardForkForgeStateInfo xs = OneEraForgeStateInfo xs
 
 type instance ForgeStateInfo (HardForkBlock xs) = HardForkForgeStateInfo xs
 
--- | We update the forge state of each era for which we have a 'BlockForging'.
--- Each of those eras can individually fail.
---
--- When one or more eras fail to update, we consider the update to be failed.
--- This means we won't forge a block. For example, when the Shelley forge
--- state failed to update, we won't even forge a block in the Byron era.
-type HardForkForgeStateUpdateError xs = PerEraForgeStateUpdateError xs
+-- | For each era in which we want to forge blocks, we have a 'BlockForging',
+-- and thus 'ForgeStateUpdateError'.
+type HardForkForgeStateUpdateError xs = OneEraForgeStateUpdateError xs
 
 type instance ForgeStateUpdateError (HardForkBlock xs) =
   HardForkForgeStateUpdateError xs
 
 hardForkBlockForging ::
      forall m xs. (CanHardFork xs, Monad m)
-  => OptNP 'False (BlockForging m) xs
+  => NS (BlockForging m) xs
   -> BlockForging m (HardForkBlock xs)
-hardForkBlockForging blockForgings =
+hardForkBlockForging blockForging =
     BlockForging {
-        canBeLeader      = hmap (WrapCanBeLeader . canBeLeader) blockForgings
-      , updateForgeState = hardForkUpdateForgeState             blockForgings
-      , checkCanForge    = hardForkCheckCanForge                blockForgings
-      , forgeBlock       = hardForkForgeBlock                   blockForgings
+        forgeLabel       = hcollapse $ hmap (K . forgeLabel) blockForging
+      , canBeLeader      = hardForkCanBeLeader               blockForging
+      , updateForgeState = hardForkUpdateForgeState          blockForging
+      , checkCanForge    = hardForkCheckCanForge             blockForging
+      , forgeBlock       = hardForkForgeBlock                blockForging
       }
 
+hardForkCanBeLeader ::
+     CanHardFork xs
+  => NS (BlockForging m) xs -> HardForkCanBeLeader xs
+hardForkCanBeLeader =
+    OneEraCanBeLeader . hmap (WrapCanBeLeader . canBeLeader)
+
+-- | POSTCONDITION: the returned 'ForgeStateUpdateInfo' is from the same era as
+-- the given 'NS' of 'BlockForging's.
 hardForkUpdateForgeState ::
      forall m xs. (CanHardFork xs, Monad m)
-  => OptNP 'False (BlockForging m) xs
+  => NS (BlockForging m) xs
   -> SlotNo
   -> m (ForgeStateUpdateInfo (HardForkBlock xs))
-hardForkUpdateForgeState blockForgings curSlot =
-    undistribForgeStateUpdateInfo <$> htraverse' updateOne blockForgings
+hardForkUpdateForgeState blockForging curSlot =
+    undistrib <$> htraverse' (flip updateForgeState curSlot) blockForging
   where
-    updateOne :: BlockForging m blk -> m (ForgeStateUpdateInfo blk)
-    updateOne blockForging = updateForgeState blockForging curSlot
-
-    -- | We use the following rules, from top to bottom:
-    --
-    -- * When one or more eras failed to update, we return 'UpdateFailed' with
-    --   the eras that didn't fail left out of the
-    --   'HardForkForgeStateUpdateError' ('OptNP').
-    --
-    -- * When one or more eras updated, we return 'Updated' even when some
-    --   eras didn't. The 'HardForkForgeStateInfo' ('OptNP') will contain all
-    --   eras that were included in the 'BlockForging' 'OptNP', including the
-    --   eras that returned 'Unchanged'.
-    --
-    -- * When all eras were unchanged, we return 'Unchanged'. The
-    --   'HardForkForgeStateInfo' ('OptNP') will contain all eras that were
-    --   included in the 'BlockForging' 'OptNP'.
-    undistribForgeStateUpdateInfo ::
-         OptNP 'False ForgeStateUpdateInfo xs
+    undistrib ::
+         NS ForgeStateUpdateInfo xs
       -> ForgeStateUpdateInfo (HardForkBlock xs)
-    undistribForgeStateUpdateInfo updateInfos = ForgeStateUpdateInfo $
-        case go updateInfos of
-          Updated      infos -> Updated      (PerEraForgeStateInfo        infos)
-          Unchanged    infos -> Unchanged    (PerEraForgeStateInfo        infos)
-          UpdateFailed errs  -> UpdateFailed (PerEraForgeStateUpdateError errs)
+    undistrib = hcollapse . hzipWith3 inj injections injections
       where
-        go :: SListI xs'
-           => OptNP empty ForgeStateUpdateInfo xs'
-           -> UpdateInfo (OptNP 'False WrapForgeStateInfo        xs')
-                         (OptNP empty  WrapForgeStateInfo        xs')
-                         (OptNP 'False WrapForgeStateUpdateError xs')
-        go OptNil         = Unchanged OptNil
-        go (OptCons x xs) = consUpdateInfo x (go xs)
-        go (OptSkip   xs) = skipUpdateInfo (go xs)
+        inj :: forall blk.
+               Injection WrapForgeStateInfo xs blk
+            -> Injection WrapForgeStateUpdateError xs blk
+            -> ForgeStateUpdateInfo blk
+            -> K (ForgeStateUpdateInfo (HardForkBlock xs)) blk
+        inj injInfo injUpdateError forgeStateUpdateInfo =
+            K $ ForgeStateUpdateInfo $
+              case getForgeStateUpdateInfo forgeStateUpdateInfo of
+                Updated      info -> Updated      $ injInfo'        info
+                Unchanged    info -> Unchanged    $ injInfo'        info
+                UpdateFailed err  -> UpdateFailed $ injUpdateError' err
+          where
+            injInfo' ::
+                 ForgeStateInfo blk
+              -> OneEraForgeStateInfo xs
+            injInfo' =
+                  OneEraForgeStateInfo
+                . unK
+                . apFn injInfo
+                . WrapForgeStateInfo
 
+            injUpdateError' ::
+                 ForgeStateUpdateError blk
+              -> OneEraForgeStateUpdateError xs
+            injUpdateError' =
+                  OneEraForgeStateUpdateError
+                . unK
+                . apFn injUpdateError
+                . WrapForgeStateUpdateError
+
+-- | PRECONDITION: the 'NS' of 'BlockForging's, the ticked 'ChainDepState', the
+-- 'HardForkIsLeader', and the 'HardForkStateInfo' are all from the same era.
+--
+-- This follows from the postconditions of 'check' and
+-- 'hardForkUpdateForgeState'.
 hardForkCheckCanForge ::
      forall m xs. CanHardFork xs
-  => OptNP 'False (BlockForging m) xs
+  => NS (BlockForging m) xs
   -> TopLevelConfig (HardForkBlock xs)
   -> SlotNo
   -> Ticked (HardForkChainDepState xs)
   -> HardForkIsLeader xs
   -> HardForkForgeStateInfo xs
   -> Either (HardForkCannotForge xs) ()
-hardForkCheckCanForge blockForgings
+hardForkCheckCanForge blockForging
                       cfg
                       curSlot
                       (TickedHardForkChainDepState chainDepState ei)
                       isLeader
                       forgeStateInfo =
-    -- First establish the 'IsLeader' and the 'ChainDepState' are from the
-    -- same era. As we have obtained 'IsLeader from 'checkIsLeader' by giving
-    -- it the 'ChainDepState', it __must__ be from the same era.
-    case State.match (getOneEraIsLeader isLeader) chainDepState of
-      Left _mismatch ->
-        error "IsLeader from different era than the TickedChainDepState"
-      Right matched  ->
-        distrib $
-          hpure (fn_4 checkOne)
-            `hap` OptNP.toNP blockForgings
-            `hap` distribTopLevelConfig ei cfg
-            `hap` OptNP.toNP (getPerEraForgeStateInfo forgeStateInfo)
-            `hap` State.tip matched
+    distrib
+      $ hzipWith
+          checkOne
+          (distribTopLevelConfig ei cfg)
+        -- We know all three NSs must be from the same era, because they were
+        -- all produced from the same 'BlockForging'. Unfortunately, we can't
+        -- enforce it statically.
+      $ matchNS' "ForgeStateInfo"       (getOneEraForgeStateInfo forgeStateInfo)
+      $ matchNS' "IsLeader"             (getOneEraIsLeader isLeader)
+      $ matchNS' "Ticked ChainDepState" (State.tip chainDepState)
+      $ blockForging
   where
     distrib ::
          NS (Maybe :.: WrapCannotForge) xs
@@ -146,46 +152,43 @@ hardForkCheckCanForge blockForgings
     distrib = maybe (Right ()) (Left . OneEraCannotForge) . hsequence'
 
     checkOne ::
-         (Maybe :.: BlockForging m) blk
-      -> TopLevelConfig blk
-      -> (Maybe :.: WrapForgeStateInfo) blk
-      -> Product WrapIsLeader (Ticked :.: WrapChainDepState) blk
+         TopLevelConfig blk
+      -> Product
+           WrapForgeStateInfo
+           (Product
+             WrapIsLeader
+             (Product
+               (Ticked :.: WrapChainDepState)
+               (BlockForging m)))
+           blk
       -> (Maybe :.: WrapCannotForge) blk
          -- ^ We use @Maybe x@ instead of @Either x ()@ because the former can
          -- be partially applied.
-    checkOne (Comp mBlockForging)
-             cfg'
-             (Comp mForgeStateInfo')
-             (Pair (WrapIsLeader isLeader') (Comp tickedChainDepState)) =
+    checkOne cfg'
+             (Pair
+               (WrapForgeStateInfo forgeStateInfo')
+               (Pair
+                 (WrapIsLeader isLeader')
+                 (Pair
+                   (Comp tickedChainDepState)
+                   blockForging'))) =
         Comp $ either (Just . WrapCannotForge) (const Nothing) $
           checkCanForge
-            blockForging
+            blockForging'
             cfg'
             curSlot
             (unwrapTickedChainDepState tickedChainDepState)
             isLeader'
             forgeStateInfo'
-      where
-        blockForging = case mBlockForging of
-          Just bf -> bf
-          -- We are given an 'IsLeader' proof of the era while we don't have a
-          -- 'BlockForging' record for that era, impossible
-          Nothing ->
-            error "checkCanForge in an era in which we cannot lead"
 
-        forgeStateInfo' = case mForgeStateInfo' of
-          Just (WrapForgeStateInfo fsi) -> fsi
-          -- We are given an 'IsLeader' proof of the era, so we must have a
-          -- 'BlockForging' record for the same era. We are also given
-          -- 'ForgeStateInfo's for all eras for which we have a 'BlockForging'
-          -- record, so it must be that there is a 'ForgeStateInfo' for this
-          -- era.
-          Nothing ->
-            error "checkCanForge in an era in which we cannot lead"
-
+-- | PRECONDITION: the 'NS' of 'BlockForging's, the ticked 'LedgerState' and
+-- 'HardForkIsLeader' are from the same era.
+--
+-- This follows from the postcondition of 'check' and the fact that the ticked
+-- 'ChainDepState' and ticked 'LedgerState' are from the same era.
 hardForkForgeBlock ::
      forall m xs. (CanHardFork xs, Monad m)
-  => OptNP 'False (BlockForging m) xs
+  => NS (BlockForging m) xs
   -> TopLevelConfig (HardForkBlock xs)
   -> BlockNo
   -> SlotNo
@@ -193,33 +196,28 @@ hardForkForgeBlock ::
   -> [GenTx (HardForkBlock xs)]
   -> HardForkIsLeader xs
   -> m (HardForkBlock xs)
-hardForkForgeBlock blockForgings
+hardForkForgeBlock blockForging
                    cfg
                    bno
                    sno
                    (TickedHardForkLedgerState transition ledgerState)
                    txs
-                   isLeader = do
-    -- First establish the 'IsLeader' and the 'LedgerState' are from the
-    -- same era. As we have passed the ledger view of the ticked ledger to
-    -- obtain the 'IsLeader' value, it __must__ be from the same era.
-    -- Unfortunately, we cannot avoid this 'error' call: the 'IsLeader'
-    -- evidence could conceivably include the ledger /view/, but not the
-    -- ledger /state/.
-    case State.match (getOneEraIsLeader isLeader) ledgerState of
-      Left _mismatch ->
-        error "IsLeader from different era than the TickedLedgerState"
-      Right matched  ->
-        -- Although we get a list with transactions that each could be from
-        -- a different era, we know they have been validated against the
-        -- 'LedgerState', which means they __must__ be from the same era.
-        fmap (HardForkBlock . OneEraBlock) $
-        hsequence $
-        hpure (fn_4 forgeBlockOne)
-          `hap` OptNP.toNP blockForgings
-          `hap` distribTopLevelConfig ei cfg
-          `hap` (partition_NS (map (getOneEraGenTx . getHardForkGenTx) txs))
-          `hap` (State.tip matched)
+                   isLeader =
+        fmap (HardForkBlock . OneEraBlock)
+      $ hsequence
+      $ hzipWith3
+          forgeBlockOne
+          (distribTopLevelConfig ei cfg)
+          -- Although we get a list with transactions that each could be from a
+          -- different era, we know they have been validated against the
+          -- 'LedgerState', which means they __must__ be from the same era.
+          (partition_NS (map (getOneEraGenTx . getHardForkGenTx) txs))
+        -- We know both NSs must be from the same era, because they were all
+        -- produced from the same 'BlockForging'. Unfortunately, we can't
+        -- enforce it statically.
+      $ matchNS' "IsLeader"           (getOneEraIsLeader isLeader)
+      $ matchNS' "Ticked LedgerState" (State.tip ledgerState)
+      $ blockForging
   where
     ei = State.epochInfoPrecomputedTransitionInfo
            (hardForkLedgerConfigShape (configLedger cfg))
@@ -228,76 +226,40 @@ hardForkForgeBlock blockForgings
 
     -- | Unwraps all the layers needed for SOP and call 'forgeBlock'.
     forgeBlockOne ::
-         (Maybe :.: BlockForging m) blk
-      -> TopLevelConfig blk
+         TopLevelConfig blk
       -> ([] :.: GenTx) blk
-      -> Product WrapIsLeader (Ticked :.: LedgerState) blk
+      -> Product
+           WrapIsLeader
+             (Product
+               (Ticked :.: LedgerState)
+               (BlockForging m))
+           blk
       -> m blk
-    forgeBlockOne (Comp mBlockForging)
-                  matchedCfg
-                  (Comp matchedTxs)
-                  (Pair matchedIsLeader (Comp matchedLedgerState)) =
+    forgeBlockOne cfg'
+                  (Comp txs')
+                  (Pair
+                    (WrapIsLeader isLeader')
+                    (Pair
+                      (Comp ledgerState')
+                      blockForging')) =
         forgeBlock
-          blockForging
-          matchedCfg
+          blockForging'
+          cfg'
           bno
           sno
-          matchedLedgerState
-          matchedTxs
-          (unwrapIsLeader matchedIsLeader)
-      where
-        blockForging = case mBlockForging of
-          Just bf -> bf
-          Nothing ->
-            error "forging a block in an era in which we cannot lead"
+          ledgerState'
+          txs'
+          isLeader'
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
-wrapForgeStateUpdateInfo ::
-     ForgeStateUpdateInfo blk
-  -> UpdateInfo
-       (WrapForgeStateInfo        blk)
-       (WrapForgeStateInfo        blk)
-       (WrapForgeStateUpdateError blk)
-wrapForgeStateUpdateInfo (ForgeStateUpdateInfo updateInfo) = case updateInfo of
-    Updated      info -> Updated      (WrapForgeStateInfo        info)
-    Unchanged    info -> Unchanged    (WrapForgeStateInfo        info)
-    UpdateFailed err  -> UpdateFailed (WrapForgeStateUpdateError err)
-
-consUpdateInfo ::
-     SListI xs
-  => ForgeStateUpdateInfo x
-  -> UpdateInfo (OptNP 'False WrapForgeStateInfo              xs)
-                (OptNP empty  WrapForgeStateInfo              xs)
-                (OptNP 'False WrapForgeStateUpdateError       xs)
-  -> UpdateInfo (OptNP 'False WrapForgeStateInfo        (x ': xs))
-                (OptNP 'False WrapForgeStateInfo        (x ': xs))
-                (OptNP 'False WrapForgeStateUpdateError (x ': xs))
-consUpdateInfo updateInfo updateInfos =
-    case (wrapForgeStateUpdateInfo updateInfo, updateInfos) of
-      -- Updated & Unchanged
-      (Updated   info, Updated   infos) -> Updated   $ OptCons info infos
-      (Unchanged info, Updated   infos) -> Updated   $ OptCons info infos
-      (Updated   info, Unchanged infos) -> Updated   $ OptCons info infos
-      (Unchanged info, Unchanged infos) -> Unchanged $ OptCons info infos
-      -- UpdateFailed
-      (UpdateFailed err, UpdateFailed errs) -> UpdateFailed $ OptCons err errs
-      (UpdateFailed err, _)                 -> UpdateFailed $ OptCons err OptNP.empty
-      (_               , UpdateFailed errs) -> UpdateFailed $ OptSkip errs
-
-skipUpdateInfo ::
-     UpdateInfo
-       (OptNP empty1 WrapForgeStateInfo              xs)
-       (OptNP empty2 WrapForgeStateInfo              xs)
-       (OptNP empty3 WrapForgeStateUpdateError       xs)
-  -> UpdateInfo
-       (OptNP empty1 WrapForgeStateInfo        (x ': xs))
-       (OptNP empty2 WrapForgeStateInfo        (x ': xs))
-       (OptNP empty3 WrapForgeStateUpdateError (x ': xs))
-skipUpdateInfo updateInfo =
-    case updateInfo of
-      Updated      infos -> Updated      (OptSkip infos)
-      Unchanged    infos -> Unchanged    (OptSkip infos)
-      UpdateFailed errs  -> UpdateFailed (OptSkip errs)
+-- | Variant of 'matchNS' for when we know the two 'NS's must match. Otherwise
+-- an error, mentioning the given 'String', is thrown.
+matchNS' ::
+     forall f g xs. HasCallStack
+  => String -> NS f xs -> NS g xs -> NS (Product f g) xs
+matchNS' lbl f g = case Match.matchNS f g of
+    Left _mismatch -> error $ lbl <> " from wrong era"
+    Right matched  -> matched

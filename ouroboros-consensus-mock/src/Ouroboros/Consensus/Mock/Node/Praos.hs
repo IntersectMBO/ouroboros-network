@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -55,7 +56,7 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState (PraosChainDepState [])
           }
-      , pInfoBlockForging = Just (praosBlockForging nid initHotKey)
+      , pInfoBlockForging = [praosBlockForging nid initHotKey]
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
@@ -96,7 +97,8 @@ praosBlockForging ::
 praosBlockForging cid initHotKey = do
     varHotKey <- newMVar initHotKey
     return $ BlockForging {
-        canBeLeader      = cid
+        forgeLabel       = "praosBlockForging"
+      , canBeLeader      = cid
       , updateForgeState = \sno -> updateMVar varHotKey $
                                second ForgeStateUpdateInfo . evolveKey sno
       , checkCanForge    = \_ _ _ _ _ -> return ()

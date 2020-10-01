@@ -746,13 +746,13 @@ mkProtocolCardanoAndHardForkTxs
         (Just $ PBftSignatureThreshold 1)
         propPV
         softVerByron
-        (Just leaderCredentialsByron)
+        [leaderCredentialsByron]
         -- Shelley
         genesisShelley
         initialNonce
         protVerShelley
         maxMajorPVShelley
-        (Just leaderCredentialsShelley)
+        [leaderCredentialsShelley]
         -- Hard fork
         mbLowerBound
         byronTransition

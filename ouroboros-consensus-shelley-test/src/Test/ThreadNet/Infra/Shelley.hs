@@ -4,6 +4,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
@@ -201,6 +202,7 @@ mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         , tpraosCanBeLeaderColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
         , tpraosCanBeLeaderSignKeyVRF = cnVRF
         }
+      , tpraosLeaderCredentialsLabel       = "ThreadNet"
       }
 
 {-------------------------------------------------------------------------------
@@ -386,7 +388,7 @@ mkProtocolRealTPraos genesis initialNonce protVer coreNode =
       initialNonce
       maxMajorPV
       protVer
-      (Just (mkLeaderCredentials coreNode))
+      [mkLeaderCredentials coreNode]
   where
     maxMajorPV = MaxMajorProtVer 1000 -- TODO
 
