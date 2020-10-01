@@ -3,6 +3,13 @@
 
 module Test.ThreadNet.RealTPraos (tests) where
 
+import Test.ThreadNet.Util.NodeTopology
+{-
+import qualified Data.Set as Set
+import Test.ThreadNet.Util.Seed
+import Data.String (fromString)
+-}
+
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
@@ -86,9 +93,19 @@ instance Arbitrary TestSetup where
         , (9, SL.mkNonceFromNumber <$> arbitrary)
         ]
 
-      setupK  <- SecurityParam <$> choose (minK, maxK)
+      let setupK = SecurityParam minK
 
-      setupTestConfig <- arbitrary
+      setupTestConfig <- do
+        let numCoreNodes = NumCoreNodes 3
+        initSeed <- arbitrary
+        nodeTopology <- genNodeTopology numCoreNodes
+        let numSlots = NumSlots 300
+        pure TestConfig {
+            initSeed
+          , nodeTopology
+          , numCoreNodes
+          , numSlots
+          }
 
       setupVersion <- genVersion (Proxy @(ShelleyBlock Era))
 
@@ -154,7 +171,10 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 5
 
 tests :: TestTree
-tests = testGroup "RealTPraos ThreadNet"
+tests = testGroup "RealTPraos ThreadNet" $
+{-    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
+    ]
+    `asTypeOf` -}
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       if enabled
