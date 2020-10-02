@@ -301,7 +301,7 @@ connectToNodeSocket iocp handshakeCodec versionDataCodec tracers versions sd =
 --
 data SomeResponderApplication addr bytes m b where
      SomeResponderApplication
-       :: forall appType addr m bytes a b.
+       :: forall appType addr bytes m a b.
           Mx.HasResponder appType ~ True
        => (OuroborosApplication appType addr bytes m a b)
        -> SomeResponderApplication addr bytes m b
@@ -320,7 +320,7 @@ data SomeResponderApplication addr bytes m b where
 data AcceptConnection st vNumber extra peerid m bytes where
 
     AcceptConnection
-      :: forall st vNumber extra peerid m bytes b.
+      :: forall st vNumber extra peerid bytes m b.
          !st
       -> !(ConnectionId peerid)
       -> Versions vNumber extra (SomeResponderApplication peerid bytes m b)

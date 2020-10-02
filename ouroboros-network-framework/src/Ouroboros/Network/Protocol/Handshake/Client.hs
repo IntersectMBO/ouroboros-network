@@ -56,6 +56,8 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
                 Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
+                -- TODO: we should check that we agree on received @vData'@,
+                -- this might be less trivial than testing for equality.
                 Done TokDone $ Right $ ( runApplication (versionApplication version) vData vData'
                                        , getAgreedOptions (versionExtra version) vNumber vData'
                                        )
