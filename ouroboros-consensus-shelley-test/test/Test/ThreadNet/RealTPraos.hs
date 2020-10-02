@@ -6,7 +6,7 @@ module Test.ThreadNet.RealTPraos (tests) where
 import Test.ThreadNet.Util.NodeTopology
 import qualified Data.Set as Set
 import Test.ThreadNet.Util.Seed
-import Data.String (fromString)
+-- import Data.String (fromString)
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
@@ -170,20 +170,24 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
 
 repro :: TestSetup
 repro = TestSetup {
-    setupD = DecentralizationParam (2 / 5)
-  , setupD2 = DecentralizationParam (2 / 5)
-  , setupInitialNonce = Nonce $ fromString $ "50826b21b9425d8ec67bfee595a3d81cb7f277b4cb5c72db0a34b97eef3a3cdc"
+    setupD = DecentralizationParam (1 / 5)
+  , setupD2 = DecentralizationParam (1 / 5)
+  , setupInitialNonce = NeutralNonce
   , setupK = SecurityParam 5
   , setupTestConfig = TestConfig {
-      initSeed = Seed (-4488399573397301335)
+      initSeed = Seed 3197045859947473347
     , nodeTopology = NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0,CoreNodeId 1])])
-    , numCoreNodes = NumCoreNodes 3, numSlots = NumSlots 161
+    , numCoreNodes = NumCoreNodes 3
+    , numSlots = NumSlots 187
     }
   , setupVersion = (NodeToNodeV_1,Shelley.ShelleyNodeToNodeVersion1)
   }
 
 tests :: TestTree
 tests = testGroup "RealTPraos ThreadNet" $
+    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
+    ]
+    `asTypeOf`
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       if enabled
@@ -192,9 +196,6 @@ tests = testGroup "RealTPraos ThreadNet" $
       else adjustOption fifthTestCount $
            testProperty name $ \setup ->
              prop_simple_real_tpraos_convergence setup
-    ]
-    `asTypeOf`
-    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
     ]
 
 prop_simple_real_tpraos_convergence :: TestSetup -> Property
