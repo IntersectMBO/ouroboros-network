@@ -46,13 +46,13 @@ import           System.Random (newStdGen, randomIO, randomRIO)
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient (DictVersion (..),
-                     LocalConnectionId, NodeToClientVersionData (..),
-                     nodeToClientCodecCBORTerm)
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
+import           Ouroboros.Network.NodeToClient (LocalConnectionId,
+                     NodeToClientVersionData (..), nodeToClientDictVersion)
+import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
+                     MiniProtocolParameters (..), NodeToNodeVersion (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
                      combineVersions, defaultMiniProtocolParameters,
-                     nodeToNodeCodecCBORTerm)
+                     nodeToNodeDictVersion)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -233,8 +233,12 @@ run runargs@RunNodeArgs{..} =
       ix <- randomRIO (0, length xs - 1)
       return $ xs !! ix
 
-    nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
-    nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
+    nodeToNodeVersionData = NodeToNodeVersionData
+      { networkMagic  = rnNetworkMagic
+      , diffusionMode = InitiatorAndResponderDiffusionMode
+      }
+    nodeToClientVersionData = NodeToClientVersionData
+      { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -302,7 +306,7 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToNodeVersionData
-                (DictVersion nodeToNodeCodecCBORTerm)
+                (nodeToNodeDictVersion version)
                 (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
@@ -310,7 +314,7 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToNodeVersionData
-                (DictVersion nodeToNodeCodecCBORTerm)
+                (nodeToNodeDictVersion version)
                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
@@ -318,7 +322,7 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToClientVersionData
-                (DictVersion nodeToClientCodecCBORTerm)
+                nodeToClientDictVersion
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]
