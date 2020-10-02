@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.QuickCheck
 
 import           Test.Consensus.HardFork.Infra
 

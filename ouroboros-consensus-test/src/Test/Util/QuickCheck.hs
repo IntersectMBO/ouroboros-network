@@ -6,8 +6,12 @@
 
 -- | QuickCheck utilities
 module Test.Util.QuickCheck (
+    -- * Generic QuickCheck utilities
+    checkGenerator
+  , checkShrinker
+  , checkInvariant
     -- * Comparison functions
-    lt
+  , lt
   , le
   , gt
   , ge
@@ -25,6 +29,7 @@ module Test.Util.QuickCheck (
   , collects
   ) where
 
+import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -37,6 +42,37 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Test.QuickCheck hiding (elements)
 import qualified Test.QuickCheck as QC
+
+{-------------------------------------------------------------------------------
+  Generic QuickCheck utilities
+-------------------------------------------------------------------------------}
+
+-- | Test the generator
+--
+-- Uses explicit 'forAll' as we don't want to assume a correct shrinker.
+checkGenerator :: (Arbitrary a, Show a) => (a -> Property) -> Property
+checkGenerator p = forAll arbitrary $ p
+
+-- | Test the shrinker
+checkShrinker :: forall a. (Arbitrary a, Show a) => (a -> Property) -> Property
+checkShrinker p =
+    -- Starting point, some arbitrary value
+    -- Explicit 'forAll': don't shrink when testing the shrinker
+    forAll arbitrary go
+  where
+    go :: a -> Property
+    go a =
+        if null (shrink a) then
+          property True
+        else
+          -- Nested 'forAll': testing that /all/ shrunk values satisfy the
+          -- property is too expensive. Since we're not shrinking, nesting
+          -- 'forAll' is ok.
+          forAll (elements (shrink a)) $ \a' -> p a' .&&. go a'
+
+-- | Check invariant
+checkInvariant :: (a -> Except String ()) -> (a -> Property)
+checkInvariant f = expectRight () . runExcept . f
 
 {-------------------------------------------------------------------------------
   Comparison functions

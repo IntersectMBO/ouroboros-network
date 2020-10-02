@@ -11,12 +11,8 @@
 
 -- | Infrastructure shared by the various 'HardFork' tests
 module Test.Consensus.HardFork.Infra (
-    -- * Generic QuickCheck utilities
-    checkGenerator
-  , checkShrinker
-  , checkInvariant
     -- * Generate HardFork shape
-  , Era(..)
+    Era(..)
   , Eras(..)
   , eraIndices
   , chooseEras
@@ -29,7 +25,6 @@ module Test.Consensus.HardFork.Infra (
   , genSummary
   ) where
 
-import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Maybe (fromMaybe)
 import           Data.SOP.Strict
@@ -41,39 +36,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
-
-import           Test.Util.QuickCheck
-
-{-------------------------------------------------------------------------------
-  Generic QuickCheck utilities
--------------------------------------------------------------------------------}
-
--- | Test the generator
---
--- Uses explicit 'forAll' as we don't want to assume a correct shrinker.
-checkGenerator :: (Arbitrary a, Show a) => (a -> Property) -> Property
-checkGenerator p = forAll arbitrary $ p
-
--- | Test the shrinker
-checkShrinker :: forall a. (Arbitrary a, Show a) => (a -> Property) -> Property
-checkShrinker p =
-    -- Starting point, some arbitrary value
-    -- Explicit 'forAll': don't shrink when testing the shrinker
-    forAll arbitrary go
-  where
-    go :: a -> Property
-    go a =
-        if null (shrink a) then
-          property True
-        else
-          -- Nested 'forAll': testing that /all/ shrunk values satisfy the
-          -- property is too expensive. Since we're not shrinking, nesting
-          -- 'forAll' is ok.
-          forAll (elements (shrink a)) $ \a' -> p a' .&&. go a'
-
--- | Check invariant
-checkInvariant :: (a -> Except String ()) -> (a -> Property)
-checkInvariant f = expectRight () . runExcept . f
 
 {-------------------------------------------------------------------------------
   Generate hard fork shape
