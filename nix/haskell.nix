@@ -33,22 +33,6 @@ let
     compiler-nix-name = compiler;
     modules = [
 
-      # Allow reinstallation of Win32
-      { nonReinstallablePkgs =
-        [ "rts" "ghc-heap" "ghc-prim" "integer-gmp" "integer-simple" "base"
-          "deepseq" "array" "ghc-boot-th" "pretty" "template-haskell"
-          # ghcjs custom packages
-          "ghcjs-prim" "ghcjs-th"
-          "ghc-boot"
-          "ghc" "array" "binary" "bytestring" "containers"
-          "filepath" "ghc-boot" "ghc-compact" "ghc-prim"
-          # "ghci" "haskeline"
-          "hpc"
-          "mtl" "parsec" "text" "transformers"
-          "xhtml"
-          # "stm" "terminfo"
-        ];
-      }
       # Compile all local packages with -Werror:
       {
         packages = lib.genAttrs projectPackages
@@ -59,15 +43,22 @@ let
         packages.prometheus.components.library.doExactConfig = true;
         enableLibraryProfiling = profiling;
       }
-      (if stdenv.hostPlatform.isWindows then {
-        # Disable cabal-doctest tests by turning off custom setups
-        packages.comonad.package.buildType = lib.mkForce "Simple";
-        packages.distributive.package.buildType = lib.mkForce "Simple";
-        packages.lens.package.buildType = lib.mkForce "Simple";
-        packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
-        packages.semigroupoids.package.buildType = lib.mkForce "Simple";
-        packages.system-filepath.package.buildType = lib.mkForce "Simple";
-
+      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+        # Allow reinstallation of Win32
+        nonReinstallablePkgs =
+          [ "rts" "ghc-heap" "ghc-prim" "integer-gmp" "integer-simple" "base"
+            "deepseq" "array" "ghc-boot-th" "pretty" "template-haskell"
+            # ghcjs custom packages
+            "ghcjs-prim" "ghcjs-th"
+            "ghc-boot"
+            "ghc" "array" "binary" "bytestring" "containers"
+            "filepath" "ghc-boot" "ghc-compact" "ghc-prim"
+            # "ghci" "haskeline"
+            "hpc"
+            "mtl" "parsec" "text" "transformers"
+            "xhtml"
+            # "stm" "terminfo"
+          ];
         # ruby/perl dependencies cannot be cross-built for cddl tests:
         packages.ouroboros-network.flags.cddl = false;
 
@@ -80,11 +71,10 @@ let
         packages.network.components.library.build-tools = lib.mkForce [];
 
         # Make sure that libsodium DLLs are available for tests
-        packages.ouroboros-consensus-shelley-test.components.all.postInstall = lib.mkForce "";
         packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-cardano-test.components.all.postInstall = lib.mkForce "";
         packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-      } else {
+      })
+      ({ pkgs, ... }: lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-network.components.tests.test-cddl.preCheck = "export HOME=`pwd`";
