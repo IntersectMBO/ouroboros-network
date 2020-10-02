@@ -99,7 +99,7 @@ data DiffusionApplications = DiffusionApplications {
 
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
-                                       DictVersion
+                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
                                        (OuroborosApplication
                                          ResponderMode SockAddr
                                          ByteString IO Void ())
@@ -107,7 +107,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
-                                       DictVersion 
+                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
                                        (OuroborosApplication
                                          InitiatorMode SockAddr
                                          ByteString IO () Void)
@@ -115,7 +115,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
-                                       DictVersion
+                                       (DictVersion NodeToClientVersion NodeToClient.AgreedOptions)
                                        (OuroborosApplication
                                          ResponderMode LocalAddress
                                          ByteString IO Void ())

@@ -56,6 +56,7 @@ module Ouroboros.Network.NodeToClient (
 
     -- * Versions
   , Versions (..)
+  , AgreedOptions
   , versionedNodeToClientProtocols
   , simpleSingletonVersions
   , foldMapVersions
@@ -63,6 +64,7 @@ module Ouroboros.Network.NodeToClient (
     -- ** Codecs
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
+  , nodeToClientDictVersion
   , nodeToClientCodecCBORTerm
 
   -- * Re-exports
@@ -217,13 +219,13 @@ versionedNodeToClientProtocols
     -> NodeToClientVersionData
     -> (ConnectionId LocalAddress -> STM m ControlMessage -> NodeToClientProtocols appType bytes m a b)
     -> Versions NodeToClientVersion
-                DictVersion
+                (DictVersion NodeToClientVersion AgreedOptions)
                 (OuroborosApplication appType LocalAddress bytes m a b)
 versionedNodeToClientProtocols versionNumber versionData protocols =
     simpleSingletonVersions
       versionNumber
       versionData
-      (DictVersion nodeToClientCodecCBORTerm)
+      nodeToClientDictVersion
       (nodeToClientProtocols protocols versionNumber)
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
@@ -235,7 +237,7 @@ connectTo
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
   -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
-              DictVersion
+              (DictVersion NodeToClientVersion AgreedOptions)
               (OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
@@ -274,7 +276,7 @@ connectTo_V1 snocket tracers versionData application =
     (simpleSingletonVersions
       NodeToClientV_1
       versionData
-      (DictVersion nodeToClientCodecCBORTerm)
+      nodeToClientDictVersion
       application)
 
 {-# DEPRECATED connectTo_V1 "Use connectTo_V2" #-}
@@ -302,22 +304,22 @@ connectTo_V2
   -- ^ path to unix socket or named pipe
   -> IO ()
 connectTo_V2 snocket tracers versionData application_V1 application_V2 =
-  connectTo
-    snocket
-    tracers
-    (
-        simpleSingletonVersions
-          NodeToClientV_1
-          versionData
-          (DictVersion nodeToClientCodecCBORTerm)
-          application_V1
-      <>
-        simpleSingletonVersions
-          NodeToClientV_2
-          versionData
-          (DictVersion nodeToClientCodecCBORTerm)
-          application_V2
-    )
+    connectTo
+      snocket
+      tracers
+      (
+          simpleSingletonVersions
+            NodeToClientV_1
+            versionData
+            nodeToClientDictVersion
+            application_V1
+        <>
+          simpleSingletonVersions
+            NodeToClientV_2
+            versionData
+            nodeToClientDictVersion
+            application_V2
+      )
 
 -- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'; Use
 -- 'withServer_V1' instead of you would like to use 'NodeToCLientV_1' version of
@@ -330,7 +332,8 @@ withServer
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalFD
-  -> Versions NodeToClientVersion DictVersion
+  -> Versions NodeToClientVersion
+              (DictVersion NodeToClientVersion AgreedOptions)
               (OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
@@ -343,7 +346,7 @@ withServer sn tracers networkState sd versions errPolicies =
     sd
     nodeToClientHandshakeCodec
     cborTermVersionDataCodec
-    (\(DictVersion _) -> acceptableVersion)
+    (\DictVersion {} -> acceptableVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
@@ -371,7 +374,7 @@ withServer_V1 sn tracers networkState sd versionData application =
       (simpleSingletonVersions
         NodeToClientV_1
         versionData
-        (DictVersion nodeToClientCodecCBORTerm)
+        nodeToClientDictVersion
         application)
 
 {-# DEPRECATED withServer_V1 "Use withServer_V2" #-}
@@ -404,13 +407,13 @@ withServer_V2 sn tracers networkState sd versionData application_V1 application_
           simpleSingletonVersions
             NodeToClientV_1
             versionData
-            (DictVersion nodeToClientCodecCBORTerm)
+            nodeToClientDictVersion
             application_V1
         <>
           simpleSingletonVersions
             NodeToClientV_2
             versionData
-            (DictVersion nodeToClientCodecCBORTerm)
+            nodeToClientDictVersion
             application_V2
       )
 
@@ -431,7 +434,7 @@ ncSubscriptionWorker
     -> ClientSubscriptionParams ()
     -> Versions
         NodeToClientVersion
-        DictVersion
+        (DictVersion NodeToClientVersion AgreedOptions)
         (OuroborosApplication mode LocalAddress BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
@@ -486,7 +489,7 @@ ncSubscriptionWorker_V1
         (simpleSingletonVersions
           NodeToClientV_1
           versionData
-          (DictVersion nodeToClientCodecCBORTerm)
+          nodeToClientDictVersion
           application)
 
 {-# DEPRECATED ncSubscriptionWorker_V1 "Use ncSubscriptionWorker_V2" #-}
@@ -525,13 +528,13 @@ ncSubscriptionWorker_V2
             simpleSingletonVersions
               NodeToClientV_1
               versionData
-              (DictVersion nodeToClientCodecCBORTerm)
+              nodeToClientDictVersion
               application_V1
           <>
             simpleSingletonVersions
               NodeToClientV_2
               versionData
-              (DictVersion nodeToClientCodecCBORTerm)
+              nodeToClientDictVersion
               application_V2
         )
 

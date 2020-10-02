@@ -4,8 +4,10 @@
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
+  , AgreedOptions
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientDictVersion
   ) where
 
 import           Data.Bits (setBit, clearBit, testBit)
@@ -17,7 +19,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..), Accept (..))
+import           Ouroboros.Network.Protocol.Handshake.Version
+                  (Acceptable (..), Accept (..), DictVersion (..))
 
 
 -- | Enumeration of node to client protocol versions.
@@ -86,3 +89,9 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+
+
+type AgreedOptions = ()
+
+nodeToClientDictVersion :: DictVersion NodeToClientVersion AgreedOptions NodeToClientVersionData
+nodeToClientDictVersion = DictVersion nodeToClientCodecCBORTerm (\_ _ -> ())

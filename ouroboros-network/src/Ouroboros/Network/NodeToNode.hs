@@ -18,6 +18,7 @@ module Ouroboros.Network.NodeToNode (
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
+  , AgreedOptions (..)
 
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
@@ -55,12 +56,14 @@ module Ouroboros.Network.NodeToNode (
 
     -- ** Versions
   , Versions (..)
+  , DiffusionMode (..)
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
     -- *** Codecs
   , nodeToNodeHandshakeCodec
   , nodeToNodeVersionCodec
+  , nodeToNodeDictVersion
   , nodeToNodeCodecCBORTerm
 
   -- * Re-exports
@@ -375,14 +378,13 @@ nodeToNodeProtocols MiniProtocolParameters {
           maximumIngressQueue = addSafetyMargin 1280
         }
 
-
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
   :: Snocket IO Socket.Socket Socket.SockAddr
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
-              DictVersion
+              (DictVersion NodeToNodeVersion AgreedOptions)
               (OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
@@ -408,7 +410,7 @@ connectTo_V1 sn tracers versionData application localAddr remoteAddr =
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
+          (nodeToNodeDictVersion NodeToNodeV_1)
           application)
       localAddr
       remoteAddr
@@ -427,7 +429,8 @@ withServer
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
-  -> Versions NodeToNodeVersion DictVersion
+  -> Versions NodeToNodeVersion
+              (DictVersion NodeToNodeVersion AgreedOptions)
               (OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
@@ -440,7 +443,7 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     sd
     nodeToNodeHandshakeCodec
     cborTermVersionDataCodec
-    (\(DictVersion _) -> acceptableVersion)
+    (\DictVersion {} -> acceptableVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
@@ -464,7 +467,7 @@ withServer_V1 sn tracers networkState acceptedConnectionsLimit sd versionData ap
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
+          (nodeToNodeDictVersion NodeToNodeV_1)
           application)
 
 
@@ -480,7 +483,7 @@ ipSubscriptionWorker
     -> IPSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
-        DictVersion
+        (DictVersion NodeToNodeVersion AgreedOptions)
         (OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker
@@ -535,7 +538,7 @@ ipSubscriptionWorker_V1
         (simpleSingletonVersions
           NodeToNodeV_1
           versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
+          (nodeToNodeDictVersion NodeToNodeV_1)
           application)
 
 
@@ -551,7 +554,7 @@ dnsSubscriptionWorker
     -> DnsSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
-        DictVersion
+        (DictVersion NodeToNodeVersion AgreedOptions)
         (OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker
@@ -608,7 +611,7 @@ dnsSubscriptionWorker_V1
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
+          (nodeToNodeDictVersion NodeToNodeV_1)
           application)
 
 -- | A minimal error policy for remote peers, which only handles exceptions
