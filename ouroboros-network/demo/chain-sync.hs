@@ -40,7 +40,6 @@ import qualified Codec.Serialise as CBOR
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.Magic
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (LocalConnectionId)
@@ -160,8 +159,8 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         nullNetworkConnectTracers
         (simpleSingletonVersions
            UnversionedProtocol
-           (NodeToNodeVersionData $ NetworkMagic 0)
-           (DictVersion nodeToNodeCodecCBORTerm)
+           UnversionedProtocolData
+           (DictVersion unversionedProtocolDataCodec (,))
            app)
         Nothing
         (localAddressFromPath sockPath)
@@ -190,11 +189,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
+      (\DictVersion {} -> acceptableVersion)
       (simpleSingletonVersions
         UnversionedProtocol
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
+        UnversionedProtocolData
+        (DictVersion unversionedProtocolDataCodec (,))
         (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
@@ -367,8 +366,8 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           nullNetworkConnectTracers
                           (simpleSingletonVersions
                             UnversionedProtocol
-                            (NodeToNodeVersionData (NetworkMagic 0))
-                            (DictVersion nodeToNodeCodecCBORTerm)
+                            UnversionedProtocolData
+                            (DictVersion unversionedProtocolDataCodec (,))
                             app)
                           Nothing
                           (localAddressFromPath sockAddr)
@@ -419,11 +418,11 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
+      (\DictVersion {} -> acceptableVersion)
       (simpleSingletonVersions
         UnversionedProtocol
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
+        UnversionedProtocolData
+        (DictVersion unversionedProtocolDataCodec (,))
         (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
