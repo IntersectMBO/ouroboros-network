@@ -184,9 +184,6 @@ repro = TestSetup {
 
 tests :: TestTree
 tests = testGroup "RealTPraos ThreadNet" $
-    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
-    ]
-    `asTypeOf`
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       if enabled
@@ -195,6 +192,9 @@ tests = testGroup "RealTPraos ThreadNet" $
       else adjustOption fifthTestCount $
            testProperty name $ \setup ->
              prop_simple_real_tpraos_convergence setup
+    ]
+    `asTypeOf`
+    [ testProperty "repro" $ prop_simple_real_tpraos_convergence repro
     ]
 
 prop_simple_real_tpraos_convergence :: TestSetup -> Property
