@@ -13,6 +13,8 @@ import qualified Test.Version (tests)
 import qualified Test.Ouroboros.Network.MockNode (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
 import qualified Test.Ouroboros.Network.KeepAlive (tests)
+import qualified Ouroboros.Network.NodeToNode.Version.Test (tests)
+import qualified Ouroboros.Network.NodeToClient.Version.Test (tests)
 import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
@@ -54,6 +56,8 @@ tests =
   , Test.Ouroboros.Network.BlockFetch.tests
   , Ouroboros.Network.PeerSelection.Test.tests
   , Test.Ouroboros.Network.KeepAlive.tests
+  , Ouroboros.Network.NodeToNode.Version.Test.tests
+  , Ouroboros.Network.NodeToClient.Version.Test.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
