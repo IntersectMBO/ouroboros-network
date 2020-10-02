@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -44,8 +45,13 @@ module Ouroboros.Consensus.Util.Counting (
   , nonEmptyLast
   , nonEmptyInit
   , nonEmptyFromList
+  , nonEmptyWeaken
+  , nonEmptyStrictPrefixes
+  , nonEmptyMapOne
+  , nonEmptyMapTwo
   ) where
 
+import           Control.Applicative
 import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
 import           Data.SOP.Dict
@@ -264,6 +270,17 @@ atMostNonEmpty = \case
   Working with 'NonEmpty'
 -------------------------------------------------------------------------------}
 
+instance IsNonEmpty xs => Applicative (NonEmpty xs) where
+  pure x = case isNonEmpty (Proxy @xs) of
+             ProofNonEmpty{} -> NonEmptyOne x
+  (<*>) = go
+    where
+      go :: NonEmpty xs' (a -> b) -> NonEmpty xs' a -> NonEmpty xs' b
+      go (NonEmptyOne  f)    (NonEmptyOne  x)    = NonEmptyOne  (f x)
+      go (NonEmptyCons f _)  (NonEmptyOne  x)    = NonEmptyOne  (f x)
+      go (NonEmptyOne  f)    (NonEmptyCons x _)  = NonEmptyOne  (f x)
+      go (NonEmptyCons f fs) (NonEmptyCons x xs) = NonEmptyCons (f x) (go fs xs)
+
 -- | Analogue of 'head'
 nonEmptyHead :: NonEmpty xs a -> a
 nonEmptyHead (NonEmptyOne  x)   = x
@@ -292,3 +309,56 @@ nonEmptyFromList = go (sList @xs)
         (SCons, y:ys') -> NonEmptyCons y <$> go sList ys'
         (SCons, [])    -> Nothing
         (SNil,  _)     -> Nothing
+
+nonEmptyWeaken :: NonEmpty xs a -> AtMost xs a
+nonEmptyWeaken = go
+  where
+    go :: NonEmpty xs a -> AtMost xs a
+    go (NonEmptyOne  x)    = AtMostCons x AtMostNil
+    go (NonEmptyCons x xs) = AtMostCons x (go xs)
+
+-- | A strict prefixes
+--
+-- >    nonEmptyStrictPrefixes (fromJust (nonEmptyFromList [1..4]))
+-- > == [ NonEmptyOne  1
+-- >    , NonEmptyCons 1 $ NonEmptyOne  2
+-- >    , NonEmptyCons 1 $ NonEmptyCons 2 $ NonEmptyOne 3
+-- >    ]
+nonEmptyStrictPrefixes :: NonEmpty xs a -> [NonEmpty xs a]
+nonEmptyStrictPrefixes = go
+  where
+    go :: NonEmpty xs a -> [NonEmpty xs a]
+    go (NonEmptyOne  _)    = []
+    go (NonEmptyCons x xs) = NonEmptyOne x : map (NonEmptyCons x) (go xs)
+
+-- | Apply the specified function to exactly one element
+nonEmptyMapOne :: forall m xs a. Alternative m
+               => (a -> m a) -> NonEmpty xs a -> m (NonEmpty xs a)
+nonEmptyMapOne f = go
+  where
+    go :: NonEmpty xs' a -> m (NonEmpty xs' a)
+    go (NonEmptyOne  x)    = NonEmptyOne <$> f x
+    go (NonEmptyCons x xs) = Foldable.asum [
+          (\x' -> NonEmptyCons x' xs) <$> f x
+        , NonEmptyCons x <$> go xs
+        ]
+
+-- | Variation on 'nonEmptyMapOne' where we try to apply the function to
+-- /pairs/ of elements
+nonEmptyMapTwo :: forall m xs a. Alternative m
+               => (a -> m a) -- Used when we reached the end of the list
+               -> (a -> a -> m (a, a))
+               -> NonEmpty xs a -> m (NonEmpty xs a)
+nonEmptyMapTwo f g = go
+  where
+    go :: NonEmpty xs' a -> m (NonEmpty xs' a)
+    go (NonEmptyOne x) =
+        NonEmptyOne <$> f x
+    go (NonEmptyCons x xs@(NonEmptyOne y)) = Foldable.asum [
+          (\(x', y') -> NonEmptyCons x' (NonEmptyOne y')) <$> g x y
+        , NonEmptyCons x <$> go xs
+        ]
+    go (NonEmptyCons x xs@(NonEmptyCons y zs)) = Foldable.asum [
+          (\(x', y') -> NonEmptyCons x' (NonEmptyCons y' zs)) <$> g x y
+        , NonEmptyCons x <$> go xs
+        ]

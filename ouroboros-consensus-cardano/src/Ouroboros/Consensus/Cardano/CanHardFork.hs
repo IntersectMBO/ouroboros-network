@@ -464,12 +464,14 @@ translateLedgerViewByronToShelleyWrapper ::
      forall era.
      RequiringBoth
        WrapLedgerConfig
-       (TranslateForecast WrapLedgerView)
+       (TranslateForecast LedgerState WrapLedgerView)
        ByronBlock
        (ShelleyBlock era)
 translateLedgerViewByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-      TranslateForecast $ \_epochNo _forecastFor _finalByronView ->
+      TranslateForecast $ \_bound _forecastFor _currentByronState -> return $
+        -- TODO: This is wrong, we should limit look-ahead.
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/2657>
         WrapTickedLedgerView $
           TickedPraosLedgerView $
             SL.mkInitialShelleyLedgerView

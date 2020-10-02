@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Util (
   , takeUntil
   , groupOn
   , groupSplit
+  , splits
     -- * Safe variants of existing base functions
   , lastMaybe
   , safeMaximum
@@ -223,6 +224,19 @@ groupSplit f = \case
         | otherwise = (b, reverse acc) : go b' [c] as
       where
         (b', c) = f a
+
+-- | Focus on one element in the list
+--
+-- E.g.
+--
+-- >    splits [1..3]
+-- > == [ ([]    , 1 , [2,3])
+-- >    , ([1]   , 2 , [3]  )
+-- >    , ([1,2] , 3 , []   )
+-- >    ]
+splits :: [a] -> [([a], a, [a])]
+splits []     = []
+splits (a:as) = ([], a, as) : map (\(xs, y, zs) -> (a:xs, y, zs)) (splits as)
 
 {-------------------------------------------------------------------------------
   Safe variants of existing base functions

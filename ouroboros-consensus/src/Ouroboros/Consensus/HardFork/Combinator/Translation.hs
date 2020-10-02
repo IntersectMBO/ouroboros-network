@@ -21,9 +21,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
 -------------------------------------------------------------------------------}
 
 data EraTranslation xs = EraTranslation {
-      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))            xs
-    , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState))      xs
-    , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (TranslateForecast WrapLedgerView)) xs
+      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))       xs
+    , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState)) xs
+    , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (TranslateForecast LedgerState WrapLedgerView)) xs
     }
   deriving NoUnexpectedThunks
        via OnlyCheckIsWHNF "EraTranslation" (EraTranslation xs)

@@ -38,7 +38,7 @@ data family Ticked st :: Type
 data instance Ticked () = TickedTrivial
   deriving (Show)
 
-data instance Ticked (K a x) = TickedK (Ticked a)
+newtype instance Ticked (K a x) = TickedK { getTickedK :: Ticked a }
 
 {-------------------------------------------------------------------------------
   Forwarding type class instances

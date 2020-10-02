@@ -131,6 +131,7 @@ test-suite test-consensus
   main-is:             Main.hs
   other-modules:
                        Test.Consensus.BlockchainTime.Simple
+                       Test.Consensus.HardFork.Forecast
                        Test.Consensus.HardFork.History
                        Test.Consensus.HardFork.Infra
                        Test.Consensus.HardFork.Summary

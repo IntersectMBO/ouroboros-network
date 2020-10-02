@@ -11,54 +11,31 @@
 
 -- | Infrastructure shared by the various 'HardFork' tests
 module Test.Consensus.HardFork.Infra (
-    -- * Generic QuickCheck utilities
-    checkGenerator
-  , checkShrinker
-  , checkInvariant
     -- * Generate HardFork shape
-  , Era(..)
+    Era(..)
   , Eras(..)
+  , eraIndices
   , chooseEras
   , erasMapStateM
   , erasUnfoldAtMost
     -- * Era-specified generators
   , genEraParams
   , genStartOfNextEra
+  , genShape
+  , genSummary
   ) where
 
-import           Control.Monad.Except
 import           Data.Kind (Type)
+import           Data.Maybe (fromMaybe)
 import           Data.SOP.Strict
 import           Data.Word
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (elements)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
-
-import           Test.Util.QuickCheck
-
-{-------------------------------------------------------------------------------
-  Generic QuickCheck utilities
--------------------------------------------------------------------------------}
-
--- | Test the generator
---
--- Uses explicit 'forAll' as we don't want to assume a correct shrinker.
-checkGenerator :: (Arbitrary a, Show a) => (a -> Property) -> Property
-checkGenerator p = forAll arbitrary $ p
-
--- | Test the shrinker
---
--- Uses explicit 'forAll': don't shrink when testing the shrinker
-checkShrinker :: (Arbitrary a, Show a) => (a -> Property) -> Property
-checkShrinker p = forAll arbitrary $ conjoin . map p . shrink
-
--- | Check invariant
-checkInvariant :: (a -> Except String ()) -> (a -> Property)
-checkInvariant f = expectRight () . runExcept . f
 
 {-------------------------------------------------------------------------------
   Generate hard fork shape
@@ -73,6 +50,9 @@ data Era = Era {
 data Eras :: [Type] -> Type where
     -- We guarantee to have at least one era
     Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
+
+eraIndices :: Eras xs -> NP (K Era) xs
+eraIndices (Eras eras) = getExactly eras
 
 deriving instance Show (Eras xs)
 
@@ -158,3 +138,32 @@ genStartOfNextEra startOfEra HF.EraParams{..} =
         case mBound of
           HF.LowerBound e -> (\n -> HF.addEpochs n e         ) <$> choose (0, 10)
           HF.NoLowerBound -> (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)
+
+genShape :: Eras xs -> Gen (HF.Shape xs)
+genShape eras = HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
+  where
+    genParams :: Era -> EpochNo -> Gen (HF.EraParams, EpochNo)
+    genParams _era startOfThis = do
+        params      <- genEraParams      startOfThis
+        startOfNext <- genStartOfNextEra startOfThis params
+        -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
+        -- era. This means we should not be generating any events for any
+        -- succeeding eras, but to determine the /shape/ of the eras, and
+        -- set subsequent lower bounds, we just need to make sure that we
+        -- generate a valid shape: the next era must start after this one.
+        return (params, fromMaybe (succ startOfThis) startOfNext)
+
+genSummary :: Eras xs -> Gen (HF.Summary xs)
+genSummary is =
+    HF.Summary <$> erasUnfoldAtMost genEraSummary is HF.initBound
+  where
+    genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.EraEnd)
+    genEraSummary _era lo = do
+        params <- genEraParams (HF.boundEpoch lo)
+        hi     <- genUpperBound lo params
+        return (HF.EraSummary lo hi params, hi)
+
+    genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.EraEnd
+    genUpperBound lo params = do
+        startOfNextEra <- genStartOfNextEra (HF.boundEpoch lo) params
+        return $ HF.mkEraEnd params lo startOfNextEra

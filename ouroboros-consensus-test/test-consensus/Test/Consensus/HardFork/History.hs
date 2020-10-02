@@ -66,26 +66,24 @@ import           Test.Util.QuickCheck
 --   b. If the event is outside of safe zone, we expect the conversion to throw
 --      a 'PastHorizonException'.
 tests :: TestTree
-tests = testGroup "HardForkHistory" [
-      testGroup "Chain" [
-          testGroup "Sanity" [
-              testProperty "generator" $ checkGenerator $ \ArbitraryChain{..} ->
-                let ArbitraryParams{..} = arbitraryParams in
-                checkInvariant HF.invariantShape arbitraryChainShape
-            , testProperty "shrinker"  $ checkShrinker $ \ArbitraryChain{..} ->
-                let ArbitraryParams{..} = arbitraryParams in
-                checkInvariant HF.invariantShape arbitraryChainShape
-            ]
-        , testGroup "Conversions" [
-              testProperty "summarizeInvariant"   summarizeInvariant
-            , testProperty "eventSlotToEpoch"     eventSlotToEpoch
-            , testProperty "eventEpochToSlot"     eventEpochToSlot
-            , testProperty "eventSlotToWallclock" eventSlotToWallclock
-            , testProperty "eventWallclockToSlot" eventWallclockToSlot
-            , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
-            , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
-            , testProperty "query vs expr"        queryVsExprConsistency
-            ]
+tests = testGroup "Chain" [
+      testGroup "Sanity" [
+          testProperty "generator" $ checkGenerator $ \ArbitraryChain{..} ->
+            let ArbitraryParams{..} = arbitraryParams in
+            checkInvariant HF.invariantShape arbitraryChainShape
+        , testProperty "shrinker"  $ checkShrinker $ \ArbitraryChain{..} ->
+            let ArbitraryParams{..} = arbitraryParams in
+            checkInvariant HF.invariantShape arbitraryChainShape
+        ]
+    , testGroup "Conversions" [
+          testProperty "summarizeInvariant"   summarizeInvariant
+        , testProperty "eventSlotToEpoch"     eventSlotToEpoch
+        , testProperty "eventEpochToSlot"     eventEpochToSlot
+        , testProperty "eventSlotToWallclock" eventSlotToWallclock
+        , testProperty "eventWallclockToSlot" eventWallclockToSlot
+        , testProperty "epochInfoSlotToEpoch" epochInfoSlotToEpoch
+        , testProperty "epochInfoEpochToSlot" epochInfoEpochToSlot
+        , testProperty "query vs expr"        queryVsExprConsistency
         ]
     ]
 
@@ -408,7 +406,7 @@ deriving instance Show ArbitraryChain
 
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
-      shape  <- HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
+      shape  <- genShape eras
       events <- genEvents eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
       rawIx  <- choose (0, length events - 1)
@@ -422,17 +420,6 @@ instance Arbitrary ArbitraryChain where
         , arbitraryDiffTime    = diff
         }
     where
-      genParams :: Era -> EpochNo -> Gen (HF.EraParams, EpochNo)
-      genParams _era startOfThis = do
-          params      <- genEraParams      startOfThis
-          startOfNext <- genStartOfNextEra startOfThis params
-          -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
-          -- era. This means we should not be generating any events for any
-          -- succeeding eras, but to determine the /shape/ of the eras, and
-          -- set subsequent lower bounds, we just need to make sure that we
-          -- generate a valid shape: the next era must start after this one.
-          return (params, fromMaybe (succ startOfThis) startOfNext)
-
       genDiffTime :: SlotLength -> Gen NominalDiffTime
       genDiffTime s = realToFrac <$> choose (0, s') `suchThat` (/= s')
         where
@@ -861,23 +848,24 @@ mockHardForkLedgerView :: SListI xs
                        -> Forecast (HardForkLedgerView_ (K ()) xs)
 mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
-      (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ ->
+      (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ -> return $
          TickedK TickedTrivial)
-      (mockState HF.initBound pss ts ess)
+      (HardForkState (mockState HF.initBound pss ts ess))
   where
     mockState :: HF.Bound
               -> Exactly  (x ': xs) HF.EraParams
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
-              -> Telescope (K Past) (Current (AnnForecast (K ()))) (x : xs)
+              -> Telescope (K Past) (Current (AnnForecast (K ()) (K ()))) (x : xs)
     mockState start (ExactlyCons ps _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
-            annForecastEraParams = ps
-          , annForecastNext      = atMostHead ts
-          , annForecast          = Forecast {
-                forecastAt  = tip es
+            annForecast      = Forecast {
+                forecastAt  = tip es -- forecast at tip of ledger
               , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
+          , annForecastState = K ()
+          , annForecastTip   = tip es
+          , annForecastEnd   = HF.mkUpperBound ps start <$> atMostHead ts
           }
     mockState start (ExactlyCons ps pss) (AtMostCons t ts) (NonEmptyCons _ ess) =
         TS (K (Past start end)) (mockState end pss ts ess)

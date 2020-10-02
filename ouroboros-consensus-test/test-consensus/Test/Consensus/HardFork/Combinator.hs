@@ -82,7 +82,7 @@ import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
 
 tests :: TestTree
-tests = testGroup "HardForkCombinator" [
+tests = testGroup "Consensus" [
       testProperty "simple convergence" $
         prop_simple_hfc_convergence
     ]
@@ -427,10 +427,10 @@ chainDepState_AtoB = InPairs.ignoringBoth $ Translate $ \_ _ ->
 ledgerView_AtoB ::
       RequiringBoth
         WrapLedgerConfig
-        (TranslateForecast WrapLedgerView)
+        (TranslateForecast LedgerState WrapLedgerView)
         BlockA
         BlockB
-ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ ->
+ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ -> return $
     WrapTickedLedgerView TickedTrivial
 
 injectTx_AtoB ::
