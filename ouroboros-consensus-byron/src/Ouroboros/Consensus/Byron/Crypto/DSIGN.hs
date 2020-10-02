@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -103,11 +104,11 @@ instance DSIGNAlgorithm ByronDSIGN where
           then Right ()
           else Left "Verification failed"
 
-    seedSizeDSIGN _ = 32
+    type SeedSizeDSIGN ByronDSIGN = 32
 
-    sizeVerKeyDSIGN _ = 64
-    sizeSignKeyDSIGN _ = 128
-    sizeSigDSIGN _ = 64
+    type SizeVerKeyDSIGN ByronDSIGN = 64
+    type SizeSignKeyDSIGN ByronDSIGN = 128
+    type SizeSigDSIGN ByronDSIGN = 64
 
     rawSerialiseVerKeyDSIGN (VerKeyByronDSIGN (VerificationKey vk)) = CC.unXPub vk
     rawSerialiseSignKeyDSIGN (SignKeyByronDSIGN (SigningKey sk)) = CC.unXPrv sk

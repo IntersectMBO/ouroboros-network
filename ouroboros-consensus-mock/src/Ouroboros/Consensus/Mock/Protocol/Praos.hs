@@ -58,7 +58,7 @@ import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), hashToBytes,
-                     hashWithSerialiser)
+                     hashWithSerialiser, sizeHash)
 import           Cardano.Crypto.Hash.MD5 (MD5)
 import           Cardano.Crypto.Hash.SHA256 (SHA256)
 import           Cardano.Crypto.KES.Class

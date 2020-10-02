@@ -45,10 +45,11 @@ import           Quiet (Quiet (..))
 import           Test.QuickCheck
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..))
+import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..), seedSizeDSIGN)
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashWithSerialiser)
 import           Cardano.Crypto.KES (KESAlgorithm (..))
-import           Cardano.Crypto.Seed (mkSeedFromBytes)
+import           Cardano.Crypto.Libsodium.MLockedBytes (mlsbFromByteString)
+import           Cardano.Crypto.Seed (getSeedBytes, mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
                      deriveVerKeyVRF, genKeyVRF, seedSizeVRF)
@@ -166,7 +167,8 @@ genCoreNode startKESPeriod = do
     delKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN (Crypto era))))
     stkKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN (Crypto era))))
     vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF   (Proxy @(VRF   (Crypto era))))
-    kesKey <- genKeyKES   <$> genSeed (seedSizeKES   (Proxy @(KES   (Crypto era))))
+    kesKey <- genKeyKES   <$> mlsbFromByteString . getSeedBytes
+                          <$> genSeed (seedSizeKES   (Proxy @(KES   (Crypto era))))
     let kesPub = deriveVerKeyKES kesKey
         sigma = SL.signedDSIGN
           @era
