@@ -48,11 +48,10 @@ import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalConnectionId,
                      NodeToClientVersionData (..), nodeToClientDictVersion)
-import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
-                     MiniProtocolParameters (..), NodeToNodeVersion (..),
-                     NodeToNodeVersionData (..), RemoteConnectionId,
-                     combineVersions, defaultMiniProtocolParameters,
-                     nodeToNodeDictVersion)
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
+                     NodeToNodeVersion (..), NodeToNodeVersionData (..),
+                     RemoteConnectionId, combineVersions,
+                     defaultMiniProtocolParameters, nodeToNodeDictVersion)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -235,7 +234,7 @@ run runargs@RunNodeArgs{..} =
 
     nodeToNodeVersionData = NodeToNodeVersionData
       { networkMagic  = rnNetworkMagic
-      , diffusionMode = InitiatorAndResponderDiffusionMode
+      , diffusionMode = daDiffusionMode rnDiffusionArguments
       }
     nodeToClientVersionData = NodeToClientVersionData
       { networkMagic = rnNetworkMagic }
