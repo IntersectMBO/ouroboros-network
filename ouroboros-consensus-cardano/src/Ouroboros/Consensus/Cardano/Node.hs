@@ -364,8 +364,8 @@ protocolInfoCardano genesisByron mSigThresh pVer sVer credssByron
     shape :: History.Shape (CardanoEras c)
     shape = History.Shape $
       exactlyTwo
-        (Byron.byronEraParams safeBeforeByron genesisByron)
-        (Shelley.shelleyEraParams genesisShelley)
+        (Byron.byronEraParams     safeBeforeByron      genesisByron)
+        (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
       where
         safeBeforeByron :: History.SafeBeforeEpoch
         safeBeforeByron =

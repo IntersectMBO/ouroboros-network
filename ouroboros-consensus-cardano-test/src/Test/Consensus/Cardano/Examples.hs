@@ -145,7 +145,7 @@ byronEraParams :: History.EraParams
 byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.ledgerConfig
 
 shelleyEraParams :: History.EraParams
-shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+shelleyEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
 
 transitionEpoch :: EpochNo
 transitionEpoch = 10

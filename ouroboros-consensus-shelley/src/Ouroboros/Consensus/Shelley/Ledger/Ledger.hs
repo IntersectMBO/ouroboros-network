@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyLedgerConfig (..)
   , mkShelleyLedgerConfig
   , shelleyEraParams
+  , shelleyEraParamsNeverHardForks
     -- * Auxiliary
   , getPParams
     -- * Serialisation
@@ -112,29 +113,37 @@ instance Era era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerGenesis   :: !(SL.ShelleyGenesis era)
+      shelleyLedgerGenesis :: !(SL.ShelleyGenesis era)
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
-    , shelleyLedgerGlobals   :: !SL.Globals
-      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
-      -- because it used very often.
-    , shelleyLedgerEraParams :: !HardFork.EraParams
+    , shelleyLedgerGlobals :: !SL.Globals
     }
   deriving (Generic, NoThunks)
 
-shelleyEraParams :: SL.ShelleyGenesis era -> HardFork.EraParams
-shelleyEraParams genesis = HardFork.EraParams {
+shelleyEraParams ::
+     HardFork.SafeBeforeEpoch
+  -> SL.ShelleyGenesis era
+  -> HardFork.EraParams
+shelleyEraParams safeBeforeEpoch genesis = HardFork.EraParams {
       eraEpochSize  = SL.sgEpochLength genesis
     , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
     , eraSafeZone   = HardFork.StandardSafeZone
                         stabilityWindow
-                        HardFork.NoLowerBound
+                        safeBeforeEpoch
     }
   where
     stabilityWindow =
         SL.computeStabilityWindow
           (SL.sgSecurityParam genesis)
           (SL.sgActiveSlotCoeff genesis)
+
+-- | Separate variant of 'shelleyEraParams' to be used for a Shelley-only chain.
+shelleyEraParamsNeverHardForks :: SL.ShelleyGenesis era -> HardFork.EraParams
+shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
+      eraEpochSize  = SL.sgEpochLength genesis
+    , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
+    , eraSafeZone   = HardFork.UnsafeIndefiniteSafeZone
+    }
 
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
@@ -143,9 +152,8 @@ mkShelleyLedgerConfig
   -> ShelleyLedgerConfig era
 mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
-        shelleyLedgerGenesis   = genesis
-      , shelleyLedgerGlobals   = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
-      , shelleyLedgerEraParams = shelleyEraParams genesis
+        shelleyLedgerGenesis = genesis
+      , shelleyLedgerGlobals = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
       }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era
@@ -356,7 +364,8 @@ instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
 
 instance HasHardForkHistory (ShelleyBlock era) where
   type HardForkIndices (ShelleyBlock era) = '[ShelleyBlock era]
-  hardForkSummary = neverForksHardForkSummary shelleyLedgerEraParams
+  hardForkSummary = neverForksHardForkSummary $
+      shelleyEraParamsNeverHardForks . shelleyLedgerGenesis
 
 {-------------------------------------------------------------------------------
   QueryLedger

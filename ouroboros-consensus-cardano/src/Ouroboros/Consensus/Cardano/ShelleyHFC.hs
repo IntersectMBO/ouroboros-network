@@ -35,7 +35,10 @@ type ShelleyBlockHFC era = HardForkBlock '[ShelleyBlock era]
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto era => NoHardForks (ShelleyBlock era) where
-  getEraParams            cfg = shelleyLedgerEraParams (configLedger cfg)
+  getEraParams =
+        shelleyEraParamsNeverHardForks
+      . shelleyLedgerGenesis
+      . configLedger
   toPartialConsensusConfig _  = tpraosParams
   toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
         shelleyLedgerConfig    = cfg
