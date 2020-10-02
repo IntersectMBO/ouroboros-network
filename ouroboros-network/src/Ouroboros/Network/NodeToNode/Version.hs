@@ -41,7 +41,7 @@ data NodeToNodeVersion
     | NodeToNodeV_4
     -- ^ Changes:
     --
-    -- * Added 'DiffusionMode' Handhskake argument.  Also from this version up
+    -- * Added 'DiffusionMode' Handshake argument.  Also from this version up
     -- the node will use duplex connections.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
