@@ -19,9 +19,6 @@ module Ouroboros.Consensus.Cardano.Node (
   , CardanoHardForkConstraints
   , MaxMajorProtVer (..)
   , TriggerHardFork (..)
-  , initialLedgerStateCardano
-  , ledgerConfigCardano
-  , mkPartialLedgerConfigShelley
     -- * SupportedNetworkProtocolVersion
   , pattern CardanoNodeToNodeVersion1
   , pattern CardanoNodeToNodeVersion2
@@ -416,80 +413,8 @@ protocolClientInfoCardano epochSlots = ProtocolClientInfo {
     }
 
 {-------------------------------------------------------------------------------
-  Extra utilities
+  Helpers
 -------------------------------------------------------------------------------}
-
--- | Create the initial 'LedgerState' based on the given Byron genesis config.
-initialLedgerStateCardano :: Byron.Genesis.Config -> LedgerState (CardanoBlock c)
-initialLedgerStateCardano =
-      HardForkLedgerState
-    . initHardForkState
-    . flip Byron.initByronLedgerState Nothing
-
--- | Create a 'LedgerConfig' for 'CardanoBlock'.
-ledgerConfigCardano ::
-     forall c.
-     -- Byron
-     Byron.Genesis.Config
-
-     -- Shelley
-  -> ShelleyGenesis (ShelleyEra c)
-  -> MaxMajorProtVer
-
-     -- Hard fork
-  -> TriggerHardFork -- ^ transition from Byron to Shelley
-  -> Maybe EpochNo   -- ^ lower bound on first Shelley epoch
-  -> TriggerHardFork -- ^ transition from Shelley to ShelleyMA
-
-  -> CardanoLedgerConfig c
-ledgerConfigCardano
-    -- Byron
-    genesisByron
-    -- Shelley
-    genesisShelley
-    maxMajorPV
-    -- HFC
-    byronTriggerHardFork
-    mbLowerBound
-    shelleyTriggerHardFork
-  =
-    HardForkLedgerConfig {
-        hardForkLedgerConfigShape  = shape
-      , hardForkLedgerConfigPerEra = PerEraLedgerConfig
-          (  WrapPartialLedgerConfig partialLedgerConfigByron
-          :* WrapPartialLedgerConfig partialLedgerConfigShelley
-          :* Nil
-          )
-      }
-  where
-    -- Byron
-
-    partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
-    partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig    = genesisByron
-        , byronTriggerHardFork = byronTriggerHardFork
-        }
-
-    -- Shelley
-
-    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
-    partialLedgerConfigShelley =
-        mkPartialLedgerConfigShelley
-          genesisShelley
-          maxMajorPV
-          shelleyTriggerHardFork
-
-    -- Cardano
-
-    shape :: History.Shape (CardanoEras c)
-    shape = History.Shape $
-      exactlyTwo
-        (Byron.byronEraParams safeBeforeByron genesisByron)
-        (Shelley.shelleyEraParams genesisShelley)
-
-    safeBeforeByron :: History.SafeBeforeEpoch
-    safeBeforeByron =
-        maybe History.NoLowerBound History.LowerBound mbLowerBound
 
 mkPartialLedgerConfigShelley ::
      ShelleyGenesis (ShelleyEra c)
@@ -507,10 +432,6 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorPV shelleyTriggerHardFork =
               maxMajorPV
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }
-
-{-------------------------------------------------------------------------------
-  Helpers
--------------------------------------------------------------------------------}
 
 -- | We are lucky that for Byron we can construct all the full configs from
 -- the partial ones, which means we can reconstruct the 'TopLevelConfig' for
