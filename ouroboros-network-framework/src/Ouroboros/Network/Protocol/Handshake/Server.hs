@@ -25,11 +25,13 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 handshakeServerPeer
   :: Ord vNumber
-  => VersionDataCodec extra vParams
+  => VersionDataCodec extra vParams vNumber agreedOptions
   -> (forall vData. extra vData -> vData -> vData -> Accept)
   -> Versions vNumber extra r
-  -> Peer (Handshake vNumber vParams) AsServer StPropose m (Either (RefuseReason vNumber) r)
-handshakeServerPeer VersionDataCodec {encodeData, decodeData} accVersion versions =
+  -> Peer (Handshake vNumber vParams)
+          AsServer StPropose m
+          (Either (RefuseReason vNumber) (r, agreedOptions))
+handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
@@ -54,7 +56,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} accVersion version
                            (Done TokDone $ Left vReason)
 
                 Right vData' ->
-                  case accVersion (versionExtra version) vData vData' of
+                  case acceptVersion (versionExtra version) vData vData' of
 
                     -- We agree on the version; send back the agreed version
                     -- number @vNumber@ and encoded data associated with our
@@ -62,7 +64,10 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} accVersion version
                     Accept ->
                       Yield (ServerAgency TokConfirm)
                             (MsgAcceptVersion vNumber (encodeData (versionExtra version) vData))
-                            (Done TokDone $ Right $ runApplication (versionApplication version) vData vData')
+                            (Done TokDone $ Right $
+                              ( runApplication (versionApplication version) vData vData'
+                              , getAgreedOptions (versionExtra version) vNumber vData'
+                              ))
 
                     -- We disagree on the version.
                     Refuse err ->

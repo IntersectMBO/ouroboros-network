@@ -246,7 +246,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         responderAddr
         unversionedHandshakeCodec
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptableVersion)
+        (\DictVersion {} -> acceptableVersion)
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do

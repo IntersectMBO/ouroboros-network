@@ -75,7 +75,7 @@ tryHandshake doHandshake = do
 
 -- | Common arguments for both 'Handshake' client & server.
 --
-data HandshakeArguments connectionId vNumber extra m application = HandshakeArguments {
+data HandshakeArguments connectionId vNumber extra m application agreedOptions = HandshakeArguments {
       -- | 'Handshake' tracer
       --
       haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
@@ -88,7 +88,7 @@ data HandshakeArguments connectionId vNumber extra m application = HandshakeArgu
       -- | A codec for protocol parameters.
       --
       haVersionDataCodec
-        ::  VersionDataCodec extra CBOR.Term,
+        ::  VersionDataCodec extra CBOR.Term vNumber agreedOptions,
 
       -- | versioned application aggreed upon with the 'Handshake' protocol.
       haVersions :: Versions vNumber extra application
@@ -108,8 +108,9 @@ runHandshakeClient
        )
     => MuxBearer m
     -> connectionId
-    -> HandshakeArguments connectionId vNumber extra m application
-    -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber)) application)
+    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
+                 (application, agreedOptions))
 runHandshakeClient bearer
                    connectionId
                    HandshakeArguments {
@@ -143,8 +144,10 @@ runHandshakeServer
     => MuxBearer m
     -> connectionId
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> HandshakeArguments connectionId vNumber extra m application
-    -> m (Either (HandshakeException (RefuseReason vNumber)) application)
+    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> m (Either
+           (HandshakeException (RefuseReason vNumber))
+           (application, agreedOptions))
 runHandshakeServer bearer
                    connectionId
                    acceptVersion
