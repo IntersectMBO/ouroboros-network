@@ -22,11 +22,12 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Exception
 import           Control.Tracer (Tracer)
 import           Data.Functor (void)
+import           Data.Maybe (maybeToList)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
-import           Network.Socket (SockAddr, AddrInfo)
+import           Network.Socket (AddrInfo, SockAddr)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket)
@@ -80,8 +81,10 @@ data DiffusionTracers = DiffusionTracers {
 -- | Network Node argumets
 --
 data DiffusionArguments = DiffusionArguments {
-      daAddresses    :: Either [Socket.Socket] [AddrInfo]
-      -- ^ sockets ready to accept connections or diffusion addresses
+      daIPv4Address  :: Maybe (Either Socket.Socket AddrInfo)
+      -- ^ IPv4 socket ready to accept connections or diffusion addresses
+    , daIPv6Address  :: Maybe (Either Socket.Socket AddrInfo)
+      -- ^ IPV4 socket ready to accept connections or diffusion addresses
     , daLocalAddress :: Either Socket.Socket FilePath
       -- ^ AF_UNIX socket ready to accept connections or address for local clients
     , daIpProducers  :: IPSubscriptionTarget
@@ -134,7 +137,8 @@ runDataDiffusion
     -> DiffusionApplications
     -> IO ()
 runDataDiffusion tracers
-                 DiffusionArguments { daAddresses
+                 DiffusionArguments { daIPv4Address
+                                    , daIPv6Address
                                     , daLocalAddress
                                     , daIpProducers
                                     , daDnsProducers
@@ -146,10 +150,8 @@ runDataDiffusion tracers
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
-
-        daAddresses' = case daAddresses of
-                            Left sds -> map Left sds
-                            Right as -> map (Right . Socket.addrAddress) as
+        addresses = maybeToList daIPv4Address
+                 ++ maybeToList daIPv6Address
 
     -- networking mutable state
     networkState <- newNetworkMutableState
@@ -168,7 +170,7 @@ runDataDiffusion tracers
           Async.withAsync (runLocalServer iocp networkLocalState) $ \_ ->
 
             -- fork servers for remote peers
-            withAsyncs (runServer snocket networkState <$> daAddresses') $ \_ ->
+            withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \_ ->
 
               -- fork ip subscription
               Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \_ ->
@@ -199,34 +201,66 @@ runDataDiffusion tracers
     -- applications instead of a 'MuxInitiatorAndResponderApplication'.
     -- This means we don't utilise full duplex connection.
     getInitiatorLocalAddresses :: SocketSnocket -> IO (LocalAddresses SockAddr)
-    getInitiatorLocalAddresses sn =
-      case daAddresses of
-           Left sds -> do
-               sockAddrs <- mapM (Snocket.getLocalAddr sn) sds
+    getInitiatorLocalAddresses sn = do
+        localIpv4 <-
+          case daIPv4Address of
+              Just (Right ipv4) -> do
+                return LocalAddresses
+                  { laIpv4 = Just (Socket.addrAddress ipv4)
+                  , laIpv6 = Nothing
+                  , laUnix = Nothing
+                  }
 
-               return $ LocalAddresses
-                 { laIpv4 = anyIPv4Addr sockAddrs
-                 , laIpv6 = anyIPv6Addr sockAddrs
-                 , laUnix = Nothing
-                 }
-           Right as ->
-             return $ LocalAddresses
-               { laIpv4 = anyIPv4Addr $ map Socket.addrAddress as
-               , laIpv6 = anyIPv6Addr $ map Socket.addrAddress as
-               , laUnix = Nothing
-               }
+              Just (Left ipv4Sock) -> do
+                 ipv4Addrs <- Snocket.getLocalAddr sn ipv4Sock
+                 return LocalAddresses
+                   { laIpv4 = anyIPv4Addr ipv4Addrs
+                   , laIpv6 = Nothing
+                   , laUnix = Nothing
+                   }
+
+              Nothing -> do
+                 return LocalAddresses
+                   { laIpv4 = Nothing
+                   , laIpv6 = Nothing
+                   , laUnix = Nothing
+                   }
+
+        localIpv6 <-
+          case daIPv6Address of
+            Just (Right ipv6) -> do
+              return LocalAddresses
+                { laIpv4 = Nothing
+                , laIpv6 = Just (Socket.addrAddress ipv6)
+                , laUnix = Nothing
+                }
+
+            Just (Left ipv6Sock) -> do
+              ipv6Addrs <- Snocket.getLocalAddr sn ipv6Sock
+              return LocalAddresses
+                { laIpv4 = Nothing
+                , laIpv6 = anyIPv6Addr ipv6Addrs
+                , laUnix = Nothing
+                }
+
+            Nothing -> do
+              return LocalAddresses
+                { laIpv4 = Nothing
+                , laIpv6 = Nothing
+                , laUnix = Nothing
+                  }
+
+        return (localIpv4 <> localIpv6)
       where
         -- Return an IPv4 address with an emphemeral portnumber if we use IPv4
-        anyIPv4Addr :: [SockAddr] -> Maybe SockAddr
-        anyIPv4Addr [] = Nothing
-        anyIPv4Addr ((Socket.SockAddrInet _ _) : _) = Just (Socket.SockAddrInet 0 0)
-        anyIPv4Addr (_ : sas) = anyIPv4Addr sas
+        anyIPv4Addr :: SockAddr -> Maybe SockAddr
+        anyIPv4Addr (Socket.SockAddrInet _ _) = Just (Socket.SockAddrInet 0 0)
+        anyIPv4Addr _ = Nothing
 
         -- Return an IPv6 address with an emphemeral portnumber if we use IPv6
-        anyIPv6Addr :: [SockAddr] -> Maybe SockAddr
-        anyIPv6Addr [] = Nothing
-        anyIPv6Addr ((Socket.SockAddrInet6 _ _ _ _ ) : _) = Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-        anyIPv6Addr (_ : sas) = anyIPv6Addr sas
+        anyIPv6Addr :: SockAddr -> Maybe SockAddr
+        anyIPv6Addr (Socket.SockAddrInet6 _ _ _ _ ) = Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
+        anyIPv6Addr _ = Nothing
 
     remoteErrorPolicy, localErrorPolicy :: ErrorPolicies
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies

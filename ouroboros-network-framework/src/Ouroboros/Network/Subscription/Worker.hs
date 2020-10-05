@@ -35,6 +35,7 @@ module Ouroboros.Network.Subscription.Worker
   , SubscriptionTrace (..)
   ) where
 
+import           Control.Applicative ((<|>))
 import           Control.Exception (SomeException (..))
 import qualified Control.Concurrent.STM as STM
 import           Control.Monad (forever, join, when, unless)
@@ -134,6 +135,13 @@ data LocalAddresses addr = LocalAddresses {
     -- | Local Unix address to use, Nothing indicates don't use Unix sockets
   , laUnix :: Maybe addr
   } deriving (Eq, Show)
+
+instance Semigroup (LocalAddresses addr) where
+    a <> b = LocalAddresses {
+        laIpv4 = laIpv4 a <|> laIpv4 b,
+        laIpv6 = laIpv6 a <|> laIpv6 b,
+        laUnix = laUnix a <|> laUnix b
+      }
 
 
 -- | Allocate a socket and connect to a peer, execute the continuation with
