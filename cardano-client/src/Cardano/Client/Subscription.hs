@@ -16,6 +16,7 @@ module Cardano.Client.Subscription (
   , RunMiniProtocol (..)
   , WithMuxBearer
   , ControlMessage (..)
+  , AgreedOptions
   , cChainSyncCodec
   , cStateQueryCodec
   , cTxSubmissionCodec
@@ -41,7 +42,7 @@ import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      NodeToClientVersionData (NodeToClientVersionData),
                      ncSubscriptionWorker, newNetworkMutableState,
                      versionedNodeToClientProtocols)
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion)
+import           Ouroboros.Network.NodeToClient (AgreedOptions, NodeToClientVersion)
 import           Ouroboros.Network.Protocol.Handshake.Version (DictVersion,
                      Versions, foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket
@@ -95,7 +96,7 @@ versionedProtocols ::
      -- 'OuroborosClientApplication', which does not include it.
   -> Versions
        NodeToClientVersion
-       DictVersion
+       (DictVersion NodeToClientVersion AgreedOptions)
        (OuroborosApplication appType LocalAddress bytes m a b)
 versionedProtocols codecConfig networkMagic callback =
     foldMapVersions applyVersion $
@@ -105,7 +106,7 @@ versionedProtocols codecConfig networkMagic callback =
          (NodeToClientVersion, BlockNodeToClientVersion blk)
       -> Versions
            NodeToClientVersion
-           DictVersion
+           (DictVersion NodeToClientVersion AgreedOptions)
            (OuroborosApplication appType LocalAddress bytes m a b)
     applyVersion (version, blockVersion) =
       versionedNodeToClientProtocols

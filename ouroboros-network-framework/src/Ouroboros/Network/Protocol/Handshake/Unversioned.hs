@@ -57,10 +57,10 @@ unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | Make a 'Versions' for an unversioned protocol. Only use this for
 -- tests and demos where proper versioning is excessive.
 --
-unversionedProtocol :: app -> Versions UnversionedProtocol DictVersion app
+unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol UnversionedProtocolData) app
 unversionedProtocol =
     simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
-                            (DictVersion unversionedProtocolDataCodec)
+      (DictVersion unversionedProtocolDataCodec (\_ _ -> UnversionedProtocolData))
 
 
 -- | 'Handshake' codec used in various tests.

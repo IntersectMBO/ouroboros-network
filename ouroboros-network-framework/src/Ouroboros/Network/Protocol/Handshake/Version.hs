@@ -121,13 +121,19 @@ data VersionMismatch vNum where
 data Dict constraint thing where
   Dict :: constraint thing => Dict constraint thing
 
-data DictVersion vData where
+-- | 'DictVersion' is used to instantiate the 'extra' param of 'Version'.
+-- 'hanshakeParams' is instatiated in either "Ouroboros.Network.NodeToNode" or
+-- "Ouroboros.Network.NodeToClient" to 'HandshakeParams'.
+--
+data DictVersion vNumber agreedOptions vData where
      DictVersion :: ( Typeable vData
                     , Acceptable vData
                     , Show vData
                     )
                  => CodecCBORTerm Text vData
-                 -> DictVersion vData
+                 -> (vNumber -> vData -> agreedOptions)
+                 -- ^ agreed vData
+                 -> DictVersion vNumber agreedOptions vData
 
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.

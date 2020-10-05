@@ -587,7 +587,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (Socket.addrAddress responderAddr)
         unversionedHandshakeCodec
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptableVersion)
+        (\DictVersion {} -> acceptableVersion)
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
@@ -730,7 +730,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         responderAddr
         unversionedHandshakeCodec
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptableVersion)
+        (\DictVersion {} -> acceptableVersion)
         (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
@@ -750,7 +750,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           responderAddr
           unversionedHandshakeCodec
           cborTermVersionDataCodec
-          (\(DictVersion _) -> acceptableVersion)
+          (\DictVersion {} -> acceptableVersion)
           (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
@@ -867,7 +867,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (Socket.addrAddress addr)
             unversionedHandshakeCodec
             cborTermVersionDataCodec
-            (\(DictVersion _) -> acceptableVersion)
+            (\DictVersion {} -> acceptableVersion)
             (unversionedProtocol (SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)

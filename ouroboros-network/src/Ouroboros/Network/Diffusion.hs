@@ -43,6 +43,7 @@ import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
                                               , AcceptedConnectionsLimit (..)
                                               , AcceptConnectionsPolicyTrace (..)
+                                              , DiffusionMode (..)
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
@@ -87,19 +88,21 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ IPV4 socket ready to accept connections or diffusion addresses
     , daLocalAddress :: Either Socket.Socket FilePath
       -- ^ AF_UNIX socket ready to accept connections or address for local clients
-    , daIpProducers  :: IPSubscriptionTarget
+    , daIpProducers   :: IPSubscriptionTarget
       -- ^ ip subscription addresses
-    , daDnsProducers :: [DnsSubscriptionTarget]
+    , daDnsProducers  :: [DnsSubscriptionTarget]
       -- ^ list of domain names to subscribe to
     , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
       -- ^ parameters for limiting number of accepted connections
+    , daDiffusionMode :: DiffusionMode
+      -- ^ run in initiator only mode
     }
 
 data DiffusionApplications = DiffusionApplications {
 
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
-                                       DictVersion
+                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
                                        (OuroborosApplication
                                          ResponderMode SockAddr
                                          ByteString IO Void ())
@@ -107,7 +110,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
-                                       DictVersion 
+                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
                                        (OuroborosApplication
                                          InitiatorMode SockAddr
                                          ByteString IO () Void)
@@ -115,7 +118,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
-                                       DictVersion
+                                       (DictVersion NodeToClientVersion NodeToClient.AgreedOptions)
                                        (OuroborosApplication
                                          ResponderMode LocalAddress
                                          ByteString IO Void ())
@@ -143,6 +146,7 @@ runDataDiffusion tracers
                                     , daIpProducers
                                     , daDnsProducers
                                     , daAcceptedConnectionsLimit
+                                    , daDiffusionMode
                                     }
                  applications@DiffusionApplications { daErrorPolicies } =
     withIOManager $ \iocp -> do
@@ -169,18 +173,22 @@ runDataDiffusion tracers
           -- fork server for local clients
           Async.withAsync (runLocalServer iocp networkLocalState) $ \_ ->
 
-            -- fork servers for remote peers
-            withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \_ ->
-
               -- fork ip subscription
               Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \_ ->
 
                 -- fork dns subscriptions
                 withAsyncs (runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers) $ \_ ->
 
-                  -- If any other threads throws 'cleanNetowrkStateThread' and
-                  -- 'cleanLocalNetworkStateThread' threads will will finish.
-                  Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
+                  case daDiffusionMode of
+                    InitiatorAndResponderDiffusionMode ->
+                      -- fork servers for remote peers
+                      withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \_ ->
+                        -- If any other threads throws 'cleanNetowrkStateThread' and
+                        -- 'cleanLocalNetworkStateThread' threads will will finish.
+                        Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
+
+                    InitiatorOnlyDiffusionMode ->
+                      Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
 
   where
     DiffusionTracers { dtIpSubscriptionTracer

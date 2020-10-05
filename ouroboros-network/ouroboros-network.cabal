@@ -243,6 +243,8 @@ test-suite test-network
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
                        Ouroboros.Network.PeerSelection.Test
+                       Ouroboros.Network.NodeToNode.Version.Test
+                       Ouroboros.Network.NodeToClient.Version.Test
 
                        Test.AnchoredFragment
                        Test.Chain

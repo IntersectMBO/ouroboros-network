@@ -27,10 +27,14 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 handshakeClientPeer
   :: Ord vNumber
-  => VersionDataCodec extra CBOR.Term
+  => VersionDataCodec extra CBOR.Term vNumber agreedOptions
   -> Versions vNumber extra r
-  -> Peer (Handshake vNumber CBOR.Term) AsClient StPropose m (Either (HandshakeClientProtocolError vNumber) r)
-handshakeClientPeer VersionDataCodec {encodeData, decodeData} versions =
+  -> Peer (Handshake vNumber CBOR.Term)
+          AsClient StPropose m
+          (Either
+            (HandshakeClientProtocolError vNumber)
+            (r, agreedOptions))
+handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
@@ -52,7 +56,11 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData} versions =
                 Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
-                Done TokDone $ Right $ runApplication (versionApplication version) vData vData'
+                -- TODO: we should check that we agree on received @vData'@,
+                -- this might be less trivial than testing for equality.
+                Done TokDone $ Right $ ( runApplication (versionApplication version) vData vData'
+                                       , getAgreedOptions (versionExtra version) vNumber vData'
+                                       )
 
 encodeVersions
   :: forall vNumber extra r vParams.

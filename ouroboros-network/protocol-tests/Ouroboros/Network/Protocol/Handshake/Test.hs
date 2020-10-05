@@ -12,7 +12,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (nub)
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Map as Map
 import           GHC.Generics
 
@@ -205,16 +205,22 @@ instance CoArbitrary Data_2 where
 --
 genValidVersion
   :: VersionNumber
-  -> Gen (Sigma (Version DictVersion Bool))
+  -> Gen (Sigma (Version (DictVersion VersionNumber ()) Bool))
 genValidVersion Version_0 = do
   (d0 :: Data_0) <- arbitrary
-  return $ Sigma d0 (Version (Application (==)) (DictVersion data0CodecCBORTerm))
+  return $ Sigma d0 (Version
+                      (Application (==))
+                      (DictVersion data0CodecCBORTerm (\_ _ -> ())))
 genValidVersion Version_1 = do
   (d1 :: Data_1) <- arbitrary
-  return $ Sigma d1 (Version (Application (==)) (DictVersion data1CodecCBORTerm))
+  return $ Sigma d1 (Version
+                      (Application (==))
+                      (DictVersion data1CodecCBORTerm (\_ _ -> ())))
 genValidVersion Version_2 = do
   (d2 :: Data_2) <- arbitrary
-  return $ Sigma d2 (Version (Application (==)) (DictVersion data2CodecCBORTerm))
+  return $ Sigma d2 (Version
+                      (Application (==))
+                      (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 
 
 -- |
@@ -222,36 +228,48 @@ genValidVersion Version_2 = do
 --
 genInvalidVersion
   :: VersionNumber
-  -> Gen (Sigma (Version DictVersion Bool))
+  -> Gen (Sigma (Version (DictVersion VersionNumber ()) Bool))
 genInvalidVersion Version_0 = arbitrary >>= \b ->
   if b
     then do
       (d1 :: Data_1) <- arbitrary
-      return $ Sigma d1 (Version (Application (==)) (DictVersion data1CodecCBORTerm))
+      return $ Sigma d1 (Version
+                          (Application (==))
+                          (DictVersion data1CodecCBORTerm (\_ _ -> ())))
     else do
       (d2 :: Data_2) <- arbitrary
-      return $ Sigma d2 (Version (Application (==)) (DictVersion data2CodecCBORTerm))
+      return $ Sigma d2 (Version
+                          (Application (==))
+                          (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 genInvalidVersion Version_1 = arbitrary >>= \b ->
   if b
     then do
       (d0 :: Data_0) <- arbitrary
-      return $ Sigma d0 (Version (Application (==)) (DictVersion data0CodecCBORTerm))
+      return $ Sigma d0 (Version
+                          (Application (==))
+                          (DictVersion data0CodecCBORTerm (\_ _ -> ())))
     else do
       (d2 :: Data_2) <- arbitrary
-      return $ Sigma d2 (Version (Application (==)) (DictVersion data2CodecCBORTerm))
+      return $ Sigma d2 (Version
+                          (Application (==))
+                          (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 genInvalidVersion Version_2 = arbitrary >>= \b ->
   if b
     then do
       (d0 :: Data_0) <- arbitrary
-      return $ Sigma d0 (Version (Application (==)) (DictVersion data0CodecCBORTerm))
+      return $ Sigma d0 (Version
+                          (Application (==))
+                          (DictVersion data0CodecCBORTerm (\_ _ -> ())))
     else do
       (d1 :: Data_1) <- arbitrary
-      return $ Sigma d1 (Version (Application (==)) (DictVersion data1CodecCBORTerm))
+      return $ Sigma d1 (Version
+                          (Application (==))
+                          (DictVersion data1CodecCBORTerm (\_ _ -> ())))
 
 -- |
 -- Generate valid @Versions@.
 --
-genValidVersions :: Gen (Versions VersionNumber DictVersion Bool)
+genValidVersions :: Gen (Versions VersionNumber (DictVersion VersionNumber ()) Bool)
 genValidVersions = do
   vns <- nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
   vs <- traverse genValidVersion vns
@@ -260,18 +278,18 @@ genValidVersions = do
 -- |
 -- Generate possible invalid @Versions@.
 --
-genVersions :: Gen (Versions VersionNumber DictVersion Bool)
+genVersions :: Gen (Versions VersionNumber (DictVersion VersionNumber ()) Bool)
 genVersions = do
   vns <- nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
   vs <- traverse (\v -> oneof [genValidVersion v, genInvalidVersion v]) vns
   return $ Versions $ Map.fromList $ zip vns vs
 
 newtype ArbitraryValidVersions = ArbitraryValidVersions {
-      runArbitraryValidVersions :: Versions VersionNumber DictVersion Bool
+      runArbitraryValidVersions :: Versions VersionNumber (DictVersion VersionNumber ()) Bool
     }
 
 instance Show ArbitraryValidVersions where
-    show (ArbitraryValidVersions (Versions vs)) = show $ map (\(vn, Sigma vData (Version _ (DictVersion _))) -> (vn, show vData)) $ Map.toList vs
+    show (ArbitraryValidVersions (Versions vs)) = show $ map (\(vn, Sigma vData (Version _ DictVersion {})) -> (vn, show vData)) $ Map.toList vs
 
 instance Arbitrary ArbitraryValidVersions where
     arbitrary = ArbitraryValidVersions <$> genValidVersions
@@ -298,13 +316,13 @@ prop_shrink_ArbitraryValidVersions a = all id
 --
 data ArbitraryVersions =
   ArbitraryVersions
-    (Versions VersionNumber DictVersion Bool)
-    (Versions VersionNumber DictVersion Bool)
+    (Versions VersionNumber (DictVersion VersionNumber ()) Bool)
+    (Versions VersionNumber (DictVersion VersionNumber ()) Bool)
 
 instance Show ArbitraryVersions where
     show (ArbitraryVersions (Versions vs) (Versions vs')) = "ArbitraryVersions " ++ fn vs ++ " " ++ fn vs'
          where
-           fn x = show $ map (\(vn, Sigma vData (Version _ (DictVersion _))) -> (vn, show vData)) $ Map.toList x
+           fn x = show $ map (\(vn, Sigma vData (Version _ DictVersion {})) -> (vn, show vData)) $ Map.toList x
 
 instance Arbitrary ArbitraryVersions where
     arbitrary = frequency
@@ -323,10 +341,10 @@ instance Arbitrary ArbitraryVersions where
 -- |
 -- Check if a @'ProtocolVersion' 'VersionNumber' r@ is valid.
 --
-validVersion :: VersionNumber -> Sigma (Version DictVersion Bool) -> Bool
-validVersion Version_0 (Sigma d (Version _ (DictVersion _))) = isJust (cast d :: Maybe Data_0)
-validVersion Version_1 (Sigma d (Version _ (DictVersion _))) = isJust (cast d :: Maybe Data_1)
-validVersion Version_2 (Sigma d (Version _ (DictVersion _))) = isJust (cast d :: Maybe Data_2)
+validVersion :: VersionNumber -> Sigma (Version (DictVersion VersionNumber ()) Bool) -> Bool
+validVersion Version_0 (Sigma d (Version _ DictVersion {})) = isJust (cast d :: Maybe Data_0)
+validVersion Version_1 (Sigma d (Version _ DictVersion {})) = isJust (cast d :: Maybe Data_1)
+validVersion Version_2 (Sigma d (Version _ DictVersion {})) = isJust (cast d :: Maybe Data_2)
 
 
 prop_arbitrary_ArbitraryVersions :: ArbitraryVersions -> Property
@@ -361,8 +379,8 @@ prop_arbitrary_ArbitraryVersions (ArbitraryVersions (Versions vs) (Versions vs')
 prop_connect :: ArbitraryVersions -> Property
 prop_connect (ArbitraryVersions clientVersions serverVersions) =
   let (serverRes, clientRes) = pureHandshake
-        (\(DictVersion _) -> Dict)
-        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} -> Dict)
+        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
         serverVersions
         clientVersions
   in case runSimOrThrow
@@ -372,12 +390,12 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 clientVersions)
               (handshakeServerPeer
                 cborTermVersionDataCodec
-                (\(DictVersion _) -> acceptableVersion)
+                (\DictVersion {} -> acceptableVersion)
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
-           maybe False id clientRes === either (const False) id clientRes'
+           fromMaybe False clientRes === either (const False) fst clientRes'
         .&&.
-           maybe False id serverRes === either (const False) id serverRes'
+           fromMaybe False serverRes === either (const False) fst serverRes'
 --
 -- Properties using a channel
 --
@@ -389,13 +407,13 @@ prop_channel :: ( MonadAsync m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
-             -> Versions VersionNumber DictVersion Bool
-             -> Versions VersionNumber DictVersion Bool
+             -> Versions VersionNumber (DictVersion VersionNumber ()) Bool
+             -> Versions VersionNumber (DictVersion VersionNumber ()) Bool
              -> m Property
 prop_channel createChannels clientVersions serverVersions =
   let (serverRes, clientRes) = pureHandshake
-        (\(DictVersion _) -> Dict)
-        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} -> Dict)
+        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
         serverVersions
         clientVersions
   in do
@@ -407,14 +425,14 @@ prop_channel createChannels clientVersions serverVersions =
           clientVersions)
         (handshakeServerPeer
           cborTermVersionDataCodec
-          (\(DictVersion _) -> acceptableVersion)
+          (\DictVersion {} -> acceptableVersion)
           serverVersions)
     pure $
       case (clientRes', serverRes') of
         -- buth succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right c, Right s) -> Just c === clientRes
-                         .&&. Just s === serverRes
+        (Right c, Right s) -> Just (fst c) === clientRes
+                         .&&. Just (fst s) === serverRes
 
         -- both failed
         (Left{}, Left{})   -> property True
@@ -460,7 +478,7 @@ prop_channel_asymmetric
        , MonadST m
        )
     => m (Channel m ByteString, Channel m ByteString)
-    -> Versions VersionNumber DictVersion Bool
+    -> Versions VersionNumber (DictVersion VersionNumber ()) Bool
     -- ^ client versions
     -> m Property
 prop_channel_asymmetric createChannels clientVersions = do
@@ -475,18 +493,19 @@ prop_channel_asymmetric createChannels clientVersions = do
           clientVersions)
         (handshakeServerPeer
           cborTermVersionDataCodec
-          (\(DictVersion _) -> acceptableVersion)
+          (\DictVersion {} -> acceptableVersion)
           serverVersions)
     pure $
       case (clientRes', serverRes') of
-        (Right c, Right s) ->      Just c === clientRes
+        (Right (c, _), Right (s, _))
+                           ->      Just c === clientRes
                               .&&. Just s === serverRes
         (Left{}, Left{})   -> property True
         _                  -> property False
 
   where
     -- server versions
-    serverVersions :: Versions VersionNumber DictVersion Bool
+    serverVersions :: Versions VersionNumber (DictVersion VersionNumber ()) Bool
     serverVersions =
       Versions
         $ Map.singleton
@@ -494,7 +513,7 @@ prop_channel_asymmetric createChannels clientVersions = do
             (Sigma
               (Data_1 True)
               (Version (Application (==))
-              (DictVersion data1CodecCBORTerm)))
+              (DictVersion data1CodecCBORTerm (\_ _ -> ()))))
 
     -- This codec does not know how to decode 'Version_0' and 'Version_2'.
     versionNumberCodec' :: CodecCBORTerm (String, Maybe Int) VersionNumber
@@ -509,8 +528,8 @@ prop_channel_asymmetric createChannels clientVersions = do
 
     (serverRes, clientRes) =
       pureHandshake
-        (\(DictVersion _) -> Dict)
-        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} -> Dict)
+        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
         serverVersions
         clientVersions
 
@@ -557,7 +576,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) whe
   arbitrary = oneof
     [     AnyMessageAndAgency (ClientAgency TokPropose)
         . MsgProposeVersions
-        . fmap (\(Sigma vData (Version _ (DictVersion codec))) -> encodeTerm codec vData)
+        . fmap (\(Sigma vData (Version _ (DictVersion codec _))) -> encodeTerm codec vData)
         . getVersions
       <$> genVersions
 
@@ -574,7 +593,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) whe
       genValidVersion' :: Gen (VersionNumber, CBOR.Term)
       genValidVersion' = do
         vn <- arbitrary
-        Sigma vData (Version _ (DictVersion codec)) <- genValidVersion vn
+        Sigma vData (Version _ (DictVersion codec _)) <- genValidVersion vn
         pure (vn, encodeTerm codec vData)
 
 
