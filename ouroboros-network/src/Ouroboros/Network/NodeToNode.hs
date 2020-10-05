@@ -624,11 +624,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
             $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
                   -> Just misconfiguredPeer
 
-          -- exception thrown by `runPeerWithLimits`
-        , ErrorPolicy
-            $ \(_ :: ProtocolLimitFailure)
-                   -> Just theyBuggyOrEvil
-
           -- deserialisation failure; this means that the remote peer is either
           -- buggy, adversarial, or the connection return garbage.  In the last
           -- case it's also good to shutdown both the consumer and the
