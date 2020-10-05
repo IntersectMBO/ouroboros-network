@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   ) where
 
 import           Control.Monad
+import           Control.Monad.Except (Except, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
@@ -37,6 +38,9 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
+                     addSlots)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.RedundantConstraints
@@ -469,10 +473,45 @@ translateLedgerViewByronToShelleyWrapper ::
        (ShelleyBlock era)
 translateLedgerViewByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-      TranslateForecast $ \_bound _forecastFor _currentByronState -> return $
-        -- TODO: This is wrong, we should limit look-ahead.
-        -- <https://github.com/input-output-hk/ouroboros-network/issues/2657>
-        WrapTickedLedgerView $
-          TickedPraosLedgerView $
-            SL.mkInitialShelleyLedgerView
-              (shelleyLedgerGenesis cfgShelley)
+      TranslateForecast (forecast cfgShelley)
+  where
+    -- We ignore the Byron ledger view and create a new Shelley.
+    --
+    -- The full Shelley forecast range (stability window) starts from the first
+    -- slot of the Shelley era, no matter how many slots there are between the
+    -- Byron ledger and the first Shelley slot. Note that this number of slots
+    -- is still guaranteed to be less than the forecast range of the HFC in the
+    -- Byron era.
+    forecast ::
+         ShelleyLedgerConfig era
+      -> Bound
+      -> SlotNo
+      -> LedgerState ByronBlock
+      -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock era)))
+    forecast cfgShelley bound forecastFor currentByronState
+        | forecastFor < maxFor
+        = return $
+            WrapTickedLedgerView $ TickedPraosLedgerView $
+              SL.mkInitialShelleyLedgerView
+                (shelleyLedgerGenesis cfgShelley)
+        | otherwise
+        = throwError $ OutsideForecastRange {
+              outsideForecastAt     = ledgerTipSlot currentByronState
+            , outsideForecastMaxFor = maxFor
+            , outsideForecastFor    = forecastFor
+            }
+      where
+        globals = shelleyLedgerGlobals cfgShelley
+        swindow = SL.stabilityWindow globals
+
+        -- This is the exclusive upper bound of the forecast range
+        --
+        -- If Shelley's stability window is 0, it means we can't forecast /at
+        -- all/ in the Shelley era. Not even to the first slot in the Shelley
+        -- era! Remember that forecasting to slot @S@ means forecasting the
+        -- ledger view obtained from the ledger state /after/ applying the block
+        -- with slot @S@. If the stability window is 0, we can't even forecast
+        -- after the very first "virtual" Shelley block, meaning we can't
+        -- forecast into the Shelley era when still in the Byron era.
+        maxFor :: SlotNo
+        maxFor = addSlots swindow (boundSlot bound)
