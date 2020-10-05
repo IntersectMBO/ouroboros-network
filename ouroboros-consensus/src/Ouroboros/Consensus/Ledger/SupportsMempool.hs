@@ -32,8 +32,8 @@ data family GenTx blk :: Type
 type family ApplyTxErr blk :: Type
 
 class ( UpdateLedger blk
-      , NoUnexpectedThunks (GenTx blk)
-      , NoUnexpectedThunks (Ticked (LedgerState blk))
+      , NoThunks (GenTx blk)
+      , NoThunks (Ticked (LedgerState blk))
       , Show (GenTx blk)
       , Show (ApplyTxErr blk)
       ) => LedgerSupportsMempool blk where
@@ -96,9 +96,9 @@ data family TxId tx :: Type
 --
 -- The mempool will use these to locate transactions, so two different
 -- transactions should have different identifiers.
-class ( Show               (TxId tx)
-      , Ord                (TxId tx)
-      , NoUnexpectedThunks (TxId tx)
+class ( Show     (TxId tx)
+      , Ord      (TxId tx)
+      , NoThunks (TxId tx)
       ) => HasTxId tx where
 
   -- | Return the 'TxId' of a 'GenTx'.

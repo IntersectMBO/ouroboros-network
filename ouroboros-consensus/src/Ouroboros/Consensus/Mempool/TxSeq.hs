@@ -33,8 +33,7 @@ import qualified Data.FingerTree.Strict as FingerTree
 import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
@@ -49,7 +48,7 @@ import           Ouroboros.Consensus.Mempool.API (MempoolSize (..))
 --
 newtype TicketNo = TicketNo Word64
   deriving stock (Eq, Ord, Show)
-  deriving newtype (Enum, Bounded, NoUnexpectedThunks)
+  deriving newtype (Enum, Bounded, NoThunks)
 
 -- | The transaction ticket number from which our counter starts.
 zeroTicketNo :: TicketNo
@@ -66,7 +65,7 @@ data TxTicket tx = TxTicket
   , txTicketTxSizeInBytes :: !TxSizeInBytes
     -- ^ The byte size of the transaction ('txTicketTx') associated with this
     -- ticket.
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  } deriving (Eq, Show, Generic, NoThunks)
 
 -- | The mempool is a sequence of transactions with their ticket numbers and
 -- size in bytes.
@@ -86,7 +85,7 @@ data TxTicket tx = TxTicket
 --
 newtype TxSeq tx = TxSeq (StrictFingerTree TxSeqMeasure (TxTicket tx))
   deriving stock   (Show)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 instance Foldable TxSeq where
   foldMap f (TxSeq txs) = Foldable.foldMap (f . txTicketTx) txs

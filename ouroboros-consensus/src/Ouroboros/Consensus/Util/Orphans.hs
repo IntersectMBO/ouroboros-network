@@ -22,6 +22,8 @@ import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
 import           Data.SOP.Strict
 import           Data.Void (Void)
+import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
+                     allNoThunks, noThunksInKeysAndValues)
 
 import           Control.Tracer (Tracer)
 
@@ -32,8 +34,6 @@ import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
-                     allNoUnexpectedThunks, noUnexpectedThunksInKeysAndValues)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -70,43 +70,43 @@ instance Serialise (VerKeyDSIGN MockDSIGN) where
   decode = decodeVerKeyDSIGN
 
 {-------------------------------------------------------------------------------
-  NoUnexpectedThunks
+  NoThunks
 -------------------------------------------------------------------------------}
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar IO a) where
+instance NoThunks a => NoThunks (StrictTVar IO a) where
   showTypeOf _ = "StrictTVar IO"
-  whnfNoUnexpectedThunks ctxt tv = do
+  wNoThunks ctxt tv = do
       -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
       -- "Control.Concurrent.STM.atomically was nested" exception.
       a <- readTVarIO (toLazyTVar tv)
-      noUnexpectedThunks ctxt a
+      noThunks ctxt a
 
-instance (NoUnexpectedThunks k, NoUnexpectedThunks v)
-      => NoUnexpectedThunks (Bimap k v) where
-  whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInKeysAndValues ctxt
-                              . Bimap.toList
+instance (NoThunks k, NoThunks v)
+      => NoThunks (Bimap k v) where
+  wNoThunks ctxt = noThunksInKeysAndValues ctxt . Bimap.toList
 
-instance ( NoUnexpectedThunks p
-         , NoUnexpectedThunks v
+instance ( NoThunks p
+         , NoThunks v
          , Ord p
-         ) => NoUnexpectedThunks (IntPSQ p v) where
+         ) => NoThunks (IntPSQ p v) where
   showTypeOf _ = "IntPSQ"
-  whnfNoUnexpectedThunks ctxt = allNoUnexpectedThunks
-                              . concatMap (\(k, p, v) ->
-                                [ noUnexpectedThunks ctxt k
-                                , noUnexpectedThunks ctxt p
-                                , noUnexpectedThunks ctxt v])
-                              . PSQ.toList
+  wNoThunks ctxt =
+        allNoThunks
+      . concatMap (\(k, p, v) ->
+        [ noThunks ctxt k
+        , noThunks ctxt p
+        , noThunks ctxt v])
+      . PSQ.toList
 
-deriving via OnlyCheckIsWHNF "Decoder" (Decoder s a) instance NoUnexpectedThunks (Decoder s a)
+deriving via OnlyCheckWhnfNamed "Decoder" (Decoder s a) instance NoThunks (Decoder s a)
 
-deriving via OnlyCheckIsWHNF "Tracer" (Tracer m ev) instance NoUnexpectedThunks (Tracer m ev)
+deriving via OnlyCheckWhnfNamed "Tracer" (Tracer m ev) instance NoThunks (Tracer m ev)
 
-deriving newtype instance NoUnexpectedThunks Time
+deriving newtype instance NoThunks Time
 
--- TODO move to cardano-prelude
-deriving anyclass instance NoUnexpectedThunks Void
+-- TODO move to nothunks
+deriving anyclass instance NoThunks Void
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (K a b) where
+instance NoThunks a => NoThunks (K a b) where
   showTypeOf _ = showTypeOf (Proxy @a)
-  whnfNoUnexpectedThunks ctxt (K a) = whnfNoUnexpectedThunks ("K":ctxt) a
+  wNoThunks ctxt (K a) = wNoThunks ("K":ctxt) a

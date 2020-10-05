@@ -25,8 +25,7 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
 import           Data.Function (on)
 import           Data.Proxy
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
@@ -72,10 +71,10 @@ collapse (Just ()) = ()
 exitEarly :: Applicative m => WithEarlyExit m a
 exitEarly = earlyExit $ pure Nothing
 
-instance (forall a'. NoUnexpectedThunks (m a'))
-      => NoUnexpectedThunks (WithEarlyExit m a) where
-   whnfNoUnexpectedThunks ctxt = whnfNoUnexpectedThunks ctxt . withEarlyExit
+instance (forall a'. NoThunks (m a'))
+      => NoThunks (WithEarlyExit m a) where
    showTypeOf _p = "WithEarlyExit " ++ showTypeOf (Proxy @(m a))
+   wNoThunks ctxt = wNoThunks ctxt . withEarlyExit
 
 {-------------------------------------------------------------------------------
   Instances for io-classes
@@ -225,8 +224,8 @@ instance MonadEventlog m => MonadEventlog (WithEarlyExit m) where
 -------------------------------------------------------------------------------}
 
 instance ( IOLike m
-         , forall a. NoUnexpectedThunks (StrictTVar (WithEarlyExit m) a)
-         , forall a. NoUnexpectedThunks (StrictMVar (WithEarlyExit m) a)
+         , forall a. NoThunks (StrictTVar (WithEarlyExit m) a)
+         , forall a. NoThunks (StrictMVar (WithEarlyExit m) a)
            -- The simulator does not currently support @MonadCatch (STM m)@,
            -- making this @IOLike@ instance applicable to @IO@ only. Once that
            -- missing @MonadCatch@ instance is added, @IOLike@ should require

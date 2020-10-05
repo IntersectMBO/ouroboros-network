@@ -58,6 +58,7 @@ library
                      , deepseq
                      , hashable
                      , mtl               >=2.2   && <2.3
+                     , nothunks
                      , serialise         >=0.2   && <0.3
                      , time
 

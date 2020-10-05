@@ -23,8 +23,7 @@ module Ouroboros.Consensus.Config (
 
 import           Data.Coerce
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -45,10 +44,10 @@ data TopLevelConfig blk = TopLevelConfig {
   deriving (Generic)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
-         , NoUnexpectedThunks (LedgerConfig blk)
-         , NoUnexpectedThunks (BlockConfig  blk)
-         , NoUnexpectedThunks (CodecConfig  blk)
-         ) => NoUnexpectedThunks (TopLevelConfig blk)
+         , NoThunks (LedgerConfig blk)
+         , NoThunks (BlockConfig  blk)
+         , NoThunks (CodecConfig  blk)
+         ) => NoThunks (TopLevelConfig blk)
 
 mkTopLevelConfig :: ConsensusConfig (BlockProtocol blk)
                  -> LedgerConfig blk

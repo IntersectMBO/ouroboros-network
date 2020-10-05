@@ -48,8 +48,7 @@ import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (unsafeNoUnexpectedThunks)
+import           NoThunks.Class (unsafeNoThunks)
 
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -103,11 +102,11 @@ defaultChainDbView chainDB = ChainDbView {
 -- newtype wrappers to avoid confusing our tip with their tip.
 newtype Their a = Their { unTheir :: a }
   deriving stock   (Eq)
-  deriving newtype (Show, NoUnexpectedThunks)
+  deriving newtype (Show, NoThunks)
 
 newtype Our   a = Our   { unOur   :: a }
   deriving stock   (Eq)
-  deriving newtype (Show, NoUnexpectedThunks)
+  deriving newtype (Show, NoThunks)
 
 bracketChainSyncClient
     :: ( IOLike m
@@ -271,7 +270,7 @@ data UnknownIntersectionState blk = UnknownIntersectionState
   deriving (Generic)
 
 instance ( LedgerSupportsProtocol blk
-         ) => NoUnexpectedThunks (UnknownIntersectionState blk) where
+         ) => NoThunks (UnknownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(UnknownIntersectionState blk))
 
 -- | State used when the intersection between the candidate and the current
@@ -317,7 +316,7 @@ data KnownIntersectionState blk = KnownIntersectionState
   deriving (Generic)
 
 instance ( LedgerSupportsProtocol blk
-         ) => NoUnexpectedThunks (KnownIntersectionState blk) where
+         ) => NoThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
 checkKnownIntersectionInvariants
@@ -650,7 +649,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
-    drainThePipe :: forall s n. NoUnexpectedThunks s
+    drainThePipe :: forall s n. NoThunks s
                  => Nat n
                  -> Stateful m blk s (ClientPipelinedStIdle 'Z)
                  -> Stateful m blk s (ClientPipelinedStIdle n)
@@ -1032,10 +1031,10 @@ data IntersectCheck blk =
 -- the state explicit in the types and do the check in 'continueWithState'.
 newtype Stateful m blk s st = Stateful (s -> m (Consensus st blk m))
 
-continueWithState :: forall m blk s st. NoUnexpectedThunks s
+continueWithState :: forall m blk s st. NoThunks s
                   => s -> Stateful m blk s st -> m (Consensus st blk m)
 continueWithState !s (Stateful f) =
-    checkInvariant (unsafeNoUnexpectedThunks s) $ f s
+    checkInvariant (show <$> unsafeNoThunks s) $ f s
 
 {-------------------------------------------------------------------------------
   Return value

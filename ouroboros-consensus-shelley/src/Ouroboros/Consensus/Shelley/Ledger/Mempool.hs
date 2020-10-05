@@ -27,10 +27,10 @@ import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
                      FullByteString (..), ToCBOR (..))
-import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
@@ -53,7 +53,7 @@ type ShelleyTxId era = SL.TxId era
 
 data instance GenTx (ShelleyBlock era) = ShelleyTx !(ShelleyTxId era) !(SL.Tx era)
   deriving stock    (Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 instance Typeable era => ShowProxy (GenTx (ShelleyBlock era)) where
 
@@ -109,8 +109,7 @@ mkShelleyTx :: Era era => SL.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 
 newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (ShelleyTxId era)
-  deriving newtype (Eq, Ord, FromCBOR, ToCBOR)
-  deriving (NoUnexpectedThunks) via UseIsNormalForm (TxId (GenTx (ShelleyBlock era)))
+  deriving newtype (Eq, Ord, FromCBOR, ToCBOR, NoThunks)
 
 instance Typeable era => ShowProxy (TxId (GenTx (ShelleyBlock era))) where
 

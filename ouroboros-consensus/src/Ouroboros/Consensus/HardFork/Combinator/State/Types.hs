@@ -17,8 +17,7 @@ import           Prelude hiding (sequence)
 import           Control.Monad.Except
 import           Data.SOP.Strict (K)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
@@ -51,7 +50,7 @@ data Past = Past {
       pastStart :: !Bound
     , pastEnd   :: !Bound
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Supporting types
@@ -105,4 +104,4 @@ data TransitionInfo =
     --   we cannot look past the safe zone of this era and hence, by definition,
     --   the transition to the /next/ era cannot happen.
   | TransitionImpossible
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)

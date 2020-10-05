@@ -53,8 +53,7 @@ import           Data.Hashable
 import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text as Text
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeString,
                      decodeWord64)
@@ -130,7 +129,7 @@ instance Hashable (HeaderHash b) => Hashable (ChainHash b)
 -- | The hash of all the information in a 'BlockHeader'.
 --
 newtype ConcreteHeaderHash = HeaderHash Int
-  deriving (Show, Eq, Ord, Generic, Hashable, NoUnexpectedThunks)
+  deriving (Show, Eq, Ord, Generic, Hashable, NoThunks)
 
 -- | The hash of all the information in a 'BlockBody'.
 --

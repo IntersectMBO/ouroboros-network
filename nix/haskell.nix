@@ -81,8 +81,13 @@ let
         packages.network.components.library.build-tools = lib.mkForce [];
 
         # Make sure that libsodium DLLs are available for tests
-        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-byron-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
         packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-mock-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-infra.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-storage.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       } else {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];

@@ -1,10 +1,10 @@
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
 
 module Ouroboros.Network.ConnectionId where
 
-import           Cardano.Prelude (UseIsNormalForm (..), NoUnexpectedThunks (..))
+import           NoThunks.Class (InspectHeap (..), NoThunks)
 
 import           Data.Hashable
 import           GHC.Generics (Generic)
@@ -20,6 +20,6 @@ data ConnectionId addr = ConnectionId {
     remoteAddress :: !addr
   }
   deriving (Eq, Ord, Show, Generic)
-  deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
+  deriving NoThunks via InspectHeap (ConnectionId addr)
 
 instance Hashable a => Hashable (ConnectionId a)

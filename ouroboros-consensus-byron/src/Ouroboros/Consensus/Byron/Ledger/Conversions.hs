@@ -17,8 +17,7 @@ module Ouroboros.Consensus.Byron.Ledger.Conversions (
 
 import           Data.Coerce
 import qualified Data.Set as Set
-
-import           Cardano.Prelude (Natural)
+import           Numeric.Natural (Natural)
 
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as Genesis

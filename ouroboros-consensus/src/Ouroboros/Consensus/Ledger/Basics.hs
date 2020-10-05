@@ -21,8 +21,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   ) where
 
 import           Data.Kind (Type)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
@@ -53,15 +52,15 @@ getTipSlot = pointSlot . getTip
 type family LedgerCfg l :: Type
 
 class ( -- Requirements on the ledger state itself
-        Show               l
-      , Eq                 l
-      , NoUnexpectedThunks l
+        Show     l
+      , Eq       l
+      , NoThunks l
         -- Requirements on 'LedgerCfg'
-      , NoUnexpectedThunks (LedgerCfg l)
+      , NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
-      , Show               (LedgerErr l)
-      , Eq                 (LedgerErr l)
-      , NoUnexpectedThunks (LedgerErr l)
+      , Show     (LedgerErr l)
+      , Eq       (LedgerErr l)
+      , NoThunks (LedgerErr l)
         -- Get the tip
         --
         -- See comment for 'applyChainTick' about the tip of the ticked ledger.

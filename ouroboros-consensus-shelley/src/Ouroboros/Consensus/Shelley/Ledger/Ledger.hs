@@ -61,9 +61,9 @@ import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
@@ -105,7 +105,7 @@ data ShelleyLedgerError era
   | BBodyError !(SL.BlockTransitionError era)
   deriving (Eq, Generic, Show)
 
-instance Era era => NoUnexpectedThunks (ShelleyLedgerError era)
+instance Era era => NoThunks (ShelleyLedgerError era)
 
 {-------------------------------------------------------------------------------
   Config
@@ -120,7 +120,7 @@ data ShelleyLedgerConfig era = ShelleyLedgerConfig {
       -- because it used very often.
     , shelleyLedgerEraParams :: !HardFork.EraParams
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 shelleyEraParams :: SL.ShelleyGenesis era -> HardFork.EraParams
 shelleyEraParams genesis = HardFork.EraParams {
@@ -159,7 +159,7 @@ data ShelleyTip era = ShelleyTip {
     , shelleyTipBlockNo :: !BlockNo
     , shelleyTipHash    :: !(HeaderHash (ShelleyBlock era))
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 shelleyTipToPoint :: WithOrigin (ShelleyTip era) -> Point (ShelleyBlock era)
 shelleyTipToPoint Origin          = GenesisPoint
@@ -171,7 +171,7 @@ data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
     , shelleyLedgerState      :: !(SL.ShelleyState era)
     , shelleyLedgerTransition :: !ShelleyTransition
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -195,7 +195,7 @@ newtype ShelleyTransition = ShelleyTransitionInfo {
       shelleyAfterVoting :: Word32
     }
   deriving stock   (Eq, Show, Generic)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 shelleyLedgerTipPoint :: LedgerState (ShelleyBlock era) -> Point (ShelleyBlock era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
@@ -222,7 +222,7 @@ data instance Ticked (LedgerState (ShelleyBlock era)) = TickedShelleyLedgerState
     , untickedShelleyLedgerTransition :: !ShelleyTransition
     , tickedShelleyLedgerState        :: !(SL.ShelleyState era)
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 untickedShelleyLedgerTipPoint ::
      Ticked (LedgerState (ShelleyBlock era))

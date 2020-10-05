@@ -24,11 +24,11 @@ import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -61,7 +61,7 @@ newtype SimpleBftExt c c' = SimpleBftExt {
       simpleBftExt :: BftFields c' (SignedSimpleBft c c')
     }
   deriving stock   (Show, Eq)
-  deriving newtype (Condense, NoUnexpectedThunks)
+  deriving newtype (Condense, NoThunks)
 
 -- | Part of the block that gets signed
 data SignedSimpleBft c c' = SignedSimpleBft {

@@ -22,11 +22,11 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
 import           Codec.Serialise (Serialise (..))
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Crypto.Hash
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -67,7 +67,7 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
     }
   deriving stock    (Generic, Show, Eq)
   deriving newtype  (Condense)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
     WithLeaderSchedule (Praos PraosCryptoUnused)

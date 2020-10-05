@@ -89,9 +89,7 @@ import qualified Data.FingerTree.Strict as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     noUnexpectedThunksInValues)
+import           NoThunks.Class (NoThunks (..), noThunksInValues)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -117,11 +115,11 @@ newtype ChainFragment block = ChainFragment (StrictFingerTree BlockMeasure block
 --
 -- TODO: Ideally we should just give an instance for 'FingerTree' directly
 -- (but without introducing an orphan).
-instance NoUnexpectedThunks block
-      => NoUnexpectedThunks (ChainFragment block) where
+instance NoThunks block
+      => NoThunks (ChainFragment block) where
   showTypeOf _ = "ChainFragment"
-  whnfNoUnexpectedThunks ctxt (ChainFragment ft) =
-      noUnexpectedThunksInValues ctxt $ Foldable.toList ft
+  wNoThunks ctxt (ChainFragment ft) =
+      noThunksInValues ctxt $ Foldable.toList ft
 
 
 viewRight :: HasHeader block

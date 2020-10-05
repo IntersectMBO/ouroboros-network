@@ -191,12 +191,12 @@ data InternalState blk = IS {
     }
   deriving (Generic)
 
-deriving instance ( NoUnexpectedThunks (GenTx blk)
-                  , NoUnexpectedThunks (GenTxId blk)
-                  , NoUnexpectedThunks (Ticked (LedgerState blk))
+deriving instance ( NoThunks (GenTx blk)
+                  , NoThunks (GenTxId blk)
+                  , NoThunks (Ticked (LedgerState blk))
                   , StandardHash blk
                   , Typeable blk
-                  ) => NoUnexpectedThunks (InternalState blk)
+                  ) => NoThunks (InternalState blk)
 
 -- | \( O(1) \). Return the number of transactions in the internal state of
 -- the Mempool paired with their total size in bytes.
@@ -230,7 +230,7 @@ initInternalState capacityOverride lastTicketNo slot st = IS {
     }
 
 initMempoolEnv :: ( IOLike m
-                  , NoUnexpectedThunks (GenTxId blk)
+                  , NoThunks (GenTxId blk)
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )

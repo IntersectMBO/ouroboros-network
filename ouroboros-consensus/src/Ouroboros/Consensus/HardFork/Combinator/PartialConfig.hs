@@ -18,8 +18,8 @@ module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
 
 import           Data.Functor.Identity
 import           Data.Kind (Type)
+import           NoThunks.Class (NoThunks)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Partial consensus config
 class ( ConsensusProtocol p
-      , NoUnexpectedThunks (PartialConsensusConfig p)
+      , NoThunks (PartialConsensusConfig p)
       ) => HasPartialConsensusConfig p where
   type PartialConsensusConfig p :: Type
   type PartialConsensusConfig p = ConsensusConfig p
@@ -58,7 +58,7 @@ class ( ConsensusProtocol p
 
 -- | Partial ledger config
 class ( UpdateLedger blk
-      , NoUnexpectedThunks (PartialLedgerConfig blk)
+      , NoThunks (PartialLedgerConfig blk)
       ) => HasPartialLedgerConfig blk where
   type PartialLedgerConfig blk :: Type
   type PartialLedgerConfig blk = LedgerConfig blk
@@ -88,5 +88,5 @@ class ( UpdateLedger blk
 newtype WrapPartialLedgerConfig    blk = WrapPartialLedgerConfig    { unwrapPartialLedgerConfig    :: PartialLedgerConfig                   blk  }
 newtype WrapPartialConsensusConfig blk = WrapPartialConsensusConfig { unwrapPartialConsensusConfig :: PartialConsensusConfig (BlockProtocol blk) }
 
-deriving instance NoUnexpectedThunks (PartialLedgerConfig                   blk)  => NoUnexpectedThunks (WrapPartialLedgerConfig    blk)
-deriving instance NoUnexpectedThunks (PartialConsensusConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapPartialConsensusConfig blk)
+deriving instance NoThunks (PartialLedgerConfig                   blk)  => NoThunks (WrapPartialLedgerConfig    blk)
+deriving instance NoThunks (PartialConsensusConfig (BlockProtocol blk)) => NoThunks (WrapPartialConsensusConfig blk)

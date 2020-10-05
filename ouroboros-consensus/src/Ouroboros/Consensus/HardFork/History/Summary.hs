@@ -58,9 +58,9 @@ import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
+import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -80,7 +80,7 @@ data Bound = Bound {
     , boundEpoch :: !EpochNo
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 initBound :: Bound
 initBound = Bound {
@@ -175,7 +175,7 @@ data EraSummary = EraSummary {
     , eraParams :: !EraParams -- ^ Active parameters
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Exclusive upper bound on the era
 data EraEnd =
@@ -187,7 +187,7 @@ data EraEnd =
     -- This arises from the use of 'UnsafeUnbounded'.
   | EraUnbounded
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Summary of the /confirmed/ part of the ledger
 --
@@ -197,10 +197,7 @@ data EraEnd =
 -- We have at most one summary for each era, and at least one
 newtype Summary xs = Summary { getSummary :: NonEmpty xs EraSummary }
   deriving (Eq, Show)
-
--- WHNF is sufficient, because the counting types are all strict
-deriving via UseIsNormalFormNamed "Summary" (Summary xs)
-         instance NoUnexpectedThunks (Summary xs)
+  deriving NoThunks via InspectHeapNamed "Summary" (Summary xs)
 
 {-------------------------------------------------------------------------------
   Trivial summary
@@ -257,7 +254,7 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 -- of consensus is indexed by block types.
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving (Show)
-  deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
+  deriving NoThunks via InspectHeapNamed "Shape" (Shape xs)
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]

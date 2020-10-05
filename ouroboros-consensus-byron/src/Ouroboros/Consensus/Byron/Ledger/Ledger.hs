@@ -52,9 +52,9 @@ import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -93,7 +93,7 @@ data instance LedgerState ByronBlock = ByronLedgerState {
     , byronLedgerState      :: !CC.ChainValidationState
     , byronLedgerTransition :: !ByronTransition
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | Information required to determine the transition from Byron to Shelley
 data ByronTransition =
@@ -110,7 +110,7 @@ data ByronTransition =
     -- Invariant: the domain of this map should equal the set of candidate
     -- proposals.
     ByronTransitionInfo !(Map Update.ProtocolVersion BlockNo)
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance UpdateLedger ByronBlock
 
@@ -165,7 +165,7 @@ data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
       tickedByronLedgerState        :: !CC.ChainValidationState
     , untickedByronLedgerTransition :: !ByronTransition
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError

@@ -78,7 +78,7 @@ data VolatileDBEnv m blk = forall h. Eq h => VolatileDBEnv {
 data InternalState blk h =
     DbClosed
   | DbOpen !(OpenState blk h)
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 dbIsOpen :: InternalState blk h -> Bool
 dbIsOpen (DbOpen _) = True
@@ -106,7 +106,7 @@ data OpenState blk h = OpenState {
       -- INVARIANT: this is the cached value of:
       -- > FileInfo.maxSlotNoInFiles (Index.elems (currentMap st))
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 {------------------------------------------------------------------------------
   State helpers

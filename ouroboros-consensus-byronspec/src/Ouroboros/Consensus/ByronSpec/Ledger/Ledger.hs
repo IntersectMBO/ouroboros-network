@@ -19,8 +19,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
 import           Codec.Serialise
 import           Control.Monad.Except
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           NoThunks.Class (AllowThunk (..), NoThunks)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -53,13 +52,13 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
     }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
+  deriving NoThunks via AllowThunk (LedgerState ByronSpecBlock)
 
 newtype ByronSpecLedgerError = ByronSpecLedgerError {
       unByronSpecLedgerError :: [[Spec.PredicateFailure Spec.CHAIN]]
     }
   deriving (Show, Eq)
-  deriving NoUnexpectedThunks via AllowThunk ByronSpecLedgerError
+  deriving NoThunks via AllowThunk ByronSpecLedgerError
 
 type instance LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
 
@@ -98,7 +97,7 @@ data instance Ticked (LedgerState ByronSpecBlock) = TickedByronSpecLedgerState {
     , tickedByronSpecLedgerState :: Spec.State Spec.CHAIN
     }
   deriving stock (Show, Eq)
-  deriving NoUnexpectedThunks via AllowThunk (Ticked (LedgerState ByronSpecBlock))
+  deriving NoThunks via AllowThunk (Ticked (LedgerState ByronSpecBlock))
 
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError

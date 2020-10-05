@@ -23,9 +23,9 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Crypto.Hash
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -41,7 +41,7 @@ data MockState blk = MockState {
     , mockConfirmed :: !(Set TxId)
     , mockTip       :: !(Point blk)
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 
@@ -51,7 +51,7 @@ data MockError blk =
     -- validate in the second 'SlotNo'.
   | MockUtxoError UtxoError
   | MockInvalidHash (ChainHash blk) (ChainHash blk)
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 deriving instance StandardHash blk => Show (MockError blk)
 deriving instance StandardHash blk => Eq   (MockError blk)

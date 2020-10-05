@@ -7,7 +7,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Translation (
   , trivialEraTranslation
   ) where
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -25,8 +25,8 @@ data EraTranslation xs = EraTranslation {
     , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState)) xs
     , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (TranslateForecast LedgerState WrapLedgerView)) xs
     }
-  deriving NoUnexpectedThunks
-       via OnlyCheckIsWHNF "EraTranslation" (EraTranslation xs)
+  deriving NoThunks
+       via OnlyCheckWhnfNamed "EraTranslation" (EraTranslation xs)
 
 trivialEraTranslation :: EraTranslation '[blk]
 trivialEraTranslation = EraTranslation {

@@ -21,8 +21,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
@@ -43,7 +42,7 @@ newtype LeaderSchedule = LeaderSchedule {
         getLeaderSchedule :: Map SlotNo [CoreNodeId]
       }
     deriving stock    (Show, Eq, Ord, Generic)
-    deriving anyclass (NoUnexpectedThunks)
+    deriving anyclass (NoThunks)
 
 -- | The 'Slots' a given node is supposed to lead in
 leaderScheduleFor :: CoreNodeId -> LeaderSchedule -> Set SlotNo
@@ -109,4 +108,4 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   reupdateChainDepState _ _ _ _ = ()
 
 instance ConsensusProtocol p
-      => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))
+      => NoThunks (ConsensusConfig (WithLeaderSchedule p))

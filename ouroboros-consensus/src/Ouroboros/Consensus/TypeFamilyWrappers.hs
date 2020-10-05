@@ -37,8 +37,7 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   ) where
 
 import           Codec.Serialise (Serialise)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -111,10 +110,10 @@ deriving instance Show (LedgerWarning            blk) => Show (WrapLedgerWarning
 deriving instance Show (OtherHeaderEnvelopeError blk) => Show (WrapEnvelopeErr           blk)
 deriving instance Show (TipInfo                  blk) => Show (WrapTipInfo               blk)
 
-deriving instance NoUnexpectedThunks (GenTxId                  blk) => NoUnexpectedThunks (WrapGenTxId         blk)
-deriving instance NoUnexpectedThunks (LedgerError              blk) => NoUnexpectedThunks (WrapLedgerErr       blk)
-deriving instance NoUnexpectedThunks (OtherHeaderEnvelopeError blk) => NoUnexpectedThunks (WrapEnvelopeErr     blk)
-deriving instance NoUnexpectedThunks (TipInfo                  blk) => NoUnexpectedThunks (WrapTipInfo         blk)
+deriving instance NoThunks (GenTxId                  blk) => NoThunks (WrapGenTxId         blk)
+deriving instance NoThunks (LedgerError              blk) => NoThunks (WrapLedgerErr       blk)
+deriving instance NoThunks (OtherHeaderEnvelopeError blk) => NoThunks (WrapEnvelopeErr     blk)
+deriving instance NoThunks (TipInfo                  blk) => NoThunks (WrapTipInfo         blk)
 
 {-------------------------------------------------------------------------------
   .. consensus based
@@ -130,9 +129,9 @@ deriving instance Show (LedgerView     (BlockProtocol blk)) => Show (WrapLedgerV
 deriving instance Show (SelectView     (BlockProtocol blk)) => Show (WrapSelectView     blk)
 deriving instance Show (ValidationErr  (BlockProtocol blk)) => Show (WrapValidationErr  blk)
 
-deriving instance NoUnexpectedThunks (ChainSelConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainSelConfig blk)
-deriving instance NoUnexpectedThunks (ChainDepState  (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainDepState  blk)
-deriving instance NoUnexpectedThunks (ValidationErr  (BlockProtocol blk)) => NoUnexpectedThunks (WrapValidationErr  blk)
+deriving instance NoThunks (ChainSelConfig (BlockProtocol blk)) => NoThunks (WrapChainSelConfig blk)
+deriving instance NoThunks (ChainDepState  (BlockProtocol blk)) => NoThunks (WrapChainDepState  blk)
+deriving instance NoThunks (ValidationErr  (BlockProtocol blk)) => NoThunks (WrapValidationErr  blk)
 
 {-------------------------------------------------------------------------------
   Versioning
@@ -150,9 +149,9 @@ deriving instance Eq (BlockNodeToClientVersion blk) => Eq (WrapNodeToClientVersi
   These are primarily useful in testing.
 -------------------------------------------------------------------------------}
 
-deriving instance Serialise (GenTxId                       blk)  => Serialise (WrapGenTxId        blk)
-deriving instance Serialise (ChainDepState  (BlockProtocol blk)) => Serialise (WrapChainDepState  blk)
-deriving instance Serialise (TipInfo                       blk)  => Serialise (WrapTipInfo        blk)
+deriving instance Serialise (GenTxId                      blk)  => Serialise (WrapGenTxId       blk)
+deriving instance Serialise (ChainDepState (BlockProtocol blk)) => Serialise (WrapChainDepState blk)
+deriving instance Serialise (TipInfo                      blk)  => Serialise (WrapTipInfo       blk)
 
 {-------------------------------------------------------------------------------
   Ticking

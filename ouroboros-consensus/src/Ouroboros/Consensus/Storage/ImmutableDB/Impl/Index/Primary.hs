@@ -137,7 +137,7 @@ data PrimaryIndex = MkPrimaryIndex {
     , primaryIndexOffsets :: !(Vector SecondaryOffset)
     }
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 assertInPrimaryIndex :: HasCallStack => PrimaryIndex -> RelativeSlot -> Word64
 assertInPrimaryIndex = assertRelativeSlotInChunk . primaryIndexChunkNo

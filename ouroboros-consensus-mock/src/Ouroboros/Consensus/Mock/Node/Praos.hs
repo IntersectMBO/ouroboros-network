@@ -12,8 +12,7 @@ module Ouroboros.Consensus.Mock.Node.Praos (
 import           Data.Bifunctor (second)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-
-import           Cardano.Prelude (Natural)
+import           Numeric.Natural (Natural)
 
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF

@@ -65,10 +65,9 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
-
-import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
@@ -157,7 +156,7 @@ getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)
   | ChainDbClosed
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 data ChainDbEnv m blk = CDB
   { cdbImmutableDB     :: !(ImmutableDB m blk)
@@ -266,7 +265,7 @@ data ChainDbEnv m blk = CDB
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
 instance (IOLike m, LedgerSupportsProtocol blk)
-      => NoUnexpectedThunks (ChainDbEnv m blk) where
+      => NoThunks (ChainDbEnv m blk) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 
 {-------------------------------------------------------------------------------
@@ -304,7 +303,7 @@ data Internal m blk = Internal
 -- when it is closed itself.
 newtype IteratorKey = IteratorKey Word
   deriving stock   (Show)
-  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
+  deriving newtype (Eq, Ord, Enum, NoThunks)
 
 {-------------------------------------------------------------------------------
   Reader-related
@@ -324,7 +323,7 @@ newtype IteratorKey = IteratorKey Word
 -- different chain.
 newtype ReaderKey = ReaderKey Word
   deriving stock   (Show)
-  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
+  deriving newtype (Eq, Ord, Enum, NoThunks)
 
 -- | Internal handle to a 'Reader' without an explicit @b@ (@blk@, @'Header'
 -- blk@, etc.) parameter so 'Reader's with different' @b@s can be stored
@@ -341,7 +340,7 @@ data ReaderHandle m blk = ReaderHandle
     -- NOTE the 'Reader' is not removed from 'cdbReaders'. (That is done by
     -- 'closeAllReaders').
   }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ReaderHandle" (ReaderHandle m blk)
+  deriving NoThunks via OnlyCheckWhnfNamed "ReaderHandle" (ReaderHandle m blk)
 
 -- | @b@ corresponds to the 'BlockComponent' that is being read.
 data ReaderState m blk b
@@ -373,7 +372,7 @@ data ReaderState m blk b
     -- positioned /on/ @readerRollStatePoint rollState@.
   | ReaderInMem !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
 data ReaderRollState blk
@@ -383,7 +382,7 @@ data ReaderRollState blk
   | RollForwardFrom !(Point blk)
     -- ^ We know that the reader is at this point and the next message we'll
     -- send is to roll forward to the point /after/ this point on our chain.
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | Get the point the 'ReaderRollState' should roll back to or roll forward
 -- from.
@@ -406,7 +405,7 @@ type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockInfo blk)
 data InvalidBlockInfo blk = InvalidBlockInfo
   { invalidBlockReason :: !(InvalidBlockReason blk)
   , invalidBlockSlotNo :: !SlotNo
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  } deriving (Eq, Show, Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Future blocks
@@ -426,7 +425,7 @@ type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
 -- read from this queue by a background thread, which processes the blocks
 -- synchronously.
 newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlocksToAdd" (BlocksToAdd m blk)
+  deriving NoThunks via OnlyCheckWhnfNamed "BlocksToAdd" (BlocksToAdd m blk)
 
 -- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
 -- to implement 'AddBlockPromise'.

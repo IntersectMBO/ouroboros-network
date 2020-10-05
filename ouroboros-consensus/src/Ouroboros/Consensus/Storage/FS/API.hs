@@ -31,10 +31,9 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadThrow
-
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.CallStack
@@ -146,7 +145,7 @@ data HasFS m h = HasFS {
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
   }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HasFS" (HasFS m h)
+  deriving NoThunks via OnlyCheckWhnfNamed "HasFS" (HasFS m h)
 
 withFile :: (HasCallStack, MonadThrow m)
          => HasFS m h -> FsPath -> OpenMode -> (Handle h -> m a) -> m a
@@ -298,10 +297,10 @@ hPut hasFS g = hPutAll hasFS g . BS.toLazyByteString
 -------------------------------------------------------------------------------}
 
 -- | It is often inconvenient to have to parameterise over @h@. One often makes
--- it existenial, losing the ability to use derive 'Generic' and
--- 'NoUnexpectedThunks'. This data type hides an existential @h@ parameter of a
--- 'HasFS' and provides a 'NoUnexpectedThunks' thunks instance.
+-- it existential, losing the ability to use derive 'Generic' and 'NoThunks'.
+-- This data type hides an existential @h@ parameter of a 'HasFS' and provides a
+-- 'NoThunks' thunks instance.
 data SomeHasFS m where
   SomeHasFS :: Eq h => HasFS m h -> SomeHasFS m
 
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SomeHasFS" (SomeHasFS m)
+  deriving NoThunks via OnlyCheckWhnfNamed "SomeHasFS" (SomeHasFS m)

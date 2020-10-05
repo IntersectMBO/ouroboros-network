@@ -28,9 +28,9 @@ import           Codec.Serialise (decode, encode)
 import           Data.Proxy
 import           Data.Typeable (Typeable, typeRep)
 import           GHC.Generics
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
@@ -50,7 +50,7 @@ deriving instance StandardHash blk => Ord  (RealPoint blk)
 deriving instance StandardHash blk => Show (RealPoint blk)
 
 instance (StandardHash blk, Typeable blk)
-      => NoUnexpectedThunks (RealPoint blk) where
+      => NoThunks (RealPoint blk) where
   showTypeOf _ = show $ typeRep (Proxy @(RealPoint blk))
 
 instance Condense (HeaderHash blk) => Condense (RealPoint blk) where

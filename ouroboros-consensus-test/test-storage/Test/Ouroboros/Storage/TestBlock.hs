@@ -76,12 +76,12 @@ import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -124,17 +124,17 @@ data TestBlock = TestBlock {
     , testBody   :: !TestBody
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoThunks, Serialise)
 
 -- | Hash of a 'TestHeader'
 newtype TestHeaderHash = TestHeaderHash Int
   deriving stock    (Eq, Ord, Show, Generic)
-  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise, Binary)
+  deriving newtype  (Condense, NoThunks, Hashable, Serialise, Binary)
 
 -- | Hash of a 'TestBody'
 newtype TestBodyHash = TestBodyHash Int
   deriving stock    (Eq, Ord, Show, Generic)
-  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise)
+  deriving newtype  (Condense, NoThunks, Hashable, Serialise)
 
 data TestHeader = TestHeader {
       thHash        :: HeaderHash TestHeader
@@ -153,14 +153,14 @@ data TestHeader = TestHeader {
     , thIsEBB       :: !EBB
     }
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoThunks, Serialise)
 
 -- | Strict variant of @Maybe EpochNo@
 data EBB =
     EBB !EpochNo
   | RegularBlock
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoThunks, Serialise)
 
 instance Hashable EBB where
   hashWithSalt s (EBB epoch)  = hashWithSalt s (unEpochNo epoch)
@@ -181,10 +181,10 @@ data TestBody = TestBody {
     , tbIsValid :: !Bool
     }
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise, Hashable)
+  deriving anyclass (NoThunks, Serialise, Hashable)
 
 newtype instance Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
-  deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
+  deriving newtype (Eq, Show, NoThunks, Serialise)
 
 instance GetHeader TestBlock where
   getHeader = TestHeader' . testHeader
@@ -234,10 +234,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
     , testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Generic, NoUnexpectedThunks, Show)
+  deriving (Generic, NoThunks, Show)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -336,7 +336,7 @@ testBlockFromLazyByteString bs = case CBOR.deserialiseFromBytes decode bs of
 -- because it corresponds to the /length/.
 newtype ChainLength = ChainLength Int
   deriving stock   (Show, Generic)
-  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks, Serialise, Hashable)
+  deriving newtype (Eq, Ord, Enum, NoThunks, Serialise, Hashable)
 
 {-------------------------------------------------------------------------------
   Creating blocks
@@ -537,7 +537,7 @@ data TestBlockError =
 
     -- | The block itself is invalid
   | InvalidBlock
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 
@@ -571,7 +571,7 @@ data instance LedgerState TestBlock =
       , lastAppliedHash  :: !(ChainHash TestBlock)
       }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving anyclass (Serialise, NoThunks)
 
 -- Ticking has no effect on the test ledger state
 newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
@@ -587,7 +587,7 @@ instance HasAnnTip TestBlock where
 
 data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance BasicEnvelopeValidation TestBlock where
   minimumPossibleSlotNo _ = SlotNo 0

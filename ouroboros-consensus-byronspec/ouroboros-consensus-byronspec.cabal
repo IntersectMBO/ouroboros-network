@@ -44,6 +44,7 @@ library
                      , byron-spec-chain
                      , byron-spec-ledger
                      , mtl               >=2.2   && <2.3
+                     , nothunks
                      , serialise         >=0.2   && <0.3
                      , small-steps
                      , transformers

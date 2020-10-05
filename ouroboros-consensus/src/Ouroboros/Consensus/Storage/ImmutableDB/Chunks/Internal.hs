@@ -42,8 +42,7 @@ import           Control.Exception
 import           Control.Monad
 import           Data.Word
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CallStack
@@ -63,8 +62,8 @@ data ChunkInfo =
     -- the number of regular blocks in an epoch).
     --
     UniformChunkSize !ChunkSize
-  deriving stock (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving stock    (Show, Generic)
+  deriving anyclass (NoThunks)
 
 -- | Simple chunk config with a single chunk size
 --
@@ -104,12 +103,12 @@ data ChunkSize = ChunkSize {
     , numRegularBlocks   :: !Word64
     }
   deriving stock    (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Chunk number
 newtype ChunkNo = ChunkNo { unChunkNo :: Word64 }
   deriving stock   (Eq, Ord, Generic)
-  deriving newtype (Show, NoUnexpectedThunks)
+  deriving newtype (Show, NoThunks)
 
 -- | First chunk
 firstChunkNo :: ChunkNo
@@ -194,7 +193,7 @@ data RelativeSlot = RelativeSlot {
   , relativeSlotIndex     :: !Word64
   }
   deriving stock    (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Maximum relative index within a chunk
 maxRelativeIndex :: ChunkSize -> Word64

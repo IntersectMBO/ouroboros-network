@@ -45,9 +45,10 @@ import           Quiet (Quiet (..))
 import           Test.QuickCheck
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..))
+import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..), seedSizeDSIGN)
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashWithSerialiser)
 import           Cardano.Crypto.KES (KESAlgorithm (..))
+import           Cardano.Crypto.Libsodium.MLockedBytes (mlsbFromByteString)
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
@@ -166,7 +167,8 @@ genCoreNode startKESPeriod = do
     delKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN (Crypto era))))
     stkKey <- genKeyDSIGN <$> genSeed (seedSizeDSIGN (Proxy @(DSIGN (Crypto era))))
     vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF   (Proxy @(VRF   (Crypto era))))
-    kesKey <- genKeyKES   <$> genSeed (seedSizeKES   (Proxy @(KES   (Crypto era))))
+    kesKey <- genKeyKES . mlsbFromByteString
+                          <$> genBytes (seedSizeKES  (Proxy @(KES   (Crypto era))))
     let kesPub = deriveVerKeyKES kesKey
         sigma = SL.signedDSIGN
           @era
@@ -189,9 +191,11 @@ genCoreNode startKESPeriod = do
   where
     certificateIssueNumber = 0
 
+    genBytes :: Integral a => a -> Gen BS.ByteString
+    genBytes nbBytes = BS.pack <$> vectorOf (fromIntegral nbBytes) arbitrary
+
     genSeed :: Integral a => a -> Gen Cardano.Crypto.Seed
-    genSeed nbBytes =
-      mkSeedFromBytes . BS.pack <$> vectorOf (fromIntegral nbBytes) arbitrary
+    genSeed = fmap mkSeedFromBytes . genBytes
 
 mkLeaderCredentials :: TPraosCrypto era => CoreNode era -> TPraosLeaderCredentials era
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =

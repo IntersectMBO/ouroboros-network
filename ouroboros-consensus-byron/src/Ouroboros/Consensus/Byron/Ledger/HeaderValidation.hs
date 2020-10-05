@@ -13,8 +13,7 @@ module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
 import           Control.Monad.Except
 import           Data.Word
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import qualified Cardano.Chain.Slotting as CC
 
@@ -38,7 +37,7 @@ instance HasAnnTip ByronBlock where
 
 data ByronOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance BasicEnvelopeValidation ByronBlock where
   expectedFirstBlockNo  _ = BlockNo 0

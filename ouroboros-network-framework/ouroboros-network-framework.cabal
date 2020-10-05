@@ -66,6 +66,7 @@ library
                      , iproute         >=1.7   && < 1.8
                      , hashable
                      , mtl
+                     , nothunks
                      , stm
                      , text
                      , time

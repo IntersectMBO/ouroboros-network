@@ -73,11 +73,11 @@ import           Data.Proxy
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -147,7 +147,7 @@ data instance Header (SimpleBlock' c ext ext') = SimpleHeader {
       -- consensus protocols.
     , simpleHeaderExt  :: ext'
     }
-  deriving (Generic, Show, Eq, NoUnexpectedThunks)
+  deriving (Generic, Show, Eq, NoThunks)
 
 instance (Typeable c, Typeable ext, Typeable ext')
     => ShowProxy (Header (SimpleBlock' c ext ext')) where
@@ -168,7 +168,7 @@ data SimpleStdHeader c ext = SimpleStdHeader {
     , simpleBodySize :: Word32
     }
   deriving stock    (Generic, Show, Eq)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving anyclass (Serialise, NoThunks)
 
 data SimpleBody = SimpleBody {
       simpleTxs :: [Mock.Tx]
@@ -281,7 +281,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
 
 data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
   deriving stock   (Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
   Codec config
@@ -289,7 +289,7 @@ data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
 
 data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
   deriving stock    (Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
   Hard fork history
@@ -305,8 +305,8 @@ instance HasHardForkHistory (SimpleBlock c ext) where
 
 class ( SimpleCrypto c
       , Typeable ext
-      , Show               (MockLedgerConfig c ext)
-      , NoUnexpectedThunks (MockLedgerConfig c ext)
+      , Show     (MockLedgerConfig c ext)
+      , NoThunks (MockLedgerConfig c ext)
       ) => MockProtocolSpecific c ext where
   type family MockLedgerConfig c ext :: Type
 
@@ -324,8 +324,8 @@ data SimpleLedgerConfig c ext = SimpleLedgerConfig {
   deriving (Generic)
 
 deriving instance Show (MockLedgerConfig c ext) => Show (SimpleLedgerConfig c ext)
-deriving instance NoUnexpectedThunks (MockLedgerConfig c ext)
-               => NoUnexpectedThunks (SimpleLedgerConfig c ext)
+deriving instance NoThunks (MockLedgerConfig c ext)
+               => NoThunks (SimpleLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
 
@@ -355,14 +355,14 @@ newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
     }
   deriving stock   (Generic, Show, Eq)
-  deriving newtype (Serialise, NoUnexpectedThunks)
+  deriving newtype (Serialise, NoThunks)
 
 -- Ticking has no effect on the simple ledger state
 newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerState {
       getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext)
     }
   deriving stock   (Generic, Show, Eq)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
@@ -421,7 +421,7 @@ newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
       unSimpleGenTxId :: Mock.TxId
     }
   deriving stock   (Generic)
-  deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
+  deriving newtype (Show, Eq, Ord, Serialise, NoThunks)
 
 instance (Typeable c, Typeable ext)
     => ShowProxy (TxId (GenTx (SimpleBlock c ext))) where
@@ -429,7 +429,7 @@ instance (Typeable c, Typeable ext)
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   txId = SimpleGenTxId . simpleGenTxId
 
-instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
+instance (Typeable p, Typeable c) => NoThunks (GenTx (SimpleBlock p c)) where
   showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
 
 instance HasTxs (SimpleBlock c ext) where

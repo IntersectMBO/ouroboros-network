@@ -29,8 +29,7 @@ import           Data.SOP.Strict
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Util.ShowProxy
 
@@ -77,7 +76,7 @@ deriving stock instance CanHardFork xs => Eq (HardForkApplyTxErr xs)
 newtype instance GenTx (HardForkBlock xs) = HardForkGenTx {
       getHardForkGenTx :: OneEraGenTx xs
     }
-  deriving (Eq, Show, NoUnexpectedThunks)
+  deriving (Eq, Show, NoThunks)
 
 instance Typeable xs => ShowProxy (GenTx (HardForkBlock xs)) where
 
@@ -168,7 +167,7 @@ applyHelper apply
 newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
       getHardForkGenTxId :: OneEraGenTxId xs
     }
-  deriving (Show, Eq, Ord, NoUnexpectedThunks)
+  deriving (Show, Eq, Ord, NoThunks)
 
 instance Typeable xs => ShowProxy (TxId (GenTx (HardForkBlock xs))) where
 

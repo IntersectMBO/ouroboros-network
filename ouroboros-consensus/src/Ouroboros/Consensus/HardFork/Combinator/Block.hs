@@ -28,8 +28,7 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable (Typeable)
 import           Data.Word
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Util.ShowProxy
 
@@ -51,7 +50,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 newtype instance Header (HardForkBlock xs) = HardForkHeader {
       getHardForkHeader :: OneEraHeader xs
     }
-  deriving (Show, NoUnexpectedThunks)
+  deriving (Show, NoThunks)
 
 instance Typeable xs => ShowProxy (Header (HardForkBlock xs)) where
 

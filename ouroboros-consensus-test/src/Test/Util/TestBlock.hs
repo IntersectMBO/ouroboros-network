@@ -70,11 +70,11 @@ import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import qualified System.Random as R
 import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -146,9 +146,9 @@ import           Test.Util.Orphans.ToExpr ()
 newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
-  deriving stock   (Generic)
-  deriving newtype (Eq, Ord, Serialise, ToExpr)
-  deriving anyclass NoUnexpectedThunks
+  deriving stock    (Generic)
+  deriving newtype  (Eq, Ord, Serialise, ToExpr)
+  deriving anyclass (NoThunks)
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
@@ -178,13 +178,13 @@ data TestBlock = TestBlock {
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
   deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
+  deriving anyclass (Serialise, NoThunks, ToExpr)
 
 instance ShowProxy TestBlock where
 
 newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
   deriving stock   (Eq, Show)
-  deriving newtype (NoUnexpectedThunks, Serialise)
+  deriving newtype (NoThunks, Serialise)
 
 instance ShowProxy (Header TestBlock) where
 
@@ -241,11 +241,11 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
       testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 -- | The 'TestBlock' does not need any codec config
 data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
@@ -285,7 +285,7 @@ data TestBlockError =
 
     -- | The block itself is invalid
   | InvalidBlock
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance BlockSupportsProtocol TestBlock where
   validateView TestBlockConfig{..} =
@@ -333,7 +333,7 @@ newtype instance LedgerState TestBlock =
         lastAppliedPoint :: Point TestBlock
       }
   deriving stock   (Show, Eq, Generic)
-  deriving newtype (Serialise, NoUnexpectedThunks, ToExpr)
+  deriving newtype (Serialise, NoThunks, ToExpr)
 
 -- Ticking has no effect
 newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {

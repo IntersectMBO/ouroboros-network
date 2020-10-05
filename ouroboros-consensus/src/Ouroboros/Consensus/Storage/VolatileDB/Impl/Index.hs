@@ -21,14 +21,14 @@ import           Prelude hiding (lookup)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
 
 -- | Mapping from 'FileId' to 'FileInfo'
 newtype Index blk = Index { unIndex :: IntMap (FileInfo blk) }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 modifyIndex ::
      (IntMap (FileInfo blk) -> IntMap (FileInfo blk))

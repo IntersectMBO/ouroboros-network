@@ -19,8 +19,7 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -57,4 +56,4 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     chainSelConfig = mcsConfigS
 
 instance (ConsensusProtocol p, ChainSelection s)
-      => NoUnexpectedThunks (ConsensusConfig (ModChainSel p s))
+      => NoThunks (ConsensusConfig (ModChainSel p s))

@@ -77,7 +77,6 @@ test-suite test
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-prelude
                      , cardano-slotting
                      , cborg
                      , containers

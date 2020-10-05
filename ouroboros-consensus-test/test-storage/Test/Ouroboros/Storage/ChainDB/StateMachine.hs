@@ -44,6 +44,7 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (AllowThunk (..))
 
 import qualified Generics.SOP as SOP
 
@@ -55,8 +56,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Cardano.Prelude (AllowThunk (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -292,7 +291,7 @@ data ChainDBState m blk = ChainDBState
     , addBlockAsync :: Async m Void
       -- ^ Background thread that adds blocks to the ChainDB
     }
-  deriving NoUnexpectedThunks via AllowThunk (ChainDBState m blk)
+  deriving NoThunks via AllowThunk (ChainDBState m blk)
 
 -- | Environment to run commands against the real ChainDB implementation.
 data ChainDBEnv m blk = ChainDBEnv {

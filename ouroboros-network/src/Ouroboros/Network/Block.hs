@@ -92,10 +92,10 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -189,11 +189,11 @@ blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 -- possible but libraries that /use/ the networking layer may wish to be able to
 -- talk about 'StandardHash' independently of 'HasHeader' since the latter may
 -- impose yet further constraints.
-class ( Eq        (HeaderHash b)
-      , Ord       (HeaderHash b)
-      , Show      (HeaderHash b)
-      , Typeable  (HeaderHash b)
-      , NoUnexpectedThunks (HeaderHash b)
+class ( Eq       (HeaderHash b)
+      , Ord      (HeaderHash b)
+      , Show     (HeaderHash b)
+      , Typeable (HeaderHash b)
+      , NoThunks (HeaderHash b)
       ) => StandardHash b
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
@@ -203,7 +203,7 @@ deriving instance StandardHash block => Eq   (ChainHash block)
 deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
 
-instance (StandardHash block, Typeable block) => NoUnexpectedThunks (ChainHash block)
+instance (StandardHash block, Typeable block) => NoThunks (ChainHash block)
   -- use generic instance
 
 castHash :: Coercible (HeaderHash b) (HeaderHash b') => ChainHash b -> ChainHash b'
@@ -227,10 +227,10 @@ newtype Point block = Point
     }
   deriving (Generic)
 
-deriving newtype instance StandardHash block => Eq   (Point block)
-deriving newtype instance StandardHash block => Ord  (Point block)
-deriving newtype instance StandardHash block => Show (Point block)
-deriving newtype instance StandardHash block => NoUnexpectedThunks (Point block)
+deriving newtype instance StandardHash block => Eq       (Point block)
+deriving newtype instance StandardHash block => Ord      (Point block)
+deriving newtype instance StandardHash block => Show     (Point block)
+deriving newtype instance StandardHash block => NoThunks (Point block)
 
 instance ShowProxy block => ShowProxy (Point block) where
     showProxy _ = "Point " ++ showProxy (Proxy :: Proxy block)
@@ -274,9 +274,9 @@ data Tip b =
   | Tip !SlotNo !(HeaderHash b) !BlockNo
   deriving (Generic)
 
-deriving instance StandardHash b => Eq                 (Tip b)
-deriving instance StandardHash b => Show               (Tip b)
-deriving instance StandardHash b => NoUnexpectedThunks (Tip b)
+deriving instance StandardHash b => Eq       (Tip b)
+deriving instance StandardHash b => Show     (Tip b)
+deriving instance StandardHash b => NoThunks (Tip b)
 instance ShowProxy b => ShowProxy (Tip b) where
     showProxy _ = "Tip " ++ showProxy (Proxy :: Proxy b)
 
@@ -373,7 +373,7 @@ data MaxSlotNo
     -- number.
   | MaxSlotNo !SlotNo
     -- ^ The highest slot number seen.
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- The derived instances would do the same, but for clarity, we write it out
 -- explicitly.

@@ -570,7 +570,7 @@ data InvalidBlockReason blk
   deriving (Eq, Show, Generic)
 
 instance LedgerSupportsProtocol blk
-      => NoUnexpectedThunks (InvalidBlockReason blk)
+      => NoThunks (InvalidBlockReason blk)
 
 {-------------------------------------------------------------------------------
   Readers

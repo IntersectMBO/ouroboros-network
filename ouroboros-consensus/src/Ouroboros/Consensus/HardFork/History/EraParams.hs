@@ -24,9 +24,9 @@ import           Codec.CBOR.Encoding (encodeListLen, encodeWord8)
 import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -139,7 +139,7 @@ data EraParams = EraParams {
     , eraSafeZone   :: !SafeZone
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Default 'EraParams'
 --
@@ -190,7 +190,7 @@ data SafeZone =
     -- 'LowerBound', and can be used for similar reasons.
   | UnsafeIndefiniteSafeZone
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | The safe zone with given 'safeFromTip' and 'NoLowerBound'
 noLowerBoundSafeZone :: Word64 -> SafeZone
@@ -216,7 +216,7 @@ data SafeBeforeEpoch =
     -- summary of the hard fork history.
   | LowerBound !EpochNo
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
   Queries

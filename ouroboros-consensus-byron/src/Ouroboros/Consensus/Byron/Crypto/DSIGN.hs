@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -21,6 +22,14 @@ module Ouroboros.Consensus.Byron.Crypto.DSIGN
     , HasSignTag(..)
     ) where
 
+
+import           Control.Exception (throw)
+import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
+import           Data.Proxy (Proxy (..))
+import           GHC.Generics (Generic)
+import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
+
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
@@ -32,12 +41,6 @@ import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
 import qualified Cardano.Crypto.Wallet as CC
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
-import           Control.Exception (throw)
-import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
-import           Data.Proxy (Proxy (..))
-import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -61,6 +64,11 @@ data ByronDSIGN
 
 instance DSIGNAlgorithm ByronDSIGN where
 
+    type SeedSizeDSIGN    ByronDSIGN = 32
+    type SizeVerKeyDSIGN  ByronDSIGN = 64
+    type SizeSignKeyDSIGN ByronDSIGN = 128
+    type SizeSigDSIGN     ByronDSIGN = 64
+
     algorithmNameDSIGN _ = "ByronDSIGN"
 
     -- Context required for Byron digital signatures
@@ -72,15 +80,15 @@ instance DSIGNAlgorithm ByronDSIGN where
 
     newtype VerKeyDSIGN ByronDSIGN = VerKeyByronDSIGN VerificationKey
         deriving (Show, Eq, Generic)
-        deriving NoUnexpectedThunks via UseIsNormalForm (VerKeyDSIGN ByronDSIGN)
+        deriving NoThunks via InspectHeapNamed "VerKeyDSIGN ByronDSIGN" (VerKeyDSIGN ByronDSIGN)
 
     newtype SignKeyDSIGN ByronDSIGN = SignKeyByronDSIGN SigningKey
         deriving (Show, Generic)
-        deriving NoUnexpectedThunks via UseIsNormalForm (SignKeyDSIGN ByronDSIGN)
+        deriving NoThunks via InspectHeapNamed "SignKeyDSIGN ByronDSIGN" (SignKeyDSIGN ByronDSIGN)
 
     newtype SigDSIGN ByronDSIGN = SigByronDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)
-        deriving NoUnexpectedThunks via UseIsNormalForm (SigDSIGN ByronDSIGN)
+        deriving NoThunks via InspectHeapNamed "SigDSIGN ByronDSIGN" (SigDSIGN ByronDSIGN)
 
     type Signable ByronDSIGN = ByronSignable
 
@@ -102,12 +110,6 @@ instance DSIGNAlgorithm ByronDSIGN where
         if verifySignatureRaw vk (Crypto.signTag magic (signTagFor genKey a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
-
-    seedSizeDSIGN _ = 32
-
-    sizeVerKeyDSIGN _ = 64
-    sizeSignKeyDSIGN _ = 128
-    sizeSigDSIGN _ = 64
 
     rawSerialiseVerKeyDSIGN (VerKeyByronDSIGN (VerificationKey vk)) = CC.unXPub vk
     rawSerialiseSignKeyDSIGN (SignKeyByronDSIGN (SigningKey sk)) = CC.unXPrv sk

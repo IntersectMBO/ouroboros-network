@@ -42,6 +42,7 @@ import           Data.Word (Word16, Word32, Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (AllowThunk (..))
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
@@ -55,8 +56,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Cardano.Prelude (AllowThunk (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
@@ -769,7 +768,7 @@ data ImmutableDBState = ImmutableDBState {
       db       :: ImmutableDB          IO TestBlock
     , internal :: ImmutableDB.Internal IO TestBlock
     }
-  deriving NoUnexpectedThunks via AllowThunk ImmutableDBState
+  deriving NoThunks via AllowThunk ImmutableDBState
 
 -- | Environment to run commands against the real ImmutableDB implementation.
 data ImmutableDBEnv = ImmutableDBEnv {

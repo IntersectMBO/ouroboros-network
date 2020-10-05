@@ -34,8 +34,7 @@ import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
 import           Data.Word
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
@@ -61,7 +60,7 @@ newtype PrefixLen = PrefixLen {
       getPrefixLen :: Word8
     }
   deriving stock   (Eq, Ord, Show, Generic)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 addPrefixLen :: Word8 -> PrefixLen -> PrefixLen
 addPrefixLen m (PrefixLen n) = PrefixLen (m + n)
@@ -109,12 +108,12 @@ data StreamFrom blk =
     StreamFromInclusive !(RealPoint blk)
   | StreamFromExclusive !(Point     blk)
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 newtype StreamTo blk =
     StreamToInclusive (RealPoint blk)
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Check whether the bounds make sense
 --

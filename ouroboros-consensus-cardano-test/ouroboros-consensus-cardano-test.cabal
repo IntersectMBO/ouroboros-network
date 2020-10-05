@@ -33,8 +33,8 @@ library
                      , cardano-crypto-wrapper
                      , cardano-ledger
                      , cardano-ledger-test
-                     , cardano-slotting
                      , cardano-prelude
+                     , cardano-slotting
                      , cborg
                      , containers
                      , hedgehog-quickcheck
@@ -86,7 +86,6 @@ test-suite test
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-slotting
-                     , cardano-prelude
                      , cborg
                      , containers
                      , hedgehog-quickcheck

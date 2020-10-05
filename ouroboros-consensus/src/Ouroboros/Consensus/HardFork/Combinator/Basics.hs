@@ -40,8 +40,8 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Util.ShowProxy
@@ -81,7 +81,7 @@ newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
 
 deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
 deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
-deriving newtype instance CanHardFork xs => NoUnexpectedThunks (LedgerState (HardForkBlock xs))
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs))
 
 {-------------------------------------------------------------------------------
   Protocol config
@@ -102,7 +102,7 @@ data instance ConsensusConfig (HardForkProtocol xs) = HardForkConsensusConfig {
     , hardForkConsensusConfigPerEra :: !(PerEraConsensusConfig xs)
     }
   deriving stock    (Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
   Block config
@@ -111,7 +111,7 @@ data instance ConsensusConfig (HardForkProtocol xs) = HardForkConsensusConfig {
 newtype instance BlockConfig (HardForkBlock xs) = HardForkBlockConfig {
       hardForkBlockConfigPerEra :: PerEraBlockConfig xs
     }
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 {-------------------------------------------------------------------------------
   Codec config
@@ -120,7 +120,7 @@ newtype instance BlockConfig (HardForkBlock xs) = HardForkBlockConfig {
 newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
       hardForkCodecConfigPerEra :: PerEraCodecConfig xs
     }
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
 
 {-------------------------------------------------------------------------------
   Ledger config
@@ -132,7 +132,7 @@ data HardForkLedgerConfig xs = HardForkLedgerConfig {
     }
   deriving (Generic)
 
-instance CanHardFork xs => NoUnexpectedThunks (HardForkLedgerConfig xs)
+instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
 

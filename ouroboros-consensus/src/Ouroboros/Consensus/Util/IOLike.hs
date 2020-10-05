@@ -37,13 +37,14 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadEventlog(..)
     -- *** MonadEvaluate
   , MonadEvaluate(..)
-    -- *** Cardano prelude
-  , NoUnexpectedThunks(..)
+    -- *** NoThunks
+  , NoThunks(..)
   ) where
+
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Crypto.KES (KESAlgorithm, SignKeyKES)
 import qualified Cardano.Crypto.KES as KES
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
@@ -72,9 +73,9 @@ class ( MonadAsync              m
       , MonadMonotonicTime      m
       , MonadEvaluate           m
       , MonadThrow         (STM m)
-      , forall a. NoUnexpectedThunks (m a)
-      , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)
-      , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar m a)
+      , forall a. NoThunks (m a)
+      , forall a. NoThunks a => NoThunks (StrictTVar m a)
+      , forall a. NoThunks a => NoThunks (StrictMVar m a)
       ) => IOLike m where
   -- | Securely forget a KES signing key.
   --

@@ -19,8 +19,7 @@ import           Control.Tracer (Tracer)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (OnlyCheckIsWHNF (..))
+import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB, StandardHash)
 import           Ouroboros.Consensus.Util.IOLike
@@ -118,7 +117,7 @@ data Index m blk h = Index
       => ChunkNo
       -> m ()
   }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Index" (Index m blk h)
+  deriving NoThunks via OnlyCheckWhnfNamed "Index" (Index m blk h)
 
 -- | See 'Primary.readOffset'.
 readOffset

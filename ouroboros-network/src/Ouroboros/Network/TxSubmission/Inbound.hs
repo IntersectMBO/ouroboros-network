@@ -22,9 +22,9 @@ import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF,
-                     unsafeNoUnexpectedThunks)
+import           Cardano.Prelude (forceElemsToWHNF)
 
 import           Control.Exception (assert)
 import           Control.Monad (unless)
@@ -143,9 +143,9 @@ data ServerState txid tx = ServerState {
      }
   deriving (Show, Generic)
 
-instance ( NoUnexpectedThunks txid
-         , NoUnexpectedThunks tx
-         ) => NoUnexpectedThunks (ServerState txid tx)
+instance ( NoThunks txid
+         , NoThunks tx
+         ) => NoThunks (ServerState txid tx)
 
 initialServerState :: ServerState txid tx
 initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
@@ -154,8 +154,8 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 txSubmissionInbound
   :: forall txid tx idx m.
      ( Ord txid
-     , NoUnexpectedThunks txid
-     , NoUnexpectedThunks tx
+     , NoThunks txid
+     , NoThunks tx
      , MonadSTM m
      , MonadThrow m
      )
@@ -437,29 +437,29 @@ newtype StatefulCollect s n txid tx m
 -- | After checking that there are no unexpected thunks in the provided state,
 -- pass it to the provided function.
 --
--- See 'checkInvariant' and 'unsafeNoUnexpectedThunks'.
-continueWithState :: NoUnexpectedThunks s
+-- See 'checkInvariant' and 'unsafeNoThunks'.
+continueWithState :: NoThunks s
                   => Stateful s n txid tx m
                   -> s
                   -> ServerStIdle n txid tx m ()
 continueWithState (Stateful f) !st =
-    checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+    checkInvariant (show <$> unsafeNoThunks st) (f st)
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'serverIdle' and 'serverReqTxIds'.
-continueWithStateM :: NoUnexpectedThunks s
+continueWithStateM :: NoThunks s
                    => StatefulM s n txid tx m
                    -> s
                    -> m (ServerStIdle n txid tx m ())
 continueWithStateM (StatefulM f) !st =
-    checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+    checkInvariant (show <$> unsafeNoThunks st) (f st)
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'handleReply'.
-collectAndContinueWithState :: NoUnexpectedThunks s
+collectAndContinueWithState :: NoThunks s
                             => StatefulCollect s n txid tx m
                             -> s
                             -> Collect txid tx
                             -> m (ServerStIdle n txid tx m ())
 collectAndContinueWithState (StatefulCollect f) !st c =
-    checkInvariant (unsafeNoUnexpectedThunks st) (f st c)
+    checkInvariant (show <$> unsafeNoThunks st) (f st c)

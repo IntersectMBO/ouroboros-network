@@ -33,8 +33,7 @@ import           Data.Coerce
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -61,7 +60,7 @@ data ExtValidationError blk =
   | ExtValidationErrorHeader !(HeaderError blk)
   deriving (Generic)
 
-instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtValidationError blk)
+instance LedgerSupportsProtocol blk => NoThunks (ExtValidationError blk)
 
 deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk)
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError blk)
@@ -71,7 +70,7 @@ deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
 --
 -- This makes debugging a bit easier, as the block gets used to resolve all
 -- kinds of type families.
-instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtLedgerState blk) where
+instance LedgerSupportsProtocol blk => NoThunks (ExtLedgerState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
 deriving instance ( LedgerSupportsProtocol blk
@@ -98,10 +97,10 @@ newtype ExtLedgerCfg blk = ExtLedgerCfg {
   deriving (Generic)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
-         , NoUnexpectedThunks (BlockConfig  blk)
-         , NoUnexpectedThunks (CodecConfig  blk)
-         , NoUnexpectedThunks (LedgerConfig blk)
-         ) => NoUnexpectedThunks (ExtLedgerCfg blk)
+         , NoThunks (BlockConfig  blk)
+         , NoThunks (CodecConfig  blk)
+         , NoThunks (LedgerConfig blk)
+         ) => NoThunks (ExtLedgerCfg blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 

@@ -50,8 +50,8 @@ import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Test.Util.Time (dawnOfTime)
@@ -96,7 +96,7 @@ data instance ConsensusConfig ProtocolA = CfgA {
       cfgA_k           :: SecurityParam
     , cfgA_leadInSlots :: Set SlotNo
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "CfgA" (ConsensusConfig ProtocolA)
+  deriving NoThunks via OnlyCheckWhnfNamed "CfgA" (ConsensusConfig ProtocolA)
 
 instance ChainSelection ProtocolA where
   -- Use defaults
@@ -126,7 +126,7 @@ data BlockA = BlkA {
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlkA" BlockA
+  deriving NoThunks via OnlyCheckWhnfNamed "BlkA" BlockA
 
 data instance Header BlockA = HdrA {
       hdrA_fields :: HeaderFields BlockA
@@ -134,7 +134,7 @@ data instance Header BlockA = HdrA {
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrA" (Header BlockA)
+  deriving NoThunks via OnlyCheckWhnfNamed "HdrA" (Header BlockA)
 
 instance GetHeader BlockA where
   getHeader          = blkA_header
@@ -142,13 +142,13 @@ instance GetHeader BlockA where
   headerIsEBB        = const Nothing
 
 data instance BlockConfig BlockA = BCfgA
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 type instance BlockProtocol BlockA = ProtocolA
 type instance HeaderHash    BlockA = Strict.ByteString
 
 data instance CodecConfig BlockA = CCfgA
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance ConfigSupportsNode BlockA where
   getSystemStart  _ = SystemStart dawnOfTime
@@ -182,20 +182,20 @@ data instance LedgerState BlockA = LgrA {
     , lgrA_transition :: Maybe SlotNo
     }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrA" (LedgerState BlockA)
+  deriving NoThunks via OnlyCheckWhnfNamed "LgrA" (LedgerState BlockA)
 
 -- | Ticking has no state on the A ledger state
 newtype instance Ticked (LedgerState BlockA) = TickedLedgerStateA {
       getTickedLedgerStateA :: LedgerState BlockA
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TickedLgrA" (Ticked (LedgerState BlockA))
+  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrA" (Ticked (LedgerState BlockA))
 
 data PartialLedgerConfigA = LCfgA {
       lcfgA_k           :: SecurityParam
     , lcfgA_systemStart :: SystemStart
     , lcfgA_forgeTxs    :: Map SlotNo [GenTx BlockA]
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LCfgA" PartialLedgerConfigA
+  deriving NoThunks via OnlyCheckWhnfNamed "LCfgA" PartialLedgerConfigA
 
 type instance LedgerCfg (LedgerState BlockA) =
     (EpochInfo Identity, PartialLedgerConfigA)
@@ -246,7 +246,7 @@ instance HasPartialLedgerConfig BlockA where
   completeLedgerConfig _ = (,)
 
 data TxPayloadA = InitiateAtoB
-  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+  deriving (Show, Eq, Generic, NoThunks, Serialise)
 
 type instance CannotForge           BlockA = Void
 type instance ForgeStateInfo        BlockA = ()
@@ -300,7 +300,7 @@ data instance GenTx BlockA = TxA {
      , txA_payload :: TxPayloadA
      }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TxA" (GenTx BlockA)
+  deriving NoThunks via OnlyCheckWhnfNamed "TxA" (GenTx BlockA)
 
 type instance ApplyTxErr BlockA = Void
 
@@ -317,7 +317,7 @@ instance LedgerSupportsMempool BlockA where
 
 newtype instance TxId (GenTx BlockA) = TxIdA Int
   deriving stock   (Show, Eq, Ord, Generic)
-  deriving newtype (NoUnexpectedThunks, Serialise)
+  deriving newtype (NoThunks, Serialise)
 
 instance HasTxId (GenTx BlockA) where
   txId = txA_id

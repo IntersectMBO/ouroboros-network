@@ -128,7 +128,7 @@ data LgrDB m blk = LgrDB {
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
-               => NoUnexpectedThunks (LgrDB m blk)
+               => NoThunks (LgrDB m blk)
   -- use generic instance
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.

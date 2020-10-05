@@ -43,8 +43,7 @@ import qualified Data.Text as Text
 import           Data.Tree
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util (repeatedlyM)
@@ -55,7 +54,7 @@ import           Ouroboros.Consensus.Util (repeatedlyM)
 
 -- | Simple in-memory representation of a file system
 data FsTree a = File !a | Folder !(Folder a)
-  deriving (Show, Eq, Generic, Functor, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, Functor, NoThunks)
 
 type Folder a = Map Text (FsTree a)
 
