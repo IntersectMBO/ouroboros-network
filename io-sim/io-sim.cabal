@@ -29,6 +29,7 @@ library
   other-modules:       Control.Monad.IOSim.Internal
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
+                       CPP,
                        ExistentialQuantification,
                        FlexibleInstances,
                        GADTSyntax,
@@ -37,7 +38,6 @@ library
                        NamedFieldPuns,
                        RankNTypes,
                        ScopedTypeVariables,
-                       TypeApplications,
                        TypeFamilies
   build-depends:       base              >=4.9 && <4.15,
                        io-sim-classes    >=0.2 && <0.3,
