@@ -33,7 +33,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , Era
   , TPraosCrypto
   , StandardCrypto
-  , StandardShelley
     -- * CannotForge
   , TPraosCannotForge (..)
   , tpraosCheckCanForge

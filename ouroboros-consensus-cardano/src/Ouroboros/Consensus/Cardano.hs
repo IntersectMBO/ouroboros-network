@@ -30,9 +30,9 @@ module Ouroboros.Consensus.Cardano (
 import           Data.Kind (Type)
 import           Data.Type.Equality
 
-import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Genesis as Byron.Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
-import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update as Byron.Update
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -50,8 +50,7 @@ import           Ouroboros.Consensus.Byron.Node as X
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
-import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto,
-                     StandardShelley)
+import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC
@@ -68,9 +67,13 @@ import           Ouroboros.Consensus.Cardano.ShelleyHFC
   breaking any assumptions made in @cardano-node@.
 -------------------------------------------------------------------------------}
 
-type ProtocolByron          = HardForkProtocol '[ByronBlock]
-type ProtocolShelley        = HardForkProtocol '[ShelleyBlock StandardShelley]
-type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock StandardShelley]
+type ProtocolByron   = HardForkProtocol '[ ByronBlock ]
+type ProtocolShelley = HardForkProtocol '[ ShelleyBlock StandardShelley ]
+type ProtocolCardano = HardForkProtocol '[ ByronBlock
+                                         , ShelleyBlock StandardShelley
+                                         , ShelleyBlock StandardAllegra
+                                         , ShelleyBlock StandardMary
+                                         ]
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -80,10 +83,10 @@ type ProtocolCardano        = HardForkProtocol '[ByronBlock, ShelleyBlock Standa
 data Protocol (m :: Type -> Type) blk p where
   -- | Run PBFT against the real Byron ledger
   ProtocolByron
-    :: Genesis.Config
+    :: Byron.Genesis.Config
     -> Maybe PBftSignatureThreshold
-    -> Update.ProtocolVersion
-    -> Update.SoftwareVersion
+    -> Byron.Update.ProtocolVersion
+    -> Byron.Update.SoftwareVersion
     -> [ByronLeaderCredentials]
     -> Protocol m ByronBlockHFC ProtocolByron
 
@@ -103,12 +106,26 @@ data Protocol (m :: Type -> Type) blk p where
 
   -- | Run the protocols of /the/ Cardano block
   ProtocolCardano
+       -- Common
+    :: Byron.Update.ProtocolVersion  -- ^ Protocol version used for all eras
+    -> MaxMajorProtVer
+
        -- Byron
-    :: Genesis.Config
+    -> Byron.Genesis.Config
     -> Maybe PBftSignatureThreshold
-    -> Update.ProtocolVersion
-    -> Update.SoftwareVersion
+    -> Byron.Update.SoftwareVersion
     -> [ByronLeaderCredentials]
+    -> Maybe EpochNo
+       -- ^ Lower bound on first Shelley epoch
+       --
+       -- Setting this to @Just@ when a true lower bound is known may
+       -- particularly improve performance of bulk syncing. For example, @Just
+       -- 208@ would be sound for the Cardano mainnet, since we know now that
+       -- the Shelley era began in epoch 208.
+       --
+       -- The @Nothing@ case is useful for test and possible alternative nets.
+    -> TriggerHardFork -- ^ Transition from Byron to Shelley
+
        -- Shelley
     -> ShelleyGenesis StandardShelley
     -> Nonce
@@ -117,23 +134,28 @@ data Protocol (m :: Type -> Type) blk p where
        --
        -- WARNING: chains using different values of this parameter will be
        -- mutually incompatible.
-    -> ProtVer -- TODO unify with 'Update.ProtocolVersion' (2 vs 3 numbers)
-    -> MaxMajorProtVer
     -> [TPraosLeaderCredentials StandardShelley]
-       -- Hard fork
     -> Maybe EpochNo
-       -- ^ maybe lower bound on first Shelley epoch
+       -- ^ Lower bound on first Allegra epoch
        --
        -- Setting this to @Just@ when a true lower bound is known may
        -- particularly improve performance of bulk syncing. For example, @Just
-       -- 180@ would be sound for the Cardano mainnet, since the Byron era's
+       -- 220@ would be sound for the Cardano mainnet, since the Shelley era's
        -- immutable prefix now includes that era. We can update it over time,
        -- and set it to the precise value once the transition has actually
        -- taken place.
        --
        -- The @Nothing@ case is useful for test and possible alternative nets.
-    -> TriggerHardFork -- ^ Transition from Byron to Shelley
-    -> TriggerHardFork -- ^ Transition from Shelley to ShelleyMA
+    -> TriggerHardFork -- ^ Transition from Shelley to Allegra
+
+       -- Allegra
+    -> [TPraosLeaderCredentials StandardAllegra]
+    -> Maybe EpochNo   -- ^ Lower bound on first Mary epoch
+    -> TriggerHardFork -- ^ Transition from Allegra to Mary
+
+       -- Mary
+    -> [TPraosLeaderCredentials StandardMary]
+
     -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
@@ -155,13 +177,17 @@ protocolInfo (ProtocolShelley genesis initialNonce protVer maxMajorPV mbLeaderCr
     inject $ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbLeaderCredentials
 
 protocolInfo (ProtocolCardano
-               genesisByron mthr prv swv mbLeaderCredentialsByron
-               genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
-               mbLowerBound byronTransition shelleyTransition) =
+               protVerByron maxMajorProtVer
+               genesisByron mSigThresh softVerByron credssByron mbLowerBoundShelley triggerHardForkByronShelley
+               genesisShelley initialNonce credssShelley mbLowerBoundAllegra triggerHardForkShelleyAllegra
+               credssAllegra mbLowerBoundMary triggerHardForkAllegraMary
+               credssMary) =
     protocolInfoCardano
-      genesisByron mthr prv swv mbLeaderCredentialsByron
-      genesisShelley initialNonce protVer maxMajorPV mbLeaderCredentialsShelley
-      mbLowerBound byronTransition shelleyTransition
+      protVerByron maxMajorProtVer
+      genesisByron mSigThresh softVerByron credssByron mbLowerBoundShelley triggerHardForkByronShelley
+      genesisShelley initialNonce credssShelley mbLowerBoundAllegra triggerHardForkShelleyAllegra
+      credssAllegra mbLowerBoundMary triggerHardForkAllegraMary
+      credssMary
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

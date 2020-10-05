@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , TPraosLeaderCredentials (..)
   , shelleyBlockForging
   , tpraosBlockIssuerVKey
-  , SL.ProtVer
+  , SL.ProtVer (..)
   , SL.Nonce (..)
   , MaxMajorProtVer (..)
   , SL.emptyGenesisStaking

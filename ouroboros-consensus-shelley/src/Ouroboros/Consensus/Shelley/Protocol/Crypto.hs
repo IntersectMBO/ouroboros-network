@@ -5,9 +5,6 @@
 module Ouroboros.Consensus.Shelley.Protocol.Crypto (
     TPraosCrypto
   , StandardCrypto
-  , StandardShelley
-    -- * Re-exported
-  , Era
   ) where
 
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
@@ -25,6 +22,8 @@ import qualified Shelley.Spec.Ledger.Keys as SL (DSignable, KESignable,
                      VRFSignable)
 import           Shelley.Spec.Ledger.OCert (OCertSignable)
 
+-- TODO #2668 these constraints and types should be parameterised by @crypto@,
+-- not @era@.
 class ( Era era
       , SL.DSignable    era (OCertSignable era)
       , SL.DSignable    era (Hash era (TxBody era))
@@ -41,7 +40,4 @@ instance Crypto StandardCrypto where
   type HASH     StandardCrypto = Blake2b_256
   type ADDRHASH StandardCrypto = Blake2b_224
 
--- | The Shelley era with standard crypto
-type StandardShelley = Shelley StandardCrypto
-
-instance TPraosCrypto StandardShelley
+instance TPraosCrypto (Shelley StandardCrypto)

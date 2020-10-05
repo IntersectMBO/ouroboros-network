@@ -70,7 +70,7 @@ dispatchEncoder ccfg version ns =
         -> EraNodeToClientVersion blk
         -> (f -.-> K Encoding) blk
     aux ccfg' (EraNodeToClientEnabled v) = Fn $ K . encodeNodeToClient ccfg' v
-    aux _      EraNodeToClientDisabled   =
+    aux _      EraNodeToClientDisabled   = Fn $ \_ ->
         throw $ disabledEraException (Proxy @blk)
 
 dispatchDecoder :: forall f xs. (

@@ -118,7 +118,11 @@ toCardanoCodecConfig ::
      CodecConfig ByronBlock
   -> CodecConfig (CardanoBlock Crypto)
 toCardanoCodecConfig codecConfigByron =
-    CardanoCodecConfig codecConfigByron ShelleyCodecConfig
+    CardanoCodecConfig
+      codecConfigByron
+      ShelleyCodecConfig
+      ShelleyCodecConfig
+      ShelleyCodecConfig
 
 {------------------------------------------------------------------------------
   Byron to Cardano

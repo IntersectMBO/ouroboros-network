@@ -21,6 +21,7 @@ import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
 import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),

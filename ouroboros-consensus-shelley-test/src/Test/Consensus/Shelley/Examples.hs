@@ -94,9 +94,10 @@ import           Test.Shelley.Spec.Ledger.Orphans ()
 import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
+import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (StandardShelley,
-                     TPraosCrypto, TPraosState (..))
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
+                     TPraosState (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)

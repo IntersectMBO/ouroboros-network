@@ -436,17 +436,20 @@ prop_simple_cardano_convergence TestSetup
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
                 mkProtocolCardanoAndHardForkTxs
+                  propPV
                   pbftParams
                   coreNodeId
                   genesisByron
                   generatedSecrets
-                  propPV
+                  (guard setupByronLowerBound *> Just numByronEpochs)
+                  (TriggerHardForkAtVersion shelleyMajorVersion)
                   genesisShelley
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
-                  (guard setupByronLowerBound *> Just numByronEpochs)
-                  (TriggerHardForkAtVersion shelleyMajorVersion)
-                  (TriggerHardForkAtVersion shelleyMaMajorVersion)
+                  Nothing
+                  (TriggerHardForkAtVersion allegraMajorVersion)
+                  Nothing
+                  (TriggerHardForkAtVersion maryMajorVersion)
             , mkRekeyM = Nothing
             }
 
@@ -698,25 +701,33 @@ prop_simple_cardano_convergence TestSetup
 
 mkProtocolCardanoAndHardForkTxs
   :: forall c m. (IOLike m, CardanoHardForkConstraints c)
+     -- Common
+  => CC.Update.ProtocolVersion
      -- Byron
-  => PBftParams
+  -> PBftParams
   -> CoreNodeId
   -> CC.Genesis.Config
   -> CC.Genesis.GeneratedSecrets
-  -> CC.Update.ProtocolVersion
+  -> Maybe EpochNo
+  -> TriggerHardFork
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> Shelley.CoreNode (ShelleyEra c)
-     -- Hard fork
   -> Maybe EpochNo
-  -> TriggerHardFork -- ^ Byron to Shelley
-  -> TriggerHardFork -- ^ Shelley to ShelleyMA
+  -> TriggerHardFork
+     -- Allegra
+  -> Maybe EpochNo
+  -> TriggerHardFork
+     -- Mary
+     -- no parameters yet
+
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
-    pbftParams coreNodeId genesisByron generatedSecretsByron propPV
-    genesisShelley initialNonce coreNodeShelley
-    mbLowerBound byronTransition shelleyTransition =
+    propPV
+    pbftParams coreNodeId genesisByron generatedSecretsByron mbLowerBoundShelley transitionShelley
+    genesisShelley initialNonce coreNodeShelley mbLowerBoundAllegra transitionAllegra
+    mbLowerBoundMary transitionMary =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
       , tniProtocolInfo = pInfo
@@ -739,24 +750,30 @@ mkProtocolCardanoAndHardForkTxs
 
     pInfo :: ProtocolInfo m (CardanoBlock c)
     pInfo = protocolInfoCardano
+        -- Common
+        propPV
+        maxMajorPV
         -- Byron
         genesisByron
         -- Trivialize the PBFT signature window so that the forks induced by
         -- the network partition are as deep as possible.
         (Just $ PBftSignatureThreshold 1)
-        propPV
         softVerByron
         [leaderCredentialsByron]
+        mbLowerBoundShelley
+        transitionShelley
         -- Shelley
         genesisShelley
         initialNonce
-        protVerShelley
-        maxMajorPVShelley
         [leaderCredentialsShelley]
-        -- Hard fork
-        mbLowerBound
-        byronTransition
-        shelleyTransition
+        mbLowerBoundAllegra
+        transitionAllegra
+        -- Allegra
+        []
+        mbLowerBoundMary
+        transitionMary
+        -- Mary
+        []
 
     -- Byron
 
@@ -772,13 +789,6 @@ mkProtocolCardanoAndHardForkTxs
     softVerByron = Byron.theProposedSoftwareVersion
 
     -- Shelley
-
-    -- the protocol version that each Shelley node is endorsing with each block
-    -- it forges (ie which the node is ready to run)
-    --
-    -- This is still Shelley, since that's the last era of this test.
-    protVerShelley :: SL.ProtVer
-    protVerShelley = SL.ProtVer shelleyMajorVersion 0
 
     leaderCredentialsShelley :: TPraosLeaderCredentials (ShelleyEra c)
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
@@ -796,8 +806,10 @@ mkProtocolCardanoAndHardForkTxs
 activeSlotCoeff :: Rational
 activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
 
-maxMajorPVShelley :: MaxMajorProtVer
-maxMajorPVShelley = MaxMajorProtVer 100   -- arbitrary
+-- | Maximum major protocol version supported. We can pick any value, as long as
+-- it is >= the major protocol version of the last era.
+maxMajorPV :: MaxMajorProtVer
+maxMajorPV = MaxMajorProtVer 100
 
 -- | The major protocol version of Byron in this test
 --
@@ -814,11 +826,17 @@ byronMajorVersion = 0
 shelleyMajorVersion :: Num a => a
 shelleyMajorVersion = byronMajorVersion + 1
 
--- | The major protocol version of ShelleyMA in this test
+-- | The major protocol version of Allegra in this test
 --
--- See 'MajorVersionbyronMajorVersion
-shelleyMaMajorVersion :: Num a => a
-shelleyMaMajorVersion = shelleyMajorVersion + 1
+-- See 'byronMajorVersion'
+allegraMajorVersion :: Num a => a
+allegraMajorVersion = shelleyMajorVersion + 1
+
+-- | The major protocol version of Mary in this test
+--
+-- See 'byronMajorVersion'
+maryMajorVersion :: Num a => a
+maryMajorVersion = allegraMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --
@@ -927,10 +945,14 @@ byronEpochSize (SecurityParam k) =
 shelleyEpochSize :: SecurityParam -> Word64
 shelleyEpochSize k = unEpochSize $ Shelley.mkEpochSize k activeSlotCoeff
 
+-- | Return 'True' when the block is a block from the Shelley era.
+--
+-- Note it will return 'False' for other Shelley-flavoured eras like Allegra and
+-- Mary.
 isShelley :: CardanoBlock c -> Bool
 isShelley = \case
-    BlockByron{}   -> False
     BlockShelley{} -> True
+    _              -> False
 
 -- | Render a number as a positive difference from @k@
 --
