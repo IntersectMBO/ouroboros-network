@@ -55,8 +55,6 @@ let
           (name: { configureFlags = [ "--ghc-option=-Werror" ]; });
       }
       {
-        packages.katip.components.library.doExactConfig = true;
-        packages.prometheus.components.library.doExactConfig = true;
         enableLibraryProfiling = profiling;
       }
       (if stdenv.hostPlatform.isWindows then {
@@ -64,7 +62,6 @@ let
         packages.comonad.package.buildType = lib.mkForce "Simple";
         packages.distributive.package.buildType = lib.mkForce "Simple";
         packages.generic-data.package.buildType = lib.mkForce "Simple";
-        packages.lens.package.buildType = lib.mkForce "Simple";
         packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
         packages.semigroupoids.package.buildType = lib.mkForce "Simple";
         packages.system-filepath.package.buildType = lib.mkForce "Simple";
