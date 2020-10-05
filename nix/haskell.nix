@@ -63,6 +63,7 @@ let
         # Disable cabal-doctest tests by turning off custom setups
         packages.comonad.package.buildType = lib.mkForce "Simple";
         packages.distributive.package.buildType = lib.mkForce "Simple";
+        packages.generic-data.package.buildType = lib.mkForce "Simple";
         packages.lens.package.buildType = lib.mkForce "Simple";
         packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
         packages.semigroupoids.package.buildType = lib.mkForce "Simple";
@@ -80,9 +81,7 @@ let
         packages.network.components.library.build-tools = lib.mkForce [];
 
         # Make sure that libsodium DLLs are available for tests
-        packages.ouroboros-consensus-shelley-test.components.all.postInstall = lib.mkForce "";
         packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-cardano-test.components.all.postInstall = lib.mkForce "";
         packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       } else {
         packages.ouroboros-network.flags.cddl = true;
