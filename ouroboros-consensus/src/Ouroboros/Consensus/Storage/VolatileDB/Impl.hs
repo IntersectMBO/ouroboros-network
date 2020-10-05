@@ -293,7 +293,7 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig, checkIntegrity } blockCom
         GetVerifiedBlock ->
           getBlockComponent hasFS ibi GetBlock >>= \blk -> do
             unless (checkIntegrity blk) $
-              throwM $ UnexpectedFailure $ CorruptBlockError (Proxy @blk) hash
+              throwIO $ UnexpectedFailure $ CorruptBlockError (Proxy @blk) hash
             return blk
       where
         InternalBlockInfo { ibiBlockInfo = BlockInfo {..}, .. } = ibi
@@ -324,9 +324,9 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig, checkIntegrity } blockCom
               | Lazy.null trailing
               -> return $ f fullBytes
               | otherwise
-              -> throwM $ UnexpectedFailure $ TrailingDataError ibiFile pt trailing
+              -> throwIO $ UnexpectedFailure $ TrailingDataError ibiFile pt trailing
             Left err
-              -> throwM $ UnexpectedFailure $ ParseError ibiFile pt err
+              -> throwIO $ UnexpectedFailure $ ParseError ibiFile pt err
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file
@@ -428,7 +428,7 @@ garbageCollectImpl env slot = do
     when usefulGC $
       writeOpenState env $ \hasFS -> do
         -- This event will be picked up by ghc-events-analyze
-        lift $ lift $ traceEventM "START garbage collection"
+        lift $ lift $ traceEventIO "START garbage collection"
         -- Note that this is /monotonic/: if 'usefulGC' is @True@, then
         -- 'filesToGC' has to be non-empty.
         --
@@ -449,7 +449,7 @@ garbageCollectImpl env slot = do
             currentMaxSlotNo = FileInfo.maxSlotNoInFiles
                                  (Index.elems (currentMap st))
           }
-        lift $ lift $ traceEventM "STOP garbage collection"
+        lift $ lift $ traceEventIO "STOP garbage collection"
   where
     -- | Return 'True' if a garbage collection would actually garbage collect
     -- at least one file.
@@ -561,5 +561,5 @@ getterSTM ::
 getterSTM fromSt VolatileDBEnv { varInternalState } = do
     mSt <- RAWLock.read varInternalState
     case mSt of
-      DbClosed  -> throwM $ ApiMisuse $ ClosedDBError Nothing
+      DbClosed  -> throwIO $ ApiMisuse $ ClosedDBError Nothing
       DbOpen st -> return $ fromSt st

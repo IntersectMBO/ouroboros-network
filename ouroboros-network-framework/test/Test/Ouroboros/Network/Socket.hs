@@ -190,15 +190,15 @@ prop_socket_send_recv :: Socket.SockAddr
 prop_socket_send_recv initiatorAddr responderAddr f xs =
     withIOManager $ \iomgr -> do
 
-    cv <- newEmptyTMVarM
-    sv <- newEmptyTMVarM
+    cv <- newEmptyTMVarIO
+    sv <- newEmptyTMVarIO
     networkState <- newNetworkMutableState
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
      - be torn down and the other side exiting before it has a chance to write to its result TMVar.
      -}
-    siblingVar <- newTVarM 2
+    siblingVar <- newTVarIO 2
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
@@ -293,7 +293,7 @@ prop_socket_recv_error f rerr =
     ioProperty $
     withIOManager $ \iomgr -> do
 
-    sv   <- newEmptyTMVarM
+    sv   <- newEmptyTMVarIO
 
     let app :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
@@ -464,7 +464,7 @@ prop_socket_client_connect_error _ xs =
     serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
-    cv <- newEmptyTMVarM
+    cv <- newEmptyTMVarIO
 
     let app :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator

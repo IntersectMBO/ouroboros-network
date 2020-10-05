@@ -74,7 +74,7 @@ withLockDB_ fileLock mountPoint lockFsPath lockTimeout action =
       lockFileAsync <- async (lockFile fileLock lockFilePath)
       timeout lockTimeout (wait lockFileAsync) >>= \case
         -- We timed out while waiting on the lock. The db is still locked.
-        Nothing     -> throwM $ DbLocked lockFilePath
+        Nothing     -> throwIO $ DbLocked lockFilePath
         Just unlock -> return unlock
 
     lockFilePath = fsToFilePath mountPoint lockFsPath

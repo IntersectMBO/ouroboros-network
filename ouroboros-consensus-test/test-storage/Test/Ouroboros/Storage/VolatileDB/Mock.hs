@@ -49,7 +49,7 @@ openDBMock maxBlocksPerFile ccfg = do
         updateE_ :: (DBModel blk -> Either VolatileDBError (DBModel blk)) -> m ()
         updateE_ f = atomically $ do
           (f <$> readTVar dbVar) >>= \case
-            Left  e   -> throwM e
+            Left  e   -> throwSTM e
             Right db' -> writeTVar dbVar db'
 
         query :: (DBModel blk -> a) -> m a
@@ -57,11 +57,11 @@ openDBMock maxBlocksPerFile ccfg = do
 
         queryE :: (DBModel blk -> Either VolatileDBError a) -> m a
         queryE f = query f >>= \case
-          Left  e -> throwM e
+          Left  e -> throwIO e
           Right a -> return a
 
         querySTME :: (DBModel blk -> Either VolatileDBError a) -> STM m a
         querySTME f =
           (f <$> readTVar dbVar) >>= \case
-            Left  e -> throwM e
+            Left  e -> throwSTM e
             Right a -> return a

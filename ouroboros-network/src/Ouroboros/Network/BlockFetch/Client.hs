@@ -251,11 +251,11 @@ blockFetchClient _version
 -}
 
             unless (blockPoint header == castPoint (blockPoint block)) $
-              throwM BlockFetchProtocolFailureWrongBlock
+              throwIO BlockFetchProtocolFailureWrongBlock
 
             -- This is moderately expensive.
             unless (blockMatchesHeader header block) $
-              throwM BlockFetchProtocolFailureInvalidBody
+              throwIO BlockFetchProtocolFailureInvalidBody
 
             -- write it to the volatile block store
             --FIXME: this is not atomic wrt the in-flight and status updates
@@ -280,10 +280,10 @@ blockFetchClient _version
             return (receiverStreaming inflightlimits range headers')
 
           (MsgBatchDone, (_:_)) -> ReceiverEffect $
-            throwM BlockFetchProtocolFailureTooFewBlocks
+            throwIO BlockFetchProtocolFailureTooFewBlocks
 
           (MsgBlock _, []) -> ReceiverEffect $
-            throwM BlockFetchProtocolFailureTooManyBlocks
+            throwIO BlockFetchProtocolFailureTooManyBlocks
 
 castRange :: (HeaderHash a ~ HeaderHash b) => ChainRange a -> ChainRange b
 castRange (ChainRange l u) = ChainRange (castPoint l) (castPoint u)

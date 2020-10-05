@@ -81,7 +81,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.IOLike hiding (fork, invariant)
+import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
@@ -382,7 +382,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
-      fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
+      fmap (`WithEq` a) $ atomically $ stateTVar varNextId $ \i -> (succ i, i)
 
 runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
 runBgTasks ChainDB.Internal{..} = do

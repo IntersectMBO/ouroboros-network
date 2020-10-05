@@ -29,7 +29,7 @@ runSimFS :: (MonadSTM m, MonadThrow m)
          -> (HasFS m HandleMock -> m a)
          -> m (a, MockFS)
 runSimFS fs act = do
-    var <- newTVarM fs
+    var <- newTVarIO fs
     a   <- act (simHasFS var)
     fs' <- atomically (readTVar var)
     return (a, fs')
@@ -68,4 +68,4 @@ simHasFS var = HasFS {
           Right (a, st') -> do
             writeTVar var st'
             return $ Right a
-      either throwM return eOrA
+      either throwIO return eOrA

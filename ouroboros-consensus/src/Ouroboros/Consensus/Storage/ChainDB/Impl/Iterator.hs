@@ -240,7 +240,7 @@ newIterator ::
   -> m (Either (UnknownRange blk) (Iterator m blk b))
 newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     unless (validBounds from to) $
-      throwM $ InvalidIteratorRange from to
+      throwIO $ InvalidIteratorRange from to
     res <- runExceptT start
     case res of
       Left e -> trace $ UnknownRangeRequested e
@@ -434,7 +434,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
       -> m (Iterator m blk b)
     makeIterator register itState = do
       iteratorKey <- makeNewIteratorKey
-      varItState  <- newTVarM itState
+      varItState  <- newTVarIO itState
       when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
@@ -473,7 +473,7 @@ computePathVolatileDB volatileDB from to = do
     lookupBlockInfo <- atomically $ VolatileDB.getBlockInfo volatileDB
     case computePath lookupBlockInfo from to of
       Just path -> return path
-      Nothing   -> throwM $ InvalidIteratorRange from to
+      Nothing   -> throwIO $ InvalidIteratorRange from to
 
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').

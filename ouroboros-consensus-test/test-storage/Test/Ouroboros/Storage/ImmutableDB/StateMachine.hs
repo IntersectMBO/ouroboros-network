@@ -269,7 +269,7 @@ run env@ImmutableDBEnv {
 
     giveWithEq :: a -> IO (WithEq a)
     giveWithEq a =
-      fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
+      fmap (`WithEq` a) $ atomically $ stateTVar varNextId $ \i -> (succ i, i)
 
     streamAll :: ImmutableDB IO TestBlock -> IO [AllComponents TestBlock]
     streamAll db =

@@ -38,4 +38,4 @@ keepAliveClientPeer (SendMsgKeepAlive cookieReq next) =
     Yield (ClientAgency TokClient) (MsgKeepAlive cookieReq) $
       Await (ServerAgency TokServer) $ \(MsgKeepAliveResponse cookieRsp) ->
         if cookieReq == cookieRsp then Effect $ keepAliveClientPeer <$> next
-                                  else Effect $ throwM $ KeepAliveCookieMissmatch cookieReq cookieRsp
+                                  else Effect $ throwIO $ KeepAliveCookieMissmatch cookieReq cookieRsp

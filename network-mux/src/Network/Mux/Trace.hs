@@ -22,7 +22,7 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Exception
+import           Control.Exception hiding (throwIO)
 import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
 
@@ -80,7 +80,7 @@ instance Exception MuxError where
 -- * 'pipeAsMuxBearer'
 --
 handleIOException :: MonadThrow m => String -> IOException -> m a
-handleIOException errorMsg e = throwM MuxError {
+handleIOException errorMsg e = throwIO MuxError {
     errorType  = MuxIOException e,
     errorMsg   = '(' : errorMsg ++ ")"
   }

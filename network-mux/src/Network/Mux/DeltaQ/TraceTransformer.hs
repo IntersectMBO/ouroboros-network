@@ -19,13 +19,13 @@ import Network.Mux.DeltaQ.TraceStats
 --   seconds (when in use).
 initDeltaQTracer :: MonadSTM m
                  => m (Tracer m MuxTrace -> Tracer m MuxTrace)
-initDeltaQTracer = newTVarM initialStatsA >>= pure . dqTracer
+initDeltaQTracer = newTVarIO initialStatsA >>= pure . dqTracer
 
 initDeltaQTracer' :: MonadSTM m
                   => Tracer m MuxTrace
                   -> m (Tracer m MuxTrace)
 initDeltaQTracer' tr = do
-    v <- newTVarM initialStatsA
+    v <- newTVarIO initialStatsA
     return $ dqTracer v tr
 
 dqTracer :: MonadSTM m
@@ -45,10 +45,10 @@ dqTracer sTvar tr = Tracer go
       = traceWith tr x
 
     update rClock lClock n
-      = atomically (updateTVar sTvar (step rClock lClock n))
+      = atomically (stateTVar sTvar (step rClock lClock n))
 
     emitSample
-      =  atomically (updateTVar sTvar processSample)
+      =  atomically (stateTVar sTvar processSample)
          >>= traceWith tr . formatSample
 
     processSample s

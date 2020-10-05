@@ -1,22 +1,35 @@
 module Control.Monad.Class.MonadEventlog (
-    MonadEventlog(..)
+    MonadEventlog(..),
+    -- * Deprecated API
+    traceEventM,
+    traceMarkerM
   ) where
 
 import           Control.Monad.Reader
-import           Debug.Trace (traceEventIO, traceMarkerIO)
+import qualified Debug.Trace as IO (traceEventIO, traceMarkerIO)
 
 class Monad m => MonadEventlog m where
 
   -- | Emits a message to the eventlog, if eventlog profiling is available and
   -- enabled at runtime.
-  traceEventM :: String -> m ()
+  traceEventIO :: String -> m ()
 
   -- | Emits a marker to the eventlog, if eventlog profiling is available and
   -- enabled at runtime.
   --
   -- The 'String' is the name of the marker. The name is just used in the
   -- profiling tools to help you keep clear which marker is which.
-  traceMarkerM :: String -> m ()
+  traceMarkerIO :: String -> m ()
+
+
+traceEventM :: MonadEventlog m => String -> m ()
+traceEventM = traceEventIO
+{-# DEPRECATED traceEventM "Use traceEventIO" #-}
+
+
+traceMarkerM :: MonadEventlog m => String -> m ()
+traceMarkerM = traceMarkerIO
+{-# DEPRECATED traceMarkerM "Use traceEventIO" #-}
 
 
 --
@@ -24,13 +37,13 @@ class Monad m => MonadEventlog m where
 --
 
 instance MonadEventlog IO where
-  traceEventM = traceEventIO
-  traceMarkerM = traceMarkerIO
+  traceEventIO = IO.traceEventIO
+  traceMarkerIO = IO.traceMarkerIO
 
 --
 -- Instance for ReaderT
 --
 
 instance MonadEventlog m => MonadEventlog (ReaderT r m) where
-  traceEventM = lift . traceEventM
-  traceMarkerM = lift . traceMarkerM
+  traceEventIO = lift . traceEventIO
+  traceMarkerIO = lift . traceMarkerIO

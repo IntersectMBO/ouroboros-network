@@ -240,7 +240,7 @@ withOpenState ::
 withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     (mr, ()) <- generalBracket open (const close) (tryImmutableDB . access)
     case mr of
-      Left  e -> throwM e
+      Left  e -> throwIO e
       Right r -> return r
   where
     -- We use 'readMVarSTM' to read a potentially stale internal state if

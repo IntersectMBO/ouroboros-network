@@ -618,7 +618,7 @@ restart cacheEnv chunk = do
     void $ swapMVar cacheVar $ emptyCached chunk currentChunkInfo
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
       case mbBgThread of
-        Just _  -> throwM $ userError "background thread still running"
+        Just _  -> throwIO $ userError "background thread still running"
         Nothing -> do
           !bgThread <- forkLinkedThread registry "ImmutableDB.expireUnusedChunks" $
             expireUnusedChunks cacheEnv

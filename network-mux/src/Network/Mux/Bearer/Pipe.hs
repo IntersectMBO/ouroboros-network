@@ -85,7 +85,7 @@ pipeAsMuxBearer tracer channel =
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' 8 []
           case Mx.decodeMuxSDU hbuf of
-              Left e     -> throwM e
+              Left e -> throwIO e
               Right header@Mx.MuxSDU { Mx.msHeader } -> do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
                   blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
@@ -100,7 +100,7 @@ pipeAsMuxBearer tracer channel =
           buf <- readHandle channel l
                     `catch` Mx.handleIOException "readHandle errored"
           if BL.null buf
-              then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data"
+              then throwIO $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data"
               else do
                   traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)

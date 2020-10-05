@@ -5048,7 +5048,7 @@ tree} data structure instantiated for block headers to enable efficient
 O(log n) operations based on slot numbers and block numbers, in addition
 to the normal efficient sequence operations.
 
-\subsubsection{Simulator environment SimM}
+\subsubsection{Simulator environment IOSim}
 \label{simulator-environment-simm}
 
 \emph{Source Lines of Code:\\
@@ -5065,7 +5065,7 @@ to the normal efficient sequence operations.
 \end{longtable}
 
 We wrote a simulation environment for the \emph{IO} monad (which is
-called \emph{SimM} or \emph{sim-io}). This is similar to the system that
+called \emph{IOSim} or \emph{sim-io}). This is similar to the system that
 was used to test the Bitcoin backbone protocol is \cite{MJ15}. This,
 unlike the other components, is very Haskell-specific, and thus its
 description below will use language which might be more familiar for
@@ -5102,13 +5102,13 @@ written with the following principles:
 \end{itemize}
 
 This allows us to write computations that can be interpreted both in
-\emph{IO} and the simulator monad \emph{SimM}.
+\emph{IO} and the simulator monad \emph{IOSim}.
 
-Currently \emph{SimM} provides a single scheduling policy, but it is
+Currently \emph{IOSim} provides a single scheduling policy, but it is
 possible to extend it, which would improve assurance for tests expressed
-using \emph{SimM} monad.
+using \emph{IOSim} monad.
 
-The time in \emph{SimM} is simulated, which allows running tests that
+The time in \emph{IOSim} is simulated, which allows running tests that
 otherwise would take a very long time to complete. Not surprising this
 was very useful for testing networking code, but also turned out to be
 very useful testing the \emph{ouroboros-consensus} package maintained by
@@ -5156,7 +5156,7 @@ All the protocols are tested on several different levels:
   \end{itemize}
 \end{itemize}
 
-All the tests are done in both the \emph{IO} monad and the \emph{SimM}
+All the tests are done in both the \emph{IO} monad and the \emph{IOSim}
 monad.
 
 Beside protocol tests we also maintain codecs for each protocol and a
@@ -5172,7 +5172,7 @@ properties which allows us to:
   errors.
 \end{itemize}
 
-Some of the tests rely on the \emph{SimM} monad which has extensive
+Some of the tests rely on the \emph{IOSim} monad which has extensive
 tracing support. This allows checking invariants of the running
 component. This also permits us to see the evolution of state maintained
 by the component, and trace events that are happening in various testing

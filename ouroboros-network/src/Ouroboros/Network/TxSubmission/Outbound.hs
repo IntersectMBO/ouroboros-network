@@ -104,13 +104,13 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
         recvMsgRequestTxIds blocking ackNo reqNo = do
 
           when (ackNo > fromIntegral (Seq.length unackedSeq)) $
-            throwM ProtocolErrorAckedTooManyTxids
+            throwIO ProtocolErrorAckedTooManyTxids
 
           when (  fromIntegral (Seq.length unackedSeq)
                 - ackNo
                 + reqNo
                 > maxUnacked) $
-            throwM (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked)
+            throwIO (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked)
 
           -- Update our tracking state to remove the number of txids that the
           -- peer has acknowledged.
@@ -123,9 +123,9 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
           txs <- case blocking of
             TokBlocking -> do
               when (reqNo == 0) $
-                throwM ProtocolErrorRequestedNothing
+                throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
-                throwM ProtocolErrorRequestBlocking
+                throwIO ProtocolErrorRequestBlocking
 
               atomically $ do
                 MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
@@ -136,9 +136,9 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
 
             TokNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
-                throwM ProtocolErrorRequestedNothing
+                throwIO ProtocolErrorRequestedNothing
               when (Seq.null unackedSeq') $
-                throwM ProtocolErrorRequestNonBlocking
+                throwIO ProtocolErrorRequestNonBlocking
 
               atomically $ do
                 MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
@@ -184,7 +184,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
               txidxs' = catMaybes txidxs
 
           when (any isNothing txidxs) $
-            throwM ProtocolErrorRequestedUnavailableTx
+            throwIO ProtocolErrorRequestedUnavailableTx
 
           -- The 'mempoolLookupTx' will return nothing if the transaction is no
           -- longer in the mempool. This is good. Neither the sending nor

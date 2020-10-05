@@ -37,15 +37,15 @@ import           Test.Tasty.QuickCheck
 tests :: TestTree
 tests =
   testGroup "IO simulator"
-  [ testProperty "read/write graph (IO)"   prop_stm_graph_io
-  , testProperty "read/write graph (SimM)" (withMaxSuccess 1000 prop_stm_graph_sim)
-  , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
+  [ testProperty "read/write graph (IO)"    prop_stm_graph_io
+  , testProperty "read/write graph (IOSim)" (withMaxSuccess 1000 prop_stm_graph_sim)
+  , testProperty "timers (IOSim)"           (withMaxSuccess 1000 prop_timers_ST)
   -- fails since we just use `threadDelay` to schedule timers in `IO`.
-  , testProperty "timers (IO)"             (expectFailure prop_timers_IO)
-  , testProperty "threadId order (SimM)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
-  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order_ST)
-  , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
-  , testProperty "STM wakeup order"        prop_wakeup_order_ST
+  , testProperty "timers (IO)"              (expectFailure prop_timers_IO)
+  , testProperty "threadId order (IOSim)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
+  , testProperty "forkIO order (IOSim)"     (withMaxSuccess 1000 prop_fork_order_ST)
+  , testProperty "order (IO)"               (expectFailure prop_fork_order_IO)
+  , testProperty "STM wakeup order"         prop_wakeup_order_ST
   , testGroup "throw/catch unit tests"
     [ testProperty "0" unit_catch_0
     , testProperty "1" unit_catch_1
@@ -56,7 +56,7 @@ tests =
     , testProperty "6" unit_catch_6
     ]
   , testProperty "evaluate unit test" unit_evaluate_0
-  , testGroup "fork unit tests"
+  , testGroup "forkIO unit tests"
     [ testProperty "1" unit_fork_1
     , testProperty "2" unit_fork_2
     ]
@@ -106,9 +106,9 @@ prop_stm_graph_sim g =
 prop_stm_graph :: (MonadFork m, MonadSTM m) => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
-            sequence [ newTVarM False | _ <- vertices g ]
+            sequence [ newTVarIO False | _ <- vertices g ]
     forM_ (vertices g) $ \v ->
-      void $ fork $ do
+      void $ forkIO $ do
         -- read all the inputs and wait for them to become true
         -- then write to all the outputs
         let incomming = g' ! v
@@ -129,7 +129,7 @@ prop_stm_graph (TestThreadGraph g) = do
                   ,      null (g  ! v) ]
 
     -- write to the inputs and wait for the outputs
-    void $ fork $ atomically $ sequence_ [ writeTVar (vars ! var) True | var <- inputs  ]
+    void $ forkIO $ atomically $ sequence_ [ writeTVar (vars ! var) True | var <- inputs  ]
     atomically $ sequence_ [ readTVar (vars ! var) >>= check | var <- outputs ]
   where
     g' = transposeG g -- for incoming edges
@@ -221,8 +221,8 @@ test_timers xs =
     experiment :: Probe m (DiffTime, Int) -> m ()
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
-        v <- newTVarM False
-        void $ fork $ threadDelay t >> do
+        v <- newTVarIO False
+        void $ forkIO $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
         return v
@@ -273,9 +273,9 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
     experiment :: Int -> Probe m Int -> m ()
     experiment 0 _ = return ()
     experiment n p = do
-      v <- newTVarM False
+      v <- newTVarIO False
 
-      void $ fork $ do
+      void $ forkIO $ do
         probeOutput p n
         atomically $ writeTVar v True
       experiment (n - 1) p
@@ -305,9 +305,9 @@ test_threadId_order = \(Positive n) -> do
   where
     experiment :: m (ThreadId m)
     experiment = do
-      v <- newTVarM False
+      v <- newTVarIO False
 
-      tid <- fork $ atomically $ writeTVar v True
+      tid <- forkIO $ atomically $ writeTVar v True
 
       -- wait for the spawned thread to finish
       atomically $ readTVar v >>= check
@@ -336,11 +336,11 @@ test_wakeup_order :: ( MonadFork m
                      )
                 => m Property
 test_wakeup_order = do
-    v          <- newTVarM False
+    v          <- newTVarIO False
     wakupOrder <-
       withProbe $ \p -> do
         sequence_
-          [ do _ <- fork $ do
+          [ do _ <- forkIO $ do
                  atomically $ do
                    x <- readTVar v
                    check x
@@ -364,7 +364,7 @@ type Probe m x = StrictTVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do
-    probe <- newTVarM []
+    probe <- newTVarIO []
     action probe
     reverse <$> atomically (readTVar probe)
 
@@ -389,10 +389,10 @@ unit_catch_0 =
         _                         -> property False
 
  where
-  example :: SimM s ()
+  example :: IOSim s ()
   example = do
     say "before"
-    _ <- throwM DivideByZero
+    _ <- throwIO DivideByZero
     say "after"
 
 -- normal execution of a catch frame
@@ -409,7 +409,7 @@ unit_catch_1 =
 unit_catch_2 =
     runSimTraceSay
       (do catch (do say "inner1"
-                    _ <- throwM DivideByZero
+                    _ <- throwIO DivideByZero
                     say "inner2")
                 (\(_e :: ArithException) -> say "handler")
           say "after"
@@ -422,7 +422,7 @@ unit_catch_2 =
 unit_catch_3 =
     runSimTraceSay
       (do catch (do say "inner"
-                    throwM DivideByZero)
+                    throwIO DivideByZero)
                 (\(_e :: IOError) -> say "handler")
           say "after"
       )
@@ -434,7 +434,7 @@ unit_catch_3 =
 unit_catch_4 =
     runSimTraceSay
       (do catch (catch (do say "inner"
-                           throwM DivideByZero)
+                           throwIO DivideByZero)
                        (\(_e :: IOError) -> say "handler1"))
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
@@ -447,7 +447,7 @@ unit_catch_4 =
 unit_catch_5 =
     runSimTraceSay
       (do catch (catch (do say "inner"
-                           throwM DivideByZero)
+                           throwIO DivideByZero)
                        (\(_e :: ArithException) -> say "handler1"))
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
@@ -460,10 +460,10 @@ unit_catch_5 =
 unit_catch_6 =
     runSimTraceSay
       (do catch (catch (do say "inner"
-                           throwM DivideByZero)
+                           throwIO DivideByZero)
                        (\(e :: ArithException) -> do
                            say "handler1"
-                           throwM e))
+                           throwIO e))
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
       )
@@ -486,9 +486,9 @@ unit_fork_1 =
         Left FailureSloppyShutdown{} -> property True
         _                            -> property False
   where
-    example :: SimM s ()
+    example :: IOSim s ()
     example = do
-      void $ fork $ say "child"
+      void $ forkIO $ say "child"
       say "parent"
 
 -- Try works and we can pass exceptions back from threads.
@@ -502,16 +502,16 @@ unit_fork_2 =
           , ioeGetErrorString ioe == "oh noes!" -> property True
         _                                       -> property False
   where
-    example :: SimM s ()
+    example :: IOSim s ()
     example = do
-      resVar <- newEmptyTMVarM
-      void $ fork $ do
+      resVar <- newEmptyTMVarIO
+      void $ forkIO $ do
         res <- try (fail "oh noes!")
         atomically (putTMVar resVar (res :: Either SomeException ()))
       say "parent"
       Left e <- atomically (takeTMVar resVar)
       say (show e)
-      throwM e
+      throwIO e
 
 
 --
@@ -529,8 +529,8 @@ unit_async_1 =
     runSimTraceSay
       (do mtid <- myThreadId
           say ("main " ++ show mtid)
-          ctid <- fork $ do tid <- myThreadId
-                            say ("child " ++ show tid)
+          ctid <- forkIO $ do tid <- myThreadId
+                              say ("child " ++ show tid)
           say ("parent " ++ show ctid)
           threadDelay 1
       )
@@ -562,7 +562,7 @@ unit_async_3 =
 
 unit_async_4 =
     runSimTraceSay
-      (do tid <- fork $ say "child"
+      (do tid <- forkIO $ say "child"
           threadDelay 1
           -- child has already terminated when we throw the async exception
           throwTo tid DivideByZero
@@ -573,7 +573,7 @@ unit_async_4 =
 
 unit_async_5 =
     runSimTraceSay
-      (do tid <- fork $ do
+      (do tid <- forkIO $ do
                    say "child"
                    catch (atomically retry)
                          (\(_e :: ArithException) -> say "handler")
@@ -588,7 +588,7 @@ unit_async_5 =
 
 unit_async_6 =
     runSimTraceSay
-      (do tid <- fork $ mask_ $
+      (do tid <- forkIO $ mask_ $
                    do
                      say "child"
                      threadDelay 1
@@ -608,7 +608,7 @@ unit_async_6 =
 
 unit_async_7 =
     runSimTraceSay
-      (do tid <- fork $
+      (do tid <- forkIO $
                    mask $ \restore -> do
                      say "child"
                      threadDelay 1
@@ -628,7 +628,7 @@ unit_async_7 =
 
 unit_async_8 =
     runSimTraceSay
-      (do tid <- fork $ do
+      (do tid <- forkIO $ do
                    catch (do mask_ $ do
                                say "child"
                                threadDelay 1
@@ -648,7 +648,7 @@ unit_async_8 =
 
 unit_async_9 =
     runSimTraceSay
-      (do tid <- fork $
+      (do tid <- forkIO $
                    mask_ $ do
                      say "child"
                      threadDelay 1
@@ -664,14 +664,14 @@ unit_async_9 =
 
 unit_async_10 =
     runSimTraceSay
-      (do tid1 <- fork $ do
+      (do tid1 <- forkIO $ do
                     mask_ $ do
                       threadDelay 1
                       say "child 1"
                       yield
                       say "child 1 running"
                     say "never 1"
-          tid2 <- fork $ do
+          tid2 <- forkIO $ do
                       threadDelay 1
                       say "child 2"
                       -- this one blocks, since child 1 is running with
@@ -689,20 +689,20 @@ unit_async_10 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: SimM s ()
+    yield :: IOSim s ()
     yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_11 =
     runSimTraceSay
-      (do tid1 <- fork $ do
+      (do tid1 <- forkIO $ do
                     mask_ $ do
                       threadDelay 1
                       say "child 1"
                       yield
                       say "child 1 running"
                     say "never 1"
-          tid2 <- fork $
+          tid2 <- forkIO $
                     -- Same as unit_async_10 but we run masked here
                     -- this is subtle: when the main thread throws the
                     -- exception it raises the exception here even though
@@ -724,13 +724,13 @@ unit_async_11 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: SimM s ()
+    yield :: IOSim s ()
     yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_12 =
     runSimTraceSay
-      (do tid <- fork $ do
+      (do tid <- forkIO $ do
                    uninterruptibleMask_ $ do
                      say "child"
                      threadDelay 1
@@ -752,7 +752,7 @@ unit_async_12 =
 unit_async_13 =
     case runSim
            (uninterruptibleMask_ $ do
-              tid <- fork $ atomically retry
+              tid <- forkIO $ atomically retry
               throwTo tid DivideByZero)
        of Left FailureDeadlock -> property True
           _                    -> property False
@@ -760,7 +760,7 @@ unit_async_13 =
 
 unit_async_14 =
     runSimTraceSay
-      (do tid <- fork $ do
+      (do tid <- forkIO $ do
                    uninterruptibleMask_ $ do
                      say "child"
                      threadDelay 1
@@ -781,7 +781,7 @@ unit_async_14 =
 
 unit_async_15 =
     runSimTraceSay
-      (do tid <- fork $
+      (do tid <- forkIO $
                    uninterruptibleMask $ \restore -> do
                      say "child"
                      threadDelay 1
@@ -801,7 +801,7 @@ unit_async_15 =
 
 unit_async_16 =
     runSimTraceSay
-      (do tid <- fork $ do
+      (do tid <- forkIO $ do
                    catch (do uninterruptibleMask_ $ do
                                say "child"
                                threadDelay 1
@@ -857,7 +857,7 @@ prop_stm_referenceM (SomeTerm _tyrep t) = do
 -- Utils
 --
 
-runSimTraceSay :: (forall s. SimM s a) -> [String]
+runSimTraceSay :: (forall s. IOSim s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)
 
 selectTraceSay :: Trace a -> [String]

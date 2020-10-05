@@ -154,7 +154,7 @@ prop_keepAlive_convergenceM
     -> m Property
 prop_keepAlive_convergenceM (NetworkDelay nd) seed = do
     registry <- newFetchClientRegistry
-    controlMessageV <- newTVarM Continue
+    controlMessageV <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageV
         clientId = "client"
         timeConstant = 1000 -- Same as in PeerGSV's <> definition

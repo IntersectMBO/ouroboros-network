@@ -37,7 +37,7 @@ simpleBlockchainTime registry time slotLen = do
 
     -- Fork thread that continuously updates the current slot
     firstSlot <- fst <$> getWallClockSlot time slotLen
-    slotVar   <- newTVarM firstSlot
+    slotVar   <- newTVarIO firstSlot
     void $ forkLinkedThread registry "simpleBlockchainTime" $
              loop slotVar firstSlot
 
@@ -125,4 +125,4 @@ waitUntilNextSlot time@SystemTime{..} slotLen oldCurrent = do
        | newCurrent == oldCurrent ->
            waitUntilNextSlot time slotLen oldCurrent
        | otherwise ->
-           throwM $ SystemClockMovedBack oldCurrent newCurrent
+           throwIO $ SystemClockMovedBack oldCurrent newCurrent

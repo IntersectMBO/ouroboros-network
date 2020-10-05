@@ -204,7 +204,7 @@ demo chain0 updates = do
                   consumerApp)
                 serverBearer
 
-        void $ fork $ sequence_
+        void $ forkIO $ sequence_
             [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
                  atomically $ do
                      p <- readTVar producerVar

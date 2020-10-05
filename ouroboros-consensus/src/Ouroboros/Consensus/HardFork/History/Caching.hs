@@ -40,7 +40,7 @@ data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
 -- the horizon (and it would be a bug if they were).
 cachedRunQueryThrow :: (MonadSTM m, MonadThrow (STM m))
                     => RunWithCachedSummary xs m -> Qry a -> STM m a
-cachedRunQueryThrow run qry = either throwM return =<< cachedRunQuery run qry
+cachedRunQueryThrow run qry = either throwIO return =<< cachedRunQuery run qry
 
 -- | Construct 'RunWithCachedSummary' given action that computes the summary
 --
@@ -51,7 +51,7 @@ runWithCachedSummary :: forall m xs. MonadSTM m
                      -> m (RunWithCachedSummary xs m)
 runWithCachedSummary getLatestSummary = do
     initSummary <- atomically getLatestSummary
-    var <- newTVarM initSummary
+    var <- newTVarIO initSummary
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
     go :: StrictTVar m (Summary xs)

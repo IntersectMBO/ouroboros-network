@@ -70,14 +70,14 @@ socketAsMuxBearer sduTimeout tracer sd =
           case r_m of
                 Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
-                    throwM $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout"
+                    throwIO $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout"
                 Just r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
       recvRem !h0 = do
           hbuf <- recvLen' (hdrLenght - BL.length h0) [h0]
           case Mx.decodeMuxSDU hbuf of
-               Left  e      ->  throwM e
+               Left  e ->  throwIO e
                Right header@Mx.MuxSDU { Mx.msHeader } -> do
                    traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
                    !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
@@ -110,7 +110,7 @@ socketAsMuxBearer sduTimeout tracer sd =
                        - a clean up and exit.
                        -}
                       threadDelay 1
-                  throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
+                  throwIO $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader)
               else do
@@ -134,7 +134,7 @@ socketAsMuxBearer sduTimeout tracer sd =
           case r of
                Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUWriteTimeoutException
-                    throwM $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
+                    throwIO $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
                Just _ -> do
                    traceWith tracer $ Mx.MuxTraceSendEnd
                    return ts

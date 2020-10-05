@@ -26,7 +26,7 @@ import           Test.Util.Orphans.IOLike ()
 -- Windows.
 mockFileLock
   :: Maybe DiffTime  -- ^ Optional release delay
-  -> SimM s (FileLock (SimM s))
+  -> IOSim s (FileLock (IOSim s))
 mockFileLock releaseDelay = do
     locks <- newMockFileLocks releaseDelay
     return FileLock {
@@ -79,6 +79,6 @@ mockUnlockFile MockFileLocks { varLocks, releaseDelay } path =
             return $ return ()
           Just delay -> do
             writeTVar varLocks $ Map.insert path LazyRelease locks
-            return $ void $ fork $ do
+            return $ void $ forkIO $ do
               threadDelay delay
               atomically $ writeTVar varLocks $ Map.delete path locks

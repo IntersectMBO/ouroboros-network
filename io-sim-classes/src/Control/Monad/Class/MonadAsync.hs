@@ -50,7 +50,7 @@ class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
   waitCatchSTM :: async a -> stm (Either SomeException a)
 
   default waitSTM :: MonadThrow stm => async a -> stm a
-  waitSTM action = waitCatchSTM action >>= either throwM return
+  waitSTM action = waitCatchSTM action >>= either throwSTM return
 
   waitAnySTM            :: [async a] -> stm (async a, a)
   waitAnyCatchSTM       :: [async a] -> stm (async a, Either SomeException a)
@@ -372,7 +372,7 @@ instance MonadAsync m => MonadAsync (ReaderT r m) where
 -- must be an instance of 'Exception', requiring it to be 'Typeable'; if @m@
 -- appeared in the type, we would require @m@ to be 'Typeable', which does not
 -- work with with the simulator, as it would require a 'Typeable' constraint
--- on the @s@ parameter of 'SimM'.
+-- on the @s@ parameter of 'IOSim'.
 data ExceptionInLinkedThread = ExceptionInLinkedThread String SomeException
 
 instance Show ExceptionInLinkedThread where
@@ -430,7 +430,7 @@ forkRepeat label action =
                 case r of
                   Left _ -> go
                   _      -> return ()
-    in fork (labelThisThread label >> go)
+    in forkIO (labelThisThread label >> go)
 
 tryAll :: MonadCatch m => m a -> m (Either SomeException a)
 tryAll = try

@@ -56,11 +56,11 @@ data FetchClientRegistry peer header block m =
 
 newFetchClientRegistry :: MonadSTM m
                        => m (FetchClientRegistry peer header block m)
-newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarM
-                                             <*> newTVarM Map.empty
-                                             <*> newTVarM Map.empty
-                                             <*> newTVarM Map.empty
-                                             <*> newTVarM Map.empty
+newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
+                                             <*> newTVarIO Map.empty
+                                             <*> newTVarIO Map.empty
+                                             <*> newTVarIO Map.empty
+                                             <*> newTVarIO Map.empty
 
 -- | This is needed to start a block fetch client. It provides the required
 -- 'FetchClientContext'. It registers and unregisters the fetch client on
@@ -76,7 +76,7 @@ bracketFetchClient :: forall m a peer header block.
                    -> m a
 bracketFetchClient (FetchClientRegistry ctxVar
                       fetchRegistry syncRegistry dqRegistry keepRegistry) peer action = do
-    ksVar <- newEmptyTMVarM
+    ksVar <- newEmptyTMVarIO
     bracket (register ksVar) (uncurry (unregister ksVar)) (action . fst)
   where
     register :: StrictTMVar m ()
@@ -152,7 +152,7 @@ bracketSyncWithFetchClient :: forall m a peer header block.
                            -> m a
 bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
                               fetchRegistry syncRegistry _dqRegistry _keepRegistry) peer action = do
-    doneVar <- newEmptyTMVarM
+    doneVar <- newEmptyTMVarIO
     bracket_ (register doneVar) (unregister doneVar) action
   where
     -- The goal here is that the block fetch client should be registered

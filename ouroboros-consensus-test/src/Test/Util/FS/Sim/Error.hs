@@ -547,7 +547,7 @@ withErr errorsVar path action msg getter setter = do
     mbErr <- next errorsVar getter setter
     case mbErr of
       Nothing      -> action
-      Just errType -> throwM FsError
+      Just errType -> throwIO FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted path
         , fsErrorString = "simulated error: " <> msg
@@ -580,7 +580,7 @@ hGetSome'  :: (MonadSTM m, MonadThrow m, HasCallStack)
 hGetSome' errorsVar hGetSomeWrapped handle n =
     next errorsVar hGetSomeE (\e es -> es { hGetSomeE = e }) >>= \case
       Nothing             -> hGetSomeWrapped handle n
-      Just (Left errType) -> throwM FsError
+      Just (Left errType) -> throwIO FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSome"
@@ -599,7 +599,7 @@ hGetSomeAt' :: (MonadSTM m, MonadThrow m, HasCallStack)
 hGetSomeAt' errorsVar hGetSomeAtWrapped handle n offset =
     next errorsVar hGetSomeAtE (\e es -> es { hGetSomeAtE = e }) >>= \case
       Nothing             -> hGetSomeAtWrapped handle n offset
-      Just (Left errType) -> throwM FsError
+      Just (Left errType) -> throwIO FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSomeAt"
@@ -623,7 +623,7 @@ hPutSome' errorsVar hPutSomeWrapped handle bs =
       Just (Left (errType, mbCorr)) -> do
         whenJust mbCorr $ \corr ->
           void $ hPutSomeWrapped handle (corrupt bs corr)
-        throwM FsError
+        throwIO FsError
           { fsErrorType   = errType
           , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
           , fsErrorString = "simulated error: hPutSome" <> case mbCorr of

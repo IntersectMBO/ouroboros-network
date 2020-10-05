@@ -91,7 +91,7 @@ newMVarWithInvariant :: (MonadSTM m, HasCallStack)
                      -> m (StrictMVar m a)
 newMVarWithInvariant invariant !a =
     checkInvariant (invariant a) $
-    StrictMVar invariant <$> Lazy.newTMVarM a <*> Lazy.newTVarM a
+    StrictMVar invariant <$> Lazy.newTMVarIO a <*> Lazy.newTVarIO a
 
 newEmptyMVar :: MonadSTM m => a -> m (StrictMVar m a)
 newEmptyMVar = newEmptyMVarWithInvariant (const Nothing)
@@ -107,7 +107,7 @@ newEmptyMVarWithInvariant :: MonadSTM m
                           -> a                    -- ^ The initial stale value
                           -> m (StrictMVar m a)
 newEmptyMVarWithInvariant invariant stale =
-    StrictMVar invariant <$> Lazy.newEmptyTMVarM <*> Lazy.newTVarM stale
+    StrictMVar invariant <$> Lazy.newEmptyTMVarIO <*> Lazy.newTVarIO stale
 
 takeMVar :: MonadSTM m => StrictMVar m a -> m a
 takeMVar StrictMVar { tmvar } = atomically $ Lazy.takeTMVar tmvar

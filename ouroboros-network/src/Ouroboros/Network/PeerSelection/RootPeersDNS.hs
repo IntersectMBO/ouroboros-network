@@ -178,7 +178,7 @@ asyncResolverResource :: DNS.ResolvConf -> IO (Resource DNSorIOError DNS.Resolve
 asyncResolverResource resolvConf =
     case DNS.resolvInfo resolvConf of
       DNS.RCFilePath filePath -> do
-        resourceVar <- newTVarM NoResolver
+        resourceVar <- newTVarIO NoResolver
         pure $ go filePath resourceVar
       _ -> do
         rs <- DNS.makeResolvSeed resolvConf
@@ -354,7 +354,7 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
 #else
     let rr = newResolverResource resolvConf
 #endif
-    resourceVar <- newTVarM rr
+    resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
     requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
@@ -364,8 +364,8 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
         case er of
-          Left (DNSError err) -> throwM err
-          Left (IOError  err) -> throwM err
+          Left (DNSError err) -> throwIO err
+          Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
                   [ lookupAWithTTL timeout resolvConf resolver daDomain
@@ -457,7 +457,7 @@ withAsyncAll xs0 action = go [] xs0
 {-
 exampleLocal :: [DomainAddress] -> IO ()
 exampleLocal domains = do
-      rootPeersVar <- newTVarM Map.empty
+      rootPeersVar <- newTVarIO Map.empty
       withAsync (observer rootPeersVar Map.empty) $ \_ ->
         provider rootPeersVar
   where

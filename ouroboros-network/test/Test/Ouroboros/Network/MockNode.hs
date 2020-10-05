@@ -51,7 +51,7 @@ tests =
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
-  , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
+  , testProperty "blockGenerator invariant IOSim" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   ]
 
@@ -103,7 +103,7 @@ test_blockGenerator chain slotDuration = do
       -> m ()
     experiment slotDur p = do
       getBlock <- blockGenerator slotDur (Chain.toOldestFirst chain)
-      void $ fork $ go getBlock
+      void $ forkIO $ go getBlock
      where
       go getBlock = do
         mb <- atomically $ getBlock
@@ -141,17 +141,17 @@ coreToRelaySim :: ( MonadSTM m
                -> Probe m (NodeId, Chain Block)
                -> m ()
 coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
-  donevar <- newTVarM False
+  donevar <- newTVarIO False
   (coreChans, relayChans) <- if duplex
     then createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
     else createOneWaySubscriptionChannels coreTrDelay relayTrDelay
 
-  void $ fork $ do
+  void $ forkIO $ do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) coreChans
-    void $ fork $ observeChainProducerState (CoreId 0) probe cps
-  void $ fork $ void $ do
+    void $ forkIO $ observeChainProducerState (CoreId 0) probe cps
+  void $ forkIO $ void $ do
     cps <- relayNode (RelayId 0) Genesis relayChans
-    void $ fork $ observeChainProducerState (RelayId 0) probe cps
+    void $ forkIO $ observeChainProducerState (RelayId 0) probe cps
     atomically $ do
       chain' <- chainState <$> readTVar cps
       unless (chain == chain') retry
@@ -223,19 +223,19 @@ coreToRelaySim2 :: ( MonadSTM m
                 -> Probe m (NodeId, Chain Block)
                 -> m ()
 coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
-  donevar <- newTVarM False
+  donevar <- newTVarIO False
   (cr1, r1c) <- createOneWaySubscriptionChannels coreTrDelay relayTrDelay
   (r1r2, r2r1) <- createOneWaySubscriptionChannels relayTrDelay relayTrDelay
 
-  void $ fork $ void $ do
+  void $ forkIO $ void $ do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) cr1
-    void $ fork $ observeChainProducerState (CoreId 0) probe cps
-  void $ fork $ void $ do
+    void $ forkIO $ observeChainProducerState (CoreId 0) probe cps
+  void $ forkIO $ void $ do
     cps <- relayNode (RelayId 1) Genesis(r1c <> r1r2)
-    void $ fork $ observeChainProducerState (RelayId 1) probe cps
-  void $ fork $ void $ do
+    void $ forkIO $ observeChainProducerState (RelayId 1) probe cps
+  void $ forkIO $ void $ do
     cps <- relayNode (RelayId 2) Genesis r2r1
-    void $ fork $ observeChainProducerState (RelayId 2) probe cps
+    void $ forkIO $ observeChainProducerState (RelayId 2) probe cps
 
     atomically $ do
       chain' <- chainState <$> readTVar cps
@@ -332,7 +332,7 @@ networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay pr
 
   -- run each node
   forM_ vs $ \i ->
-    fork $ void $
+    forkIO $ void $
       case i `lookup` cs of
         Just chain ->
           coreNode  (CoreId i) slotDuration (Chain.toOldestFirst chain) (channs' Map.! i)
@@ -458,7 +458,7 @@ type Probe m x = StrictTVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do
-    probe <- newTVarM []
+    probe <- newTVarIO []
     action probe
     reverse <$> atomically (readTVar probe)
 

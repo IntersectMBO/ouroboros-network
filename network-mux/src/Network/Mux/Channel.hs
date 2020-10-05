@@ -92,8 +92,8 @@ createBufferConnectedChannels :: forall m. MonadSTM m
                               => m (Channel m,
                                     Channel m)
 createBufferConnectedChannels = do
-    bufferA <- newEmptyTMVarM
-    bufferB <- newEmptyTMVarM
+    bufferA <- newEmptyTMVarIO
+    bufferB <- newEmptyTMVarIO
 
     return (buffersAsChannel bufferB bufferA,
             buffersAsChannel bufferA bufferB)

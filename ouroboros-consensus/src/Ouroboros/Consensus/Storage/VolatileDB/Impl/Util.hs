@@ -74,7 +74,7 @@ filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 ------------------------------------------------------------------------------}
 
 wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwM . UnexpectedFailure . FileSystemError
+wrapFsError = handle $ throwIO . UnexpectedFailure . FileSystemError
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the

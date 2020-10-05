@@ -38,8 +38,7 @@ import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
-                     MonadMonotonicTime (..), MonadSTMTxExtended (..),
-                     StrictMVar, StrictTVar)
+                     MonadMonotonicTime (..), StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -111,22 +110,21 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   newTBQueue      = lift .  newTBQueue
   readTBQueue     = lift .  readTBQueue
   tryReadTBQueue  = lift .  tryReadTBQueue
+  flushTBQueue    = lift .  flushTBQueue
   writeTBQueue    = lift .: writeTBQueue
+  lengthTBQueue   = lift .  lengthTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
-
-instance MonadSTMTxExtended stm => MonadSTMTxExtended (WithEarlyExit stm) where
-  lengthTBQueue   = lift .  lengthTBQueue
 
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   type STM (WithEarlyExit m) = WithEarlyExit (STM m)
 
-  atomically     = earlyExit . atomically . withEarlyExit
-  newTMVarM      = lift . newTMVarM
-  newEmptyTMVarM = lift   newEmptyTMVarM
+  atomically      = earlyExit . atomically . withEarlyExit
+  newTMVarIO      = lift . newTMVarIO
+  newEmptyTMVarIO = lift   newEmptyTMVarIO
 
 instance MonadCatch m => MonadThrow (WithEarlyExit m) where
-  throwM = lift . throwM
+  throwIO = lift . throwIO
 
 instance MonadCatch m => MonadCatch (WithEarlyExit m) where
   catch act handler = earlyExit $
@@ -193,12 +191,12 @@ commute (Right Nothing)  = Nothing
 commute (Right (Just a)) = Just (Right a)
 
 instance MonadFork m => MonadFork (WithEarlyExit m) where
-  fork           f = lift $ fork (collapse <$> withEarlyExit f)
-  forkWithUnmask f = lift $ forkWithUnmask $ \unmask ->
-                       let unmask' :: forall a. WithEarlyExit m a -> WithEarlyExit m a
-                           unmask' = earlyExit . unmask . withEarlyExit
-                       in collapse <$> withEarlyExit (f unmask')
-  throwTo          = lift .: throwTo
+  forkIO           f = lift $ forkIO (collapse <$> withEarlyExit f)
+  forkIOWithUnmask f = lift $ forkIOWithUnmask $ \unmask ->
+                         let unmask' :: forall a. WithEarlyExit m a -> WithEarlyExit m a
+                             unmask' = earlyExit . unmask . withEarlyExit
+                         in collapse <$> withEarlyExit (f unmask')
+  throwTo            = lift .: throwTo
 
 instance MonadST m => MonadST (WithEarlyExit m) where
   withLiftST f = lowerLiftST $ \(_proxy :: Proxy s) liftST ->
@@ -219,8 +217,8 @@ instance (MonadEvaluate m, MonadCatch m) => MonadEvaluate (WithEarlyExit m) wher
   evaluate  = lift . evaluate
 
 instance MonadEventlog m => MonadEventlog (WithEarlyExit m) where
-  traceEventM  = lift . traceEventM
-  traceMarkerM = lift . traceMarkerM
+  traceEventIO  = lift . traceEventIO
+  traceMarkerIO = lift . traceMarkerIO
 
 {-------------------------------------------------------------------------------
   Finally, the consensus IOLike wrapper

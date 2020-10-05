@@ -70,7 +70,7 @@ hardForkBlockchainTime registry
     systemTimeWait
 
     (firstSlot, firstDelay) <- getCurrentSlot' tracer time run backoffDelay
-    slotVar <- newTVarM firstSlot
+    slotVar <- newTVarIO firstSlot
     void $ forkLinkedThread registry "hardForkBlockchainTime" $
              loop run slotVar firstSlot firstDelay
 
@@ -114,7 +114,7 @@ hardForkBlockchainTime registry
           -- user's system clock was adjusted (say by an NTP process).
           | m <  n    -> return ()
           | m == n    -> return ()
-          | otherwise -> throwM $ SystemClockMovedBack m n
+          | otherwise -> throwIO $ SystemClockMovedBack m n
 
 {-------------------------------------------------------------------------------
   Auxiliary

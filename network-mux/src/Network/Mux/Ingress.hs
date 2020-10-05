@@ -113,19 +113,19 @@ demuxer ptcls bearer =
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:
                             (flipMiniProtocolDir $ msDir sdu) of
-      Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
-                          ("id = " ++ show (msNum sdu)))
+      Nothing   -> throwIO (MuxError MuxUnknownMiniProtocol
+                           ("id = " ++ show (msNum sdu)))
       Just MiniProtocolDirUnused ->
-                   throwM (MuxError MuxInitiatorOnly
-                          ("id = " ++ show (msNum sdu)))
+                   throwIO (MuxError MuxInitiatorOnly
+                           ("id = " ++ show (msNum sdu)))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
           if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
-              else throwM $ MuxError MuxIngressQueueOverRun
+              else throwSTM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
-                                 (show $ msNum sdu) (show $ msDir sdu))
+                                (show $ msNum sdu) (show $ msDir sdu))
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum

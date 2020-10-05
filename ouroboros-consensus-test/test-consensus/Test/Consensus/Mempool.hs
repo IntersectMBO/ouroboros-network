@@ -714,7 +714,7 @@ withTestMempool setup@TestSetup {..} prop =
 
       -- Set up the Tracer
       varEvents <- uncheckedNewTVarM []
-      -- TODO use SimM's dynamicTracer
+      -- TODO use IOSim's dynamicTracer
       let tracer = Tracer $ \ev -> atomically $ modifyTVar varEvents (ev:)
 
       -- Open the mempool and add the initial transactions

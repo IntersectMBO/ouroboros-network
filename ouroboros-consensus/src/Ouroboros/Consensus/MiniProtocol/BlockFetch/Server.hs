@@ -88,7 +88,7 @@ blockFetchServer _tracer chainDB _version registry = senderSide
         (BlockPoint s h, BlockPoint s' h') ->
           receiveReq (RealPoint s h) (RealPoint s' h')
         _otherwise ->
-          throwM NoGenesisBlock
+          throwIO NoGenesisBlock
 
     receiveReq :: RealPoint blk
                -> RealPoint blk
@@ -121,7 +121,7 @@ blockFetchServer _tracer chainDB _version registry = senderSide
           return $ SendMsgBatchDone $ return senderSide
         IteratorBlockGCed pt -> do
           ChainDB.iteratorClose it
-          throwM $ BlockGCed @blk pt
+          throwIO $ BlockGCed @blk pt
 
 
 {-------------------------------------------------------------------------------

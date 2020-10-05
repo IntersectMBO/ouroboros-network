@@ -237,7 +237,7 @@ getAnyKnownBlockComponent immutableDB volatileDB blockComponent p = do
         getAnyBlockComponent immutableDB volatileDB blockComponent p
     case mBlock of
       Right b  -> return b
-      Left err -> throwM err
+      Left err -> throwIO err
 
 -- | Get a block component from either the immutable DB or volatile DB.
 --

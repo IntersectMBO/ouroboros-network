@@ -111,8 +111,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
     let producerAddress = Socket.addrAddress producerAddressInfo
         consumerAddress = Socket.addrAddress consumerAddressInfo
 
-    producerVar <- newTVarM (CPS.initChainProducerState chain0)
-    consumerVar <- newTVarM chain0
+    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarIO chain0
     done <- atomically newEmptyTMVar
     networkState <- newNetworkMutableState
 
@@ -180,7 +180,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           (Just consumerAddress)
           realProducerAddress)
         $ \ _connAsync -> do
-          void $ fork $ sequence_
+          void $ forkIO $ sequence_
               [ do
                   threadDelay 10e-4 -- just to provide interest
                   atomically $ do

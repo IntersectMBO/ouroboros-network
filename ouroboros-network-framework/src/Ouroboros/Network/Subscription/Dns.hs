@@ -115,9 +115,9 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
          Right rs -> do
              withResolverFn rs $ \resolver -> do
-                 ipv6Rsps <- newEmptyTMVarM
-                 ipv4Rsps <- newEmptyTMVarM
-                 gotIpv6Rsp <- newTVarM False
+                 ipv6Rsps <- newEmptyTMVarIO
+                 ipv4Rsps <- newEmptyTMVarIO
+                 gotIpv6Rsp <- newTVarIO False
 
                  -- Though the DNS lib does have its own timeouts, these do not work
                  -- on Windows reliably so as a workaround we add an extra layer

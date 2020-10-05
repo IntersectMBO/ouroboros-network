@@ -75,7 +75,6 @@ import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 import           Data.Hashable
@@ -542,7 +541,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         completeTx mainTx (toLazyTVar nmsPeerStates)
   where
     mainTx :: Server.Main (PeerStates IO addr) Void
-    mainTx (ThrowException e) = throwM e
+    mainTx (ThrowException e) = throwIO e
     mainTx PeerStates{}       = retry
 
     -- When a connection completes, we do nothing. State is ().

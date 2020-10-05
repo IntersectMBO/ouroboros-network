@@ -46,7 +46,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
           case Mx.decodeMuxSDU hbuf of
-              Left  e      -> throwM e
+              Left  e      -> throwIO e
               Right header -> do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd (Mx.msHeader header)
                   ts <- getMonotonicTime

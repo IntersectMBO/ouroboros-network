@@ -149,9 +149,9 @@ data NextTimeout m = NoNextTimeout
 
 newMonitorState :: MonadSTM m => m (MonitorState m)
 newMonitorState = do
-    nextTimeoutVar   <- newTVarM NoNextTimeout
-    curDeadlineVar   <- newTVarM (Time 0)
-    deadlineResetVar <- newTVarM False
+    nextTimeoutVar   <- newTVarIO NoNextTimeout
+    curDeadlineVar   <- newTVarIO (Time 0)
+    deadlineResetVar <- newTVarIO False
     return MonitorState{..}
 
 
@@ -237,7 +237,7 @@ timeout monitorState delay action =
       -- Set up the timeout and pass it over to the monitoring thread.
       -- This overwrites any previous timeout.
       tid <- myThreadId
-      timeoutStateVar <- newTVarM TimeoutPending
+      timeoutStateVar <- newTVarIO TimeoutPending
       now <- getMonotonicTime
       let deadline = addTime delay now
       setNewTimer monitorState tid deadline timeoutStateVar
@@ -272,7 +272,7 @@ timeout monitorState delay action =
           TimeoutFired   -> return True
           TimeoutPending -> writeTVar timeoutStateVar TimeoutCancelled
                          >> return False
-          _              -> throwM TimeoutImpossibleTimeoutState
+          _              -> throwSTM TimeoutImpossibleTimeoutState
 
       -- If we established that the monitoring thread is definitely not firing
       -- the timeout exception then we're done.
@@ -298,8 +298,8 @@ timeout monitorState delay action =
                st <- readTVar timeoutStateVar
                case st of
                  TimeoutFired      -> retry
-                 TimeoutTerminated -> throwM TimeoutImpossibleReachedTerminated
-                 _                 -> throwM TimeoutImpossibleTimeoutState
+                 TimeoutTerminated -> throwSTM TimeoutImpossibleReachedTerminated
+                 _                 -> throwSTM TimeoutImpossibleTimeoutState
 
     `catch` \TimeoutException -> return Nothing
 
@@ -341,7 +341,7 @@ monitoringThread monitorState@MonitorState{deadlineResetVar} =
                      TimeoutPending   -> writeTVar timeoutStateVar TimeoutFired
                                       >> return False
                      TimeoutCancelled -> return True
-                     _                -> throwM TimeoutImpossibleMonitorState
+                     _                -> throwSTM TimeoutImpossibleMonitorState
 
     -- If it turns out that the timeout was cancelled before the timeout
     -- expired then we do nothing and go back to the start.

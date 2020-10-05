@@ -137,7 +137,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
         body varCandidate
   where
     register = do
-      varCandidate <- newTVarM $ AF.Empty AF.AnchorGenesis
+      varCandidate <- newTVarIO $ AF.Empty AF.AnchorGenesis
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 
@@ -902,13 +902,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: forall m' x'. MonadThrow m'
                => ChainSyncClientException -> m' x'
-    disconnect = throwM
+    disconnect = throwIO
 
     -- | Trace any 'ChainSyncClientException' if thrown.
     traceException :: m a -> m a
     traceException m = m `catch` \(e :: ChainSyncClientException) -> do
       traceWith tracer $ TraceException e
-      throwM e
+      throwIO e
 
     ourTipFromChain :: AnchoredFragment (Header blk) -> Our (Tip blk)
     ourTipFromChain = Our . AF.anchorToTip . AF.headAnchor
@@ -1004,7 +1004,7 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
     disconnect invalidHeader reason = do
       let ex = InvalidBlock (headerPoint invalidHeader) reason
       traceWith tracer $ TraceException ex
-      throwM ex
+      throwIO ex
 
 -- | Auxiliary data type used as an intermediary result in 'rollForward'.
 data IntersectCheck blk =

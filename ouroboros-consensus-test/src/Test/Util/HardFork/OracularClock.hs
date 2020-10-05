@@ -169,7 +169,7 @@ mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
     exhaustedM = do
         -- throw if this thread isn't terminated in time
         threadDelay $ picosecondsToDiffTime 1   -- the smallest possible delay
-        throwM EndOfDaysException
+        throwIO EndOfDaysException
 
     -- a 'BTime.systemTimeCurrent' that respects @endOfDays@
     finiteSystemTimeCurrent :: m BTime.RelativeTime
@@ -178,7 +178,7 @@ mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
 
         -- check if clock is exhausted
         let tFinal = BTime.RelativeTime endOfDays
-        when (t >  tFinal) $ throwM EndOfDaysException
+        when (t >  tFinal) $ throwIO EndOfDaysException
         when (t == tFinal) $ exhaustedM
 
         pure t

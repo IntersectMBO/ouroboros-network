@@ -451,7 +451,7 @@ updateState :: forall m a. IOLike m
             -> State (RegistryState m) a
             -> m a
 updateState rr f =
-    atomically $ updateTVar (registryState rr) (swap . runState f)
+    atomically $ stateTVar (registryState rr) (swap . runState f)
 
 -- | Attempt to allocate a resource in a registry which is closed
 --
@@ -495,7 +495,7 @@ instance Exception RegistryClosedException
 unsafeNewRegistry :: (IOLike m, HasCallStack) => m (ResourceRegistry m)
 unsafeNewRegistry = do
     context  <- captureContext
-    stateVar <- newTVarM initState
+    stateVar <- newTVarIO initState
     return ResourceRegistry {
           registryContext = context
         , registryState   = stateVar
@@ -532,7 +532,7 @@ closeRegistry :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 closeRegistry rr = mask_ $ do
     context <- captureContext
     unless (contextThreadId context == contextThreadId (registryContext rr)) $
-      throwM $ ResourceRegistryClosedFromWrongThread {
+      throwIO $ ResourceRegistryClosedFromWrongThread {
           resourceRegistryCreatedIn = registryContext rr
         , resourceRegistryUsedIn    = context
         }
@@ -570,7 +570,7 @@ releaseResources rr keys releaser = do
 
     case prioritize exs of
       Nothing -> return (catMaybes mbContexts)
-      Just e  -> throwM e
+      Just e  -> throwIO e
   where
     newToOld :: Set ResourceId -> [ResourceId]
     newToOld = Set.toDescList -- depends on 'Ord' instance
@@ -635,7 +635,7 @@ runWithTempRegistry
   => WithTempRegistry st m (a, st)
   -> m a
 runWithTempRegistry m = withRegistry $ \rr -> do
-    varTransferredTo <- newTVarM mempty
+    varTransferredTo <- newTVarIO mempty
     let tempRegistry = TempRegistry {
             tempResourceRegistry = rr
           , tempTransferredTo    = varTransferredTo
@@ -653,7 +653,7 @@ runWithTempRegistry m = withRegistry $ \rr -> do
     remainingResources <- releaseAllHelper rr context release
 
     whenJust (listToMaybe remainingResources) $ \remainingResource ->
-      throwM $ TempRegistryRemainingResource {
+      throwIO $ TempRegistryRemainingResource {
           tempRegistryContext  = registryContext rr
         , tempRegistryResource = remainingResource
         }
@@ -849,7 +849,7 @@ throwRegistryClosed :: IOLike m
                     -> Context m
                     -> PrettyCallStack
                     -> m x
-throwRegistryClosed rr context closed = throwM RegistryClosedException {
+throwRegistryClosed rr context closed = throwIO RegistryClosedException {
       registryClosedRegistryContext = registryContext rr
     , registryClosedCloseCallStack  = closed
     , registryClosedAllocContext    = context
@@ -905,7 +905,7 @@ releaseAll :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 releaseAll rr = do
     context <- captureContext
     unless (contextThreadId context == contextThreadId (registryContext rr)) $
-      throwM $ ResourceRegistryClosedFromWrongThread {
+      throwIO $ ResourceRegistryClosedFromWrongThread {
           resourceRegistryCreatedIn = registryContext rr
         , resourceRegistryUsedIn    = context
         }
@@ -1111,7 +1111,7 @@ ensureKnownThread :: forall m. IOLike m
 ensureKnownThread rr context = do
     isKnown <- checkIsKnown
     unless isKnown $
-      throwM $ ResourceRegistryUsedFromUntrackedThread {
+      throwIO $ ResourceRegistryUsedFromUntrackedThread {
                    resourceRegistryCreatedIn = registryContext rr
                  , resourceRegistryUsedIn    = context
                  }

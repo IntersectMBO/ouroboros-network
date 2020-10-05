@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                    #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
@@ -16,9 +15,9 @@ module Control.Monad.Class.MonadSTM
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
-  , newTMVarMDefault
+  , newTMVarIODefault
   , newEmptyTMVarDefault
-  , newEmptyTMVarMDefault
+  , newEmptyTMVarIODefault
   , takeTMVarDefault
   , tryTakeTMVarDefault
   , putTMVarDefault
@@ -45,6 +44,18 @@ module Control.Monad.Class.MonadSTM
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
   , lengthTBQueueDefault
+  , flushTBQueueDefault
+
+  -- * MonadThrow aliases
+  , throwSTM
+  , catchSTM
+
+  -- * Deprecated API
+  , newTVarM
+  , newTMVarM
+  , newTMVarMDefault
+  , newEmptyTMVarM
+  , newEmptyTMVarMDefault
   ) where
 
 import           Prelude hiding (read)
@@ -54,6 +65,8 @@ import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TQueue as STM
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
+
+import qualified Control.Monad.Class.MonadThrow as MonadThrow
 
 import           Control.Applicative (Alternative (..))
 import           Control.Exception
@@ -87,6 +100,10 @@ class ( Monad stm
   modifyTVar'  :: TVar_ stm a -> (a -> a) -> stm ()
   modifyTVar' v f = readTVar v >>= \x -> writeTVar v $! f x
 
+  -- | @since io-sim-classes-0.2.0.0
+  stateTVar    :: TVar_ stm s -> (s -> (a, s)) -> stm a
+  stateTVar    = stateTVarDefault
+
   check        :: Bool -> stm ()
   check True = return ()
   check _    = retry
@@ -115,9 +132,21 @@ class ( Monad stm
   newTBQueue     :: Natural -> stm (TBQueue_ stm a)
   readTBQueue    :: TBQueue_ stm a -> stm a
   tryReadTBQueue :: TBQueue_ stm a -> stm (Maybe a)
+  flushTBQueue   :: TBQueue_ stm a -> stm [a]
   writeTBQueue   :: TBQueue_ stm a -> a -> stm ()
+  -- | @since 0.2.0.0
+  lengthTBQueue  :: TBQueue_ stm a -> stm Natural
   isEmptyTBQueue :: TBQueue_ stm a -> stm Bool
   isFullTBQueue  :: TBQueue_ stm a -> stm Bool
+
+
+stateTVarDefault :: MonadSTMTx stm => TVar_ stm s -> (s -> (a, s)) -> stm a
+stateTVarDefault var f = do
+   s <- readTVar var
+   let (a, s') = f s
+   writeTVar var s'
+   return a
+
 
 type TVar    m = TVar_    (STM m)
 type TMVar   m = TMVar_   (STM m)
@@ -132,13 +161,28 @@ class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
 
   -- Helpful derived functions with default implementations
 
-  newTVarM        :: a -> m (TVar  m a)
-  newTMVarM       :: a -> m (TMVar m a)
-  newEmptyTMVarM  ::      m (TMVar m a)
+  newTVarIO        :: a -> m (TVar  m a)
+  newTMVarIO       :: a -> m (TMVar m a)
+  newEmptyTMVarIO  ::      m (TMVar m a)
+  newTBQueueIO     :: Natural -> m (TBQueue m a)
 
-  newTVarM        = atomically . newTVar
-  newTMVarM       = atomically . newTMVar
-  newEmptyTMVarM  = atomically   newEmptyTMVar
+  newTVarIO       = atomically . newTVar
+  newTMVarIO      = atomically . newTMVar
+  newEmptyTMVarIO = atomically   newEmptyTMVar
+  newTBQueueIO    = atomically . newTBQueue
+
+
+newTVarM :: MonadSTM m => a -> m (TVar  m a)
+newTVarM = newTVarIO
+{-# DEPRECATED newTVarM "Use newTVarIO" #-}
+
+newTMVarM :: MonadSTM m => a -> m (TMVar m a)
+newTMVarM = newTMVarIO
+{-# DEPRECATED newTMVarM "Use newTMVarIO" #-}
+
+newEmptyTMVarM  :: MonadSTM m => m (TMVar m a)
+newEmptyTMVarM = newEmptyTMVarIO
+{-# DEPRECATED newEmptyTMVarM "Use newEmptyTMVarIO" #-}
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -157,6 +201,7 @@ instance MonadSTMTx STM.STM where
   orElse         = STM.orElse
   modifyTVar     = STM.modifyTVar
   modifyTVar'    = STM.modifyTVar'
+  stateTVar      = STM.stateTVar
   check          = STM.check
   newTMVar       = STM.newTMVar
   newEmptyTMVar  = STM.newEmptyTMVar
@@ -171,29 +216,26 @@ instance MonadSTMTx STM.STM where
   newTQueue      = STM.newTQueue
   readTQueue     = STM.readTQueue
   tryReadTQueue  = STM.tryReadTQueue
+  flushTBQueue   = STM.flushTBQueue
   writeTQueue    = STM.writeTQueue
   isEmptyTQueue  = STM.isEmptyTQueue
+  newTBQueue     = STM.newTBQueue
   readTBQueue    = STM.readTBQueue
   tryReadTBQueue = STM.tryReadTBQueue
   writeTBQueue   = STM.writeTBQueue
+  lengthTBQueue  = STM.lengthTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
 
-#if MIN_VERSION_stm(2,5,0)
-  newTBQueue     = STM.newTBQueue
-#else
-  -- STM prior to 2.5.0 takes an Int
-  newTBQueue     = STM.newTBQueue . fromEnum
-#endif
 
 instance MonadSTM IO where
   type STM IO = STM.STM
 
   atomically = wrapBlockedIndefinitely . STM.atomically
 
-  newTVarM       = STM.newTVarIO
-  newTMVarM      = STM.newTMVarIO
-  newEmptyTMVarM = STM.newEmptyTMVarIO
+  newTVarIO       = STM.newTVarIO
+  newTMVarIO      = STM.newTMVarIO
+  newEmptyTMVarIO = STM.newEmptyTMVarIO
 
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
 data BlockedIndefinitely = BlockedIndefinitely {
@@ -218,9 +260,9 @@ wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 instance MonadSTM m => MonadSTM (ReaderT r m) where
   type STM (ReaderT r m) = STM m
   atomically      = lift . atomically
-  newTVarM        = lift . newTVarM
-  newTMVarM       = lift . newTMVarM
-  newEmptyTMVarM  = lift   newEmptyTMVarM
+  newTVarIO       = lift . newTVarM
+  newTMVarIO      = lift . newTMVarM
+  newEmptyTMVarIO = lift   newEmptyTMVarM
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -233,20 +275,28 @@ newTMVarDefault a = do
   t <- newTVar (Just a)
   return (TMVar t)
 
-newTMVarMDefault :: MonadSTM m => a -> m (TMVarDefault m a)
-newTMVarMDefault a = do
+newTMVarIODefault :: MonadSTM m => a -> m (TMVarDefault m a)
+newTMVarIODefault a = do
   t <- newTVarM (Just a)
   return (TMVar t)
+
+newTMVarMDefault :: MonadSTM m => a -> m (TMVarDefault m a)
+newTMVarMDefault = newTMVarIODefault
+{-# DEPRECATED newTMVarMDefault "Use newTMVarIODefault" #-}
 
 newEmptyTMVarDefault :: MonadSTM m => STM m (TMVarDefault m a)
 newEmptyTMVarDefault = do
   t <- newTVar Nothing
   return (TMVar t)
 
-newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
-newEmptyTMVarMDefault = do
+newEmptyTMVarIODefault :: MonadSTM m => m (TMVarDefault m a)
+newEmptyTMVarIODefault = do
   t <- newTVarM Nothing
   return (TMVar t)
+
+newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
+newEmptyTMVarMDefault = newEmptyTMVarIODefault
+{-# DEPRECATED newEmptyTMVarMDefault "Use newEmptyTMVarIODefault" #-}
 
 takeTMVarDefault :: MonadSTM m => TMVarDefault m a -> STM m a
 takeTMVarDefault (TMVar t) = do
@@ -425,18 +475,36 @@ isFullTBQueueDefault (TBQueue rsize _read wsize _write _size) = do
             then return False
             else return True
 
--- 'lengthTBQueue' was added in stm-2.5.0.0, but since we support older
--- versions of stm, we don't include it as a method in the type class. If we
--- were to conditionally (@MIN_VERSION_stm(2,5,0)@) include the method in the
--- type class, the IO simulator would have to conditionally include the
--- method, requiring a dependency on the @stm@ package, which would be
--- strange.
---
--- Nevertheless, we already provide a default implementation. Downstream
--- packages that don't mind having a >= 2.5 constraint on stm can use this to
--- implement 'lengthTBQueue' for the IO simulator.
 lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m Natural
 lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
   r <- readTVar rsize
   w <- readTVar wsize
   return $! size - r - w
+
+
+flushTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m [a]
+flushTBQueueDefault (TBQueue rsize read wsize write size) = do
+  xs <- readTVar read
+  ys <- readTVar write
+  if null xs && null ys
+    then return []
+    else do
+      writeTVar read []
+      writeTVar write []
+      writeTVar rsize 0
+      writeTVar wsize size
+      return (xs ++ reverse ys)
+
+
+-- | 'throwIO' specialised to @stm@ monad.
+--
+throwSTM :: (MonadSTMTx stm, MonadThrow.MonadThrow stm, Exception e)
+         => e -> stm a
+throwSTM = MonadThrow.throwIO
+
+
+-- | 'catch' speclialized for an @stm@ monad.
+--
+catchSTM :: (MonadSTMTx stm, MonadThrow.MonadCatch stm, Exception e)
+         => stm a -> (e -> stm a) -> stm a
+catchSTM = MonadThrow.catch

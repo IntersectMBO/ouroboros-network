@@ -338,7 +338,7 @@ withDBChecks RunNodeArgs{..} body = do
 
     -- Check the DB marker first, before doing the lock file, since if the
     -- marker is not present, it expects an empty DB dir.
-    either throwM return =<< checkDbMarker
+    either throwIO return =<< checkDbMarker
       hasFS
       mountPoint
       (getNetworkMagic (configBlock pInfoConfig))

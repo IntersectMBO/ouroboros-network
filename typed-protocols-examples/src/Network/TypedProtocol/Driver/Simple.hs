@@ -112,7 +112,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
         Left failure ->
-          throwM failure
+          throwIO failure
 
 
 -- | Run a peer with the given channel via the given codec.
