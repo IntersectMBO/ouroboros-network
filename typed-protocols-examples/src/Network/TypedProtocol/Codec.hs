@@ -1,16 +1,16 @@
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeInType                 #-}
 -- @UndecidableInstances@ extension is required for defining @Show@ instance of
--- @'AnyMessage'@.
+-- @'AnyMessage'@ and @'AnyMessageAndAgency'@.
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE QuantifiedConstraints      #-}
 
 module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
@@ -299,11 +299,11 @@ data AnyMessageAndAgency ps where
                       -> AnyMessageAndAgency ps
 
 -- requires @UndecidableInstances@ and @QuantifiedConstraints@.
-instance (forall st st'. ( Show (Message ps st st')
-                         , Show (ClientHasAgency st)
-                         , Show (ServerHasAgency st)
-                         ))
-         => Show (AnyMessageAndAgency ps) where
+instance
+    ( forall (st :: ps).             Show (ClientHasAgency st)
+    , forall (st :: ps).             Show (ServerHasAgency st)
+    , forall (st :: ps) (st' :: ps). Show (Message ps st st')
+    ) => Show (AnyMessageAndAgency ps) where
   show (AnyMessageAndAgency agency msg) = show (agency, msg)
 
 -- | The 'Codec' round-trip property: decode after encode gives the same
