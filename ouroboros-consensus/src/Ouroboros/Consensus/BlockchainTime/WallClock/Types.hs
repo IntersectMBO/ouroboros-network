@@ -30,10 +30,9 @@ import           Control.Exception (assert)
 import           Data.Fixed
 import           Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (InspectHeap (..), NoThunks,
+                     OnlyCheckWhnfNamed (..))
 import           Quiet
-
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
-                     UseIsNormalForm (..))
 
 {-------------------------------------------------------------------------------
   System start
@@ -44,7 +43,7 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
   deriving (Eq, Generic)
-  deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
+  deriving NoThunks via InspectHeap SystemStart
   deriving Show via Quiet SystemStart
 
 {-------------------------------------------------------------------------------
@@ -54,7 +53,7 @@ newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
 -- | 'RelativeTime' is time relative to the 'SystemStart'
 newtype RelativeTime = RelativeTime { getRelativeTime :: NominalDiffTime }
   deriving stock   (Eq, Ord, Generic)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoThunks)
   deriving Show via Quiet RelativeTime
 
 addRelTime :: NominalDiffTime -> RelativeTime -> RelativeTime
@@ -91,7 +90,7 @@ data SystemTime m = SystemTime {
       -- to reach 'SystemStart'. In tests this does nothing.
     , systemTimeWait    :: m ()
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SystemTime" (SystemTime m)
+  deriving NoThunks via OnlyCheckWhnfNamed "SystemTime" (SystemTime m)
 
 {-------------------------------------------------------------------------------
   SlotLength
@@ -99,7 +98,7 @@ data SystemTime m = SystemTime {
 
 -- | Slot length
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
-  deriving (Eq, Generic, NoUnexpectedThunks)
+  deriving (Eq, Generic, NoThunks)
   deriving Show via Quiet SlotLength
 
 -- | Constructor for 'SlotLength'

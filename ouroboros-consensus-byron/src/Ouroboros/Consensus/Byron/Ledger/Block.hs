@@ -42,9 +42,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import qualified Crypto.Hash as Crypto
 
@@ -70,7 +70,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving stock   (Eq, Ord, Show, Generic)
   deriving newtype (ToCBOR, FromCBOR, Condense)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash
@@ -181,7 +181,7 @@ instance Condense (Header ByronBlock) where
 
 instance ShowProxy (Header ByronBlock) where
 
-instance NoUnexpectedThunks (Header ByronBlock) where
+instance NoThunks (Header ByronBlock) where
   showTypeOf _ = show $ typeRep (Proxy @(Header ByronBlock))
 
 mkByronHeader :: CC.EpochSlots

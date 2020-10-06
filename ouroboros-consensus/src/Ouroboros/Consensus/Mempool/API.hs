@@ -266,7 +266,7 @@ data ForgeLedgerState blk =
 newtype MempoolCapacityBytes = MempoolCapacityBytes {
       getMempoolCapacityBytes :: Word32
     }
-  deriving (Eq, Show, NoUnexpectedThunks)
+  deriving (Eq, Show, NoThunks)
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual

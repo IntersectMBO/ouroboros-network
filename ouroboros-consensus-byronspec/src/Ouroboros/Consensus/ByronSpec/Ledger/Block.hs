@@ -16,8 +16,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
 import           Codec.Serialise
 import           Data.FingerTree.Strict (Measured (..))
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
@@ -99,7 +98,7 @@ instance GetPrevHash ByronSpecBlock where
 -------------------------------------------------------------------------------}
 
 data instance BlockConfig ByronSpecBlock = ByronSpecBlockConfig
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 data instance CodecConfig ByronSpecBlock = ByronSpecCodecConfig
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)

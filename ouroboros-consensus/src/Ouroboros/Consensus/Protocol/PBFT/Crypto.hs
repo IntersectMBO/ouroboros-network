@@ -15,10 +15,10 @@ module Ouroboros.Consensus.Protocol.PBFT.Crypto (
 
 import           Data.Kind (Type)
 import           Data.Typeable
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -35,8 +35,8 @@ class ( Typeable c
       , Ord  (PBftVerKeyHash c)
       , Eq   (PBftVerKeyHash c)
       , Show (PBftVerKeyHash c)
-      , NoUnexpectedThunks (PBftVerKeyHash c)
-      , NoUnexpectedThunks (PBftDelegationCert c)
+      , NoThunks (PBftVerKeyHash c)
+      , NoThunks (PBftDelegationCert c)
       ) => PBftCrypto c where
   type family PBftDSIGN          c :: Type
   type family PBftDelegationCert c = (d :: Type) | d -> c

@@ -11,10 +11,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
 
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
+import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 
 import           Control.Monad.Class.MonadTime
-
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Config.SecurityParam
 
@@ -64,7 +63,7 @@ data DiskPolicy = DiskPolicy {
       -- See also 'defaultDiskPolicy'
     , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "DiskPolicy" DiskPolicy
+  deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
 -- | Default on-disk policy
 --

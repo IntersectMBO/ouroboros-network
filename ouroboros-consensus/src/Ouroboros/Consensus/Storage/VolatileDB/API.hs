@@ -35,8 +35,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (OnlyCheckIsWHNF (..))
+import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Network.Block (MaxSlotNo)
 
@@ -143,7 +142,7 @@ data VolatileDB m blk = VolatileDB {
       -- | Return the highest slot number ever stored by the VolatileDB.
     , getMaxSlotNo        :: HasCallStack => STM m MaxSlotNo
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB m blk)
+  deriving NoThunks via OnlyCheckWhnfNamed "VolatileDB" (VolatileDB m blk)
 
 {------------------------------------------------------------------------------
   Types
@@ -159,7 +158,7 @@ data BlockInfo blk = BlockInfo {
     , biHeaderOffset :: !Word16
     , biHeaderSize   :: !Word16
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 {------------------------------------------------------------------------------
   Errors

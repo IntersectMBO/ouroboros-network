@@ -25,11 +25,11 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.Util
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
@@ -65,7 +65,7 @@ newtype SimplePraosExt c c' = SimplePraosExt {
   }
   deriving stock    (Generic, Show, Eq)
   deriving newtype  (Condense)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Part of the block that gets signed
 --

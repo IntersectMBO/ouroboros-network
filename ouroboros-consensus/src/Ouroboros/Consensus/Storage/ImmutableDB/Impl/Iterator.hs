@@ -77,7 +77,7 @@ data IteratorHandle m blk h = IteratorHandle {
 data IteratorStateOrExhausted m hash h =
     IteratorStateOpen !(IteratorState m hash h)
   | IteratorStateExhausted
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 data IteratorState m blk h = IteratorState {
       itsChunk        :: !ChunkNo
@@ -100,7 +100,7 @@ data IteratorState m blk h = IteratorState {
     }
   deriving (Generic)
 
-deriving instance (StandardHash blk, IOLike m) => NoUnexpectedThunks (IteratorState m blk h)
+deriving instance (StandardHash blk, IOLike m) => NoThunks (IteratorState m blk h)
 
 -- | Auxiliary data type that combines the 'currentChunk' and
 -- 'currentChunkOffset' fields from 'OpenState'. This is used to avoid passing

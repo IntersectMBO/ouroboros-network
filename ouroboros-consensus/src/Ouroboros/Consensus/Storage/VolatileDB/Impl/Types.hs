@@ -26,11 +26,10 @@ import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
-import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..))
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..))
 
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo)
@@ -115,11 +114,11 @@ type ReverseIndex blk = Map (HeaderHash blk) (InternalBlockInfo blk)
 type SuccessorsIndex blk = Map (ChainHash blk) (Set (HeaderHash blk))
 
 newtype BlockSize = BlockSize { unBlockSize :: Word32 }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | The offset at which a block is stored in a file.
 newtype BlockOffset = BlockOffset { unBlockOffset :: Word64 }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blk = InternalBlockInfo {
@@ -129,4 +128,4 @@ data InternalBlockInfo blk = InternalBlockInfo {
     , ibiBlockInfo   :: !(BlockInfo blk)
     , ibiNestedCtxt  :: !(SomeBlock (NestedCtxt Header) blk)
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)

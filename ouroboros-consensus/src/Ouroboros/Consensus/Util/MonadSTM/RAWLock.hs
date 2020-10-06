@@ -31,8 +31,7 @@ import           Control.Monad.Except
 import           Data.Functor (($>))
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
-
-import           Cardano.Prelude (AllowThunk (..))
+import           NoThunks.Class (AllowThunk (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -141,14 +140,14 @@ import           Ouroboros.Consensus.Util.IOLike
 --   readers.
 --
 -- * The state @st@ is always evaluated to WHNF and is subject to the
---   'NoUnexpectedThunks' check when enabled.
+--   'NoThunks' check when enabled.
 --
 -- * All public functions are exception-safe.
 --
 newtype RAWLock m st = RAWLock (StrictTVar m (RAWState st))
 
 -- | Create a new 'RAWLock'
-new :: (IOLike m, NoUnexpectedThunks st) => st -> m (RAWLock m st)
+new :: (IOLike m, NoThunks st) => st -> m (RAWLock m st)
 new st = RAWLock <$> newTVarIO (emptyRAWState st)
 
 -- | Access the state stored in the 'RAWLock' as a reader.
@@ -344,11 +343,11 @@ unsafeReleaseWriteAccess (RAWLock var) st = atomically $ do
 
 -- | Any non-negative number of readers
 newtype Readers = Readers Word
-  deriving newtype (Eq, Ord, Enum, Num, NoUnexpectedThunks)
+  deriving newtype (Eq, Ord, Enum, Num, NoThunks)
 
 -- | At most one appender
 data Appender = NoAppender | Appender
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | The lock is implemented by a single 'StrictTVar', which stores a
 -- 'RAWState'.
@@ -370,7 +369,7 @@ data RAWState st =
     -- | The lock has been poisoned: all subsequent acquires or releases will
     -- throw the stored exception.
   | Poisoned       !(AllowThunk SomeException)
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Create an initial, empty, unlocked 'RAWState': no readers, no appender,
 -- no writer (waiting).

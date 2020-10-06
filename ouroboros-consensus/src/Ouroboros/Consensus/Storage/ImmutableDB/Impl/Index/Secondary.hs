@@ -57,7 +57,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 
 newtype BlockOffset = BlockOffset { unBlockOffset :: Word64 }
   deriving stock   (Show)
-  deriving newtype (Eq, Ord, Enum, Real, Integral, Num, Storable, NoUnexpectedThunks)
+  deriving newtype (Eq, Ord, Enum, Real, Integral, Num, Storable, NoThunks)
 
 instance Binary BlockOffset where
   get = BlockOffset <$> Get.getWord64be
@@ -65,7 +65,7 @@ instance Binary BlockOffset where
 
 newtype HeaderOffset = HeaderOffset { unHeaderOffset :: Word16 }
   deriving stock   (Show)
-  deriving newtype (Eq, Storable, NoUnexpectedThunks)
+  deriving newtype (Eq, Storable, NoThunks)
 
 instance Binary HeaderOffset where
   get = HeaderOffset <$> Get.getWord16be
@@ -73,7 +73,7 @@ instance Binary HeaderOffset where
 
 newtype HeaderSize = HeaderSize { unHeaderSize :: Word16 }
   deriving stock   (Show)
-  deriving newtype (Eq, Storable, NoUnexpectedThunks)
+  deriving newtype (Eq, Storable, NoThunks)
 
 instance Binary HeaderSize where
   get = HeaderSize <$> Get.getWord16be
@@ -102,9 +102,9 @@ data Entry blk = Entry {
     }
   deriving (Generic)
 
-deriving instance StandardHash blk => Eq                 (Entry blk)
-deriving instance StandardHash blk => Show               (Entry blk)
-deriving instance StandardHash blk => NoUnexpectedThunks (Entry blk)
+deriving instance StandardHash blk => Eq       (Entry blk)
+deriving instance StandardHash blk => Show     (Entry blk)
+deriving instance StandardHash blk => NoThunks (Entry blk)
 
 getEntry :: forall blk. ConvertRawHash blk => IsEBB -> Get (Entry blk)
 getEntry isEBB = do
@@ -151,7 +151,7 @@ data BlockSize
   | LastEntry
     -- ^ In case of the last entry, we don't have any entry and thus block
     -- offset after it that we can use to calculate the size of the block.
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 -- | Read the entry at the given 'SecondaryOffset'. Interpret it as an EBB
 -- depending on the given 'IsEBB'.

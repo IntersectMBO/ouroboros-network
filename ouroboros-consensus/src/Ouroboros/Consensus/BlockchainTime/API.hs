@@ -14,8 +14,7 @@ module Ouroboros.Consensus.BlockchainTime.API (
 
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (OnlyCheckIsWHNF (..))
+import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
@@ -35,8 +34,8 @@ data BlockchainTime m = BlockchainTime {
       -- | Get current slot
       getCurrentSlot :: STM m CurrentSlot
     }
-  deriving NoUnexpectedThunks
-       via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
+  deriving NoThunks
+       via OnlyCheckWhnfNamed "BlockchainTime" (BlockchainTime m)
 
 data CurrentSlot =
     -- | The current slot is known
@@ -49,7 +48,7 @@ data CurrentSlot =
     -- 'SlotNo'. This should only be the case during syncing.
   | CurrentSlotUnknown
   deriving stock    (Generic, Show)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
   Derived functionality

@@ -45,8 +45,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
 import           Control.Monad
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 
@@ -138,7 +137,7 @@ chunkIndexOfSlot (UniformChunkSize ChunkSize{..}) (SlotNo slot) = ChunkNo $
 data ChunkSlot = UnsafeChunkSlot
   { chunkIndex    :: !ChunkNo
   , chunkRelative :: !RelativeSlot
-  } deriving (Eq, Generic, NoUnexpectedThunks)
+  } deriving (Eq, Generic, NoThunks)
 
 -- | We provide a manual 'Ord' instance because 'RelativeSlot' does not
 -- (and cannot) define one. By comparing the 'chunkIndex' before the index here,

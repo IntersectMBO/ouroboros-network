@@ -53,9 +53,8 @@ import           Data.Functor.Product
 import           Data.Kind
 import           Data.SOP.Strict
 import           GHC.Stack
+import           NoThunks.Class (NoThunks (..), allNoThunks)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     allNoUnexpectedThunks)
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
 
@@ -520,13 +519,13 @@ deriving instance ( All (Compose Show g) xs
                   , All (Compose Show f) xs
                   ) => Show (Telescope g f xs)
 
-instance ( All (Compose NoUnexpectedThunks g) xs
-         , All (Compose NoUnexpectedThunks f) xs
-         ) => NoUnexpectedThunks (Telescope g f xs) where
+instance ( All (Compose NoThunks g) xs
+         , All (Compose NoThunks f) xs
+         ) => NoThunks (Telescope g f xs) where
   showTypeOf _ = "Telescope"
-  whnfNoUnexpectedThunks ctxt = \case
-      TZ f   -> noUnexpectedThunks ("TZ" : ctxt) f
-      TS g t -> allNoUnexpectedThunks [
-                   noUnexpectedThunks ("g" : "TS" : ctxt) g
-                 , noUnexpectedThunks ("t" : "TS" : ctxt) t
+  wNoThunks ctxt = \case
+      TZ f   -> noThunks ("TZ" : ctxt) f
+      TS g t -> allNoThunks [
+                   noThunks ("g" : "TS" : ctxt) g
+                 , noThunks ("t" : "TS" : ctxt) t
                  ]

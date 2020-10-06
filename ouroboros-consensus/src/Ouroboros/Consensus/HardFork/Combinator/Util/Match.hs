@@ -41,9 +41,7 @@ import           Data.Functor.Product
 import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Void
-
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     allNoUnexpectedThunks)
+import           NoThunks.Class (NoThunks (..), allNoThunks)
 
 import           Ouroboros.Consensus.Util.SOP ()
 
@@ -195,17 +193,17 @@ deriving stock instance ( All (Compose Show f) xs
                         , All (Compose Show g) xs
                         ) => Show (Mismatch f g xs)
 
-instance ( All (Compose NoUnexpectedThunks f) xs
-         , All (Compose NoUnexpectedThunks g) xs
-         ) => NoUnexpectedThunks (Mismatch f g xs) where
+instance ( All (Compose NoThunks f) xs
+         , All (Compose NoThunks g) xs
+         ) => NoThunks (Mismatch f g xs) where
   showTypeOf _ = "Mismatch"
-  whnfNoUnexpectedThunks ctxt = \case
-    ML l r -> allNoUnexpectedThunks [
-                  noUnexpectedThunks ("l" : "ML" : ctxt) l
-                , noUnexpectedThunks ("r" : "ML" : ctxt) r
+  wNoThunks ctxt = \case
+    ML l r -> allNoThunks [
+                  noThunks ("l" : "ML" : ctxt) l
+                , noThunks ("r" : "ML" : ctxt) r
                 ]
-    MR l r -> allNoUnexpectedThunks [
-                  noUnexpectedThunks ("l" : "MR" : ctxt) l
-                , noUnexpectedThunks ("r" : "MR" : ctxt) r
+    MR l r -> allNoThunks [
+                  noThunks ("l" : "MR" : ctxt) l
+                , noThunks ("r" : "MR" : ctxt) r
                 ]
-    MS m   -> noUnexpectedThunks ("MS" : ctxt) m
+    MS m   -> noThunks ("MS" : ctxt) m

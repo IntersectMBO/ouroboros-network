@@ -61,8 +61,7 @@ import           Data.Function (on)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
@@ -165,7 +164,7 @@ data ImmutableDB m blk = ImmutableDB {
         -> StreamTo   blk
         -> m (Either (MissingBlock blk) (Iterator m blk b))
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ImmutableDB" (ImmutableDB m blk)
+  deriving NoThunks via OnlyCheckWhnfNamed "ImmutableDB" (ImmutableDB m blk)
 
 {-------------------------------------------------------------------------------
   Iterator API
@@ -198,7 +197,7 @@ data Iterator m blk b = Iterator {
     , iteratorClose   :: HasCallStack => m ()
     }
   deriving (Functor)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Iterator" (Iterator m blk b)
+  deriving NoThunks via OnlyCheckWhnfNamed "Iterator" (Iterator m blk b)
 
 -- | Variant of 'traverse' instantiated to @'Iterator' m blk m@ that executes
 -- the monadic function when calling 'iteratorNext'.
@@ -253,9 +252,9 @@ data Tip blk = Tip {
     }
   deriving (Generic)
 
-deriving instance StandardHash blk => Eq                 (Tip blk)
-deriving instance StandardHash blk => Show               (Tip blk)
-deriving instance StandardHash blk => NoUnexpectedThunks (Tip blk)
+deriving instance StandardHash blk => Eq       (Tip blk)
+deriving instance StandardHash blk => Show     (Tip blk)
+deriving instance StandardHash blk => NoThunks (Tip blk)
 
 tipToRealPoint :: Tip blk -> RealPoint blk
 tipToRealPoint Tip { tipSlotNo, tipHash } = RealPoint tipSlotNo tipHash

@@ -1,5 +1,7 @@
 module Main (main) where
 
+import           Cardano.Crypto.Libsodium (sodiumInit)
+
 import           Test.Tasty
 import           Test.Util.Nightly
 
@@ -8,7 +10,7 @@ import qualified Test.Consensus.Shelley.Serialisation (tests)
 import qualified Test.ThreadNet.RealTPraos (tests)
 
 main :: IO ()
-main = defaultMainWithIohkNightly tests
+main = sodiumInit >> defaultMainWithIohkNightly tests
 
 tests :: TestTree
 tests =

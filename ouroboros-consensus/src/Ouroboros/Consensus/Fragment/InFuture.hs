@@ -25,10 +25,10 @@ module Ouroboros.Consensus.Fragment.InFuture (
 import           Data.Bifunctor
 import           Data.Time (NominalDiffTime)
 import           Data.Word
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadSTM
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
@@ -49,8 +49,8 @@ data CheckInFuture m blk = CheckInFuture {
        checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
                      -> m (AnchoredFragment (Header blk), [InFuture blk])
     }
-  deriving NoUnexpectedThunks
-       via OnlyCheckIsWHNF "CheckInFuture" (CheckInFuture m blk)
+  deriving NoThunks
+       via OnlyCheckWhnfNamed "CheckInFuture" (CheckInFuture m blk)
 
 -- | Header of block that we found to be in the future
 data InFuture blk = InFuture {

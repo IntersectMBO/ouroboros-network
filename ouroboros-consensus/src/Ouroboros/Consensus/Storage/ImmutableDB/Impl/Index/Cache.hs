@@ -51,8 +51,9 @@ import qualified Data.Vector as Vector
 import           Data.Void (Void)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (unsafeNoThunks)
 
-import           Cardano.Prelude (forceElemsToWHNF, unsafeNoUnexpectedThunks)
+import           Cardano.Prelude (forceElemsToWHNF)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB (..),
                      StandardHash)
@@ -111,7 +112,7 @@ data CurrentChunkInfo blk = CurrentChunkInfo
   , currentChunkOffsets :: !(StrictSeq SecondaryOffset)
   , currentChunkEntries :: !(StrictSeq (Entry blk))
   }
-  deriving (Generic, NoUnexpectedThunks, Show)
+  deriving (Show, Generic, NoThunks)
 
 emptyCurrentChunkInfo :: ChunkNo -> CurrentChunkInfo blk
 emptyCurrentChunkInfo chunk = CurrentChunkInfo
@@ -144,14 +145,14 @@ data PastChunkInfo blk = PastChunkInfo
   { pastChunkOffsets :: !PrimaryIndex
   , pastChunkEntries :: !(Vector (Entry blk))
   }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | The last time a cached past chunk was accessed.
 --
 -- We care about the ordering /and/ the absolute times so we can also evict
 -- chunks when they haven't been used for @x@ seconds or minutes.
 newtype LastUsed = LastUsed Time
-  deriving newtype (Eq, Ord, Show, NoUnexpectedThunks)
+  deriving newtype (Eq, Ord, Show, NoThunks)
 
 -- | The data stored in the cache.
 data Cached blk = Cached
@@ -194,7 +195,7 @@ data Cached blk = Cached
     --
     -- INVARIANT: 'nbPastChunks' == @'PSQ.size' 'pastChunksInfo'@
   }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 checkInvariants
   :: Word32  -- ^ Maximum number of past chunks to cache
@@ -400,7 +401,7 @@ newEnv hasFS registry tracer cacheConfig chunkInfo chunk = do
       Strict.newMVarWithInvariant $ \cached ->
         checkInvariants pastChunksToCache cached
         `mplus`
-        unsafeNoUnexpectedThunks cached
+        (show <$> unsafeNoThunks cached)
 
 {------------------------------------------------------------------------------
   Background thread

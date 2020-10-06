@@ -13,8 +13,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -46,7 +45,7 @@ data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
                                        (SL.VKey 'SL.BlockIssuer era))
     }
   deriving stock (Show, Generic)
-  deriving anyclass NoUnexpectedThunks
+  deriving anyclass NoThunks
 
 mkShelleyBlockConfig ::
      (Era era)
@@ -70,4 +69,4 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
 
 -- | No particular codec configuration is needed for Shelley
 data instance CodecConfig (ShelleyBlock era) = ShelleyCodecConfig
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)

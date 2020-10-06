@@ -31,8 +31,7 @@ import           Data.Functor.Product
 import           Data.SOP.Strict
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -387,6 +386,6 @@ injectValidationErr inj =
   Instances
 -------------------------------------------------------------------------------}
 
-deriving instance CanHardFork xs => Eq                 (HardForkValidationErr xs)
-deriving instance CanHardFork xs => Show               (HardForkValidationErr xs)
-deriving instance CanHardFork xs => NoUnexpectedThunks (HardForkValidationErr xs)
+deriving instance CanHardFork xs => Eq       (HardForkValidationErr xs)
+deriving instance CanHardFork xs => Show     (HardForkValidationErr xs)
+deriving instance CanHardFork xs => NoThunks (HardForkValidationErr xs)

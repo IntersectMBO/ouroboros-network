@@ -100,8 +100,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment)
@@ -148,7 +147,7 @@ import           Ouroboros.Network.Point (WithOrigin (At, Origin))
 data AnchoredFragment block = AnchoredFragment
     { anchor           :: !(Anchor block)
     , unanchorFragment :: !(ChainFragment block)
-    } deriving (Show, Eq, Generic, NoUnexpectedThunks)
+    } deriving (Show, Eq, Generic, NoThunks)
 
 anchorPoint :: AnchoredFragment block -> Point block
 anchorPoint = anchorToPoint . anchor
@@ -171,9 +170,9 @@ data Anchor block =
   | Anchor !SlotNo !(HeaderHash block) !BlockNo
   deriving (Generic)
 
-deriving instance StandardHash block => Show               (Anchor block)
-deriving instance StandardHash block => Eq                 (Anchor block)
-deriving instance StandardHash block => NoUnexpectedThunks (Anchor block)
+deriving instance StandardHash block => Show     (Anchor block)
+deriving instance StandardHash block => Eq       (Anchor block)
+deriving instance StandardHash block => NoThunks (Anchor block)
 
 -- | The equivalent of 'castPoint' for 'Anchor'
 castAnchor :: (HeaderHash a ~ HeaderHash b) => Anchor a -> Anchor b

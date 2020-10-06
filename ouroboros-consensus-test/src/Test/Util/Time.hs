@@ -12,7 +12,6 @@ dawnOfTime :: UTCTime
 dawnOfTime = UTCTime day 0
   where
     -- Force it to avoid a thunk in 'UTCTime', which doesn't have bangs on its
-    -- arguments. The thunk itself would be harmless, as it would be forced
-    -- the first time it's accessed, but it causes the 'NoUnexpectedThunks'
-    -- check to fail.
+    -- arguments. The thunk itself would be harmless, as it would be forced the
+    -- first time it's accessed, but it causes the 'NoThunks' check to fail.
     !day = fromGregorian 2000 01 01

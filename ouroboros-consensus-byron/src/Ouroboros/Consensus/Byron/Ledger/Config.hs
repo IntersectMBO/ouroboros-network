@@ -22,8 +22,7 @@ module Ouroboros.Consensus.Byron.Ledger.Config (
 
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
@@ -55,7 +54,7 @@ data instance BlockConfig ByronBlock = ByronConfig {
       -- Like 'byronProtocolVersion', this is independent from the chain.
     , byronSoftwareVersion :: !CC.Update.SoftwareVersion
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 byronGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
 byronGenesisHash = CC.Genesis.configGenesisHash . byronGenesisConfig
@@ -76,7 +75,7 @@ byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig
 newtype instance CodecConfig ByronBlock = ByronCodecConfig {
       getByronEpochSlots :: CC.Slot.EpochSlots
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 mkByronCodecConfig :: CC.Genesis.Config -> CodecConfig ByronBlock
 mkByronCodecConfig cfg = ByronCodecConfig {

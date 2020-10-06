@@ -17,12 +17,11 @@ import           Control.Monad.Reader
 import           Control.Tracer
 import           Data.Fixed
 import qualified Data.Time.Clock as Time
+import           NoThunks.Class (AllowThunk (..))
 import           Test.QuickCheck hiding (Fixed)
 import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
-
-import           Cardano.Prelude (AllowThunk (..))
 
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
@@ -107,7 +106,7 @@ prop_delayNextSlot TestDelayIO{..} =
 -- easier to interpret and shrink (slot length is set to 1 seconds).
 newtype Schedule = Schedule { getSchedule :: [Fixed E1] }
   deriving stock (Show)
-  deriving NoUnexpectedThunks via AllowThunk Schedule
+  deriving NoThunks via AllowThunk Schedule
 
 -- | Translate an offset in the schedule to a slot
 --
@@ -306,13 +305,13 @@ newtype OverrideDelay m a = OverrideDelay {
            )
 
 deriving via AllowThunk (OverrideDelay s a)
-         instance NoUnexpectedThunks (OverrideDelay s a)
+         instance NoThunks (OverrideDelay s a)
 
 deriving via AllowThunk (StrictTVar (OverrideDelay s) a)
-         instance NoUnexpectedThunks (StrictTVar (OverrideDelay s) a)
+         instance NoThunks (StrictTVar (OverrideDelay s) a)
 
 deriving via AllowThunk (StrictMVar (OverrideDelay s) a)
-         instance NoUnexpectedThunks (StrictMVar (OverrideDelay s) a)
+         instance NoThunks (StrictMVar (OverrideDelay s) a)
 
 instance MonadDelay (OverrideDelay (IOSim s)) where
   threadDelay d = OverrideDelay $ ReaderT $ \schedule -> do

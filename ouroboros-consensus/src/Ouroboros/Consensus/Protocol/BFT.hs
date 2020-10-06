@@ -34,9 +34,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -59,7 +59,7 @@ deriving instance BftCrypto c => Show (BftFields c toSign)
 deriving instance BftCrypto c => Eq   (BftFields c toSign)
 
 -- We use the generic implementation, but override 'showTypeOf' to show @c@
-instance (BftCrypto c, Typeable toSign) => NoUnexpectedThunks (BftFields c toSign) where
+instance (BftCrypto c, Typeable toSign) => NoThunks (BftFields c toSign) where
   showTypeOf _ = show $ typeRep (Proxy @(BftFields c))
 
 data BftValidateView c =
@@ -112,7 +112,7 @@ data BftParams = BftParams {
       -- | Number of core nodes
     , bftNumNodes      :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | (Static) node configuration
 data instance ConsensusConfig (Bft c) = BftConfig {
@@ -163,7 +163,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
   reupdateChainDepState _ _ _ _ = ()
   tickChainDepState     _ _ _ _ = TickedTrivial
 
-instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
+instance BftCrypto c => NoThunks (ConsensusConfig (Bft c))
   -- use generic instance
 
 {-------------------------------------------------------------------------------
@@ -171,7 +171,7 @@ instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
 -------------------------------------------------------------------------------}
 
 data BftValidationErr = BftInvalidSignature String
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Crypto models
@@ -181,7 +181,7 @@ data BftValidationErr = BftInvalidSignature String
 class ( Typeable c
       , DSIGNAlgorithm (BftDSIGN c)
       , Condense (SigDSIGN (BftDSIGN c))
-      , NoUnexpectedThunks (SigDSIGN (BftDSIGN c))
+      , NoThunks (SigDSIGN (BftDSIGN c))
       , ContextDSIGN (BftDSIGN c) ~ ()
       ) => BftCrypto c where
   type family BftDSIGN c :: Type

@@ -27,9 +27,9 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
 import           Data.SOP.Strict hiding (shape)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.SOP
 
@@ -65,12 +65,12 @@ instance HCollapse HardForkState where
   hcollapse = hcollapse . hmap currentState . Telescope.tip . getHardForkState
 
 {-------------------------------------------------------------------------------
-  Eq, Show, NoUnexpectedThunks
+  Eq, Show, NoThunks
 -------------------------------------------------------------------------------}
 
-deriving instance Eq                 (f blk) => Eq                 (Current f blk)
-deriving instance Show               (f blk) => Show               (Current f blk)
-deriving instance NoUnexpectedThunks (f blk) => NoUnexpectedThunks (Current f blk)
+deriving instance Eq       (f blk) => Eq       (Current f blk)
+deriving instance Show     (f blk) => Show     (Current f blk)
+deriving instance NoThunks (f blk) => NoThunks (Current f blk)
 
 deriving via LiftTelescope (K Past) (Current f) xs
          instance ( All SingleEraBlock xs
@@ -84,8 +84,8 @@ deriving via LiftTelescope (K Past) (Current f) xs
 
 deriving via LiftNamedTelescope "HardForkState" (K Past) (Current f) xs
          instance ( All SingleEraBlock xs
-                  , forall blk. SingleEraBlock blk => NoUnexpectedThunks (f blk)
-                  ) => NoUnexpectedThunks (HardForkState f xs)
+                  , forall blk. SingleEraBlock blk => NoThunks (f blk)
+                  ) => NoThunks (HardForkState f xs)
 
 {-------------------------------------------------------------------------------
   Serialisation

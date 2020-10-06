@@ -15,9 +15,8 @@ import           Codec.Serialise (Serialise)
 import           Data.Hashable
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import           Quiet
-
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
@@ -29,7 +28,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 -- layer does not use or provide node ids (it uses addresses).
 data NodeId = CoreId !CoreNodeId
             | RelayId !Word64
-  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Ord, Show, Generic, NoThunks)
 
 instance Condense NodeId where
   condense (CoreId (CoreNodeId i)) = "c" ++ show i
@@ -42,7 +41,7 @@ newtype CoreNodeId = CoreNodeId {
       unCoreNodeId :: Word64
     }
   deriving stock   (Eq, Ord, Generic)
-  deriving newtype (Condense, Serialise, NoUnexpectedThunks)
+  deriving newtype (Condense, Serialise, NoThunks)
   deriving Show via Quiet CoreNodeId
 
 instance Hashable CoreNodeId

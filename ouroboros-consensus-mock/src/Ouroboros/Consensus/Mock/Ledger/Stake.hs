@@ -21,8 +21,7 @@ import           Codec.Serialise (Serialise)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
@@ -49,7 +48,7 @@ data StakeHolder =
 --
 -- INVARIANT: The rationals should sum to 1.
 newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
-  deriving (Show, Eq, Serialise, NoUnexpectedThunks)
+  deriving (Show, Eq, Serialise, NoThunks)
 
 -- | Ticked stake distribution
 newtype instance Ticked StakeDist = TickedStakeDist {

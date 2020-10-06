@@ -69,8 +69,7 @@ import qualified Data.Set as S
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.CallStack
@@ -87,7 +86,7 @@ data MockFS = MockFS {
     , mockHandles    :: !(Map HandleMock HandleState)
     , mockNextHandle :: !HandleMock
     }
-  deriving (Generic, Show, NoUnexpectedThunks)
+  deriving (Generic, Show, NoThunks)
 
 -- | We store the files as an 'FsTree' of the file contents
 type Files = FsTree ByteString
@@ -97,7 +96,7 @@ type Files = FsTree ByteString
 -- This is only meaningful when interpreted against a 'MockFS'.
 newtype HandleMock = HandleMock Int
   deriving stock   (Show, Eq, Ord, Generic)
-  deriving newtype (Enum, NoUnexpectedThunks)
+  deriving newtype (Enum, NoThunks)
 
 -- | Instantiate 'Handle' with the mock handle
 type Handle' = Handle HandleMock
@@ -106,13 +105,13 @@ type Handle' = Handle HandleMock
 data HandleState =
     HandleOpen !OpenHandleState
   | HandleClosed !ClosedHandleState
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 data OpenHandleState = OpenHandle {
       openFilePath :: !FsPath
     , openPtr      :: !FilePtr
     }
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 -- | Check whether the file handle is in write/append mode.
 isWriteHandle :: OpenHandleState -> Bool
@@ -134,12 +133,12 @@ data FilePtr =
     --
     -- Offset is always the end of the file in append mode
   | Append
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 data ClosedHandleState = ClosedHandle {
       closedFilePath :: FsPath
     }
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 -- | Monads in which we can simulate the file system
 type CanSimFS m = (HasCallStack, MonadState MockFS m, MonadError FsError m)

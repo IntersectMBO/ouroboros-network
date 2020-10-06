@@ -66,9 +66,9 @@ import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
+import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -106,7 +106,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 -- leave the Byron spec ledger state unchanged.
 --
 -- NOTE: The dual ledger is used for testing purposes only; we do not do any
--- meaningful 'NoUnexpectedThunks' checks here.
+-- meaningful 'NoThunks' checks here.
 data DualBlock m a = DualBlock {
       dualBlockMain   :: m
     , dualBlockAux    :: Maybe a
@@ -135,7 +135,7 @@ instance ConvertRawHash m => ConvertRawHash (DualBlock m a) where
 -------------------------------------------------------------------------------}
 
 newtype instance Header (DualBlock m a) = DualHeader { dualHeaderMain :: Header m }
-  deriving NoUnexpectedThunks via AllowThunk (Header (DualBlock m a))
+  deriving NoThunks via AllowThunk (Header (DualBlock m a))
 
 instance Bridge m a => GetHeader (DualBlock m a) where
   getHeader = DualHeader . getHeader . dualBlockMain
@@ -161,7 +161,7 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
       dualBlockConfigMain :: BlockConfig m
     , dualBlockConfigAux  :: BlockConfig a
     }
-  deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
+  deriving NoThunks via AllowThunk (BlockConfig (DualBlock m a))
 
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart  = getSystemStart  . dualBlockConfigMain
@@ -190,9 +190,9 @@ data instance CodecConfig (DualBlock m a) = DualCodecConfig {
     }
   deriving (Generic)
 
-instance ( NoUnexpectedThunks (CodecConfig m)
-         , NoUnexpectedThunks (CodecConfig a)
-         ) => NoUnexpectedThunks (CodecConfig (DualBlock m a))
+instance ( NoThunks (CodecConfig m)
+         , NoThunks (CodecConfig a)
+         ) => NoThunks (CodecConfig (DualBlock m a))
   -- Use generic instance
 
 {-------------------------------------------------------------------------------
@@ -214,12 +214,12 @@ class (
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
-      , Typeable              a
-      , UpdateLedger          a
-      , LedgerSupportsMempool a
-      , Show (ApplyTxErr      a)
-      , NoUnexpectedThunks (LedgerConfig a)
-      , NoUnexpectedThunks (CodecConfig a)
+      , Typeable               a
+      , UpdateLedger           a
+      , LedgerSupportsMempool  a
+      , Show (ApplyTxErr       a)
+      , NoThunks (LedgerConfig a)
+      , NoThunks (CodecConfig  a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)
@@ -288,7 +288,7 @@ data DualLedgerError m a = DualLedgerError {
         dualLedgerErrorMain :: LedgerError m
       , dualLedgerErrorAux  :: LedgerError a
       }
-  deriving NoUnexpectedThunks via AllowThunk (DualLedgerError m a)
+  deriving NoThunks via AllowThunk (DualLedgerError m a)
 
 deriving instance ( Show (LedgerError m)
                   , Show (LedgerError a)
@@ -305,7 +305,7 @@ data DualLedgerConfig m a = DualLedgerConfig {
       dualLedgerConfigMain :: LedgerConfig m
     , dualLedgerConfigAux  :: LedgerConfig a
     }
-  deriving NoUnexpectedThunks via AllowThunk (DualLedgerConfig m a)
+  deriving NoThunks via AllowThunk (DualLedgerConfig m a)
 
 type instance LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
 
@@ -327,7 +327,7 @@ data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
       -- no auxiliary block, the auxiliary ledger state remains unchanged.
     , tickedDualLedgerStateAuxOrig :: LedgerState a
     }
-  deriving NoUnexpectedThunks via AllowThunk (Ticked (LedgerState (DualBlock m a)))
+  deriving NoThunks via AllowThunk (Ticked (LedgerState (DualBlock m a)))
 
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
@@ -395,7 +395,7 @@ data instance LedgerState (DualBlock m a) = DualLedgerState {
     , dualLedgerStateAux    :: LedgerState a
     , dualLedgerStateBridge :: BridgeLedger m a
     }
-  deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
+  deriving NoThunks via AllowThunk (LedgerState (DualBlock m a))
 
 instance Bridge m a => UpdateLedger (DualBlock m a)
 
@@ -506,7 +506,7 @@ data instance GenTx (DualBlock m a) = DualGenTx {
     , dualGenTxAux    :: GenTx a
     , dualGenTxBridge :: BridgeTx m a
     }
-  deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
+  deriving NoThunks via AllowThunk (GenTx (DualBlock m a))
 
 instance (Typeable m, Typeable a)
     => ShowProxy (GenTx (DualBlock m a)) where
@@ -573,7 +573,7 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
 newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
       dualGenTxIdMain :: GenTxId m
     }
-  deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
+  deriving NoThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
 instance (Typeable m, Typeable a)
     => ShowProxy (TxId (GenTx (DualBlock m a))) where

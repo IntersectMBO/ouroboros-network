@@ -42,8 +42,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Test.Util.Time (dawnOfTime)
 
@@ -85,7 +84,7 @@ data instance ConsensusConfig ProtocolB = CfgB {
       cfgB_k           :: SecurityParam
     , cfgB_leadInSlots :: Set SlotNo
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "CfgB" (ConsensusConfig ProtocolB)
+  deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
 
 instance ChainSelection ProtocolB where
   -- Use defaults
@@ -114,7 +113,7 @@ data BlockB = BlkB {
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlkB" BlockB
+  deriving NoThunks via OnlyCheckWhnfNamed "BlkB" BlockB
 
 data instance Header BlockB = HdrB {
       hdrB_fields :: HeaderFields BlockB
@@ -122,7 +121,7 @@ data instance Header BlockB = HdrB {
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HdrB" (Header BlockB)
+  deriving NoThunks via OnlyCheckWhnfNamed "HdrB" (Header BlockB)
 
 instance GetHeader BlockB where
   getHeader          = blkB_header
@@ -130,13 +129,13 @@ instance GetHeader BlockB where
   headerIsEBB        = const Nothing
 
 data instance BlockConfig BlockB = BCfgB
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 type instance BlockProtocol BlockB = ProtocolB
 type instance HeaderHash    BlockB = Strict.ByteString
 
 data instance CodecConfig BlockB = CCfgB
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance ConfigSupportsNode BlockB where
   getSystemStart  _ = SystemStart dawnOfTime
@@ -167,7 +166,7 @@ data instance LedgerState BlockB = LgrB {
       lgrB_tip :: Point BlockB
     }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrB" (LedgerState BlockB)
+  deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB)
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 
@@ -175,7 +174,7 @@ type instance LedgerCfg (LedgerState BlockB) = ()
 newtype instance Ticked (LedgerState BlockB) = TickedLedgerStateB {
       getTickedLedgerStateB :: LedgerState BlockB
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TickedLgrB" (Ticked (LedgerState BlockB))
+  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrB" (Ticked (LedgerState BlockB))
 
 instance GetTip (LedgerState BlockB) where
   getTip = castPoint . lgrB_tip
@@ -249,7 +248,7 @@ safeZoneB :: SecurityParam -> History.SafeZone
 safeZoneB (SecurityParam k) = History.noLowerBoundSafeZone k
 
 data instance GenTx BlockB
-  deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+  deriving (Show, Eq, Generic, NoThunks, Serialise)
 
 type instance ApplyTxErr BlockB = Void
 
@@ -262,7 +261,7 @@ instance LedgerSupportsMempool BlockB where
 
 data instance TxId (GenTx BlockB)
   deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoThunks, Serialise)
 
 instance HasTxId (GenTx BlockB) where
   txId tx = case tx of {}

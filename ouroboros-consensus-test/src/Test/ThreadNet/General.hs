@@ -78,7 +78,7 @@ import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.HardFork.Future (Future)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.Orphans.NoUnexpectedThunks ()
+import           Test.Util.Orphans.NoThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
 import           Test.Util.Slots (NumSlots (..))

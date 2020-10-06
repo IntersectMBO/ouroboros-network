@@ -25,8 +25,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
@@ -47,7 +46,7 @@ data FileInfo blk = FileInfo {
   deriving (Generic)
 
 deriving instance StandardHash blk => Show (FileInfo blk)
-deriving instance StandardHash blk => NoUnexpectedThunks (FileInfo blk)
+deriving instance StandardHash blk => NoThunks (FileInfo blk)
 
 {-------------------------------------------------------------------------------
   Construction

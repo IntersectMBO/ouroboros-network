@@ -48,13 +48,13 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (InspectHeapNamed (..), NoThunks (..))
 
 import           Cardano.Binary (ByteSpan, DecoderError (..), FromCBOR (..),
                      ToCBOR (..), enforceSize, fromCBOR, serialize, slice,
                      toCBOR, unsafeDeserialize)
 import           Cardano.Crypto (hashDecoded)
-import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
-                     cborError)
+import           Cardano.Prelude (cborError)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -91,7 +91,7 @@ data instance GenTx ByronBlock
   | ByronUpdateProposal !Update.UpId              !(Update.AProposal        ByteString)
   | ByronUpdateVote     !Update.VoteId            !(Update.AVote            ByteString)
   deriving (Eq, Generic)
-  deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
+  deriving NoThunks via InspectHeapNamed "GenTx ByronBlock" (GenTx ByronBlock)
 
 instance ShowProxy (GenTx ByronBlock) where
 
@@ -131,7 +131,7 @@ data instance TxId (GenTx ByronBlock)
   | ByronUpdateProposalId !Update.UpId
   | ByronUpdateVoteId     !Update.VoteId
   deriving (Eq, Ord)
-  deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
+  deriving NoThunks via InspectHeapNamed "TxId (GenTx ByronBlock)" (TxId (GenTx ByronBlock))
 
 instance ShowProxy (TxId (GenTx ByronBlock)) where
 

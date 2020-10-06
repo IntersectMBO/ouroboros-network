@@ -15,8 +15,7 @@ import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -34,7 +33,7 @@ import           Ouroboros.Consensus.Ticked
 data family ConsensusConfig p :: Type
 
 -- | Chain selection
-class ( NoUnexpectedThunks (ChainSelConfig p)
+class ( NoThunks (ChainSelConfig p)
         -- For the benefit of tests
       , Show (SelectView     p)
       , Show (ChainSelConfig p)
@@ -108,9 +107,9 @@ class ( Show (ChainDepState   p)
       , Show (LedgerView      p)
       , Eq   (ChainDepState   p)
       , Eq   (ValidationErr   p)
-      , NoUnexpectedThunks (ConsensusConfig p)
-      , NoUnexpectedThunks (ChainDepState   p)
-      , NoUnexpectedThunks (ValidationErr   p)
+      , NoThunks (ConsensusConfig p)
+      , NoThunks (ChainDepState   p)
+      , NoThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
       , ChainSelection p
       ) => ConsensusProtocol p where

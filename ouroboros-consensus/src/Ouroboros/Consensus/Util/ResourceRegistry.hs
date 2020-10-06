@@ -64,9 +64,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (OnlyCheckIsWHNF (..),
-                     UseIsNormalFormNamed (..), allNoUnexpectedThunks)
+import           NoThunks.Class (InspectHeapNamed (..), OnlyCheckWhnfNamed (..),
+                     allNoThunks)
 
 import           Ouroboros.Consensus.Util (mustBeRight, whenJust)
 import           Ouroboros.Consensus.Util.CallStack
@@ -290,7 +289,7 @@ data ResourceRegistry m = ResourceRegistry {
     }
   deriving (Generic)
 
-deriving instance IOLike m => NoUnexpectedThunks (ResourceRegistry m)
+deriving instance IOLike m => NoThunks (ResourceRegistry m)
 
 {-------------------------------------------------------------------------------
   Internal: registry state
@@ -312,7 +311,7 @@ data RegistryState m = RegistryState {
       -- See 'RegistryClosedException' for discussion.
     , registryStatus    :: !RegistryStatus
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Threads known to the registry
 --
@@ -328,7 +327,7 @@ data RegistryState m = RegistryState {
 -- broken when we start a new thread in 'forkThread' but will be re-established
 -- before that thread starts execution proper.)
 newtype KnownThreads m = KnownThreads (Set (ThreadId m))
-  deriving NoUnexpectedThunks via UseIsNormalFormNamed "KnownThreads" (KnownThreads m)
+  deriving NoThunks via InspectHeapNamed "KnownThreads" (KnownThreads m)
 
 -- | Status of the registry (open or closed)
 data RegistryStatus =
@@ -336,13 +335,13 @@ data RegistryStatus =
 
     -- | We record the 'CallStack' to the call to 'close
   | RegistryClosed !PrettyCallStack
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Resource key
 --
 -- Resource keys are tied to a particular registry.
 data ResourceKey m = ResourceKey !(ResourceRegistry m) !ResourceId
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Return the 'ResourceId' of a 'ResourceKey'.
 resourceKeyId :: ResourceKey m -> ResourceId
@@ -355,7 +354,7 @@ resourceKeyId (ResourceKey _rr rid) = rid
 -- close the registry to release "younger" resources before "older" resources.
 newtype ResourceId = ResourceId Int
   deriving stock   (Show, Eq, Ord)
-  deriving newtype (Enum, NoUnexpectedThunks)
+  deriving newtype (Enum, NoThunks)
 
 -- | Information about a resource
 data Resource m = Resource {
@@ -365,14 +364,14 @@ data Resource m = Resource {
       -- | Deallocate the resource
     , resourceRelease :: !(Release m)
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 -- | Release the resource, return 'True' when the resource was actually
 -- released, return 'False' when the resource was already released.
 --
 -- If unsure, returning 'True' is always fine.
 newtype Release m = Release (m Bool)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Release" (Release m)
+  deriving NoThunks via OnlyCheckWhnfNamed "Release" (Release m)
 
 releaseResource :: Resource m -> m Bool
 releaseResource Resource{resourceRelease = Release f} = f
@@ -681,7 +680,7 @@ newtype TransferredTo st = TransferredTo {
       runTransferredTo :: st -> Set ResourceId
     }
   deriving newtype (Semigroup, Monoid)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TransferredTo" (TransferredTo st)
+  deriving NoThunks via OnlyCheckWhnfNamed "TransferredTo" (TransferredTo st)
 
 -- | The environment used to run a 'WithTempRegistry' action.
 data TempRegistry st m = TempRegistry {
@@ -946,7 +945,7 @@ data Thread m a = IOLike m => Thread {
     , threadAsync      :: !(Async m a)
     , threadRegistry   :: !(ResourceRegistry m)
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Thread" (Thread m a)
+  deriving NoThunks via OnlyCheckWhnfNamed "Thread" (Thread m a)
 
 -- | 'Eq' instance for 'Thread' compares 'threadId' only.
 instance Eq (Thread m a) where
@@ -1164,11 +1163,11 @@ data Context m = IOLike m => Context {
     }
 
 -- Existential type; we can't use generics
-instance NoUnexpectedThunks (Context m) where
+instance NoThunks (Context m) where
   showTypeOf _ = "Context"
-  whnfNoUnexpectedThunks ctxt (Context cs tid) = allNoUnexpectedThunks
-    [ noUnexpectedThunks ctxt cs
-    , noUnexpectedThunks ctxt (UseIsNormalFormNamed @"ThreadId" tid)
+  wNoThunks ctxt (Context cs tid) = allNoThunks
+    [ noThunks ctxt cs
+    , noThunks ctxt (InspectHeapNamed @"ThreadId" tid)
     ]
 
 deriving instance Show (Context m)

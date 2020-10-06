@@ -24,8 +24,7 @@ import           Data.SOP.Dict
 import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.TypeLits
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
@@ -188,14 +187,14 @@ instance ( All SingleEraBlock xs
 newtype LiftNamedNS (name :: Symbol) f xs = LiftNamedNS (NS f xs)
 
 instance ( All SingleEraBlock xs
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (f x)
+         , forall x. SingleEraBlock x => NoThunks (f x)
          , KnownSymbol name
-         ) => NoUnexpectedThunks (LiftNamedNS name f xs) where
+         ) => NoThunks (LiftNamedNS name f xs) where
   showTypeOf _ = symbolVal (Proxy @name) ++ " " ++ showBlockTypes (sList :: SList xs)
 
-  whnfNoUnexpectedThunks ctxt (LiftNamedNS x) =
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @f) of { Dict ->
-          whnfNoUnexpectedThunks ctxt x
+  wNoThunks ctxt (LiftNamedNS x) =
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @f) of { Dict ->
+          wNoThunks ctxt x
         }
 
 {-------------------------------------------------------------------------------
@@ -205,14 +204,14 @@ instance ( All SingleEraBlock xs
 newtype LiftNamedNP (name :: Symbol) f xs = LiftNamedNP (NP f xs)
 
 instance ( All SingleEraBlock xs
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (f x)
+         , forall x. SingleEraBlock x => NoThunks (f x)
          , KnownSymbol name
-         ) => NoUnexpectedThunks (LiftNamedNP name f xs) where
+         ) => NoThunks (LiftNamedNP name f xs) where
   showTypeOf _ = symbolVal (Proxy @name) ++ " " ++ showBlockTypes (sList :: SList xs)
 
-  whnfNoUnexpectedThunks ctxt (LiftNamedNP x) =
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @f) of { Dict ->
-          whnfNoUnexpectedThunks ctxt x
+  wNoThunks ctxt (LiftNamedNP x) =
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @f) of { Dict ->
+          wNoThunks ctxt x
         }
 
 {-------------------------------------------------------------------------------
@@ -222,16 +221,16 @@ instance ( All SingleEraBlock xs
 newtype LiftNamedTelescope (name :: Symbol) f g xs = LiftNamedTelescope (Telescope f g xs)
 
 instance ( All SingleEraBlock xs
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (f x)
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (g x)
+         , forall x. SingleEraBlock x => NoThunks (f x)
+         , forall x. SingleEraBlock x => NoThunks (g x)
          , KnownSymbol name
-         ) => NoUnexpectedThunks (LiftNamedTelescope name f g xs) where
+         ) => NoThunks (LiftNamedTelescope name f g xs) where
   showTypeOf _ = symbolVal (Proxy @name) ++ " " ++ showBlockTypes (sList :: SList xs)
 
-  whnfNoUnexpectedThunks ctxt (LiftNamedTelescope x) =
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @f) of { Dict ->
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @g) of { Dict ->
-          whnfNoUnexpectedThunks ctxt x
+  wNoThunks ctxt (LiftNamedTelescope x) =
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @f) of { Dict ->
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @g) of { Dict ->
+          wNoThunks ctxt x
         }}
 
 {-------------------------------------------------------------------------------
@@ -241,16 +240,16 @@ instance ( All SingleEraBlock xs
 newtype LiftNamedMismatch (name :: Symbol) f g xs = LiftNamedMismatch (Mismatch f g xs)
 
 instance ( All SingleEraBlock xs
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (f x)
-         , forall x. SingleEraBlock x => NoUnexpectedThunks (g x)
+         , forall x. SingleEraBlock x => NoThunks (f x)
+         , forall x. SingleEraBlock x => NoThunks (g x)
          , KnownSymbol name
-         ) => NoUnexpectedThunks (LiftNamedMismatch name f g xs) where
+         ) => NoThunks (LiftNamedMismatch name f g xs) where
   showTypeOf _ = symbolVal (Proxy @name) ++ " " ++ showBlockTypes (sList :: SList xs)
 
-  whnfNoUnexpectedThunks ctxt (LiftNamedMismatch x) =
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @f) of { Dict ->
-      case liftEras (Proxy @xs) (Proxy @NoUnexpectedThunks) (Proxy @g) of { Dict ->
-          whnfNoUnexpectedThunks ctxt x
+  wNoThunks ctxt (LiftNamedMismatch x) =
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @f) of { Dict ->
+      case liftEras (Proxy @xs) (Proxy @NoThunks) (Proxy @g) of { Dict ->
+          wNoThunks ctxt x
         }}
 
 {-------------------------------------------------------------------------------

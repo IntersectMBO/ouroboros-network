@@ -173,7 +173,7 @@ instance Show GcBlocks where
 --
 -- The NOTE of 'GcBlocks' also applies here.
 newtype GcGarbageCollections = GcGarbageCollections [(SlotNo, Time)]
-  deriving newtype (Eq, Condense, NoUnexpectedThunks)
+  deriving newtype (Eq, Condense, NoThunks)
 
 instance Show GcGarbageCollections where
   show = condense

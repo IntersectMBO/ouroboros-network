@@ -37,14 +37,12 @@ module Data.SOP.Strict (
 
 import           Data.Coerce
 import           Data.Kind (Type)
+import           NoThunks.Class (NoThunks (..), allNoThunks)
 
 import           Data.SOP hiding (Injection, NP (..), NS (..), hd, injections,
                      shiftInjection, tl, unZ)
 import           Data.SOP.Classes (Same)
 import           Data.SOP.Constraint
-
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..),
-                     allNoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   NP
@@ -268,22 +266,22 @@ deriving instance  All (Eq `Compose` f) xs                            => Eq  (NP
 deriving instance (All (Eq `Compose` f) xs, All (Ord `Compose` f) xs) => Ord (NP f xs)
 
 {-------------------------------------------------------------------------------
-  NoUnexpectedThunks
+  NoThunks
 -------------------------------------------------------------------------------}
 
-instance All (Compose NoUnexpectedThunks f) xs
-      => NoUnexpectedThunks (NS (f :: k -> Type) (xs :: [k])) where
+instance All (Compose NoThunks f) xs
+      => NoThunks (NS (f :: k -> Type) (xs :: [k])) where
   showTypeOf _ = "NS"
-  whnfNoUnexpectedThunks ctxt = \case
-      Z l -> noUnexpectedThunks ("Z" : ctxt) l
-      S r -> noUnexpectedThunks ("S" : ctxt) r
+  wNoThunks ctxt = \case
+      Z l -> noThunks ("Z" : ctxt) l
+      S r -> noThunks ("S" : ctxt) r
 
-instance All (Compose NoUnexpectedThunks f) xs
-      => NoUnexpectedThunks (NP (f :: k -> Type) (xs :: [k])) where
+instance All (Compose NoThunks f) xs
+      => NoThunks (NP (f :: k -> Type) (xs :: [k])) where
   showTypeOf _ = "NP"
-  whnfNoUnexpectedThunks ctxt = \case
-      Nil     -> return NoUnexpectedThunks
-      x :* xs -> allNoUnexpectedThunks [
-                     noUnexpectedThunks ("fst" : ctxt) x
-                   , noUnexpectedThunks ("snd" : ctxt) xs
+  wNoThunks ctxt = \case
+      Nil     -> return Nothing
+      x :* xs -> allNoThunks [
+                     noThunks ("fst" : ctxt) x
+                   , noThunks ("snd" : ctxt) xs
                    ]

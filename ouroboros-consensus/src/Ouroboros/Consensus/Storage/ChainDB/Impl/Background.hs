@@ -399,7 +399,7 @@ data ScheduledGc = ScheduledGc {
     , scheduledGcSlot :: !SlotNo
       -- ^ For which slot to run the garbage collection
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance Condense ScheduledGc where
   condense (ScheduledGc time slot) = condense (time, slot)

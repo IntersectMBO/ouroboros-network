@@ -12,8 +12,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Info (
 import           Codec.Serialise (Serialise)
 import           Data.Text (Text)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 {-------------------------------------------------------------------------------
   Era info
@@ -24,7 +23,7 @@ data SingleEraInfo blk = SingleEraInfo {
       singleEraName :: !Text
     }
   deriving stock    (Generic, Eq, Show)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoThunks, Serialise)
 
 -- | Additional newtype wrapper around 'SingleEraInfo'
 --
@@ -34,4 +33,4 @@ newtype LedgerEraInfo blk = LedgerEraInfo {
       getLedgerEraInfo :: SingleEraInfo blk
     }
   deriving stock   (Eq, Show)
-  deriving newtype (NoUnexpectedThunks, Serialise)
+  deriving newtype (NoThunks, Serialise)

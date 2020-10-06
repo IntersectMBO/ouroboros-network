@@ -67,8 +67,7 @@ import           Data.Text (Text)
 import           Data.Void
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -129,7 +128,7 @@ newtype OneEraValidationErr         xs = OneEraValidationErr         { getOneEra
 -- So, the type parameter @xs@ here is merely a phantom one, and we just store
 -- the underlying raw hash.
 newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: ShortByteString }
-  deriving newtype (Eq, Ord, NoUnexpectedThunks, Serialise)
+  deriving newtype (Eq, Ord, NoThunks, Serialise)
 
 instance Show (OneEraHash xs) where
   show = BSC.unpack . B16.encode . Short.fromShort . getOneEraHash
@@ -227,47 +226,47 @@ getSameValue values =
         = throwError "differing values across hard fork"
 
 {-------------------------------------------------------------------------------
-  NoUnexpectedThunks instances
+  NoThunks instances
 -------------------------------------------------------------------------------}
 
 deriving via LiftNamedNP "PerEraBlockConfig" BlockConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraBlockConfig xs)
+         instance CanHardFork xs => NoThunks (PerEraBlockConfig xs)
 
 deriving via LiftNamedNP "PerEraChainSelConfig" WrapChainSelConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraChainSelConfig xs)
+         instance CanHardFork xs => NoThunks (PerEraChainSelConfig xs)
 
 deriving via LiftNamedNP "PerEraCodecConfig" CodecConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraCodecConfig xs)
+         instance CanHardFork xs => NoThunks (PerEraCodecConfig xs)
 
 deriving via LiftNamedNP "PerEraConsensusConfig" WrapPartialConsensusConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraConsensusConfig xs)
+         instance CanHardFork xs => NoThunks (PerEraConsensusConfig xs)
 
 deriving via LiftNamedNP "PerEraLedgerConfig" WrapPartialLedgerConfig xs
-         instance CanHardFork xs => NoUnexpectedThunks (PerEraLedgerConfig xs)
+         instance CanHardFork xs => NoThunks (PerEraLedgerConfig xs)
 
 deriving via LiftNamedNS "OneEraEnvelopeErr" WrapEnvelopeErr xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraEnvelopeErr xs)
+         instance CanHardFork xs => NoThunks (OneEraEnvelopeErr xs)
 
 deriving via LiftNamedNS "OneEraGenTx" GenTx xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraGenTx xs)
+         instance CanHardFork xs => NoThunks (OneEraGenTx xs)
 
 deriving via LiftNamedNS "OneEraGenTxId" WrapGenTxId xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraGenTxId xs)
+         instance CanHardFork xs => NoThunks (OneEraGenTxId xs)
 
 deriving via LiftNamedNS "OneEraHeader" Header xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraHeader xs)
+         instance CanHardFork xs => NoThunks (OneEraHeader xs)
 
 deriving via LiftNamedNS "OneEraLedgerError" WrapLedgerErr xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraLedgerError xs)
+         instance CanHardFork xs => NoThunks (OneEraLedgerError xs)
 
 deriving via LiftNamedNS "OneEraTipInfo" WrapTipInfo xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraTipInfo xs)
+         instance CanHardFork xs => NoThunks (OneEraTipInfo xs)
 
 deriving via LiftNamedNS "OneEraValidationErr" WrapValidationErr xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraValidationErr xs)
+         instance CanHardFork xs => NoThunks (OneEraValidationErr xs)
 
 deriving via LiftNamedMismatch "MismatchEraInfo" SingleEraInfo LedgerEraInfo xs
-         instance CanHardFork xs => NoUnexpectedThunks (MismatchEraInfo xs)
+         instance CanHardFork xs => NoThunks (MismatchEraInfo xs)
 
 {-------------------------------------------------------------------------------
   Other instances

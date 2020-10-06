@@ -28,10 +28,10 @@ import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
@@ -267,7 +267,7 @@ data TriggerHardFork =
   | TriggerHardForkAtEpoch !EpochNo
     -- | Never trigger a hard fork
   | TriggerHardForkNever
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger
 -- config. Standalone Byron uses the regular ledger config. This means that
@@ -278,7 +278,7 @@ data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig    :: !(LedgerConfig ByronBlock)
     , byronTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance HasPartialLedgerConfig ByronBlock where
 
@@ -324,7 +324,7 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       shelleyLedgerConfig    :: !(ShelleyLedgerConfig era)
     , shelleyTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance TPraosCrypto era => HasPartialLedgerConfig (ShelleyBlock era) where
   type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era

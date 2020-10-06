@@ -41,11 +41,11 @@ import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
                      FullByteString (..), ToCBOR (..), serialize)
 import qualified Cardano.Crypto.Hash as Crypto
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -67,7 +67,7 @@ newtype ShelleyHash era = ShelleyHash {
     }
   deriving stock    (Eq, Ord, Show, Generic)
   deriving newtype  (ToCBOR, FromCBOR)
-  deriving anyclass NoUnexpectedThunks
+  deriving anyclass (NoThunks)
 
 instance Era era => Serialise (ShelleyHash era) where
   encode = toCBOR
@@ -110,7 +110,7 @@ data instance Header (ShelleyBlock era) = ShelleyHeader {
       shelleyHeaderRaw  :: !(SL.BHeader era)
     , shelleyHeaderHash :: !(ShelleyHash era)
     }
-  deriving (Eq, Generic, Show, NoUnexpectedThunks)
+  deriving (Eq, Generic, Show, NoThunks)
 
 instance Typeable era => ShowProxy (Header (ShelleyBlock era)) where
 

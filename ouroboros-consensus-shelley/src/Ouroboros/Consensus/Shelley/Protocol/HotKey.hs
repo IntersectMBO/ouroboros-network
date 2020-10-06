@@ -57,7 +57,7 @@ data KESInfo = KESInfo {
       -- Invariant:
       -- > kesStartPeriod + kesEvolution in [kesStartPeriod, kesEndPeriod)
     }
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Show, Generic, NoThunks)
 
 -- | Return the absolute KES period
 kesAbsolutePeriod :: KESInfo -> Absolute.KESPeriod
@@ -156,7 +156,7 @@ data KESKey era =
   | KESKeyPoisoned
   deriving (Generic)
 
-instance Era era => NoUnexpectedThunks (KESKey era)
+instance Era era => NoThunks (KESKey era)
 
 kesKeyIsPoisoned :: KESKey era -> Bool
 kesKeyIsPoisoned KESKeyPoisoned = True
@@ -168,7 +168,7 @@ data KESState era = KESState {
     }
   deriving (Generic)
 
-instance Era era => NoUnexpectedThunks (KESState era)
+instance Era era => NoThunks (KESState era)
 
 mkHotKey ::
      forall m era. (Era era, IOLike m)

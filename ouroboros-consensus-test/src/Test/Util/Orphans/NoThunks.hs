@@ -1,28 +1,29 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Util.Orphans.NoUnexpectedThunks () where
+module Test.Util.Orphans.NoThunks () where
+
+import           NoThunks.Class (NoThunks (..))
 
 import           Control.Monad.IOSim
 import           Control.Monad.ST.Lazy
 import           Control.Monad.ST.Unsafe (unsafeSTToIO)
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 -- | Just like the IO instance, we don't actually check anything here
-instance NoUnexpectedThunks (IOSim s a) where
+instance NoThunks (IOSim s a) where
   showTypeOf _ = "IOSim"
-  whnfNoUnexpectedThunks _ctxt _act = return NoUnexpectedThunks
+  wNoThunks _ctxt _act = return Nothing
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar (IOSim s) a) where
+instance NoThunks a => NoThunks (StrictTVar (IOSim s) a) where
   showTypeOf _ = "StrictTVar IOSim"
-  whnfNoUnexpectedThunks ctxt tvar = do
+  wNoThunks ctxt tvar = do
       a <- unsafeSTToIO $ lazyToStrictST $ execReadTVar (toLazyTVar tvar)
-      noUnexpectedThunks ctxt a
+      noThunks ctxt a
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar (IOSim s) a) where
+instance NoThunks a => NoThunks (StrictMVar (IOSim s) a) where
   showTypeOf _ = "StrictMVar IOSim"
-  whnfNoUnexpectedThunks ctxt StrictMVar { tvar } = do
+  wNoThunks ctxt StrictMVar { tvar } = do
       a <- unsafeSTToIO $ lazyToStrictST $ execReadTVar tvar
-      noUnexpectedThunks ctxt a
+      noThunks ctxt a

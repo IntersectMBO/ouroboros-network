@@ -30,8 +30,7 @@ import           Data.Coerce (Coercible)
 import           Data.Sequence.Strict (StrictSeq ((:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -63,7 +62,7 @@ deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
 deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
                 => Show (HeaderStateHistory blk)
 deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
-                => NoUnexpectedThunks (HeaderStateHistory blk)
+                => NoThunks (HeaderStateHistory blk)
 
 current :: HeaderStateHistory blk -> HeaderState blk
 current HeaderStateHistory {..} =

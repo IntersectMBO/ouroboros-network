@@ -11,8 +11,7 @@ import           Control.DeepSeq (NFData)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.String
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -27,7 +26,7 @@ newtype Addr = Addr String
     , IsString
     , Serialise
     , NFData
-    , NoUnexpectedThunks
+    , NoThunks
     )
 
 instance Condense Addr where

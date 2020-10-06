@@ -38,10 +38,10 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
+import           NoThunks.Class (InspectHeap (..), NoThunks)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
@@ -60,7 +60,7 @@ data Expiry
   = DoNotExpire
   | ExpireAtOnsetOf !SlotNo
   deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving anyclass (Serialise, NoThunks)
 
 instance NFData Expiry where rnf = rwhnf
 
@@ -70,7 +70,7 @@ instance Condense Expiry where
 data Tx = UnsafeTx Expiry (Set TxIn) [TxOut]
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NFData)
-  deriving NoUnexpectedThunks via UseIsNormalForm Tx
+  deriving NoThunks via InspectHeap Tx
 
 pattern Tx :: Expiry -> Set TxIn -> [TxOut] -> Tx
 pattern Tx expiry ins outs <- UnsafeTx expiry ins outs where
@@ -101,7 +101,7 @@ data UtxoError
       Amount  -- ^ Input
       Amount  -- ^ Output
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving anyclass (Serialise, NoThunks)
 
 instance Condense UtxoError where
   condense = show

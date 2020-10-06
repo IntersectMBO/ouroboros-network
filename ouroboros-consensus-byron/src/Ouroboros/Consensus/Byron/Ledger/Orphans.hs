@@ -13,8 +13,7 @@ import           Data.ByteString (ByteString)
 import           Data.Coerce
 import           Data.Text (unpack)
 import           Formatting
-
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
+import           NoThunks.Class (InspectHeap (..), NoThunks)
 
 import qualified Cardano.Binary
 import           Cardano.Crypto (shortHashF)
@@ -133,13 +132,13 @@ instance Condense Cardano.Crypto.VerificationKey where
   condense = unpack . sformat build
 
 {-------------------------------------------------------------------------------
-  NoUnexpectedThunks
+  NoThunks
 -------------------------------------------------------------------------------}
 
 -- TODO <https://github.com/input-output-hk/cardano-ledger/issues/685>
 --
 -- Cardano.Chain.Delegation.Validation.Registration.TooLarge is not exported,
 -- but occurs somewhere in CC.ChainValidationError, so we use
--- 'UseIsNormalForm' instead of deriving one using Generics.
-deriving via UseIsNormalForm CC.ChainValidationError
-  instance NoUnexpectedThunks CC.ChainValidationError
+-- 'InspectHeap' instead of deriving one using Generics.
+deriving via InspectHeap CC.ChainValidationError
+  instance NoThunks CC.ChainValidationError

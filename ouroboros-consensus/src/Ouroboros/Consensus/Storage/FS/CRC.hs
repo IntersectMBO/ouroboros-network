@@ -25,10 +25,10 @@ import           Data.Word
 import           Foreign.Storable (Storable)
 import           GHC.Generics (Generic)
 import           GHC.Stack
+import           NoThunks.Class (NoThunks)
 
 import           Control.Monad.Class.MonadThrow
 
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..))
@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..))
 -------------------------------------------------------------------------------}
 
 newtype CRC = CRC { getCRC :: Word32 }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks, Storable)
+  deriving (Eq, Show, Generic, NoThunks, Storable)
 
 initCRC :: CRC
 initCRC = CRC $ Digest.crc32 ([] :: [Word8])

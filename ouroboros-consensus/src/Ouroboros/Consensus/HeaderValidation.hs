@@ -63,9 +63,9 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -91,9 +91,9 @@ data AnnTip blk = AnnTip {
     }
   deriving (Generic)
 
-deriving instance HasAnnTip blk => Show               (AnnTip blk)
-deriving instance HasAnnTip blk => Eq                 (AnnTip blk)
-deriving instance HasAnnTip blk => NoUnexpectedThunks (AnnTip blk)
+deriving instance HasAnnTip blk => Show     (AnnTip blk)
+deriving instance HasAnnTip blk => Eq       (AnnTip blk)
+deriving instance HasAnnTip blk => NoThunks (AnnTip blk)
 
 annTipHash :: forall blk. HasAnnTip blk => AnnTip blk -> HeaderHash blk
 annTipHash = tipInfoHash (Proxy @blk) . annTipInfo
@@ -111,9 +111,9 @@ mapAnnTip :: (TipInfo blk -> TipInfo blk') -> AnnTip blk -> AnnTip blk'
 mapAnnTip f AnnTip { annTipInfo, .. } = AnnTip { annTipInfo = f annTipInfo, .. }
 
 class ( StandardHash blk
-      , Show               (TipInfo blk)
-      , Eq                 (TipInfo blk)
-      , NoUnexpectedThunks (TipInfo blk)
+      , Show     (TipInfo blk)
+      , Eq       (TipInfo blk)
+      , NoThunks (TipInfo blk)
       ) => HasAnnTip blk where
   type TipInfo blk :: Type
   type TipInfo blk = HeaderHash blk
@@ -169,7 +169,7 @@ deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
 deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
                 => Show (HeaderState blk)
 deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
-                => NoUnexpectedThunks (HeaderState blk)
+                => NoThunks (HeaderState blk)
 
 data instance Ticked (HeaderState blk) = TickedHeaderState {
       untickedHeaderStateTip    :: WithOrigin (AnnTip blk)
@@ -224,7 +224,7 @@ data HeaderEnvelopeError blk =
 deriving instance (ValidateEnvelope blk) => Eq   (HeaderEnvelopeError blk)
 deriving instance (ValidateEnvelope blk) => Show (HeaderEnvelopeError blk)
 deriving instance (ValidateEnvelope blk, Typeable blk)
-               => NoUnexpectedThunks (HeaderEnvelopeError blk)
+               => NoThunks (HeaderEnvelopeError blk)
 
 castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
                            , OtherHeaderEnvelopeError blk ~ OtherHeaderEnvelopeError blk'
@@ -268,9 +268,9 @@ class ( HasHeader (Header blk)
 -- | Validate header envelope
 class ( BasicEnvelopeValidation blk
       , GetPrevHash blk
-      , Eq                 (OtherHeaderEnvelopeError blk)
-      , Show               (OtherHeaderEnvelopeError blk)
-      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk)
+      , Eq       (OtherHeaderEnvelopeError blk)
+      , Show     (OtherHeaderEnvelopeError blk)
+      , NoThunks (OtherHeaderEnvelopeError blk)
       ) => ValidateEnvelope blk where
 
   -- | A block-specific error that 'validateEnvelope' can return.
@@ -352,7 +352,7 @@ deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
 deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Show               (HeaderError blk)
 deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk, Typeable blk)
-               => NoUnexpectedThunks (HeaderError blk)
+               => NoThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')
@@ -469,8 +469,7 @@ data TipInfoIsEBB blk = TipInfoIsEBB !(HeaderHash blk) !IsEBB
 
 deriving instance StandardHash blk => Eq   (TipInfoIsEBB blk)
 deriving instance StandardHash blk => Show (TipInfoIsEBB blk)
-deriving instance NoUnexpectedThunks (HeaderHash blk)
-               => NoUnexpectedThunks (TipInfoIsEBB blk)
+deriving instance StandardHash blk => NoThunks (TipInfoIsEBB blk)
 
 {-------------------------------------------------------------------------------
   Serialisation

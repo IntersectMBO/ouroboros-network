@@ -133,7 +133,7 @@ initNodeKernel
     :: forall m remotePeer localPeer blk.
        ( IOLike m
        , RunNode blk
-       , NoUnexpectedThunks remotePeer
+       , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
        )
@@ -192,7 +192,7 @@ initInternalState
        ( IOLike m
        , LedgerSupportsProtocol blk
        , Ord remotePeer
-       , NoUnexpectedThunks remotePeer
+       , NoThunks remotePeer
        , RunNode blk
        )
     => NodeArgs m remotePeer localPeer blk

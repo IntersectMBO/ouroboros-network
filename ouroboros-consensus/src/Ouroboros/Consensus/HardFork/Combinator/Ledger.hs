@@ -34,8 +34,7 @@ import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -80,7 +79,7 @@ data HardForkLedgerError xs =
 
     -- | We tried to apply a block from the wrong era
   | HardForkLedgerErrorWrongEra (MismatchEraInfo xs)
-  deriving (Generic, Show, Eq, NoUnexpectedThunks)
+  deriving (Generic, Show, Eq, NoThunks)
 
 {-------------------------------------------------------------------------------
   GetTip
@@ -110,7 +109,7 @@ data instance Ticked (LedgerState (HardForkBlock xs)) =
 
 deriving anyclass instance
      CanHardFork xs
-  => NoUnexpectedThunks (Ticked (LedgerState (HardForkBlock xs)))
+  => NoThunks (Ticked (LedgerState (HardForkBlock xs)))
 
 instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
@@ -247,7 +246,7 @@ data HardForkEnvelopeErr xs =
 
     -- | We tried to apply a block from the wrong era
   | HardForkEnvelopeErrWrongEra (MismatchEraInfo xs)
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
   type OtherHeaderEnvelopeError (HardForkBlock xs) = HardForkEnvelopeErr xs

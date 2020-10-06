@@ -22,9 +22,8 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
 
 import           Data.Coerce (coerce)
 import           Data.Set (Set)
+import           NoThunks.Class (AllowThunk (..), NoThunks)
 import           Numeric.Natural (Natural)
-
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
@@ -54,7 +53,7 @@ data ByronSpecGenesis = ByronSpecGenesis {
     , byronSpecGenesisSlotLength    :: Natural
     }
   deriving stock (Show)
-  deriving NoUnexpectedThunks via AllowThunk ByronSpecGenesis
+  deriving NoThunks via AllowThunk ByronSpecGenesis
 
 modPBftThreshold :: (Double -> Double)
                  -> ByronSpecGenesis -> ByronSpecGenesis

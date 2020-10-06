@@ -49,8 +49,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
@@ -155,13 +154,13 @@ data PBftSigner c = PBftSigner {
 newtype WindowSize = WindowSize { getWindowSize :: Word64 }
   deriving newtype (Show, Eq, Ord, Enum, Num, Real, Integral)
 
-deriving instance PBftCrypto c => Show (PBftState c)
-deriving instance PBftCrypto c => Eq   (PBftState c)
-deriving instance PBftCrypto c => NoUnexpectedThunks (PBftState c)
+deriving instance PBftCrypto c => Show     (PBftState c)
+deriving instance PBftCrypto c => Eq       (PBftState c)
+deriving instance PBftCrypto c => NoThunks (PBftState c)
 
-deriving instance PBftCrypto c => Show (PBftSigner c)
-deriving instance PBftCrypto c => Eq   (PBftSigner c)
-deriving instance PBftCrypto c => NoUnexpectedThunks (PBftSigner c)
+deriving instance PBftCrypto c => Show     (PBftSigner c)
+deriving instance PBftCrypto c => Eq       (PBftSigner c)
+deriving instance PBftCrypto c => NoThunks (PBftSigner c)
 
 {-------------------------------------------------------------------------------
   Queries

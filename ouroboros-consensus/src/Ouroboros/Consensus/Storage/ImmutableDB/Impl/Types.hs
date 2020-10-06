@@ -18,8 +18,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (
 import           Data.Text (Text)
 import           Data.Word
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
@@ -37,7 +36,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 data BlockOrEBB =
     Block !SlotNo
   | EBB   !EpochNo
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 isBlockOrEBB :: BlockOrEBB -> IsEBB
 isBlockOrEBB (Block _) = IsNotEBB
@@ -47,7 +46,7 @@ data WithBlockSize a = WithBlockSize {
       blockSize        :: !Word32
     , withoutBlockSize :: !a
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Generic, NoThunks, Functor, Foldable, Traversable)
 
 {------------------------------------------------------------------------------
   Validation policy

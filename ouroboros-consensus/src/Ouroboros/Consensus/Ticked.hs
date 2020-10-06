@@ -12,8 +12,7 @@ module Ouroboros.Consensus.Ticked (
 
 import           Data.Kind (Type)
 import           Data.SOP.BasicFunctors
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 {-------------------------------------------------------------------------------
   Ticked state
@@ -53,5 +52,5 @@ deriving newtype instance {-# OVERLAPPING #-}
   => Show ((Ticked :.: f) a)
 
 deriving newtype instance
-     NoUnexpectedThunks (Ticked (f a))
-  => NoUnexpectedThunks ((Ticked :.: f) a)
+     NoThunks (Ticked (f a))
+  => NoThunks ((Ticked :.: f) a)

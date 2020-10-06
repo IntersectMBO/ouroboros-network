@@ -109,13 +109,13 @@ blockUntilAllJust = mapM blockUntilJust
 newtype Fingerprint = Fingerprint Word64
   deriving stock    (Show, Eq, Generic)
   deriving newtype  (Enum)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoThunks)
 
 -- | Store a value together with its fingerprint.
 data WithFingerprint a = WithFingerprint
   { forgetFingerprint :: !a
   , getFingerprint    :: !Fingerprint
-  } deriving (Show, Eq, Functor, Generic, NoUnexpectedThunks)
+  } deriving (Show, Eq, Functor, Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks

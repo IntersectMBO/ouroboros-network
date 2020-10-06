@@ -52,9 +52,9 @@ import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
 import           Cardano.Crypto.DSIGN.Class
-import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -84,7 +84,7 @@ data PBftFields c toSign = PBftFields {
 deriving instance PBftCrypto c => Show (PBftFields c toSign)
 deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
 
-instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toSign)
+instance (PBftCrypto c, Typeable toSign) => NoThunks (PBftFields c toSign)
   -- use generic instance
 
 -- | Part of the header that we validate
@@ -169,7 +169,7 @@ data instance Ticked (PBftLedgerView c) = TickedPBftLedgerView {
       tickedPBftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
     }
 
-deriving instance PBftCrypto c => NoUnexpectedThunks (PBftLedgerView c)
+deriving instance PBftCrypto c => NoThunks (PBftLedgerView c)
   -- use generic instance
 
 deriving instance Eq (PBftVerKeyHash c) => Eq (PBftLedgerView c)
@@ -209,7 +209,7 @@ data PBftParams = PBftParams {
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
     }
-  deriving (Generic, NoUnexpectedThunks, Show)
+  deriving (Generic, NoThunks, Show)
 
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.
@@ -221,7 +221,7 @@ data PBftCanBeLeader c = PBftCanBeLeader {
     }
   deriving (Generic)
 
-instance PBftCrypto c => NoUnexpectedThunks (PBftCanBeLeader c)
+instance PBftCrypto c => NoThunks (PBftCanBeLeader c)
 
 -- | Information required to produce a block.
 data PBftIsLeader c = PBftIsLeader {
@@ -230,13 +230,13 @@ data PBftIsLeader c = PBftIsLeader {
     }
   deriving (Generic)
 
-instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
+instance PBftCrypto c => NoThunks (PBftIsLeader c)
 
 -- | (Static) node configuration
 data instance ConsensusConfig (PBft c) = PBftConfig {
       pbftParams :: !PBftParams
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 instance PBftCrypto c => ChainSelection (PBft c) where
   type SelectView (PBft c) = PBftSelectView
@@ -421,7 +421,7 @@ data PBftValidationErr c
   -- | We record how many slots this key signed
   | PBftExceededSignThreshold !(PBftVerKeyHash c) !Word64
   | PBftInvalidSlot
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 deriving instance PBftCrypto c => Show (PBftValidationErr c)
 deriving instance PBftCrypto c => Eq   (PBftValidationErr c)
@@ -444,7 +444,7 @@ data PBftCannotForge c =
 
 deriving instance PBftCrypto c => Show (PBftCannotForge c)
 
-instance PBftCrypto c => NoUnexpectedThunks (PBftCannotForge c)
+instance PBftCrypto c => NoThunks (PBftCannotForge c)
  -- use generic instance
 
 pbftCheckCanForge ::

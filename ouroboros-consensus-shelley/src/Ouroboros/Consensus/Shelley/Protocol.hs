@@ -52,10 +52,11 @@ import qualified Data.Map.Strict as Map
 import           Data.Ord (Down (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
+import           Numeric.Natural (Natural)
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import qualified Cardano.Crypto.VRF as VRF
-import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -88,8 +89,8 @@ data TPraosFields era toSign = TPraosFields {
     }
   deriving (Generic)
 
-instance (NoUnexpectedThunks toSign, Era era)
-  => NoUnexpectedThunks (TPraosFields era toSign)
+instance (NoThunks toSign, Era era)
+  => NoThunks (TPraosFields era toSign)
 deriving instance (Show toSign, Era era)
   => Show (TPraosFields era toSign)
 
@@ -118,7 +119,7 @@ data TPraosToSign era = TPraosToSign {
     }
   deriving (Generic)
 
-instance Era era => NoUnexpectedThunks (TPraosToSign era)
+instance Era era => NoThunks (TPraosToSign era)
 deriving instance Era era => Show (TPraosToSign era)
 
 forgeTPraosFields :: ( Era era
@@ -163,7 +164,7 @@ type TPraosValidateView era = SL.BHeader era
 newtype MaxMajorProtVer = MaxMajorProtVer {
       getMaxMajorProtVer :: Natural
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 data TPraos era
 
@@ -200,7 +201,7 @@ data TPraosParams = TPraosParams {
       -- initial nonce at runtime. TODO #2326.
     , tpraosInitialNonce      :: !SL.Nonce
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 mkTPraosParams
   :: MaxMajorProtVer
@@ -231,7 +232,7 @@ data TPraosCanBeLeader era = TPraosCanBeLeader {
     }
   deriving (Generic)
 
-instance Era era => NoUnexpectedThunks (TPraosCanBeLeader era)
+instance Era era => NoThunks (TPraosCanBeLeader era)
 
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
@@ -244,7 +245,7 @@ data TPraosIsLeader era = TPraosIsLeader {
     }
   deriving (Generic)
 
-instance Era era => NoUnexpectedThunks (TPraosIsLeader era)
+instance Era era => NoThunks (TPraosIsLeader era)
 
 -- | Static configuration
 data instance ConsensusConfig (TPraos era) = TPraosConfig {
@@ -254,7 +255,7 @@ data instance ConsensusConfig (TPraos era) = TPraosConfig {
   deriving (Generic)
 
 -- Use generic instance
-instance Era era => NoUnexpectedThunks (ConsensusConfig (TPraos era))
+instance Era era => NoThunks (ConsensusConfig (TPraos era))
 
 -- | Separate type instead of 'Bool' for the custom 'Ord' instance +
 -- documentation.
@@ -334,7 +335,7 @@ data TPraosState era = TPraosState {
     }
   deriving (Generic, Show, Eq)
 
-instance Era era => NoUnexpectedThunks (TPraosState era)
+instance Era era => NoThunks (TPraosState era)
 
 -- | Version 0 supported rollback, removed in #2575.
 serialisationFormatVersion1 :: VersionNumber

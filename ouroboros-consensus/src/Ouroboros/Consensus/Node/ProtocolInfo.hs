@@ -11,8 +11,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
   ) where
 
 import           Data.Word
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -24,7 +23,7 @@ import           Ouroboros.Consensus.NodeId
 -------------------------------------------------------------------------------}
 
 newtype NumCoreNodes = NumCoreNodes Word64
-  deriving (Show, NoUnexpectedThunks)
+  deriving (Show, NoThunks)
 
 enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
 enumCoreNodes (NumCoreNodes 0)        = []

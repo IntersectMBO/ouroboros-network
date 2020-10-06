@@ -70,7 +70,7 @@ data ImmutableDBEnv m blk = forall h. Eq h => ImmutableDBEnv {
 data InternalState m blk h =
     DbClosed
   | DbOpen !(OpenState m blk h)
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 dbIsOpen :: InternalState m blk h -> Bool
 dbIsOpen DbClosed   = False
@@ -97,7 +97,7 @@ data OpenState m blk h = OpenState {
     , currentIndex           :: !(Index m blk h)
       -- ^ An abstraction layer on top of the indices to allow for caching.
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 {------------------------------------------------------------------------------
   State helpers

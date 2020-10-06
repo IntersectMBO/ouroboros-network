@@ -6,7 +6,7 @@ module Ouroboros.Consensus.Block.SupportsProtocol (
     BlockSupportsProtocol(..)
   ) where
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -19,9 +19,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 class ( GetHeader blk
       , GetPrevHash blk
       , ConsensusProtocol (BlockProtocol blk)
-      , NoUnexpectedThunks (Header blk)
-      , NoUnexpectedThunks (BlockConfig blk)
-      , NoUnexpectedThunks (CodecConfig blk)
+      , NoThunks (Header blk)
+      , NoThunks (BlockConfig blk)
+      , NoThunks (CodecConfig blk)
       ) => BlockSupportsProtocol blk where
   validateView :: BlockConfig blk
                -> Header blk

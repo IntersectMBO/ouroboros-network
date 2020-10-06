@@ -12,8 +12,7 @@ module Ouroboros.Consensus.Util.CallStack (
 
 import           GHC.Stack (CallStack, HasCallStack)
 import qualified GHC.Stack as GHC
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 {-------------------------------------------------------------------------------
   Auxiliary: CallStack with different Show instance
@@ -21,7 +20,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 -- | CallStack with 'Show' instance using 'prettyCallStack'
 newtype PrettyCallStack = PrettyCallStack CallStack
-  deriving (NoUnexpectedThunks)
+  deriving (NoThunks)
 
 instance Show PrettyCallStack where
   show (PrettyCallStack cs) = GHC.prettyCallStack cs

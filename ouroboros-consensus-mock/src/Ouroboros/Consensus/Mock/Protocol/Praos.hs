@@ -54,11 +54,12 @@ import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks (..))
 import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), hashToBytes,
-                     hashWithSerialiser)
+                     hashWithSerialiser, sizeHash)
 import           Cardano.Crypto.Hash.MD5 (MD5)
 import           Cardano.Crypto.Hash.SHA256 (SHA256)
 import           Cardano.Crypto.KES.Class
@@ -68,7 +69,6 @@ import           Cardano.Crypto.Util
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -89,7 +89,7 @@ data PraosFields c toSign = PraosFields {
     }
   deriving (Generic)
 
-instance (PraosCrypto c, Typeable toSign) => NoUnexpectedThunks (PraosFields c toSign)
+instance (PraosCrypto c, Typeable toSign) => NoThunks (PraosFields c toSign)
   -- use generic instance
 
 -- | Fields that should be included in the signature
@@ -100,7 +100,7 @@ data PraosExtraFields c = PraosExtraFields {
     }
   deriving (Generic)
 
-instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
+instance PraosCrypto c => NoThunks (PraosExtraFields c)
   -- use generic instance
 
 data PraosValidateView c =
@@ -127,7 +127,7 @@ data HotKey c =
   | HotKeyPoisoned
   deriving (Generic)
 
-instance PraosCrypto c => NoUnexpectedThunks (HotKey c)
+instance PraosCrypto c => NoThunks (HotKey c)
 
 deriving instance PraosCrypto c => Show (HotKey c)
 
@@ -188,7 +188,7 @@ forgePraosFields PraosProof{..} hotKey mkToSign =
 -------------------------------------------------------------------------------}
 
 data VRFType = NONCE | TEST
-    deriving (Show, Eq, Ord, Generic, NoUnexpectedThunks)
+    deriving (Show, Eq, Ord, Generic, NoThunks)
 
 instance Serialise VRFType
   -- use generic instance
@@ -218,7 +218,7 @@ data PraosValidationError c =
     deriving (Generic)
 
 -- We override 'showTypeOf' to make sure to show @c@
-instance PraosCrypto c => NoUnexpectedThunks (PraosValidationError c) where
+instance PraosCrypto c => NoThunks (PraosValidationError c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosValidationError c))
 
 deriving instance PraosCrypto c => Show (PraosValidationError c)
@@ -231,9 +231,9 @@ data BlockInfo c = BlockInfo
     }
   deriving (Generic)
 
-deriving instance PraosCrypto c => Show               (BlockInfo c)
-deriving instance PraosCrypto c => Eq                 (BlockInfo c)
-deriving instance PraosCrypto c => NoUnexpectedThunks (BlockInfo c)
+deriving instance PraosCrypto c => Show     (BlockInfo c)
+deriving instance PraosCrypto c => Eq       (BlockInfo c)
+deriving instance PraosCrypto c => NoThunks (BlockInfo c)
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -248,7 +248,7 @@ data PraosParams = PraosParams {
     , praosSlotsPerEpoch :: !Word64
     , praosLifetimeKES   :: !Natural
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 data instance ConsensusConfig (Praos c) = PraosConfig
   { praosParams       :: !PraosParams
@@ -266,7 +266,7 @@ newtype PraosChainDepState c = PraosChainDepState {
       praosHistory :: [BlockInfo c]
     }
   deriving stock   (Eq, Show)
-  deriving newtype (NoUnexpectedThunks, Serialise)
+  deriving newtype (NoThunks, Serialise)
 
 -- | Ticking the Praos chain dep state has no effect
 --
@@ -385,7 +385,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).
 
-instance PraosCrypto c => NoUnexpectedThunks (ConsensusConfig (Praos c))
+instance PraosCrypto c => NoThunks (ConsensusConfig (Praos c))
   -- use generic instance
 
 slotEpoch :: ConsensusConfig (Praos c) -> SlotNo -> EpochNo

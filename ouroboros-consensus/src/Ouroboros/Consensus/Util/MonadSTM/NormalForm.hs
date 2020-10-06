@@ -11,9 +11,7 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   ) where
 
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     unsafeNoUnexpectedThunks)
+import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
 import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVarIO,
                      newTMVar, newTMVarIO, newTVar, newTVarIO,
@@ -29,16 +27,16 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
   Wrappers that check for thunks
 -------------------------------------------------------------------------------}
 
-newTVarIO :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
+newTVarIO :: (MonadSTM m, HasCallStack, NoThunks a)
           => a -> m (StrictTVar m a)
-newTVarIO = Strict.newTVarWithInvariantIO unsafeNoUnexpectedThunks
+newTVarIO = Strict.newTVarWithInvariantIO (fmap show . unsafeNoThunks)
 
-newMVar :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
+newMVar :: (MonadSTM m, HasCallStack, NoThunks a)
         => a -> m (StrictMVar m a)
-newMVar = Strict.newMVarWithInvariant unsafeNoUnexpectedThunks
+newMVar = Strict.newMVarWithInvariant (fmap show . unsafeNoThunks)
 
-newEmptyMVar :: (MonadSTM m, NoUnexpectedThunks a) => a -> m (StrictMVar m a)
-newEmptyMVar = Strict.newEmptyMVarWithInvariant unsafeNoUnexpectedThunks
+newEmptyMVar :: (MonadSTM m, NoThunks a) => a -> m (StrictMVar m a)
+newEmptyMVar = Strict.newEmptyMVarWithInvariant (fmap show . unsafeNoThunks)
 
 {-------------------------------------------------------------------------------
   Unchecked wrappers (where we don't check for thunks)

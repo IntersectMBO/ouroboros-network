@@ -35,8 +35,7 @@ import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow (ExitCase (..), MonadCatch,
                      generalBracket)
 import           GHC.Stack
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           NoThunks.Class (NoThunks (..))
 
 {-------------------------------------------------------------------------------
   Strict MVar
@@ -193,13 +192,13 @@ modifyMVar_ :: (MonadSTM m, MonadCatch m, HasCallStack)
 modifyMVar_ var action = modifyMVar var (fmap (, ()) . action)
 
 {-------------------------------------------------------------------------------
-  NoUnexpectedThunks
+  NoThunks
 -------------------------------------------------------------------------------}
 
-instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar IO a) where
+instance NoThunks a => NoThunks (StrictMVar IO a) where
   showTypeOf _ = "StrictMVar IO"
-  whnfNoUnexpectedThunks ctxt StrictMVar { tvar } = do
+  wNoThunks ctxt StrictMVar { tvar } = do
       -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
       -- "Control.Concurrent.STM.atomically was nested" exception.
       a <- readTVarIO tvar
-      noUnexpectedThunks ctxt a
+      noThunks ctxt a

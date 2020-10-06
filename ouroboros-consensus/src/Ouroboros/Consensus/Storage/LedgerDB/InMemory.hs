@@ -80,8 +80,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -146,13 +145,13 @@ data LedgerDB l r = LedgerDB {
       -- | Ledger DB parameters
     , ledgerDbParams      :: !LedgerDbParams
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 newtype LedgerDbParams = LedgerDbParams {
       -- | Security parameter (maximum rollback)
       ledgerDbSecurityParam :: SecurityParam
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 -- | Default parameters
 ledgerDbDefaultParams :: SecurityParam -> LedgerDbParams
@@ -181,7 +180,7 @@ data Checkpoint l r = Checkpoint {
       cpBlock :: !r
     , cpState :: !l
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 cpToPair :: Checkpoint l r -> (r, l)
 cpToPair (Checkpoint r l) = (r, l)
@@ -201,7 +200,7 @@ data ChainSummary l r = ChainSummary {
       -- | Ledger state
     , csLedger :: !l
     }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoThunks)
 
 genesisChainSummary :: l -> ChainSummary l r
 genesisChainSummary l = ChainSummary Origin 0 l
@@ -688,9 +687,9 @@ instance IsLedger l => GetTip (Ticked (LedgerDB l r)) where
 
 instance ( IsLedger l
            -- Required superclass constraints of 'IsLedger'
-         , Show               r
-         , Eq                 r
-         , NoUnexpectedThunks r
+         , Show     r
+         , Eq       r
+         , NoThunks r
          ) => IsLedger (LedgerDB l r) where
   type LedgerErr (LedgerDB l r) = LedgerErr l
 

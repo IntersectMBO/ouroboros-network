@@ -10,8 +10,7 @@ module Ouroboros.Consensus.Block.EBB (
 
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
-
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -33,7 +32,7 @@ import           Ouroboros.Consensus.Util.Condense
 data IsEBB
   = IsEBB
   | IsNotEBB
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoThunks)
 
 instance Serialise IsEBB where
   encode = encode . fromIsEBB

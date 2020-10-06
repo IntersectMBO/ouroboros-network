@@ -568,7 +568,7 @@ data IteratorState m blk b
   deriving (Generic)
 
 instance (Typeable blk, StandardHash blk)
-      => NoUnexpectedThunks (IteratorState m blk b)
+      => NoThunks (IteratorState m blk b)
   -- use generic instance
 
 -- | Extract the ImmutableDB Iterator from the 'IteratorState'.
@@ -591,7 +591,7 @@ data InImmutableDBEnd blk =
   | SwitchToVolatileDBFrom !(StreamTo blk) !(NonEmpty (RealPoint blk))
     -- ^ Stream to the upper bound. Afterwards, start streaming the path (the
     -- second parameter) from the VolatileDB.
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoThunks)
 
 implIteratorNext ::
     forall m blk b. (IOLike m, HasHeader blk)
