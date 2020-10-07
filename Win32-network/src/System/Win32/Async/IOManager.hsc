@@ -29,7 +29,6 @@ import Control.Exception ( Exception (..)
                          , bracket
                          , catch
                          , throwIO
-                         , throwTo
                          )
 import Control.Monad (when)
 import Data.Word (Word32)
