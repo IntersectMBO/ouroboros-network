@@ -96,6 +96,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
                      TPraosCrypto, Ticked (TickedPraosLedgerView))
+import           Ouroboros.Consensus.Shelley.Protocol.Util (isNewEpoch)
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -226,9 +227,14 @@ instance GetTip (Ticked (LedgerState (ShelleyBlock era))) where
 
 -- | Ticking only affects the state itself
 data instance Ticked (LedgerState (ShelleyBlock era)) = TickedShelleyLedgerState {
-      untickedShelleyLedgerTip        :: !(WithOrigin (ShelleyTip era))
-    , untickedShelleyLedgerTransition :: !ShelleyTransition
-    , tickedShelleyLedgerState        :: !(SL.ShelleyState era)
+      untickedShelleyLedgerTip      :: !(WithOrigin (ShelleyTip era))
+      -- | We are counting blocks within an epoch, this means:
+      --
+      -- 1. We are only incrementing this when /applying/ a block, not when ticking.
+      -- 2. However, we count within an epoch, which is slot-based. So the count
+      --    must be reset when /ticking/, not when applying a block.
+    , tickedShelleyLedgerTransition :: !ShelleyTransition
+    , tickedShelleyLedgerState      :: !(SL.ShelleyState era)
     }
   deriving (Generic, NoThunks)
 
@@ -246,13 +252,25 @@ instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
                               , shelleyLedgerTransition
                               } =
       TickedShelleyLedgerState {
-          untickedShelleyLedgerTip        = shelleyLedgerTip
-        , untickedShelleyLedgerTransition = shelleyLedgerTransition
-        , tickedShelleyLedgerState        = SL.applyTickTransition
-                                              (shelleyLedgerGlobals cfg)
-                                              shelleyLedgerState
-                                              slotNo
+          untickedShelleyLedgerTip =
+            shelleyLedgerTip
+        , tickedShelleyLedgerTransition =
+            -- The voting resets each epoch
+            if isNewEpoch ei (shelleyTipSlotNo <$> shelleyLedgerTip) slotNo then
+              ShelleyTransitionInfo { shelleyAfterVoting = 0 }
+            else
+              shelleyLedgerTransition
+        , tickedShelleyLedgerState =
+            SL.applyTickTransition
+              globals
+              shelleyLedgerState
+              slotNo
         }
+    where
+      globals = shelleyLedgerGlobals cfg
+
+      ei :: EpochInfo Identity
+      ei = SL.epochInfo globals
 
 instance TPraosCrypto era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
@@ -284,7 +302,7 @@ applyHelper ::
   -> Ticked (LedgerState (ShelleyBlock era))
   -> m (LedgerState (ShelleyBlock era))
 applyHelper f cfg blk TickedShelleyLedgerState{
-                          untickedShelleyLedgerTransition
+                          tickedShelleyLedgerTransition
                         , tickedShelleyLedgerState
                         } = do
     newShelleyState <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
@@ -299,10 +317,10 @@ applyHelper f cfg blk TickedShelleyLedgerState{
           newShelleyState
       , shelleyLedgerTransition = ShelleyTransitionInfo {
             shelleyAfterVoting =
-              if blockSlot blk < votingDeadline then
-                0
-              else
-                succ (shelleyAfterVoting untickedShelleyLedgerTransition)
+              -- We count the number of blocks that have been applied after the
+              -- voting deadline has passed.
+              (if blockSlot blk >= votingDeadline then succ else id) $
+                shelleyAfterVoting tickedShelleyLedgerTransition
           }
       }
   where
@@ -310,7 +328,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
     swindow = SL.stabilityWindow globals
 
     ei :: EpochInfo Identity
-    ei = SL.epochInfo (shelleyLedgerGlobals cfg)
+    ei = SL.epochInfo globals
 
     -- The start of the next epoch is within the safe zone, always.
     startOfNextEpoch :: SlotNo

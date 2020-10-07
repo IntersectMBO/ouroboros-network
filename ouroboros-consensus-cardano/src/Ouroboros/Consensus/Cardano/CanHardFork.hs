@@ -553,11 +553,7 @@ translateLedgerStateShelleyToAllegraWrapper ::
        (ShelleyBlock (AllegraEra c))
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ledgerShelley ->
-        ledgerShelley {
-            shelleyLedgerTransition =
-              ShelleyTransitionInfo{shelleyAfterVoting = 0}
-          }
+      Translate $ \_epochNo ledgerShelley -> ledgerShelley
 
 translateChainDepStateShelleyToAllegraWrapper ::
      RequiringBoth
@@ -634,11 +630,7 @@ translateLedgerStateAllegraToMaryWrapper ::
        (ShelleyBlock (MaryEra c))
 translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ledgerAllegra ->
-        ledgerAllegra {
-            shelleyLedgerTransition =
-              ShelleyTransitionInfo{shelleyAfterVoting = 0}
-          }
+      Translate $ \_epochNo ledgerAllegra -> ledgerAllegra
 
 translateChainDepStateAllegraToMaryWrapper ::
      RequiringBoth

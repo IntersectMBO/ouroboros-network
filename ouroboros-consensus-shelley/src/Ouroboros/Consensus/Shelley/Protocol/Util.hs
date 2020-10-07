@@ -11,24 +11,34 @@ import           Cardano.Slotting.EpochInfo
 import           Data.Functor.Identity (Identity (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.History.Util (addEpochs,
+                     countSlots)
 
 -- | Verify whether a slot represents a change to a new epoch with regard to
 -- some other slot.
+--
+-- PRECONDITION: the two slots must be in the same era.
 isNewEpoch
   :: EpochInfo Identity
-  -> SlotNo
-      -- ^ Slot we want to check
   -> WithOrigin SlotNo
      -- ^ Slot we are comparing a new epoch against
+  -> SlotNo
+      -- ^ Slot we want to check
   -> Bool
-isNewEpoch ei newSlot referenceWO = runIdentity $ do
-    oldEpoch <- epochInfoEpoch ei reference
-    newEpoch <- epochInfoEpoch ei newSlot
+isNewEpoch ei reference newSlot = runIdentity $ do
+    oldEpoch  <- case reference of
+                   Origin      -> return $ EpochNo 0
+                   NotOrigin s -> epochInfoEpoch ei s
+    epochSize <- epochInfoSize  ei oldEpoch
+    firstSlot <- epochInfoFirst ei oldEpoch
+
+    let epochsAfter = (countSlots newSlot firstSlot) `div` unEpochSize epochSize
+        newEpoch    = addEpochs epochsAfter oldEpoch
+    -- Note that we don't call:
+    -- > epochInfoEpoch ei newSlot
+    -- because the 'EpochInfo' might have limited range. The precondition
+    -- justifies the calculation that we do here.
     pure $ newEpoch > oldEpoch
-  where
-    reference = fromWithOrigin genesisSlotNo referenceWO
-    -- TODO
-    genesisSlotNo = SlotNo 0
 
 -- | Return the first slot in the epoch of the given slot.
 firstSlotOfEpochOfSlot ::
