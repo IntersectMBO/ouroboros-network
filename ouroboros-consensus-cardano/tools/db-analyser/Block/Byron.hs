@@ -13,13 +13,12 @@ module Block.Byron (
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum)
-import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
+import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
 
 import qualified Cardano.Chain.Block as Chain
@@ -41,7 +40,7 @@ instance HasAnalysis ByronBlock where
     data Args ByronBlock =
       ByronBlockArgs {
           configFileByron      :: FilePath
-        , requiresNetworkMagic :: Bool
+        , requiresNetworkMagic :: RequiresNetworkMagic
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
@@ -50,8 +49,6 @@ instance HasAnalysis ByronBlock where
       config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
       return $ mkByronProtocolInfo config threshold
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
-    blockHeaderSize = fromIntegral .
-      aBlockOrBoundary blockBoundaryHeaderSize blockHeaderSizeByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
 
@@ -64,9 +61,9 @@ parseByronArgs = ByronBlockArgs
           , help "Path to config file"
           , metavar "PATH"
           ])
-    <*> switch (mconcat [
-            long "testnet"
-          , help "The DB contains blocks from testnet rather than mainnet"
+    <*> flag RequiresNoMagic RequiresMagic (mconcat [
+            long "requires-magic"
+          , help "The DB contains blocks from a testnet, requiring network magic, rather than mainnet"
           ])
     <*> parseMaybe (option auto (mconcat [
             long "genesisHash"
@@ -107,13 +104,6 @@ countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
     countTx :: Chain.Tx -> Int
     countTx = length . Chain.txOutputs
 
-blockBoundaryHeaderSize ::  Chain.ABoundaryBlock ByteString -> Natural
-blockBoundaryHeaderSize =
-    fromIntegral . BS.length . Chain.boundaryHeaderAnnotation . Chain.boundaryHeader
-
-blockHeaderSizeByron ::  Chain.ABlock ByteString -> Natural
-blockHeaderSizeByron = Chain.headerLength . Chain.blockHeader
-
 blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
 blockTxSizesByron block =
     map (fromIntegral . BL.length . BL.fromStrict . Chain.aTaAnnotation) blockTxAuxs
@@ -122,17 +112,19 @@ blockTxSizesByron block =
     Chain.ABody{ bodyTxPayload } = blockBody
     Chain.ATxPayload{ aUnTxPayload = blockTxAuxs } = bodyTxPayload
 
-openGenesisByron :: FilePath -> Maybe (Crypto.Hash Raw) -> Bool -> IO Genesis.Config
-openGenesisByron configFile mHash onMainNet = do
+openGenesisByron ::
+     FilePath
+  -> Maybe (Crypto.Hash Raw)
+  -> RequiresNetworkMagic
+  -> IO Genesis.Config
+openGenesisByron configFile mHash requiresNetworkMagic = do
     genesisHash <- case mHash of
       Nothing -> either (error . show) return =<< runExceptT
         (Genesis.unGenesisHash . snd <$> Genesis.readGenesisData configFile)
       Just hash -> return hash
     genesisConfig <- either (error . show) return =<< runExceptT
       (Genesis.mkConfigFromFile
-        (if onMainNet -- transactions on testnet include magic number
-          then Crypto.RequiresNoMagic
-          else Crypto.RequiresMagic)
+        requiresNetworkMagic
         configFile
         genesisHash)
     return genesisConfig

@@ -60,9 +60,6 @@ instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs blk = case blk of
     Cardano.BlockByron b    -> countTxOutputs b
     Cardano.BlockShelley sh -> countTxOutputs sh
-  blockHeaderSize blk = case blk of
-    Cardano.BlockByron b    -> blockHeaderSize b
-    Cardano.BlockShelley sh -> blockHeaderSize sh
   blockTxSizes blk = case blk of
     Cardano.BlockByron b    -> blockTxSizes b
     Cardano.BlockShelley sh -> blockTxSizes sh
