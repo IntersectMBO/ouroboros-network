@@ -33,7 +33,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , Era
   , TPraosCrypto
   , StandardCrypto
-  , StandardShelley
     -- * CannotForge
   , TPraosCannotForge (..)
   , tpraosCheckCanForge
@@ -436,7 +435,7 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
       st' = SL.tickChainDepState
               shelleyGlobals
               lv
-              (isNewEpoch tpraosEpochInfo slot lastSlot)
+              (isNewEpoch tpraosEpochInfo lastSlot slot)
               st
       shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
 

@@ -224,71 +224,6 @@ withinEraForecast maxLookAhead st = Forecast{
 -------------------------------------------------------------------------------}
 
 -- | Translations between eras
---
--- We have to be very careful here in how we compute the maximum lookahead.
--- As long as we are in a single era, things look like this:
---
--- >                                          /-------------------\
--- >                                          |                   |
--- > chain     ... - block - block - block [block]                |
--- >                                   |                          v
--- > ledger                           TIP                  VIEW
---
--- where @TIP@ is the current ledger tip and @VIEW@ is the last ledger view we
--- can forecast, because the next block @[block]@ to arrive will take effect in
--- the next leger state after @VIEW@. Note that if the maximum lookahead is
--- zero, this looks like
---
--- > chain     ... - block - block - block [block]
--- >                                   |      |
--- > ledger                           TIP
---
--- where @[block]@ can have immediate changes on the ledger, and so we can't
--- look ahead at all (of course, we always know the /current/ @TIP@).
---
--- Note that blocks arriving /after/ @block@ can only take effect /later/ than
--- @block@, and so they are not relevant for computing the maximum slot number
--- we can compute a ledger view for.
---
--- Now, if we are near an era transition, this picture gets a bit more
--- complicated. /If/ the next block is still in this era (that is, unless we are
--- /right/ at the edge), then that imposes /one/ constraint, as before. However,
--- the first block in the /next/ era imposes an /additional/ constraint:
---
--- >                      ~
--- >                      ~    /------------------\
--- >                      ~    |                  |
--- >          /---------- ~ ---|----------\       |
--- >          |           ~    |          |       |
--- > block [block]        ~ [block']      |       |
--- >   |                  ~               v       v
--- >  TIP                 ~         VIEW
--- >                      ~
---
--- The HFC however does not impose any restrictions on the relative values
--- of these two maximum lookahead values. This means that it's quite possible
--- for the next era to have a /smaller/ lookahead (to re-iterate, since that
--- era has not yet begun, the first block in that era is at the transition, and
--- so the maximum lookahead applies from the transition point):
---
--- >                      ~
--- >                      ~    /----------\
--- >                      ~    |          |
--- >          /---------- ~ ---|----------|-------\
--- >          |           ~    |          |       |
--- > block [block]        ~ [block']      |       |
--- >   |                  ~               v       v
--- >  TIP                 ~         VIEW
--- >                      ~
---
--- Indeed, if the next era has zero lookahead, when the first block of the next
--- era comes it, it can make changes immediately, and so we can't even know what
--- the view at the transition point is.
---
--- We can therefore compute the earliest 'SlotNo' the next block in this era
--- (if any) can make changes to the ledger state, as well as the earliest
--- 'SlotNo' the first block in the next era can; their @minimum@ will serve as
--- an exclusive upper bound for the forecast range.
 translations :: forall xs.
      TestSetup xs
   -> InPairs (TranslateForecast (K LedgerState) (K LedgerView)) xs
@@ -309,29 +244,16 @@ translations TestSetup{..} =
     tr thisLookahead nextLookahead =
         TranslateForecast $ \transition sno (K st) ->
           assert (sno >= boundSlot transition) $ do
-
             let tip :: WithOrigin SlotNo
                 tip = ledgerTip st
 
-                tipSucc :: SlotNo
-                tipSucc = withOrigin (SlotNo 0) succ tip
-
-                -- Upper bound for this era
-                --
-                -- 'Nothing' if there are no more blocks in this era
-                -- (see description above)
-                thisBound :: Maybe SlotNo
-                thisBound = do
-                    guard (tipSucc < boundSlot transition)
-                    return $ addSlots thisLookahead tipSucc
-
-                -- Upper bound for the next era
-                nextBound :: SlotNo
-                nextBound = addSlots nextLookahead (boundSlot transition)
-
                 -- (Exclusive) upper bound for the forecast
                 bound :: SlotNo
-                bound = maybe nextBound (min nextBound) thisBound
+                bound = crossEraForecastBound
+                          tip
+                          (boundSlot transition)
+                          thisLookahead
+                          nextLookahead
 
             when (sno >= bound) $
               throwError $ OutsideForecastRange {
@@ -909,7 +831,7 @@ instance Arbitrary (Some TestSetup) where
             , let era' = era { testEraBlocks = blocks' }
             ]
 
-            -- | Shrink blocks
+            -- Shrink blocks
             --
             -- We don't use shrinkList for this, because we need some context
           , [ era'

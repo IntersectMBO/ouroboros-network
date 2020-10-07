@@ -112,7 +112,7 @@ prop_simple_pbft_convergence TestSetup
 
     NumCoreNodes nn = numCoreNodes
 
-    sigThd = (1.0 / fromIntegral nn) + 0.1
+    sigThd = PBftSignatureThreshold $ (1.0 / fromIntegral nn) + 0.1
     params = PBftParams k numCoreNodes sigThd
 
     testOutput =

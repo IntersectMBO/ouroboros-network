@@ -60,6 +60,7 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff,
                      mkNonceFromNumber)
 import qualified Shelley.Spec.Ledger.OverlaySchedule as SL (overlaySlots)
 
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -444,9 +445,11 @@ prop_simple_cardano_convergence TestSetup
                   genesisShelley
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
-                  (guard setupByronLowerBound *> Just numByronEpochs)
-                  (TriggerHardForkAtVersion shelleyMajorVersion)
-                  (TriggerHardForkAtVersion shelleyMaMajorVersion)
+                  ProtocolParamsTransition {
+                      transitionLowerBound =
+                        guard setupByronLowerBound *> Just numByronEpochs
+                    , transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
+                    }
             , mkRekeyM = Nothing
             }
 
@@ -708,15 +711,15 @@ mkProtocolCardanoAndHardForkTxs
   -> ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> Shelley.CoreNode (ShelleyEra c)
-     -- Hard fork
-  -> Maybe EpochNo
-  -> TriggerHardFork -- ^ Byron to Shelley
-  -> TriggerHardFork -- ^ Shelley to ShelleyMA
+     -- HardForks
+  -> ProtocolParamsTransition
+       ByronBlock
+       (ShelleyBlock (ShelleyEra c))
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
     genesisShelley initialNonce coreNodeShelley
-    mbLowerBound byronTransition shelleyTransition =
+    protocolParamsByronShelley =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
       , tniProtocolInfo = pInfo
@@ -739,24 +742,38 @@ mkProtocolCardanoAndHardForkTxs
 
     pInfo :: ProtocolInfo m (CardanoBlock c)
     pInfo = protocolInfoCardano
-        -- Byron
-        genesisByron
-        -- Trivialize the PBFT signature window so that the forks induced by
-        -- the network partition are as deep as possible.
-        (Just $ PBftSignatureThreshold 1)
-        propPV
-        softVerByron
-        [leaderCredentialsByron]
-        -- Shelley
-        genesisShelley
-        initialNonce
-        protVerShelley
-        maxMajorPVShelley
-        [leaderCredentialsShelley]
-        -- Hard fork
-        mbLowerBound
-        byronTransition
-        shelleyTransition
+        ProtocolParamsByron {
+            byronGenesis                = genesisByron
+            -- Trivialize the PBFT signature window so that the forks induced by
+            -- the network partition are as deep as possible.
+          , byronPbftSignatureThreshold = Just $ PBftSignatureThreshold 1
+          , byronProtocolVersion        = propPV
+          , byronSoftwareVersion        = softVerByron
+          , byronLeaderCredentials      = Just leaderCredentialsByron
+          }
+        ProtocolParamsShelley {
+            shelleyGenesis           = genesisShelley
+          , shelleyInitialNonce      = initialNonce
+          , shelleyProtVer           = SL.ProtVer shelleyMajorVersion 0
+          , shelleyLeaderCredentials = Just leaderCredentialsShelley
+          }
+        ProtocolParamsAllegra {
+            allegraProtVer           = SL.ProtVer allegraMajorVersion 0
+          , allegraLeaderCredentials = Nothing
+          }
+        ProtocolParamsMary {
+            maryProtVer           = SL.ProtVer maryMajorVersion 0
+          , maryLeaderCredentials = Nothing
+          }
+        protocolParamsByronShelley
+        ProtocolParamsTransition {
+            transitionLowerBound = Nothing
+          , transitionTrigger    = TriggerHardForkAtVersion allegraMajorVersion
+          }
+        ProtocolParamsTransition {
+            transitionLowerBound = Nothing
+          , transitionTrigger    = TriggerHardForkAtVersion maryMajorVersion
+          }
 
     -- Byron
 
@@ -772,13 +789,6 @@ mkProtocolCardanoAndHardForkTxs
     softVerByron = Byron.theProposedSoftwareVersion
 
     -- Shelley
-
-    -- the protocol version that each Shelley node is endorsing with each block
-    -- it forges (ie which the node is ready to run)
-    --
-    -- This is still Shelley, since that's the last era of this test.
-    protVerShelley :: SL.ProtVer
-    protVerShelley = SL.ProtVer shelleyMajorVersion 0
 
     leaderCredentialsShelley :: TPraosLeaderCredentials (ShelleyEra c)
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
@@ -796,9 +806,6 @@ mkProtocolCardanoAndHardForkTxs
 activeSlotCoeff :: Rational
 activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
 
-maxMajorPVShelley :: MaxMajorProtVer
-maxMajorPVShelley = MaxMajorProtVer 100   -- arbitrary
-
 -- | The major protocol version of Byron in this test
 --
 -- On mainnet, the Byron era spans multiple major versions: 0 for Classic and 1
@@ -814,11 +821,17 @@ byronMajorVersion = 0
 shelleyMajorVersion :: Num a => a
 shelleyMajorVersion = byronMajorVersion + 1
 
--- | The major protocol version of ShelleyMA in this test
+-- | The major protocol version of Allegra in this test
 --
--- See 'MajorVersionbyronMajorVersion
-shelleyMaMajorVersion :: Num a => a
-shelleyMaMajorVersion = shelleyMajorVersion + 1
+-- See 'byronMajorVersion'
+allegraMajorVersion :: Num a => a
+allegraMajorVersion = shelleyMajorVersion + 1
+
+-- | The major protocol version of Mary in this test
+--
+-- See 'byronMajorVersion'
+maryMajorVersion :: Num a => a
+maryMajorVersion = allegraMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --
@@ -927,10 +940,14 @@ byronEpochSize (SecurityParam k) =
 shelleyEpochSize :: SecurityParam -> Word64
 shelleyEpochSize k = unEpochSize $ Shelley.mkEpochSize k activeSlotCoeff
 
+-- | Return 'True' when the block is a block from the Shelley era.
+--
+-- Note it will return 'False' for other Shelley-flavoured eras like Allegra and
+-- Mary.
 isShelley :: CardanoBlock c -> Bool
 isShelley = \case
-    BlockByron{}   -> False
     BlockShelley{} -> True
+    _              -> False
 
 -- | Render a number as a positive difference from @k@
 --

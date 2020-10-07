@@ -30,6 +30,8 @@ module Ouroboros.Consensus.Block.Abstract (
   , decodeRawHash
     -- * Existentials
   , SomeBlock(..)
+    -- * Utilities for working with WithOrigin
+  , succWithOrigin
     -- * Re-export basic definitions from @ouroboros-network@
   , blockHash
   , blockMeasure
@@ -242,12 +244,18 @@ data SomeBlock (f :: Type -> Type -> Type) blk where
   SomeBlock :: !(f blk a) -> SomeBlock f blk
 
 {-------------------------------------------------------------------------------
-  Custom patterns for WithOrigin
-
-  This avoids clashing with our (extensive) use of 'At' for testing.
+  Utilities for working with WithOrigin
 -------------------------------------------------------------------------------}
 
 {-# COMPLETE Origin, NotOrigin #-}
 
+-- | Custom pattern for 'WithOrigin'
+--
+-- This avoids clashing with our (extensive) use of 'At' for testing.
 pattern NotOrigin :: t -> WithOrigin t
 pattern NotOrigin t = Cardano.At t
+
+-- | Return the successor of a 'WithOrigin' value. Useful in combination with
+-- 'SlotNo' and 'BlockNo'.
+succWithOrigin :: (Bounded t, Enum t) => WithOrigin t -> t
+succWithOrigin = withOrigin minBound succ

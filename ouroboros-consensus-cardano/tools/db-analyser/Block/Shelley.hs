@@ -21,10 +21,12 @@ import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
-import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
-                     Nonce (..), ShelleyGenesis, protocolInfoShelley)
+import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
+                     ProtocolParamsShelley (..), ShelleyGenesis,
+                     protocolInfoShelley)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           HasAnalysis
@@ -50,17 +52,16 @@ instance HasAnalysis (ShelleyBlock StandardShelley) where
 type ShelleyBlockArgs = Args (ShelleyBlock StandardShelley)
 
 mkShelleyProtocolInfo ::
-     forall era. TPraosCrypto era
-  => ShelleyGenesis era
+     ShelleyGenesis StandardShelley
   -> Nonce
-  -> ProtocolInfo IO (ShelleyBlock era)
+  -> ProtocolInfo IO (ShelleyBlock StandardShelley)
 mkShelleyProtocolInfo genesis initialNonce =
-    protocolInfoShelley
-      genesis
-      initialNonce
-      (MaxMajorProtVer 1000)
-      (SL.ProtVer 0 0)
-      []
+    protocolInfoShelley $ ProtocolParamsShelley {
+        shelleyGenesis           = genesis
+      , shelleyInitialNonce      = initialNonce
+      , shelleyProtVer           = SL.ProtVer 2 0
+      , shelleyLeaderCredentials = []
+      }
 
 countOutputs :: TPraosCrypto era => SL.Tx era -> Int
 countOutputs tx = length $ SL._outputs $ SL._body tx

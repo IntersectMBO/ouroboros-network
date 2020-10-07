@@ -75,6 +75,7 @@ import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
 
+import           Ouroboros.Consensus.Shelley.Eras (ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..), ShelleyBlock,
                      mkShelleyTx)
 import           Ouroboros.Consensus.Shelley.Node
@@ -380,22 +381,19 @@ mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
             ]
 
 mkProtocolRealTPraos
-  :: forall m era. (IOLike m, TPraosCrypto era)
-  => ShelleyGenesis era
+  :: forall m c. (IOLike m, TPraosCrypto (ShelleyEra c))
+  => ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> ProtVer
-  -> CoreNode era
-  -> ProtocolInfo m (ShelleyBlock era)
+  -> CoreNode (ShelleyEra c)
+  -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 mkProtocolRealTPraos genesis initialNonce protVer coreNode =
-    protocolInfoShelley
-      genesis
-      initialNonce
-      maxMajorPV
-      protVer
-      [mkLeaderCredentials coreNode]
-  where
-    maxMajorPV = MaxMajorProtVer 1000 -- TODO
-
+    protocolInfoShelley $ ProtocolParamsShelley {
+        shelleyGenesis           = genesis
+      , shelleyInitialNonce      = initialNonce
+      , shelleyProtVer           = protVer
+      , shelleyLeaderCredentials = Just $ mkLeaderCredentials coreNode
+      }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'
 -------------------------------------------------------------------------------}

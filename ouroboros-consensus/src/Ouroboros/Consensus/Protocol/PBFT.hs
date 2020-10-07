@@ -16,6 +16,7 @@
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
+  , PBftSignatureThreshold(..)
   , PBftLedgerView(..)
   , PBftFields(..)
   , PBftParams(..)
@@ -189,6 +190,14 @@ instance (Serialise (PBftVerKeyHash c), Ord (PBftVerKeyHash c))
 -- As defined in https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
 data PBft c
 
+
+-- | Signature threshold. This represents the proportion of blocks in a
+-- @pbftSignatureWindow@-sized window which may be signed by any single key.
+newtype PBftSignatureThreshold = PBftSignatureThreshold {
+      getPBftSignatureThreshold :: Double
+    }
+  deriving (Eq, Show, Generic, NoThunks)
+
 -- | Protocol parameters
 data PBftParams = PBftParams {
       -- | Security parameter
@@ -207,7 +216,7 @@ data PBftParams = PBftParams {
       -- proper is parameterized over the size of this window of recent blocks,
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
-    , pbftSignatureThreshold :: !Double
+    , pbftSignatureThreshold :: !PBftSignatureThreshold
     }
   deriving (Generic, NoThunks, Show)
 
@@ -371,7 +380,9 @@ data PBftWindowParams = PBftWindowParams {
 pbftWindowParams :: ConsensusConfig (PBft c) -> PBftWindowParams
 pbftWindowParams PBftConfig{..} = PBftWindowParams {
       windowSize = winSize
-    , threshold  = floor $ pbftSignatureThreshold * fromIntegral winSize
+    , threshold  =
+        floor $
+          getPBftSignatureThreshold pbftSignatureThreshold * fromIntegral winSize
     }
   where
     PBftParams{..} = pbftParams

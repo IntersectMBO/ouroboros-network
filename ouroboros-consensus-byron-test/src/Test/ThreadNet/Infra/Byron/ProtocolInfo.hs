@@ -52,16 +52,17 @@ mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
     signingKey :: SignKeyDSIGN ByronDSIGN
     signingKey = SignKeyByronDSIGN (blcSignKey leaderCredentials)
 
-    PBftParams{pbftSignatureThreshold} = params
+    PBftParams { pbftSignatureThreshold } = params
 
     protocolInfo :: ProtocolInfo m ByronBlock
     protocolInfo =
-        protocolInfoByron
-          genesisConfig
-          (Just $ PBftSignatureThreshold pbftSignatureThreshold)
-          theProposedProtocolVersion
-          theProposedSoftwareVersion
-          [leaderCredentials]
+        protocolInfoByron $ ProtocolParamsByron {
+            byronGenesis                = genesisConfig
+          , byronPbftSignatureThreshold = Just $ pbftSignatureThreshold
+          , byronProtocolVersion        = theProposedProtocolVersion
+          , byronSoftwareVersion        = theProposedSoftwareVersion
+          , byronLeaderCredentials      = Just leaderCredentials
+          }
 
 mkLeaderCredentials
   :: HasCallStack

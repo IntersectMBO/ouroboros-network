@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
+import           Ouroboros.Consensus.Util.Counting (Exactly (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
@@ -44,8 +44,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto,
-                     StandardShelley)
+import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
@@ -58,16 +57,15 @@ import qualified Test.Consensus.Byron.Examples as Byron
 
 import qualified Test.Consensus.Shelley.Examples as Shelley
 
-import           Test.Consensus.Cardano.Generators (toTelescope)
-
 {-------------------------------------------------------------------------------
   Setup
 -------------------------------------------------------------------------------}
 
 type Crypto = StandardCrypto
 
+-- TODO #2669
 eraExamples :: NP Examples (CardanoEras Crypto)
-eraExamples = Byron.examples :* Shelley.examples :* Nil
+eraExamples = Byron.examples :* Shelley.examples :* mempty :* mempty :* Nil
 
 -- | By using this function, we can't forget to update this test when adding a
 -- new era to 'CardanoEras'.
@@ -81,6 +79,9 @@ combineEras = mconcat . hcollapse . hap eraInjections
     eraInjections =
            fn (K . injExamplesByron)
         :* fn (K . injExamplesShelley)
+        -- TODO #2669
+        :* fn (K . const mempty)
+        :* fn (K . const mempty)
         :* Nil
 
 -- Generalise in #2368
@@ -145,7 +146,13 @@ byronEraParams :: History.EraParams
 byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.ledgerConfig
 
 shelleyEraParams :: History.EraParams
-shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+shelleyEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
+
+allegraEraParams :: History.EraParams
+allegraEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
+
+maryEraParams :: History.EraParams
+maryEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
 
 transitionEpoch :: EpochNo
 transitionEpoch = 10
@@ -166,7 +173,14 @@ shelleyStartBound = byronEndBound
 summary :: History.Summary (CardanoEras Crypto)
 summary =
     State.reconstructSummary
-      (History.Shape (exactlyTwo byronEraParams shelleyEraParams))
+      (History.Shape
+        (Exactly
+          (  K byronEraParams
+          :* K shelleyEraParams
+          :* K allegraEraParams
+          :* K maryEraParams
+          :* Nil
+          )))
       (State.TransitionKnown transitionEpoch)
       (hardForkLedgerStatePerEra (ledgerStateByron byronLedger))
   where
@@ -179,7 +193,12 @@ eraInfoShelley :: SingleEraInfo (ShelleyBlock StandardShelley)
 eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock StandardShelley))
 
 codecConfig :: CardanoCodecConfig Crypto
-codecConfig = CardanoCodecConfig Byron.codecConfig Shelley.codecConfig
+codecConfig =
+    CardanoCodecConfig
+      Byron.codecConfig
+      Shelley.codecConfig
+      Shelley.codecConfig
+      Shelley.codecConfig
 
 {-------------------------------------------------------------------------------
   Additional injections
@@ -247,7 +266,7 @@ ledgerStateByron ::
      LedgerState ByronBlock
   -> LedgerState (CardanoBlock Crypto)
 ledgerStateByron stByron =
-    HardForkLedgerState $ toTelescope (Proxy @LedgerState) (Left cur)
+    HardForkLedgerState $ HardForkState $ TZ cur
   where
     cur = State.Current {
           currentStart = History.initBound
@@ -258,7 +277,7 @@ ledgerStateShelley ::
      LedgerState (ShelleyBlock StandardShelley)
   -> LedgerState (CardanoBlock Crypto)
 ledgerStateShelley stShelley =
-    HardForkLedgerState $ toTelescope (Proxy @LedgerState) (Right (past, cur))
+    HardForkLedgerState $ HardForkState $ TS (K past) (TZ cur)
   where
     past = State.Past {
           pastStart    = History.initBound
@@ -273,7 +292,7 @@ chainDepStateByron ::
      ChainDepState (BlockProtocol ByronBlock)
   -> ChainDepState (BlockProtocol (CardanoBlock Crypto))
 chainDepStateByron stByron =
-    toTelescope (Proxy @WrapChainDepState) (Left cur)
+    HardForkState $ TZ cur
   where
     cur = State.Current {
           currentStart = History.initBound
@@ -284,7 +303,7 @@ chainDepStateShelley ::
      ChainDepState (BlockProtocol (ShelleyBlock StandardShelley))
   -> ChainDepState (BlockProtocol (CardanoBlock Crypto))
 chainDepStateShelley stShelley =
-    toTelescope (Proxy @WrapChainDepState) (Right (past, cur))
+    HardForkState $ TS (K past) (TZ cur)
   where
     past = State.Past {
           pastStart    = History.initBound

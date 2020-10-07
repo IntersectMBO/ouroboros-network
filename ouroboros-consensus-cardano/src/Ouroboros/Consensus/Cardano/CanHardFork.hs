@@ -26,6 +26,7 @@ import           Control.Monad.Except (Except, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
+import           Data.SOP.Strict (NP (..))
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -48,9 +49,8 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (RequiringBoth (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
+                     (RequiringBoth (..), ignoringBoth)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
@@ -354,12 +354,37 @@ type CardanoHardForkConstraints c =
 
 instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
   hardForkEraTranslation = EraTranslation {
-      translateLedgerState   = PCons translateLedgerStateByronToShelleyWrapper   PNil
-    , translateChainDepState = PCons translateChainDepStateByronToShelleyWrapper PNil
-    , translateLedgerView    = PCons translateLedgerViewByronToShelleyWrapper    PNil
+      translateLedgerState   =
+          PCons translateLedgerStateByronToShelleyWrapper
+        $ PCons translateLedgerStateShelleyToAllegraWrapper
+        $ PCons translateLedgerStateAllegraToMaryWrapper
+        $ PNil
+    , translateChainDepState =
+          PCons translateChainDepStateByronToShelleyWrapper
+        $ PCons translateChainDepStateShelleyToAllegraWrapper
+        $ PCons translateChainDepStateAllegraToMaryWrapper
+        $ PNil
+    , translateLedgerView    =
+          PCons translateLedgerViewByronToShelleyWrapper
+        $ PCons translateLedgerViewShelleyToAllegraWrapper
+        $ PCons translateLedgerViewAllegraToMaryWrapper
+        $ PNil
     }
-  hardForkChainSel  = Tails.mk2 CompareBlockNo
-  hardForkInjectTxs = InPairs.mk2 $ InPairs.ignoringBoth cannotInjectTx
+  hardForkChainSel =
+        -- Byron <-> Shelley, ...
+        TCons (CompareBlockNo :* CompareBlockNo :* CompareBlockNo :* Nil)
+        -- Shelley <-> Allegra, ...
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
+        -- Allegra <-> Mary, ...
+      $ TCons (SelectSameProtocol :* Nil)
+        -- Mary <-> ...
+      $ TCons Nil
+      $ TNil
+  hardForkInjectTxs =
+        PCons (ignoringBoth cannotInjectTx)
+      $ PCons (ignoringBoth translateTxShelleyToAllegraWrapper)
+      $ PCons (ignoringBoth translateTxAllegraToMaryWrapper)
+      $ PNil
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
@@ -515,3 +540,123 @@ translateLedgerViewByronToShelleyWrapper =
         -- forecast into the Shelley era when still in the Byron era.
         maxFor :: SlotNo
         maxFor = addSlots swindow (boundSlot bound)
+
+{-------------------------------------------------------------------------------
+  Translation from Shelley to Allegra
+-------------------------------------------------------------------------------}
+
+translateLedgerStateShelleyToAllegraWrapper ::
+    RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+translateLedgerStateShelleyToAllegraWrapper =
+    ignoringBoth $
+      Translate $ \_epochNo ledgerShelley -> ledgerShelley
+
+translateChainDepStateShelleyToAllegraWrapper ::
+     RequiringBoth
+       WrapConsensusConfig
+       (Translate WrapChainDepState)
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+translateChainDepStateShelleyToAllegraWrapper =
+    ignoringBoth $
+      Translate $ \_epochNo (WrapChainDepState stateShelley) ->
+        WrapChainDepState stateShelley
+
+translateLedgerViewShelleyToAllegraWrapper ::
+     TPraosCrypto (ShelleyEra c)
+  => RequiringBoth
+       WrapLedgerConfig
+       (TranslateForecast LedgerState WrapLedgerView)
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+translateLedgerViewShelleyToAllegraWrapper =
+    RequireBoth $ \(WrapLedgerConfig cfgShelley)
+                   (WrapLedgerConfig cfgAllegra) ->
+      TranslateForecast $ forecastAcrossShelley cfgShelley cfgAllegra
+
+-- | Forecast from a Shelley-based era to the next Shelley-based era.
+forecastAcrossShelley ::
+     ( TPraosCrypto eraFrom
+       -- TODO #2668 remove this constraint and use the translation infrastructure
+       -- from the ledger when in place
+     , eraFrom ~ eraTo
+     )
+  => ShelleyLedgerConfig eraFrom
+  -> ShelleyLedgerConfig eraTo
+  -> Bound  -- ^ Transition between the two eras
+  -> SlotNo -- ^ Forecast for this slot
+  -> LedgerState (ShelleyBlock eraFrom)
+  -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock eraTo)))
+forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
+    | forecastFor < maxFor
+    = return $
+        WrapTickedLedgerView $ TickedPraosLedgerView $
+          SL.mkInitialShelleyLedgerView
+            (shelleyLedgerGenesis cfgTo)
+    | otherwise
+    = throwError $ OutsideForecastRange {
+          outsideForecastAt     = ledgerTipSlot ledgerStateFrom
+        , outsideForecastMaxFor = maxFor
+        , outsideForecastFor    = forecastFor
+        }
+  where
+    -- Exclusive upper bound
+    maxFor :: SlotNo
+    maxFor = crossEraForecastBound
+               (ledgerTipSlot ledgerStateFrom)
+               (boundSlot transition)
+               (SL.stabilityWindow (shelleyLedgerGlobals cfgFrom))
+               (SL.stabilityWindow (shelleyLedgerGlobals cfgTo))
+
+translateTxShelleyToAllegraWrapper ::
+     InjectTx
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+translateTxShelleyToAllegraWrapper = InjectTx Just
+
+{-------------------------------------------------------------------------------
+  Translation from Shelley to Allegra
+-------------------------------------------------------------------------------}
+
+translateLedgerStateAllegraToMaryWrapper ::
+    RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
+translateLedgerStateAllegraToMaryWrapper =
+    ignoringBoth $
+      Translate $ \_epochNo ledgerAllegra -> ledgerAllegra
+
+translateChainDepStateAllegraToMaryWrapper ::
+     RequiringBoth
+       WrapConsensusConfig
+       (Translate WrapChainDepState)
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
+translateChainDepStateAllegraToMaryWrapper =
+    ignoringBoth $
+      Translate $ \_epochNo (WrapChainDepState stateAllegra) ->
+        WrapChainDepState stateAllegra
+
+translateLedgerViewAllegraToMaryWrapper ::
+     TPraosCrypto (AllegraEra c)
+  => RequiringBoth
+       WrapLedgerConfig
+       (TranslateForecast LedgerState WrapLedgerView)
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
+translateLedgerViewAllegraToMaryWrapper =
+    RequireBoth $ \(WrapLedgerConfig cfgAllegra)
+                   (WrapLedgerConfig cfgMary) ->
+      TranslateForecast $ forecastAcrossShelley cfgAllegra cfgMary
+
+translateTxAllegraToMaryWrapper ::
+     InjectTx
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
+translateTxAllegraToMaryWrapper = InjectTx Just

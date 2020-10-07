@@ -41,7 +41,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..))
+import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..),
+                     PBftSignatureThreshold (..))
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -168,7 +169,8 @@ tooMany params st@State{forgers} =
 -- allowed to have signed
 --
 pbftLimit :: Integral a => PBftParams -> a
-pbftLimit params = floor $ oneK params * pbftSignatureThreshold
+pbftLimit params =
+    floor $ oneK params * getPBftSignatureThreshold pbftSignatureThreshold
   where
     PBftParams{pbftSignatureThreshold} = params
 

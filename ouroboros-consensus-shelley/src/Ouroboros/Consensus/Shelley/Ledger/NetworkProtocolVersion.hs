@@ -23,6 +23,7 @@ instance HasNetworkProtocolVersion (ShelleyBlock era) where
   type BlockNodeToNodeVersion   (ShelleyBlock era) = ShelleyNodeToNodeVersion
   type BlockNodeToClientVersion (ShelleyBlock era) = ShelleyNodeToClientVersion
 
+-- TODO #2668 make this era-specific
 instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
   supportedNodeToNodeVersions   _ = Map.fromList [
         (NodeToNodeV_1, ShelleyNodeToNodeVersion1)

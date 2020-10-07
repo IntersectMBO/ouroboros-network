@@ -43,17 +43,23 @@ tests = testGroup "Cardano"
 
 testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron
 testCodecCfg =
-  CardanoCodecConfig (ByronCodecConfig epochSlots) ShelleyCodecConfig
+  CardanoCodecConfig
+    (ByronCodecConfig epochSlots)
+    ShelleyCodecConfig
+    ShelleyCodecConfig
+    ShelleyCodecConfig
 
 dictNestedHdr
   :: forall a.
      NestedCtxt_ (CardanoBlock MockCryptoCompatByron) Header a
   -> Dict (Eq a, Show a)
 dictNestedHdr = \case
-    NCZ (CtxtByronBoundary {}) -> Dict
-    NCZ (CtxtByronRegular  {}) -> Dict
-    NCS (NCZ CtxtShelley)      -> Dict
-    NCS (NCS x)                -> case x of {}
+    NCZ (CtxtByronBoundary {})        -> Dict
+    NCZ (CtxtByronRegular  {})        -> Dict
+    NCS (NCZ CtxtShelley)             -> Dict
+    NCS (NCS (NCZ CtxtShelley))       -> Dict
+    NCS (NCS (NCS (NCZ CtxtShelley))) -> Dict
+    NCS (NCS (NCS (NCS x)))           -> case x of {}
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo
