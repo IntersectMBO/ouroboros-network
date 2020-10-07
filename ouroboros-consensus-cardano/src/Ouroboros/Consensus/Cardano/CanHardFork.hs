@@ -574,41 +574,43 @@ translateLedgerViewShelleyToAllegraWrapper ::
        (ShelleyBlock (ShelleyEra c))
        (ShelleyBlock (AllegraEra c))
 translateLedgerViewShelleyToAllegraWrapper =
-    RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-      TranslateForecast $ \_bound forecastFor stateShelley ->
-        forecastCrossShelley cfgShelley forecastFor stateShelley
+    RequireBoth $ \(WrapLedgerConfig cfgShelley)
+                   (WrapLedgerConfig cfgAllegra) ->
+      TranslateForecast $ forecastAcrossShelley cfgShelley cfgAllegra
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
-forecastCrossShelley ::
+forecastAcrossShelley ::
      ( TPraosCrypto eraFrom
        -- TODO #2668 remove this constraint and use the translation infrastructure
        -- from the ledger when in place
      , eraFrom ~ eraTo
      )
   => ShelleyLedgerConfig eraFrom
-  -> SlotNo
+  -> ShelleyLedgerConfig eraTo
+  -> Bound  -- ^ Transition between the two eras
+  -> SlotNo -- ^ Forecast for this slot
   -> LedgerState (ShelleyBlock eraFrom)
   -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock eraTo)))
-forecastCrossShelley cfg forecastFor ledgerState
+forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
     = return $
         WrapTickedLedgerView $ TickedPraosLedgerView $
           SL.mkInitialShelleyLedgerView
-            (shelleyLedgerGenesis cfg)
+            (shelleyLedgerGenesis cfgTo)
     | otherwise
     = throwError $ OutsideForecastRange {
-          outsideForecastAt     = ledgerTipSlot ledgerState
+          outsideForecastAt     = ledgerTipSlot ledgerStateFrom
         , outsideForecastMaxFor = maxFor
         , outsideForecastFor    = forecastFor
         }
   where
-    globals = shelleyLedgerGlobals cfg
-    swindow = SL.stabilityWindow globals
-    at      = ledgerTipSlot ledgerState
-
     -- Exclusive upper bound
     maxFor :: SlotNo
-    maxFor = addSlots swindow $ succWithOrigin at
+    maxFor = crossEraForecastBound
+               (ledgerTipSlot ledgerStateFrom)
+               (boundSlot transition)
+               (SL.stabilityWindow (shelleyLedgerGlobals cfgFrom))
+               (SL.stabilityWindow (shelleyLedgerGlobals cfgTo))
 
 translateTxShelleyToAllegraWrapper ::
      InjectTx
@@ -649,9 +651,9 @@ translateLedgerViewAllegraToMaryWrapper ::
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
 translateLedgerViewAllegraToMaryWrapper =
-    RequireBoth $ \_ (WrapLedgerConfig cfgAllegra) ->
-      TranslateForecast $ \_bound forecastFor stateAllegra ->
-        forecastCrossShelley cfgAllegra forecastFor stateAllegra
+    RequireBoth $ \(WrapLedgerConfig cfgAllegra)
+                   (WrapLedgerConfig cfgMary) ->
+      TranslateForecast $ forecastAcrossShelley cfgAllegra cfgMary
 
 translateTxAllegraToMaryWrapper ::
      InjectTx
