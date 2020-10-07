@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
@@ -14,6 +15,9 @@
 
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
+  , ProtocolParamsShelley (..)
+  , ProtocolParamsAllegra (..)
+  , ProtocolParamsMary (..)
   , protocolClientInfoShelley
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
@@ -28,6 +32,7 @@ module Ouroboros.Consensus.Shelley.Node (
   ) where
 
 import           Data.Bifunctor (first)
+import           Data.Foldable (toList)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
@@ -53,6 +58,7 @@ import           Cardano.Ledger.Val ((<->))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
+import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
@@ -146,25 +152,52 @@ validateGenesis = first errsToString . SL.validateGenesis
         Text.unpack $ Text.unlines
           ("Invalid genesis config:" : map SL.describeValidationErr errs)
 
-protocolInfoShelley
-  :: forall m era. (IOLike m, TPraosCrypto era)
-  => SL.ShelleyGenesis era
-  -> SL.Nonce
-     -- ^ The initial nonce, typically derived from the hash of Genesis config
-     -- JSON file.
-  -> MaxMajorProtVer
-  -> SL.ProtVer
-  -> [TPraosLeaderCredentials era]
-  -> ProtocolInfo m (ShelleyBlock era)
-protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
+-- | Parameters needed to run Shelley
+data ProtocolParamsShelley c f = ProtocolParamsShelley {
+      shelleyGenesis           :: SL.ShelleyGenesis (ShelleyEra c)
+      -- | The initial nonce, typically derived from the hash of Genesis
+      -- config JSON file.
+      --
+      -- WARNING: chains using different values of this parameter will be
+      -- mutually incompatible.
+    , shelleyInitialNonce      :: SL.Nonce
+    , shelleyProtVer           :: SL.ProtVer
+    , shelleyLeaderCredentials :: f (TPraosLeaderCredentials (ShelleyEra c))
+    }
+
+-- | Parameters needed to run Allegra
+data ProtocolParamsAllegra c f = ProtocolParamsAllegra {
+      allegraProtVer           :: SL.ProtVer
+    , allegraLeaderCredentials :: f (TPraosLeaderCredentials (AllegraEra c))
+    }
+
+-- | Parameters needed to run Mary
+data ProtocolParamsMary c f = ProtocolParamsMary {
+      maryProtVer           :: SL.ProtVer
+    , maryLeaderCredentials :: f (TPraosLeaderCredentials (MaryEra c))
+    }
+
+protocolInfoShelley ::
+     forall m c f. (IOLike m, TPraosCrypto (ShelleyEra c), Foldable f)
+  => ProtocolParamsShelley c f
+  -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
+protocolInfoShelley ProtocolParamsShelley {
+                        shelleyGenesis           = genesis
+                      , shelleyInitialNonce      = initialNonce
+                      , shelleyProtVer           = protVer
+                      , shelleyLeaderCredentials = credentialss
+                      } =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> credentialss
+      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> toList credentialss
       }
   where
-    topLevelConfig :: TopLevelConfig (ShelleyBlock era)
+    maxMajorProtVer :: MaxMajorProtVer
+    maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
+
+    topLevelConfig :: TopLevelConfig (ShelleyBlock (ShelleyEra c))
     topLevelConfig = TopLevelConfig {
         topLevelConfigProtocol = consensusConfig
       , topLevelConfigLedger   = ledgerConfig
@@ -172,36 +205,36 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
       , topLevelConfigCodec    = ShelleyCodecConfig
       }
 
-    consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock era))
+    consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
     consensusConfig = TPraosConfig {
         tpraosParams
       , tpraosEpochInfo = epochInfo
       }
 
-    ledgerConfig :: LedgerConfig (ShelleyBlock era)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorPV
+    ledgerConfig :: LedgerConfig (ShelleyBlock (ShelleyEra c))
+    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo Identity
     epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
 
     tpraosParams :: TPraosParams
-    tpraosParams = mkTPraosParams maxMajorPV initialNonce genesis
+    tpraosParams = mkTPraosParams maxMajorProtVer initialNonce genesis
 
-    blockConfig :: BlockConfig (ShelleyBlock era)
+    blockConfig :: BlockConfig (ShelleyBlock (ShelleyEra c))
     blockConfig =
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey <$> credentialss)
+          (tpraosBlockIssuerVKey <$> toList credentialss)
 
-    initLedgerState :: LedgerState (ShelleyBlock era)
+    initLedgerState :: LedgerState (ShelleyBlock (ShelleyEra c))
     initLedgerState = ShelleyLedgerState {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      = SL.chainNes initShelleyState
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
-    initChainDepState :: TPraosState era
+    initChainDepState :: TPraosState (ShelleyEra c)
     initChainDepState = TPraosState Origin $
       SL.ChainDepState {
           SL.csProtocol = SL.PrtclState
@@ -218,10 +251,10 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
     initialEpochNo :: EpochNo
     initialEpochNo = 0
 
-    initialUtxo :: SL.UTxO era
+    initialUtxo :: SL.UTxO (ShelleyEra c)
     initialUtxo = SL.genesisUtxO genesis
 
-    initShelleyState :: SL.ChainState era
+    initShelleyState :: SL.ChainState (ShelleyEra c)
     initShelleyState = registerGenesisStaking $ SL.initialShelleyState
       Origin
       initialEpochNo
@@ -231,7 +264,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
       (SL.sgProtocolParams genesis)
       initialNonce
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock era)
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock (ShelleyEra c))
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState
@@ -245,7 +278,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
     -- HERE BE DRAGONS! This function is intended to help in testing. It should
     -- not be called with anything other than 'emptyGenesisStaking' in
     -- production.
-    registerGenesisStaking :: SL.ChainState era -> SL.ChainState era
+    registerGenesisStaking :: SL.ChainState (ShelleyEra c) -> SL.ChainState (ShelleyEra c)
     registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
         { SL.chainNes = newChainNes }
       where
@@ -278,7 +311,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
         -- about updating the '_delegations' field.
         --
         -- See STS DELEG for details
-        newDState :: SL.DState era
+        newDState :: SL.DState (ShelleyEra c)
         newDState = (SL._dstate oldDPState) {
           SL._rewards = Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
@@ -288,7 +321,7 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer credentialss =
 
         -- We consider pools as having been registered in slot 0
         -- See STS POOL for details
-        newPState :: SL.PState era
+        newPState :: SL.PState (ShelleyEra c)
         newPState = (SL._pstate oldDPState) {
           SL._pParams = sgsPools
         }

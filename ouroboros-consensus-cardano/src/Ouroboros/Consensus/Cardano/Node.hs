@@ -15,6 +15,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
+  , ProtocolParamsTransition (..)
+  , ProtocolParamsAllegra (..)
+  , ProtocolParamsMary (..)
   , protocolClientInfoCardano
   , CardanoHardForkConstraints
   , MaxMajorProtVer (..)
@@ -37,13 +40,12 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (maybeToList)
 import           Data.SOP.Strict (K (..), NP (..), NS (..))
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
-import qualified Cardano.Chain.Genesis as Byron.Genesis
 import           Cardano.Chain.Slotting (EpochSlots)
-import qualified Cardano.Chain.Update as Byron.Update
 import           Cardano.Prelude (cborError)
 
 import           Ouroboros.Consensus.Block
@@ -338,43 +340,69 @@ instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
+-- | Parameters needed to transition between two eras.
+--
+-- The two eras are phantom type parameters of this type to avoid mixing up
+-- multiple 'ProtocolParamsTransition's
+data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
+       -- | Lower bound on first epoch of @eraTo@
+       --
+       -- Setting this to @Just@ when a true lower bound is known may
+       -- particularly improve performance of bulk syncing. For example, for the
+       -- transition from Byron to Shelley, @Just 208@ would be sound for the
+       -- Cardano mainnet, since we know now that the Shelley era began in epoch
+       -- 208.
+       --
+       -- The @Nothing@ case is useful for test and possible alternative nets.
+      transitionLowerBound :: Maybe EpochNo
+    , transitionTrigger    :: TriggerHardFork
+    }
+
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
-     -- Common
-  => Byron.Update.ProtocolVersion  -- ^ Protocol version used for all eras
-  -> MaxMajorProtVer
-
-     -- Byron
-  -> Byron.Genesis.Config
-  -> Maybe PBftSignatureThreshold
-  -> Byron.Update.SoftwareVersion
-  -> [ByronLeaderCredentials]
-  -> Maybe EpochNo   -- ^ Lower bound on first Shelley epoch
-  -> TriggerHardFork -- ^ Transition from Byron to Shelley
-
-     -- Shelley
-  -> ShelleyGenesis (ShelleyEra c)
-  -> Nonce
-     -- ^ The initial nonce for the Shelley era, typically derived from the
-     -- hash of Shelley Genesis config JSON file.
-  -> [TPraosLeaderCredentials (ShelleyEra c)]
-  -> Maybe EpochNo   -- ^ Lower bound on first Allegra epoch
-  -> TriggerHardFork -- ^ Transition from Shelley to Allegra
-
-     -- Allegra
-  -> [TPraosLeaderCredentials (AllegraEra c)]
-  -> Maybe EpochNo   -- ^ Lower bound on first Allegra epoch
-  -> TriggerHardFork -- ^ Transition from Allegra to Mary
-
-     -- Mary
-  -> [TPraosLeaderCredentials (MaryEra c)]
-
+  => ProtocolParamsByron
+  -> ProtocolParamsShelley c Maybe
+  -> ProtocolParamsAllegra c Maybe
+  -> ProtocolParamsMary    c Maybe
+  -> ProtocolParamsTransition
+       ByronBlock
+       (ShelleyBlock (ShelleyEra c))
+  -> ProtocolParamsTransition
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+  -> ProtocolParamsTransition
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
   -> ProtocolInfo m (CardanoBlock c)
-protocolInfoCardano protVerByron maxMajorProtVer
-                    genesisByron mSigThresh softVerByron credssByron mbLowerBoundShelley triggerHardForkByronShelley
-                    genesisShelley initialNonce credssShelley mbLowerBoundAllegra triggerHardForkShelleyAllegra
-                    credssAllegra mbLowerBoundMary triggerHardForkAllegraMary
-                    credssMary =
+protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
+                        byronGenesis           = genesisByron
+                      , byronLeaderCredentials = mCredsByron
+                      }
+                    ProtocolParamsShelley {
+                        shelleyGenesis           = genesisShelley
+                      , shelleyInitialNonce      = initialNonceShelley
+                      , shelleyProtVer           = protVerShelley
+                      , shelleyLeaderCredentials = mCredsShelley
+                      }
+                    ProtocolParamsAllegra {
+                        allegraLeaderCredentials = mCredsAllegra
+                      }
+                    ProtocolParamsMary {
+                        maryProtVer           = protVerMary
+                      , maryLeaderCredentials = mCredsMary
+                      }
+                    ProtocolParamsTransition {
+                        transitionLowerBound = mbLowerBoundShelley
+                      , transitionTrigger    = triggerHardForkByronShelley
+                      }
+                    ProtocolParamsTransition {
+                        transitionLowerBound = mbLowerBoundAllegra
+                      , transitionTrigger    = triggerHardForkShelleyAllegra
+                      }
+                    ProtocolParamsTransition {
+                        transitionLowerBound = mbLowerBoundMary
+                      , transitionTrigger    = triggerHardForkAllegraMary
+                      } =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig = cfg
@@ -390,26 +418,27 @@ protocolInfoCardano protVerByron maxMajorProtVer
           }
       , pInfoBlockForging = mconcat [
             [ return $ hardForkBlockForging $ Z $ byronBlockForging credsByron
-            | credsByron <- credssByron
+            | credsByron <- maybeToList mCredsByron
             ]
           , [ hardForkBlockForging . S . Z
                 <$> shelleyBlockForging tpraosParams credsShelley
-            | credsShelley <- credssShelley
+            | credsShelley <- maybeToList mCredsShelley
             ]
           , [ hardForkBlockForging . S . S . Z
                 <$> shelleyBlockForging tpraosParams credsAllegra
-            | credsAllegra <- credssAllegra
+            | credsAllegra <- maybeToList mCredsAllegra
             ]
           , [ hardForkBlockForging . S . S . S . Z
                 <$> shelleyBlockForging tpraosParams credsMary
-            | credsMary <- credssMary
+            | credsMary <- maybeToList mCredsMary
             ]
           ]
       }
   where
-    -- Common
-    protVer :: ProtVer
-    protVer = translateProtocolVersion protVerByron
+    -- The major protocol version of the last era is the maximum major protocol
+    -- version we support.
+    maxMajorProtVer :: MaxMajorProtVer
+    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerMary)
 
     -- Byron
     ProtocolInfo {
@@ -422,7 +451,7 @@ protocolInfoCardano protVerByron maxMajorProtVer
             ledgerState = initLedgerStateByron
           , headerState = initHeaderStateByron
           }
-      } = protocolInfoByron @m genesisByron mSigThresh protVerByron softVerByron credssByron
+      } = protocolInfoByron @m protocolParamsByron
 
     partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
     partialConsensusConfigByron = consensusConfigByron
@@ -442,15 +471,15 @@ protocolInfoCardano protVerByron maxMajorProtVer
     tpraosParams =
         Shelley.mkTPraosParams
           maxMajorProtVer
-          initialNonce
+          initialNonceShelley
           genesisShelley
 
     blockConfigShelley :: BlockConfig (ShelleyBlock (ShelleyEra c))
     blockConfigShelley =
         Shelley.mkShelleyBlockConfig
-          protVer
+          protVerShelley
           genesisShelley
-          (tpraosBlockIssuerVKey <$> credssShelley)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelley)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -609,13 +638,3 @@ projByronTopLevelConfig cfg = byronCfg
       , topLevelConfigBlock    = byronBlockCfg
       , topLevelConfigCodec    = byronCodecCfg
       }
-
--- | Translate the protocol version from the Byron era to a protocol version
--- from a Shelley-based era.
---
--- A Shelley protocol version has two components: /major/ and /minor/. The Byron
--- protocol version has one extra component, /alt/, which we drop in the
--- translation to the Shelley one.
-translateProtocolVersion :: Byron.Update.ProtocolVersion -> ProtVer
-translateProtocolVersion (Byron.Update.ProtocolVersion major minor _alt) =
-    ProtVer (fromIntegral major) (fromIntegral minor)

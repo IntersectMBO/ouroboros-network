@@ -26,19 +26,18 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
-                     Nonce (..), ShelleyGenesis)
+import           Ouroboros.Consensus.Shelley.Node (Nonce (..), ShelleyGenesis)
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold)
 
-import           Ouroboros.Consensus.Cardano.Block (CardanoBlock)
-import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
-                     protocolInfoCardano)
-
 import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
+
+import           Ouroboros.Consensus.Cardano
+import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
+                     protocolInfoCardano)
 
 import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
@@ -91,28 +90,39 @@ mkCardanoProtocolInfo ::
   -> ProtocolInfo IO (CardanoBlock StandardCrypto)
 mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonce =
     protocolInfoCardano
-      -- Common
-      (Byron.Update.ProtocolVersion 2 0 0)
-      (MaxMajorProtVer 2)
-      -- Byron
-      genesisByron
-      signatureThreshold
-      (Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2)
-      []
-      Nothing
-      (TriggerHardForkAtVersion 2)
-      -- Shelley
-      genesisShelley
-      initialNonce
-      []
-      Nothing
-      (TriggerHardForkAtVersion 3)
-      -- Allegra
-      []
-      Nothing
-      (TriggerHardForkAtVersion 4)
-      -- Mary
-      []
+      ProtocolParamsByron {
+          byronGenesis                = genesisByron
+        , byronPbftSignatureThreshold = signatureThreshold
+        , byronProtocolVersion        = Byron.Update.ProtocolVersion 1 2 0
+        , byronSoftwareVersion        = Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2
+        , byronLeaderCredentials      = Nothing
+        }
+      ProtocolParamsShelley {
+          shelleyGenesis           = genesisShelley
+        , shelleyInitialNonce      = initialNonce
+        , shelleyProtVer           = ProtVer 2 0
+        , shelleyLeaderCredentials = Nothing
+        }
+      ProtocolParamsAllegra {
+          allegraProtVer           = ProtVer 3 0
+        , allegraLeaderCredentials = Nothing
+        }
+      ProtocolParamsMary {
+          maryProtVer           = ProtVer 4 0
+        , maryLeaderCredentials = Nothing
+        }
+      ProtocolParamsTransition {
+          transitionLowerBound = Nothing
+        , transitionTrigger    = TriggerHardForkAtVersion 2
+        }
+      ProtocolParamsTransition {
+          transitionLowerBound = Nothing
+        , transitionTrigger    = TriggerHardForkAtVersion 3
+        }
+      ProtocolParamsTransition {
+          transitionLowerBound = Nothing
+        , transitionTrigger    = TriggerHardForkAtVersion 4
+        }
 
 castHeaderHash ::
      HeaderHash ByronBlock

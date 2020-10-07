@@ -60,6 +60,7 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff,
                      mkNonceFromNumber)
 import qualified Shelley.Spec.Ledger.OverlaySchedule as SL (overlaySlots)
 
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -436,20 +437,19 @@ prop_simple_cardano_convergence TestSetup
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
                 mkProtocolCardanoAndHardForkTxs
-                  propPV
                   pbftParams
                   coreNodeId
                   genesisByron
                   generatedSecrets
-                  (guard setupByronLowerBound *> Just numByronEpochs)
-                  (TriggerHardForkAtVersion shelleyMajorVersion)
+                  propPV
                   genesisShelley
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
-                  Nothing
-                  (TriggerHardForkAtVersion allegraMajorVersion)
-                  Nothing
-                  (TriggerHardForkAtVersion maryMajorVersion)
+                  ProtocolParamsTransition {
+                      transitionLowerBound =
+                        guard setupByronLowerBound *> Just numByronEpochs
+                    , transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
+                    }
             , mkRekeyM = Nothing
             }
 
@@ -701,33 +701,25 @@ prop_simple_cardano_convergence TestSetup
 
 mkProtocolCardanoAndHardForkTxs
   :: forall c m. (IOLike m, CardanoHardForkConstraints c)
-     -- Common
-  => CC.Update.ProtocolVersion
      -- Byron
-  -> PBftParams
+  => PBftParams
   -> CoreNodeId
   -> CC.Genesis.Config
   -> CC.Genesis.GeneratedSecrets
-  -> Maybe EpochNo
-  -> TriggerHardFork
+  -> CC.Update.ProtocolVersion
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> Shelley.CoreNode (ShelleyEra c)
-  -> Maybe EpochNo
-  -> TriggerHardFork
-     -- Allegra
-  -> Maybe EpochNo
-  -> TriggerHardFork
-     -- Mary
-     -- no parameters yet
-
+     -- HardForks
+  -> ProtocolParamsTransition
+       ByronBlock
+       (ShelleyBlock (ShelleyEra c))
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
-    propPV
-    pbftParams coreNodeId genesisByron generatedSecretsByron mbLowerBoundShelley transitionShelley
-    genesisShelley initialNonce coreNodeShelley mbLowerBoundAllegra transitionAllegra
-    mbLowerBoundMary transitionMary =
+    pbftParams coreNodeId genesisByron generatedSecretsByron propPV
+    genesisShelley initialNonce coreNodeShelley
+    protocolParamsByronShelley =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
       , tniProtocolInfo = pInfo
@@ -750,30 +742,38 @@ mkProtocolCardanoAndHardForkTxs
 
     pInfo :: ProtocolInfo m (CardanoBlock c)
     pInfo = protocolInfoCardano
-        -- Common
-        propPV
-        maxMajorPV
-        -- Byron
-        genesisByron
-        -- Trivialize the PBFT signature window so that the forks induced by
-        -- the network partition are as deep as possible.
-        (Just $ PBftSignatureThreshold 1)
-        softVerByron
-        [leaderCredentialsByron]
-        mbLowerBoundShelley
-        transitionShelley
-        -- Shelley
-        genesisShelley
-        initialNonce
-        [leaderCredentialsShelley]
-        mbLowerBoundAllegra
-        transitionAllegra
-        -- Allegra
-        []
-        mbLowerBoundMary
-        transitionMary
-        -- Mary
-        []
+        ProtocolParamsByron {
+            byronGenesis                = genesisByron
+            -- Trivialize the PBFT signature window so that the forks induced by
+            -- the network partition are as deep as possible.
+          , byronPbftSignatureThreshold = Just $ PBftSignatureThreshold 1
+          , byronProtocolVersion        = propPV
+          , byronSoftwareVersion        = softVerByron
+          , byronLeaderCredentials      = Just leaderCredentialsByron
+          }
+        ProtocolParamsShelley {
+            shelleyGenesis           = genesisShelley
+          , shelleyInitialNonce      = initialNonce
+          , shelleyProtVer           = SL.ProtVer shelleyMajorVersion 0
+          , shelleyLeaderCredentials = Just leaderCredentialsShelley
+          }
+        ProtocolParamsAllegra {
+            allegraProtVer           = SL.ProtVer allegraMajorVersion 0
+          , allegraLeaderCredentials = Nothing
+          }
+        ProtocolParamsMary {
+            maryProtVer           = SL.ProtVer maryMajorVersion 0
+          , maryLeaderCredentials = Nothing
+          }
+        protocolParamsByronShelley
+        ProtocolParamsTransition {
+            transitionLowerBound = Nothing
+          , transitionTrigger    = TriggerHardForkAtVersion allegraMajorVersion
+          }
+        ProtocolParamsTransition {
+            transitionLowerBound = Nothing
+          , transitionTrigger    = TriggerHardForkAtVersion maryMajorVersion
+          }
 
     -- Byron
 
@@ -805,11 +805,6 @@ mkProtocolCardanoAndHardForkTxs
 -- violations (in particular, wedges) are extremely unlikely.
 activeSlotCoeff :: Rational
 activeSlotCoeff = 0.2   -- c.f. mainnet is more conservative, using 0.05
-
--- | Maximum major protocol version supported. We can pick any value, as long as
--- it is >= the major protocol version of the last era.
-maxMajorPV :: MaxMajorProtVer
-maxMajorPV = MaxMajorProtVer 100
 
 -- | The major protocol version of Byron in this test
 --

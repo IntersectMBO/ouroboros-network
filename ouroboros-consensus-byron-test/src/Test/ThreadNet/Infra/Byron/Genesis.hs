@@ -30,7 +30,7 @@ realPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
 realPBftParams paramK numCoreNodes = PBftParams
   { pbftNumNodes           = numCoreNodes
   , pbftSecurityParam      = paramK
-  , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
+  , pbftSignatureThreshold = PBftSignatureThreshold $ (1 / n) + (1 / k) + epsilon
     -- crucially: @floor (k * t) >= ceil (k / n)@
   }
     where

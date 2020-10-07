@@ -1,11 +1,13 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Node (
     protocolInfoByron
+  , ProtocolParamsByron(..)
   , protocolClientInfoByron
   , mkByronConfig
   , PBftSignatureThreshold(..)
@@ -150,24 +152,31 @@ mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid _) = PBftCanBeLeader {
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
--- | Signature threshold. This represents the proportion of blocks in a
---   pbftSignatureWindow-sized window which may be signed by any single key.
-newtype PBftSignatureThreshold =
-        PBftSignatureThreshold { unSignatureThreshold :: Double }
-
 -- | See chapter 4.1 of
 --   https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
 defaultPBftSignatureThreshold :: PBftSignatureThreshold
 defaultPBftSignatureThreshold = PBftSignatureThreshold 0.22
 
-protocolInfoByron :: forall m. Monad m
-                  => Genesis.Config
-                  -> Maybe PBftSignatureThreshold
-                  -> Update.ProtocolVersion
-                  -> Update.SoftwareVersion
-                  -> [ByronLeaderCredentials]
-                  -> ProtocolInfo m ByronBlock
-protocolInfoByron genesisConfig mSigThresh pVer sVer leaderCredss =
+-- | Parameters needed to run Byron
+data ProtocolParamsByron = ProtocolParamsByron {
+      byronGenesis                :: Genesis.Config
+    , byronPbftSignatureThreshold :: Maybe PBftSignatureThreshold
+    , byronProtocolVersion        :: Update.ProtocolVersion
+    , byronSoftwareVersion        :: Update.SoftwareVersion
+    , byronLeaderCredentials      :: Maybe ByronLeaderCredentials
+    }
+
+protocolInfoByron ::
+     forall m. Monad m
+  => ProtocolParamsByron
+  -> ProtocolInfo m ByronBlock
+protocolInfoByron ProtocolParamsByron {
+                      byronGenesis                = genesisConfig
+                    , byronPbftSignatureThreshold = mSigThresh
+                    , byronProtocolVersion        = pVer
+                    , byronSoftwareVersion        = sVer
+                    , byronLeaderCredentials      = mLeaderCreds
+                    } =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PBftConfig {
@@ -185,7 +194,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer leaderCredss =
           , headerState = genesisHeaderState S.empty
           }
       , pInfoBlockForging =
-          return . byronBlockForging <$> leaderCredss
+          return . byronBlockForging <$> maybeToList mLeaderCreds
       }
   where
     compactedGenesisConfig = compactGenesisConfig genesisConfig
@@ -202,8 +211,7 @@ byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
 byronPBftParams cfg threshold = PBftParams {
       pbftSecurityParam      = genesisSecurityParam cfg
     , pbftNumNodes           = genesisNumCoreNodes  cfg
-    , pbftSignatureThreshold = unSignatureThreshold
-                             $ fromMaybe defaultPBftSignatureThreshold threshold
+    , pbftSignatureThreshold = fromMaybe defaultPBftSignatureThreshold threshold
     }
 
 mkByronConfig :: Genesis.Config

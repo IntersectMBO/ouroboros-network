@@ -102,12 +102,13 @@ testCfg = pInfoConfig protocolInfo
   where
     protocolInfo :: ProtocolInfo Identity ByronBlock
     protocolInfo =
-      protocolInfoByron
-        CC.dummyConfig
-        (Just (PBftSignatureThreshold 0.5))
-        (CC.Update.ProtocolVersion 1 0 0)
-        (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
-        []
+      protocolInfoByron $ ProtocolParamsByron {
+          byronGenesis                = CC.dummyConfig
+        , byronPbftSignatureThreshold = Just (PBftSignatureThreshold 0.5)
+        , byronProtocolVersion        = CC.Update.ProtocolVersion 1 0 0
+        , byronSoftwareVersion        = CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2
+        , byronLeaderCredentials      = Nothing
+        }
 
 -- | Matches the values used for the generators.
 testCodecCfg :: CodecConfig ByronBlock

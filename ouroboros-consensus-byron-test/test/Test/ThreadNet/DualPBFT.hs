@@ -219,7 +219,11 @@ instance Arbitrary SetupDualPBft where
       adjustGenesis :: PBftParams
                     -> ByronSpecGenesis
                     -> ByronSpecGenesis
-      adjustGenesis = Genesis.modPBftThreshold . const . pbftSignatureThreshold
+      adjustGenesis =
+            Genesis.modPBftThreshold
+          . const
+          . getPBftSignatureThreshold
+          . pbftSignatureThreshold
 
   -- TODO shrink
 

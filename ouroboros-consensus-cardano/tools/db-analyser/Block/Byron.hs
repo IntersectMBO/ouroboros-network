@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..),
-                     protocolInfoByron)
+                     ProtocolParamsByron (..), protocolInfoByron)
 
 import           HasAnalysis
 
@@ -133,9 +133,10 @@ mkByronProtocolInfo :: Genesis.Config
                     -> Maybe PBftSignatureThreshold
                     -> ProtocolInfo IO ByronBlock
 mkByronProtocolInfo genesisConfig signatureThreshold =
-    protocolInfoByron
-      genesisConfig
-      signatureThreshold
-      (Update.ProtocolVersion 1 0 0)
-      (Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2)
-      []
+    protocolInfoByron $ ProtocolParamsByron {
+        byronGenesis                = genesisConfig
+      , byronPbftSignatureThreshold = signatureThreshold
+      , byronProtocolVersion        = Update.ProtocolVersion 1 0 0
+      , byronSoftwareVersion        = Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2
+      , byronLeaderCredentials      = Nothing
+      }
