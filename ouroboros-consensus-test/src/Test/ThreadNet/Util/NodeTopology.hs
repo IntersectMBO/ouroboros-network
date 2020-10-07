@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -18,7 +20,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           Quiet (Quiet (..))
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -46,8 +50,10 @@ import           Ouroboros.Consensus.Util.Orphans ()
 -- connected components during the execution, but the base topology is
 -- connected.
 --
-newtype NodeTopology = NodeTopology (Map CoreNodeId (Set CoreNodeId))
-  deriving (Eq, Show)
+newtype NodeTopology =
+    NodeTopology {unNodeTopology :: Map CoreNodeId (Set CoreNodeId)}
+  deriving (Eq, Generic)
+  deriving (Show) via Quiet NodeTopology
 
 instance Condense NodeTopology where
   condense top@(NodeTopology m)
