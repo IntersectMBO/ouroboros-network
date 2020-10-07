@@ -376,9 +376,7 @@ instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
 
       -- Exclusive upper bound
       maxFor :: SlotNo
-      maxFor = case at of
-          Origin      -> SlotNo swindow
-          NotOrigin s -> SlotNo $ unSlotNo s + 1 + swindow
+      maxFor = addSlots swindow $ succWithOrigin at
 
 instance HasHardForkHistory (ShelleyBlock era) where
   type HardForkIndices (ShelleyBlock era) = '[ShelleyBlock era]
