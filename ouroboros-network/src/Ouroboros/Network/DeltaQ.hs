@@ -276,9 +276,9 @@ data PeerGSV = PeerGSV {
 -- Note that this semigroup is  is non-commutative. The new value must come first.
 instance Semigroup PeerGSV where
   (<>) a b = let timeConstant = 1000 :: DiffTime
-                 sampleInterval = sampleTime b `diffTime` sampleTime a
+                 sampleInterval = sampleTime a `diffTime` sampleTime b
                  alpha = (sampleInterval / timeConstant) `min` 1
-                 updateG (GSV g0 s v) (GSV g1 _ _)
+                 updateG (GSV g1 s v) (GSV g0 _ _)
                    = GSV (g0 + alpha * (g1 - g0)) s v
              in PeerGSV { sampleTime  = sampleTime a
                         , outboundGSV = updateG (outboundGSV a) (outboundGSV b)
