@@ -246,7 +246,6 @@ data PraosParams = PraosParams {
       praosLeaderF       :: !Double
     , praosSecurityParam :: !SecurityParam
     , praosSlotsPerEpoch :: !Word64
-    , praosLifetimeKES   :: !Natural
     }
   deriving (Generic, NoThunks)
 
