@@ -491,7 +491,7 @@ instance PraosCrypto PraosStandardCrypto where
   type PraosHash PraosStandardCrypto = SHA256
 
 instance PraosCrypto PraosMockCrypto where
-  type PraosKES  PraosMockCrypto = MockKES 1000
+  type PraosKES  PraosMockCrypto = MockKES 10000
   type PraosVRF  PraosMockCrypto = MockVRF
   type PraosHash PraosMockCrypto = MD5
 
