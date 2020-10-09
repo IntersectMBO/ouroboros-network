@@ -26,6 +26,7 @@ module Ouroboros.Network.Protocol.TxSubmission.Server (
   , txSubmissionServerPeerPipelined
   ) where
 
+import           Data.Functor ((<&>))
 import           Data.Word (Word16)
 import           Data.List.NonEmpty (NonEmpty)
 
@@ -55,7 +56,7 @@ data Collect txid tx =
        -- transactions requested. This is because the peer can determine that
        -- some transactions are no longer needed.
      | CollectTxs [txid] [tx]
-
+  deriving (Show)
 
 data ServerStIdle (n :: N) txid tx m a where
 
@@ -87,7 +88,7 @@ data ServerStIdle (n :: N) txid tx m a where
   -- | Collect a pipelined result.
   --
   CollectPipelined
-    :: Maybe                 (ServerStIdle (S n) txid tx m a)
+    :: Maybe              (m (ServerStIdle (S n) txid tx m a))
     -> (Collect txid tx -> m (ServerStIdle    n  txid tx m a))
     ->                        ServerStIdle (S n) txid tx m a
 
@@ -151,7 +152,7 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
         MsgKThxBye
         (SenderDone TokDone kDone)
 
-    go (CollectPipelined mNone collect) =
+    go (CollectPipelined mBmNone collect) =
       SenderCollect
-        (fmap go mNone)
+        (mBmNone <&> \mNone -> SenderEffect $ go <$> mNone)
         (SenderEffect . fmap go . collect)

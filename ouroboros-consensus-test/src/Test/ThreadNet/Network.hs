@@ -56,7 +56,7 @@ import           GHC.Stack
 import           System.Random (mkStdGen)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..), TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -930,7 +930,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 }
 
           -- traces the node's local events other than those from the -- ChainDB
-          tracers = instrumentationTracers <> nullDebugTracers coreNodeId
+          tracers = instrumentationTracers <> (nullDebugTracers coreNodeId){
+                txInboundTracer = Tracer $ \case
+                    TraceLabelPeer (CoreId (CoreNodeId 2)) e | CoreNodeId 0 == coreNodeId -> traceWith debugTracer (show e)
+                    _ -> pure ()
+              }
 
       let -- use a backoff delay of exactly one slot length (which the
           -- 'OracularClock' always knows) for the following reasons

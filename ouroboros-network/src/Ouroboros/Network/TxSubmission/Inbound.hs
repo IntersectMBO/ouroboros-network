@@ -30,7 +30,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
@@ -64,7 +64,21 @@ data TxSubmissionMempoolWriter txid tx idx m =
        mempoolAddTxs :: [tx] -> m [txid]
     }
 
+data SomeNat = forall n. SomeNat (Nat n)
+
+instance Show SomeNat where show (SomeNat n) = 'n' : show n
+
 data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
+  | BufferTxsBeforeError (Map txid (Maybe tx))
+  | CollectedTxIds SomeNat Word16 [(txid, TxSizeInBytes)]
+  | CollectedTxs SomeNat [txid]
+  | Idling
+  | Ignoring [txid]
+  | AddingTxs SomeNat [txid] [txid] [txid]
+  | AddedTxs SomeNat
+  | BlockingRequestTxIds Word16 Word16
+  | RequestingTxs SomeNat Word16 (Map txid TxSizeInBytes)
+  | PipelinedRequestTxIds SomeNat Word16 Word16
   deriving Show
 
 data TxSubmissionProtocolError =
@@ -184,12 +198,12 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
     serverIdle :: forall (n :: N).
                   Nat n
                -> StatefulM (ServerState txid tx) n txid tx m
-    serverIdle n = StatefulM $ \st -> case n of
+    serverIdle n = StatefulM $ \st -> traceWith _tracer Idling *> case n of
         Zero -> if canRequestMoreTxs st
-          then
+          then do
             -- There are no replies in flight, but we do know some more txs we
             -- can ask for, so lets ask for them and more txids.
-            pure $ continueWithState (serverReqTxs Zero) st
+            continueWithStateM (serverReqTxs Zero) st
 
           else do
             -- There's no replies in flight, and we have no more txs we can
@@ -200,12 +214,15 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             (if (requestedTxIdsInFlight st == 0
                   && Seq.null (unacknowledgedTxIds st)
                   && Map.null (availableTxids st)
-                  && Map.null (bufferedTxs st)) then id else error (show (requestedTxIdsInFlight st
-                  , Seq.length (unacknowledgedTxIds st)
-                  , Map.size (availableTxids st)
-                  , Map.size (bufferedTxs st)))) $
-              pure $
-              SendMsgRequestTxIdsBlocking
+                  && Map.null (bufferedTxs st)) then id else \_ -> do
+                    traceWith _tracer (BufferTxsBeforeError $ bufferedTxs st)
+                    error $
+                      show (requestedTxIdsInFlight st
+                           , Seq.length (unacknowledgedTxIds st)
+                           , Map.size (availableTxids st)
+                           , Map.size (bufferedTxs st))) $ do
+              traceWith _tracer $ BlockingRequestTxIds (numTxsToAcknowledge st) numTxIdsToRequest
+              pure $ SendMsgRequestTxIdsBlocking
                 (numTxsToAcknowledge st)
                 numTxIdsToRequest
                 ()        -- Our result if the client terminates the protocol
@@ -231,9 +248,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             -- put us into a busy-polling loop.
             --
             pure $ CollectPipelined
-              (Just (continueWithState (serverReqTxs (Succ n')) st))
+              (Just (continueWithStateM (serverReqTxs (Succ n')) st))
               (collectAndContinueWithState (handleReply n') st)
-
           else
             -- In this case there is nothing else to do so we block until we
             -- collect a reply.
@@ -250,6 +266,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
                 -> StatefulCollect (ServerState txid tx) n txid tx m
     handleReply n = StatefulCollect $ \st collect -> case collect of
       CollectTxIds reqNo txids -> do
+        traceWith _tracer (CollectedTxIds (SomeNat n) reqNo txids)
+
         -- Check they didn't send more than we asked for. We don't need to
         -- check for a minimum: the blocking case checks for non-zero
         -- elsewhere, and for the non-blocking case it is quite normal for
@@ -272,11 +290,13 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
           availableTxids         = availableTxids st <> txidsMap
         }
         mpSnapshot <- atomically mempoolGetSnapshot
-        continueWithStateM
+        acknowledgeTxIdsInMempool st' mpSnapshot >>= continueWithStateM
           (serverIdle n)
-          (acknowledgeTxIdsInMempool st' mpSnapshot)
+          
 
       CollectTxs txids txs -> do
+        traceWith _tracer (CollectedTxs (SomeNat n) txids)
+
         -- To start with we have to verify that the txs they have sent us do
         -- correspond to the txs we asked for. This is slightly complicated by
         -- the fact that in general we get a subset of the txs that we asked
@@ -323,7 +343,9 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs'' = foldl' (flip Map.delete)
                                    bufferedTxs' acknowledgedTxIds
 
+        traceWith _tracer $ AddingTxs (SomeNat n) [] [] {- (Map.keys (bufferedTxs st)) (Map.keys txIdsRequestedWithTxsReceived) -} (map txId txsReady)
         _ <- mempoolAddTxs txsReady
+        traceWith _tracer $ AddedTxs (SomeNat n)
 
         continueWithStateM (serverIdle n) st {
           bufferedTxs         = bufferedTxs'',
@@ -341,9 +363,11 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
     --
     acknowledgeTxIdsInMempool :: ServerState txid tx
                               -> MempoolSnapshot txid tx idx
-                              -> ServerState txid tx
+                              -> m (ServerState txid tx)
     acknowledgeTxIdsInMempool st MempoolSnapshot{mempoolHasTx} =
         -- Return the next 'ServerState'
+        (traceWith _tracer (Ignoring $ Map.keys ignoredTxids) *>) $
+        pure $
         st {
           availableTxids      = availableTxids',
           bufferedTxs         = bufferedTxs'',
@@ -384,8 +408,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
 
     serverReqTxs :: forall (n :: N).
                     Nat n
-                 -> Stateful (ServerState txid tx) n txid tx m
-    serverReqTxs n = Stateful $ \st -> do
+                 -> StatefulM (ServerState txid tx) n txid tx m
+    serverReqTxs n = StatefulM $ \st -> do
         -- TODO: This implementation is deliberately naive, we pick in an
         -- arbitrary order and up to a fixed limit. This is to illustrate
         -- that we can request txs out of order. In the final version we will
@@ -398,7 +422,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         let (txsToRequest, availableTxids') =
               Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
 
-        SendMsgRequestTxsPipelined
+        traceWith _tracer $ RequestingTxs (SomeNat n) maxTxToRequest txsToRequest
+        pure $ SendMsgRequestTxsPipelined
           (Map.keys txsToRequest)
           (continueWithStateM (serverReqTxIds (Succ n)) st {
              availableTxids = availableTxids'
@@ -418,7 +443,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             `min` maxTxIdsToRequest
 
       if numTxIdsToRequest > 0
-        then pure $ SendMsgRequestTxIdsPipelined
+        then (traceWith _tracer (PipelinedRequestTxIds (SomeNat n) (numTxsToAcknowledge st) numTxIdsToRequest) *>) $ pure $ SendMsgRequestTxIdsPipelined
           (numTxsToAcknowledge st)
           numTxIdsToRequest
           (continueWithStateM (serverIdle (Succ n)) st {
@@ -428,24 +453,11 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
               })
         else continueWithStateM (serverIdle n) st
 
-newtype Stateful s n txid tx m = Stateful (s -> ServerStIdle n txid tx m ())
-
 newtype StatefulM s n txid tx m
   = StatefulM (s -> m (ServerStIdle n txid tx m ()))
 
 newtype StatefulCollect s n txid tx m
   = StatefulCollect (s -> Collect txid tx -> m (ServerStIdle n txid tx m ()))
-
--- | After checking that there are no unexpected thunks in the provided state,
--- pass it to the provided function.
---
--- See 'checkInvariant' and 'unsafeNoUnexpectedThunks'.
-continueWithState :: NoUnexpectedThunks s
-                  => Stateful s n txid tx m
-                  -> s
-                  -> ServerStIdle n txid tx m ()
-continueWithState (Stateful f) !st =
-    checkInvariant (unsafeNoUnexpectedThunks st) (f st)
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'serverIdle' and 'serverReqTxIds'.
