@@ -214,7 +214,7 @@ runDataDiffusion tracers
           case daIPv4Address of
               Just (Right ipv4) -> do
                 return LocalAddresses
-                  { laIpv4 = Just (Socket.addrAddress ipv4)
+                  { laIpv4 = anyIPv4Addr (Socket.addrAddress ipv4)
                   , laIpv6 = Nothing
                   , laUnix = Nothing
                   }
@@ -239,7 +239,7 @@ runDataDiffusion tracers
             Just (Right ipv6) -> do
               return LocalAddresses
                 { laIpv4 = Nothing
-                , laIpv6 = Just (Socket.addrAddress ipv6)
+                , laIpv6 = anyIPv6Addr (Socket.addrAddress ipv6)
                 , laUnix = Nothing
                 }
 
