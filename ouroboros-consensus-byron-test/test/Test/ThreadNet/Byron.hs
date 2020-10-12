@@ -7,12 +7,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.ThreadNet.RealPBFT (
+module Test.ThreadNet.Byron (
     tests
-    -- * To support the DualPBFT tests
+    -- * To support the DualByron tests
   , TestSetup (..)
   , noEBBs
-  , realPBftParams
+  , byronPBftParams
   , genTestSetup
   , expectedCannotForge
   ) where
@@ -104,9 +104,9 @@ instance Arbitrary TestSetup where
 
   -- TODO shrink
 
--- | An entrypoint used by "Test.ThreadNet.DualPBFT"
+-- | An entrypoint used by "Test.ThreadNet.DualByron"
 --
--- See the @'Arbitrary' 'Test.ThreadNet.DualPBFT.SetupDualPBft'@ instance.
+-- See the @'Arbitrary' 'Test.ThreadNet.DualByron.SetupDualByron'@ instance.
 genTestSetup :: SecurityParam -> NumCoreNodes -> NumSlots -> SlotLength -> Gen TestSetup
 genTestSetup k numCoreNodes numSlots setupSlotLength = do
     setupEBBs    <- arbitrary
@@ -119,9 +119,9 @@ genTestSetup k numCoreNodes numSlots setupSlotLength = do
           , numCoreNodes
           , numSlots
           }
-    let params = realPBftParams k numCoreNodes
+    let params = byronPBftParams k numCoreNodes
 
-    nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
+    nodeJoinPlan <- genByronNodeJoinPlan params numSlots
     nodeRestarts <- genNodeRestarts nodeJoinPlan numSlots >>=
                     genNodeRekeys params nodeJoinPlan nodeTopology numSlots
 
@@ -138,10 +138,10 @@ genTestSetup k numCoreNodes numSlots setupSlotLength = do
       setupVersion
 
 tests :: TestTree
-tests = testGroup "RealPBFT" $
+tests = testGroup "Byron" $
     [ testProperty "trivial join plan is considered deterministic"
         $ \TestSetup{setupK = k, setupTestConfig = TestConfig{numCoreNodes}} ->
-          prop_deterministicPlan $ realPBftParams k numCoreNodes
+          prop_deterministicPlan $ byronPBftParams k numCoreNodes
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
       -- as of merging PR #773, this test case fails without the commit that
       -- introduces the InvalidRollForward exception
@@ -286,7 +286,7 @@ tests = testGroup "RealPBFT" $
             , setupSlotLength = slotLengthFromSec 20
             , setupVersion    = (NodeToNodeV_1, ByronNodeToNodeVersion1)
             }
-    , -- RealPBFT runs are slow, so do 10x less of this narrow test
+    , -- Byron runs are slow, so do 10x less of this narrow test
       adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
       testProperty "re-delegation via NodeRekey" $ \seed w ->
           let ncn = NumCoreNodes 5
@@ -657,7 +657,7 @@ tests = testGroup "RealPBFT" $
             }
     , testProperty "only check updates for mesh topologies" $
           -- This repro exercises
-          -- 'Test.ThreadNet.RealPBFT.TrackUpdates.checkTopo'.
+          -- 'Test.ThreadNet.Byron.TrackUpdates.checkTopo'.
           --
           -- The predicted slot outcomes are
           --
@@ -673,7 +673,7 @@ tests = testGroup "RealPBFT" $
           -- so the proposal then expires (TTL 10 slots, but only after an
           -- endorsement; see Issue 749 in cardano-ledger).
           --
-          -- "Test.ThreadNet.RealPBFT.TrackUpdates" does not otherwise
+          -- "Test.ThreadNet.Byron.TrackUpdates" does not otherwise
           -- correctly anticipate such races, so it makes no requirement for
           -- non-mesh topologies.
           prop_simple_real_pbft_convergence TestSetup
@@ -923,7 +923,7 @@ prop_simple_real_pbft_convergence TestSetup
     testOutput =
         runTestNetwork testConfig testConfigB TestConfigMB
             { nodeInfo = \nid ->
-                mkProtocolRealPBftAndHardForkTxs
+                mkProtocolByronAndHardForkTxs
                   params nid genesisConfig genesisSecrets
                   theProposedProtocolVersion
             , mkRekeyM = Just $ fromRekeyingToRekeyM Rekeying
@@ -1051,7 +1051,7 @@ prop_simple_real_pbft_convergence TestSetup
         ]
 
     params :: PBftParams
-    params = realPBftParams k numCoreNodes
+    params = byronPBftParams k numCoreNodes
 
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
@@ -1121,9 +1121,9 @@ genSlot lo hi = SlotNo <$> choose (unSlotNo lo, unSlotNo hi)
 -- Note that there is only one chain: at any slot onset, the net's fork only
 -- has one tine.
 --
-genRealPBFTNodeJoinPlan :: PBftParams -> NumSlots -> Gen NodeJoinPlan
-genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
-  | n < 0 || t < 1 = error $ "Cannot generate RealPBFT NodeJoinPlan: "
+genByronNodeJoinPlan :: PBftParams -> NumSlots -> Gen NodeJoinPlan
+genByronNodeJoinPlan params numSlots@(NumSlots t)
+  | n < 0 || t < 1 = error $ "Cannot generate Byron NodeJoinPlan: "
     ++ show (params, numSlots)
   | otherwise      =
     go (NodeJoinPlan Map.empty) Ref.emptyState
@@ -1134,7 +1134,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
         -- eventually succeed, since the plan where all nodes join immediately
         -- satisfies it.
         --
-        -- In a run of 7000 successful RealPBFT tests, this 'suchThat' retried:
+        -- In a run of 7000 successful Byron tests, this 'suchThat' retried:
         --
         -- 486 retried once
         -- 100 retried twice
@@ -1188,7 +1188,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
         s' <- case out <$> searchFromTo (check . out) (inn lastSlot) (inn lo) of
             Just hi -> genSlot lo hi
             Nothing -> error $
-                "Cannot find viable RealPBFT NodeJoinPlan: " ++
+                "Cannot find viable Byron NodeJoinPlan: " ++
                 show (params, numSlots, nodeJoinPlan, st)
 
         let m'  = Map.insert nid s' m
@@ -1209,6 +1209,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
         i   = case fst <$> Map.lookupMax m of
             Nothing             -> 0
             Just (CoreNodeId h) -> succ h
+
 -- | Possibly promote some 'NodeRestart's to 'NodeRekey's
 --
 -- POSTCONDITION No node will rekey multiple times in a single epoch.
@@ -1218,7 +1219,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
 -- POSTCONDITION Each rekey takes at least 2k slots, and the node can't lead
 -- until it's finished. Therefore, at most one node will be rekeying at a time,
 -- since otherwise its inability to lead may spoil the invariants established
--- by 'genRealPBFTNodeJoinPlan'.
+-- by 'genByronNodeJoinPlan'.
 --
 genNodeRekeys
   :: PBftParams

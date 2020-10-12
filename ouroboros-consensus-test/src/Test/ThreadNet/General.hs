@@ -403,7 +403,7 @@ noExpectedCannotForges _ _ _ = False
 -- multiple longest chains; see the PBFT reference simulator
 -- "Test.ThreadNet.Ref.PBFT".
 --
--- Specific tests make additional assumptions, eg the @RealPBFT@ tests make
+-- Specific tests make additional assumptions, eg the @Byron@ tests make
 -- assumptions about delegation certificates, update proposals, etc.
 prop_general ::
   forall blk.

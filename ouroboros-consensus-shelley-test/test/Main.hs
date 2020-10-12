@@ -7,7 +7,7 @@ import           Test.Util.Nightly
 
 import qualified Test.Consensus.Shelley.Golden (tests)
 import qualified Test.Consensus.Shelley.Serialisation (tests)
-import qualified Test.ThreadNet.RealTPraos (tests)
+import qualified Test.ThreadNet.Shelley (tests)
 
 main :: IO ()
 main = sodiumInit >> defaultMainWithIohkNightly tests
@@ -17,5 +17,5 @@ tests =
   testGroup "shelley"
   [ Test.Consensus.Shelley.Golden.tests
   , Test.Consensus.Shelley.Serialisation.tests
-  , Test.ThreadNet.RealTPraos.tests
+  , Test.ThreadNet.Shelley.tests
   ]

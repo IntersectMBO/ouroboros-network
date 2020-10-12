@@ -71,7 +71,7 @@ test-suite test
   other-modules:
                        Test.Consensus.Shelley.Golden
                        Test.Consensus.Shelley.Serialisation
-                       Test.ThreadNet.RealTPraos
+                       Test.ThreadNet.Shelley
 
   build-depends:       base
                      , bytestring

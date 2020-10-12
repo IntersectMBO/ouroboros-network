@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.RealTPraos (tests) where
+module Test.ThreadNet.Shelley (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
@@ -154,7 +154,7 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 5
 
 tests :: TestTree
-tests = testGroup "RealTPraos ThreadNet"
+tests = testGroup "Shelley ThreadNet"
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       if enabled
@@ -260,7 +260,7 @@ prop_simple_real_tpraos_convergence TestSetup
             { nodeInfo = \(CoreNodeId nid) ->
                 TestNodeInitialization
                   { tniProtocolInfo =
-                      mkProtocolRealTPraos
+                      mkProtocolShelley
                         genesisConfig
                         setupInitialNonce
                         nextProtVer

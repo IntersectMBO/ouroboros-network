@@ -5,7 +5,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.ThreadNet.DualPBFT (
+module Test.ThreadNet.DualByron (
     tests
   ) where
 
@@ -51,8 +51,8 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
 import           Ouroboros.Consensus.ByronDual.Ledger
 import           Ouroboros.Consensus.ByronDual.Node
 
+import qualified Test.ThreadNet.Byron as Byron
 import           Test.ThreadNet.General
-import qualified Test.ThreadNet.RealPBFT as RealPBFT
 import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
@@ -63,14 +63,14 @@ import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Slots (NumSlots (..))
 
 tests :: TestTree
-tests = testGroup "DualPBFT" [
+tests = testGroup "DualByron" [
       testProperty "convergence" $ prop_convergence
     ]
 
 -- These tests are very expensive, due to the Byron generators
 -- (100 tests take about 20 minutes)
 -- We limit it to 10 tests for now.
-prop_convergence :: SetupDualPBft -> Property
+prop_convergence :: SetupDualByron -> Property
 prop_convergence setup = withMaxSuccess 10 $
     (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
@@ -91,9 +91,9 @@ prop_convergence setup = withMaxSuccess 10 $
       }
       (setupTestOutput setup)
   where
-    SetupDualPBft{..}      = setup
-    RealPBFT.TestSetup{..} = setupRealPBft
-    TestConfig{..} = setupTestConfig
+    SetupDualByron{..}  = setup
+    Byron.TestSetup{..} = setupByron
+    TestConfig{..}      = setupTestConfig
 
     refResult :: Ref.Result
     refResult =
@@ -123,17 +123,17 @@ prop_convergence setup = withMaxSuccess 10 $
   Test setup
 -------------------------------------------------------------------------------}
 
-data SetupDualPBft = SetupDualPBft {
-      setupGenesis  :: ByronSpecGenesis
-    , setupRealPBft :: RealPBFT.TestSetup
+data SetupDualByron = SetupDualByron {
+      setupGenesis :: ByronSpecGenesis
+    , setupByron   :: Byron.TestSetup
     }
   deriving (Show)
 
-setupParams :: SetupDualPBft -> PBftParams
-setupParams = realPBftParams . setupGenesis
+setupParams :: SetupDualByron -> PBftParams
+setupParams = byronPBftParams . setupGenesis
 
-setupTestConfigB :: SetupDualPBft -> TestConfigB DualByronBlock
-setupTestConfigB SetupDualPBft{..} = TestConfigB
+setupTestConfigB :: SetupDualByron -> TestConfigB DualByronBlock
+setupTestConfigB SetupDualByron{..} = TestConfigB
   { forgeEbbEnv  = Nothing -- spec does not model EBBs
   , future       = singleEraFuture setupSlotLength epochSize
   , messageDelay = noCalcMessageDelay
@@ -143,14 +143,14 @@ setupTestConfigB SetupDualPBft{..} = TestConfigB
   , version      = newestVersion (Proxy @DualByronBlock)
   }
   where
-    RealPBFT.TestSetup{..} = setupRealPBft
+    Byron.TestSetup{..} = setupByron
 
     epochSize :: EpochSize
     epochSize =
         fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount setupK)
 
-setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
-setupTestOutput setup@SetupDualPBft{..} =
+setupTestOutput :: SetupDualByron -> TestOutput DualByronBlock
+setupTestOutput setup@SetupDualByron{..} =
     runTestNetwork testConfig testConfigB TestConfigMB {
         nodeInfo = \coreNodeId ->
           plainTestNodeInitialization $
@@ -161,58 +161,58 @@ setupTestOutput setup@SetupDualPBft{..} =
       , mkRekeyM = Nothing -- TODO
       }
   where
-    testConfig  = RealPBFT.setupTestConfig setupRealPBft
+    testConfig  = Byron.setupTestConfig setupByron
     testConfigB = setupTestConfigB setup
 
 setupExpectedCannotForge ::
-     SetupDualPBft
+     SetupDualByron
   -> SlotNo
   -> NodeId
   -> WrapCannotForge DualByronBlock
   -> Bool
-setupExpectedCannotForge SetupDualPBft{..} s nid (WrapCannotForge cl) =
-    RealPBFT.expectedCannotForge
+setupExpectedCannotForge SetupDualByron{..} s nid (WrapCannotForge cl) =
+    Byron.expectedCannotForge
       setupK
       numCoreNodes
       setupNodeRestarts
       s nid (WrapCannotForge cl)
   where
-    RealPBFT.TestSetup{..} = setupRealPBft
-    TestConfig{..}         = setupTestConfig
+    Byron.TestSetup{..} = setupByron
+    TestConfig{..}      = setupTestConfig
 
 {-------------------------------------------------------------------------------
-  Generator for 'SetupDualPBft'
+  Generator for 'SetupDualByron'
 -------------------------------------------------------------------------------}
 
 -- | We do an awkward dance in this generator. We want to reuse
--- 'RealPBFT.TestSetup' as much as possible. However, 'genSpecGenesis' needs
--- values provided by 'RealPBFT.TestSetup' (ie @numSlots@ and @slotLen@) but
--- also sets a value provided by 'RealPBFT.TestSetup' (eg @k@).
-instance Arbitrary SetupDualPBft where
+-- 'Byron.TestSetup' as much as possible. However, 'genSpecGenesis' needs values
+-- provided by 'Byron.TestSetup' (ie @numSlots@ and @slotLen@) but also sets a
+-- value provided by 'Byron.TestSetup' (eg @k@).
+instance Arbitrary SetupDualByron where
   arbitrary = do
       numSlots <- arbitrary
       slotLen  <- arbitrary
 
       genesis0                 <- genSpecGenesis slotLen numSlots
-      let params@PBftParams{..} = realPBftParams genesis0
+      let params@PBftParams{..} = byronPBftParams genesis0
           setupGenesis          = adjustGenesis params genesis0
 
       -- TODO: Once we produce all kinds of transactions, we will need to
       -- rethink rekeys/restarts (but might not be trivial, as we do not
       -- generate the blocks upfront..).
-      setupRealPBft <-
-        (\x -> x{RealPBFT.setupNodeRestarts = noRestarts})
-        <$> RealPBFT.genTestSetup
+      setupByron <-
+        (\x -> x{Byron.setupNodeRestarts = noRestarts})
+        <$> Byron.genTestSetup
               pbftSecurityParam
               pbftNumNodes
               numSlots
               slotLen
 
-      return SetupDualPBft{..}
+      return SetupDualByron{..}
     where
-      -- The spec tests and the RealPBFT tests compute a different test value
-      -- for the PBFT threshold. For now we ignore the value computed by the
-      -- spec and override it with the value computed in the RealPBFT tests.
+      -- The spec tests and the Byron tests compute a different test value for
+      -- the PBFT threshold. For now we ignore the value computed by the spec
+      -- and override it with the value computed in the Byron tests.
       --
       -- TODO: It would be interesting to see if we can bring these two in line,
       -- but if we do, we probably need to adjust 'expectedBlockRejection'.
@@ -248,9 +248,9 @@ genSpecGenesis slotLen (NumSlots numSlots) = fmap fromEnv . hedgehog $
     fromEnv = Genesis.modUtxoValues (* 10000)
             . Genesis.fromChainEnv (toByronSlotLength slotLen)
 
-realPBftParams :: ByronSpecGenesis -> PBftParams
-realPBftParams ByronSpecGenesis{..} =
-    RealPBFT.realPBftParams (SecurityParam k) numCoreNodes
+byronPBftParams :: ByronSpecGenesis -> PBftParams
+byronPBftParams ByronSpecGenesis{..} =
+    Byron.byronPBftParams (SecurityParam k) numCoreNodes
   where
     Spec.BlockCount k = byronSpecGenesisSecurityParam
 
@@ -289,7 +289,7 @@ instance TxGen DualByronBlock where
 -- For now we only generate regular transactions. Generating delegation
 -- certificates and update proposals/votes is out of the scope of this test,
 -- for now. Extending the scope will require integration with the restart/rekey
--- infrastructure of the RealPBFT tests.
+-- infrastructure of the Byron tests.
 genTx :: TopLevelConfig DualByronBlock
       -> Ticked (LedgerState DualByronBlock)
       -> Gen (GenTx DualByronBlock)

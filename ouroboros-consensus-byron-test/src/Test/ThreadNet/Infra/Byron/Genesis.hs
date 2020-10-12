@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Test.ThreadNet.Infra.Byron.Genesis (
-    realPBftParams
+    byronPBftParams
   , generateGenesisConfig
   ) where
 
@@ -26,8 +26,8 @@ import           Test.Util.Time
   Generating the genesis configuration
 -------------------------------------------------------------------------------}
 
-realPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
-realPBftParams paramK numCoreNodes = PBftParams
+byronPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
+byronPBftParams paramK numCoreNodes = PBftParams
   { pbftNumNodes           = numCoreNodes
   , pbftSecurityParam      = paramK
   , pbftSignatureThreshold = PBftSignatureThreshold $ (1 / n) + (1 / k) + epsilon

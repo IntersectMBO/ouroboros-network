@@ -5,7 +5,7 @@
 module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   theProposedProtocolVersion,
   theProposedSoftwareVersion,
-  mkProtocolRealPBFT,
+  mkProtocolByron,
   mkLeaderCredentials,
   ) where
 
@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Byron.Crypto.DSIGN (ByronDSIGN,
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node
 
-mkProtocolRealPBFT ::
+mkProtocolByron ::
      forall m. (Monad m, HasCallStack)
   => PBftParams
   -> CoreNodeId
@@ -39,7 +39,7 @@ mkProtocolRealPBFT ::
   -> (ProtocolInfo m ByronBlock, SignKeyDSIGN ByronDSIGN)
      -- ^ We return the signing key which is needed in some tests, because it
      -- cannot easily be extracted from the 'ProtocolInfo'.
-mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
+mkProtocolByron params coreNodeId genesisConfig genesisSecrets =
     (protocolInfo, signingKey)
   where
     leaderCredentials :: ByronLeaderCredentials
@@ -99,7 +99,7 @@ mkLeaderCredentials genesisConfig genesisSecrets (CoreNodeId i) =
 --
 -- This value occurs in two crucial places: the proposal and also the
 -- 'Byron.byronProtocolVersion' field of the static node config. See the
--- Haddock comment on 'mkProtocolRealPBftAndHardForkTxs'.
+-- Haddock comment on 'mkProtocolByronAndHardForkTxs'.
 --
 theProposedProtocolVersion :: Update.ProtocolVersion
 theProposedProtocolVersion = Update.ProtocolVersion 1 0 0
