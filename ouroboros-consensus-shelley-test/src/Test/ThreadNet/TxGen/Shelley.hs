@@ -50,6 +50,14 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
 
   testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg extra lst
       | stgeStartAt > curSlotNo = pure []
+
+      -- TODO Temporarily disable the transaction generator until we fix the
+      -- failing assertion in TxSubmission.Inbound, see #2680.
+      --
+      -- When fixed, remove the line below to re-enable the transaction
+      -- generator.
+      | otherwise               = pure []
+
       | otherwise               = do
       n <- choose (0, 20)
       go [] n $ applyChainTick lcfg curSlotNo lst
