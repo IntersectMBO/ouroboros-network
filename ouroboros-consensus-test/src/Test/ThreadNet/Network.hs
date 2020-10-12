@@ -672,6 +672,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 (nodeSeed `combineWith` unSlotNo curSlotNo)
                 (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledger)
 
+        traceWith debugTracer $ show (coreNodeId, map txId txs)
         void $ addTxs mempool txs
 
     mkArgs :: CoreNodeId
