@@ -308,7 +308,9 @@ monitoringThread :: (MonadFork m, MonadSTM m,
                      MonadMonotonicTime m, MonadTimer m,
                      MonadThrow (STM m))
                  => MonitorState m -> m ()
-monitoringThread monitorState@MonitorState{deadlineResetVar} =
+monitoringThread monitorState@MonitorState{deadlineResetVar} = do
+  threadId <- myThreadId
+  labelThread threadId "timeout-monitoring-thread"
   forever $ do
     -- Grab the next timeout to consider
     (tid, deadline, timeoutStateVar) <- readNextTimeout monitorState

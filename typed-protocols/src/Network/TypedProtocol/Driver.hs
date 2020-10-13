@@ -32,6 +32,7 @@ import Network.TypedProtocol.Pipelined
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 
 
 -- $intro
@@ -224,7 +225,9 @@ data MaybeDState dstate (n :: N) where
 
 runPipelinedPeerSender
   :: forall ps (st :: ps) pr dstate c m a.
-     MonadSTM m
+     ( MonadSTM    m
+     , MonadThread m
+     )
   => TQueue m (ReceiveHandler dstate ps pr m c)
   -> TQueue m (c, dstate)
   -> Driver ps dstate m
@@ -233,7 +236,9 @@ runPipelinedPeerSender
   -> m (a, dstate)
 runPipelinedPeerSender receiveQueue collectQueue
                        Driver{sendMessage, recvMessage}
-                       peer dstate0 =
+                       peer dstate0 = do
+    threadId <- myThreadId
+    labelThread threadId "pipeliend-peer-seneder"
     go Zero (HasDState dstate0) peer
   where
     go :: forall st' n.
@@ -275,13 +280,17 @@ runPipelinedPeerSender receiveQueue collectQueue
 
 runPipelinedPeerReceiverQueue
   :: forall ps pr dstate m c.
-     MonadSTM m
+     ( MonadSTM    m
+     , MonadThread m
+     )
   => TQueue m (ReceiveHandler dstate ps pr m c)
   -> TQueue m (c, dstate)
   -> Driver ps dstate m
   -> m Void
 runPipelinedPeerReceiverQueue receiveQueue collectQueue
-                              driver@Driver{startDState} =
+                              driver@Driver{startDState} = do
+    threadId <- myThreadId
+    labelThread threadId "pipelined-recevier-queue"
     go startDState
   where
     go :: dstate -> m Void

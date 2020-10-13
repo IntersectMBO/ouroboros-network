@@ -38,6 +38,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
+import           Ouroboros.Network.Mux (ControlMessageSTM, timeoutWithControlMessage)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
@@ -400,6 +401,11 @@ data TraceFetchClientState header =
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
+
+        -- | The client is terminating.  Log the number of outstanding
+        -- requests.
+        --
+      | ClientTerminating Int
   deriving Show
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
@@ -480,15 +486,20 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 --
 acknowledgeFetchRequest :: MonadSTM m
                         => Tracer m (TraceFetchClientState header)
+                        -> ControlMessageSTM m
                         -> FetchClientStateVars m header
-                        -> m ( FetchRequest header
-                             , PeerGSV
-                             , PeerFetchInFlightLimits )
-acknowledgeFetchRequest tracer FetchClientStateVars {fetchClientRequestVar} = do
-    result@(request, _, _) <-
-      atomically $ takeTFetchRequestVar fetchClientRequestVar
-    traceWith tracer (AcknowledgedFetchRequest request)
-    return result
+                        -> m (Maybe
+                               ( FetchRequest header
+                               , PeerGSV
+                               , PeerFetchInFlightLimits ))
+acknowledgeFetchRequest tracer controlMessageSTM FetchClientStateVars {fetchClientRequestVar} = do
+    result <-
+      timeoutWithControlMessage controlMessageSTM (takeTFetchRequestVar fetchClientRequestVar)
+    case result of
+      Nothing -> return result
+      Just (request, _, _) -> do
+        traceWith tracer (AcknowledgedFetchRequest request)
+        return result
 
 startedFetchBatch :: MonadSTM m
                   => Tracer m (TraceFetchClientState header)
