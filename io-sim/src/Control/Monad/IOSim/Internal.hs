@@ -31,6 +31,7 @@ module Control.Monad.IOSim.Internal (
   EventlogMarker (..),
   ThreadId,
   ThreadLabel,
+  LabeledThread (..),
   Trace (..),
   TraceEvent (..),
   liftST,
@@ -414,12 +415,14 @@ instance MonadDelay (IOSim s) where
   -- Use default in terms of MonadTimer
 
 instance MonadTimer (IOSim s) where
-  data Timeout (IOSim s) = Timeout !(TVar s TimeoutState) !TimeoutId
-                        | NegativeTimeout !TimeoutId
-                        -- ^ a negative timeout
+  data Timeout (IOSim s) = Timeout !(TVar s TimeoutState) !(TVar s Bool) !TimeoutId
+                         -- ^ a timeout; we keep both 'TVar's to support
+                         -- `newTimer` and 'registerTimeout'.
+                         | NegativeTimeout !TimeoutId
+                         -- ^ a negative timeout
 
-  readTimeout (Timeout var _key)     = readTVar var
-  readTimeout (NegativeTimeout _key) = pure TimeoutCancelled
+  readTimeout (Timeout var _bvar _key) = readTVar var
+  readTimeout (NegativeTimeout _key)   = pure TimeoutCancelled
 
   newTimeout      d = IOSim $ \k -> NewTimeout      d k
   updateTimeout t d = IOSim $ \k -> UpdateTimeout t d (k ())
@@ -430,7 +433,7 @@ instance MonadTimer (IOSim s) where
     | d == 0    = return Nothing
     | otherwise = do
         pid <- myThreadId
-        t@(Timeout _ tid) <- newTimeout d
+        t@(Timeout _ _ tid) <- newTimeout d
         handleJust
           (\(TimeoutException tid') -> if tid' == tid
                                          then Just ()
@@ -444,6 +447,8 @@ instance MonadTimer (IOSim s) where
                   cancelTimeout t
                   throwTo pid' AsyncCancelled)
             (\_ -> Just <$> action)
+
+  registerDelay d = IOSim $ \k -> NewTimeout d (\(Timeout _var bvar _) -> k bvar)
 
 newtype TimeoutException = TimeoutException TimeoutId deriving Eq
 
@@ -509,6 +514,21 @@ newtype ClockId   = ClockId   Int deriving (Eq, Ord, Enum, Show)
 
 type ThreadLabel = String
 
+data LabeledThread = LabeledThread {
+    labeledThreadId    :: ThreadId,
+    labeledThreadLabel :: Maybe ThreadLabel
+  }
+  deriving (Eq, Ord, Show)
+
+labeledThreads :: Map ThreadId (Thread s a) -> [LabeledThread]
+labeledThreads threadMap =
+    -- @Map.foldr'@ (and alikes) are not strict enough, to not ratain the
+    -- original thread map we need to evaluate the spine of the list.
+    -- TODO: https://github.com/haskell/containers/issues/749
+    Map.foldr'
+      (\Thread { threadId, threadLabel } !acc -> LabeledThread threadId threadLabel : acc)
+      [] threadMap
+
 
 -- | 'Trace' is a recursive data type, it is the trace of a 'IOSim' computation.
 -- The trace will contain information about thread sheduling, blocking on
@@ -522,9 +542,9 @@ type ThreadLabel = String
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
 data Trace a = Trace !Time !ThreadId !(Maybe ThreadLabel) !TraceEvent (Trace a)
-             | TraceMainReturn    !Time a             ![ThreadId]
-             | TraceMainException !Time SomeException ![ThreadId]
-             | TraceDeadlock      !Time               ![ThreadId]
+             | TraceMainReturn    !Time a             ![LabeledThread]
+             | TraceMainException !Time SomeException ![LabeledThread]
+             | TraceDeadlock      !Time               ![LabeledThread]
   deriving Show
 
 data TraceEvent
@@ -553,6 +573,13 @@ data TraceEvent
   | EventTimerExpired   TimeoutId
   deriving Show
 
+
+-- | Timers mutable variables.  First one supports 'newTimeout' api, the second
+-- one 'registerDelay'.
+--
+data TimerVars s = TimerVars !(TVar s TimeoutState) !(TVar s Bool)
+
+
 -- | Internal state.
 --
 data SimState s a = SimState {
@@ -563,7 +590,7 @@ data SimState s a = SimState {
        -- | current time
        curTime  :: !Time,
        -- | ordered list of timers
-       timers   :: !(OrdPSQ TimeoutId Time (TVar s TimeoutState)),
+       timers   :: !(OrdPSQ TimeoutId Time (TimerVars s)),
        -- | list of clocks
        clocks   :: !(Map ClockId UTCTime),
        nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
@@ -634,7 +661,7 @@ schedule thread@Thread{
         -- the main thread is done, so we're done
         -- even if other threads are still running
         return $ Trace time tid tlbl EventThreadFinished
-               $ TraceMainReturn time x (Map.keys threads)
+               $ TraceMainReturn time x (labeledThreads threads)
 
       ForkFrame -> do
         -- this thread is done
@@ -666,7 +693,7 @@ schedule thread@Thread{
           -- An unhandled exception in the main thread terminates the program
           return (Trace time tid tlbl (EventThrow e) $
                   Trace time tid tlbl (EventThreadUnhandled e) $
-                  TraceMainException time e (Map.keys threads))
+                  TraceMainException time e (labeledThreads threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
@@ -749,25 +776,26 @@ schedule thread@Thread{
               trace)
 
     NewTimeout d k -> do
-      tvar <- execNewTVar nextVid TimeoutPending
+      tvar  <- execNewTVar nextVid TimeoutPending
+      tvar' <- execNewTVar (succ nextVid) False
       let expiry  = d `addTime` time
-          t       = Timeout tvar nextTmid
-          timers' = PSQ.insert nextTmid expiry tvar timers
+          t       = Timeout tvar tvar' nextTmid
+          timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
           thread' = thread { threadControl = ThreadControl (k t) ctl }
       trace <- schedule thread' simstate { timers   = timers'
-                                         , nextVid  = succ nextVid
+                                         , nextVid  = succ (succ nextVid)
                                          , nextTmid = succ nextTmid }
       return (Trace time tid tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
 
     -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
     -- effectively cancels it.
-    UpdateTimeout (Timeout _tvar tmid) d k | d < 0 -> do
+    UpdateTimeout (Timeout _tvar _tvar' tmid) d k | d < 0 -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid tlbl (EventTimerCancelled tmid) trace)
 
-    UpdateTimeout (Timeout _tvar tmid) d k -> do
+    UpdateTimeout (Timeout _tvar _tvar' tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
           -- to race using a timeout with updating or cancelling it
       let updateTimeout_  Nothing       = ((), Nothing)
@@ -783,7 +811,7 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl k ctl }
       schedule thread' simstate
 
-    CancelTimeout (Timeout _tvar tmid) k -> do
+    CancelTimeout (Timeout _tvar _tvar' tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
@@ -925,6 +953,7 @@ schedule thread@Thread{
           return $ Trace time tid tlbl (EventThrowTo e tid')
                  $ trace
 
+
 threadInterruptible :: Thread s a -> Bool
 threadInterruptible thread =
     case threadMasking thread of
@@ -1024,7 +1053,7 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
-      Nothing -> return (TraceDeadlock time (Map.keys threads))
+      Nothing -> return (TraceDeadlock time (labeledThreads threads))
 
       Just (tmids, time', fired, timers') -> assert (time' >= time) $ do
 
@@ -1047,10 +1076,11 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
                      , let Just vids = Set.toList <$> Map.lookup tid' wokeby ])
                     trace
   where
-    timeoutAction var = do
+    timeoutAction (TimerVars var bvar) = do
       x <- readTVar var
       case x of
-        TimeoutPending   -> writeTVar var TimeoutFired
+        TimeoutPending   -> writeTVar var  TimeoutFired
+                         >> writeTVar bvar True
         TimeoutFired     -> error "MonadTimer(Sim): invariant violation"
         TimeoutCancelled -> return ()
 

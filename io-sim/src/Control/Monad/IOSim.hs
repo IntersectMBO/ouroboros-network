@@ -20,6 +20,8 @@ module Control.Monad.IOSim (
   -- * Simulation trace
   Trace(..),
   TraceEvent(..),
+  ThreadLabel,
+  LabeledThread (..),
   traceEvents,
   traceResult,
   selectTraceEvents,
@@ -106,7 +108,7 @@ data Failure =
        -- | The main thread terminated normally but other threads were still
        -- alive, and strict shutdown checking was requested.
        -- See 'runSimStrictShutdown'
-     | FailureSloppyShutdown [ThreadId]
+     | FailureSloppyShutdown [LabeledThread]
   deriving Show
 
 instance Exception Failure
