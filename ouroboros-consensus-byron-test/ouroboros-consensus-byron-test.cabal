@@ -74,8 +74,8 @@ test-suite test
   other-modules:
                        Test.Consensus.Byron.Golden
                        Test.Consensus.Byron.Serialisation
-                       Test.ThreadNet.DualPBFT
-                       Test.ThreadNet.RealPBFT
+                       Test.ThreadNet.Byron
+                       Test.ThreadNet.DualByron
 
   build-depends:       base
                      , binary-search

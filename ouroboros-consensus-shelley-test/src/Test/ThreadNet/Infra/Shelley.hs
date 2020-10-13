@@ -25,7 +25,7 @@ module Test.ThreadNet.Infra.Shelley (
   , mkKeyHash
   , mkKeyHashVrf
   , mkLeaderCredentials
-  , mkProtocolRealTPraos
+  , mkProtocolShelley
   , mkSetDecentralizationParamTxs
   , mkVerKey
   , networkId
@@ -380,14 +380,14 @@ mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
             , let vrfHash = SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
             ]
 
-mkProtocolRealTPraos
+mkProtocolShelley
   :: forall m c. (IOLike m, TPraosCrypto (ShelleyEra c))
   => ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> ProtVer
   -> CoreNode (ShelleyEra c)
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
-mkProtocolRealTPraos genesis initialNonce protVer coreNode =
+mkProtocolShelley genesis initialNonce protVer coreNode =
     protocolInfoShelley $ ProtocolParamsShelley {
         shelleyGenesis           = genesis
       , shelleyInitialNonce      = initialNonce

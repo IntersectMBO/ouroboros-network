@@ -105,7 +105,7 @@ specToImplTx spec impl = SpecToImplIds $ Spec.Test.AbstractToConcreteIdMaps {
 -- The relation between the Byron implementation and specification for the
 -- /linear/ case is tested in the Byron implementation itself, specifically
 -- in 'ts_prop_generatedChainsAreValidated'. The main goal of the consensus
--- DualPBFT tests is to lift these tests to the general consensus setting,
+-- DualByron tests is to lift these tests to the general consensus setting,
 -- where time is not linear but branching.
 --
 -- In the linear case, the tests maintain some state linking the spec and

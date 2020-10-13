@@ -52,8 +52,8 @@ let
       gnuparallel = pkgs.parallel;
       glibcLocales = pkgs.glibcLocales;
 
-      Cardano    = haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
-      RealTPraos = haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
+      Cardano = haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
+      Shelley = haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
     shell = import ./shell.nix {

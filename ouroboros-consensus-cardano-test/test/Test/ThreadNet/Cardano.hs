@@ -480,7 +480,7 @@ prop_simple_cardano_convergence TestSetup
     -- Byron
 
     pbftParams :: PBftParams
-    pbftParams = Byron.realPBftParams setupK numCoreNodes
+    pbftParams = Byron.byronPBftParams setupK numCoreNodes
 
     -- the Byron ledger is designed to use a fixed epoch size, so this test
     -- does not randomize it
@@ -729,11 +729,11 @@ mkProtocolCardanoAndHardForkTxs
     crucialTxs =
         GenTxByron <$> tniCrucialTxs tniByron
       where
-        -- reuse the RealPBft logic for generating the crucial txs, ie the
+        -- reuse the Byron logic for generating the crucial txs, ie the
         -- proposal and votes
         tniByron :: TestNodeInitialization m ByronBlock
         tniByron =
-            Byron.mkProtocolRealPBftAndHardForkTxs
+            Byron.mkProtocolByronAndHardForkTxs
               pbftParams
               coreNodeId
               genesisByron

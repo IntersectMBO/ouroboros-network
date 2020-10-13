@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.Infra.Byron.TrackUpdates (
-  mkProtocolRealPBftAndHardForkTxs,
+  mkProtocolByronAndHardForkTxs,
   ProtocolVersionUpdateLabel (..),
   SoftwareVersionUpdateLabel (..),
   mkUpdateLabels,
@@ -366,7 +366,7 @@ data ProposalState =
 --    mitigating circumstances, such as the test not even being scheduled to
 --    reach the second epoch.
 --
-mkProtocolRealPBftAndHardForkTxs
+mkProtocolByronAndHardForkTxs
   :: forall m. (Monad m, HasCallStack)
   => PBftParams
   -> CoreNodeId
@@ -375,7 +375,7 @@ mkProtocolRealPBftAndHardForkTxs
   -> Update.ProtocolVersion
      -- ^ the protocol version that triggers the hard fork
   -> TestNodeInitialization m ByronBlock
-mkProtocolRealPBftAndHardForkTxs
+mkProtocolByronAndHardForkTxs
   params cid genesisConfig genesisSecrets propPV =
     TestNodeInitialization
       { tniCrucialTxs   = proposals ++ votes
@@ -388,7 +388,7 @@ mkProtocolRealPBftAndHardForkTxs
     pInfo :: ProtocolInfo m ByronBlock
     opKey :: Crypto.SigningKey
     (pInfo, Crypto.SignKeyByronDSIGN opKey) =
-        mkProtocolRealPBFT params cid genesisConfig genesisSecrets
+        mkProtocolByron params cid genesisConfig genesisSecrets
 
     proposals :: [Byron.GenTx ByronBlock]
     proposals =
@@ -440,7 +440,7 @@ mkHardForkProposal params genesisConfig genesisSecrets propPV =
     pInfo :: ProtocolInfo Identity ByronBlock
     opKey :: Crypto.SigningKey
     (pInfo, Crypto.SignKeyByronDSIGN opKey) =
-        mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
+        mkProtocolByron params (CoreNodeId 0) genesisConfig genesisSecrets
 
     ProtocolInfo{pInfoConfig} = pInfo
     bcfg = configBlock pInfoConfig
