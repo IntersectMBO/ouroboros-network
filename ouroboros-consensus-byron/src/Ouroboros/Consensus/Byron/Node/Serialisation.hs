@@ -73,7 +73,8 @@ instance DecodeDisk ByronBlock (AnnTip ByronBlock) where
   SerialiseNodeToNode
 -------------------------------------------------------------------------------}
 
-instance SerialiseNodeToNodeConstraints ByronBlock
+instance SerialiseNodeToNodeConstraints ByronBlock where
+  estimateBlockSize = byronHeaderBlockSizeHint
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

@@ -37,7 +37,8 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util ((.:))
 
-instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs)
+instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs) where
+  estimateBlockSize = estimateHfcBlockSize
 
 {-------------------------------------------------------------------------------
   Dispatch to first era or HFC

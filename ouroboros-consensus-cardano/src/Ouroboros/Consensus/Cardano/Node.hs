@@ -168,6 +168,14 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
             headerOffset = headerOffset binfo + shift
           }
 
+  estimateHfcBlockSize = \case
+      HeaderByron   headerByron   -> estimateBlockSize headerByron
+      -- For Shelley and later eras, we add two extra bytes, see the
+      -- 'SerialiseHFC' instance.
+      HeaderShelley headerShelley -> estimateBlockSize headerShelley + 2
+      HeaderAllegra headerAllegra -> estimateBlockSize headerAllegra + 2
+      HeaderMary    headerMary    -> estimateBlockSize headerMary    + 2
+
 -- | Prepend the given tag by creating a CBOR 2-tuple with the tag as the
 -- first element and the given 'Encoding' as the second.
 prependTag :: Word -> Encoding -> Encoding
@@ -289,15 +297,6 @@ instance CardanoHardForkConstraints c
 -------------------------------------------------------------------------------}
 
 instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
-  -- TODO pull out of RunNode
-  nodeBlockFetchSize = \case
-      HeaderByron   headerByron   -> nodeBlockFetchSize headerByron
-      -- For Shelley and later eras, we add two extra bytes, see the
-      -- 'SerialiseHFC' instance.
-      HeaderShelley headerShelley -> nodeBlockFetchSize headerShelley + 2
-      HeaderAllegra headerAllegra -> nodeBlockFetchSize headerAllegra + 2
-      HeaderMary    headerMary    -> nodeBlockFetchSize headerMary    + 2
-
   -- Use a ChunkInfo with Byron's epoch size for the whole chain. This means
   -- Shelley chunks will be 10x smaller, as the slot density is 10x smaller.
   --

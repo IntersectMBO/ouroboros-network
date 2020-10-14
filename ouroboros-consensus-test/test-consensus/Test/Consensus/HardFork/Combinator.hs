@@ -391,7 +391,6 @@ instance SerialiseHFC '[BlockA, BlockB]
   -- Use defaults
 
 instance RunNode TestBlock where
-  nodeBlockFetchSize = const 0
   nodeCheckIntegrity = \_ _ -> True
   nodeImmutableDbChunkInfo =
         simpleChunkInfo

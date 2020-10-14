@@ -333,6 +333,15 @@ class ( CanHardFork xs
           underlyingBlockInfo :: BinaryBlockInfo
           underlyingBlockInfo = getBinaryBlockInfo blk
 
+  -- | Used as the implementation of 'estimateBlockSize' for 'HardForkBlock'.
+  estimateHfcBlockSize :: Header (HardForkBlock xs) -> SizeInBytes
+  estimateHfcBlockSize =
+        (+ 2) -- Account for the era wrapper
+      . hcollapse
+      . hcmap (Proxy @SerialiseConstraintsHFC) (K . estimateBlockSize)
+      . getOneEraHeader
+      . getHardForkHeader
+
 {-------------------------------------------------------------------------------
   Exceptions
 -------------------------------------------------------------------------------}

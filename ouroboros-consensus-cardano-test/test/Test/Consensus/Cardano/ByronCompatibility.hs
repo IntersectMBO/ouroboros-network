@@ -296,7 +296,8 @@ instance SerialiseNodeToNode ByronToCardano (GenTxId ByronToCardano) where
   encodeNodeToNode = encodeNodeToNodeB2C (Proxy @WrapGenTxId) unGenTxIdB2C
   decodeNodeToNode = decodeNodeToNodeB2C (Proxy @WrapGenTxId) (\(GenTxIdByron txid) -> GenTxIdB2C txid)
 
-instance SerialiseNodeToNodeConstraints ByronToCardano
+instance SerialiseNodeToNodeConstraints ByronToCardano where
+  estimateBlockSize = estimateBlockSize . unHeaderB2C
 
 {------------------------------------------------------------------------------
   Byron to Cardano: NodeToClient
@@ -576,7 +577,8 @@ instance SerialiseNodeToNode CardanoToByron (GenTxId CardanoToByron) where
   encodeNodeToNode = encodeNodeToNodeC2B (Proxy @WrapGenTxId) (GenTxIdByron . unGenTxIdC2B)
   decodeNodeToNode = decodeNodeToNodeC2B (Proxy @WrapGenTxId) GenTxIdC2B
 
-instance SerialiseNodeToNodeConstraints CardanoToByron
+instance SerialiseNodeToNodeConstraints CardanoToByron where
+  estimateBlockSize = estimateBlockSize . unHeaderC2B
 
 {------------------------------------------------------------------------------
   Cardano to Byron: NodeToClient

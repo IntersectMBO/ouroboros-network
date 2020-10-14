@@ -15,8 +15,7 @@ module Ouroboros.Consensus.Mock.Node (
   , simpleBlockForging
   ) where
 
-import           Codec.Serialise (Serialise, serialise)
-import qualified Data.ByteString.Lazy as Lazy
+import           Codec.Serialise (Serialise)
 import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
 
@@ -56,12 +55,6 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
-  nodeBlockFetchSize hdr =
-      7 {- CBOR-in-CBOR -} + 1 {- encodeListLen 2 -} + hdrSize + bodySize
-    where
-      hdrSize  = fromIntegral (Lazy.length (serialise hdr))
-      bodySize = simpleBodySize (simpleHeaderStd hdr)
-
   nodeImmutableDbChunkInfo = \cfg -> simpleChunkInfo $
       EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
 

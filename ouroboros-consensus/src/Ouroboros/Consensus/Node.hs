@@ -440,7 +440,7 @@ mkNodeArgs registry cfg initBlockForging tracers btime chainDB = do
       , chainDB
       , blockForging            = blockForging
       , initChainDB             = nodeInitChainDB
-      , blockFetchSize          = nodeBlockFetchSize
+      , blockFetchSize          = estimateBlockSize
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters

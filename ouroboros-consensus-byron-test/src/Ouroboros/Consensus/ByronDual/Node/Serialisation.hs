@@ -89,7 +89,10 @@ instance DecodeDisk DualByronBlock (AnnTip DualByronBlock) where
   SerialiseNodeToNode
 -------------------------------------------------------------------------------}
 
-instance SerialiseNodeToNodeConstraints DualByronBlock
+instance SerialiseNodeToNodeConstraints DualByronBlock where
+  -- We don't enforce this estimate, so we just reuse the estimate from the
+  -- concrete header.
+  estimateBlockSize = estimateBlockSize . dualHeaderMain
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

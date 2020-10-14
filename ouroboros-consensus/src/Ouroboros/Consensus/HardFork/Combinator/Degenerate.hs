@@ -74,8 +74,6 @@ instance ( RunNode b
 
   nodeCheckIntegrity cfg (DegenBlock b) = nodeCheckIntegrity (project cfg) b
 
-  nodeBlockFetchSize (DegenHeader h) = nodeBlockFetchSize h
-
   nodeInitChainDB cfg = nodeInitChainDB (project cfg) . contramap DegenBlock
 
 {-------------------------------------------------------------------------------

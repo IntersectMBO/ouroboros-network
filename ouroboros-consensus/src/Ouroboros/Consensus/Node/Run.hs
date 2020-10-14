@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Node.Run (
   , LgrDbSerialiseConstraints
   , VolatileDbSerialiseConstraints
     -- * SerialiseNodeToNode
-  , SerialiseNodeToNodeConstraints
+  , SerialiseNodeToNodeConstraints (..)
     -- * SerialiseNodeToClient
   , SerialiseNodeToClientConstraints
     -- * RunNode
@@ -53,7 +53,17 @@ class ( ConvertRawHash blk
       , SerialiseNodeToNode blk (SerialisedHeader blk)
       , SerialiseNodeToNode blk (GenTx blk)
       , SerialiseNodeToNode blk (GenTxId blk)
-      ) => SerialiseNodeToNodeConstraints blk
+      ) => SerialiseNodeToNodeConstraints blk where
+  -- | An upper bound on the size in bytes of the block corresponding to the
+  -- header. This can be an overestimate, but not an underestimate.
+  --
+  -- The block fetch client uses this to estimate how bytes will be in flight.
+  -- This is also used to limit the number of bytes accepted when downloading
+  -- a block.
+  --
+  -- This is part of this class as it depends on the node-to-node serialisation
+  -- format used for blocks.
+  estimateBlockSize :: Header blk -> SizeInBytes
 
 -- | Serialisation constraints needed by the node-to-client protocols
 class ( ConvertRawHash blk
@@ -89,14 +99,6 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                 (Query blk)
       , ShowProxy           (TxId (GenTx blk))
       ) => RunNode blk where
-  -- | An upper bound the size in bytes of the block corresponding to the
-  -- header. This can be an overestimate, but not an underestimate.
-  --
-  -- The block fetch client uses this to estimate how bytes will be in flight.
-  -- This is also used to limit the number of bytes accepted when downloading
-  -- a block.
-  nodeBlockFetchSize :: Header blk -> SizeInBytes
-
   nodeImmutableDbChunkInfo :: TopLevelConfig blk -> ChunkInfo
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by

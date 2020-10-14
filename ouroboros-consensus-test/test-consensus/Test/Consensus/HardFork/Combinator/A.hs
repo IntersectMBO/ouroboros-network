@@ -485,8 +485,9 @@ instance HasBinaryBlockInfo BlockA where
 
 instance SerialiseConstraintsHFC          BlockA
 instance SerialiseDiskConstraints         BlockA
-instance SerialiseNodeToNodeConstraints   BlockA
 instance SerialiseNodeToClientConstraints BlockA
+instance SerialiseNodeToNodeConstraints   BlockA where
+    estimateBlockSize = const 0
 
 {-------------------------------------------------------------------------------
   SerialiseDiskConstraints

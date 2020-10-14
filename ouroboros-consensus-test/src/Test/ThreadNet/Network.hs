@@ -970,7 +970,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , chainDB
             , initChainDB             = nodeInitChainDB
             , blockForging            = blockForging
-            , blockFetchSize          = nodeBlockFetchSize
+            , blockFetchSize          = estimateBlockSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
             , keepAliveRng            = kaRng

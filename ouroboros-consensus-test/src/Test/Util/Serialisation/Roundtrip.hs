@@ -45,9 +45,8 @@ import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run (RunNode (..),
-                     SerialiseNodeToClientConstraints,
-                     SerialiseNodeToNodeConstraints)
+import           Ouroboros.Consensus.Node.Run (SerialiseNodeToClientConstraints,
+                     SerialiseNodeToNodeConstraints (..))
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
@@ -102,7 +101,15 @@ type Arbitrary' a = (Arbitrary a, Eq a, Show a)
 -- | All roundtrip tests
 roundtrip_all
   :: forall blk.
-     ( RunNode blk
+     ( SerialiseDiskConstraints         blk
+     , SerialiseNodeToNodeConstraints   blk
+     , SerialiseNodeToClientConstraints blk
+
+     , Show (BlockNodeToNodeVersion   blk)
+     , Show (BlockNodeToClientVersion blk)
+
+     , StandardHash blk
+     , GetHeader    blk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
@@ -134,7 +141,7 @@ roundtrip_all ccfg dictNestedHdr =
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
       , testProperty "hashSize"           $ prop_hashSize                   (Proxy @blk)
-      , testProperty "nodeBlockFetchSize" $ prop_nodeBlockFetchSize         ccfg
+      , testProperty "estimateBlockSize"  $ prop_estimateBlockSize         ccfg
       ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
@@ -422,15 +429,15 @@ prop_hashSize p h =
     hashSize p === fromIntegral (Short.length (toShortRawHash p h))
 
 {-------------------------------------------------------------------------------
-  nodeBlockFetchSize
+  estimateBlockSize
 -------------------------------------------------------------------------------}
 
-prop_nodeBlockFetchSize ::
-     RunNode blk
+prop_estimateBlockSize ::
+     (SerialiseNodeToNodeConstraints blk, GetHeader blk)
   => CodecConfig blk
   -> WithVersion (BlockNodeToNodeVersion blk) blk
   -> Property
-prop_nodeBlockFetchSize ccfg (WithVersion version blk)
+prop_estimateBlockSize ccfg (WithVersion version blk)
   | actualBlockSize > expectedBlockSize
   = counterexample
       ("actualBlockSize > expectedBlockSize: "
@@ -462,7 +469,7 @@ prop_nodeBlockFetchSize ccfg (WithVersion version blk)
 
     expectedBlockSize :: SizeInBytes
     expectedBlockSize =
-          nodeBlockFetchSize
+          estimateBlockSize
         . getHeader
         $ blk
 

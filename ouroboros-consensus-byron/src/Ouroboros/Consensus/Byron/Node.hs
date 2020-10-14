@@ -248,8 +248,6 @@ extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeBlockFetchSize = byronHeaderBlockSizeHint
-
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
   nodeImmutableDbChunkInfo =

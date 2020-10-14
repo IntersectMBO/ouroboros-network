@@ -234,10 +234,6 @@ instance RunNode DualByronBlock where
   -- Node config is a consensus concern, determined by the main block only
   nodeImmutableDbChunkInfo = nodeImmutableDbChunkInfo  . dualTopLevelConfigMain
 
-  -- For now the size of the block is just an estimate, and so we just reuse
-  -- the estimate from the concrete header.
-  nodeBlockFetchSize = nodeBlockFetchSize . dualHeaderMain
-
   -- We don't really care too much about data loss or malicious behaviour for
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
