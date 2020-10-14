@@ -29,6 +29,7 @@ module Test.Consensus.HardFork.Combinator.A (
     -- * Type family instances
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -77,10 +78,12 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (repeatedlyM, (.....:))
 import           Ouroboros.Consensus.Util.Condense
@@ -148,6 +151,9 @@ type instance BlockProtocol BlockA = ProtocolA
 type instance HeaderHash    BlockA = Strict.ByteString
 
 data instance CodecConfig BlockA = CCfgA
+  deriving (Generic, NoThunks)
+
+data instance StorageConfig BlockA = SCfgA
   deriving (Generic, NoThunks)
 
 instance ConfigSupportsNode BlockA where
@@ -400,6 +406,12 @@ getConfirmationDepth st = do
                                 else ( confirmedInSlot
                                      , History.countSlots s confirmedInSlot
                                      )
+
+instance NodeInitStorage BlockA where
+  nodeCheckIntegrity  _ _ = True
+
+  -- Pick some chunk size
+  nodeImmutableDbChunkInfo _ = simpleChunkInfo 10
 
 instance SingleEraBlock BlockA where
   singleEraInfo _ = SingleEraInfo "A"

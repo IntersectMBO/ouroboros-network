@@ -11,6 +11,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   ) where
 
 import           Codec.Serialise
@@ -101,4 +102,7 @@ data instance BlockConfig ByronSpecBlock = ByronSpecBlockConfig
   deriving (Generic, NoThunks)
 
 data instance CodecConfig ByronSpecBlock = ByronSpecCodecConfig
+  deriving (Generic, NoThunks)
+
+data instance StorageConfig ByronSpecBlock = ByronSpecStorageConfig
   deriving (Generic, NoThunks)

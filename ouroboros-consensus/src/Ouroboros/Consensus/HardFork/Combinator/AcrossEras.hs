@@ -25,6 +25,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , PerEraChainSelConfig(..)
   , PerEraCodecConfig(..)
   , PerEraLedgerConfig(..)
+  , PerEraStorageConfig(..)
     -- * Value for /one/ era
   , OneEraApplyTxErr(..)
   , OneEraBlock(..)
@@ -92,6 +93,7 @@ newtype PerEraChainSelConfig  xs = PerEraChainSelConfig  { getPerEraChainSelConf
 newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig     :: NP CodecConfig                xs }
 newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusConfig :: NP WrapPartialConsensusConfig xs }
 newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
+newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfig   :: NP StorageConfig              xs }
 
 {-------------------------------------------------------------------------------
   Value for /one/ era
@@ -243,6 +245,9 @@ deriving via LiftNamedNP "PerEraConsensusConfig" WrapPartialConsensusConfig xs
 
 deriving via LiftNamedNP "PerEraLedgerConfig" WrapPartialLedgerConfig xs
          instance CanHardFork xs => NoThunks (PerEraLedgerConfig xs)
+
+deriving via LiftNamedNP "PerEraStorageConfig" StorageConfig xs
+         instance CanHardFork xs => NoThunks (PerEraStorageConfig xs)
 
 deriving via LiftNamedNS "OneEraEnvelopeErr" WrapEnvelopeErr xs
          instance CanHardFork xs => NoThunks (OneEraEnvelopeErr xs)

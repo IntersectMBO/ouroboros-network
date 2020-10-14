@@ -43,12 +43,10 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
-import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -282,6 +280,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* CCfgB
                 :* Nil
             }
+        , topLevelConfigStorage = HardForkStorageConfig {
+              hardForkStorageConfigPerEra = PerEraStorageConfig $
+                   SCfgA
+                :* SCfgB
+                :* Nil
+            }
         }
 
     consensusConfigA :: CoreNodeId -> ConsensusConfig ProtocolA
@@ -389,16 +393,6 @@ instance SupportedNetworkProtocolVersion TestBlock where
 
 instance SerialiseHFC '[BlockA, BlockB]
   -- Use defaults
-
-instance RunNode TestBlock where
-  nodeCheckIntegrity = \_ _ -> True
-  nodeImmutableDbChunkInfo =
-        simpleChunkInfo
-      . eraEpochSize
-      . exactlyHead
-      . History.getShape
-      . hardForkLedgerConfigShape
-      . configLedger
 
 {-------------------------------------------------------------------------------
   Translation

@@ -30,7 +30,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , LedgerState (DegenLedgerState)
   ) where
 
-import           Control.Tracer
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -38,8 +37,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
@@ -54,7 +51,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool ()
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Node ()
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
                      ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient
@@ -62,19 +58,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Serialise
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode
                      ()
 import           Ouroboros.Consensus.HardFork.Combinator.Unary
-
-instance ( RunNode b
-           -- Instances that must be defined for specific values of @b@:
-         , SupportedNetworkProtocolVersion (HardForkBlock '[b])
-         , SerialiseHFC '[b]
-         , NoHardForks b
-         ) => RunNode (HardForkBlock '[b]) where
-
-  nodeImmutableDbChunkInfo cfg = nodeImmutableDbChunkInfo (project cfg)
-
-  nodeCheckIntegrity cfg (DegenBlock b) = nodeCheckIntegrity (project cfg) b
-
-  nodeInitChainDB cfg = nodeInitChainDB (project cfg) . contramap DegenBlock
 
 {-------------------------------------------------------------------------------
   Simple patterns

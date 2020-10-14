@@ -97,9 +97,10 @@ newtype ExtLedgerCfg blk = ExtLedgerCfg {
   deriving (Generic)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
-         , NoThunks (BlockConfig  blk)
-         , NoThunks (CodecConfig  blk)
-         , NoThunks (LedgerConfig blk)
+         , NoThunks (BlockConfig   blk)
+         , NoThunks (CodecConfig   blk)
+         , NoThunks (LedgerConfig  blk)
+         , NoThunks (StorageConfig blk)
          ) => NoThunks (ExtLedgerCfg blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk

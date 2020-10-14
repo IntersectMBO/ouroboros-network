@@ -24,6 +24,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , EBB(..)
   , ChainLength(..)
     -- ** Construction
@@ -237,6 +238,9 @@ data instance BlockConfig TestBlock = TestBlockConfig {
   deriving (Generic, NoThunks)
 
 data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Generic, NoThunks, Show)
+
+data instance StorageConfig TestBlock = TestBlockStorageConfig
   deriving (Generic, NoThunks, Show)
 
 instance Condense TestBlock where
@@ -663,12 +667,13 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           , bftSignKey = SignKeyMockDSIGN 0
           , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
-      , topLevelConfigLedger = eraParams
-      , topLevelConfigBlock  = TestBlockConfig {
+      , topLevelConfigLedger  = eraParams
+      , topLevelConfigBlock   = TestBlockConfig {
             testBlockEBBsAllowed  = chunkCanContainEBB
           , testBlockNumCoreNodes = numCoreNodes
           }
-      , topLevelConfigCodec  = TestBlockCodecConfig
+      , topLevelConfigCodec   = TestBlockCodecConfig
+      , topLevelConfigStorage = TestBlockStorageConfig
       }
   where
     slotLength :: SlotLength

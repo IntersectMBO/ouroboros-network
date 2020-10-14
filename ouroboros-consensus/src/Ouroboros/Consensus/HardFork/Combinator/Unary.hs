@@ -192,6 +192,10 @@ instance Isomorphic CodecConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
+instance Isomorphic StorageConfig where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
 instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
@@ -268,6 +272,7 @@ instance Isomorphic TopLevelConfig where
         (auxLedger    $ configLedger    tlc)
         (project      $ configBlock     tlc)
         (project      $ configCodec     tlc)
+        (project      $ configStorage   tlc)
     where
       ei :: EpochInfo Identity
       ei = noHardForksEpochInfo $ project tlc
@@ -297,6 +302,7 @@ instance Isomorphic TopLevelConfig where
         (auxLedger    $ configLedger    tlc)
         (inject       $ configBlock     tlc)
         (inject       $ configCodec     tlc)
+        (inject       $ configStorage   tlc)
     where
       eraParams = getEraParams tlc
 

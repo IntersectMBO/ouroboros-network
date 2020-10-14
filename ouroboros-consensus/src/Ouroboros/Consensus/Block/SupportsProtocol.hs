@@ -22,6 +22,7 @@ class ( GetHeader blk
       , NoThunks (Header blk)
       , NoThunks (BlockConfig blk)
       , NoThunks (CodecConfig blk)
+      , NoThunks (StorageConfig blk)
       ) => BlockSupportsProtocol blk where
   validateView :: BlockConfig blk
                -> Header blk

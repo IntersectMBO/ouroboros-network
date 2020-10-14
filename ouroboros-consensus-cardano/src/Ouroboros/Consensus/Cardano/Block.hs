@@ -99,6 +99,9 @@ module Ouroboros.Consensus.Cardano.Block (
     -- * BlockConfig
   , CardanoBlockConfig
   , BlockConfig (CardanoBlockConfig)
+    -- * StorageConfig
+  , CardanoStorageConfig
+  , StorageConfig (CardanoStorageConfig)
     -- * ConsensusConfig
   , CardanoConsensusConfig
   , ConsensusConfig (CardanoConsensusConfig)
@@ -615,6 +618,35 @@ pattern CardanoBlockConfig cfgByron cfgShelley cfgAllegra cfgMary =
       }
 
 {-# COMPLETE CardanoBlockConfig #-}
+
+{-------------------------------------------------------------------------------
+  StorageConfig
+-------------------------------------------------------------------------------}
+
+-- | The 'StorageConfig' for 'CardanoBlock'.
+--
+-- Thanks to the pattern synonyms, you can treat this as the product of
+-- the Byron, Shelley, ... 'StorageConfig's.
+type CardanoStorageConfig c = StorageConfig (CardanoBlock c)
+
+pattern CardanoStorageConfig
+  :: StorageConfig ByronBlock
+  -> StorageConfig (ShelleyBlock (ShelleyEra c))
+  -> StorageConfig (ShelleyBlock (AllegraEra c))
+  -> StorageConfig (ShelleyBlock (MaryEra c))
+  -> CardanoStorageConfig c
+pattern CardanoStorageConfig cfgByron cfgShelley cfgAllegra cfgMary =
+    HardForkStorageConfig {
+        hardForkStorageConfigPerEra = PerEraStorageConfig
+          (  cfgByron
+          :* cfgShelley
+          :* cfgAllegra
+          :* cfgMary
+          :* Nil
+          )
+      }
+
+{-# COMPLETE CardanoStorageConfig #-}
 
 {-------------------------------------------------------------------------------
   ConsensusConfig

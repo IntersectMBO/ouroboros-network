@@ -46,8 +46,8 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock.Types
                        Ouroboros.Consensus.BlockchainTime.WallClock.Util
                        Ouroboros.Consensus.Config
-                       Ouroboros.Consensus.Config.SupportsNode
                        Ouroboros.Consensus.Config.SecurityParam
+                       Ouroboros.Consensus.Config.SupportsNode
                        Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.Fragment.Diff
                        Ouroboros.Consensus.Fragment.InFuture
@@ -73,6 +73,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
                        Ouroboros.Consensus.HardFork.Combinator.Node
+                       Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage
                        Ouroboros.Consensus.HardFork.Combinator.PartialConfig
                        Ouroboros.Consensus.HardFork.Combinator.Protocol
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
@@ -129,11 +130,12 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
+                       Ouroboros.Consensus.Node.InitStorage
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
-                       Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
+                       Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT

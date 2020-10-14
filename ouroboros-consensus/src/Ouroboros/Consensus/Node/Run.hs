@@ -14,14 +14,13 @@ module Ouroboros.Consensus.Node.Run (
     -- * SerialiseNodeToClient
   , SerialiseNodeToClientConstraints
     -- * RunNode
-  , RunNode (..)
+  , RunNode
   ) where
 
 import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -29,16 +28,14 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
-import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
@@ -89,6 +86,7 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
+      , NodeInitStorage                  blk
       , Show                (CannotForge blk)
       , Show             (ForgeStateInfo blk)
       , Show      (ForgeStateUpdateError blk)
@@ -98,33 +96,4 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                (Header blk)
       , ShowProxy                 (Query blk)
       , ShowProxy           (TxId (GenTx blk))
-      ) => RunNode blk where
-  nodeImmutableDbChunkInfo :: TopLevelConfig blk -> ChunkInfo
-
-  -- | Check the integrity of a block, i.e., that it has not been corrupted by
-  -- a bitflip.
-  --
-  -- Check this by, e.g., verifying whether the block has a valid signature
-  -- and that the hash of the body matches the body hash stores in the header.
-  --
-  -- This does not check the validity of the contents of the block, e.g.,
-  -- whether the transactions are valid w.r.t. the ledger, or whether it's
-  -- sent by a malicious node.
-  nodeCheckIntegrity :: TopLevelConfig blk -> blk -> Bool
-
-  -- | This function is called when starting up the node, right after the
-  -- ChainDB was opened, and before we connect to other nodes and start block
-  -- production.
-  --
-  -- This function can be used to, for example, create the genesis EBB in case
-  -- the chain(DB) is empty.
-  --
-  -- We only provide a limited interface to the chain DB. This is primarily
-  -- useful for the definition of combinators (which may need to turn a
-  -- 'InitChainDB' for one type of block into an 'InitChainDB' for a closely
-  -- related type of block).
-  nodeInitChainDB :: IOLike m
-                  => TopLevelConfig blk
-                  -> InitChainDB m blk
-                  -> m ()
-  nodeInitChainDB _ _ = return ()
+      ) => RunNode blk
