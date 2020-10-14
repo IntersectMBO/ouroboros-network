@@ -16,6 +16,7 @@ module Test.Mux
     ( tests
     ) where
 
+import           Control.Applicative
 import           Control.Arrow ((&&&))
 import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
@@ -26,6 +27,7 @@ import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd, nub)
+import qualified Data.Map as M
 import           Data.Tuple (swap)
 import           Data.Word
 import           Test.QuickCheck hiding ((.&.))
@@ -81,6 +83,7 @@ tests =
   , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
   , testProperty "demuxing (IO)"           prop_demux_sdu_io
   , testProperty "mux start and stop"      prop_mux_start
+  , testProperty "mux restart"             prop_mux_restart
   , testGroup "Generators"
     [ testProperty "genByteString"         prop_arbitrary_genByteString
     , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
@@ -1219,8 +1222,61 @@ dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
          DummyAppSucceed -> return ((), Nothing)
          DummyAppFail    -> throwIO $ MuxError (MuxShutdown Nothing) "App Fail"
 
+data DummyRestartingApps =
+    DummyRestartingResponderApps [(DummyApp, Int)]
+  | DummyRestartingInitiatorApps [(DummyApp, Int)]
+  | DummyRestartingInitiatorResponderApps [(DummyApp, Int)]
+  deriving Show
+
+instance Arbitrary DummyRestartingApps where
+    arbitrary = do
+        nums <- listOf1 $ arbitrary
+        apps <- mapM genApp $ nub nums
+        mode <- arbitrary
+        case mode of
+             InitiatorMode          -> return $ DummyRestartingInitiatorApps apps
+             ResponderMode          -> return $ DummyRestartingResponderApps apps
+             InitiatorResponderMode -> return $ DummyRestartingInitiatorResponderApps apps
+      where
+        genApp num = do
+            app <- DummyApp num DummyAppSucceed <$> arbitrary <*> arbitrary
+            restarts <- choose (0, 5)
+            return (app, restarts)
+
+
+dummyRestartingAppToChannel :: forall a m.
+                     ( MonadAsync m
+                     , MonadCatch m
+                     , MonadTimer m
+                     )
+                  => (DummyApp, a)
+                  -> (Channel m -> m ((DummyApp, a), Maybe BL.ByteString))
+dummyRestartingAppToChannel (app, r) = \_ -> do
+    threadDelay $ daRunTime app
+    case daAction app of
+         DummyAppSucceed -> return ((app, r), Nothing)
+         DummyAppFail    -> throwIO $ MuxError (MuxShutdown Nothing) "App Fail"
+
+
 appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
 appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits
+
+triggerApp :: forall m.
+              ( MonadAsync m
+              , MonadSay m
+              , MonadTime m
+              , MonadTimer m
+              )
+            => MuxBearer m
+            -> DummyApp
+            -> m ()
+triggerApp bearer app = do
+    let chan = muxBearerAsChannel bearer (daNum app) InitiatorDir
+    traceWith verboseTracer $ "app waiting " ++ (show $ daNum app)
+    threadDelay (daStartAfter app)
+    traceWith verboseTracer $ "app starting " ++ (show $ daNum app)
+    send chan $ BL.singleton 0xa5
+    return ()
 
 prop_mux_start_mX :: forall m.
                        ( MonadAsync m
@@ -1242,15 +1298,6 @@ prop_mux_start_mX apps runTime = do
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
 
   where
-    triggerApp :: MuxBearer m -> DummyApp -> m ()
-    triggerApp bearer app = do
-        let chan = muxBearerAsChannel bearer (daNum app) InitiatorDir
-        traceWith verboseTracer $ "app waiting " ++ (show $ daNum app)
-        threadDelay (daStartAfter app)
-        traceWith verboseTracer $ "app starting " ++ (show $ daNum app)
-        (send chan) $ BL.singleton 0xa5
-        return ()
-
     checkRes :: StartOnDemandOrEagerly
              -> DiffTime
              -> ((STM m (Either SomeException ())), DummyApp)
@@ -1269,6 +1316,152 @@ prop_mux_start_mX apps runTime = do
                  case r of
                       Left _  -> return (True, r)
                       Right _ -> return (False, r)
+
+prop_mux_restart_m :: forall m.
+                       ( MonadAsync m
+                       , MonadFork m
+                       , MonadMask m
+                       , MonadSay m
+                       , MonadThrow (STM m)
+                       , MonadTime m
+                       , MonadTimer m
+                       )
+                    => DummyRestartingApps
+                    -> m Property
+prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+        MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly . fst) apps
+
+    mux <- newMux $ MiniProtocolBundle minis
+    mux_aid <- async $ runMux nullTracer mux bearer
+    getRes <- sequence [ runMiniProtocol
+                           mux
+                          (daNum $ fst app)
+                          InitiatorDirectionOnly
+                          StartEagerly
+                          (dummyRestartingAppToChannel app)
+                       | app <- apps
+                       ]
+    r <- runRestartingApps mux $ M.fromList $ zip (map (daNum . fst) apps) getRes
+    stopMux mux
+    void $ waitCatch mux_aid
+    return $ property r
+
+  where
+    runRestartingApps :: Mux InitiatorMode m
+                      -> M.Map MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
+                      -> m Bool
+    runRestartingApps _ ops | M.null ops = return True
+    runRestartingApps mux ops = do
+        appResult <- atomically $ foldr (<|>) retry $ M.elems ops
+        case appResult of
+             Left _ -> return False
+             Right (app, 0) -> do
+                 runRestartingApps mux $ M.delete (daNum app) ops
+             Right (app, restarts) -> do
+                 op <- runMiniProtocol mux (daNum app) InitiatorDirectionOnly StartEagerly
+                         (dummyRestartingAppToChannel (app, restarts - 1))
+                 runRestartingApps mux $ M.insert (daNum app) op ops
+
+prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+        apps = map fst rapps
+        MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+
+    mux <- newMux $ MiniProtocolBundle minis
+    mux_aid <- async $ runMux nullTracer mux bearer
+    getRes <- sequence [ runMiniProtocol
+                           mux
+                          (daNum $ fst app)
+                          ResponderDirectionOnly
+                          StartEagerly
+                          (dummyRestartingAppToChannel app)
+                       | app <- rapps
+                       ]
+    triggers <- mapM (async . (triggerApp peerBearer)) apps
+    r <- runRestartingApps mux $ M.fromList $ zip (map daNum apps) getRes
+    stopMux mux
+    void $ waitCatch mux_aid
+    mapM_ cancel triggers
+    return $ property r
+  where
+    runRestartingApps :: Mux ResponderMode m
+                      -> M.Map MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
+                      -> m Bool
+    runRestartingApps _ ops | M.null ops = return True
+    runRestartingApps mux ops = do
+        appResult <- atomically $ foldr (<|>) retry $ M.elems ops
+        case appResult of
+             Left _ -> return False
+             Right (app, 0) -> do
+                 runRestartingApps mux $ M.delete (daNum app) ops
+             Right (app, restarts) -> do
+                 op <- runMiniProtocol mux (daNum app) ResponderDirectionOnly StartOnDemand
+                           (dummyRestartingAppToChannel (app, restarts - 1))
+                 runRestartingApps mux $ M.insert (daNum app) op ops
+
+prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+        apps = map fst rapps
+        initMinis = map (appToInfo InitiatorDirection) apps
+        respMinis = map (appToInfo ResponderDirection) apps
+
+    mux <- newMux $ MiniProtocolBundle $ initMinis ++ respMinis
+    mux_aid <- async $ runMux nullTracer mux bearer
+    getInitRes <- sequence [ runMiniProtocol
+                               mux
+                               (daNum $ fst app)
+                               InitiatorDirection
+                               StartEagerly
+                               (dummyRestartingAppToChannel (fst app, (InitiatorDirection, snd app)))
+                           | app <- rapps
+                           ]
+    getRespRes <- sequence [ runMiniProtocol
+                               mux
+                               (daNum $ fst app)
+                               ResponderDirection
+                               StartOnDemand
+                               (dummyRestartingAppToChannel (fst app, (ResponderDirection, snd app)))
+                           | app <- rapps
+                           ]
+
+    triggers <- mapM (async . triggerApp peerBearer) apps
+    let gi = M.fromList $ map (\(n, g) -> ((InitiatorDirection, n), g)) $ zip (map daNum apps) getInitRes
+        gr = M.fromList $ map (\(n, g) -> ((ResponderDirection, n), g)) $ zip (map daNum apps) getRespRes
+    r <- runRestartingApps mux $ gi <> gr
+    stopMux mux
+    void $ waitCatch mux_aid
+    mapM_ cancel triggers
+    return $ property r
+  where
+    runRestartingApps :: Mux InitiatorResponderMode m
+                      -> M.Map (MiniProtocolDirection InitiatorResponderMode, MiniProtocolNum)
+                               (STM m (Either SomeException (DummyApp, (MiniProtocolDirection InitiatorResponderMode, Int))))
+                      -> m Bool
+    runRestartingApps _ ops | M.null ops = return True
+    runRestartingApps mux ops = do
+        appResult <- atomically $ foldr (<|>) retry $ M.elems ops
+        case appResult of
+             Left _ -> return False
+             Right (app, (dir, 0)) ->
+                 let opKey = (dir, daNum app) in
+                 runRestartingApps mux $ M.delete opKey ops
+             Right (app, (dir, restarts)) -> do
+                 let opKey = (dir, daNum app)
+                     strat = case dir of
+                                  InitiatorDirection -> StartEagerly
+                                  ResponderDirection -> StartOnDemand
+                 op <- runMiniProtocol mux (daNum app) dir strat (dummyRestartingAppToChannel (app, (dir, restarts - 1)))
+                 runRestartingApps mux $ M.insert opKey op ops
+
 
 
 prop_mux_start_m :: forall m.
@@ -1311,7 +1504,7 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
 
     return (property $ and $ map fst rc)
 
-prop_mux_start_m bearer triggerApp checkRes (DummyResponderApps apps) runTime = do
+prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
     let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a + daStartAfter a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
@@ -1326,7 +1519,7 @@ prop_mux_start_m bearer triggerApp checkRes (DummyResponderApps apps) runTime = 
                        | app <- apps
                        ]
 
-    triggers <- mapM (async . triggerApp ) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
     killer <- async $ (threadDelay runTime) >> stopMux mux
     rc <- mapM (checkRes StartOnDemand minRunTime) $ zip getRes apps
     wait killer
@@ -1335,7 +1528,7 @@ prop_mux_start_m bearer triggerApp checkRes (DummyResponderApps apps) runTime = 
 
     return (property $ and $ map fst rc)
 
-prop_mux_start_m bearer triggerApp checkRes (DummyInitiatorResponderApps apps) runTime = do
+prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime = do
     let initMinis = map (appToInfo InitiatorDirection) apps
         respMinis = map (appToInfo ResponderDirection) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
@@ -1359,7 +1552,7 @@ prop_mux_start_m bearer triggerApp checkRes (DummyInitiatorResponderApps apps) r
                            | app <- apps
                            ]
 
-    triggers <- mapM (async . triggerApp) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
     killer <- async $ (threadDelay runTime) >> stopMux mux
     !rcInit <- mapM (checkRes StartEagerly minRunTime) $ zip getInitRes apps
     !rcResp <- mapM (checkRes StartOnDemand minRunTime) $ zip getRespRes apps
@@ -1378,6 +1571,18 @@ prop_mux_start apps runTime = do
     case r_e of
        Left  _ -> return $ property False
        Right r -> return r
+
+-- | Verify restarting of miniprotocols.
+prop_mux_restart :: DummyRestartingApps -> Property
+prop_mux_restart apps = do
+  let (_output, r_e) = (selectTraceEventsSay &&& traceResult True) (runSimTrace $ prop_mux_restart_m apps)
+  ioProperty $ do
+    -- mapM_ (printf "%s\n") _output
+    case r_e of
+       Left  _ -> return $ property False
+       Right r -> return r
+
+
 
 data WithThreadAndTime a = WithThreadAndTime {
       wtatOccuredAt    :: !Time
