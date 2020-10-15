@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util ((.....:))
 
@@ -264,9 +264,8 @@ instance NodeInitStorage ByronBlock where
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
-  nodeInitChainDB cfg chainDB = do
-      empty <- InitChainDB.checkEmpty chainDB
-      when empty $ InitChainDB.addBlock chainDB genesisEBB
+  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
+      addBlockIfEmpty (return genesisEBB)
     where
       genesisEBB = forgeEBB (getByronBlockConfig cfg) (SlotNo 0) (BlockNo 0) GenesisHash
 

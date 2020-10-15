@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,7 +11,6 @@ module Ouroboros.Consensus.ByronDual.Node (
     protocolInfoDualByron
   ) where
 
-import           Control.Monad
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -218,9 +218,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
 
 instance NodeInitStorage DualByronBlock where
   -- Just like Byron, we need to start with an EBB
-  nodeInitChainDB cfg chainDB = do
-      empty <- InitChainDB.checkEmpty chainDB
-      when empty $ InitChainDB.addBlock chainDB genesisEBB
+  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
+      addBlockIfEmpty (return genesisEBB)
     where
       genesisEBB :: DualByronBlock
       genesisEBB = DualBlock {
