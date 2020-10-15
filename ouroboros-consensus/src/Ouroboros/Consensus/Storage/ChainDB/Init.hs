@@ -17,30 +17,28 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Restricted interface to the 'ChainDB' used on node initialization
-data InitChainDB m blk = InitChainDB {
-      -- | Check if the current chain is empty
-      checkEmpty :: m Bool
-
-      -- | Add a block to the DB
-    , addBlock   :: blk -> m ()
+newtype InitChainDB m blk = InitChainDB {
+      -- | Add a block to the DB when the current chain is empty.
+      --
+      -- The given action is only called when the current chain is empty.
+      addBlockIfEmpty :: m blk -> m ()
     }
 
-instance Contravariant (InitChainDB m) where
+instance Functor m => Contravariant (InitChainDB m) where
   contramap f db = InitChainDB {
-        checkEmpty = checkEmpty db
-      , addBlock   = addBlock   db . f
+        addBlockIfEmpty = addBlockIfEmpty db . (f <$>)
       }
 
 fromFull :: IOLike m => ChainDB m blk -> InitChainDB m blk
 fromFull db = InitChainDB {
-      checkEmpty = do
+      addBlockIfEmpty = \mkBlk -> do
           tip <- atomically $ ChainDB.getTipPoint db
-          return $ case tip of
-                     BlockPoint {} -> False
-                     GenesisPoint  -> True
-
-    , addBlock = ChainDB.addBlock_ db
+          case tip of
+            BlockPoint {} -> return ()
+            GenesisPoint  -> do
+              blk <- mkBlk
+              ChainDB.addBlock_ db blk
     }
 
-cast :: Coercible blk blk' => InitChainDB m blk -> InitChainDB m blk'
+cast :: (Functor m, Coercible blk blk') => InitChainDB m blk -> InitChainDB m blk'
 cast = contramap coerce

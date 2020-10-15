@@ -41,13 +41,14 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util ((.....:))
 
@@ -182,9 +183,10 @@ protocolInfoByron ProtocolParamsByron {
             topLevelConfigProtocol = PBftConfig {
                 pbftParams = byronPBftParams compactedGenesisConfig mSigThresh
               }
-          , topLevelConfigLedger = compactedGenesisConfig
-          , topLevelConfigBlock  = mkByronConfig compactedGenesisConfig pVer sVer
-          , topLevelConfigCodec  = mkByronCodecConfig compactedGenesisConfig
+          , topLevelConfigLedger  = compactedGenesisConfig
+          , topLevelConfigBlock   = blockConfig
+          , topLevelConfigCodec   = mkByronCodecConfig compactedGenesisConfig
+          , topLevelConfigStorage = ByronStorageConfig blockConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             -- Important: don't pass the compacted genesis config to
@@ -198,6 +200,8 @@ protocolInfoByron ProtocolParamsByron {
       }
   where
     compactedGenesisConfig = compactGenesisConfig genesisConfig
+
+    blockConfig = mkByronConfig compactedGenesisConfig pVer sVer
 
 protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
 protocolClientInfoByron epochSlots =
@@ -244,12 +248,10 @@ extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
-  RunNode instance
+  NodeInitStorage instance
 -------------------------------------------------------------------------------}
 
-instance RunNode ByronBlock where
-  nodeBlockFetchSize = byronHeaderBlockSizeHint
-
+instance NodeInitStorage ByronBlock where
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
   nodeImmutableDbChunkInfo =
@@ -258,14 +260,19 @@ instance RunNode ByronBlock where
       . kEpochSlots
       . Genesis.gdK
       . extractGenesisData
-      . configBlock
+      . getByronBlockConfig
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
-  nodeInitChainDB cfg chainDB = do
-      empty <- InitChainDB.checkEmpty chainDB
-      when empty $ InitChainDB.addBlock chainDB genesisEBB
+  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
+      addBlockIfEmpty (return genesisEBB)
     where
-      genesisEBB = forgeEBB (configBlock cfg) (SlotNo 0) (BlockNo 0) GenesisHash
+      genesisEBB = forgeEBB (getByronBlockConfig cfg) (SlotNo 0) (BlockNo 0) GenesisHash
 
-  nodeCheckIntegrity     = verifyBlockIntegrity . configBlock
+  nodeCheckIntegrity = verifyBlockIntegrity . getByronBlockConfig
+
+{-------------------------------------------------------------------------------
+  RunNode instance
+-------------------------------------------------------------------------------}
+
+instance RunNode ByronBlock

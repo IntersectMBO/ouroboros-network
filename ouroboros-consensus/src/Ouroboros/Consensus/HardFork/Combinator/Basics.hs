@@ -22,6 +22,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , ConsensusConfig(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , HardForkLedgerConfig(..)
     -- ** Functions on config
   , completeLedgerConfig'
@@ -52,6 +53,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP (fn_5)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -119,6 +121,15 @@ newtype instance BlockConfig (HardForkBlock xs) = HardForkBlockConfig {
 
 newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
       hardForkCodecConfigPerEra :: PerEraCodecConfig xs
+    }
+  deriving newtype (NoThunks)
+
+{-------------------------------------------------------------------------------
+  Storage config
+-------------------------------------------------------------------------------}
+
+newtype instance StorageConfig (HardForkBlock xs) = HardForkStorageConfig {
+      hardForkStorageConfigPerEra :: PerEraStorageConfig xs
     }
   deriving newtype (NoThunks)
 
@@ -195,12 +206,13 @@ distribTopLevelConfig :: CanHardFork xs
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei tlc =
     hcpure proxySingle
-      (fn_4 (\cfgConsensus cfgLedger cfgBlock cfgCodec ->
+      (fn_5 (\cfgConsensus cfgLedger cfgBlock cfgCodec cfgStorage ->
            mkTopLevelConfig
              (completeConsensusConfig' ei cfgConsensus)
              (completeLedgerConfig'    ei cfgLedger)
              cfgBlock
-             cfgCodec))
+             cfgCodec
+             cfgStorage))
     `hap`
       (getPerEraConsensusConfig $
          hardForkConsensusConfigPerEra (configConsensus tlc))
@@ -213,3 +225,6 @@ distribTopLevelConfig ei tlc =
     `hap`
       (getPerEraCodecConfig $
          hardForkCodecConfigPerEra (configCodec tlc))
+    `hap`
+      (getPerEraStorageConfig $
+         hardForkStorageConfigPerEra (configStorage tlc))

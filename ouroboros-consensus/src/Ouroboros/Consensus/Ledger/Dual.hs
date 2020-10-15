@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , LedgerState(..)
   , GenTx(..)
   , TxId(..)
@@ -175,9 +176,10 @@ instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       topLevelConfigProtocol = topLevelConfigProtocol
-    , topLevelConfigLedger   = dualLedgerConfigMain topLevelConfigLedger
-    , topLevelConfigBlock    = dualBlockConfigMain  topLevelConfigBlock
-    , topLevelConfigCodec    = dualCodecConfigMain  topLevelConfigCodec
+    , topLevelConfigLedger   = dualLedgerConfigMain  topLevelConfigLedger
+    , topLevelConfigBlock    = dualBlockConfigMain   topLevelConfigBlock
+    , topLevelConfigCodec    = dualCodecConfigMain   topLevelConfigCodec
+    , topLevelConfigStorage  = dualStorageConfigMain topLevelConfigStorage
     }
 
 {-------------------------------------------------------------------------------
@@ -193,6 +195,21 @@ data instance CodecConfig (DualBlock m a) = DualCodecConfig {
 instance ( NoThunks (CodecConfig m)
          , NoThunks (CodecConfig a)
          ) => NoThunks (CodecConfig (DualBlock m a))
+  -- Use generic instance
+
+{-------------------------------------------------------------------------------
+  StorageConfig
+-------------------------------------------------------------------------------}
+
+data instance StorageConfig (DualBlock m a) = DualStorageConfig {
+      dualStorageConfigMain :: !(StorageConfig m)
+    , dualStorageConfigAux  :: !(StorageConfig a)
+    }
+  deriving (Generic)
+
+instance ( NoThunks (StorageConfig m)
+         , NoThunks (StorageConfig a)
+         ) => NoThunks (StorageConfig (DualBlock m a))
   -- Use generic instance
 
 {-------------------------------------------------------------------------------
@@ -214,12 +231,13 @@ class (
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
-      , Typeable               a
-      , UpdateLedger           a
-      , LedgerSupportsMempool  a
-      , Show (ApplyTxErr       a)
-      , NoThunks (LedgerConfig a)
-      , NoThunks (CodecConfig  a)
+      , Typeable                a
+      , UpdateLedger            a
+      , LedgerSupportsMempool   a
+      , Show (ApplyTxErr        a)
+      , NoThunks (LedgerConfig  a)
+      , NoThunks (CodecConfig   a)
+      , NoThunks (StorageConfig a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)

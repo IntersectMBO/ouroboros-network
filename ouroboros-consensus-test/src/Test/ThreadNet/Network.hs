@@ -82,6 +82,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -706,7 +707,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
           -- Integration
         , cdbTopLevelConfig         = cfg
         , cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize0
-        , cdbCheckIntegrity         = nodeCheckIntegrity cfg
+        , cdbCheckIntegrity         = nodeCheckIntegrity (configStorage cfg)
         , cdbGenesis                = return initLedger
         , cdbCheckInFuture          = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
                                       (OracularClock.finiteSystemTime clock)
@@ -970,7 +971,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , chainDB
             , initChainDB             = nodeInitChainDB
             , blockForging            = blockForging
-            , blockFetchSize          = nodeBlockFetchSize
+            , blockFetchSize          = estimateBlockSize
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
             , keepAliveRng            = kaRng

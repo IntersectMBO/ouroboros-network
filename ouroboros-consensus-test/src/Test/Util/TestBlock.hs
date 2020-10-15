@@ -28,6 +28,7 @@ module Test.Util.TestBlock (
   , Header(..)
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -247,6 +248,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
 data instance CodecConfig TestBlock = TestBlockCodecConfig
   deriving (Show, Generic, NoThunks)
 
+-- | The 'TestBlock' does not need any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
+
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
 
@@ -412,9 +417,10 @@ singleNodeTestConfigWithK k = TopLevelConfig {
         , bftSignKey = SignKeyMockDSIGN 0
         , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , topLevelConfigLedger = eraParams
-    , topLevelConfigBlock  = TestBlockConfig numCoreNodes
-    , topLevelConfigCodec  = TestBlockCodecConfig
+    , topLevelConfigLedger  = eraParams
+    , topLevelConfigBlock   = TestBlockConfig numCoreNodes
+    , topLevelConfigCodec   = TestBlockCodecConfig
+    , topLevelConfigStorage = TestBlockStorageConfig
     }
   where
     slotLength :: SlotLength

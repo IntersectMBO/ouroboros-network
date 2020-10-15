@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Config (
   , configLedger
   , configBlock
   , configCodec
+  , configStorage
     -- ** Additional convenience functions
   , configSecurityParam
     -- * Re-exports
@@ -40,20 +41,24 @@ data TopLevelConfig blk = TopLevelConfig {
     , topLevelConfigLedger   :: !(LedgerConfig blk)
     , topLevelConfigBlock    :: !(BlockConfig blk)
     , topLevelConfigCodec    :: !(CodecConfig blk)
+    , topLevelConfigStorage  :: !(StorageConfig blk)
     }
   deriving (Generic)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
-         , NoThunks (LedgerConfig blk)
-         , NoThunks (BlockConfig  blk)
-         , NoThunks (CodecConfig  blk)
+         , NoThunks (LedgerConfig  blk)
+         , NoThunks (BlockConfig   blk)
+         , NoThunks (CodecConfig   blk)
+         , NoThunks (StorageConfig blk)
          ) => NoThunks (TopLevelConfig blk)
 
-mkTopLevelConfig :: ConsensusConfig (BlockProtocol blk)
-                 -> LedgerConfig blk
-                 -> BlockConfig  blk
-                 -> CodecConfig  blk
-                 -> TopLevelConfig blk
+mkTopLevelConfig ::
+     ConsensusConfig (BlockProtocol blk)
+  -> LedgerConfig   blk
+  -> BlockConfig    blk
+  -> CodecConfig    blk
+  -> StorageConfig  blk
+  -> TopLevelConfig blk
 mkTopLevelConfig = TopLevelConfig
 
 configConsensus :: TopLevelConfig blk -> ConsensusConfig (BlockProtocol blk)
@@ -68,6 +73,9 @@ configBlock = topLevelConfigBlock
 configCodec  :: TopLevelConfig blk -> CodecConfig  blk
 configCodec = topLevelConfigCodec
 
+configStorage  :: TopLevelConfig blk -> StorageConfig blk
+configStorage = topLevelConfigStorage
+
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
 configSecurityParam = protocolSecurityParam . configConsensus
@@ -76,8 +84,9 @@ castTopLevelConfig ::
      ( Coercible (ConsensusConfig (BlockProtocol blk))
                  (ConsensusConfig (BlockProtocol blk'))
      , LedgerConfig blk ~ LedgerConfig blk'
-     , Coercible (BlockConfig blk) (BlockConfig blk')
-     , Coercible (CodecConfig blk) (CodecConfig blk')
+     , Coercible (BlockConfig   blk) (BlockConfig   blk')
+     , Coercible (CodecConfig   blk) (CodecConfig   blk')
+     , Coercible (StorageConfig blk) (StorageConfig blk')
      )
   => TopLevelConfig blk -> TopLevelConfig blk'
 castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
@@ -85,4 +94,5 @@ castTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
     , topLevelConfigLedger   = topLevelConfigLedger
     , topLevelConfigBlock    = coerce topLevelConfigBlock
     , topLevelConfigCodec    = coerce topLevelConfigCodec
+    , topLevelConfigStorage  = coerce topLevelConfigStorage
     }

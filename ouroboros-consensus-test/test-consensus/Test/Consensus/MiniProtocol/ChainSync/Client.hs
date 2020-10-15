@@ -401,9 +401,10 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                            , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
                            ]
           }
-      , topLevelConfigLedger = eraParams
-      , topLevelConfigBlock  = TestBlockConfig numCoreNodes
-      , topLevelConfigCodec  = TestBlockCodecConfig
+      , topLevelConfigLedger  = eraParams
+      , topLevelConfigBlock   = TestBlockConfig numCoreNodes
+      , topLevelConfigCodec   = TestBlockCodecConfig
+      , topLevelConfigStorage = TestBlockStorageConfig
       }
 
     eraParams :: HardFork.EraParams

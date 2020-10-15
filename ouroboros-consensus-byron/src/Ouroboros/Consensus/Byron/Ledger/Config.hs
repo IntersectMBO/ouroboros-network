@@ -16,6 +16,8 @@ module Ouroboros.Consensus.Byron.Ledger.Config (
     -- * Codec config
   , CodecConfig(..)
   , mkByronCodecConfig
+    -- * Storage config
+  , StorageConfig(..)
     -- * Compact genesis config
   , compactGenesisConfig
   ) where
@@ -81,6 +83,17 @@ mkByronCodecConfig :: CC.Genesis.Config -> CodecConfig ByronBlock
 mkByronCodecConfig cfg = ByronCodecConfig {
       getByronEpochSlots = CC.Genesis.configEpochSlots cfg
     }
+
+{-------------------------------------------------------------------------------
+  Storage config
+-------------------------------------------------------------------------------}
+
+newtype instance StorageConfig ByronBlock = ByronStorageConfig {
+      -- | We need the 'BlockConfig' to be able to forge an EBB in
+      -- 'nodeInitChainDB'.
+      getByronBlockConfig :: BlockConfig ByronBlock
+    }
+  deriving (Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Compact genesis config

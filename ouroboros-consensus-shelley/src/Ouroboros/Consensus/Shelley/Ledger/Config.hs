@@ -8,10 +8,12 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
   , mkShelleyBlockConfig
   , CodecConfig (..)
+  , StorageConfig (..)
   ) where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
@@ -19,6 +21,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 
 import qualified Shelley.Spec.Ledger.API as SL
 
@@ -69,4 +72,16 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
 
 -- | No particular codec configuration is needed for Shelley
 data instance CodecConfig (ShelleyBlock era) = ShelleyCodecConfig
+  deriving (Generic, NoThunks)
+
+{-------------------------------------------------------------------------------
+  Storage config
+-------------------------------------------------------------------------------}
+
+data instance StorageConfig (ShelleyBlock era) = ShelleyStorageConfig {
+      -- | Needed for 'nodeCheckIntegrity'
+      shelleyStorageConfigSlotsPerKESPeriod :: !Word64
+      -- | Needed for 'nodeImmutableDbChunkInfo'
+    , shelleyStorageConfigSecurityParam     :: !SecurityParam
+    }
   deriving (Generic, NoThunks)

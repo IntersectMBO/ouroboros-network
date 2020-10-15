@@ -14,7 +14,7 @@ module Ouroboros.Consensus.Mock.Node.Serialisation (
   , NestedCtxt_(..)
   ) where
 
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (Serialise, decode, encode, serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable (Typeable)
 
@@ -70,7 +70,12 @@ instance DecodeDisk (MockBlock ext) (AnnTip (MockBlock ext)) where
   possible.
 -------------------------------------------------------------------------------}
 
-instance Serialise ext => SerialiseNodeToNodeConstraints (MockBlock ext)
+instance Serialise ext => SerialiseNodeToNodeConstraints (MockBlock ext) where
+  estimateBlockSize hdr =
+      7 {- CBOR-in-CBOR -} + 1 {- encodeListLen 2 -} + hdrSize + bodySize
+    where
+      hdrSize  = fromIntegral (Lazy.length (serialise hdr))
+      bodySize = simpleBodySize (simpleHeaderStd hdr)
 
 instance Serialise ext => SerialiseNodeToNode (MockBlock ext) (MockBlock ext) where
   encodeNodeToNode _ _ = defaultEncodeCBORinCBOR

@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Node
   , run
     -- * Exposed by 'run'
   , RunNodeArgs (..)
-  , RunNode (..)
+  , RunNode
   , Tracers
   , Tracers' (..)
   , ChainDB.TraceEvent (..)
@@ -67,6 +67,7 @@ import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
@@ -387,7 +388,7 @@ openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
     args :: ChainDbArgs Identity IO blk
     args = customiseArgs $
              mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-             (nodeImmutableDbChunkInfo cfg)
+             (nodeImmutableDbChunkInfo (configStorage cfg))
 
 mkChainDbArgs
   :: forall blk. RunNode blk
@@ -407,7 +408,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbChunkInfo             = chunkInfo
     , ChainDB.cdbGenesis               = return initLedger
     , ChainDB.cdbDiskPolicy            = defaultDiskPolicy k
-    , ChainDB.cdbCheckIntegrity        = nodeCheckIntegrity cfg
+    , ChainDB.cdbCheckIntegrity        = nodeCheckIntegrity (configStorage cfg)
     , ChainDB.cdbParamsLgrDB           = ledgerDbDefaultParams k
     , ChainDB.cdbTopLevelConfig        = cfg
     , ChainDB.cdbRegistry              = registry
@@ -440,7 +441,7 @@ mkNodeArgs registry cfg initBlockForging tracers btime chainDB = do
       , chainDB
       , blockForging            = blockForging
       , initChainDB             = nodeInitChainDB
-      , blockFetchSize          = nodeBlockFetchSize
+      , blockFetchSize          = estimateBlockSize
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters

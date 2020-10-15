@@ -119,7 +119,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , cfg                     :: TopLevelConfig blk
     , btime                   :: BlockchainTime m
     , chainDB                 :: ChainDB m blk
-    , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
+    , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
     , maxTxCapacityOverride   :: MaxTxCapacityOverride
@@ -143,7 +143,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
                              , blockForging, chainDB, initChainDB
                              , blockFetchConfiguration } = do
 
-    initChainDB cfg (InitChainDB.fromFull chainDB)
+    initChainDB (configStorage cfg) (InitChainDB.fromFull chainDB)
 
     st <- initInternalState args
 

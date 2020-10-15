@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Block.Abstract (
     -- * Configuration
   , BlockConfig
   , CodecConfig
+  , StorageConfig
     -- * Previous hash
   , GetPrevHash(..)
   , blockPrevHash
@@ -107,6 +108,11 @@ data family BlockConfig blk :: Type
 --
 -- Data family instead of type family to get better type inference.
 data family CodecConfig blk :: Type
+
+-- | Config needed for the
+-- 'Ouroboros.Consensus.Node.InitStorage.NodeInitStorage' class. Defined here to
+-- avoid circular dependencies.
+data family StorageConfig blk :: Type
 
 {-------------------------------------------------------------------------------
   Get hash of previous block

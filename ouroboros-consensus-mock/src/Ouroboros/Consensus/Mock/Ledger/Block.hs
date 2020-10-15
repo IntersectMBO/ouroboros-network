@@ -39,6 +39,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * Configuration
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , SimpleLedgerConfig(..)
     -- * Protocol-specific part
   , MockProtocolSpecific(..)
@@ -80,6 +81,7 @@ import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -288,6 +290,14 @@ data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
 -------------------------------------------------------------------------------}
 
 data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
+  deriving stock    (Generic)
+  deriving anyclass (NoThunks)
+
+{-------------------------------------------------------------------------------
+  Storage config
+-------------------------------------------------------------------------------}
+
+data instance StorageConfig (SimpleBlock c ext) = SimpleStorageConfig SecurityParam
   deriving stock    (Generic)
   deriving anyclass (NoThunks)
 

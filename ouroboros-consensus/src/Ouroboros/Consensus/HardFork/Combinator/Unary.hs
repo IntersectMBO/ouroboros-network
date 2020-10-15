@@ -37,6 +37,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
 
 import           Data.Bifunctor (first)
 import           Data.Coerce
+import           Data.Functor.Contravariant
 import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict
@@ -58,7 +59,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -192,6 +192,10 @@ instance Isomorphic CodecConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
+instance Isomorphic StorageConfig where
+  project = defaultProjectNP
+  inject  = defaultInjectNP
+
 instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
@@ -268,6 +272,7 @@ instance Isomorphic TopLevelConfig where
         (auxLedger    $ configLedger    tlc)
         (project      $ configBlock     tlc)
         (project      $ configCodec     tlc)
+        (project      $ configStorage   tlc)
     where
       ei :: EpochInfo Identity
       ei = noHardForksEpochInfo $ project tlc
@@ -297,6 +302,7 @@ instance Isomorphic TopLevelConfig where
         (auxLedger    $ configLedger    tlc)
         (inject       $ configBlock     tlc)
         (inject       $ configCodec     tlc)
+        (inject       $ configStorage   tlc)
     where
       eraParams = getEraParams tlc
 
@@ -369,20 +375,14 @@ instance Isomorphic AnnTip where
 
   inject (AnnTip s b nfo) = AnnTip s b (OneEraTipInfo (Z (WrapTipInfo nfo)))
 
-instance Isomorphic (InitChainDB m) where
+instance Functor m => Isomorphic (InitChainDB m) where
   project :: forall blk. NoHardForks blk
           => InitChainDB m (HardForkBlock '[blk]) -> InitChainDB m blk
-  project initDB = InitChainDB.InitChainDB {
-        InitChainDB.checkEmpty = InitChainDB.checkEmpty initDB
-      , InitChainDB.addBlock   = InitChainDB.addBlock   initDB . inject' (Proxy @(I blk))
-      }
+  project = contramap (inject' (Proxy @(I blk)))
 
   inject :: forall blk. NoHardForks blk
          => InitChainDB m blk -> InitChainDB m (HardForkBlock '[blk])
-  inject initDB = InitChainDB.InitChainDB {
-        InitChainDB.checkEmpty = InitChainDB.checkEmpty initDB
-      , InitChainDB.addBlock   = InitChainDB.addBlock   initDB . project' (Proxy @(I blk))
-      }
+  inject = contramap (project' (Proxy @(I blk)))
 
 instance Isomorphic ProtocolClientInfo where
   project ProtocolClientInfo{..} = ProtocolClientInfo {

@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -203,6 +204,7 @@ protocolInfoShelley ProtocolParamsShelley {
       , topLevelConfigLedger   = ledgerConfig
       , topLevelConfigBlock    = blockConfig
       , topLevelConfigCodec    = ShelleyCodecConfig
+      , topLevelConfigStorage  = storageConfig
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -226,6 +228,12 @@ protocolInfoShelley ProtocolParamsShelley {
           protVer
           genesis
           (tpraosBlockIssuerVKey <$> toList credentialss)
+
+    storageConfig :: StorageConfig (ShelleyBlock (ShelleyEra c))
+    storageConfig = ShelleyStorageConfig {
+          shelleyStorageConfigSlotsPerKESPeriod = tpraosSlotsPerKESPeriod tpraosParams
+        , shelleyStorageConfigSecurityParam     = tpraosSecurityParam     tpraosParams
+        }
 
     initLedgerState :: LedgerState (ShelleyBlock (ShelleyEra c))
     initLedgerState = ShelleyLedgerState {
@@ -362,34 +370,25 @@ instance ConfigSupportsNode (ShelleyBlock era) where
   getNetworkMagic = shelleyNetworkMagic
 
 {-------------------------------------------------------------------------------
+  NodeInitStorage instance
+-------------------------------------------------------------------------------}
+
+instance TPraosCrypto era => NodeInitStorage (ShelleyBlock era) where
+  -- We fix the chunk size to @10k@ so that we have the same chunk size as
+  -- Byron. Consequently, a Shelley net will have the same chunk size as the
+  -- Byron-to-Shelley net with the same @k@.
+  nodeImmutableDbChunkInfo =
+        simpleChunkInfo
+      . EpochSize
+      . (* 10)
+      . maxRollbacks
+      . shelleyStorageConfigSecurityParam
+
+  nodeCheckIntegrity cfg =
+      verifyBlockIntegrity (shelleyStorageConfigSlotsPerKESPeriod cfg)
+
+{-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto era => RunNode (ShelleyBlock era) where
-  nodeBlockFetchSize hdr = overhead + headerSize + bodySize
-    where
-      -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block
-      -- is:
-      --
-      -- > D8 18          # tag(24)
-      -- >    1A 00010000 # bytes(65536)
-      --
-      -- Which is 7 bytes, enough for up to 4294967295 bytes.
-      overhead   = 7 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
-      bodySize   = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw $ hdr
-      headerSize = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
-
-  -- We fix the chunk size to 10k
-  nodeImmutableDbChunkInfo =
-      simpleChunkInfo
-    . EpochSize
-    . (* 10)
-    . maxRollbacks
-    . tpraosSecurityParam
-    . tpraosParams
-    . configConsensus
-
-  nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
-    where
-      TPraosParams { tpraosSlotsPerKESPeriod } =
-        tpraosParams $ configConsensus cfg
+instance TPraosCrypto era => RunNode (ShelleyBlock era)

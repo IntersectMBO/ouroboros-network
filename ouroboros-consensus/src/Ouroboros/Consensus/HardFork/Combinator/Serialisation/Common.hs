@@ -85,14 +85,6 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
-import           Ouroboros.Consensus.HardFork.Combinator.State
-import           Ouroboros.Consensus.HardFork.Combinator.State.Instances
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (SimpleTelescope (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -100,6 +92,19 @@ import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
+
+import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
+import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.Info
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+import           Ouroboros.Consensus.HardFork.Combinator.State
+import           Ouroboros.Consensus.HardFork.Combinator.State.Instances
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
+                     (SimpleTelescope (..), Telescope (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
   Distinguish between the first era and all others
@@ -332,6 +337,15 @@ class ( CanHardFork xs
         where
           underlyingBlockInfo :: BinaryBlockInfo
           underlyingBlockInfo = getBinaryBlockInfo blk
+
+  -- | Used as the implementation of 'estimateBlockSize' for 'HardForkBlock'.
+  estimateHfcBlockSize :: Header (HardForkBlock xs) -> SizeInBytes
+  estimateHfcBlockSize =
+        (+ 2) -- Account for the era wrapper
+      . hcollapse
+      . hcmap (Proxy @SerialiseConstraintsHFC) (K . estimateBlockSize)
+      . getOneEraHeader
+      . getHardForkHeader
 
 {-------------------------------------------------------------------------------
   Exceptions

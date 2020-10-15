@@ -65,7 +65,19 @@ instance Era era =>  DecodeDisk (ShelleyBlock era) (AnnTip (ShelleyBlock era)) w
   SerialiseNodeToNode
 -------------------------------------------------------------------------------}
 
-instance Era era => SerialiseNodeToNodeConstraints (ShelleyBlock era)
+instance Era era => SerialiseNodeToNodeConstraints (ShelleyBlock era) where
+  estimateBlockSize hdr = overhead + hdrSize + bodySize
+    where
+      -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block
+      -- is:
+      --
+      -- > D8 18          # tag(24)
+      -- >    1A 00010000 # bytes(65536)
+      --
+      -- Which is 7 bytes, enough for up to 4294967295 bytes.
+      overhead = 7 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
+      bodySize = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw $ hdr
+      hdrSize  = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

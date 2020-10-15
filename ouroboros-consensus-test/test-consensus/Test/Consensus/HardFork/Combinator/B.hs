@@ -25,6 +25,7 @@ module Test.Consensus.HardFork.Combinator.B (
     -- * Type family instances
   , BlockConfig(..)
   , CodecConfig(..)
+  , StorageConfig(..)
   , ConsensusConfig(..)
   , GenTx(..)
   , Header(..)
@@ -65,10 +66,12 @@ import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.Condense
@@ -135,6 +138,9 @@ type instance BlockProtocol BlockB = ProtocolB
 type instance HeaderHash    BlockB = Strict.ByteString
 
 data instance CodecConfig BlockB = CCfgB
+  deriving (Generic, NoThunks)
+
+data instance StorageConfig BlockB = SCfgB
   deriving (Generic, NoThunks)
 
 instance ConfigSupportsNode BlockB where
@@ -313,6 +319,12 @@ instance ReconstructNestedCtxt Header BlockB
 instance InspectLedger BlockB where
   -- Use defaults
 
+instance NodeInitStorage BlockB where
+  nodeCheckIntegrity  _ _ = True
+
+  -- Pick some chunk size
+  nodeImmutableDbChunkInfo _ = simpleChunkInfo 10
+
 instance SingleEraBlock BlockB where
   singleEraInfo _     = SingleEraInfo "B"
   singleEraTransition = \_ _ _ _ -> Nothing
@@ -350,8 +362,9 @@ instance HasBinaryBlockInfo BlockB where
 
 instance SerialiseConstraintsHFC          BlockB
 instance SerialiseDiskConstraints         BlockB
-instance SerialiseNodeToNodeConstraints   BlockB
 instance SerialiseNodeToClientConstraints BlockB
+instance SerialiseNodeToNodeConstraints   BlockB where
+    estimateBlockSize = const 0
 
 {-------------------------------------------------------------------------------
   Serialisation

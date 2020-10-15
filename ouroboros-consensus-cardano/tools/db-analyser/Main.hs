@@ -11,8 +11,10 @@ import           System.IO
 import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import qualified Ouroboros.Consensus.Node as Node
+import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -158,7 +160,7 @@ analyse CmdLine {..} args =
       tracer <- mkTracer verbose
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
-      let chunkInfo  = Node.nodeImmutableDbChunkInfo cfg
+      let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
           args' = Node.mkChainDbArgs tracer registry InFuture.dontCheck
                     dbDir cfg initLedger chunkInfo
           chainDbArgs = args' {

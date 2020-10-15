@@ -38,7 +38,6 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
-import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import           Data.SOP.Strict (K (..), NP (..), NS (..))
@@ -56,7 +55,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
@@ -167,6 +165,14 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
       shiftHeaderOffset shift binfo = binfo {
             headerOffset = headerOffset binfo + shift
           }
+
+  estimateHfcBlockSize = \case
+      HeaderByron   headerByron   -> estimateBlockSize headerByron
+      -- For Shelley and later eras, we add two extra bytes, see the
+      -- 'SerialiseHFC' instance.
+      HeaderShelley headerShelley -> estimateBlockSize headerShelley + 2
+      HeaderAllegra headerAllegra -> estimateBlockSize headerAllegra + 2
+      HeaderMary    headerMary    -> estimateBlockSize headerMary    + 2
 
 -- | Prepend the given tag by creating a CBOR 2-tuple with the tag as the
 -- first element and the given 'Encoding' as the second.
@@ -283,58 +289,6 @@ instance CardanoHardForkConstraints c
       -- , (NodeToClientV_4, CardanoNodeToClientVersion3)
       -- , (NodeToClientV_5, CardanoNodeToClientVersion4)
       ]
-
-{-------------------------------------------------------------------------------
-  RunNode instance
--------------------------------------------------------------------------------}
-
-instance CardanoHardForkConstraints c => RunNode (CardanoBlock c) where
-  -- TODO pull out of RunNode
-  nodeBlockFetchSize = \case
-      HeaderByron   headerByron   -> nodeBlockFetchSize headerByron
-      -- For Shelley and later eras, we add two extra bytes, see the
-      -- 'SerialiseHFC' instance.
-      HeaderShelley headerShelley -> nodeBlockFetchSize headerShelley + 2
-      HeaderAllegra headerAllegra -> nodeBlockFetchSize headerAllegra + 2
-      HeaderMary    headerMary    -> nodeBlockFetchSize headerMary    + 2
-
-  -- Use a ChunkInfo with Byron's epoch size for the whole chain. This means
-  -- Shelley chunks will be 10x smaller, as the slot density is 10x smaller.
-  --
-  -- TODO update when a non-uniform chunk size is supported
-  nodeImmutableDbChunkInfo =
-        simpleChunkInfo
-      . History.eraEpochSize
-      . exactlyHead
-      . History.getShape
-      . hardForkLedgerConfigShape
-      . configLedger
-
-  -- Call Byron's intialisation, as the chain starts with Byron
-  nodeInitChainDB cfg initChainDB =
-      nodeInitChainDB
-        (projByronTopLevelConfig cfg)
-        (contramap BlockByron initChainDB)
-
-  nodeCheckIntegrity cfg = \case
-      BlockByron blockByron ->
-        Byron.verifyBlockIntegrity blockCfgByron blockByron
-      BlockShelley blockShelley ->
-        Shelley.verifyBlockIntegrity slotsPerKESPeriodShelley blockShelley
-      BlockAllegra blockAllegra ->
-        Shelley.verifyBlockIntegrity slotsPerKESPeriodAllegra blockAllegra
-      BlockMary blockMary ->
-        Shelley.verifyBlockIntegrity slotsPerKESPeriodMary    blockMary
-    where
-      TopLevelConfig {
-          topLevelConfigProtocol =
-            CardanoConsensusConfig
-              _
-              TPraosParams { tpraosSlotsPerKESPeriod = slotsPerKESPeriodShelley }
-              TPraosParams { tpraosSlotsPerKESPeriod = slotsPerKESPeriodAllegra }
-              TPraosParams { tpraosSlotsPerKESPeriod = slotsPerKESPeriodMary    }
-        , topLevelConfigBlock = CardanoBlockConfig blockCfgByron _ _ _
-        } = cfg
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -468,7 +422,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Shelley
 
     tpraosParams :: TPraosParams
-    tpraosParams =
+    tpraosParams@TPraosParams { tpraosSlotsPerKESPeriod } =
         Shelley.mkTPraosParams
           maxMajorProtVer
           initialNonceShelley
@@ -578,6 +532,12 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             Shelley.ShelleyCodecConfig
             Shelley.ShelleyCodecConfig
             Shelley.ShelleyCodecConfig
+      , topLevelConfigStorage =
+          CardanoStorageConfig
+            (configStorage topLevelConfigByron)
+            (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
+            (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
+            (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
       }
 
 protocolClientInfoCardano
@@ -614,27 +574,3 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFo
               maxMajorProtVer
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }
-
--- | We are lucky that for Byron we can construct all the full configs from
--- the partial ones, which means we can reconstruct the 'TopLevelConfig' for
--- Byron. This is not possible for Shelley, as we would have to call
--- 'completeLedgerConfig' and 'completeConsensusConfig' first.
-projByronTopLevelConfig
-  :: TopLevelConfig (CardanoBlock c)
-  -> TopLevelConfig ByronBlock
-projByronTopLevelConfig cfg = byronCfg
-  where
-    TopLevelConfig {
-        topLevelConfigProtocol = CardanoConsensusConfig byronConsensusCfg _ _ _
-      , topLevelConfigLedger   = CardanoLedgerConfig    byronLedgerCfg    _ _ _
-      , topLevelConfigBlock    = CardanoBlockConfig     byronBlockCfg     _ _ _
-      , topLevelConfigCodec    = CardanoCodecConfig     byronCodecCfg     _ _ _
-      } = cfg
-
-    byronCfg :: TopLevelConfig ByronBlock
-    byronCfg = TopLevelConfig {
-        topLevelConfigProtocol = byronConsensusCfg
-      , topLevelConfigLedger   = byronLedgerConfig byronLedgerCfg
-      , topLevelConfigBlock    = byronBlockCfg
-      , topLevelConfigCodec    = byronCodecCfg
-      }

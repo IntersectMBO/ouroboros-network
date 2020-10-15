@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,7 +11,6 @@ module Ouroboros.Consensus.ByronDual.Node (
     protocolInfoDualByron
   ) where
 
-import           Control.Monad
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
@@ -39,12 +39,13 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Ledger
@@ -103,6 +104,10 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
           , topLevelConfigCodec = DualCodecConfig {
                 dualCodecConfigMain = mkByronCodecConfig concreteGenesis
               , dualCodecConfigAux  = ByronSpecCodecConfig
+              }
+          , topLevelConfigStorage = DualStorageConfig {
+                dualStorageConfigMain = ByronStorageConfig concreteConfig
+              , dualStorageConfigAux  = ByronSpecStorageConfig
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -208,14 +213,13 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
                           (byronSpecLedgerState initAbstractState)
 
 {-------------------------------------------------------------------------------
-  RunNode instance
+  NodeInitStorage instance
 -------------------------------------------------------------------------------}
 
-instance RunNode DualByronBlock where
+instance NodeInitStorage DualByronBlock where
   -- Just like Byron, we need to start with an EBB
-  nodeInitChainDB cfg chainDB = do
-      empty <- InitChainDB.checkEmpty chainDB
-      when empty $ InitChainDB.addBlock chainDB genesisEBB
+  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
+      addBlockIfEmpty (return genesisEBB)
     where
       genesisEBB :: DualByronBlock
       genesisEBB = DualBlock {
@@ -226,19 +230,21 @@ instance RunNode DualByronBlock where
 
       byronEBB :: ByronBlock
       byronEBB = forgeEBB
-                   (configBlock (dualTopLevelConfigMain cfg))
+                   (getByronBlockConfig (dualStorageConfigMain cfg))
                    (SlotNo 0)
                    (BlockNo 0)
                    GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeImmutableDbChunkInfo = nodeImmutableDbChunkInfo  . dualTopLevelConfigMain
-
-  -- For now the size of the block is just an estimate, and so we just reuse
-  -- the estimate from the concrete header.
-  nodeBlockFetchSize = nodeBlockFetchSize . dualHeaderMain
+  nodeImmutableDbChunkInfo = nodeImmutableDbChunkInfo . dualStorageConfigMain
 
   -- We don't really care too much about data loss or malicious behaviour for
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
-  nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
+  nodeCheckIntegrity cfg = nodeCheckIntegrity (dualStorageConfigMain cfg) . dualBlockMain
+
+{-------------------------------------------------------------------------------
+  RunNode instance
+-------------------------------------------------------------------------------}
+
+instance RunNode DualByronBlock
