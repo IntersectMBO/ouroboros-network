@@ -14,7 +14,7 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "typed-protocols"
+  testGroup "ouroboros-network-framework"
   [ PingPong.tests
   , ReqResp.tests
   , Driver.tests
