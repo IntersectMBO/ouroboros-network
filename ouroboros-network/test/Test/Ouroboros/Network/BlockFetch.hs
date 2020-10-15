@@ -45,7 +45,7 @@ import           Ouroboros.Network.Mux (ControlMessage (..), continueForever)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Testing.ConcreteBlock
 
-import           Test.Ouroboros.Network.Utils
+import           Ouroboros.Network.Testing.Utils
 
 
 --

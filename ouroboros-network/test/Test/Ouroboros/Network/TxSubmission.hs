@@ -51,7 +51,7 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 
-import           Test.Ouroboros.Network.Utils
+import           Ouroboros.Network.Testing.Utils
 
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
