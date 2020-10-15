@@ -25,6 +25,7 @@ library
   exposed-modules:
                        Ouroboros.Network.Testing.Serialise
                        Ouroboros.Network.Testing.QuickCheck
+                       Ouroboros.Network.Testing.Utils
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -49,7 +50,9 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.15,
+                       contra-tracer,
                        io-sim,
+                       io-sim-classes,
 
                        cborg             >=0.2.1 && <0.3,
                        serialise         >=0.2 && <0.3,

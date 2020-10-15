@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Ouroboros.Network.Utils where
+module Ouroboros.Network.Testing.Utils where
 
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSay
@@ -35,3 +35,4 @@ debugTracer = Tracer traceShowM
 
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
+
