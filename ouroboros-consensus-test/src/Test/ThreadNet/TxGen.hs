@@ -1,19 +1,31 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- | Transaction generator for testing
-module Test.ThreadNet.TxGen
-  ( TxGen (..)
+module Test.ThreadNet.TxGen (
+    TxGen (..)
+    -- * Implementation for HFC
+  , WrapTxGenExtra (..)
+  , testGenTxsHfc
   ) where
 
 import           Data.Kind (Type)
+import           Data.SOP.Strict
 
 import           Test.QuickCheck (Gen)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
+import           Ouroboros.Consensus.Util.SOP
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 
 {-------------------------------------------------------------------------------
   TxGen class
@@ -39,3 +51,56 @@ class TxGen blk where
              -> TxGenExtra blk
              -> LedgerState blk
              -> Gen [GenTx blk]
+
+{-------------------------------------------------------------------------------
+  Implementation for HFC
+-------------------------------------------------------------------------------}
+
+-- | Newtypes wrapper around the 'TxGenExtra' type family so that it can be
+-- partially applied.
+newtype WrapTxGenExtra blk = WrapTxGenExtra {
+      unwrapTxGenExtra :: TxGenExtra blk
+    }
+
+-- | Function that can be used for 'TxGen' instances for 'HardForkBlock'.
+--
+-- We don't provide a generic instance of 'TxGen' because it might be desirable
+-- to provide custom implementations for specific instantiations of the eras of
+-- 'HardForkBlock'. Instead, we provide this function that can be used when a
+-- generic implemenation is desired.
+--
+-- Choose @NP WrapTxGenExtra xs@ for the instance of the 'TxGenExtra' type
+-- family, where @xs@ matches the concrete instantiation.
+testGenTxsHfc ::
+     forall xs. (All TxGen xs, CanHardFork xs)
+  => CoreNodeId
+  -> NumCoreNodes
+  -> SlotNo
+  -> TopLevelConfig (HardForkBlock xs)
+  -> NP WrapTxGenExtra xs
+  -> LedgerState (HardForkBlock xs)
+  -> Gen [GenTx (HardForkBlock xs)]
+testGenTxsHfc coreNodeId numCoreNodes curSlotNo cfg extras state =
+    hcollapse $
+    hcizipWith3
+      (Proxy @TxGen)
+      aux
+      cfgs
+      extras
+      (State.tip (hardForkLedgerStatePerEra state))
+  where
+    cfgs = distribTopLevelConfig ei cfg
+    ei   = State.epochInfoLedger
+             (configLedger cfg)
+             (hardForkLedgerStatePerEra state)
+
+    aux ::
+         forall blk. TxGen blk
+      => Index xs blk
+      -> TopLevelConfig blk
+      -> WrapTxGenExtra blk
+      -> LedgerState blk
+      -> K (Gen [GenTx (HardForkBlock xs)]) blk
+    aux index cfg' (WrapTxGenExtra extra') state' = K $
+        fmap (injectNS' (Proxy @GenTx) index)
+          <$> testGenTxs coreNodeId numCoreNodes curSlotNo cfg' extra' state'
