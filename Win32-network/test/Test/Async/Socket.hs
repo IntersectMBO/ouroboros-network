@@ -16,7 +16,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import           Data.Function (on)
-import           Data.Foldable (all, foldl', traverse_)
+import           Data.Foldable (foldl', traverse_)
 import           GHC.IO.Exception (IOException (..))
 
 import           System.IOManager
