@@ -23,11 +23,11 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 -- TODO: GADT encoding of the server (@Handshake.Server@ module).
 --
-handshakeServerPeer
+{-handshakeServerPeer
   :: Ord vNumber
   => VersionDataCodec extra vParams vNumber agreedOptions
   -> (forall vData. extra vData -> vData -> vData -> Accept)
-  -> Versions vNumber extra r
+  -> Versions vNumber extra r vData
   -> Peer (Handshake vNumber vParams)
           AsServer StPropose m
           (Either (RefuseReason vNumber) (r, agreedOptions))
@@ -48,7 +48,8 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
 
           vNumber:_ ->
             case (getVersions versions Map.! vNumber, vMap Map.! vNumber) of
-              (Sigma vData version, vParams) -> case decodeData (versionExtra version) vParams of
+              --(Sigma vData version, vParams) -> case decodeData (versionExtra version) vParams of
+              (version, vParams) -> case decodeData (versionExtra version) vParams of
                 Left err ->
                   let vReason = HandshakeDecodeError vNumber err
                   in Yield (ServerAgency TokConfirm)
@@ -56,6 +57,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
                            (Done TokDone $ Left vReason)
 
                 Right vData' ->
+                  let vData = versionData version in
                   case acceptVersion (versionExtra version) vData vData' of
 
                     -- We agree on the version; send back the agreed version
@@ -68,6 +70,59 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
                               ( runApplication (versionApplication version) vData vData'
                               , getAgreedOptions (versionExtra version) vNumber vData'
                               ))
+
+                    -- We disagree on the version.
+                    Refuse err ->
+                      let vReason = Refused vNumber err
+                      in Yield (ServerAgency TokConfirm)
+                               (MsgRefuse vReason)
+                               (Done TokDone $ Left $ vReason)
+-}
+
+handshakeServerPeer
+  :: Ord vNumber
+  => VersionDataCodec extra vParams vNumber
+  -> (forall vParams'. extra vParams' -> vParams' -> Accept agreedOptions)
+  -> Versions vNumber extra r vData agreedOptions
+  -> Peer (Handshake vNumber vParams)
+          AsServer StPropose m
+          (Either (RefuseReason vNumber) r)
+handshakeServerPeer VersionDataCodec {encodeData, decodeData, getLocalData} acceptVersion versions =
+    -- await for versions proposed by a client
+    Await (ClientAgency TokPropose) $ \msg -> case msg of
+
+      MsgProposeVersions vMap ->
+        -- Compute intersection of local and remote versions.  We cannot
+        -- intersect @vMap@ and @getVersions versions@ as the values have
+        -- different types.
+        case map fst (Map.toDescList vMap) `intersect` map fst (Map.toDescList (getVersions versions)) of
+          [] ->
+            let vReason = VersionMismatch (Map.keys $ getVersions versions) []
+            in Yield (ServerAgency TokConfirm)
+                     (MsgRefuse vReason)
+                     (Done TokDone (Left vReason))
+
+          vNumber:_ ->
+            case (getVersions versions Map.! vNumber, vMap Map.! vNumber) of
+              (version, vParams) -> case decodeData (versionExtra version) vParams of
+                Left err ->
+                  let vReason = HandshakeDecodeError vNumber err
+                  in Yield (ServerAgency TokConfirm)
+                           (MsgRefuse vReason)
+                           (Done TokDone $ Left vReason)
+
+                Right vData' ->
+                  case acceptVersion (versionExtra version) vData' of
+
+                    -- We agree on the version; send back the agreed version
+                    -- number @vNumber@ and encoded data associated with our
+                    -- version.
+                    Accept agreedOptions ->
+                      let vData = getLocalData (versionExtra version) vNumber in
+                      Yield (ServerAgency TokConfirm)
+                            (MsgAcceptVersion vNumber (encodeData (versionExtra version) vData))
+                            (Done TokDone $ Right $
+                                runApplication (versionApplication version) agreedOptions)
 
                     -- We disagree on the version.
                     Refuse err ->

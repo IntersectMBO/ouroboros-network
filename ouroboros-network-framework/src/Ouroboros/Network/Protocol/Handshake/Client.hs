@@ -27,16 +27,16 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 handshakeClientPeer
   :: Ord vNumber
-  => VersionDataCodec extra CBOR.Term vNumber agreedOptions
-  -> Versions vNumber extra r
+  => VersionDataCodec extra CBOR.Term vNumber
+  -> Versions vNumber extra r vData agreedOptions
   -> Peer (Handshake vNumber CBOR.Term)
           AsClient StPropose m
           (Either
             (HandshakeClientProtocolError vNumber)
-            (r, agreedOptions))
-handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} versions =
+            r)
+handshakeClientPeer VersionDataCodec {encodeData, decodeData, getLocalData} versions =
   -- send known versions
-  Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
+  Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData getLocalData versions) $
 
     Await (ServerAgency TokConfirm) $ \msg -> case msg of
 
@@ -49,7 +49,9 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
       MsgAcceptVersion vNumber vParams ->
         case vNumber `Map.lookup` getVersions versions of
           Nothing -> Done TokDone (Left $ NotRecognisedVersion vNumber)
-          Just (Sigma vData version) ->
+          --Just (Sigma vData version) ->
+          Just version ->
+            -- let vData = versionData version in
             case decodeData (versionExtra version) vParams of
 
               Left err ->
@@ -58,16 +60,16 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
               Right vData' ->
                 -- TODO: we should check that we agree on received @vData'@,
                 -- this might be less trivial than testing for equality.
-                Done TokDone $ Right $ ( runApplication (versionApplication version) vData vData'
-                                       , getAgreedOptions (versionExtra version) vNumber vData'
-                                       )
+                Done TokDone $ Right $ ( runApplication (versionApplication version) undefined)
 
 encodeVersions
-  :: forall vNumber extra r vParams.
+  :: forall vNumber extra r vParams vData agreedOptions.
      (forall vData. extra vData -> vData -> vParams)
-  -> Versions vNumber extra r
+  -> (forall vData. extra vData -> vNumber -> vData)
+  -> Versions vNumber extra r vData agreedOptions
   -> Map vNumber vParams
-encodeVersions encoder (Versions vs) = go <$> vs
+encodeVersions encoder lData (Versions vs) = Map.mapWithKey go vs
     where
-      go :: Sigma (Version extra r) -> vParams
-      go (Sigma vData Version {versionExtra}) = encoder versionExtra vData
+      --go :: Sigma (Version extra r) -> vParams
+      --go (Sigma vData Version {versionExtra}) = encoder versionExtra vData
+      go vNumber (Version {versionExtra}) = encoder versionExtra (lData versionExtra vNumber) 

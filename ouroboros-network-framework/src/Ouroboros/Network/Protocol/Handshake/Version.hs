@@ -3,21 +3,31 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
+  --, VersionsX (..)
   , Application (..)
+  --, ApplicationX (..)
   , Version (..)
+  --, VersionX (..)
   , Sigma (..)
   , Accept (..)
+  --, AcceptX (..)
   , Acceptable (..)
-  , Dict (..)
+  -- , Dict (..)
   , DictVersion (..)
-  , pickVersions
+  -- , pickVersions
   , VersionMismatch (..)
+
+  --, pickVersionsX
+  --, VersionsX (..)
+  --, VersionX (..)
+  --, simpleSingletonVersionsX
 
   -- * Simple or no versioning
   , simpleSingletonVersions
@@ -60,15 +70,22 @@ import           Ouroboros.Network.CodecCBORTerm
 -- >          ]
 -- >
 --
-newtype Versions vNum extra r = Versions
-  { getVersions :: Map vNum (Sigma (Version extra r))
+
+newtype Versions vNum extra r vData agreedOptions = Versions {
+    getVersions :: Map vNum (Version extra r vData agreedOptions)
   }
   deriving (Semigroup)
 
-instance Functor (Versions vNum extra) where
+newtype VersionsZ vNum extra r vData = VersionsZ
+  -- { getVersions :: Map vNum (Sigma (Version extra r))
+  {  getVersionsZ :: Map vNum (VersionZ extra r vData)
+  }
+  deriving (Semigroup)
+
+{-instance Functor (Versions vNum extra r) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
       where
-        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
+        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)-}
 
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
@@ -81,38 +98,60 @@ data Sigma f where
 -- PRECONDITION: @f x@ is non-empty.
 --
 foldMapVersions :: (Ord vNum, Foldable f, HasCallStack)
-                => (x -> Versions vNum extra r)
+                => (x -> Versions vNum extra r vData agreedOptions)
                 -> f x
-                -> Versions vNum extra r
+                -> Versions vNum extra r vData agreedOptions
 foldMapVersions f fx = case toList fx of
     [] -> error "foldMapVersions: precondition violated"
     xs -> foldl1 (<>) (map f xs)
 
 combineVersions :: (Ord vNum, Foldable f, HasCallStack)
-                => f (Versions vNum extra r)
-                -> Versions vNum extra r
+                => f (Versions vNum extra r vData agreedOptions)
+                -> Versions vNum extra r vData agreedOptions
 combineVersions = foldMapVersions id
 
 -- |
 -- A @'Maybe'@ like type which better explains its purpose.
 --
-data Accept
-  = Accept
+data AcceptZ
+  = AcceptZ
+  | RefuseZ !Text
+  deriving (Eq, Show)
+
+class AcceptableZ v where
+  acceptableVersionZ :: v -> v -> AcceptZ
+
+data Accept agreedOptions
+  = Accept agreedOptions
   | Refuse !Text
   deriving (Eq, Show)
 
-class Acceptable v where
-  acceptableVersion :: v -> v -> Accept
+class Acceptable v agreedOptions where
+  acceptableVersion :: v -> v -> Accept agreedOptions
+
+
+
 
 -- | Takes a pair of version data: local then remote.
-newtype Application r vData = Application
-  { runApplication :: vData -> vData -> r
+newtype ApplicationZ r vData = ApplicationZ
+  { runApplicationZ :: vData -> vData -> r
   }
 
-data Version extra r vData = Version
-  { versionApplication :: Application r vData
-  , versionExtra       :: extra vData
+newtype Application r agreedOptions = Application
+  { runApplication :: agreedOptions -> r
   }
+
+data VersionZ extra r vData = VersionZ
+  { versionApplicationZ :: Application r vData
+  , versionExtraZ       :: extra vData
+  , versionDataZ        :: vData
+  }
+
+data Version extra r vData agreedOptions = Version
+  { versionApplication :: Application r agreedOptions
+  , versionExtra       :: extra vData 
+  }
+
 
 data VersionMismatch vNum where
   NoCommonVersion     :: VersionMismatch vNum
@@ -125,15 +164,15 @@ data Dict constraint thing where
 -- 'hanshakeParams' is instatiated in either "Ouroboros.Network.NodeToNode" or
 -- "Ouroboros.Network.NodeToClient" to 'HandshakeParams'.
 --
-data DictVersion vNumber agreedOptions vData where
+data DictVersion vNumber vData agreedOptions where
      DictVersion :: ( Typeable vData
-                    , Acceptable vData
+                    , Acceptable vData agreedOptions
                     , Show vData
                     )
                  => CodecCBORTerm Text vData
-                 -> (vNumber -> vData -> agreedOptions)
-                 -- ^ agreed vData
-                 -> DictVersion vNumber agreedOptions vData
+                 -> (vNumber -> vData )
+                 -- ^ local vData
+                 -> DictVersion vNumber vData agreedOptions
 
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.
@@ -149,7 +188,7 @@ data DictVersion vNumber agreedOptions vData where
 -- So, the issue here is that they may not have the same version data type.
 -- This becomes a non-issue on the network because the decoder/encoder
 -- basically fills the role of a safe dynamic type cast.
-pickVersions
+{-pickVersions
   :: ( Ord vNum )
   => (forall vData . extra vData -> Dict Typeable vData)
   -> Versions vNum extra r
@@ -167,7 +206,32 @@ pickVersions isTypeable lversions rversions = case Map.toDescList commonVersions
           in  Right (runApplication lapp ldata rdata, runApplication rapp rdata rdata)
   where
   commonVersions = getVersions lversions `intersect` getVersions rversions
-  intersect = Map.intersectionWith (,)
+  intersect = Map.intersectionWith (,)-}
+
+{-pickVersionsX
+  :: forall vNum r vData extra.
+      ( Ord vNum
+     , Acceptable vData)
+  => VersionsX vNum extra r vData
+  -> VersionsX vNum extra r vData
+  -> Either (VersionMismatch vNum) (r, r)
+pickVersionsX lversions rversions = undefined matchVersion (Map.toDescList commonVersions)
+  where
+  matchVersion :: [(vNum, (Version extra r vData, Version extra r vData))] -> Either (VersionMismatch vNum) (r, r)
+  matchVersion [] = Left NoCommonVersion
+  matchVersion ((_, (lversion, rversion)):vs) =
+    let ldata = version lversion
+        rdata = versionData rversion in
+    case acceptableVersion (versionData lversion) (versionData rversion) of
+      Refuse _ -> matchVersion vs
+      Accept ->
+         let lapp = versionApplication lversion
+             rapp = versionApplication rversion in
+         Right (runApplication lapp ldata rdata, runApplication rapp ldata rdata)
+
+
+  commonVersions = getVersionsX lversions `intersect` getVersionsX rversions
+  intersect = Map.intersectionWith (,)-}
 
 --
 -- Simple version negotation
@@ -180,8 +244,19 @@ simpleSingletonVersions
   -> vData
   -> extra vData
   -> r
-  -> Versions vNum extra r
+  -> Versions vNum extra r vData agreedOptions
 simpleSingletonVersions vNum vData extra r =
   Versions
     $ Map.singleton vNum
-        (Sigma vData (Version (Application $ \_ _ -> r) extra))
+        (Version (Application $ \_ -> r) extra)
+
+{-simpleSingletonVersionsX
+  :: vNum
+  -> vData
+  -> extra vData
+  -> r
+  -> VersionsX vNum extra r vData
+simpleSingletonVersionsX vNum vData extra r =
+  VersionsX
+    $ Map.singleton vNum
+        ((Version (Application $ \_ _ -> r) extra))-}

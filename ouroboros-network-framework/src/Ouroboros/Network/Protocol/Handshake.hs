@@ -75,7 +75,7 @@ tryHandshake doHandshake = do
 
 -- | Common arguments for both 'Handshake' client & server.
 --
-data HandshakeArguments connectionId vNumber extra m application agreedOptions = HandshakeArguments {
+data HandshakeArguments connectionId vNumber extra m application vData agreedOptions = HandshakeArguments {
       -- | 'Handshake' tracer
       --
       haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
@@ -88,10 +88,10 @@ data HandshakeArguments connectionId vNumber extra m application agreedOptions =
       -- | A codec for protocol parameters.
       --
       haVersionDataCodec
-        ::  VersionDataCodec extra CBOR.Term vNumber agreedOptions,
+        ::  VersionDataCodec extra CBOR.Term vNumber,
 
       -- | versioned application aggreed upon with the 'Handshake' protocol.
-      haVersions :: Versions vNumber extra application
+      haVersions :: Versions vNumber extra application vData agreedOptions
     }
 
 
@@ -108,9 +108,9 @@ runHandshakeClient
        )
     => MuxBearer m
     -> connectionId
-    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> HandshakeArguments connectionId vNumber extra m application vData agreedOptions
     -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
-                 (application, agreedOptions))
+                 application)
 runHandshakeClient bearer
                    connectionId
                    HandshakeArguments {
@@ -133,7 +133,8 @@ runHandshakeClient bearer
 -- | Run server side of the 'Handshake' protocol.
 --
 runHandshakeServer
-    :: ( MonadAsync m
+    :: forall m connectionId extra vNumber application vData agreedOptions.
+       ( MonadAsync m
        , MonadFork m
        , MonadMonotonicTime m
        , MonadTimer m
@@ -143,11 +144,12 @@ runHandshakeServer
        )
     => MuxBearer m
     -> connectionId
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> (forall vData. extra vData -> vData -> Accept agreedOptions)
+    -- -> (extra CBOR.Term -> CBOR.Term -> Accept agreedOptions)
+    -> HandshakeArguments connectionId vNumber extra m application vData agreedOptions
     -> m (Either
            (HandshakeException (RefuseReason vNumber))
-           (application, agreedOptions))
+           application)
 runHandshakeServer bearer
                    connectionId
                    acceptVersion

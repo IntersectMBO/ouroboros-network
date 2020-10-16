@@ -150,7 +150,7 @@ serverPingPong =
       defaultLocalSocketAddr
       unversionedHandshakeCodec
       cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (\DictVersion {} -> acceptableVersion undefined)
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->

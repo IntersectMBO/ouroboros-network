@@ -220,7 +220,7 @@ versionedNodeToClientProtocols
     -> (ConnectionId LocalAddress -> STM m ControlMessage -> NodeToClientProtocols appType bytes m a b)
     -> Versions NodeToClientVersion
                 (DictVersion NodeToClientVersion AgreedOptions)
-                (OuroborosApplication appType LocalAddress bytes m a b)
+                (OuroborosApplication appType LocalAddress bytes m a b) vData
 versionedNodeToClientProtocols versionNumber versionData protocols =
     simpleSingletonVersions
       versionNumber
@@ -238,7 +238,7 @@ connectTo
   -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               (DictVersion NodeToClientVersion AgreedOptions)
-              (OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b)
+              (OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b) vData
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -334,7 +334,7 @@ withServer
   -> LocalFD
   -> Versions NodeToClientVersion
               (DictVersion NodeToClientVersion AgreedOptions)
-              (OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b)
+              (OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b) vData
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -425,7 +425,7 @@ type NetworkClientSubcriptionTracers
 -- established connection.
 --
 ncSubscriptionWorker
-    :: forall mode x y.
+    :: forall mode x y vData.
        ( HasInitiator mode ~ True
        )
     => LocalSnocket
@@ -435,7 +435,7 @@ ncSubscriptionWorker
     -> Versions
         NodeToClientVersion
         (DictVersion NodeToClientVersion AgreedOptions)
-        (OuroborosApplication mode LocalAddress BL.ByteString IO x y)
+        (OuroborosApplication mode LocalAddress BL.ByteString IO x y) vData
     -> IO Void
 ncSubscriptionWorker
   sn

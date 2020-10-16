@@ -1,4 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 -- | Unversioned protocol, used in tests and demo applications.
 --
@@ -12,6 +14,7 @@ module Ouroboros.Network.Protocol.Handshake.Unversioned
 
 import           Control.Monad.Class.MonadST
 
+adf
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
@@ -40,9 +43,10 @@ data UnversionedProtocolData = UnversionedProtocolData
 
 instance Acceptable UnversionedProtocolData where
   acceptableVersion UnversionedProtocolData
-                    UnversionedProtocolData = Accept
+                    UnversionedProtocolData = Accept UnversionedProtocolData
 
 
+adsf
 unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
 unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -57,10 +61,10 @@ unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | Make a 'Versions' for an unversioned protocol. Only use this for
 -- tests and demos where proper versioning is excessive.
 --
-unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol UnversionedProtocolData) app
+unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol) app UnversionedProtocolData UnversionedProtocolData
 unversionedProtocol =
     simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
-      (DictVersion unversionedProtocolDataCodec (\_ _ -> UnversionedProtocolData))
+      (DictVersion unversionedProtocolDataCodec (\_ -> UnversionedProtocolData))
 
 
 -- | 'Handshake' codec used in various tests.
