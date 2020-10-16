@@ -65,6 +65,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Compat
                        Ouroboros.Consensus.HardFork.Combinator.Condense
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
+                       Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
                        Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
                        Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
                        Ouroboros.Consensus.HardFork.Combinator.Forging
@@ -291,6 +292,7 @@ library
                      , psqueues          >=0.2.3 && <0.3
                      , random
                      , quiet             >=0.2   && <0.3
+                     , semialign         >=1.1   && <1.2
                      , serialise         >=0.2   && <0.3
                      , sop-core          >=0.5   && <0.6
                      , stm               >=2.5   && <2.6
