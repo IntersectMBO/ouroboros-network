@@ -17,7 +17,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 pureHandshake
   ::forall vNumber extra r. Ord vNumber
   => (forall vData. extra vData -> Dict Typeable vData)
-  -> (forall vData. extra vData -> vData -> vData -> Bool)
+  -> (forall vData. extra vData -> vNumber -> vData -> vData -> Bool)
   -> Versions vNumber extra r -- reponders's \/ server's known versions
   -> Versions vNumber extra r -- initiator's \/ client's known versions
   -> (Maybe r, Maybe r)
@@ -34,7 +34,7 @@ pureHandshake isTypeable acceptVersion (Versions serverVersions) (Versions clien
                   case (isTypeable (versionExtra version), isTypeable (versionExtra version')) of
                         (Dict, Dict) -> case (cast vData, cast vData') of
                           (Just d, Just d') ->
-                            ( if acceptVersion (versionExtra version) vData d'
+                            ( if acceptVersion (versionExtra version) vNumber vData d'
                                 then Just $ runApplication (versionApplication version) vData d'
                                 else Nothing
 

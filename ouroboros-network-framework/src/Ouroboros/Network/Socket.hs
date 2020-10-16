@@ -347,7 +347,7 @@ beginConnection
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term vNumber agreedOptions
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vNumber -> vData -> vData -> Accept agreedOptions)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra addr IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
@@ -507,7 +507,7 @@ runServerThread
     -> AcceptedConnectionsLimit
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term vNumber agreedOptions
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vNumber -> vData -> vData -> Accept agreedOptions)
     -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -> ErrorPolicies
     -> IO Void
@@ -588,7 +588,7 @@ withServerNode
     -> addr
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term vNumber agreedOptions
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vNumber -> vData -> vData -> Accept agreedOptions)
     -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
@@ -654,7 +654,7 @@ withServerNode'
     -> fd
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term vNumber agreedOptions
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vNumber -> vData -> vData -> Accept agreedOptions)
     -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is

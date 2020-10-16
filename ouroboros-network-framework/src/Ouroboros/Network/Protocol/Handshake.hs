@@ -143,7 +143,7 @@ runHandshakeServer
        )
     => MuxBearer m
     -> connectionId
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vNumber -> vData -> vData -> Accept agreedOptions)
     -> HandshakeArguments connectionId vNumber extra m application agreedOptions
     -> m (Either
            (HandshakeException (RefuseReason vNumber))

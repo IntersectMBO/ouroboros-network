@@ -443,7 +443,7 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     sd
     nodeToNodeHandshakeCodec
     cborTermVersionDataCodec
-    (\DictVersion {} -> acceptableVersion)
+    (\DictVersion {} vNumber -> acceptableVersion vNumber)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)

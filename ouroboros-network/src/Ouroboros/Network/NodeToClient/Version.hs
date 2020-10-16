@@ -1,5 +1,5 @@
-
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -70,10 +70,10 @@ newtype NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
 
-instance Acceptable NodeToClientVersionData where
-    acceptableVersion local remote
+instance Acceptable NodeToClientVersion NodeToClientVersionData NodeToClientVersionData where
+    acceptableVersion _ local remote
       | local == remote
-      = Accept
+      = Accept local
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
                                     ++ " /= " ++ show remote
@@ -91,7 +91,7 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
-type AgreedOptions = ()
+type AgreedOptions = NodeToClientVersionData
 
 nodeToClientDictVersion :: DictVersion NodeToClientVersion AgreedOptions NodeToClientVersionData
-nodeToClientDictVersion = DictVersion nodeToClientCodecCBORTerm (\_ _ -> ())
+nodeToClientDictVersion = undefined -- DictVersion nodeToClientCodecCBORTerm undefined

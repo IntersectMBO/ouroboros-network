@@ -1,4 +1,6 @@
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 
 -- | Unversioned protocol, used in tests and demo applications.
 --
@@ -38,9 +40,14 @@ data UnversionedProtocolData = UnversionedProtocolData
   deriving (Eq, Show)
 
 
-instance Acceptable UnversionedProtocolData where
-  acceptableVersion UnversionedProtocolData
-                    UnversionedProtocolData = Accept
+instance Acceptable UnversionedProtocol UnversionedProtocolData UnversionedProtocolData where
+  acceptableVersion UnversionedProtocol UnversionedProtocolData
+                    UnversionedProtocolData = Accept UnversionedProtocolData
+
+instance Acceptable UnversionedProtocol UnversionedProtocolData (UnversionedProtocol, UnversionedProtocolData) where
+  acceptableVersion UnversionedProtocol UnversionedProtocolData
+                    UnversionedProtocolData = Accept (UnversionedProtocol, UnversionedProtocolData)
+
 
 
 unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
@@ -57,7 +64,7 @@ unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | Make a 'Versions' for an unversioned protocol. Only use this for
 -- tests and demos where proper versioning is excessive.
 --
-unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol UnversionedProtocolData) app
+unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol UnversionedProtocolData) app UnversionedProtocolData
 unversionedProtocol =
     simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
       (DictVersion unversionedProtocolDataCodec (\_ _ -> UnversionedProtocolData))

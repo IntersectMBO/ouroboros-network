@@ -1,8 +1,9 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Ouroboros.Network.Protocol.Handshake.Test where
 
@@ -124,8 +125,8 @@ versionNumberHandshakeCodec = codecHandshake versionNumberCodec
 data Data_0 = C0 | C1 | C2
   deriving (Eq, Show, Typeable, Generic)
 
-instance Acceptable Data_0 where
-  acceptableVersion l r | l == r = Accept
+instance Acceptable VersionNumber Data_0 () where
+  acceptableVersion _ l r | l == r = Accept ()
                         | otherwise =  Refuse $ T.pack ""
 
 data0CodecCBORTerm :: CodecCBORTerm Text Data_0
@@ -155,9 +156,9 @@ instance CoArbitrary Data_0 where
 data Data_1 = Data_1 Bool
   deriving (Eq, Show, Typeable, Generic)
 
-instance Acceptable Data_1 where
-  acceptableVersion l r | l == r = Accept
-                        | otherwise =  Refuse $ T.pack ""
+instance Acceptable VersionNumber Data_1 () where
+  acceptableVersion _ l r | l == r = Accept ()
+                          | otherwise =  Refuse $ T.pack ""
 
 data1CodecCBORTerm :: CodecCBORTerm Text Data_1
 data1CodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
@@ -179,9 +180,9 @@ instance CoArbitrary Data_1
 data Data_2 = Data_2 Word Word
   deriving (Eq, Show, Typeable, Generic)
 
-instance Acceptable Data_2 where
-  acceptableVersion l r | l == r = Accept
-                        | otherwise =  Refuse $ T.pack ""
+instance Acceptable VersionNumber Data_2 () where
+  acceptableVersion _ l r | l == r = Accept ()
+                          | otherwise =  Refuse $ T.pack ""
 
 data2CodecCBORTerm :: CodecCBORTerm Text Data_2
 data2CodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
@@ -380,7 +381,7 @@ prop_connect :: ArbitraryVersions -> Property
 prop_connect (ArbitraryVersions clientVersions serverVersions) =
   let (serverRes, clientRes) = pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vNumber vData vData' -> acceptableVersion  vNumber vData vData' == Accept ())
         serverVersions
         clientVersions
   in case runSimOrThrow
@@ -390,7 +391,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 clientVersions)
               (handshakeServerPeer
                 cborTermVersionDataCodec
-                (\DictVersion {} -> acceptableVersion)
+                (\DictVersion {} vNumber -> acceptableVersion vNumber)
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
            fromMaybe False clientRes === either (const False) fst clientRes'
@@ -413,7 +414,7 @@ prop_channel :: ( MonadAsync m
 prop_channel createChannels clientVersions serverVersions =
   let (serverRes, clientRes) = pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vNumber vData vData' -> acceptableVersion vNumber vData vData' == Accept ())
         serverVersions
         clientVersions
   in do
@@ -529,7 +530,7 @@ prop_channel_asymmetric createChannels clientVersions = do
     (serverRes, clientRes) =
       pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vNumber vData vData' -> acceptableVersion vNumber vData vData' == Accept ())
         serverVersions
         clientVersions
 

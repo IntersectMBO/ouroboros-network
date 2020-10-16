@@ -1,5 +1,6 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 
 module Ouroboros.Network.NodeToNode.Version
   ( NodeToNodeVersion (..)
@@ -86,10 +87,15 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
 
-instance Acceptable NodeToNodeVersionData where
-    acceptableVersion local remote
-      | networkMagic local == networkMagic remote
-      = Accept
+instance Acceptable NodeToNodeVersion NodeToNodeVersionData AgreedOptions where
+    acceptableVersion version local remote
+      | version <= NodeToNodeV_3 && networkMagic local == networkMagic remote
+      = Accept $ AgreedOptions { agreedConnectionMode = UnidirectionalMode
+                               , agreedOptions        = local }
+
+      | version > NodeToNodeV_3 && networkMagic local == networkMagic remote
+      = Accept $ AgreedOptions { agreedConnectionMode = DuplexMode
+                               , agreedOptions        = local }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local

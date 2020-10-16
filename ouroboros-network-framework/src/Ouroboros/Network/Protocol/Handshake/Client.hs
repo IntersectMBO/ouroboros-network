@@ -28,12 +28,12 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 handshakeClientPeer
   :: Ord vNumber
   => VersionDataCodec extra CBOR.Term vNumber agreedOptions
-  -> Versions vNumber extra r
+  -> Versions vNumber extra r agreedOptions
   -> Peer (Handshake vNumber CBOR.Term)
           AsClient StPropose m
           (Either
             (HandshakeClientProtocolError vNumber)
-            (r, agreedOptions))
+            r)
 handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
