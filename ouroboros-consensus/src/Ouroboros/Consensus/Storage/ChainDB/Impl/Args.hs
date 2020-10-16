@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   , fromChainDbArgs
   ) where
 
-import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap, nullTracer)

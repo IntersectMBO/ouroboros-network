@@ -18,13 +18,16 @@ on: [push]
 # ``
 
 jobs:
-  test-windows-8_6_5:
-    name: "Windows GHC-8.6.5"
+  test-windows-8_10_2:
+    name: "Windows GHC-8.10.2"
     runs-on: windows-latest
     steps:
       - name: Install GHC
         run: |
-          choco install -y ghc --version 8.6.5 --allow-downgrade
+          choco install -y ghc --version 8.10.2 --allow-downgrade
+      - name: Fix GHC-8.10.2 installation
+        run: |
+          (Get-Content "C:\ProgramData\chocolatey\lib\ghc.8.10.2\tools\ghc-8.10.2\lib\settings") -replace('\("Merge objects command", .*\)', '("Merge objects command", "C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/mingw/bin/ld.exe")') | Out-File -FilePath "C:\ProgramData\chocolatey\lib\ghc.8.10.2\tools\ghc-8.10.2\lib\settings"
       - name: Print version
         run: |
           cabal --version
@@ -37,7 +40,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: C:\SR
-          key: cabal-store-8.6.5
+          key: cabal-store-8.10.2
       # Cache parts of dist-newstyle (C:\dist)
       - name: cache buiddir [cache]
         uses: actions/cache@v1

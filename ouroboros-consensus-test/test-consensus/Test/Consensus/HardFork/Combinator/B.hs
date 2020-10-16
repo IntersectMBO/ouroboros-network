@@ -421,7 +421,7 @@ instance SerialiseNodeToClient BlockB Void where
   decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
 
 instance SerialiseNodeToClient BlockB (SomeBlock Query BlockB) where
-  encodeNodeToClient _ _ (SomeBlock q) = case q of {}
+  encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 
 instance SerialiseResult BlockB (Query BlockB) where

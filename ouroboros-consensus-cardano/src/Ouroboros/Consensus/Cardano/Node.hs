@@ -74,8 +74,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
-                     TPraosCrypto, TPraosParams (..))
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
+                     TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block

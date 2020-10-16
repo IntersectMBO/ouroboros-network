@@ -43,6 +43,8 @@ import Control.Exception ( SomeAsyncException
 import Control.Monad ( when
                      , void
                      )
+import Data.Kind ( Type
+                 )
 import Foreign ( Ptr
                , StablePtr
                , Storable (..)
@@ -80,7 +82,7 @@ data AsyncSing (asyncType :: AsyncType) where
 -- number of storable instances as we can map directly @asyncType :: AsyncType@
 -- to the 'OVERLAPPED' or 'WSAOVERLAPPED' .
 --
-type family OverlappedType (asyncType :: AsyncType) :: * where
+type family OverlappedType (asyncType :: AsyncType) :: Type where
   OverlappedType Async    = OVERLAPPED
   OverlappedType WsaAsync = WSAOVERLAPPED
 

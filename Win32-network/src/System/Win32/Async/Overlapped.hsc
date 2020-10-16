@@ -19,9 +19,7 @@ module System.Win32.Async.Overlapped
 #if MIN_VERSION_Win32 (2, 7, 0)
 import System.Win32.File ( LPOVERLAPPED, OVERLAPPED (..) )
 #endif
-import Foreign ( Ptr
-               , nullPtr
-               )
+import Foreign (Ptr)
 import Foreign.Storable (Storable (..))
 import System.Win32.Types
 

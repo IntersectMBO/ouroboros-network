@@ -61,7 +61,7 @@ import           Data.Function (on)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
+import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 

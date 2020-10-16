@@ -5,10 +5,10 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "c639cbe655725d6389b225af867cd413ca99c7d9",
-        "sha256": "0ri8w0s7925lpgq8jgijrgzwcpydx660mkskiqq02d3ac1lcq273",
+        "rev": "6e0810ad0dc6f340f0826c1e6dddc5017fbaa46d",
+        "sha256": "149haghrpdjq8r4pi9cidvnpn7a6kvvrih6a8h9n1v5crm8kpqzw",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/c639cbe655725d6389b225af867cd413ca99c7d9.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/6e0810ad0dc6f340f0826c1e6dddc5017fbaa46d.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
@@ -33,6 +33,18 @@
         "sha256": "0jn88ahv6mycxdkzihy1v0dz2110q0d42q4ggyj68l2lyba6y0yy",
         "type": "tarball",
         "url": "https://github.com/input-output-hk/niv/archive/89da7b2e7ae0779fd351618fc74df1b1da5e6214.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "nixpkgs": {
+        "branch": "nixpkgs-20.09-darwin",
+        "description": "Nix Packages collection",
+        "homepage": null,
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "07e5844fdf6fe99f41229d7392ce81cfe191bcfc",
+        "sha256": "0p2z6jidm4rlp2yjfl553q234swj1vxl8z0z8ra1hm61lfrlcmb9",
+        "type": "tarball",
+        "url": "https://github.com/NixOS/nixpkgs/archive/07e5844fdf6fe99f41229d7392ce81cfe191bcfc.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

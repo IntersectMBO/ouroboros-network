@@ -49,9 +49,9 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalConnectionId,
                      NodeToClientVersionData (..), nodeToClientDictVersion)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
-                     NodeToNodeVersion (..), NodeToNodeVersionData (..),
-                     RemoteConnectionId, combineVersions,
-                     defaultMiniProtocolParameters, nodeToNodeDictVersion)
+                     NodeToNodeVersionData (..), RemoteConnectionId,
+                     combineVersions, defaultMiniProtocolParameters,
+                     nodeToNodeDictVersion)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block

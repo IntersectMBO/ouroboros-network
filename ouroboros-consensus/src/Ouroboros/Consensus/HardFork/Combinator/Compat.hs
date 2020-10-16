@@ -121,4 +121,3 @@ singleEraCompatQuery epochSize slotLen f = go
 
     trivialIndex :: EraIndex '[era] -> ()
     trivialIndex (EraIndex (Z (K ()))) = ()
-    trivialIndex (EraIndex (S ix))     = case ix of {}
