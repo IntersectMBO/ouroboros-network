@@ -429,13 +429,13 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 
   -- | Only for debugging purposes, we don't guarantee binary compatibility.
   -- Moreover, it is huge.
-  GetCurrentEpochState
-    :: Query (ShelleyBlock era) (SL.EpochState era)
+  GetCurrentShelleyState
+    :: Query (ShelleyBlock era) (SL.ShelleyState era)
 
   -- | Wrap the result of the query using CBOR-in-CBOR.
   --
   -- For example, when a client is running a different version than the
-  -- server and it sends a 'GetCurrentEpochState' query, the client's
+  -- server and it sends a 'GetCurrentShelleyState' query, the client's
   -- decoder might fail to deserialise the epoch state as it might have
   -- changed between the two different versions. The client will then
   -- disconnect.
@@ -467,7 +467,7 @@ instance TPraosCrypto era => QueryLedger (ShelleyBlock era) where
       GetStakeDistribution -> SL.poolsByTotalStakeFraction globals (shelleyLedgerState st)
       GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyLedgerState st) addrs
       GetUTxO -> SL.getUTxO $ shelleyLedgerState st
-      GetCurrentEpochState -> getCurrentEpochState $ shelleyLedgerState st
+      GetCurrentShelleyState -> shelleyLedgerState st
       GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
           answerQuery cfg query' st
       GetFilteredDelegationsAndRewardAccounts creds ->
@@ -516,9 +516,9 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Just Refl
   sameDepIndex GetUTxO _
     = Nothing
-  sameDepIndex GetCurrentEpochState GetCurrentEpochState
+  sameDepIndex GetCurrentShelleyState GetCurrentShelleyState
     = Just Refl
-  sameDepIndex GetCurrentEpochState _
+  sameDepIndex GetCurrentShelleyState _
     = Nothing
   sameDepIndex (GetCBOR q) (GetCBOR q')
     = apply Refl <$> sameDepIndex q q'
@@ -545,7 +545,7 @@ instance Era era => ShowQuery (Query (ShelleyBlock era)) where
   showResult GetStakeDistribution                         = show
   showResult (GetFilteredUTxO {})                         = show
   showResult GetUTxO                                      = show
-  showResult GetCurrentEpochState                         = show
+  showResult GetCurrentShelleyState                       = show
   showResult (GetCBOR {})                                 = show
   showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
 
@@ -580,10 +580,6 @@ getPParams = SL.esPp . SL.nesEs
 getProposedPPUpdates :: SL.ShelleyState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
-
--- Get the current EpochState. This is mainly for debugging.
-getCurrentEpochState :: SL.ShelleyState era -> SL.EpochState era
-getCurrentEpochState = SL.nesEs
 
 getDState :: SL.ShelleyState era -> SL.DState era
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
@@ -710,7 +706,7 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
     GetUTxO ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
-    GetCurrentEpochState ->
+    GetCurrentShelleyState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
     GetCBOR query' ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
@@ -730,7 +726,7 @@ decodeShelleyQuery = do
       (1, 5)  -> return $ SomeBlock GetStakeDistribution
       (2, 6)  -> SomeBlock . GetFilteredUTxO <$> fromCBOR
       (1, 7)  -> return $ SomeBlock GetUTxO
-      (1, 8)  -> return $ SomeBlock GetCurrentEpochState
+      (1, 8)  -> return $ SomeBlock GetCurrentShelleyState
       (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
       (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
       _       -> fail $
@@ -749,7 +745,7 @@ encodeShelleyResult query = case query of
     GetStakeDistribution                       -> toCBOR
     GetFilteredUTxO {}                         -> toCBOR
     GetUTxO                                    -> toCBOR
-    GetCurrentEpochState                       -> toCBOR
+    GetCurrentShelleyState                     -> toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
 
@@ -766,6 +762,6 @@ decodeShelleyResult query = case query of
     GetStakeDistribution                       -> fromCBOR
     GetFilteredUTxO {}                         -> fromCBOR
     GetUTxO                                    -> fromCBOR
-    GetCurrentEpochState                       -> fromCBOR
+    GetCurrentShelleyState                     -> fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR

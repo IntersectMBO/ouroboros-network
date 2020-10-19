@@ -73,7 +73,7 @@ instance CanMock era => Arbitrary (SomeBlock Query (ShelleyBlock era)) where
     , pure $ SomeBlock GetCurrentPParams
     , pure $ SomeBlock GetProposedPParamsUpdates
     , pure $ SomeBlock GetStakeDistribution
-    , pure $ SomeBlock GetCurrentEpochState
+    , pure $ SomeBlock GetCurrentShelleyState
     , (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> arbitrary
     , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
@@ -86,7 +86,7 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
     , SomeResult GetCurrentPParams <$> genPParams (Proxy @era)
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
-    , SomeResult GetCurrentEpochState <$> arbitrary
+    , SomeResult GetCurrentShelleyState <$> arbitrary
     , (\(SomeResult q r) ->
         SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
       arbitrary
