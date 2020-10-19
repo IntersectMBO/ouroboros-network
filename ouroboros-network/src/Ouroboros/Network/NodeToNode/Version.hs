@@ -88,8 +88,10 @@ data NodeToNodeVersionData = NodeToNodeVersionData
 
 instance Acceptable NodeToNodeVersionData where
     acceptableVersion local remote
+      | networkMagic local == networkMagic remote && diffusionMode remote == InitiatorOnlyDiffusionMode
+      = Accept remote
       | networkMagic local == networkMagic remote
-      = Accept
+      = Accept local
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local

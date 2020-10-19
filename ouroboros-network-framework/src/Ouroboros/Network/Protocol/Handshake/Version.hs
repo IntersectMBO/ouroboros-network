@@ -16,7 +16,6 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Acceptable (..)
   , Dict (..)
   , DictVersion (..)
-  , pickVersions
   , VersionMismatch (..)
 
   -- * Simple or no versioning
@@ -29,7 +28,7 @@ import           Data.Foldable (toList)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Text (Text)
-import           Data.Typeable ((:~:) (Refl), Typeable, eqT)
+import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.CodecCBORTerm
@@ -68,7 +67,7 @@ newtype Versions vNum extra r = Versions
 instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
       where
-        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
+        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x -> f (app x)) extra)
 
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
@@ -96,17 +95,17 @@ combineVersions = foldMapVersions id
 -- |
 -- A @'Maybe'@ like type which better explains its purpose.
 --
-data Accept
-  = Accept
+data Accept vData
+  = Accept vData
   | Refuse !Text
   deriving (Eq, Show)
 
 class Acceptable v where
-  acceptableVersion :: v -> v -> Accept
+  acceptableVersion :: v -> v -> Accept v
 
 -- | Takes a pair of version data: local then remote.
 newtype Application r vData = Application
-  { runApplication :: vData -> vData -> r
+  { runApplication :: vData -> r
   }
 
 data Version extra r vData = Version
@@ -135,40 +134,6 @@ data DictVersion vNumber agreedOptions vData where
                  -- ^ agreed vData
                  -> DictVersion vNumber agreedOptions vData
 
--- | Pick the version with the highest version number (by `Ord vNum`) common
--- in both maps.
---
--- This is a useful guide for comparison with a version negotiation scheme for
--- use in production between different processes. If the `Versions` maps
--- used by each process are given to `pickVersions`, it should come up with
--- the same result as the production version negotiation.
---
--- It is _assumed_ that if the maps agree on a key, then the existential
--- types in the `Sigma` value at the key are also equal.
---
--- So, the issue here is that they may not have the same version data type.
--- This becomes a non-issue on the network because the decoder/encoder
--- basically fills the role of a safe dynamic type cast.
-pickVersions
-  :: ( Ord vNum )
-  => (forall vData . extra vData -> Dict Typeable vData)
-  -> Versions vNum extra r
-  -> Versions vNum extra r
-  -> Either (VersionMismatch vNum) (r, r)
-pickVersions isTypeable lversions rversions = case Map.toDescList commonVersions of
-  [] -> Left NoCommonVersion
-  (vNum, (Sigma (ldata :: ldata) lversion, Sigma (rdata :: rdata) rversion)) : _ ->
-    case (isTypeable (versionExtra lversion), isTypeable (versionExtra rversion)) of
-      (Dict, Dict) -> case eqT :: Maybe (ldata :~: rdata) of
-        Nothing   -> Left $ InconsistentVersion vNum
-        Just Refl ->
-          let lapp = versionApplication lversion
-              rapp = versionApplication rversion
-          in  Right (runApplication lapp ldata rdata, runApplication rapp rdata rdata)
-  where
-  commonVersions = getVersions lversions `intersect` getVersions rversions
-  intersect = Map.intersectionWith (,)
-
 --
 -- Simple version negotation
 --
@@ -184,4 +149,4 @@ simpleSingletonVersions
 simpleSingletonVersions vNum vData extra r =
   Versions
     $ Map.singleton vNum
-        (Sigma vData (Version (Application $ \_ _ -> r) extra))
+        (Sigma vData (Version (Application $ \_ -> r) extra))

@@ -111,6 +111,7 @@ clientPingPong pipelined =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
+      (\DictVersion {} -> acceptableVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -206,6 +207,7 @@ clientPingPong2 =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
+      (\DictVersion {} -> acceptableVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr

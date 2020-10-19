@@ -158,6 +158,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         nullNetworkConnectTracers
+        (\DictVersion {} -> acceptableVersion)
         (simpleSingletonVersions
            UnversionedProtocol
            UnversionedProtocolData
@@ -365,6 +366,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           unversionedHandshakeCodec
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
+                          (\DictVersion {} -> acceptableVersion)
                           (simpleSingletonVersions
                             UnversionedProtocol
                             UnversionedProtocolData

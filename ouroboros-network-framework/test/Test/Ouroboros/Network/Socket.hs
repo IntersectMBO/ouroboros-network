@@ -255,6 +255,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             unversionedHandshakeCodec
             cborTermVersionDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
+            (\DictVersion {} -> acceptableVersion)
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -489,6 +490,7 @@ prop_socket_client_connect_error _ xs =
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         nullNetworkConnectTracers
+        (\DictVersion {} -> acceptableVersion)
         (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)

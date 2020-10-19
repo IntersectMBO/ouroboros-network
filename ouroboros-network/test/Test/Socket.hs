@@ -174,6 +174,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           nodeToNodeHandshakeCodec
           cborTermVersionDataCodec
           nullNetworkConnectTracers
+          (\DictVersion {} -> acceptableVersion)
           (simpleSingletonVersions
             NodeToNodeV_1
             (NodeToNodeVersionData {

@@ -127,6 +127,7 @@ instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
 data HandshakeClientProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
+  | InvalidServerSelection vNumber Text
   deriving (Eq, Show)
 
 instance (Typeable vNumber, Show vNumber)
