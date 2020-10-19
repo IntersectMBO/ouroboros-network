@@ -74,10 +74,11 @@ instance CanMock era => Arbitrary (SomeBlock Query (ShelleyBlock era)) where
     , pure $ SomeBlock GetCurrentPParams
     , pure $ SomeBlock GetProposedPParamsUpdates
     , pure $ SomeBlock GetStakeDistribution
-    , pure $ SomeBlock GetCurrentEpochState
+    , pure $ SomeBlock DebugEpochState
     , (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> arbitrary
     , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     , pure $ SomeBlock GetGenesisConfig
+    , pure $ SomeBlock DebugNewEpochState
     ]
 
 instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
@@ -88,12 +89,13 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
     , SomeResult GetCurrentPParams <$> genPParams (Proxy @era)
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
-    , SomeResult GetCurrentEpochState <$> arbitrary
+    , SomeResult DebugEpochState <$> arbitrary
     , (\(SomeResult q r) ->
         SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
       arbitrary
     , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
     , SomeResult GetGenesisConfig . compactGenesis <$> arbitrary
+    , SomeResult DebugNewEpochState <$> arbitrary
     ]
 
 instance CanMock era => Arbitrary (NonMyopicMemberRewards era) where
