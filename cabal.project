@@ -1,4 +1,4 @@
-index-state: 2020-09-15T00:00:00Z
+index-state: 2020-10-01T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -124,28 +124,24 @@ package small-steps-test
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: c9230a97f033187157002ba00fa0c5753f381593
-  --sha256: 1iqjziw0pad0l78lz6l5dhvfk7wqkffbwln2g62vrqsshl1gb08y
+  tag: 034962a2729e0afff82c367121c1cc9637c7f45a
+  --sha256: 0ga5j9r55r3ika48x2w39clp4qh8kjp27qanxsg1s6jrl125yjac
   subdir: contra-tracer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: 3376feb66f94e4a12ad0b51efa2f252cc7f52967
-  --sha256: 0m6f0m8dsyji1l4c4n8yr7axk8mljwfajk7qp07zaw5fzrsd4abf
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 3376feb66f94e4a12ad0b51efa2f252cc7f52967
-  --sha256: 0m6f0m8dsyji1l4c4n8yr7axk8mljwfajk7qp07zaw5fzrsd4abf
-  subdir: test
+  tag: a5519e09958ad1605ed438d26dd7aad39167d0f9
+  --sha256: 03v46yn5bnkmwcm1zwihjhqvma4ssh3s1s1bfdizvq18y1janwf1
+  subdir:
+    cardano-prelude
+    cardano-prelude-test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: af6675d6b6c618418c69c37d1307e3b0c97671cb
-  --sha256: 17bkgpdm39wcl8qfg41hs9xm6x6zmlxvfph1ysy6c4p7y9kkvix7
+  tag: 72399b18f1bb7d91b21bc9e0e3c28715cde7d124
+  --sha256: 014jw9jkwq3z30hl5pc0in51hzxrdys4964vpppmn1nim994bykx
   subdir:
     binary
     binary/test
