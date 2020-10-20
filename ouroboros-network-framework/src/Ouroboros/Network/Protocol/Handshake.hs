@@ -108,11 +108,13 @@ runHandshakeClient
        )
     => MuxBearer m
     -> connectionId
+    -> (forall vData. extra vData -> vData -> vData -> Accept vData)
     -> HandshakeArguments connectionId vNumber extra m application agreedOptions
     -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
                  (application, agreedOptions))
 runHandshakeClient bearer
                    connectionId
+                   acceptVersion
                    HandshakeArguments {
                      haHandshakeTracer,
                      haHandshakeCodec,
@@ -127,7 +129,7 @@ runHandshakeClient bearer
           byteLimitsHandshake
           timeLimitsHandshake
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir))
-          (handshakeClientPeer haVersionDataCodec haVersions))
+          (handshakeClientPeer haVersionDataCodec acceptVersion haVersions))
 
 
 -- | Run server side of the 'Handshake' protocol.
@@ -143,7 +145,7 @@ runHandshakeServer
        )
     => MuxBearer m
     -> connectionId
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (forall vData. extra vData -> vData -> vData -> Accept vData)
     -> HandshakeArguments connectionId vNumber extra m application agreedOptions
     -> m (Either
            (HandshakeException (RefuseReason vNumber))

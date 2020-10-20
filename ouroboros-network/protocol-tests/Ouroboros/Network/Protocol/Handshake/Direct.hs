@@ -35,9 +35,9 @@ pureHandshake isTypeable acceptVersion (Versions serverVersions) (Versions clien
                         (Dict, Dict) -> case (cast vData, cast vData') of
                           (Just d, Just d') ->
                             ( if acceptVersion (versionExtra version) vData d'
-                                then Just $ runApplication (versionApplication version) vData d'
+                                then Just $ runApplication (versionApplication version) d'
                                 else Nothing
 
-                            , Just $ runApplication (versionApplication version') vData' d
+                            , Just $ runApplication (versionApplication version') d
                             )
                           _ -> (Nothing, Nothing)

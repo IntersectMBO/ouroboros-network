@@ -26,7 +26,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 handshakeServerPeer
   :: Ord vNumber
   => VersionDataCodec extra vParams vNumber agreedOptions
-  -> (forall vData. extra vData -> vData -> vData -> Accept)
+  -> (forall vData. extra vData -> vData -> vData -> Accept vData)
   -> Versions vNumber extra r
   -> Peer (Handshake vNumber vParams)
           AsServer StPropose m
@@ -61,12 +61,12 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
                     -- We agree on the version; send back the agreed version
                     -- number @vNumber@ and encoded data associated with our
                     -- version.
-                    Accept ->
+                    Accept agreedData ->
                       Yield (ServerAgency TokConfirm)
-                            (MsgAcceptVersion vNumber (encodeData (versionExtra version) vData))
+                            (MsgAcceptVersion vNumber (encodeData (versionExtra version) agreedData))
                             (Done TokDone $ Right $
-                              ( runApplication (versionApplication version) vData vData'
-                              , getAgreedOptions (versionExtra version) vNumber vData'
+                              ( runApplication (versionApplication version) agreedData
+                              , getAgreedOptions (versionExtra version) vNumber agreedData
                               ))
 
                     -- We disagree on the version.

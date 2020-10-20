@@ -389,8 +389,8 @@ connectTo
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
-connectTo sn =
-    connectToNode sn nodeToNodeHandshakeCodec cborTermVersionDataCodec
+connectTo sn tr =
+    connectToNode sn nodeToNodeHandshakeCodec cborTermVersionDataCodec tr (\DictVersion {} -> acceptableVersion)
 
 
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
@@ -508,6 +508,7 @@ ipSubscriptionWorker
           nodeToNodeHandshakeCodec
           cborTermVersionDataCodec
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
+          (\DictVersion {} -> acceptableVersion)
           versions)
 
 
@@ -581,6 +582,7 @@ dnsSubscriptionWorker
         nodeToNodeHandshakeCodec
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
+        (\DictVersion {} -> acceptableVersion)
         versions)
 
 

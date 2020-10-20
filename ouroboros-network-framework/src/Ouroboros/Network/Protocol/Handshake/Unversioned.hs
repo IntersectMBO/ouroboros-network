@@ -40,7 +40,7 @@ data UnversionedProtocolData = UnversionedProtocolData
 
 instance Acceptable UnversionedProtocolData where
   acceptableVersion UnversionedProtocolData
-                    UnversionedProtocolData = Accept
+                    UnversionedProtocolData = Accept UnversionedProtocolData
 
 
 unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData

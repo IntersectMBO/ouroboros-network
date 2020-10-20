@@ -73,7 +73,7 @@ newtype NodeToClientVersionData = NodeToClientVersionData
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
       | local == remote
-      = Accept
+      = Accept local
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
                                     ++ " /= " ++ show remote

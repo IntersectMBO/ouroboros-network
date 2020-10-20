@@ -250,6 +250,7 @@ connectTo snocket tracers versions path =
                   nodeToClientHandshakeCodec
                   cborTermVersionDataCodec
                   tracers
+                  (\DictVersion {} -> acceptableVersion)
                   versions
                   Nothing
                   (localAddressFromPath path)
@@ -459,6 +460,7 @@ ncSubscriptionWorker
           nodeToClientHandshakeCodec
           cborTermVersionDataCodec
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
+          (\DictVersion {} -> acceptableVersion)
           versions)
 
 

@@ -125,7 +125,7 @@ data Data_0 = C0 | C1 | C2
   deriving (Eq, Show, Typeable, Generic)
 
 instance Acceptable Data_0 where
-  acceptableVersion l r | l == r = Accept
+  acceptableVersion l r | l == r = Accept l
                         | otherwise =  Refuse $ T.pack ""
 
 data0CodecCBORTerm :: CodecCBORTerm Text Data_0
@@ -156,7 +156,7 @@ data Data_1 = Data_1 Bool
   deriving (Eq, Show, Typeable, Generic)
 
 instance Acceptable Data_1 where
-  acceptableVersion l r | l == r = Accept
+  acceptableVersion l r | l == r = Accept l
                         | otherwise =  Refuse $ T.pack ""
 
 data1CodecCBORTerm :: CodecCBORTerm Text Data_1
@@ -180,7 +180,7 @@ data Data_2 = Data_2 Word Word
   deriving (Eq, Show, Typeable, Generic)
 
 instance Acceptable Data_2 where
-  acceptableVersion l r | l == r = Accept
+  acceptableVersion l r | l == r = Accept l
                         | otherwise =  Refuse $ T.pack ""
 
 data2CodecCBORTerm :: CodecCBORTerm Text Data_2
@@ -209,17 +209,17 @@ genValidVersion
 genValidVersion Version_0 = do
   (d0 :: Data_0) <- arbitrary
   return $ Sigma d0 (Version
-                      (Application (==))
+                      (Application (d0 ==))
                       (DictVersion data0CodecCBORTerm (\_ _ -> ())))
 genValidVersion Version_1 = do
   (d1 :: Data_1) <- arbitrary
   return $ Sigma d1 (Version
-                      (Application (==))
+                      (Application (d1 ==))
                       (DictVersion data1CodecCBORTerm (\_ _ -> ())))
 genValidVersion Version_2 = do
   (d2 :: Data_2) <- arbitrary
   return $ Sigma d2 (Version
-                      (Application (==))
+                      (Application (d2 ==))
                       (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 
 
@@ -234,36 +234,36 @@ genInvalidVersion Version_0 = arbitrary >>= \b ->
     then do
       (d1 :: Data_1) <- arbitrary
       return $ Sigma d1 (Version
-                          (Application (==))
+                          (Application (d1 ==))
                           (DictVersion data1CodecCBORTerm (\_ _ -> ())))
     else do
       (d2 :: Data_2) <- arbitrary
       return $ Sigma d2 (Version
-                          (Application (==))
+                          (Application (d2 ==))
                           (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 genInvalidVersion Version_1 = arbitrary >>= \b ->
   if b
     then do
       (d0 :: Data_0) <- arbitrary
       return $ Sigma d0 (Version
-                          (Application (==))
+                          (Application (d0 ==))
                           (DictVersion data0CodecCBORTerm (\_ _ -> ())))
     else do
       (d2 :: Data_2) <- arbitrary
       return $ Sigma d2 (Version
-                          (Application (==))
+                          (Application (d2 ==))
                           (DictVersion data2CodecCBORTerm (\_ _ -> ())))
 genInvalidVersion Version_2 = arbitrary >>= \b ->
   if b
     then do
       (d0 :: Data_0) <- arbitrary
       return $ Sigma d0 (Version
-                          (Application (==))
+                          (Application (d0 ==))
                           (DictVersion data0CodecCBORTerm (\_ _ -> ())))
     else do
       (d1 :: Data_1) <- arbitrary
       return $ Sigma d1 (Version
-                          (Application (==))
+                          (Application (d1 ==))
                           (DictVersion data1CodecCBORTerm (\_ _ -> ())))
 
 -- |
@@ -380,13 +380,18 @@ prop_connect :: ArbitraryVersions -> Property
 prop_connect (ArbitraryVersions clientVersions serverVersions) =
   let (serverRes, clientRes) = pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vData vData' ->
+            case acceptableVersion vData vData' of
+                 Accept _ -> True
+                 _        -> False
+        )
         serverVersions
         clientVersions
   in case runSimOrThrow
            (connect
               (handshakeClientPeer
                 cborTermVersionDataCodec
+                (\DictVersion {} -> acceptableVersion)
                 clientVersions)
               (handshakeServerPeer
                 cborTermVersionDataCodec
@@ -413,7 +418,11 @@ prop_channel :: ( MonadAsync m
 prop_channel createChannels clientVersions serverVersions =
   let (serverRes, clientRes) = pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vData vData' ->
+            case acceptableVersion vData vData' of
+                 Accept _ -> True
+                 _        -> False
+        )
         serverVersions
         clientVersions
   in do
@@ -422,6 +431,7 @@ prop_channel createChannels clientVersions serverVersions =
         createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
           cborTermVersionDataCodec
+          (\DictVersion {} -> acceptableVersion)
           clientVersions)
         (handshakeServerPeer
           cborTermVersionDataCodec
@@ -490,6 +500,7 @@ prop_channel_asymmetric createChannels clientVersions = do
         (codecHandshake versionNumberCodec')
         (handshakeClientPeer
           cborTermVersionDataCodec
+          (\DictVersion {} -> acceptableVersion)
           clientVersions)
         (handshakeServerPeer
           cborTermVersionDataCodec
@@ -512,7 +523,7 @@ prop_channel_asymmetric createChannels clientVersions = do
             Version_1
             (Sigma
               (Data_1 True)
-              (Version (Application (==))
+              (Version (Application (Data_1 True ==))
               (DictVersion data1CodecCBORTerm (\_ _ -> ()))))
 
     -- This codec does not know how to decode 'Version_0' and 'Version_2'.
@@ -529,7 +540,11 @@ prop_channel_asymmetric createChannels clientVersions = do
     (serverRes, clientRes) =
       pureHandshake
         (\DictVersion {} -> Dict)
-        (\DictVersion {} vData vData' -> acceptableVersion vData vData' == Accept)
+        (\DictVersion {} vData vData' ->
+            case acceptableVersion vData vData' of
+                 Accept _ -> True
+                 _        -> False
+        )
         serverVersions
         clientVersions
 

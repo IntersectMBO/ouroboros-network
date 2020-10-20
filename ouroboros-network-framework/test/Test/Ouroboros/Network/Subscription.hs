@@ -612,6 +612,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
+                (\DictVersion {} -> acceptableVersion)
                 (unversionedProtocol initiatorApp))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -776,6 +777,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                   unversionedHandshakeCodec
                   cborTermVersionDataCodec
                   nullNetworkConnectTracers
+                  (\DictVersion {} -> acceptableVersion)
                   (unversionedProtocol (appX rrcfg)))
 
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -847,6 +849,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
                 unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
+                (\DictVersion {} -> acceptableVersion)
                 (unversionedProtocol appReq))
 
     threadDelay 130
