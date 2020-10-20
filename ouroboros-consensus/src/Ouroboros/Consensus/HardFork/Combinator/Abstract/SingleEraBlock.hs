@@ -17,6 +17,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
   , eraIndexFromNS
   , eraIndexZero
   , eraIndexSucc
+  , eraIndexToInt
   ) where
 
 import           Codec.Serialise
@@ -150,3 +151,6 @@ eraIndexZero = EraIndex (Z (K ()))
 
 eraIndexSucc :: EraIndex xs -> EraIndex (x ': xs)
 eraIndexSucc (EraIndex ix) = EraIndex (S ix)
+
+eraIndexToInt :: EraIndex xs -> Int
+eraIndexToInt = index_NS . getEraIndex

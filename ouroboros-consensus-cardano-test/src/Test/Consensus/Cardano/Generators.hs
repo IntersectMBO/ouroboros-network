@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
                      nonEmptyFromList)
+import           Ouroboros.Consensus.Util.SOP (nsFromIndex)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
@@ -295,10 +296,10 @@ instance Arbitrary (BlockNodeToClientVersion blk)
     ]
 
 arbitraryNodeToClient
-  :: ( Arbitrary (WithVersion ByronNodeToClientVersion byron)
-     , Arbitrary shelley
-     , Arbitrary allegra
-     , Arbitrary mary
+  :: ( Arbitrary (WithVersion ByronNodeToClientVersion   byron)
+     , Arbitrary (WithVersion ShelleyNodeToClientVersion shelley)
+     , Arbitrary (WithVersion ShelleyNodeToClientVersion allegra)
+     , Arbitrary (WithVersion ShelleyNodeToClientVersion mary)
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
@@ -382,7 +383,7 @@ instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
 
 instance Arbitrary (Some (QueryHardFork (CardanoEras c))) where
-  arbitrary = return $ Some GetInterpreter
+  arbitrary = elements [Some GetInterpreter, Some GetCurrentEra]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
@@ -456,6 +457,14 @@ instance (Arbitrary a, SListI xs) => Arbitrary (NonEmpty xs a) where
 instance Arbitrary (History.Interpreter (CardanoEras c)) where
   arbitrary = History.mkInterpreter . History.Summary <$> arbitrary
 
+instance Arbitrary (EraIndex (CardanoEras c)) where
+  arbitrary = do
+    let nbEras = lengthSList (Proxy @(CardanoEras c))
+    index <- choose (0, fromIntegral nbEras - 1)
+    case nsFromIndex index of
+      Nothing -> error $ "nsFromIndex failed for " <> show index
+      Just ns -> return $ eraIndexFromNS ns
+
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (SomeResult (CardanoBlock c))) where
@@ -524,8 +533,10 @@ instance c ~ MockCryptoCompatByron
           SomeResult (QueryAnytimeMary GetEraStart) <$> arbitrary
 
       genQueryHardForkResult :: Gen (SomeResult (CardanoBlock c))
-      genQueryHardForkResult =
-          SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
+      genQueryHardForkResult = oneof
+          [ SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
+          , SomeResult (QueryHardFork GetCurrentEra)  <$> arbitrary
+          ]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (MismatchEraInfo (CardanoEras c)) where

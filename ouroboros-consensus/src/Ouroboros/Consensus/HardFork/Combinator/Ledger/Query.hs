@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -275,14 +276,23 @@ answerQueryAnytime HardForkLedgerConfig{..} =
 
 data QueryHardFork xs result where
   GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
+  GetCurrentEra  :: QueryHardFork xs (EraIndex xs)
 
 deriving instance Show (QueryHardFork xs result)
 
-instance ShowQuery (QueryHardFork xs) where
+instance All SingleEraBlock xs => ShowQuery (QueryHardFork xs) where
   showResult GetInterpreter = show
+  showResult GetCurrentEra  = show
 
 instance SameDepIndex (QueryHardFork xs) where
-  sameDepIndex GetInterpreter GetInterpreter = Just Refl
+  sameDepIndex GetInterpreter GetInterpreter =
+      Just Refl
+  sameDepIndex GetInterpreter _ =
+      Nothing
+  sameDepIndex GetCurrentEra GetCurrentEra =
+      Just Refl
+  sameDepIndex GetCurrentEra _ =
+      Nothing
 
 interpretQueryHardFork ::
      All SingleEraBlock xs
@@ -292,7 +302,10 @@ interpretQueryHardFork ::
   -> result
 interpretQueryHardFork cfg query st =
     case query of
-      GetInterpreter -> History.mkInterpreter $ hardForkSummary cfg st
+      GetInterpreter ->
+        History.mkInterpreter $ hardForkSummary cfg st
+      GetCurrentEra  ->
+        eraIndexFromNS $ State.tip $ hardForkLedgerStatePerEra st
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -320,24 +333,34 @@ decodeQueryAnytimeResult GetEraStart = decode
 encodeQueryHardForkResult ::
      SListI xs
   => QueryHardFork xs result -> result -> Encoding
-encodeQueryHardForkResult GetInterpreter = encode
+encodeQueryHardForkResult = \case
+    GetInterpreter -> encode
+    GetCurrentEra  -> encode
 
 decodeQueryHardForkResult ::
      SListI xs
   => QueryHardFork xs result -> forall s. Decoder s result
-decodeQueryHardForkResult GetInterpreter = decode
+decodeQueryHardForkResult = \case
+    GetInterpreter -> decode
+    GetCurrentEra  -> decode
 
 instance Serialise (Some (QueryHardFork xs)) where
-  encode (Some GetInterpreter) = mconcat [
-        Enc.encodeListLen 1
-      , Enc.encodeWord8 0
-      ]
+  encode = \case
+      Some GetInterpreter -> mconcat [
+          Enc.encodeListLen 1
+        , Enc.encodeWord8 0
+        ]
+      Some GetCurrentEra -> mconcat [
+          Enc.encodeListLen 1
+        , Enc.encodeWord8 1
+        ]
 
   decode = do
     enforceSize "QueryHardFork" 1
     tag <- Dec.decodeWord8
     case tag of
       0 -> return $ Some GetInterpreter
+      1 -> return $ Some GetCurrentEra
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 {-------------------------------------------------------------------------------
