@@ -122,7 +122,13 @@ goldenTestCBOR testName example enc goldenFile =
                    . enc
                    $ example
         return $ case (actualRes, decodeAsFlatTerm golden) of
-          (Left e, Right goldenFlatTerm) -> Just $ unlines [
+          (Left e, Right goldenFlatTerm)
+              -- Encoder threw an exception and the golden output was valid
+              -- CBOR. However, sometimes the 'show'n exception is also valid
+              -- CBOR. So if the exception and the golden output match, the test
+              -- passes.
+            | exceptionToByteString e == golden -> Nothing
+            | otherwise -> Just $ unlines [
                 "Exception thrown by encoder doesn't match the golden CBOR output"
               , "Exception:"
               , show e
