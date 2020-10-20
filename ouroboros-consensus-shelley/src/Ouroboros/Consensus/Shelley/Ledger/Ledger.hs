@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -469,6 +470,9 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     :: Set (SL.Credential 'SL.Staking era)
     -> Query (ShelleyBlock era) (Delegations era, SL.RewardAccounts era)
 
+  GetGenesisConfig
+    :: Query (ShelleyBlock era) (CompactGenesis era)
+
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
@@ -489,6 +493,7 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
         getFilteredDelegationsAndRewardAccounts
           (shelleyLedgerState st)
           creds
+      GetGenesisConfig -> shelleyLedgerCompactGenesis cfg
     where
       globals = shelleyLedgerGlobals cfg
 
@@ -547,22 +552,28 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Nothing
   sameDepIndex (GetFilteredDelegationsAndRewardAccounts _) _
     = Nothing
+  sameDepIndex GetGenesisConfig GetGenesisConfig
+    = Just Refl
+  sameDepIndex GetGenesisConfig _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock era) result)
 deriving instance Show (Query (ShelleyBlock era) result)
 
 instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
-  showResult GetLedgerTip                                 = show
-  showResult GetEpochNo                                   = show
-  showResult (GetNonMyopicMemberRewards {})               = show
-  showResult GetCurrentPParams                            = show
-  showResult GetProposedPParamsUpdates                    = show
-  showResult GetStakeDistribution                         = show
-  showResult (GetFilteredUTxO {})                         = show
-  showResult GetUTxO                                      = show
-  showResult GetCurrentEpochState                         = show
-  showResult (GetCBOR {})                                 = show
-  showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
+  showResult = \case
+      GetLedgerTip                               -> show
+      GetEpochNo                                 -> show
+      GetNonMyopicMemberRewards {}               -> show
+      GetCurrentPParams                          -> show
+      GetProposedPParamsUpdates                  -> show
+      GetStakeDistribution                       -> show
+      GetFilteredUTxO {}                         -> show
+      GetUTxO                                    -> show
+      GetCurrentEpochState                       -> show
+      GetCBOR {}                                 -> show
+      GetFilteredDelegationsAndRewardAccounts {} -> show
+      GetGenesisConfig                           -> show
 
 instance ShelleyBasedEra era
       => CommonProtocolParams (ShelleyBlock era) where
@@ -741,6 +752,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
     GetFilteredDelegationsAndRewardAccounts creds ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
+    GetGenesisConfig ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 11
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -760,6 +773,7 @@ decodeShelleyQuery = do
       (1, 8)  -> return $ SomeBlock GetCurrentEpochState
       (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
       (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (1, 11) -> return $ SomeBlock GetGenesisConfig
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -779,6 +793,7 @@ encodeShelleyResult query = case query of
     GetCurrentEpochState                       -> toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
+    GetGenesisConfig                           -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -796,3 +811,4 @@ decodeShelleyResult query = case query of
     GetCurrentEpochState                       -> fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
+    GetGenesisConfig                           -> fromCBOR

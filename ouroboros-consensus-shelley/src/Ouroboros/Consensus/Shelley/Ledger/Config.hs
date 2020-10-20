@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
@@ -21,6 +22,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
+
+import           Cardano.Binary (FromCBOR, ToCBOR)
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -111,9 +114,10 @@ data instance StorageConfig (ShelleyBlock era) = ShelleyStorageConfig {
 newtype CompactGenesis era = CompactGenesis {
       getCompactGenesis :: SL.ShelleyGenesis era
     }
-  deriving (Eq, Show, Generic)
+  deriving stock (Eq, Show, Generic)
+  deriving newtype (FromCBOR, ToCBOR)
 
-deriving instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
+deriving anyclass instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
 
 -- | Compacts the given 'SL.ShelleyGenesis'.
 compactGenesis :: SL.ShelleyGenesis era -> CompactGenesis era

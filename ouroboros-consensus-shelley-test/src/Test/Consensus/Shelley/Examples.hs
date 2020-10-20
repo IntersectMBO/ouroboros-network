@@ -213,7 +213,7 @@ examples = Golden.Examples {
               , Right (SL.ScriptHashObj (mkScriptHash 1))
               , Right (SL.KeyHashObj (mkKeyHash 2))
               ])
-
+        , ("GetGenesisConfig",          SomeBlock GetGenesisConfig)
       ]
 
     results = labelled [
@@ -228,6 +228,7 @@ examples = Golden.Examples {
               , (Right (SL.ScriptHashObj (mkScriptHash 1)), Map.empty)
               , (Right (SL.KeyHashObj (mkKeyHash 2)), Map.singleton (mkKeyHash 3) (SL.Coin 9))
               ]))
+        , ("GenesisConfig",          SomeResult GetGenesisConfig (compactGenesis testShelleyGenesis))
         ]
 
     proposedPParamsUpdates :: SL.ProposedPPUpdates StandardShelley
