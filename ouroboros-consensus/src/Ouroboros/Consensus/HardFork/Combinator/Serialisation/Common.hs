@@ -31,6 +31,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
   , isFirstEra
   , notFirstEra
     -- * Versioning
+  , HardForkSpecificNodeToNodeVersion(..)
+  , HardForkSpecificNodeToClientVersion(..)
   , HardForkNodeToNodeVersion(..)
   , HardForkNodeToClientVersion(..)
   , EraNodeToNodeVersion(..)
@@ -138,6 +140,21 @@ notFirstEra = hcmap proxySingle aux
   Versioning
 -------------------------------------------------------------------------------}
 
+-- | Versioning of the specific additions made by the HFC to the @NodeToNode@
+-- protocols, e.g., the era tag.
+data HardForkSpecificNodeToNodeVersion =
+    HardForkSpecificNodeToNodeVersion1
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Versioning of the specific additions made by the HFC to the @NodeToClient@
+-- protocols, e.g., the era tag or the hard-fork specific queries.
+data HardForkSpecificNodeToClientVersion =
+    HardForkSpecificNodeToClientVersion1
+
+    -- | Enable the 'GetCurrentEra' query in 'QueryHardFork'.
+  | HardForkSpecificNodeToClientVersion2
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
 data HardForkNodeToNodeVersion xs where
   -- | Disable the HFC
   --
@@ -152,9 +169,11 @@ data HardForkNodeToNodeVersion xs where
   -- Each era can be enabled or disabled individually by passing
   -- 'EraNodeToNodeDisabled' as its configuration, but serialised values will
   -- always include tags inserted by the HFC to distinguish one era from
-  -- another.
+  -- another. We also version the hard-fork specific parts with
+  -- 'HardForkSpecificNodeToNodeVersion'.
   HardForkNodeToNodeEnabled ::
-       NP EraNodeToNodeVersion xs
+       HardForkSpecificNodeToNodeVersion
+    -> NP EraNodeToNodeVersion xs
     -> HardForkNodeToNodeVersion xs
 
 data HardForkNodeToClientVersion xs where
@@ -169,7 +188,8 @@ data HardForkNodeToClientVersion xs where
   --
   -- See 'HardForkNodeToNodeEnabled'
   HardForkNodeToClientEnabled ::
-       NP EraNodeToClientVersion xs
+       HardForkSpecificNodeToClientVersion
+    -> NP EraNodeToClientVersion xs
     -> HardForkNodeToClientVersion xs
 
 data EraNodeToNodeVersion blk =
@@ -360,7 +380,11 @@ data HardForkEncoderException where
   HardForkEncoderDisabledEra :: SingleEraInfo blk -> HardForkEncoderException
 
   -- | HFC disabled, but we saw a query that is only supported by the HFC
-  HardForkEncoderUnsupportedQuery :: HardForkEncoderException
+  HardForkEncoderQueryHfcDisabled :: HardForkEncoderException
+
+  -- | HFC enabled, but we saw a HFC query that is not supported by the
+  -- HFC-specific version used
+  HardForkEncoderQueryWrongVersion :: HardForkEncoderException
 
 deriving instance Show HardForkEncoderException
 instance Exception HardForkEncoderException
@@ -552,15 +576,15 @@ encodeEitherMismatch :: forall xs a. SListI xs
                      -> (Either (MismatchEraInfo xs) a -> Encoding)
 encodeEitherMismatch version enc ma =
     case (version, ma) of
-      (HardForkNodeToClientDisabled _, Right a) ->
+      (HardForkNodeToClientDisabled {}, Right a) ->
           enc a
-      (HardForkNodeToClientDisabled _, Left err) ->
+      (HardForkNodeToClientDisabled {}, Left err) ->
           throw $ futureEraException (mismatchFutureEra err)
-      (HardForkNodeToClientEnabled _, Right a) -> mconcat [
+      (HardForkNodeToClientEnabled {}, Right a) -> mconcat [
             Enc.encodeListLen 1
           , enc a
           ]
-      (HardForkNodeToClientEnabled _, Left (MismatchEraInfo err)) -> mconcat [
+      (HardForkNodeToClientEnabled {}, Left (MismatchEraInfo err)) -> mconcat [
             Enc.encodeListLen 2
           , encodeNS (hpure (fn encodeName)) era1
           , encodeNS (hpure (fn (encodeName . getLedgerEraInfo))) era2
@@ -579,9 +603,9 @@ decodeEitherMismatch :: SListI xs
                      -> Decoder s (Either (MismatchEraInfo xs) a)
 decodeEitherMismatch version dec =
     case version of
-      HardForkNodeToClientDisabled _ ->
+      HardForkNodeToClientDisabled {} ->
         Right <$> dec
-      HardForkNodeToClientEnabled _ -> do
+      HardForkNodeToClientEnabled {} -> do
         tag <- Dec.decodeListLen
         case tag of
           1 -> Right <$> dec

@@ -166,9 +166,18 @@ instance TPraosCrypto c => Arbitrary (SL.ChainDepState c) where
 instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToNodeVersion a) where
   arbitrary = WithVersion <$> arbitrary <*> arbitrary
 
--- | We only have single version, so no special casing required.
---
--- This blanket orphan instance will have to be replaced with more specific
--- ones, once we introduce a different Shelley version.
-instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
+-- | This is @OVERLAPPABLE@ because we have to override the default behaviour
+-- for 'Query's.
+instance {-# OVERLAPPABLE #-} Arbitrary a
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
   arbitrary = WithVersion <$> arbitrary <*> arbitrary
+
+-- | Some 'Query's are only supported by 'ShelleyNodeToClientVersion2', so we
+-- make sure to not generate those queries in combination with
+-- 'ShelleyNodeToClientVersion1'.
+instance CanMock era
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeBlock Query (ShelleyBlock era))) where
+  arbitrary = do
+      query@(SomeBlock q) <- arbitrary
+      version <- arbitrary `suchThat` querySupportedVersion q
+      return $ WithVersion version query

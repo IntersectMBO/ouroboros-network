@@ -187,45 +187,53 @@ arbitraryNodeToNode injByron injShelley injAllegra injMary = oneof
     -- V2.
     , (\(WithVersion versionByron b) versionShelley versionAllegra versionMary ->
           WithVersion
-            (HardForkNodeToNodeEnabled (
-                 EraNodeToNodeEnabled versionByron
+            (HardForkNodeToNodeEnabled
+              maxBound
+              (  EraNodeToNodeEnabled versionByron
               :* EraNodeToNodeEnabled versionShelley
               :* versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injByron b))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Shelley + HardFork enabled
     , (\versionByron (WithVersion versionShelley s) versionAllegra versionMary ->
           WithVersion
-            (HardForkNodeToNodeEnabled (
-                 EraNodeToNodeEnabled versionByron
+            (HardForkNodeToNodeEnabled
+              maxBound
+              (  EraNodeToNodeEnabled versionByron
               :* EraNodeToNodeEnabled versionShelley
               :* versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injShelley s))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Allegra + HardFork enabled
     , (\versionByron versionShelley (WithVersion versionAllegra a) versionMary ->
           WithVersion
-            (HardForkNodeToNodeEnabled (
-                 EraNodeToNodeEnabled versionByron
+            (HardForkNodeToNodeEnabled
+              maxBound
+              (  EraNodeToNodeEnabled versionByron
               :* EraNodeToNodeEnabled versionShelley
               :* EraNodeToNodeEnabled versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injAllegra a))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Mary + HardFork enabled
     , (\versionByron versionShelley versionAllegra (WithVersion versionMary m) ->
           WithVersion
-            (HardForkNodeToNodeEnabled (
-                 EraNodeToNodeEnabled versionByron
+            (HardForkNodeToNodeEnabled
+              maxBound
+              (  EraNodeToNodeEnabled versionByron
               :* EraNodeToNodeEnabled versionShelley
               :* EraNodeToNodeEnabled versionAllegra
               :* EraNodeToNodeEnabled versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injMary m))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     ]
@@ -288,6 +296,26 @@ instance CardanoHardForkConstraints c
       . supportedNodeToClientVersions
       $ Proxy @(CardanoBlock c)
 
+-- | Generate a supported 'HardForkNodeToClientVersion' of which the
+-- 'HardForkSpecificNodeToClientVersion' satisfies the given predicate.
+--
+-- PRECONDITION: 'supportedNodeToClientVersions' must include a version that
+-- satisfies this condition.
+genWithHardForkSpecificNodeToClientVersion ::
+     forall c. CardanoHardForkConstraints c
+  => (HardForkSpecificNodeToClientVersion -> Bool)
+  -> Gen (HardForkNodeToClientVersion (CardanoEras c))
+genWithHardForkSpecificNodeToClientVersion p =
+      elements
+    . filter p'
+    . Map.elems
+    . supportedNodeToClientVersions
+    $ Proxy @(CardanoBlock c)
+  where
+    p' :: HardForkNodeToClientVersion (CardanoEras c) -> Bool
+    p' (HardForkNodeToClientEnabled v _) = p v
+    p' (HardForkNodeToClientDisabled {}) = False
+
 instance Arbitrary (BlockNodeToClientVersion blk)
      => Arbitrary (EraNodeToClientVersion blk) where
   arbitrary = frequency
@@ -316,45 +344,53 @@ arbitraryNodeToClient injByron injShelley injAllegra injMary = oneof
     -- Byron + HardFork enabled.
     , (\(WithVersion versionByron b) versionShelley versionAllegra versionMary ->
           WithVersion
-            (HardForkNodeToClientEnabled (
-                 EraNodeToClientEnabled versionByron
+            (HardForkNodeToClientEnabled
+              maxBound
+              (  EraNodeToClientEnabled versionByron
               :* EraNodeToClientEnabled versionShelley
               :* versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injByron b))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Shelley + HardFork enabled
     , (\versionByron (WithVersion versionShelley s) versionAllegra versionMary ->
           WithVersion
-            (HardForkNodeToClientEnabled (
-                 EraNodeToClientEnabled versionByron
+            (HardForkNodeToClientEnabled
+              maxBound
+              (  EraNodeToClientEnabled versionByron
               :* EraNodeToClientEnabled versionShelley
               :* versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injShelley s))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Allegra + HardFork enabled
     , (\versionByron versionShelley (WithVersion versionAllegra a) versionMary ->
           WithVersion
-            (HardForkNodeToClientEnabled (
-                 EraNodeToClientEnabled versionByron
+            (HardForkNodeToClientEnabled
+              maxBound
+              (  EraNodeToClientEnabled versionByron
               :* EraNodeToClientEnabled versionShelley
               :* EraNodeToClientEnabled versionAllegra
               :* versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injAllegra a))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     -- Mary + HardFork enabled
     , (\versionByron versionShelley versionAllegra (WithVersion versionMary m) ->
           WithVersion
-            (HardForkNodeToClientEnabled (
-                 EraNodeToClientEnabled versionByron
+            (HardForkNodeToClientEnabled
+              maxBound
+              (  EraNodeToClientEnabled versionByron
               :* EraNodeToClientEnabled versionShelley
               :* EraNodeToClientEnabled versionAllegra
               :* EraNodeToClientEnabled versionMary
-              :* Nil))
+              :* Nil
+              ))
             (injMary m))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     ]
@@ -382,8 +418,16 @@ instance c ~ MockCryptoCompatByron
 instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
 
-instance Arbitrary (Some (QueryHardFork (CardanoEras c))) where
-  arbitrary = elements [Some GetInterpreter, Some GetCurrentEra]
+instance CardanoHardForkConstraints c
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (Some (QueryHardFork (CardanoEras c)))) where
+  arbitrary = frequency
+      [ (1, do version <- getHardForkEnabledNodeToClientVersion <$> arbitrary
+               return $ WithVersion version (Some GetInterpreter))
+      , (1, do version <- genWithHardForkSpecificNodeToClientVersion
+                            (>= HardForkSpecificNodeToClientVersion2)
+               return $ WithVersion version (Some GetCurrentEra))
+      ]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
@@ -402,9 +446,7 @@ instance c ~ MockCryptoCompatByron
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (injAnytimeMary <$> arbitrary))
-      , (1, WithVersion
-              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
-              <*> (injHardFork <$> arbitrary))
+      , (1, fmap injHardFork <$> arbitrary)
       ]
     where
       injByron          (SomeBlock query) = SomeBlock (QueryIfCurrentByron   query)

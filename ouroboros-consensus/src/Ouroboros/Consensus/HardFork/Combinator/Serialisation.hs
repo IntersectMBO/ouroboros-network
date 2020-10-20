@@ -6,8 +6,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation (
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common as X
                      (EraNodeToClientVersion (..), EraNodeToNodeVersion (..),
                      HardForkNodeToClientVersion (..),
-                     HardForkNodeToNodeVersion (..), SerialiseConstraintsHFC,
-                     SerialiseHFC (..), isHardForkNodeToClientEnabled,
+                     HardForkNodeToNodeVersion (..),
+                     HardForkSpecificNodeToClientVersion (..),
+                     HardForkSpecificNodeToNodeVersion (..),
+                     SerialiseConstraintsHFC, SerialiseHFC (..),
+                     isHardForkNodeToClientEnabled,
                      isHardForkNodeToNodeEnabled)
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk as X
                      ()

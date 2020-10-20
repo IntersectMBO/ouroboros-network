@@ -16,7 +16,11 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 data ShelleyNodeToNodeVersion = ShelleyNodeToNodeVersion1
   deriving (Show, Eq, Ord, Enum, Bounded)
 
-data ShelleyNodeToClientVersion = ShelleyNodeToClientVersion1
+data ShelleyNodeToClientVersion =
+    ShelleyNodeToClientVersion1
+
+    -- | New queries introduced
+  | ShelleyNodeToClientVersion2
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock era) where
@@ -34,5 +38,8 @@ instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
         (NodeToClientV_1, ShelleyNodeToClientVersion1)
         -- Enable the LocalStateQuery protocol, no serialisation changes
       , (NodeToClientV_2, ShelleyNodeToClientVersion1)
-        -- V_3 enables the hard fork, unused by Shelley-only
+        -- V_3 enables the hard fork, which didn't affect Shelley-only when
+        -- introduced. However, we have retroactively claimed V_3 to enable
+        -- 'ShelleyNodeToClientVersion2'.
+      , (NodeToClientV_3, ShelleyNodeToClientVersion2)
       ]

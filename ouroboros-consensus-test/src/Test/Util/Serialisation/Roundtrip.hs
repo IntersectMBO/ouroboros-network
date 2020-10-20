@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -193,7 +194,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 -- For example, a certain constructor can only be used after a certain version
 -- and can thus not be generated for any prior versions.
 data WithVersion v a = WithVersion v a
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
 
 instance Arbitrary a => Arbitrary (WithVersion () a) where
   arbitrary = WithVersion () <$> arbitrary

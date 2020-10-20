@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , Ticked(..)
   , QueryLedger (..)
   , Query (..)
+  , querySupportedVersion
   , NonMyopicMemberRewards (..)
     -- * Ledger config
   , ShelleyLedgerConfig (..)
@@ -99,6 +100,8 @@ import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
+                     (ShelleyNodeToClientVersion (..))
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -584,6 +587,26 @@ instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
       GetFilteredDelegationsAndRewardAccounts {} -> show
       GetGenesisConfig                           -> show
       DebugNewEpochState                         -> show
+
+-- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
+querySupportedVersion :: Query (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
+querySupportedVersion = \case
+    GetLedgerTip                               -> (>= v1)
+    GetEpochNo                                 -> (>= v1)
+    GetNonMyopicMemberRewards {}               -> (>= v1)
+    GetCurrentPParams                          -> (>= v1)
+    GetProposedPParamsUpdates                  -> (>= v1)
+    GetStakeDistribution                       -> (>= v1)
+    GetFilteredUTxO {}                         -> (>= v1)
+    GetUTxO                                    -> (>= v1)
+    DebugEpochState                            -> (>= v1)
+    GetCBOR q                                  -> querySupportedVersion q
+    GetFilteredDelegationsAndRewardAccounts {} -> (>= v1)
+    GetGenesisConfig                           -> (>= v2)
+    DebugNewEpochState                         -> (>= v2)
+  where
+    v1 = ShelleyNodeToClientVersion1
+    v2 = ShelleyNodeToClientVersion2
 
 instance ShelleyBasedEra era
       => CommonProtocolParams (ShelleyBlock era) where

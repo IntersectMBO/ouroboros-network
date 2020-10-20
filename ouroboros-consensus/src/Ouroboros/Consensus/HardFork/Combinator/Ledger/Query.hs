@@ -344,25 +344,6 @@ decodeQueryHardForkResult = \case
     GetInterpreter -> decode
     GetCurrentEra  -> decode
 
-instance Serialise (Some (QueryHardFork xs)) where
-  encode = \case
-      Some GetInterpreter -> mconcat [
-          Enc.encodeListLen 1
-        , Enc.encodeWord8 0
-        ]
-      Some GetCurrentEra -> mconcat [
-          Enc.encodeListLen 1
-        , Enc.encodeWord8 1
-        ]
-
-  decode = do
-    enforceSize "QueryHardFork" 1
-    tag <- Dec.decodeWord8
-    case tag of
-      0 -> return $ Some GetInterpreter
-      1 -> return $ Some GetCurrentEra
-      _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
-
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
