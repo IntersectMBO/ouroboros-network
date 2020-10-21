@@ -72,13 +72,13 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
                      PrefixLen (..), addPrefixLen, takePrefix)
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 {-------------------------------------------------------------------------------

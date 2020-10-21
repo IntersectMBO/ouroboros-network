@@ -30,12 +30,10 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.Util.ShowProxy
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util (ShowProxy, (.:))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract

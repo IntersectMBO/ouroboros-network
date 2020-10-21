@@ -31,12 +31,11 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.Util.ShowProxy
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (ShowProxy)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras

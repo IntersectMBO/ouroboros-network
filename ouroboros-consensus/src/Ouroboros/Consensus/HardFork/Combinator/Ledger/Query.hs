@@ -45,7 +45,6 @@ import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (enforceSize)
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
@@ -53,6 +52,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 import           Ouroboros.Consensus.Util.DepPair
 

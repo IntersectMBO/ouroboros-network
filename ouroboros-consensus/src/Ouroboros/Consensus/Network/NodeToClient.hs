@@ -59,7 +59,6 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -73,6 +72,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry

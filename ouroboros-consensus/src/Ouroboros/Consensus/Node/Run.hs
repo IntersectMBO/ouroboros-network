@@ -18,7 +18,6 @@ module Ouroboros.Consensus.Node.Run (
   ) where
 
 import           Ouroboros.Network.Block (Serialised)
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -31,6 +30,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Util (ShowProxy)
 
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
