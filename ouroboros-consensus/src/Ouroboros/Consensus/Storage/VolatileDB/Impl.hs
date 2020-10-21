@@ -304,7 +304,7 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig, checkIntegrity } blockCom
         parseHeader :: Lazy.ByteString -> m (Header blk)
         parseHeader bytes = throwParseErrors bytes $
             case ibiNestedCtxt of
-              SomeBlock ctxt ->
+              SomeSecond ctxt ->
                 CBOR.deserialiseFromBytes
                   ((\f -> nest . DepPair ctxt . f) <$>
                       decodeDiskDep codecConfig ctxt)
@@ -389,7 +389,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer, codecConfig }
           , ibiBlockSize    = BlockSize $ fromIntegral bytesWritten
           , ibiBlockInfo    = blockInfo
           , ibiNestedCtxt   = case unnest (getHeader blk) of
-                                DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+                                DepPair nestedCtxt _ -> SomeSecond nestedCtxt
           }
         currentRevMap' = Map.insert biHash internalBlockInfo' currentRevMap
         st' = st {

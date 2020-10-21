@@ -116,7 +116,7 @@ examples = Golden.Examples {
     regularAndEBB :: a -> a -> Labelled a
     regularAndEBB regular ebb = labelled [("regular", regular), ("EBB", ebb)]
 
-    exampleQuery  = SomeBlock GetUpdateInterfaceState
+    exampleQuery  = SomeSecond GetUpdateInterfaceState
     exampleResult = SomeResult GetUpdateInterfaceState exampleUPIState
 
 exampleBlock :: ByronBlock

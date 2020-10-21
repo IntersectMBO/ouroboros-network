@@ -48,7 +48,7 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SomeBlock)
+                     HeaderHash, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
@@ -210,7 +210,7 @@ data Examples blk = Examples {
     , exampleGenTx            :: Labelled (GenTx blk)
     , exampleGenTxId          :: Labelled (GenTxId blk)
     , exampleApplyTxErr       :: Labelled (ApplyTxErr blk)
-    , exampleQuery            :: Labelled (SomeBlock Query blk)
+    , exampleQuery            :: Labelled (SomeSecond Query blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)

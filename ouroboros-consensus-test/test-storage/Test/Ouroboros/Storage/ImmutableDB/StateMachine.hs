@@ -176,7 +176,7 @@ type AllComponents blk =
   , IsEBB
   , Word32
   , Word16
-  , SomeBlock (NestedCtxt Header) blk
+  , SomeSecond (NestedCtxt Header) blk
   )
 
 -- | Short-hand

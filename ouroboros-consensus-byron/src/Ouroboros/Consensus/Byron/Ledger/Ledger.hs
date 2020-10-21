@@ -479,11 +479,11 @@ encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (SomeBlock Query ByronBlock)
+decodeByronQuery :: Decoder s (SomeSecond Query ByronBlock)
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
-      0 -> return $ SomeBlock GetUpdateInterfaceState
+      0 -> return $ SomeSecond GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
 encodeByronResult :: Query ByronBlock result -> result -> Encoding

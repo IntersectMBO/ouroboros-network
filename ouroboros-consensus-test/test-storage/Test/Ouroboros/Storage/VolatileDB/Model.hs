@@ -278,7 +278,7 @@ getBlockComponentModel blockComponent hash dbm@DBModel { codecConfig } =
         GetBlockSize     -> fromIntegral $ BL.length blockBytes
         GetHeaderSize    -> headerSize binaryBlockInfo
         GetNestedCtxt    -> case unnest (getHeader blk) of
-                              DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+                              DepPair nestedCtxt _ -> SomeSecond nestedCtxt
         GetPure a        -> a
         GetApply f bc    -> go blk f $ go blk bc
       where

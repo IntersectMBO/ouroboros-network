@@ -467,10 +467,10 @@ extractBlockComponent ccfg blk = \case
     rawBlk = CBOR.toLazyByteString $ encodeDisk ccfg blk
 
     rawHdr :: Lazy.ByteString
-    nestedCtxt :: SomeBlock (NestedCtxt Header) blk
+    nestedCtxt :: SomeSecond (NestedCtxt Header) blk
     (nestedCtxt, rawHdr) = case unnest (getHeader blk) of
         DepPair ctxt h ->
-          ( SomeBlock ctxt
+          ( SomeSecond ctxt
           , CBOR.toLazyByteString $ encodeDiskDep ccfg ctxt h
           )
 

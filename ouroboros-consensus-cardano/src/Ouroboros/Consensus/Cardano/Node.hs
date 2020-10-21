@@ -142,11 +142,11 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
 
   reconstructHfcNestedCtxt _ prefix blockSize =
       case Short.index prefix 1 of
-        0 -> SomeBlock $ NestedCtxt (NCZ (Byron.CtxtByronBoundary blockSize))
-        1 -> SomeBlock $ NestedCtxt (NCZ (Byron.CtxtByronRegular  blockSize))
-        2 -> SomeBlock $ NestedCtxt (NCS (NCZ Shelley.CtxtShelley))
-        3 -> SomeBlock $ NestedCtxt (NCS (NCS (NCZ Shelley.CtxtShelley)))
-        4 -> SomeBlock $ NestedCtxt (NCS (NCS (NCS (NCZ Shelley.CtxtShelley))))
+        0 -> SomeSecond $ NestedCtxt (NCZ (Byron.CtxtByronBoundary blockSize))
+        1 -> SomeSecond $ NestedCtxt (NCZ (Byron.CtxtByronRegular  blockSize))
+        2 -> SomeSecond $ NestedCtxt (NCS (NCZ Shelley.CtxtShelley))
+        3 -> SomeSecond $ NestedCtxt (NCS (NCS (NCZ Shelley.CtxtShelley)))
+        4 -> SomeSecond $ NestedCtxt (NCS (NCS (NCS (NCZ Shelley.CtxtShelley))))
         _ -> error $ "CardanoBlock: invalid prefix " <> show prefix
 
   getHfcBinaryBlockInfo = \case

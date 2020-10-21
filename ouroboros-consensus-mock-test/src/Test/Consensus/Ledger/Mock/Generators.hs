@@ -94,11 +94,11 @@ instance (HashAlgorithm (SimpleHash c), Arbitrary ext, Serialise ext)
 instance Arbitrary SimpleBody where
   arbitrary = SimpleBody <$> listOf arbitrary
 
-instance Arbitrary (SomeBlock (NestedCtxt Header) (SimpleBlock c ext)) where
-  arbitrary = return $ SomeBlock indexIsTrivial
+instance Arbitrary (SomeSecond (NestedCtxt Header) (SimpleBlock c ext)) where
+  arbitrary = return $ SomeSecond indexIsTrivial
 
-instance Arbitrary (SomeBlock Query (SimpleBlock c ext)) where
-  arbitrary = return $ SomeBlock QueryLedgerTip
+instance Arbitrary (SomeSecond Query (SimpleBlock c ext)) where
+  arbitrary = return $ SomeSecond QueryLedgerTip
 
 instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c ext)) where
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary

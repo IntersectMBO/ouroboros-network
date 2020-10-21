@@ -305,10 +305,10 @@ instructionHelper registry varReader blockComponent fromMaybeSTM CDB{..} = do
           Query.getAnyKnownBlockComponent cdbImmutableDB cdbVolatileDB bc (headerRealPoint hdr)
 
         rawHdr :: Lazy.ByteString
-        nestedCtxt :: SomeBlock (NestedCtxt Header) blk
+        nestedCtxt :: SomeSecond (NestedCtxt Header) blk
         (nestedCtxt, rawHdr) = case unnest hdr of
           DepPair ctxt h ->
-            ( SomeBlock ctxt
+            ( SomeSecond ctxt
             , toLazyByteString $ encodeDiskDep codecConfig ctxt h
             )
 

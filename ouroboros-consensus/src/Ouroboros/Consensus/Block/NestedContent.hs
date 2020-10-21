@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Block.NestedContent (
   , mapSomeNestedCtxt
     -- * Convenience re-exports
   , module Ouroboros.Consensus.Util.DepPair
+  , SomeSecond (..)
   ) where
 
 import           Data.Kind (Type)
@@ -34,7 +35,7 @@ import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 import           NoThunks.Class (InspectHeap (..), NoThunks)
 
-import           Ouroboros.Consensus.Block.Abstract (SomeBlock (..))
+import           Ouroboros.Consensus.Util (SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
 
 {-------------------------------------------------------------------------------
@@ -146,7 +147,7 @@ deriving instance (HasNestedContent f blk, forall a. Show (g a))
   Existentials
 -------------------------------------------------------------------------------}
 
-deriving instance HasNestedContent f blk => Show (SomeBlock (NestedCtxt f) blk)
+deriving instance HasNestedContent f blk => Show (SomeSecond (NestedCtxt f) blk)
 
 -- | We can write a manual instance using the following quantified constraint:
 --
@@ -155,19 +156,19 @@ deriving instance HasNestedContent f blk => Show (SomeBlock (NestedCtxt f) blk)
 -- However, this constraint would have to be propagated all the way up, which is
 -- rather verbose and annoying (standalone deriving has to be used), hence we
 -- use 'InspectHeap' for convenience.
-deriving via InspectHeap (SomeBlock (NestedCtxt f) blk)
-  instance (Typeable f, Typeable blk) => NoThunks (SomeBlock (NestedCtxt f) blk)
+deriving via InspectHeap (SomeSecond (NestedCtxt f) blk)
+  instance (Typeable f, Typeable blk) => NoThunks (SomeSecond (NestedCtxt f) blk)
 
 instance SameDepIndex (NestedCtxt_ blk f)
-      => Eq (SomeBlock (NestedCtxt f) blk) where
-  SomeBlock ctxt == SomeBlock ctxt' = isJust (sameDepIndex ctxt ctxt')
+      => Eq (SomeSecond (NestedCtxt f) blk) where
+  SomeSecond ctxt == SomeSecond ctxt' = isJust (sameDepIndex ctxt ctxt')
 
 castSomeNestedCtxt :: (forall a. NestedCtxt_ blk f a -> NestedCtxt_ blk' f a)
-                   -> SomeBlock (NestedCtxt f) blk
-                   -> SomeBlock (NestedCtxt f) blk'
-castSomeNestedCtxt coerce (SomeBlock ctxt) = SomeBlock (castNestedCtxt coerce ctxt)
+                   -> SomeSecond (NestedCtxt f) blk
+                   -> SomeSecond (NestedCtxt f) blk'
+castSomeNestedCtxt coerce (SomeSecond ctxt) = SomeSecond (castNestedCtxt coerce ctxt)
 
 mapSomeNestedCtxt :: (forall a. NestedCtxt_ blk f a -> NestedCtxt_ blk' f' a)
-                  -> SomeBlock (NestedCtxt f)  blk
-                  -> SomeBlock (NestedCtxt f') blk'
-mapSomeNestedCtxt f (SomeBlock ctxt) = SomeBlock (mapNestedCtxt f ctxt)
+                  -> SomeSecond (NestedCtxt f)  blk
+                  -> SomeSecond (NestedCtxt f') blk'
+mapSomeNestedCtxt f (SomeSecond ctxt) = SomeSecond (mapNestedCtxt f ctxt)

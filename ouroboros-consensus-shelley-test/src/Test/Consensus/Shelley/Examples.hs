@@ -202,18 +202,18 @@ examples = Golden.Examples {
     }
   where
     queries = labelled [
-          ("GetLedgerTip",              SomeBlock GetLedgerTip)
-        , ("GetEpochNo",                SomeBlock GetEpochNo)
-        , ("GetCurrentPParams",         SomeBlock GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeBlock GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeBlock GetStakeDistribution)
+          ("GetLedgerTip",              SomeSecond GetLedgerTip)
+        , ("GetEpochNo",                SomeSecond GetEpochNo)
+        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
         , ("GetNonMyopicMemberRewards",
-            SomeBlock $ GetNonMyopicMemberRewards $ Set.fromList [
+            SomeSecond $ GetNonMyopicMemberRewards $ Set.fromList [
                 Left  (SL.Coin 100)
               , Right (SL.ScriptHashObj (mkScriptHash 1))
               , Right (SL.KeyHashObj (mkKeyHash 2))
               ])
-        , ("GetGenesisConfig",          SomeBlock GetGenesisConfig)
+        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
       ]
 
     results = labelled [

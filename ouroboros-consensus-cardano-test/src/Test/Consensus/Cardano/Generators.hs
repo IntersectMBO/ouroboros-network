@@ -240,7 +240,7 @@ arbitraryNodeToNode injByron injShelley injAllegra injMary = oneof
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
-                                (SomeBlock (NestedCtxt Header) (CardanoBlock c))) where
+                                (SomeSecond (NestedCtxt Header) (CardanoBlock c))) where
   arbitrary = arbitraryNodeToNode injByron injShelley injAllegra injMary
     where
       injByron   = mapSomeNestedCtxt NCZ
@@ -431,7 +431,7 @@ instance CardanoHardForkConstraints c
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
-                                (SomeBlock Query (CardanoBlock c))) where
+                                (SomeSecond Query (CardanoBlock c))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary)
       , (1, WithVersion
@@ -449,15 +449,15 @@ instance c ~ MockCryptoCompatByron
       , (1, fmap injHardFork <$> arbitrary)
       ]
     where
-      injByron          (SomeBlock query) = SomeBlock (QueryIfCurrentByron   query)
-      injShelley        (SomeBlock query) = SomeBlock (QueryIfCurrentShelley query)
-      injAllegra        (SomeBlock query) = SomeBlock (QueryIfCurrentAllegra query)
-      injMary           (SomeBlock query) = SomeBlock (QueryIfCurrentMary    query)
-      injAnytimeByron   (Some      query) = SomeBlock (QueryAnytimeByron     query)
-      injAnytimeShelley (Some      query) = SomeBlock (QueryAnytimeShelley   query)
-      injAnytimeAllegra (Some      query) = SomeBlock (QueryAnytimeAllegra   query)
-      injAnytimeMary    (Some      query) = SomeBlock (QueryAnytimeMary      query)
-      injHardFork       (Some      query) = SomeBlock (QueryHardFork         query)
+      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron   query)
+      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley query)
+      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra query)
+      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary    query)
+      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron     query)
+      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
+      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
+      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
+      injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
 
 instance Arbitrary History.EraEnd where
   arbitrary = oneof

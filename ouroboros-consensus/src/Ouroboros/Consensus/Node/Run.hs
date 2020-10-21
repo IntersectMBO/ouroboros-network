@@ -68,7 +68,7 @@ class ( ConvertRawHash blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
       , SerialiseNodeToClient blk (ApplyTxErr blk)
-      , SerialiseNodeToClient blk (SomeBlock Query blk)
+      , SerialiseNodeToClient blk (SomeSecond Query blk)
       , SerialiseResult       blk (Query blk)
       ) => SerialiseNodeToClientConstraints blk
 

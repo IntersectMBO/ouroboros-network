@@ -638,16 +638,16 @@ instance ReconstructNestedCtxt Header m
       1 `addPrefixLen` reconstructPrefixLen (Proxy @(Header m))
   reconstructNestedCtxt _ prefix size =
       case reconstructNestedCtxt (Proxy @(Header m)) prefixMain size of
-        SomeBlock ctxt -> SomeBlock (mapNestedCtxt CtxtDual ctxt)
+        SomeSecond ctxt -> SomeSecond (mapNestedCtxt CtxtDual ctxt)
     where
       prefixMain = Short.pack . drop 1 . Short.unpack $ prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) m
       => EncodeDiskDepIx (NestedCtxt Header) (DualBlock m a) where
-  encodeDiskDepIx ccfg (SomeBlock ctxt) =
+  encodeDiskDepIx ccfg (SomeSecond ctxt) =
       encodeDiskDepIx
         (dualCodecConfigMain ccfg)
-        (SomeBlock (mapNestedCtxt ctxtDualMain ctxt))
+        (SomeSecond (mapNestedCtxt ctxtDualMain ctxt))
 
 instance EncodeDiskDep (NestedCtxt Header) m
       => EncodeDiskDep (NestedCtxt Header) (DualBlock m a) where

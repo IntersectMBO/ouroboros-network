@@ -43,7 +43,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
+import           Ouroboros.Consensus.Util (SomeSecond (..), repeatedly,
+                     repeatedlyM)
 import           Ouroboros.Consensus.Util.DepPair
 
 {-------------------------------------------------------------------------------
@@ -141,7 +142,7 @@ class (ShowQuery (Query blk), SameDepIndex (Query blk)) => QueryLedger blk where
   -- | Answer the given query about the ledger state.
   answerQuery :: LedgerConfig blk -> Query blk result -> LedgerState blk -> result
 
-instance SameDepIndex (Query blk) => Eq (SomeBlock Query blk) where
-  SomeBlock qry == SomeBlock qry' = isJust (sameDepIndex qry qry')
+instance SameDepIndex (Query blk) => Eq (SomeSecond Query blk) where
+  SomeSecond qry == SomeSecond qry' = isJust (sameDepIndex qry qry')
 
-deriving instance (forall result. Show (Query blk result)) => Show (SomeBlock Query blk)
+deriving instance (forall result. Show (Query blk result)) => Show (SomeSecond Query blk)

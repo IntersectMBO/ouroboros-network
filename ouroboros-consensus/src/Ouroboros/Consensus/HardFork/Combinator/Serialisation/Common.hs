@@ -317,11 +317,11 @@ class ( CanHardFork xs
        proxy (Header (HardForkBlock xs))
     -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> SomeBlock (NestedCtxt Header) (HardForkBlock xs)
+    -> SomeSecond (NestedCtxt Header) (HardForkBlock xs)
   reconstructHfcNestedCtxt _ prefix blockSize =
      case nsFromIndex tag of
        Nothing -> error $ "invalid HardForkBlock with tag: " <> show tag
-       Just ns -> injSomeBlock $ hcmap proxySingle reconstructOne ns
+       Just ns -> injSomeSecond $ hcmap proxySingle reconstructOne ns
     where
       tag :: Word8
       tag = Short.index prefix 1
@@ -330,16 +330,16 @@ class ( CanHardFork xs
       prefixOne = Short.pack . drop 2 . Short.unpack $ prefix
 
       reconstructOne :: forall blk. SingleEraBlock blk
-                     => K () blk -> SomeBlock (NestedCtxt Header) blk
+                     => K () blk -> SomeSecond (NestedCtxt Header) blk
       reconstructOne _ =
           reconstructNestedCtxt (Proxy @(Header blk)) prefixOne blockSize
 
-      injSomeBlock :: NS (SomeBlock (NestedCtxt Header)) xs'
-                   -> SomeBlock (NestedCtxt Header) (HardForkBlock xs')
-      injSomeBlock (Z x) = case x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
-      injSomeBlock (S x) = case injSomeBlock x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
+      injSomeSecond :: NS (SomeSecond (NestedCtxt Header)) xs'
+                   -> SomeSecond (NestedCtxt Header) (HardForkBlock xs')
+      injSomeSecond (Z x) = case x of
+          SomeSecond (NestedCtxt y) -> SomeSecond (NestedCtxt (NCZ y))
+      injSomeSecond (S x) = case injSomeSecond x of
+          SomeSecond (NestedCtxt y) -> SomeSecond (NestedCtxt (NCS y))
 
   -- | Used as the implementation of 'getBinaryBlockInfo' for
   -- 'HardForkBlock'.
@@ -524,9 +524,9 @@ decodeNested = \ccfg (NestedCtxt ctxt) ->
 
 encodeNestedCtxt :: All (EncodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
-                 -> SomeBlock (NestedCtxt f) (HardForkBlock xs)
+                 -> SomeSecond (NestedCtxt f) (HardForkBlock xs)
                  -> Encoding
-encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
+encodeNestedCtxt = \ccfg (SomeSecond ctxt) ->
     go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg))
        npWithIndices
        (flipNestedCtxt ctxt)
@@ -541,12 +541,12 @@ encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
     go (c :* _)  (K i :* _)  (NCZ ctxt) = mconcat [
           Enc.encodeListLen 2
         , Serialise.encode i
-        , encodeDiskDepIx c (SomeBlock (NestedCtxt ctxt))
+        , encodeDiskDepIx c (SomeSecond (NestedCtxt ctxt))
         ]
 
 decodeNestedCtxt :: All (DecodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
-                 -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs))
+                 -> forall s. Decoder s (SomeSecond (NestedCtxt f) (HardForkBlock xs))
 decodeNestedCtxt = \ccfg -> do
     enforceSize "decodeNestedCtxt" 2
     tag <- Serialise.decode
@@ -558,7 +558,7 @@ decodeNestedCtxt = \ccfg -> do
     go :: All (DecodeDiskDepIx (NestedCtxt f)) xs'
        => NP CodecConfig xs'
        -> NS (K ()) xs'
-       -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs'))
+       -> forall s. Decoder s (SomeSecond (NestedCtxt f) (HardForkBlock xs'))
     go Nil       i     = case i of {}
     go (c :* _)  (Z _) = mapSomeNestedCtxt NCZ <$> decodeDiskDepIx c
     go (_ :* cs) (S i) = mapSomeNestedCtxt NCS <$> go cs i
@@ -669,21 +669,21 @@ undistribSerialisedHeader =
 
 distribQueryIfCurrent ::
      Some (QueryIfCurrent xs)
-  -> NS (SomeBlock Query) xs
+  -> NS (SomeSecond Query) xs
 distribQueryIfCurrent = \(Some qry) -> go qry
   where
-    go :: QueryIfCurrent xs result -> NS (SomeBlock Query) xs
-    go (QZ qry) = Z (SomeBlock qry)
+    go :: QueryIfCurrent xs result -> NS (SomeSecond Query) xs
+    go (QZ qry) = Z (SomeSecond qry)
     go (QS qry) = S (go qry)
 
 undistribQueryIfCurrent ::
-     NS (SomeBlock Query) xs
+     NS (SomeSecond Query) xs
   -> Some (QueryIfCurrent xs)
 undistribQueryIfCurrent = go
   where
-    go :: NS (SomeBlock Query) xs -> Some (QueryIfCurrent xs)
+    go :: NS (SomeSecond Query) xs -> Some (QueryIfCurrent xs)
     go (Z qry) = case qry of
-                   SomeBlock qry' ->
+                   SomeSecond qry' ->
                      Some (QZ qry')
     go (S qry) = case go qry of
                    Some qry' ->
@@ -701,7 +701,7 @@ undistribQueryIfCurrent = go
 -- Example
 --
 -- > deriving via SerialiseNS Header SomeEras
--- >          instance Serialise (Header SomeBlock)
+-- >          instance Serialise (Header SomeSecond)
 newtype SerialiseNS f xs = SerialiseNS {
       getSerialiseNS :: NS f xs
     }

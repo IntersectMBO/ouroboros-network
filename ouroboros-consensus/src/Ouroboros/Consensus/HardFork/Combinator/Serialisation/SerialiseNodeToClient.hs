@@ -200,8 +200,8 @@ decodeQueryHardFork = do
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 instance SerialiseHFC xs
-      => SerialiseNodeToClient (HardForkBlock xs) (SomeBlock Query (HardForkBlock xs)) where
-  encodeNodeToClient ccfg version (SomeBlock q) = case version of
+      => SerialiseNodeToClient (HardForkBlock xs) (SomeSecond Query (HardForkBlock xs)) where
+  encodeNodeToClient ccfg version (SomeSecond q) = case version of
       HardForkNodeToClientDisabled v0 -> case q of
         QueryIfCurrent qry ->
           case distribQueryIfCurrent (Some qry) of
@@ -249,24 +249,24 @@ instance SerialiseHFC xs
               case checkIsNonEmpty p of
                 Nothing -> fail $ "QueryAnytime requires multiple era"
                 Just (ProofNonEmpty {}) ->
-                  return $ SomeBlock (QueryAnytime qry eraIndex)
+                  return $ SomeSecond (QueryAnytime qry eraIndex)
 
             (2, 2) -> do
               Some (qry :: QueryHardFork xs result) <- decodeQueryHardFork
               case checkIsNonEmpty p of
                 Nothing -> fail $ "QueryHardFork requires multiple era"
                 Just (ProofNonEmpty {}) ->
-                  return $ SomeBlock (QueryHardFork qry)
+                  return $ SomeSecond (QueryHardFork qry)
 
             _ -> fail $ "HardForkQuery: invalid size and tag" <> show (size, tag)
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-      injQueryIfCurrent :: NS (SomeBlock Query) xs
-                        -> SomeBlock Query (HardForkBlock xs)
+      injQueryIfCurrent :: NS (SomeSecond Query) xs
+                        -> SomeSecond Query (HardForkBlock xs)
       injQueryIfCurrent ns =
           case undistribQueryIfCurrent ns of
-            Some q -> SomeBlock (QueryIfCurrent q)
+            Some q -> SomeSecond (QueryIfCurrent q)
 
 {-------------------------------------------------------------------------------
   Results

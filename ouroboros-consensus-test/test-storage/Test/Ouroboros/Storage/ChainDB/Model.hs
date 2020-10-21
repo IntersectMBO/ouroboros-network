@@ -547,7 +547,7 @@ getBlockComponent blk = \case
     GetBlockSize     -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize    -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
     GetNestedCtxt    -> case unnest (getHeader blk) of
-                          DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+                          DepPair nestedCtxt _ -> SomeSecond nestedCtxt
     GetPure a        -> a
     GetApply f bc    -> getBlockComponent blk f $ getBlockComponent blk bc
 

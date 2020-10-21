@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Util (
   , Empty
   , Some(..)
   , SomePair(..)
+  , SomeSecond(..)
   , ShowProxy(..)
   , mustBeRight
     -- * Folding variations
@@ -101,6 +102,13 @@ data Some (f :: k -> Type) where
 -- | Pair of functors instantiated to the /same/ existential
 data SomePair (f :: k -> Type) (g :: k -> Type) where
     SomePair :: f a -> g a -> SomePair f g
+
+-- | Hide the second type argument of some functor
+--
+-- @SomeSecond f a@ is isomorphic to @Some (f a)@, but is more convenient in
+-- partial applications.
+data SomeSecond (f :: Type -> Type -> Type) a where
+  SomeSecond :: !(f a b) -> SomeSecond f a
 
 mustBeRight :: Either Void a -> a
 mustBeRight (Left  v) = absurd v

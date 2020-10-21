@@ -792,24 +792,24 @@ encodeShelleyQuery query = case query of
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
-  => Decoder s (SomeBlock Query (ShelleyBlock era))
+  => Decoder s (SomeSecond Query (ShelleyBlock era))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
     case (len, tag) of
-      (1, 0)  -> return $ SomeBlock GetLedgerTip
-      (1, 1)  -> return $ SomeBlock GetEpochNo
-      (2, 2)  -> SomeBlock . GetNonMyopicMemberRewards <$> fromCBOR
-      (1, 3)  -> return $ SomeBlock GetCurrentPParams
-      (1, 4)  -> return $ SomeBlock GetProposedPParamsUpdates
-      (1, 5)  -> return $ SomeBlock GetStakeDistribution
-      (2, 6)  -> SomeBlock . GetFilteredUTxO <$> fromCBOR
-      (1, 7)  -> return $ SomeBlock GetUTxO
-      (1, 8)  -> return $ SomeBlock DebugEpochState
-      (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
-      (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
-      (1, 11) -> return $ SomeBlock GetGenesisConfig
-      (1, 12) -> return $ SomeBlock DebugNewEpochState
+      (1, 0)  -> return $ SomeSecond GetLedgerTip
+      (1, 1)  -> return $ SomeSecond GetEpochNo
+      (2, 2)  -> SomeSecond . GetNonMyopicMemberRewards <$> fromCBOR
+      (1, 3)  -> return $ SomeSecond GetCurrentPParams
+      (1, 4)  -> return $ SomeSecond GetProposedPParamsUpdates
+      (1, 5)  -> return $ SomeSecond GetStakeDistribution
+      (2, 6)  -> SomeSecond . GetFilteredUTxO <$> fromCBOR
+      (1, 7)  -> return $ SomeSecond GetUTxO
+      (1, 8)  -> return $ SomeSecond DebugEpochState
+      (2, 9)  -> (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> decodeShelleyQuery
+      (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (1, 11) -> return $ SomeSecond GetGenesisConfig
+      (1, 12) -> return $ SomeSecond DebugNewEpochState
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"

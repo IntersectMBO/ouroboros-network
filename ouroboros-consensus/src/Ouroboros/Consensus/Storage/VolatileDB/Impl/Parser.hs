@@ -40,7 +40,7 @@ data ParsedBlockInfo blk = ParsedBlockInfo {
       pbiBlockOffset :: !BlockOffset
     , pbiBlockSize   :: !BlockSize
     , pbiBlockInfo   :: !(BlockInfo blk)
-    , pbiNestedCtxt  :: !(SomeBlock (NestedCtxt Header) blk)
+    , pbiNestedCtxt  :: !(SomeSecond (NestedCtxt Header) blk)
     }
 
 -- | Parse the given file containing blocks.
@@ -89,7 +89,7 @@ parseBlockFile ccfg hasFS isNotCorrupt validationPolicy fsPath =
                  , pbiBlockSize   = BlockSize $ fromIntegral size
                  , pbiBlockInfo   = blockInfo
                  , pbiNestedCtxt  = case unnest (getHeader blk) of
-                                      DepPair nestedCtxt _ -> SomeBlock nestedCtxt
+                                      DepPair nestedCtxt _ -> SomeSecond nestedCtxt
                  }
            in checkEntries (newParsed : parsed) stream'
         | otherwise  -- The block was invalid

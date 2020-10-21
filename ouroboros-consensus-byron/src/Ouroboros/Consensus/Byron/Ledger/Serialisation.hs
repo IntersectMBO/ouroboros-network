@@ -283,9 +283,9 @@ isEbbEnvelope = \case
   IsNotEBB -> "\130\SOH"
 
 addV1Envelope ::
-     (SomeBlock (NestedCtxt Header) ByronBlock, Lazy.ByteString)
+     (SomeSecond (NestedCtxt Header) ByronBlock, Lazy.ByteString)
   -> Lazy.ByteString
-addV1Envelope (SomeBlock (NestedCtxt ctxt), bs) = isEbbTag <> bs
+addV1Envelope (SomeSecond (NestedCtxt ctxt), bs) = isEbbTag <> bs
   where
     isEbbTag = case ctxt of
       CtxtByronBoundary {} -> isEbbEnvelope IsEBB
@@ -295,15 +295,15 @@ addV1Envelope (SomeBlock (NestedCtxt ctxt), bs) = isEbbTag <> bs
 -- Since we don't know the block size, use 'fakeByronBlockSizeHint'.
 dropV1Envelope ::
      Lazy.ByteString
-  -> Except String (SomeBlock (NestedCtxt Header) ByronBlock, Lazy.ByteString)
+  -> Except String (SomeSecond (NestedCtxt Header) ByronBlock, Lazy.ByteString)
 dropV1Envelope bs = case Lazy.splitAt 2 bs of
     (prefix, suffix)
       | prefix == isEbbEnvelope IsEBB
-      -> return ( SomeBlock . NestedCtxt $ CtxtByronBoundary fakeByronBlockSizeHint
+      -> return ( SomeSecond . NestedCtxt $ CtxtByronBoundary fakeByronBlockSizeHint
                 , suffix
                 )
       | prefix == isEbbEnvelope IsNotEBB
-      -> return ( SomeBlock . NestedCtxt $ CtxtByronRegular fakeByronBlockSizeHint
+      -> return ( SomeSecond . NestedCtxt $ CtxtByronRegular fakeByronBlockSizeHint
                 , suffix
                 )
       | otherwise

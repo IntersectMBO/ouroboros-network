@@ -160,8 +160,8 @@ instance Arbitrary API.ApplyMempoolPayloadErr where
     -- , MempoolUpdateVoteErr     <$> arbitrary
     ]
 
-instance Arbitrary (SomeBlock Query ByronBlock) where
-  arbitrary = pure $ SomeBlock GetUpdateInterfaceState
+instance Arbitrary (SomeSecond Query ByronBlock) where
+  arbitrary = pure $ SomeSecond GetUpdateInterfaceState
 
 instance Arbitrary EpochNumber where
   arbitrary = hedgehog CC.genEpochNumber
@@ -300,15 +300,15 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (Header ByronBlock)) wher
             hdr
     return (WithVersion version hdr')
 
-instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeBlock (NestedCtxt Header) ByronBlock)) where
+instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeSecond (NestedCtxt Header) ByronBlock)) where
   arbitrary = do
       version <- arbitrary
       size    <- case version of
                    ByronNodeToNodeVersion1 -> return fakeByronBlockSizeHint
                    ByronNodeToNodeVersion2 -> arbitrary
       ctxt    <- elements [
-                     SomeBlock . NestedCtxt $ CtxtByronRegular  size
-                   , SomeBlock . NestedCtxt $ CtxtByronBoundary size
+                     SomeSecond . NestedCtxt $ CtxtByronRegular  size
+                   , SomeSecond . NestedCtxt $ CtxtByronBoundary size
                    ]
       return (WithVersion version ctxt)
 
