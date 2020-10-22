@@ -74,8 +74,7 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
-                     TPraosParams (..))
+import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -86,7 +85,7 @@ import           Ouroboros.Consensus.Cardano.CanHardFork
 -------------------------------------------------------------------------------}
 
 instance SerialiseConstraintsHFC ByronBlock
-instance TPraosCrypto era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
 
 -- | Important: we need to maintain binary compatibility with Byron blocks, as
 -- they are already stored on disk.
@@ -339,7 +338,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , shelleyLeaderCredentials = mCredsShelley
                       }
                     ProtocolParamsAllegra {
-                        allegraLeaderCredentials = mCredsAllegra
+                        allegraProtVer           = protVerAllegra
+                      , allegraLeaderCredentials = mCredsAllegra
                       }
                     ProtocolParamsMary {
                         maryProtVer           = protVerMary
@@ -451,8 +451,15 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     -- Allegra
 
+    genesisAllegra :: ShelleyGenesis (AllegraEra c)
+    genesisAllegra = genesisShelley
+
     blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
-    blockConfigAllegra = blockConfigShelley
+    blockConfigAllegra =
+        Shelley.mkShelleyBlockConfig
+          protVerAllegra
+          genesisAllegra
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsAllegra)
 
     partialConsensusConfigAllegra ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
@@ -461,14 +468,21 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAllegra :: PartialLedgerConfig (ShelleyBlock (AllegraEra c))
     partialLedgerConfigAllegra =
         mkPartialLedgerConfigShelley
-          genesisShelley
+          genesisAllegra
           maxMajorProtVer
           triggerHardForkAllegraMary
 
     -- Mary
 
+    genesisMary :: ShelleyGenesis (MaryEra c)
+    genesisMary = genesisAllegra
+
     blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
-    blockConfigMary = blockConfigShelley
+    blockConfigMary =
+        Shelley.mkShelleyBlockConfig
+          protVerMary
+          genesisMary
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsMary)
 
     partialConsensusConfigMary ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))
@@ -477,7 +491,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigMary :: PartialLedgerConfig (ShelleyBlock (MaryEra c))
     partialLedgerConfigMary =
         mkPartialLedgerConfigShelley
-          genesisShelley
+          genesisMary
           maxMajorProtVer
           TriggerHardForkNever
 

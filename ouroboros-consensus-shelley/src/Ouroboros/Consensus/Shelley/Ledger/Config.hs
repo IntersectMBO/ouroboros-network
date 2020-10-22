@@ -1,8 +1,10 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE DerivingVia    #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
@@ -25,6 +27,7 @@ import           Ouroboros.Consensus.Config
 
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 
 {-------------------------------------------------------------------------------
@@ -44,17 +47,19 @@ data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
       -- corresponding to the node's signing key(s), to make sure we prefer
       -- self-issued blocks. For non block producing nodes, this can be set to
       -- the empty map.
-    , shelleyBlockIssuerVKeys :: !(Map (SL.KeyHash 'SL.BlockIssuer era)
-                                       (SL.VKey 'SL.BlockIssuer era))
+    , shelleyBlockIssuerVKeys :: !(Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
+                                       (SL.VKey 'SL.BlockIssuer (EraCrypto era)))
     }
-  deriving stock (Show, Generic)
-  deriving anyclass NoThunks
+  deriving stock (Generic)
+
+deriving instance ShelleyBasedEra era => Show     (BlockConfig (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock era))
 
 mkShelleyBlockConfig ::
-     (Era era)
+     ShelleyBasedEra era
   => SL.ProtVer
   -> SL.ShelleyGenesis era
-  -> [SL.VKey 'SL.BlockIssuer era]
+  -> [SL.VKey 'SL.BlockIssuer (EraCrypto era)]
   -> BlockConfig (ShelleyBlock era)
 mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
       shelleyProtocolVersion  = protVer

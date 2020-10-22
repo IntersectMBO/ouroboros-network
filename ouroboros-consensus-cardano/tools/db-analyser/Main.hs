@@ -150,7 +150,11 @@ getCmdLine = execParser opts
 -------------------------------------------------------------------------------}
 
 analyse ::
-     (Node.RunNode blk, Show (Header blk), HasAnalysis blk)
+     ( Node.RunNode blk
+     , Show (Header blk)
+     , HasAnalysis blk
+     , HasProtocolInfo blk
+     )
   => CmdLine
   -> Args blk
   -> IO ()

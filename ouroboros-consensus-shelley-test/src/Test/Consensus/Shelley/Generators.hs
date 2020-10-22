@@ -37,6 +37,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
+import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators (genPParams)
 
 {-------------------------------------------------------------------------------
@@ -52,7 +53,7 @@ instance CanMock era => Arbitrary (ShelleyBlock era) where
 instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary
 
-instance CanMock era => Arbitrary (ShelleyHash era) where
+instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
 instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
@@ -99,7 +100,7 @@ instance CanMock era => Arbitrary (NonMyopicMemberRewards era) where
 instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
-instance Era era => Arbitrary (TPraosState era) where
+instance TPraosCrypto c => Arbitrary (TPraosState c) where
   arbitrary = do
       lastSlot <- frequency
         [ (1, return Origin)
@@ -134,7 +135,8 @@ instance Arbitrary ShelleyNodeToNodeVersion where
 instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
-instance Era era => Arbitrary (SomeBlock (NestedCtxt f) (ShelleyBlock era)) where
+instance ShelleyBasedEra era
+      => Arbitrary (SomeBlock (NestedCtxt f) (ShelleyBlock era)) where
   arbitrary = return (SomeBlock indexIsTrivial)
 
 {-------------------------------------------------------------------------------
@@ -145,21 +147,7 @@ instance Arbitrary (SL.PParams' SL.StrictMaybe era) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance (TPraosCrypto era, CanMock era) => Arbitrary (SL.LedgerView era) where
-  arbitrary = do
-      lvProtParams   <- genPParams (Proxy @era)
-      lvPoolDistr    <- arbitrary
-      lvGenDelegs    <- arbitrary
-      pure SL.LedgerView{..}
-
-  shrink lv =
-      -- TODO shrink for lvProtParams
-      [ lv{SL.lvPoolDistr    = x} | x <- shrink lvPoolDistr    ] ++
-      [ lv{SL.lvGenDelegs    = x} | x <- shrink lvGenDelegs    ]
-    where
-      SL.LedgerView { lvPoolDistr, lvGenDelegs } = lv
-
-instance Era era => Arbitrary (SL.ChainDepState era) where
+instance TPraosCrypto c => Arbitrary (SL.ChainDepState c) where
   arbitrary = genericArbitraryU
   shrink = genericShrink
 

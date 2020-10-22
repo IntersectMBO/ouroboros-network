@@ -49,6 +49,7 @@ library
                      , cardano-prelude
                      , cardano-slotting
                      , shelley-spec-ledger
+                     , cardano-ledger-shelley-ma
 
                      , ouroboros-network
                      , ouroboros-consensus

@@ -71,13 +71,13 @@ import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
   Credentials
 -------------------------------------------------------------------------------}
 
-data TPraosLeaderCredentials era = TPraosLeaderCredentials {
+data TPraosLeaderCredentials c = TPraosLeaderCredentials {
       -- | The unevolved signing KES key (at evolution 0).
       --
       -- Note that this is not inside 'TPraosCanBeLeader' since it gets evolved
       -- automatically, whereas 'TPraosCanBeLeader' does not change.
-      tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES era
-    , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader era
+      tpraosLeaderCredentialsInitSignKey :: SL.SignKeyKES c
+    , tpraosLeaderCredentialsCanBeLeader :: TPraosCanBeLeader c
       -- | Identifier for this set of credentials.
       --
       -- Useful when the node is running with multiple sets of credentials.
@@ -85,7 +85,7 @@ data TPraosLeaderCredentials era = TPraosLeaderCredentials {
     }
 
 tpraosBlockIssuerVKey ::
-     TPraosLeaderCredentials era -> SL.VKey 'SL.BlockIssuer era
+     TPraosLeaderCredentials c -> SL.VKey 'SL.BlockIssuer c
 tpraosBlockIssuerVKey =
     tpraosCanBeLeaderColdVerKey . tpraosLeaderCredentialsCanBeLeader
 
@@ -93,16 +93,16 @@ tpraosBlockIssuerVKey =
   BlockForging
 -------------------------------------------------------------------------------}
 
-type instance CannotForge (ShelleyBlock era) = TPraosCannotForge era
+type instance CannotForge (ShelleyBlock era) = TPraosCannotForge (EraCrypto era)
 
 type instance ForgeStateInfo (ShelleyBlock era) = HotKey.KESInfo
 
 type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionError
 
-shelleyBlockForging
-  :: forall m era. (TPraosCrypto era, IOLike m)
+shelleyBlockForging ::
+     forall m era. (ShelleyBasedEra era, IOLike m)
   => TPraosParams
-  -> TPraosLeaderCredentials era
+  -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
 shelleyBlockForging TPraosParams {..}
                     TPraosLeaderCredentials {
@@ -125,7 +125,7 @@ shelleyBlockForging TPraosParams {..}
       , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
       }
   where
-    forgingVRFHash :: SL.Hash era (SL.VerKeyVRF era)
+    forgingVRFHash :: SL.Hash (EraCrypto era) (SL.VerKeyVRF (EraCrypto era))
     forgingVRFHash =
           SL.hashVerKeyVRF
         . VRF.deriveVerKeyVRF
@@ -145,7 +145,9 @@ shelleyBlockForging TPraosParams {..}
 
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
-validateGenesis :: TPraosCrypto era => SL.ShelleyGenesis era -> Either String ()
+validateGenesis ::
+     ShelleyBasedEra era
+  => SL.ShelleyGenesis era -> Either String ()
 validateGenesis = first errsToString . SL.validateGenesis
   where
     errsToString :: [SL.ValidationErr] -> String
@@ -163,23 +165,23 @@ data ProtocolParamsShelley c f = ProtocolParamsShelley {
       -- mutually incompatible.
     , shelleyInitialNonce      :: SL.Nonce
     , shelleyProtVer           :: SL.ProtVer
-    , shelleyLeaderCredentials :: f (TPraosLeaderCredentials (ShelleyEra c))
+    , shelleyLeaderCredentials :: f (TPraosLeaderCredentials c)
     }
 
 -- | Parameters needed to run Allegra
 data ProtocolParamsAllegra c f = ProtocolParamsAllegra {
       allegraProtVer           :: SL.ProtVer
-    , allegraLeaderCredentials :: f (TPraosLeaderCredentials (AllegraEra c))
+    , allegraLeaderCredentials :: f (TPraosLeaderCredentials c)
     }
 
 -- | Parameters needed to run Mary
 data ProtocolParamsMary c f = ProtocolParamsMary {
       maryProtVer           :: SL.ProtVer
-    , maryLeaderCredentials :: f (TPraosLeaderCredentials (MaryEra c))
+    , maryLeaderCredentials :: f (TPraosLeaderCredentials c)
     }
 
 protocolInfoShelley ::
-     forall m c f. (IOLike m, TPraosCrypto (ShelleyEra c), Foldable f)
+     forall m c f. (IOLike m, ShelleyBasedEra (ShelleyEra c), Foldable f)
   => ProtocolParamsShelley c f
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 protocolInfoShelley ProtocolParamsShelley {
@@ -242,7 +244,7 @@ protocolInfoShelley ProtocolParamsShelley {
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
-    initChainDepState :: TPraosState (ShelleyEra c)
+    initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $
       SL.ChainDepState {
           SL.csProtocol = SL.PrtclState
@@ -373,7 +375,7 @@ instance ConfigSupportsNode (ShelleyBlock era) where
   NodeInitStorage instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto era => NodeInitStorage (ShelleyBlock era) where
+instance ShelleyBasedEra era => NodeInitStorage (ShelleyBlock era) where
   -- We fix the chunk size to @10k@ so that we have the same chunk size as
   -- Byron. Consequently, a Shelley net will have the same chunk size as the
   -- Byron-to-Shelley net with the same @k@.
@@ -391,4 +393,4 @@ instance TPraosCrypto era => NodeInitStorage (ShelleyBlock era) where
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance TPraosCrypto era => RunNode (ShelleyBlock era)
+instance ShelleyBasedEra era => RunNode (ShelleyBlock era)

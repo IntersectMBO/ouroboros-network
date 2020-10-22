@@ -63,6 +63,8 @@ instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
   arbitrary = oneof
     [ BlockByron   <$> arbitrary
     , BlockShelley <$> arbitrary
+    , BlockAllegra <$> arbitrary
+    , BlockMary    <$> arbitrary
     ]
 
 instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
@@ -114,7 +116,7 @@ arbitraryHardForkState _ = coerce <$> oneof
     genPast :: Gen Past
     genPast = Past <$> arbitrary <*> arbitrary
 
-instance (c ~ MockCryptoCompatByron, Era (ShelleyEra c))
+instance (c ~ MockCryptoCompatByron, ShelleyBasedEra (ShelleyEra c))
       => Arbitrary (CardanoLedgerState c) where
   arbitrary = arbitraryHardForkState (Proxy @LedgerState)
 
@@ -132,13 +134,17 @@ instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
   arbitrary = OneEraHash <$> oneof
     [ toShortRawHash (Proxy @ByronBlock) <$> arbitrary
     , toShortRawHash (Proxy @(ShelleyBlock (ShelleyEra c))) <$> arbitrary
+    , toShortRawHash (Proxy @(ShelleyBlock (AllegraEra c))) <$> arbitrary
+    , toShortRawHash (Proxy @(ShelleyBlock (MaryEra    c))) <$> arbitrary
     ]
 
-instance (c ~ MockCryptoCompatByron, Era (ShelleyEra c))
+instance (c ~ MockCryptoCompatByron, ShelleyBasedEra (ShelleyEra c))
       => Arbitrary (AnnTip (CardanoBlock c)) where
   arbitrary = oneof
     [ mapAnnTip TipInfoByron   <$> arbitrary @(AnnTip (ByronBlock))
     , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock (ShelleyEra c)))
+    , mapAnnTip TipInfoAllegra <$> arbitrary @(AnnTip (ShelleyBlock (AllegraEra c)))
+    , mapAnnTip TipInfoMary    <$> arbitrary @(AnnTip (ShelleyBlock (MaryEra    c)))
     ]
 
 {-------------------------------------------------------------------------------

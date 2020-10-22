@@ -27,7 +27,6 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Chain
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -37,6 +36,11 @@ import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..),
 import           HasAnalysis
 
 instance HasAnalysis ByronBlock where
+    countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
+    blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
+    knownEBBs = const Byron.knownEBBs
+
+instance HasProtocolInfo ByronBlock where
     data Args ByronBlock =
       ByronBlockArgs {
           configFileByron      :: FilePath
@@ -48,9 +52,6 @@ instance HasAnalysis ByronBlock where
     mkProtocolInfo ByronBlockArgs {..} = do
       config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
       return $ mkByronProtocolInfo config threshold
-    countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
-    blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
-    knownEBBs = const Byron.knownEBBs
 
 type ByronBlockArgs = Args ByronBlock
 

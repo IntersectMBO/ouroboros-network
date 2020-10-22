@@ -1,6 +1,8 @@
 {-# LANGUAGE TypeFamilies #-}
 module HasAnalysis (
     HasAnalysis (..)
+  , HasProtocolInfo (..)
+  , SizeInBytes
   ) where
 
 import           Data.Map.Strict (Map)
@@ -15,9 +17,11 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 -------------------------------------------------------------------------------}
 
 class GetPrevHash blk => HasAnalysis blk where
-    data Args blk
-    argsParser      :: proxy blk -> Parser (Args blk)
-    mkProtocolInfo  :: Args blk -> IO (ProtocolInfo IO blk)
-    countTxOutputs  :: blk -> Int
-    blockTxSizes    :: blk -> [SizeInBytes]
-    knownEBBs       :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
+  countTxOutputs :: blk -> Int
+  blockTxSizes   :: blk -> [SizeInBytes]
+  knownEBBs      :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
+
+class HasProtocolInfo blk where
+  data Args blk
+  argsParser     :: proxy blk -> Parser (Args blk)
+  mkProtocolInfo :: Args blk -> IO (ProtocolInfo IO blk)

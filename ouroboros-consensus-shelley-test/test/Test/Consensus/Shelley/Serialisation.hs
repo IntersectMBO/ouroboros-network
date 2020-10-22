@@ -54,7 +54,7 @@ tests = testGroup "Shelley"
     testCodecCfg = ShelleyCodecConfig
 
     dictNestedHdr ::
-         forall a era. Era era
+         forall a era. ShelleyBasedEra era
       => NestedCtxt_ (ShelleyBlock era) Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtShelley = Dict
 

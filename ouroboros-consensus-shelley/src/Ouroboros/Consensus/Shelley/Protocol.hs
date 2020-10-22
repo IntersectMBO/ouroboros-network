@@ -30,7 +30,6 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , mkShelleyGlobals
   , MaxMajorProtVer (..)
     -- * Crypto
-  , Era
   , TPraosCrypto
   , StandardCrypto
     -- * CannotForge
@@ -65,7 +64,6 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 
 import           Cardano.Ledger.Crypto (VRF)
-import           Cardano.Ledger.Era (Era (Crypto))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import qualified Shelley.Spec.Ledger.BlockChain as SL (checkLeaderValue, mkSeed,
@@ -81,54 +79,55 @@ import           Ouroboros.Consensus.Shelley.Protocol.Util
   Fields required by TPraos in the header
 -------------------------------------------------------------------------------}
 
-data TPraosFields era toSign = TPraosFields {
-      tpraosSignature :: SL.SignedKES era toSign
+data TPraosFields c toSign = TPraosFields {
+      tpraosSignature :: SL.SignedKES c toSign
     , tpraosToSign    :: toSign
     }
   deriving (Generic)
 
-instance (NoThunks toSign, Era era)
-  => NoThunks (TPraosFields era toSign)
-deriving instance (Show toSign, Era era)
-  => Show (TPraosFields era toSign)
+deriving instance (NoThunks toSign, TPraosCrypto c)
+  => NoThunks (TPraosFields c toSign)
+deriving instance (Show toSign, TPraosCrypto c)
+  => Show (TPraosFields c toSign)
 
 -- | Fields arising from transitional praos execution which must be included in
 -- the block signature.
-data TPraosToSign era = TPraosToSign {
+data TPraosToSign c = TPraosToSign {
       -- | Verification key for the issuer of this block.
       --
       -- Note that unlike in Classic/BFT where we have a key for the genesis
       -- delegate on whose behalf we are issuing this block, this key
       -- corresponds to the stake pool/core node actually forging the block.
-      tpraosToSignIssuerVK :: SL.VKey 'SL.BlockIssuer era
-    , tpraosToSignVrfVK    :: SL.VerKeyVRF era
+      tpraosToSignIssuerVK :: SL.VKey 'SL.BlockIssuer c
+    , tpraosToSignVrfVK    :: SL.VerKeyVRF c
       -- | Verifiable result containing the updated nonce value.
-    , tpraosToSignEta      :: SL.CertifiedVRF era SL.Nonce
+    , tpraosToSignEta      :: SL.CertifiedVRF c SL.Nonce
       -- | Verifiable proof of the leader value, used to determine whether the
       -- node has the right to issue a block in this slot.
       --
       -- We include a value here even for blocks forged under the BFT
       -- schedule. It is not required that such a value be verifiable (though
       -- by default it will be verifiably correct, but unused.)
-    , tpraosToSignLeader   :: SL.CertifiedVRF era Natural
+    , tpraosToSignLeader   :: SL.CertifiedVRF c Natural
       -- | Lightweight delegation certificate mapping the cold (DSIGN) key to
       -- the online KES key.
-    , tpraosToSignOCert    :: SL.OCert era
+    , tpraosToSignOCert    :: SL.OCert c
     }
   deriving (Generic)
 
-instance Era era => NoThunks (TPraosToSign era)
-deriving instance Era era => Show (TPraosToSign era)
+instance TPraosCrypto c => NoThunks (TPraosToSign c)
+deriving instance TPraosCrypto c => Show (TPraosToSign c)
 
-forgeTPraosFields :: ( Era era
-                     , SL.KESignable era toSign
-                     , Monad m
-                     )
-                  => HotKey era m
-                  -> CanBeLeader (TPraos era)
-                  -> IsLeader (TPraos era)
-                  -> (TPraosToSign era -> toSign)
-                  -> m (TPraosFields era toSign)
+forgeTPraosFields ::
+     ( TPraosCrypto c
+     , SL.KESignable c toSign
+     , Monad m
+     )
+  => HotKey c m
+  -> CanBeLeader (TPraos c)
+  -> IsLeader (TPraos c)
+  -> (TPraosToSign c -> toSign)
+  -> m (TPraosFields c toSign)
 forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
     signature <- HotKey.sign hotKey toSign
     return TPraosFields {
@@ -149,7 +148,7 @@ forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
 -- | Because we are using the executable spec, rather than implementing the
 -- protocol directly here, we have a fixed header type rather than an
 -- abstraction. So our validate view is fixed to this.
-type TPraosValidateView era = SL.BHeader era
+type TPraosValidateView c = SL.BHeader c
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -164,7 +163,7 @@ newtype MaxMajorProtVer = MaxMajorProtVer {
     }
   deriving (Eq, Show, Generic, NoThunks)
 
-data TPraos era
+data TPraos c
 
 -- | TPraos parameters that are node independent
 data TPraosParams = TPraosParams {
@@ -220,40 +219,39 @@ mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
   where
     securityParam = SecurityParam $ SL.sgSecurityParam genesis
 
-data TPraosCanBeLeader era = TPraosCanBeLeader {
+data TPraosCanBeLeader c = TPraosCanBeLeader {
       -- | Certificate delegating rights from the stake pool cold key (or
       -- genesis stakeholder delegate cold key) to the online KES key.
-      tpraosCanBeLeaderOpCert     :: !(SL.OCert era)
+      tpraosCanBeLeaderOpCert     :: !(SL.OCert c)
       -- | Stake pool cold key or genesis stakeholder delegate cold key.
-    , tpraosCanBeLeaderColdVerKey :: !(SL.VKey 'SL.BlockIssuer era)
-    , tpraosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF era)
+    , tpraosCanBeLeaderColdVerKey :: !(SL.VKey 'SL.BlockIssuer c)
+    , tpraosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF c)
     }
   deriving (Generic)
 
-instance Era era => NoThunks (TPraosCanBeLeader era)
+instance TPraosCrypto c => NoThunks (TPraosCanBeLeader c)
 
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
-data TPraosIsLeader era = TPraosIsLeader {
-      tpraosIsLeaderEta        :: SL.CertifiedVRF era SL.Nonce
-    , tpraosIsLeaderProof      :: SL.CertifiedVRF era Natural
+data TPraosIsLeader c = TPraosIsLeader {
+      tpraosIsLeaderEta        :: SL.CertifiedVRF c SL.Nonce
+    , tpraosIsLeaderProof      :: SL.CertifiedVRF c Natural
       -- | When in the overlay schedule (otherwise 'Nothing'), return the hash
       -- of the VRF verification key in the overlay schedule
-    , tpraosIsLeaderGenVRFHash :: Maybe (SL.Hash era (SL.VerKeyVRF era))
+    , tpraosIsLeaderGenVRFHash :: Maybe (SL.Hash c (SL.VerKeyVRF c))
     }
   deriving (Generic)
 
-instance Era era => NoThunks (TPraosIsLeader era)
+instance TPraosCrypto c => NoThunks (TPraosIsLeader c)
 
 -- | Static configuration
-data instance ConsensusConfig (TPraos era) = TPraosConfig {
+data instance ConsensusConfig (TPraos c) = TPraosConfig {
       tpraosParams    :: !TPraosParams
     , tpraosEpochInfo :: !(EpochInfo Identity)
     }
   deriving (Generic)
 
--- Use generic instance
-instance Era era => NoThunks (ConsensusConfig (TPraos era))
+instance TPraosCrypto c => NoThunks (ConsensusConfig (TPraos c))
 
 -- | Separate type instead of 'Bool' for the custom 'Ord' instance +
 -- documentation.
@@ -280,16 +278,16 @@ instance Ord SelfIssued where
 -- 3. If the tip of each chain was issued by the same agent, then we prefer
 --    the chain whose tip has the highest ocert issue number.
 -- 4. By the leader value of the chain tip, with lower values preferred.
-data TPraosChainSelectView era = TPraosChainSelectView {
+data TPraosChainSelectView c = TPraosChainSelectView {
     csvChainLength :: BlockNo
   , csvSlotNo      :: SlotNo
   , csvSelfIssued  :: SelfIssued
-  , csvIssuer      :: SL.VKey 'SL.BlockIssuer era
+  , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Word64
-  , csvLeaderVRF   :: VRF.OutputVRF (VRF (Crypto era))
+  , csvLeaderVRF   :: VRF.OutputVRF (VRF c)
   } deriving (Show, Eq)
 
-instance Era era => Ord (TPraosChainSelectView era) where
+instance TPraosCrypto c => Ord (TPraosChainSelectView c) where
   compare =
       mconcat [
           compare `on` csvChainLength
@@ -311,35 +309,35 @@ instance Era era => Ord (TPraosChainSelectView era) where
         | otherwise
         = EQ
 
-instance Era era => ChainSelection (TPraos era) where
+instance TPraosCrypto c => ChainSelection (TPraos c) where
 
   -- | Chain selection is done on the basis of the chain length first, and then
   -- operational certificate issue number.
-  type SelectView (TPraos era) = TPraosChainSelectView era
+  type SelectView (TPraos c) = TPraosChainSelectView c
 
 -- | Ledger view at a particular slot
-newtype instance Ticked (SL.LedgerView era) = TickedPraosLedgerView {
+newtype instance Ticked (SL.LedgerView c) = TickedPraosLedgerView {
       -- TODO: Perhaps it would be cleaner to define this as a separate type
-      getTickedPraosLedgerView :: SL.LedgerView era
+      getTickedPraosLedgerView :: SL.LedgerView c
     }
 
 -- | Transitional Praos consensus state.
 --
 -- In addition to the 'ChainDepState' provided by the ledger, we track the slot
 -- number of the last applied header.
-data TPraosState era = TPraosState {
+data TPraosState c = TPraosState {
       tpraosStateLastSlot      :: !(WithOrigin SlotNo)
-    , tpraosStateChainDepState :: !(SL.ChainDepState era)
+    , tpraosStateChainDepState :: !(SL.ChainDepState c)
     }
   deriving (Generic, Show, Eq)
 
-instance Era era => NoThunks (TPraosState era)
+instance TPraosCrypto c => NoThunks (TPraosState c)
 
 -- | Version 0 supported rollback, removed in #2575.
 serialisationFormatVersion1 :: VersionNumber
 serialisationFormatVersion1 = 1
 
-instance Era era => Serialise (TPraosState era) where
+instance TPraosCrypto c => Serialise (TPraosState c) where
   encode (TPraosState slot chainDepState) =
     encodeVersion serialisationFormatVersion1 $ mconcat [
         CBOR.encodeListLen 2
@@ -355,19 +353,18 @@ instance Era era => Serialise (TPraosState era) where
         TPraosState <$> fromCBOR <*> fromCBOR
 
 -- | Ticked 'TPraosState'
---
-data instance Ticked (TPraosState era) = TickedChainDepState {
-      tickedTPraosStateChainDepState :: SL.ChainDepState era
-    , tickedTPraosStateLedgerView    :: Ticked (LedgerView (TPraos era))
+data instance Ticked (TPraosState c) = TickedChainDepState {
+      tickedTPraosStateChainDepState :: SL.ChainDepState c
+    , tickedTPraosStateLedgerView    :: Ticked (LedgerView (TPraos c))
     }
 
-instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
-  type ChainDepState (TPraos era) = TPraosState era
-  type IsLeader      (TPraos era) = TPraosIsLeader era
-  type CanBeLeader   (TPraos era) = TPraosCanBeLeader era
-  type LedgerView    (TPraos era) = SL.LedgerView era
-  type ValidationErr (TPraos era) = SL.ChainTransitionError era
-  type ValidateView  (TPraos era) = TPraosValidateView era
+instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
+  type ChainDepState (TPraos c) = TPraosState c
+  type IsLeader      (TPraos c) = TPraosIsLeader c
+  type CanBeLeader   (TPraos c) = TPraosCanBeLeader c
+  type LedgerView    (TPraos c) = SL.LedgerView c
+  type ValidationErr (TPraos c) = SL.ChainTransitionError c
+  type ValidateView  (TPraos c) = TPraosValidateView c
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
@@ -408,7 +405,7 @@ instance TPraosCrypto era => ConsensusProtocol (TPraos era) where
     where
       chainState = tickedTPraosStateChainDepState cs
       lv         = getTickedPraosLedgerView $ tickedTPraosStateLedgerView cs
-      d          = SL._d $ SL.lvProtParams lv
+      d          = SL.lvD lv
       asc        = tpraosLeaderF $ tpraosParams cfg
       firstSlot  = firstSlotOfEpochOfSlot (tpraosEpochInfo cfg) slot
       gkeys      = Map.keysSet dlgMap
@@ -479,21 +476,20 @@ mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold ::
-     forall era. Era era
-  => ConsensusConfig (TPraos era)
-  -> LedgerView (TPraos era)
-  -> SL.KeyHash 'SL.StakePool era
-  -> SL.CertifiedVRF era SL.Seed
+     forall c. TPraosCrypto c
+  => ConsensusConfig (TPraos c)
+  -> LedgerView (TPraos c)
+  -> SL.KeyHash 'SL.StakePool c
+  -> SL.CertifiedVRF c SL.Seed
   -> Bool
-meetsLeaderThreshold
-  TPraosConfig { tpraosParams }
-  SL.LedgerView { lvPoolDistr }
-  keyHash
-  certNat
-    = SL.checkLeaderValue
-        (VRF.certifiedOutput certNat)
-        r
-        (tpraosLeaderF tpraosParams)
+meetsLeaderThreshold TPraosConfig { tpraosParams }
+                     SL.LedgerView { lvPoolDistr }
+                     keyHash
+                     certNat =
+    SL.checkLeaderValue
+      (VRF.certifiedOutput certNat)
+      r
+      (tpraosLeaderF tpraosParams)
   where
     SL.PoolDistr poolDistr = lvPoolDistr
     r = maybe 0 SL.individualPoolStake
@@ -505,7 +501,7 @@ meetsLeaderThreshold
 
 -- | Expresses that, whilst we believe ourselves to be a leader for this slot,
 -- we are nonetheless unable to forge a block.
-data TPraosCannotForge era =
+data TPraosCannotForge c =
     -- | The KES key in our operational certificate can't be used because the
     -- current (wall clock) period is before the start period of the key.
     -- current KES period.
@@ -523,24 +519,24 @@ data TPraosCannotForge era =
     -- | We are a genesis delegate, but our VRF key (second argument) does not
     -- match the registered key for that delegate (first argument).
   | TPraosCannotForgeWrongVRF
-      !(SL.Hash era (SL.VerKeyVRF era))
-      !(SL.Hash era (SL.VerKeyVRF era))
+      !(SL.Hash c (SL.VerKeyVRF c))
+      !(SL.Hash c (SL.VerKeyVRF c))
   deriving (Generic)
 
-deriving instance Era era => Show (TPraosCannotForge era)
+deriving instance TPraosCrypto c => Show (TPraosCannotForge c)
 
 tpraosCheckCanForge ::
-     ConsensusConfig (TPraos era)
-  -> SL.Hash era (SL.VerKeyVRF era)
+     ConsensusConfig (TPraos c)
+  -> SL.Hash c (SL.VerKeyVRF c)
      -- ^ Precomputed hash of the VRF verification key
   -> SlotNo
-  -> IsLeader (TPraos era)
+  -> IsLeader (TPraos c)
   -> HotKey.KESInfo
-  -> Either (TPraosCannotForge era) ()
-tpraosCheckCanForge TPraosConfig{tpraosParams}
+  -> Either (TPraosCannotForge c) ()
+tpraosCheckCanForge TPraosConfig { tpraosParams }
                     forgingVRFHash
                     curSlot
-                    TPraosIsLeader{tpraosIsLeaderGenVRFHash}
+                    TPraosIsLeader { tpraosIsLeaderGenVRFHash }
                     kesInfo
   | let startPeriod = HotKey.kesStartPeriod kesInfo
   , startPeriod > wallclockPeriod
@@ -560,5 +556,5 @@ tpraosCheckCanForge TPraosConfig{tpraosParams}
   Condense
 -------------------------------------------------------------------------------}
 
-instance (Condense toSign, Era era) => Condense (TPraosFields era toSign) where
+instance (Condense toSign, TPraosCrypto c) => Condense (TPraosFields c toSign) where
   condense = condense . tpraosToSign

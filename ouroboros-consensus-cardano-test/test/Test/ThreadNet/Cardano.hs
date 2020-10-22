@@ -501,7 +501,7 @@ prop_simple_cardano_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    coreNodes :: [Shelley.CoreNode (ShelleyEra Crypto)]
+    coreNodes :: [Shelley.CoreNode Crypto]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
           Shelley.genCoreNode initialKESPeriod
@@ -516,7 +516,7 @@ prop_simple_cardano_convergence TestSetup
           activeSlotCoeff
           setupD
           setupSlotLengthShelley
-          (Shelley.mkKesConfig (Proxy @(ShelleyEra Crypto)) numSlots)
+          (Shelley.mkKesConfig (Proxy @Crypto) numSlots)
           coreNodes
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
@@ -710,7 +710,7 @@ mkProtocolCardanoAndHardForkTxs
      -- Shelley
   -> ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
-  -> Shelley.CoreNode (ShelleyEra c)
+  -> Shelley.CoreNode c
      -- HardForks
   -> ProtocolParamsTransition
        ByronBlock
@@ -790,7 +790,7 @@ mkProtocolCardanoAndHardForkTxs
 
     -- Shelley
 
-    leaderCredentialsShelley :: TPraosLeaderCredentials (ShelleyEra c)
+    leaderCredentialsShelley :: TPraosLeaderCredentials c
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
 
 {-------------------------------------------------------------------------------

@@ -16,38 +16,53 @@ import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
 import           Options.Applicative
 
+import qualified Cardano.Ledger.Core as Core
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
+import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
+                     StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelley (..), ShelleyGenesis,
                      protocolInfoShelley)
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           HasAnalysis
 
-instance HasAnalysis (ShelleyBlock StandardShelley) where
-    data Args (ShelleyBlock StandardShelley) =
-      ShelleyBlockArgs {
-          configFileShelley :: FilePath
-        , initialNonce      :: Nonce
-        } deriving Show
-    argsParser _ = parseShelleyArgs
-    mkProtocolInfo ShelleyBlockArgs {..}  = do
-      config <- either (error . show) return =<<
-        Aeson.eitherDecodeFileStrict' configFileShelley
-      return $ mkShelleyProtocolInfo config initialNonce
-    countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
+-- | Usable for each Shelley-based era
+instance ( ShelleyBasedEra era
+           -- TODO this will have to be generalised for the real Mary era (and
+           -- Allegra?), which will have a different 'Core.TxBody'.
+         , Core.TxBody era ~ SL.TxBody era
+         ) => HasAnalysis (ShelleyBlock era) where
+  countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
-    blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
+    where
+      countOutputs :: SL.Tx era -> Int
+      countOutputs = length . SL._outputs . SL._body
+
+  blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) ->
         toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
-    knownEBBs = const Map.empty
+
+  knownEBBs = const Map.empty
+
+-- | Shelley-era specific
+instance HasProtocolInfo (ShelleyBlock StandardShelley) where
+  data Args (ShelleyBlock StandardShelley) = ShelleyBlockArgs {
+        configFileShelley :: FilePath
+      , initialNonce      :: Nonce
+      }
+    deriving (Show)
+
+  argsParser _ = parseShelleyArgs
+  mkProtocolInfo ShelleyBlockArgs {..}  = do
+    config <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFileShelley
+    return $ mkShelleyProtocolInfo config initialNonce
 
 type ShelleyBlockArgs = Args (ShelleyBlock StandardShelley)
 
@@ -62,9 +77,6 @@ mkShelleyProtocolInfo genesis initialNonce =
       , shelleyProtVer           = SL.ProtVer 2 0
       , shelleyLeaderCredentials = []
       }
-
-countOutputs :: TPraosCrypto era => SL.Tx era -> Int
-countOutputs tx = length $ SL._outputs $ SL._body tx
 
 parseShelleyArgs :: Parser ShelleyBlockArgs
 parseShelleyArgs = ShelleyBlockArgs
