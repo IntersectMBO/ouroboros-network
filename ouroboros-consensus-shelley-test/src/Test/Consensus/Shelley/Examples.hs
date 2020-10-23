@@ -220,7 +220,7 @@ examples = Golden.Examples {
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint exampleBlock))
         , ("EpochNo",                SomeResult GetEpochNo 10)
         , ("EmptyPParams",           SomeResult GetCurrentPParams SL.emptyPParams)
-        , ("ProposedPParamsUpdatse", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
+        , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
         , ("StakeDistribution",      SomeResult GetStakeDistribution examplePoolDistr)
         , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
             (NonMyopicMemberRewards $ Map.fromList [
