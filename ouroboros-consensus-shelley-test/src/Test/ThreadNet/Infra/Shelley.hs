@@ -30,8 +30,10 @@ module Test.ThreadNet.Infra.Shelley (
   , mkVerKey
   , networkId
   , tpraosSlotLength
+  , initialLovelacePerCoreNode
   ) where
 
+import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as BS
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -58,6 +60,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -266,15 +269,18 @@ mkEpochSize (SecurityParam k) f =
 -- we take it as an argument.
 mkGenesisConfig
   :: forall era. TPraosCrypto (EraCrypto era)
-  => ProtVer  -- ^ Initial protocol version
+  => ProtVer   -- ^ Initial protocol version
   -> SecurityParam
-  -> Rational   -- ^ Initial active slot coefficient
+  -> Rational  -- ^ Initial active slot coefficient
   -> DecentralizationParam
+  -> Word64
+     -- ^ Max Lovelace supply, must be >= #coreNodes * initialLovelacePerCoreNode
   -> SlotLength
   -> KesConfig
   -> [CoreNode (EraCrypto era)]
   -> ShelleyGenesis era
-mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
+mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
+    assertWithMsg checkMaxLovelaceSupply $
     ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = dawnOfTime
@@ -294,10 +300,18 @@ mkGenesisConfig pVer k f d slotLength kesCfg coreNodes =
     , sgStaking               = initialStake
     }
   where
-     -- TODO
-    maxLovelaceSupply :: Word64
-    maxLovelaceSupply =
-      fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+    checkMaxLovelaceSupply :: Either String ()
+    checkMaxLovelaceSupply
+      | maxLovelaceSupply >=
+        fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+      = return ()
+      | otherwise
+      = throwError $ unwords [
+            "Lovelace supply ="
+          , show maxLovelaceSupply
+          , "but must be at least"
+          , show (fromIntegral (length coreNodes) * initialLovelacePerCoreNode)
+          ]
 
     quorum :: Word64
     quorum = nbCoreNodes `min` ((nbCoreNodes `div` 2) + 1)

@@ -288,6 +288,10 @@ prop_simple_real_tpraos_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
+    maxLovelaceSupply :: Word64
+    maxLovelaceSupply =
+      fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+
     genesisConfig :: ShelleyGenesis Era
     genesisConfig =
         mkGenesisConfig
@@ -295,6 +299,7 @@ prop_simple_real_tpraos_convergence TestSetup
           setupK
           activeSlotCoeff
           setupD
+          maxLovelaceSupply
           tpraosSlotLength
           (mkKesConfig (Proxy @(EraCrypto Era)) numSlots)
           coreNodes

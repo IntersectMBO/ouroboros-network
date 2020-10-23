@@ -508,6 +508,12 @@ prop_simple_cardano_convergence TestSetup
       where
         NumCoreNodes n = numCoreNodes
 
+    -- Same value as for mainnet. Must be larger than the amount of Lovelace in
+    -- circulation in the Byron ledger. Since this is the maximum value of
+    -- lovelace, this is guaranteed to be the case.
+    maxLovelaceSupply :: Word64
+    maxLovelaceSupply = 45000000000000000
+
     genesisShelley :: ShelleyGenesis (ShelleyEra Crypto)
     genesisShelley =
         Shelley.mkGenesisConfig
@@ -515,6 +521,7 @@ prop_simple_cardano_convergence TestSetup
           setupK
           activeSlotCoeff
           setupD
+          maxLovelaceSupply
           setupSlotLengthShelley
           (Shelley.mkKesConfig (Proxy @Crypto) numSlots)
           coreNodes
