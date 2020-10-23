@@ -16,10 +16,12 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     ShelleyLedgerError (..)
+  , ShelleyBasedEra
   , ShelleyTip (..)
   , shelleyTipToPoint
   , ShelleyTransition(..)
@@ -90,24 +92,26 @@ import           Ouroboros.Consensus.Util.Versioned
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts,
                      proposals)
-import qualified Shelley.Spec.Ledger.STS.Chain as SL (ChainPredicateFailure)
+import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
-                     TPraosCrypto, Ticked (TickedPraosLedgerView))
+                     Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Shelley.Protocol.Util (isNewEpoch)
 
 {-------------------------------------------------------------------------------
   Ledger errors
 -------------------------------------------------------------------------------}
 
-data ShelleyLedgerError era
-  = TickError  !(SL.TickTransitionError  era)
-  | BBodyError !(SL.BlockTransitionError era)
-  deriving (Eq, Generic, Show)
+newtype ShelleyLedgerError era = BBodyError (SL.BlockTransitionError era)
+  deriving (Generic)
 
-instance Era era => NoThunks (ShelleyLedgerError era)
+deriving instance ShelleyBasedEra era => Eq   (ShelleyLedgerError era)
+deriving instance ShelleyBasedEra era => Show (ShelleyLedgerError era)
+
+instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 
 {-------------------------------------------------------------------------------
   Config
@@ -177,10 +181,13 @@ shelleyTipToPoint (NotOrigin tip) = BlockPoint (shelleyTipSlotNo tip)
 
 data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
       shelleyLedgerTip        :: !(WithOrigin (ShelleyTip era))
-    , shelleyLedgerState      :: !(SL.ShelleyState era)
+    , shelleyLedgerState      :: !(SL.NewEpochState era)
     , shelleyLedgerTransition :: !ShelleyTransition
     }
-  deriving (Eq, Show, Generic, NoThunks)
+  deriving (Generic, NoThunks)
+
+deriving instance ShelleyBasedEra era => Show (LedgerState (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => Eq   (LedgerState (ShelleyBlock era))
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -209,7 +216,7 @@ newtype ShelleyTransition = ShelleyTransitionInfo {
 shelleyLedgerTipPoint :: LedgerState (ShelleyBlock era) -> Point (ShelleyBlock era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
 
-instance TPraosCrypto era => UpdateLedger (ShelleyBlock era)
+instance ShelleyBasedEra era => UpdateLedger (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   GetTip
@@ -234,7 +241,7 @@ data instance Ticked (LedgerState (ShelleyBlock era)) = TickedShelleyLedgerState
       -- 2. However, we count within an epoch, which is slot-based. So the count
       --    must be reset when /ticking/, not when applying a block.
     , tickedShelleyLedgerTransition :: !ShelleyTransition
-    , tickedShelleyLedgerState      :: !(SL.ShelleyState era)
+    , tickedShelleyLedgerState      :: !(SL.NewEpochState era)
     }
   deriving (Generic, NoThunks)
 
@@ -243,7 +250,7 @@ untickedShelleyLedgerTipPoint ::
   -> Point (ShelleyBlock era)
 untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 
-instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
+instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
   type LedgerErr (LedgerState (ShelleyBlock era)) = ShelleyLedgerError era
 
   applyChainTick cfg slotNo ShelleyLedgerState{
@@ -261,7 +268,7 @@ instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
             else
               shelleyLedgerTransition
         , tickedShelleyLedgerState =
-            SL.applyTickTransition
+            SL.applyTick
               globals
               shelleyLedgerState
               slotNo
@@ -272,7 +279,7 @@ instance Era era => IsLedger (LedgerState (ShelleyBlock era)) where
       ei :: EpochInfo Identity
       ei = SL.epochInfo globals
 
-instance TPraosCrypto era
+instance ShelleyBasedEra era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
   -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
   -- block. In consensus, we split up the application of a block to the ledger
@@ -287,16 +294,16 @@ instance TPraosCrypto era
   applyLedgerBlock =
       applyHelper $
         -- Apply the BBODY transition using the ticked state
-        withExcept BBodyError ..: SL.applyBlockTransition
+        withExcept BBodyError ..: SL.applyBlock
 
   reapplyLedgerBlock = runIdentity ...:
       applyHelper $
         -- Reapply the BBODY transition using the ticked state
-        Identity ..: SL.reapplyBlockTransition
+        Identity ..: SL.reapplyBlock
 
 applyHelper ::
-     (TPraosCrypto era, Monad m)
-  => (SL.Globals -> SL.ShelleyState era -> SL.Block era -> m (SL.ShelleyState era))
+     (ShelleyBasedEra era, Monad m)
+  => (SL.Globals -> SL.NewEpochState era -> SL.Block era -> m (SL.NewEpochState era))
   -> LedgerConfig (ShelleyBlock era)
   -> ShelleyBlock era
   -> Ticked (LedgerState (ShelleyBlock era))
@@ -305,7 +312,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
                           tickedShelleyLedgerTransition
                         , tickedShelleyLedgerState
                         } = do
-    newShelleyState <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
+    newNewEpochState <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
 
     return ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
@@ -314,7 +321,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
           , shelleyTipHash    = blockHash blk
           }
       , shelleyLedgerState =
-          newShelleyState
+          newNewEpochState
       , shelleyLedgerTransition = ShelleyTransitionInfo {
             shelleyAfterVoting =
               -- We count the number of blocks that have been applied after the
@@ -343,7 +350,8 @@ applyHelper f cfg blk TickedShelleyLedgerState{
     votingDeadline :: SlotNo
     votingDeadline = subSlots (2 * swindow) startOfNextEpoch
 
-instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
+instance ShelleyBasedEra era
+      => LedgerSupportsProtocol (ShelleyBlock era) where
   protocolLedgerView _cfg = TickedPraosLedgerView
                           . SL.currentLedgerView
                           . tickedShelleyLedgerState
@@ -367,7 +375,7 @@ instance TPraosCrypto era => LedgerSupportsProtocol (ShelleyBlock era) where
 
       -- | 'SL.futureLedgerView' imposes its own bounds. Those bounds could
       -- /exceed/ the 'maxFor' we have computed, but should never be /less/.
-      futureLedgerView :: SlotNo -> Ticked (SL.LedgerView era)
+      futureLedgerView :: SlotNo -> Ticked (SL.LedgerView (EraCrypto era))
       futureLedgerView =
             either
               (\e -> error ("futureLedgerView failed: " <> show e))
@@ -390,14 +398,16 @@ instance HasHardForkHistory (ShelleyBlock era) where
 newtype NonMyopicMemberRewards era = NonMyopicMemberRewards {
       unNonMyopicMemberRewards ::
         Map (Either SL.Coin (SL.Credential 'SL.Staking era))
-            (Map (SL.KeyHash 'SL.StakePool era) SL.Coin)
+            (Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) SL.Coin)
     }
   deriving stock   (Show)
   deriving newtype (Eq)
 
-type Delegations era = Map (SL.Credential 'SL.Staking era) (SL.KeyHash 'SL.StakePool era)
+type Delegations era =
+  Map (SL.Credential 'SL.Staking era)
+      (SL.KeyHash 'SL.StakePool (EraCrypto era))
 
-instance Era era => Serialise (NonMyopicMemberRewards era) where
+instance ShelleyBasedEra era => Serialise (NonMyopicMemberRewards era) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
 
@@ -420,7 +430,7 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   -- an endpoint that provides all the information that the wallet wants about
   -- pools, in an extensible fashion.
   GetStakeDistribution
-    :: Query (ShelleyBlock era) (SL.PoolDistr era)
+    :: Query (ShelleyBlock era) (SL.PoolDistr (EraCrypto era))
   GetFilteredUTxO
     :: Set (SL.Addr era)
     -> Query (ShelleyBlock era) (SL.UTxO era)
@@ -456,7 +466,7 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
-instance TPraosCrypto era => QueryLedger (ShelleyBlock era) where
+instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
   answerQuery cfg query st = case query of
       GetLedgerTip -> shelleyLedgerTipPoint st
       GetEpochNo -> SL.nesEL $ shelleyLedgerState st
@@ -536,7 +546,7 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
 deriving instance Eq   (Query (ShelleyBlock era) result)
 deriving instance Show (Query (ShelleyBlock era) result)
 
-instance Era era => ShowQuery (Query (ShelleyBlock era)) where
+instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
   showResult GetLedgerTip                                 = show
   showResult GetEpochNo                                   = show
   showResult (GetNonMyopicMemberRewards {})               = show
@@ -549,7 +559,8 @@ instance Era era => ShowQuery (Query (ShelleyBlock era)) where
   showResult (GetCBOR {})                                 = show
   showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
 
-instance TPraosCrypto era => CommonProtocolParams (ShelleyBlock era) where
+instance ShelleyBasedEra era
+      => CommonProtocolParams (ShelleyBlock era) where
   maxHeaderSize = fromIntegral . SL._maxBHSize . getPParams . shelleyLedgerState
   maxTxSize     = fromIntegral . SL._maxTxSize . getPParams . shelleyLedgerState
 
@@ -557,38 +568,37 @@ instance TPraosCrypto era => CommonProtocolParams (ShelleyBlock era) where
   ValidateEnvelope
 -------------------------------------------------------------------------------}
 
-instance Era era => BasicEnvelopeValidation (ShelleyBlock era) where
+instance ShelleyBasedEra era => BasicEnvelopeValidation (ShelleyBlock era) where
   -- defaults all OK
 
-instance Era era => ValidateEnvelope (ShelleyBlock era) where
+instance ShelleyBasedEra era => ValidateEnvelope (ShelleyBlock era) where
   type OtherHeaderEnvelopeError (ShelleyBlock era) =
-    SL.ChainPredicateFailure era
+    SL.PredicateFailure (SL.CHAIN era)
 
   additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
-      SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
+      SL.chainChecks globals (SL.lvChainChecks ledgerView) (shelleyHeaderRaw hdr)
     where
-      pparams = SL.lvProtParams ledgerView
       globals = shelleyLedgerGlobals (configLedger cfg)
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getPParams :: SL.ShelleyState era -> SL.PParams era
+getPParams :: SL.NewEpochState era -> SL.PParams era
 getPParams = SL.esPp . SL.nesEs
 
-getProposedPPUpdates :: SL.ShelleyState era -> SL.ProposedPPUpdates era
+getProposedPPUpdates :: SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
 
 -- Get the current EpochState. This is mainly for debugging.
-getCurrentEpochState :: SL.ShelleyState era -> SL.EpochState era
+getCurrentEpochState :: SL.NewEpochState era -> SL.EpochState era
 getCurrentEpochState = SL.nesEs
 
-getDState :: SL.ShelleyState era -> SL.DState era
+getDState :: SL.NewEpochState era -> SL.DState era
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
 
-getFilteredDelegationsAndRewardAccounts :: SL.ShelleyState era
+getFilteredDelegationsAndRewardAccounts :: SL.NewEpochState era
                                         -> Set (SL.Credential 'SL.Staking era)
                                         -> (Delegations era, SL.RewardAccounts era)
 getFilteredDelegationsAndRewardAccounts ss creds =
@@ -613,20 +623,25 @@ getFilteredDelegationsAndRewardAccounts ss creds =
 serialisationFormatVersion2 :: VersionNumber
 serialisationFormatVersion2 = 2
 
-encodeShelleyAnnTip :: Era era => AnnTip (ShelleyBlock era) -> Encoding
+encodeShelleyAnnTip ::
+     ShelleyBasedEra era
+  => AnnTip (ShelleyBlock era) -> Encoding
 encodeShelleyAnnTip = defaultEncodeAnnTip toCBOR
 
-decodeShelleyAnnTip :: Era era => Decoder s (AnnTip (ShelleyBlock era))
+decodeShelleyAnnTip ::
+     ShelleyBasedEra era
+  => Decoder s (AnnTip (ShelleyBlock era))
 decodeShelleyAnnTip = defaultDecodeAnnTip fromCBOR
 
-encodeShelleyHeaderState :: Era era
-                         => HeaderState (ShelleyBlock era)
-                         -> Encoding
+encodeShelleyHeaderState ::
+     ShelleyBasedEra era
+  => HeaderState (ShelleyBlock era)
+  -> Encoding
 encodeShelleyHeaderState = encodeHeaderState
     encode
     encodeShelleyAnnTip
 
-encodeShelleyTip :: Era era => ShelleyTip era -> Encoding
+encodeShelleyTip :: ShelleyBasedEra era => ShelleyTip era -> Encoding
 encodeShelleyTip ShelleyTip {
                      shelleyTipSlotNo
                    , shelleyTipBlockNo
@@ -638,7 +653,7 @@ encodeShelleyTip ShelleyTip {
     , encode shelleyTipHash
     ]
 
-decodeShelleyTip :: Era era => Decoder s (ShelleyTip era)
+decodeShelleyTip :: ShelleyBasedEra era => Decoder s (ShelleyTip era)
 decodeShelleyTip = do
     enforceSize "ShelleyTip" 3
     shelleyTipSlotNo  <- decode
@@ -660,7 +675,10 @@ decodeShelleyTransition = do
     shelleyAfterVoting <- CBOR.decodeWord32
     return ShelleyTransitionInfo{shelleyAfterVoting}
 
-encodeShelleyLedgerState :: Era era => LedgerState (ShelleyBlock era) -> Encoding
+encodeShelleyLedgerState ::
+     ShelleyBasedEra era
+  => LedgerState (ShelleyBlock era)
+  -> Encoding
 encodeShelleyLedgerState
     ShelleyLedgerState { shelleyLedgerTip
                        , shelleyLedgerState
@@ -674,7 +692,7 @@ encodeShelleyLedgerState
       ]
 
 decodeShelleyLedgerState ::
-     forall era s. Era era
+     forall era s. ShelleyBasedEra era
   => Decoder s (LedgerState (ShelleyBlock era))
 decodeShelleyLedgerState = decodeVersion [
       (serialisationFormatVersion2, Decode decodeShelleyLedgerState2)
@@ -692,7 +710,9 @@ decodeShelleyLedgerState = decodeVersion [
         , shelleyLedgerTransition
         }
 
-encodeShelleyQuery :: Era era => Query (ShelleyBlock era) result -> Encoding
+encodeShelleyQuery ::
+     ShelleyBasedEra era
+  => Query (ShelleyBlock era) result -> Encoding
 encodeShelleyQuery query = case query of
     GetLedgerTip ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 0
@@ -717,7 +737,9 @@ encodeShelleyQuery query = case query of
     GetFilteredDelegationsAndRewardAccounts creds ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
 
-decodeShelleyQuery :: Era era => Decoder s (SomeBlock Query (ShelleyBlock era))
+decodeShelleyQuery ::
+     ShelleyBasedEra era
+  => Decoder s (SomeBlock Query (ShelleyBlock era))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
@@ -737,8 +759,8 @@ decodeShelleyQuery = do
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
 
-encodeShelleyResult
-  :: Era era
+encodeShelleyResult ::
+     ShelleyBasedEra era
   => Query (ShelleyBlock era) result -> result -> Encoding
 encodeShelleyResult query = case query of
     GetLedgerTip                               -> encodePoint encode
@@ -753,8 +775,8 @@ encodeShelleyResult query = case query of
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
 
-decodeShelleyResult
-  :: Era era
+decodeShelleyResult ::
+     ShelleyBasedEra era
   => Query (ShelleyBlock era) result
   -> forall s. Decoder s result
 decodeShelleyResult query = case query of

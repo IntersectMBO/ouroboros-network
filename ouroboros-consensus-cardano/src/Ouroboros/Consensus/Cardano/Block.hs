@@ -168,7 +168,7 @@ type CardanoEras c =
 -- > f (BlockByron   b) = _
 -- > f (BlockShelley s) = _
 -- > f (BlockAllegra a) = _
--- > f (BlockAllegra m) = _
+-- > f (BlockMary    m) = _
 --
 type CardanoBlock c = HardForkBlock (CardanoEras c)
 

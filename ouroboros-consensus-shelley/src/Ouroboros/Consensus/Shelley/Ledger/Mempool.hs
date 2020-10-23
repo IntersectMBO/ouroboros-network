@@ -8,6 +8,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -46,14 +47,15 @@ import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol
-
 
 type ShelleyTxId era = SL.TxId era
 
 data instance GenTx (ShelleyBlock era) = ShelleyTx !(ShelleyTxId era) !(SL.Tx era)
-  deriving stock    (Eq, Generic)
-  deriving anyclass (NoThunks)
+  deriving stock    (Generic)
+
+deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock era))
+
+deriving instance ShelleyBasedEra era => Eq (GenTx (ShelleyBlock era))
 
 instance Typeable era => ShowProxy (GenTx (ShelleyBlock era)) where
 
@@ -87,7 +89,8 @@ fixedBlockBodyOverhead = 1024
 perTxOverhead :: Num a => a
 perTxOverhead = 4
 
-instance TPraosCrypto era => LedgerSupportsMempool (ShelleyBlock era) where
+instance ShelleyBasedEra era
+      => LedgerSupportsMempool (ShelleyBlock era) where
   txInvariant = const True
 
   applyTx = applyShelleyTx
@@ -105,7 +108,7 @@ instance TPraosCrypto era => LedgerSupportsMempool (ShelleyBlock era) where
     where
       txSize = fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
-mkShelleyTx :: Era era => SL.Tx era -> GenTx (ShelleyBlock era)
+mkShelleyTx :: ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 
 newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (ShelleyTxId era)
@@ -113,10 +116,10 @@ newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (ShelleyTxId era)
 
 instance Typeable era => ShowProxy (TxId (GenTx (ShelleyBlock era))) where
 
-instance Era era => HasTxId (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => HasTxId (GenTx (ShelleyBlock era)) where
   txId (ShelleyTx i _) = ShelleyTxId i
 
-instance Era era => HasTxs (ShelleyBlock era) where
+instance ShelleyBasedEra era => HasTxs (ShelleyBlock era) where
   extractTxs =
         map mkShelleyTx
       . txSeqToList
@@ -130,12 +133,12 @@ instance Era era => HasTxs (ShelleyBlock era) where
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance Era era => ToCBOR (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => ToCBOR (GenTx (ShelleyBlock era)) where
   -- No need to encode the 'TxId', it's just a hash of the 'SL.TxBody' inside
   -- 'SL.Tx', so it can be recomputed.
   toCBOR (ShelleyTx _txid tx) = wrapCBORinCBOR toCBOR tx
 
-instance Era era => FromCBOR (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => FromCBOR (GenTx (ShelleyBlock era)) where
   fromCBOR = fmap mkShelleyTx $ unwrapCBORinCBOR
     $ (. Full) . runAnnotator <$> fromCBOR
 
@@ -143,13 +146,13 @@ instance Era era => FromCBOR (GenTx (ShelleyBlock era)) where
   Pretty-printing
 -------------------------------------------------------------------------------}
 
-instance Era era => Condense (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => Condense (GenTx (ShelleyBlock era)) where
   condense (ShelleyTx _ tx ) = show tx
 
 instance Condense (GenTxId (ShelleyBlock era)) where
   condense (ShelleyTxId i) = "txid: " <> show i
 
-instance Era era => Show (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => Show (GenTx (ShelleyBlock era)) where
   show = condense
 
 instance Show (GenTxId (ShelleyBlock era)) where
@@ -159,8 +162,8 @@ instance Show (GenTxId (ShelleyBlock era)) where
   Applying transactions
 -------------------------------------------------------------------------------}
 
-applyShelleyTx
-  :: TPraosCrypto era
+applyShelleyTx ::
+     ShelleyBasedEra era
   => LedgerConfig (ShelleyBlock era)
   -> SlotNo
   -> GenTx (ShelleyBlock era)
@@ -168,9 +171,8 @@ applyShelleyTx
   -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
 applyShelleyTx cfg slot (ShelleyTx _ tx) st =
     (\state -> st { tickedShelleyLedgerState = state }) <$>
-       SL.overShelleyState
-        (SL.applyTxs globals mempoolEnv (Seq.singleton tx))
-        (tickedShelleyLedgerState st)
-  where
-    globals    = shelleyLedgerGlobals cfg
-    mempoolEnv = SL.mkMempoolEnv (tickedShelleyLedgerState st) slot
+        SL.applyTxs
+          (shelleyLedgerGlobals cfg)
+          slot
+          (Seq.singleton tx)
+          (tickedShelleyLedgerState st)

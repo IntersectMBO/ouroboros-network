@@ -36,6 +36,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (UnitInterval,
                      mkNonceFromNumber, unitIntervalToRational)
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Node
@@ -208,6 +209,7 @@ prop_simple_real_tpraos_convergence TestSetup
       , numSlots
       } = setupTestConfig
 
+    testConfigB :: TestConfigB (ShelleyBlock Era)
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       = singleEraFuture tpraosSlotLength epochSize
@@ -279,12 +281,16 @@ prop_simple_real_tpraos_convergence TestSetup
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
 
-    coreNodes :: [CoreNode Era]
+    coreNodes :: [CoreNode (EraCrypto Era)]
     coreNodes = runGen initSeed $
         replicateM (fromIntegral n) $
           genCoreNode initialKESPeriod
       where
         NumCoreNodes n = numCoreNodes
+
+    maxLovelaceSupply :: Word64
+    maxLovelaceSupply =
+      fromIntegral (length coreNodes) * initialLovelacePerCoreNode
 
     genesisConfig :: ShelleyGenesis Era
     genesisConfig =
@@ -293,8 +299,9 @@ prop_simple_real_tpraos_convergence TestSetup
           setupK
           activeSlotCoeff
           setupD
+          maxLovelaceSupply
           tpraosSlotLength
-          (mkKesConfig (Proxy @Era) numSlots)
+          (mkKesConfig (Proxy @(EraCrypto Era)) numSlots)
           coreNodes
 
     epochSize :: EpochSize

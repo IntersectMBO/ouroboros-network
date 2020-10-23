@@ -34,7 +34,7 @@ import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
 import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
 
-import           Test.Consensus.Shelley.MockCrypto (MockShelley)
+import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
 import           Test.ThreadNet.Infra.Shelley
 
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
@@ -123,10 +123,11 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
 data WhetherToGeneratePPUs = DoNotGeneratePPUs | DoGeneratePPUs
   deriving (Show)
 
-mkGenEnv :: forall h. HashAlgorithm h
-         => WhetherToGeneratePPUs
-         -> [CoreNode (MockShelley h)]
-         -> Gen.GenEnv (MockShelley h)
+mkGenEnv ::
+     forall h. HashAlgorithm h
+  => WhetherToGeneratePPUs
+  -> [CoreNode (MockCrypto h)]
+  -> Gen.GenEnv (MockShelley h)
 mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
   where
     -- Configuration of the transaction generator

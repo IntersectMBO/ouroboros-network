@@ -32,12 +32,13 @@ import           Shelley.Spec.Ledger.BaseTypes (strictMaybeToMaybe)
 import qualified Shelley.Spec.Ledger.LedgerState as SL (proposals)
 import qualified Shelley.Spec.Ledger.PParams as SL (PParamsUpdate)
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 
 data ProtocolUpdate era = ProtocolUpdate {
       protocolUpdateProposal :: UpdateProposal era
-    , protocolUpdateState    :: UpdateState    era
+    , protocolUpdateState    :: UpdateState (EraCrypto era)
     }
   deriving (Show, Eq)
 
@@ -86,9 +87,9 @@ data UpdateProposal era = UpdateProposal {
 -- 4. The next epoch is always started with a clean slate, proposals from the
 --    previous epoch that didn't make it are discarded (except for "future
 --    proposals" that are explicitly marked for future epochs).
-data UpdateState era = UpdateState {
+data UpdateState c = UpdateState {
       -- | The genesis delegates that voted for this proposal
-      proposalVotes         :: [SL.KeyHash 'SL.Genesis era]
+      proposalVotes         :: [SL.KeyHash 'SL.Genesis c]
 
       -- | Has this proposal reached sufficient votes to be adopted?
     , proposalReachedQuorum :: Bool
@@ -116,14 +117,14 @@ protocolUpdates genesis st = [
     | (proposal, votes) <- proposalsInv
     ]
   where
-    proposalsInv :: [(SL.PParamsUpdate era, [SL.KeyHash 'SL.Genesis era])]
+    proposalsInv :: [(SL.PParamsUpdate era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
     proposalsInv =
           groupSplit id
         . sortBy (comparing fst)
         $ map swap (Map.toList proposals)
 
     -- Updated proposed within the proposal window
-    proposals :: Map (SL.KeyHash 'SL.Genesis era) (SL.PParamsUpdate era)
+    proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (SL.PParamsUpdate era)
     SL.ProposedPPUpdates proposals =
           SL.proposals
         . SL._ppups

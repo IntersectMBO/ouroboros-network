@@ -65,7 +65,7 @@ import           Test.ThreadNet.TxGen
 data CardanoTxGenExtra c = CardanoTxGenExtra
   { ctgeByronGenesisKeys :: GeneratedSecrets
   , ctgeNetworkMagic     :: Byron.NetworkMagic
-  , ctgeShelleyCoreNodes :: [Shelley.CoreNode (ShelleyEra c)]
+  , ctgeShelleyCoreNodes :: [Shelley.CoreNode c]
   }
 
 instance CardanoHardForkConstraints c => TxGen (CardanoBlock c) where
@@ -108,19 +108,19 @@ instance CardanoHardForkConstraints c => TxGen (CardanoBlock c) where
 
       -- Reuse the payment key as the pool key, since it's an individual
       -- stake pool and the namespaces are separate.
-      poolSK :: SL.SignKeyDSIGN (ShelleyEra c)
+      poolSK :: SL.SignKeyDSIGN c
       poolSK = paymentSK
 
 -- | See 'migrateUTxO'
-data MigrationInfo era = MigrationInfo
+data MigrationInfo c = MigrationInfo
   { byronMagic :: Byron.NetworkMagic
     -- ^ Needed for creating a Byron address.
   , byronSK    :: Byron.SigningKey
     -- ^ The core node's Byron secret.
-  , paymentSK  :: SL.SignKeyDSIGN era
-  , poolSK     :: SL.SignKeyDSIGN era
-  , stakingSK  :: SL.SignKeyDSIGN era
-  , vrfSK      :: SL.SignKeyVRF   era
+  , paymentSK  :: SL.SignKeyDSIGN c
+  , poolSK     :: SL.SignKeyDSIGN c
+  , stakingSK  :: SL.SignKeyDSIGN c
+  , vrfSK      :: SL.SignKeyVRF   c
     -- ^ To be re-used by the individual pool.
   }
 
@@ -135,7 +135,7 @@ data MigrationInfo era = MigrationInfo
 -- 'byronAddr' (eg if this transaction has already been applied).
 migrateUTxO ::
      forall c. CardanoHardForkConstraints c
-  => MigrationInfo (ShelleyEra c)
+  => MigrationInfo c
   -> SlotNo
   -> LedgerConfig (CardanoBlock c)
   -> LedgerState (CardanoBlock c)
@@ -187,7 +187,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
           , SL._wdrls    = SL.Wdrl Map.empty
           }
 
-        bodyHash :: SL.Hash (ShelleyEra c) (SL.TxBody (ShelleyEra c))
+        bodyHash :: SL.Hash c (SL.TxBody (ShelleyEra c))
         bodyHash = SL.hashWithSerialiser toCBOR body
 
         -- Witness the use of bootstrap address's utxo.
@@ -197,18 +197,18 @@ migrateUTxO migrationInfo curSlot lcfg lst
             Byron.addrAttributes byronAddr
 
         -- Witness the stake delegation.
-        delegWit :: SL.WitVKey (ShelleyEra c) 'SL.Witness
+        delegWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
         delegWit =
             SL.WitVKey
               (Shelley.mkVerKey stakingSK)
-              (SL.signedDSIGN @(ShelleyEra c) stakingSK bodyHash)
+              (SL.signedDSIGN @c stakingSK bodyHash)
 
         -- Witness the pool registration.
-        poolWit :: SL.WitVKey (ShelleyEra c) 'SL.Witness
+        poolWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
         poolWit =
             SL.WitVKey
               (Shelley.mkVerKey poolSK)
-              (SL.signedDSIGN @(ShelleyEra c) poolSK bodyHash)
+              (SL.signedDSIGN @c poolSK bodyHash)
 
     in
     if Map.null picked then Nothing else

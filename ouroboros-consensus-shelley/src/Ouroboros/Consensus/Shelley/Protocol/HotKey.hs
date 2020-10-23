@@ -33,7 +33,7 @@ import qualified Cardano.Crypto.KES as Relative (Period)
 import           Ouroboros.Consensus.Block (UpdateInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Cardano.Ledger.Era (Era)
+import           Cardano.Ledger.Crypto (Crypto)
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
@@ -124,7 +124,7 @@ data KESEvolutionError =
 type KESEvolutionInfo = UpdateInfo KESInfo KESInfo KESEvolutionError
 
 -- | API to interact with the key.
-data HotKey era m = HotKey {
+data HotKey c m = HotKey {
       -- | Evolve the KES signing key to the given absolute KES period.
       --
       -- When the key cannot evolve anymore, we poison it.
@@ -138,43 +138,43 @@ data HotKey era m = HotKey {
       -- PRECONDITION: the key is not poisoned.
       --
       -- POSTCONDITION: the signature is in normal form.
-    , sign_      :: forall toSign. (SL.KESignable era toSign, HasCallStack)
-                 => toSign -> m (SL.SignedKES era toSign)
+    , sign_      :: forall toSign. (SL.KESignable c toSign, HasCallStack)
+                 => toSign -> m (SL.SignedKES c toSign)
     }
 
 sign ::
-     (SL.KESignable era toSign, HasCallStack)
-  => HotKey era m
-  -> toSign -> m (SL.SignedKES era toSign)
+     (SL.KESignable c toSign, HasCallStack)
+  => HotKey c m
+  -> toSign -> m (SL.SignedKES c toSign)
 sign = sign_
 
 -- | The actual KES key, unless it expired, in which case it is replaced by
 -- \"poison\".
-data KESKey era =
-    KESKey !(SL.SignKeyKES era)
+data KESKey c =
+    KESKey !(SL.SignKeyKES c)
   | KESKeyPoisoned
   deriving (Generic)
 
-instance Era era => NoThunks (KESKey era)
+instance Crypto c => NoThunks (KESKey c)
 
-kesKeyIsPoisoned :: KESKey era -> Bool
+kesKeyIsPoisoned :: KESKey c -> Bool
 kesKeyIsPoisoned KESKeyPoisoned = True
 kesKeyIsPoisoned (KESKey _)     = False
 
-data KESState era = KESState {
+data KESState c = KESState {
       kesStateInfo :: !KESInfo
-    , kesStateKey  :: !(KESKey era)
+    , kesStateKey  :: !(KESKey c)
     }
   deriving (Generic)
 
-instance Era era => NoThunks (KESState era)
+instance Crypto c => NoThunks (KESState c)
 
 mkHotKey ::
-     forall m era. (Era era, IOLike m)
-  => SL.SignKeyKES era
+     forall m c. (Crypto c, IOLike m)
+  => SL.SignKeyKES c
   -> Absolute.KESPeriod  -- ^ Start period
   -> Word64              -- ^ Max KES evolutions
-  -> m (HotKey era m)
+  -> m (HotKey c m)
 mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
     varKESState <- newMVar initKESState
     return HotKey {
@@ -194,7 +194,7 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
               evaluate signed
       }
   where
-    initKESState :: KESState era
+    initKESState :: KESState c
     initKESState = KESState {
         kesStateInfo = KESInfo {
             kesStartPeriod = startPeriod
@@ -219,8 +219,8 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 --
 -- When the key is poisoned, we always return 'UpdateFailed'.
 evolveKey ::
-     forall m era. (Era era, IOLike m)
-  => StrictMVar m (KESState era) -> Absolute.KESPeriod -> m KESEvolutionInfo
+     forall m c. (Crypto c, IOLike m)
+  => StrictMVar m (KESState c) -> Absolute.KESPeriod -> m KESEvolutionInfo
 evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
     let info = kesStateInfo kesState
     -- We mask the evolution process because if we got interrupted after
@@ -257,13 +257,13 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
                go targetEvolution info key
 
   where
-    poisonState :: KESState era -> KESState era
+    poisonState :: KESState c -> KESState c
     poisonState kesState = kesState { kesStateKey = KESKeyPoisoned }
 
     -- | PRECONDITION:
     --
     -- > targetEvolution >= curEvolution
-    go :: KESEvolution -> KESInfo -> SL.SignKeyKES era -> m (KESState era)
+    go :: KESEvolution -> KESInfo -> SL.SignKeyKES c -> m (KESState c)
     go targetEvolution info key
       | targetEvolution <= curEvolution
       = return $ KESState { kesStateInfo = info, kesStateKey = KESKey key }

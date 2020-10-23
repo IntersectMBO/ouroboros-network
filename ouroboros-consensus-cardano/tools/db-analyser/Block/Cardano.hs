@@ -53,7 +53,7 @@ analyseBlock f =
     p :: Proxy HasAnalysis
     p = Proxy
 
-instance HasAnalysis (CardanoBlock StandardCrypto) where
+instance HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
@@ -67,6 +67,8 @@ instance HasAnalysis (CardanoBlock StandardCrypto) where
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
     return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley initialNonce
+
+instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
   blockTxSizes   = analyseBlock blockTxSizes
   knownEBBs _    =

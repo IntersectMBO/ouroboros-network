@@ -44,7 +44,6 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
@@ -196,9 +195,9 @@ codecConfig :: CardanoCodecConfig Crypto
 codecConfig =
     CardanoCodecConfig
       Byron.codecConfig
-      Shelley.codecConfig
-      Shelley.codecConfig
-      Shelley.codecConfig
+      Shelley.ShelleyCodecConfig
+      Shelley.ShelleyCodecConfig
+      Shelley.ShelleyCodecConfig
 
 {-------------------------------------------------------------------------------
   Additional injections

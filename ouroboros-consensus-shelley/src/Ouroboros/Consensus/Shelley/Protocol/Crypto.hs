@@ -13,23 +13,19 @@ import           Cardano.Crypto.KES.Sum
 import           Cardano.Crypto.VRF.Praos (PraosVRF)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
-import           Cardano.Ledger.Era (Era)
-import           Cardano.Ledger.Shelley (Shelley)
-
-import           Shelley.Spec.Ledger.API (BHBody, Hash, TxBody)
+import           Shelley.Spec.Ledger.API (BHBody, Hash)
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import qualified Shelley.Spec.Ledger.Keys as SL (DSignable, KESignable,
                      VRFSignable)
 import           Shelley.Spec.Ledger.OCert (OCertSignable)
+import           Shelley.Spec.Ledger.TxBody (EraIndependentTxBody)
 
--- TODO #2668 these constraints and types should be parameterised by @crypto@,
--- not @era@.
-class ( Era era
-      , SL.DSignable    era (OCertSignable era)
-      , SL.DSignable    era (Hash era (TxBody era))
-      , SL.KESignable   era (BHBody era)
-      , SL.VRFSignable  era Seed
-      ) => TPraosCrypto era
+class ( Crypto c
+      , SL.DSignable    c (OCertSignable c)
+      , SL.DSignable    c (Hash c EraIndependentTxBody)
+      , SL.KESignable   c (BHBody c)
+      , SL.VRFSignable  c Seed
+      ) => TPraosCrypto c
 
 data StandardCrypto
 
@@ -40,4 +36,4 @@ instance Crypto StandardCrypto where
   type HASH     StandardCrypto = Blake2b_256
   type ADDRHASH StandardCrypto = Blake2b_224
 
-instance TPraosCrypto (Shelley StandardCrypto)
+instance TPraosCrypto StandardCrypto

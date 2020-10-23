@@ -1,5 +1,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE TypeFamilies             #-}
 module Ouroboros.Consensus.Shelley.Ledger.Integrity (
     verifyHeaderIntegrity
   , verifyBlockIntegrity
@@ -14,11 +16,10 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.Keys as SL (verifySignedKES)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
-import           Ouroboros.Consensus.Shelley.Protocol
 
 -- | Verify whether a header is not corrupted
-verifyHeaderIntegrity
-  :: TPraosCrypto era
+verifyHeaderIntegrity ::
+     ShelleyBasedEra era
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
   -> Header (ShelleyBlock era)
   -> Bool
@@ -41,8 +42,8 @@ verifyHeaderIntegrity slotsPerKESPeriod hdr@ShelleyHeader { shelleyHeaderRaw } =
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses
-verifyBlockIntegrity
-  :: TPraosCrypto era
+verifyBlockIntegrity ::
+     ShelleyBasedEra era
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
   -> ShelleyBlock era -> Bool
 verifyBlockIntegrity slotsPerKESPeriod blk =

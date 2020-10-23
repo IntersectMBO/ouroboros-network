@@ -17,6 +17,7 @@ import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -25,9 +26,9 @@ import           Ouroboros.Consensus.Shelley.Protocol
   Support for Transitional Praos consensus algorithm
 -------------------------------------------------------------------------------}
 
-type instance BlockProtocol (ShelleyBlock era) = TPraos era
+type instance BlockProtocol (ShelleyBlock era) = TPraos (EraCrypto era)
 
-instance TPraosCrypto era => BlockSupportsProtocol (ShelleyBlock era) where
+instance ShelleyBasedEra era => BlockSupportsProtocol (ShelleyBlock era) where
   validateView _cfg (ShelleyHeader hdr _) = hdr
 
   selectView cfg hdr@(ShelleyHeader shdr _) = TPraosChainSelectView {
@@ -39,11 +40,11 @@ instance TPraosCrypto era => BlockSupportsProtocol (ShelleyBlock era) where
       , csvLeaderVRF   = certifiedOutput . SL.bheaderL $ hdrBody
       }
     where
-      hdrBody :: SL.BHBody era
+      hdrBody :: SL.BHBody (EraCrypto era)
       hdrBody = SL.bhbody shdr
 
-      issuerVKeys :: Map (SL.KeyHash 'SL.BlockIssuer era)
-                         (SL.VKey 'SL.BlockIssuer era)
+      issuerVKeys :: Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
+                         (SL.VKey 'SL.BlockIssuer (EraCrypto era))
       issuerVKeys = shelleyBlockIssuerVKeys cfg
 
       -- | Premature optimisation: we assume everywhere that 'selectView' is
@@ -85,7 +86,7 @@ instance TPraosCrypto era => BlockSupportsProtocol (ShelleyBlock era) where
             -> NotSelfIssued
 
 -- TODO correct place for these two?
-type instance Signed (Header (ShelleyBlock era)) = SL.BHBody era
+type instance Signed (Header (ShelleyBlock era)) = SL.BHBody (EraCrypto era)
 
-instance Era era => SignedHeader (Header (ShelleyBlock era)) where
+instance ShelleyBasedEra era => SignedHeader (Header (ShelleyBlock era)) where
   headerSigned = SL.bhbody . shelleyHeaderRaw
