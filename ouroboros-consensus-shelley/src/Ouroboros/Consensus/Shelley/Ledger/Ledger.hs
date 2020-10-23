@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , NonMyopicMemberRewards (..)
     -- * Ledger config
   , ShelleyLedgerConfig (..)
+  , shelleyLedgerGenesis
   , mkShelleyLedgerConfig
   , shelleyEraParams
   , shelleyEraParamsNeverHardForks
@@ -96,6 +97,7 @@ import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
+import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -118,12 +120,15 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerGenesis :: !(SL.ShelleyGenesis era)
+      shelleyLedgerCompactGenesis :: !(CompactGenesis era)
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
-    , shelleyLedgerGlobals :: !SL.Globals
+    , shelleyLedgerGlobals        :: !SL.Globals
     }
   deriving (Generic, NoThunks)
+
+shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
+shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
 
 shelleyEraParams ::
      HardFork.SafeBeforeEpoch
@@ -157,8 +162,8 @@ mkShelleyLedgerConfig
   -> ShelleyLedgerConfig era
 mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
-        shelleyLedgerGenesis = genesis
-      , shelleyLedgerGlobals = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
+        shelleyLedgerCompactGenesis = compactGenesis genesis
+      , shelleyLedgerGlobals        = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
       }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era

@@ -11,6 +11,9 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
   , mkShelleyBlockConfig
   , CodecConfig (..)
   , StorageConfig (..)
+  , CompactGenesis -- opaque
+  , getCompactGenesis
+  , compactGenesis
   ) where
 
 import           Data.Map.Strict (Map)
@@ -90,3 +93,32 @@ data instance StorageConfig (ShelleyBlock era) = ShelleyStorageConfig {
     , shelleyStorageConfigSecurityParam     :: !SecurityParam
     }
   deriving (Generic, NoThunks)
+
+{-------------------------------------------------------------------------------
+  Compact genesis
+-------------------------------------------------------------------------------}
+
+-- | Compact variant of 'SL.ShelleyGenesis' with some fields erased that are
+-- only used on start-up and that should not be kept in memory forever.
+--
+-- Concretely:
+--
+-- * The 'sgInitialFunds' field is erased. It is only used to set up the initial
+--   UTxO in tests and testnets.
+--
+-- * The 'sgStaking' field is erased. It is only used to register initial stake
+--   pools in tests and benchmarks.
+newtype CompactGenesis era = CompactGenesis {
+      getCompactGenesis :: SL.ShelleyGenesis era
+    }
+  deriving (Eq, Show, Generic)
+
+deriving instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
+
+-- | Compacts the given 'SL.ShelleyGenesis'.
+compactGenesis :: SL.ShelleyGenesis era -> CompactGenesis era
+compactGenesis genesis = CompactGenesis $
+    genesis {
+        SL.sgInitialFunds = mempty
+      , SL.sgStaking      = SL.emptyGenesisStaking
+      }
