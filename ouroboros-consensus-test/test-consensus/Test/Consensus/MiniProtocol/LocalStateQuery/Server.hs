@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
@@ -164,7 +164,7 @@ mkServer k chain = do
         (LgrDB.getPastState lgrDB)
         getImmutablePoint
   where
-    cfg = configLedger $ testCfg k
+    cfg = ExtLedgerCfg $ testCfg k
     getImmutablePoint = return $ Chain.headPoint $
       Chain.drop (fromIntegral (maxRollbacks k)) chain
 

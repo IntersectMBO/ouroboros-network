@@ -87,12 +87,10 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -622,25 +620,6 @@ decodeEitherMismatch version dec =
 {-------------------------------------------------------------------------------
   Distributive properties
 -------------------------------------------------------------------------------}
-
-distribAnnTip :: SListI xs => AnnTip (HardForkBlock xs) -> NS AnnTip xs
-distribAnnTip AnnTip{..} =
-    hmap distrib (getOneEraTipInfo annTipInfo)
-  where
-    distrib :: WrapTipInfo blk -> AnnTip blk
-    distrib (WrapTipInfo info) =
-        AnnTip annTipSlotNo annTipBlockNo info
-
-undistribAnnTip :: SListI xs => NS AnnTip xs -> AnnTip (HardForkBlock xs)
-undistribAnnTip = hcollapse . hzipWith undistrib injections
-  where
-    undistrib :: (WrapTipInfo -.-> K (NS WrapTipInfo xs)) blk
-              -> AnnTip blk
-              -> K (AnnTip (HardForkBlock xs)) blk
-    undistrib inj AnnTip{..} = K $
-        AnnTip annTipSlotNo
-               annTipBlockNo
-               (OneEraTipInfo $ unK . apFn inj . WrapTipInfo $ annTipInfo)
 
 distribSerialisedHeader :: SerialisedHeader (HardForkBlock xs)
                         -> NS SerialisedHeader xs

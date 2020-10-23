@@ -19,6 +19,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
     Header(..)
   , NestedCtxt_(..)
+    -- * AnnTip
+  , distribAnnTip
+  , undistribAnnTip
   ) where
 
 import           Data.FingerTree.Strict (Measured (..))
@@ -197,6 +200,25 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
                  . toShortRawHash (Proxy @blk)
                  . tipInfoHash    (Proxy @blk)
                  . unwrapTipInfo
+
+distribAnnTip :: SListI xs => AnnTip (HardForkBlock xs) -> NS AnnTip xs
+distribAnnTip AnnTip{..} =
+    hmap distrib (getOneEraTipInfo annTipInfo)
+  where
+    distrib :: WrapTipInfo blk -> AnnTip blk
+    distrib (WrapTipInfo info) =
+        AnnTip annTipSlotNo annTipBlockNo info
+
+undistribAnnTip :: SListI xs => NS AnnTip xs -> AnnTip (HardForkBlock xs)
+undistribAnnTip = hcollapse . hzipWith undistrib injections
+  where
+    undistrib :: (WrapTipInfo -.-> K (NS WrapTipInfo xs)) blk
+              -> AnnTip blk
+              -> K (AnnTip (HardForkBlock xs)) blk
+    undistrib inj AnnTip{..} = K $
+        AnnTip annTipSlotNo
+               annTipBlockNo
+               (OneEraTipInfo $ unK . apFn inj . WrapTipInfo $ annTipInfo)
 
 {-------------------------------------------------------------------------------
   BasicEnvelopeValidation

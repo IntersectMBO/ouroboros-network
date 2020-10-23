@@ -9,13 +9,13 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
      forall m blk. (IOLike m, QueryLedger blk)
-  => LedgerConfig blk
+  => ExtLedgerCfg blk
   -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
@@ -37,14 +37,14 @@ localStateQueryServer cfg getPastLedger getImmutablePoint =
 
         return $ case mPastLedger of
           Just pastLedger
-            -> SendMsgAcquired $ acquired (ledgerState pastLedger)
+            -> SendMsgAcquired $ acquired pastLedger
           Nothing
             | pointSlot pt < pointSlot immutablePoint
             -> SendMsgFailure AcquireFailurePointTooOld idle
             | otherwise
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    acquired :: LedgerState blk -> ServerStAcquired blk (Query blk) m ()
+    acquired :: ExtLedgerState blk -> ServerStAcquired blk (Query blk) m ()
     acquired ledgerState = ServerStAcquired {
           recvMsgQuery     = handleQuery ledgerState
         , recvMsgReAcquire = handleAcquire
@@ -52,7 +52,7 @@ localStateQueryServer cfg getPastLedger getImmutablePoint =
         }
 
     handleQuery ::
-         LedgerState blk
+         ExtLedgerState blk
       -> Query blk result
       -> m (ServerStQuerying blk (Query blk) m () result)
     handleQuery ledgerState query = return $

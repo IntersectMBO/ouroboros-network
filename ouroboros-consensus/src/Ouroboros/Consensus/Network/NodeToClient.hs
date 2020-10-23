@@ -61,8 +61,8 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
@@ -114,7 +114,7 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
             getMempool
       , hStateQueryServer =
           localStateQueryServer
-            (configLedger cfg)
+            (ExtLedgerCfg cfg)
             (ChainDB.getPastLedger getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
       }

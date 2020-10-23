@@ -28,6 +28,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
   , mkMismatchTwo
   , mismatchNotEmpty
   , mismatchNotFirst
+  , mustMatchNS
     -- * SOP operators
   , bihap
   , bihmap
@@ -41,6 +42,7 @@ import           Data.Functor.Product
 import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Void
+import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), allNoThunks)
 
 import           Ouroboros.Consensus.Util.SOP ()
@@ -143,6 +145,15 @@ mismatchNotFirst = go
     go (MR fy _ ) = Left fy
     go (MS m)     = mismatchNotEmpty m $ \m' ->
                       bimap S S $ go m'
+
+-- | Variant of 'matchNS' for when we know the two 'NS's must match. Otherwise
+-- an error, mentioning the given 'String', is thrown.
+mustMatchNS ::
+     forall f g xs. HasCallStack
+  => String -> NS f xs -> NS g xs -> NS (Product f g) xs
+mustMatchNS lbl f g = case matchNS f g of
+    Left _mismatch -> error $ lbl <> " from wrong era"
+    Right matched  -> matched
 
 {-------------------------------------------------------------------------------
   Subset of the (generalized) SOP operators

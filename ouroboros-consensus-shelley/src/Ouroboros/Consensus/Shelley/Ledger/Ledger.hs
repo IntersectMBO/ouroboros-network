@@ -28,7 +28,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTransition(..)
   , LedgerState (..)
   , Ticked(..)
-  , QueryLedger (..)
   , Query (..)
   , querySupportedVersion
   , NonMyopicMemberRewards (..)
@@ -86,6 +85,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..), (...:), (..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
@@ -104,7 +104,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                      (ShelleyNodeToClientVersion (..))
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
-                     Ticked (TickedPraosLedgerView))
+                     TPraosState (..), Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Shelley.Protocol.Util (isNewEpoch)
 
 {-------------------------------------------------------------------------------
@@ -480,30 +480,37 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   DebugNewEpochState
     :: Query (ShelleyBlock era) (SL.NewEpochState era)
 
+  -- | Only for debugging purposes, we don't guarantee binary compatibility.
+  DebugChainDepState
+    :: Query (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
+
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
-  answerQuery cfg query st = case query of
-      GetLedgerTip -> shelleyLedgerTipPoint st
-      GetEpochNo -> SL.nesEL $ shelleyLedgerState st
+  answerQuery cfg query ext@(ExtLedgerState ledgerState headerState) = case query of
+      GetLedgerTip -> shelleyLedgerTipPoint ledgerState
+      GetEpochNo -> SL.nesEL $ shelleyLedgerState ledgerState
       GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
-          SL.getNonMyopicMemberRewards globals (shelleyLedgerState st) creds
-      GetCurrentPParams -> getPParams $ shelleyLedgerState st
-      GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyLedgerState st
-      GetStakeDistribution -> SL.poolsByTotalStakeFraction globals (shelleyLedgerState st)
-      GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyLedgerState st) addrs
-      GetUTxO -> SL.getUTxO $ shelleyLedgerState st
-      DebugEpochState -> getEpochState $ shelleyLedgerState st
+          SL.getNonMyopicMemberRewards globals st creds
+      GetCurrentPParams -> getPParams st
+      GetProposedPParamsUpdates -> getProposedPPUpdates st
+      GetStakeDistribution -> SL.poolsByTotalStakeFraction globals st
+      GetFilteredUTxO addrs -> SL.getFilteredUTxO st addrs
+      GetUTxO -> SL.getUTxO st
+      DebugEpochState -> getEpochState st
       GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
-          answerQuery cfg query' st
+          answerQuery cfg query' ext
       GetFilteredDelegationsAndRewardAccounts creds ->
         getFilteredDelegationsAndRewardAccounts
-          (shelleyLedgerState st)
+          st
           creds
-      GetGenesisConfig -> shelleyLedgerCompactGenesis cfg
-      DebugNewEpochState -> shelleyLedgerState st
+      GetGenesisConfig -> shelleyLedgerCompactGenesis lcfg
+      DebugNewEpochState -> st
+      DebugChainDepState -> tpraosStateChainDepState (headerStateChainDep headerState)
     where
-      globals = shelleyLedgerGlobals cfg
+      lcfg    = configLedger $ getExtLedgerCfg cfg
+      globals = shelleyLedgerGlobals lcfg
+      st      = shelleyLedgerState ledgerState
 
 instance SameDepIndex (Query (ShelleyBlock era)) where
   sameDepIndex GetLedgerTip GetLedgerTip
@@ -568,6 +575,10 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Just Refl
   sameDepIndex DebugNewEpochState _
     = Nothing
+  sameDepIndex DebugChainDepState DebugChainDepState
+    = Just Refl
+  sameDepIndex DebugChainDepState _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock era) result)
 deriving instance Show (Query (ShelleyBlock era) result)
@@ -587,6 +598,7 @@ instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
       GetFilteredDelegationsAndRewardAccounts {} -> show
       GetGenesisConfig                           -> show
       DebugNewEpochState                         -> show
+      DebugChainDepState                         -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: Query (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
@@ -604,6 +616,7 @@ querySupportedVersion = \case
     GetFilteredDelegationsAndRewardAccounts {} -> (>= v1)
     GetGenesisConfig                           -> (>= v2)
     DebugNewEpochState                         -> (>= v2)
+    DebugChainDepState                         -> (>= v2)
   where
     v1 = ShelleyNodeToClientVersion1
     v2 = ShelleyNodeToClientVersion2
@@ -789,6 +802,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 11
     DebugNewEpochState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 12
+    DebugChainDepState ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 13
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -810,6 +825,7 @@ decodeShelleyQuery = do
       (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
       (1, 11) -> return $ SomeSecond GetGenesisConfig
       (1, 12) -> return $ SomeSecond DebugNewEpochState
+      (1, 13) -> return $ SomeSecond DebugChainDepState
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -831,6 +847,7 @@ encodeShelleyResult query = case query of
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
     GetGenesisConfig                           -> toCBOR
     DebugNewEpochState                         -> toCBOR
+    DebugChainDepState                         -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -850,3 +867,4 @@ decodeShelleyResult query = case query of
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
     GetGenesisConfig                           -> fromCBOR
     DebugNewEpochState                         -> fromCBOR
+    DebugChainDepState                         -> fromCBOR

@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..))
@@ -197,7 +198,7 @@ data instance Query ByronBlock :: Type -> Type where
   GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
 instance QueryLedger ByronBlock where
-  answerQuery _cfg GetUpdateInterfaceState ledgerState =
+  answerQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
 instance SameDepIndex (Query ByronBlock) where

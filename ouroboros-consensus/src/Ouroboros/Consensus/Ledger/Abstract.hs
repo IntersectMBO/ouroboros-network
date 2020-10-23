@@ -23,29 +23,18 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , ledgerTipHash
   , ledgerTipPoint
   , ledgerTipSlot
-    -- * Queries
-  , Query
-  , QueryLedger(..)
-  , ShowQuery(..)
     -- * Re-exports
   , module Ouroboros.Consensus.Ledger.Basics
   ) where
 
 import           Control.Monad.Except
-import           Data.Kind (Type)
-import           Data.Maybe (isJust)
 import           Data.Proxy
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util (SomeSecond (..), repeatedly,
-                     repeatedlyM)
-import           Ouroboros.Consensus.Util.DepPair
+import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 
 {-------------------------------------------------------------------------------
   Apply block to ledger state
@@ -125,24 +114,3 @@ ledgerTipSlot ::
      forall blk. UpdateLedger blk
   => LedgerState blk -> WithOrigin SlotNo
 ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))
-
-{-------------------------------------------------------------------------------
-  Queries
--------------------------------------------------------------------------------}
-
--- | Different queries supported by the ledger, indexed by the result type.
-data family Query blk :: Type -> Type
-
--- | Query the ledger state.
---
--- Used by the LocalStateQuery protocol to allow clients to query the ledger
--- state.
-class (ShowQuery (Query blk), SameDepIndex (Query blk)) => QueryLedger blk where
-
-  -- | Answer the given query about the ledger state.
-  answerQuery :: LedgerConfig blk -> Query blk result -> LedgerState blk -> result
-
-instance SameDepIndex (Query blk) => Eq (SomeSecond Query blk) where
-  SomeSecond qry == SomeSecond qry' = isJust (sameDepIndex qry qry')
-
-deriving instance (forall result. Show (Query blk result)) => Show (SomeSecond Query blk)

@@ -199,7 +199,7 @@ distribLedgerConfig ei cfg =
       (completeLedgerConfig'' ei)
       (getPerEraLedgerConfig $ hardForkLedgerConfigPerEra cfg)
 
-distribTopLevelConfig :: CanHardFork xs
+distribTopLevelConfig :: All SingleEraBlock xs
                       => EpochInfo Identity
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs
