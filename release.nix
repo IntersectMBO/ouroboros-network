@@ -20,8 +20,11 @@
 # The systems that the jobset will be built for.
 , supportedSystems ? [ "x86_64-linux" "x86_64-darwin" ]
 
-# The systems used for cross-compiling
-, supportedCrossSystems ? [ "x86_64-linux" ]
+# The systems used for cross-compiling (default: linux)
+, supportedCrossSystems ? [ (builtins.head supportedSystems) ]
+
+# Cross compilation to Windows is currently only supported on linux.
+, windowsBuild ? builtins.elem "x86_64-linux" supportedCrossSystems
 
 # A Hydra option
 , scrubJobs ? true
@@ -57,30 +60,51 @@ let
       map (drv: drv // { inherit packageName; }) (collectJobs' package)
     ) ds);
 
-  disabledMingwW64Tests = recursiveUpdate (if withProblematicWindowsTests then {} else {
-    haskellPackages.ouroboros-network.checks.test-network = null;
-    checks.tests.ouroboros-network.test-network = null;
-    haskellPackages.Win32-network.checks.test-Win32-network = null;
-    checks.tests.Win32-network.test-Win32-network = null;
-    haskellPackages.network-mux.checks.test-network-mux = null;
-    checks.tests.network-mux.test-network-mux = null;
-    haskellPackages.ouroboros-network-framework.checks.ouroboros-network-framework-tests = null;
-    checks.tests.ouroboros-network-framework.ouroboros-network-framework-tests = null;
-  }) {
-    haskellPackages.ouroboros-network.components.tests.test-cddl = null;
-    tests.ouroboros-network.test-cddl = null;
-    haskellPackages.ouroboros-network.checks.test-cddl = null;
-    checks.tests.ouroboros-network.test-cddl = null;
-  };
+  nonDefaultBuildSystems = tail supportedSystems;
+
+  # Paths or prefixes of paths of derivations to build only on the default system (ie. linux on hydra):
+  onlyBuildOnDefaultSystem = [ ["docs" ] ];
+  # Paths or prefix of paths for which cross-builds (mingwW64, musl64) are disabled:
+  noCrossBuild = let
+    # checks are available from two path:
+    checksPaths = path: [ (["checks" "tests"] ++ path) ([ "haskellPackages" (head path) "checks" ] ++ (tail path)) ];
+    # as well as tests:
+    testsPaths = path: [ ([ "tests"] ++ path) ([ "haskellPackages" (head path) "components" "tests" ] ++ (tail path)) ];
+  in
+    [ ["shell"] ]
+    ++ (optionals (!withProblematicWindowsTests) (
+         (checksPaths ["ouroboros-network" "test-network"])
+      ++ (checksPaths ["Win32-network" "test-Win32-network"])
+      ++ (checksPaths ["network-mux" "test-network-mux"])
+      ++ (checksPaths ["ouroboros-network-framework" "ouroboros-network-framework-tests"])
+      ++ [[ "haskellPackages" "ouroboros-network" "coverageReport" ]
+          [ "haskellPackages" "Win32-network" "coverageReport" ]
+          [ "haskellPackages" "network-mux" "coverageReport" ]
+          [ "haskellPackages" "ouroboros-network-framework" "coverageReport" ]]
+    ))
+    ++ (testsPaths ["ouroboros-network" "test-cddl"])
+    ++ (checksPaths ["ouroboros-network" "test-cddl"])
+    ++ onlyBuildOnDefaultSystem;
+
+  # Remove build jobs for which cross compiling does not make sense.
+  filterProject = noBuildList: mapAttrsRecursiveCond (a: !(isDerivation a)) (path: value:
+    if (isDerivation value && (any (p: take (length p) path == p) noBuildList)) then null
+    else value
+  ) project;
 
   inherit (systems.examples) mingwW64 musl64;
 
   jobs = {
-    native = mapTestOn (__trace (__toJSON (packagePlatforms project)) (packagePlatforms project));
-    "${mingwW64.config}" = recursiveUpdate (mapTestOnCross mingwW64 (packagePlatformsCross project)) disabledMingwW64Tests;
+    native =
+      let filteredBuilds = mapAttrsRecursiveCond (a: !(isList a)) (path: value:
+        if (any (p: take (length p) path == p) onlyBuildOnDefaultSystem) then filter (s: !(elem s nonDefaultBuildSystems)) value else value)
+        (packagePlatforms project);
+      in (mapTestOn (__trace (__toJSON filteredBuilds) filteredBuilds));
     # TODO: fix broken evals
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
-  } // (mkRequiredJob (concatLists [
+  } // (optionalAttrs windowsBuild {
+    "${mingwW64.config}" = mapTestOnCross mingwW64 (packagePlatformsCross (filterProject noCrossBuild));
+  }) // (mkRequiredJob (concatLists [
     (collectJobs jobs."${mingwW64.config}".checks.tests)
     (collectJobs jobs.native.checks)
     (collectJobs jobs.native.benchmarks)
