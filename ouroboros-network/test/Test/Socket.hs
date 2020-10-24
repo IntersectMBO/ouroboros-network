@@ -157,14 +157,13 @@ demo chain0 updates = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       producerAddress
       nodeToNodeHandshakeCodec
-      cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+      acceptableVersion
       (simpleSingletonVersions
         NodeToNodeV_1
         (NodeToNodeVersionData {
           networkMagic  = NetworkMagic 0,
           diffusionMode = InitiatorAndResponderDiffusionMode })
-        (nodeToNodeDictVersion NodeToNodeV_1)
         (SomeResponderApplication responderApp))
       nullErrorPolicies
       $ \realProducerAddress _ -> do
@@ -172,15 +171,14 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (connectToNode
           (socketSnocket iocp)
           nodeToNodeHandshakeCodec
-          cborTermVersionDataCodec
+          (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
           nullNetworkConnectTracers
-          (\DictVersion {} -> acceptableVersion)
+          acceptableVersion
           (simpleSingletonVersions
             NodeToNodeV_1
             (NodeToNodeVersionData {
               networkMagic  = NetworkMagic 0,
               diffusionMode = InitiatorOnlyDiffusionMode })
-            (nodeToNodeDictVersion NodeToNodeV_1)
             initiatorApp)
           (Just consumerAddress)
           realProducerAddress)

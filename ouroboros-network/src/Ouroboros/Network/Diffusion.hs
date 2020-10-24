@@ -38,9 +38,11 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
+import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
+                                                , NodeToClientVersionData )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
+                                              , NodeToNodeVersionData
                                               , AcceptedConnectionsLimit (..)
                                               , AcceptConnectionsPolicyTrace (..)
                                               , DiffusionMode (..)
@@ -102,7 +104,7 @@ data DiffusionApplications = DiffusionApplications {
 
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
-                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
+                                       NodeToNodeVersionData
                                        (OuroborosApplication
                                          ResponderMode SockAddr
                                          ByteString IO Void ())
@@ -110,7 +112,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
-                                       (DictVersion NodeToNodeVersion NodeToNode.AgreedOptions)
+                                       NodeToNodeVersionData
                                        (OuroborosApplication
                                          InitiatorMode SockAddr
                                          ByteString IO () Void)
@@ -118,7 +120,7 @@ data DiffusionApplications = DiffusionApplications {
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
-                                       (DictVersion NodeToClientVersion NodeToClient.AgreedOptions)
+                                       NodeToClientVersionData
                                        (OuroborosApplication
                                          ResponderMode LocalAddress
                                          ByteString IO Void ())

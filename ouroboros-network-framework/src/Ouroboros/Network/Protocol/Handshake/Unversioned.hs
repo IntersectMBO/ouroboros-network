@@ -43,8 +43,8 @@ instance Acceptable UnversionedProtocolData where
                     UnversionedProtocolData = Accept UnversionedProtocolData
 
 
-unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
-unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
+unversionedProtocolDataCodec :: UnversionedProtocol -> CodecCBORTerm Text UnversionedProtocolData
+unversionedProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: UnversionedProtocolData -> CBOR.Term
       encodeTerm UnversionedProtocolData = CBOR.TNull
@@ -57,10 +57,11 @@ unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | Make a 'Versions' for an unversioned protocol. Only use this for
 -- tests and demos where proper versioning is excessive.
 --
-unversionedProtocol :: app -> Versions UnversionedProtocol (DictVersion UnversionedProtocol UnversionedProtocolData) app
-unversionedProtocol =
-    simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
-      (DictVersion unversionedProtocolDataCodec (\_ _ -> UnversionedProtocolData))
+unversionedProtocol :: app
+                    -> Versions UnversionedProtocol
+                                UnversionedProtocolData
+                                app
+unversionedProtocol = simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
 
 
 -- | 'Handshake' codec used in various tests.

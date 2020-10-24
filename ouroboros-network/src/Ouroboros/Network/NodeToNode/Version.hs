@@ -5,11 +5,9 @@ module Ouroboros.Network.NodeToNode.Version
   ( NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DiffusionMode (..)
-  , AgreedOptions (..)
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-  , nodeToNodeDictVersion
   ) where
 
 import           Data.Text (Text)
@@ -21,7 +19,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Protocol.Handshake.Version
-                  (Acceptable (..), Accept (..), DictVersion (..))
+                  (Acceptable (..), Accept (..))
 
 
 -- | Enumeration of node to node protocol versions.
@@ -150,23 +148,3 @@ nodeToNodeCodecCBORTerm version
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
-
-data AgreedOptions = AgreedOptions {
-    agreedConnectionMode :: ConnectionMode,
-    agreedOptions        :: NodeToNodeVersionData
-  }
-
-
-mkAgreedOptions :: NodeToNodeVersion -> NodeToNodeVersionData -> AgreedOptions
-mkAgreedOptions version agreedOptions
-  | version <= NodeToNodeV_3
-  = AgreedOptions { agreedConnectionMode = UnidirectionalMode, agreedOptions }
-  | otherwise
-  = AgreedOptions { agreedConnectionMode = DuplexMode, agreedOptions }
-
-
-
-nodeToNodeDictVersion :: NodeToNodeVersion
-                      -> DictVersion NodeToNodeVersion AgreedOptions NodeToNodeVersionData
-nodeToNodeDictVersion version =
-    DictVersion (nodeToNodeCodecCBORTerm version) mkAgreedOptions

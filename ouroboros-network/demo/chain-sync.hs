@@ -156,13 +156,12 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
       connectToNode
         (localSnocket iocp sockPath)
         unversionedHandshakeCodec
-        cborTermVersionDataCodec
+        (cborTermVersionDataCodec unversionedProtocolDataCodec)
         nullNetworkConnectTracers
-        (\DictVersion {} -> acceptableVersion)
+        acceptableVersion
         (simpleSingletonVersions
            UnversionedProtocol
            UnversionedProtocolData
-           (DictVersion unversionedProtocolDataCodec (,))
            app)
         Nothing
         (localAddressFromPath sockPath)
@@ -190,12 +189,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      acceptableVersion
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (DictVersion unversionedProtocolDataCodec (,))
         (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
@@ -364,13 +362,12 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                         connectToNode
                           (localSnocket iocp defaultLocalSocketAddrPath)
                           unversionedHandshakeCodec
-                          cborTermVersionDataCodec
+                          (cborTermVersionDataCodec unversionedProtocolDataCodec)
                           nullNetworkConnectTracers
-                          (\DictVersion {} -> acceptableVersion)
+                          acceptableVersion
                           (simpleSingletonVersions
                             UnversionedProtocol
                             UnversionedProtocolData
-                            (DictVersion unversionedProtocolDataCodec (,))
                             app)
                           Nothing
                           (localAddressFromPath sockAddr)
@@ -420,12 +417,11 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      acceptableVersion
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (DictVersion unversionedProtocolDataCodec (,))
         (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->

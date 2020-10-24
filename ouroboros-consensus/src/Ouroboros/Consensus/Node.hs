@@ -47,11 +47,10 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalConnectionId,
-                     NodeToClientVersionData (..), nodeToClientDictVersion)
+                     NodeToClientVersionData (..))
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     combineVersions, defaultMiniProtocolParameters,
-                     nodeToNodeDictVersion)
+                     combineVersions, defaultMiniProtocolParameters)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -306,7 +305,6 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToNodeVersionData
-                (nodeToNodeDictVersion version)
                 (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
@@ -314,7 +312,6 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToNodeVersionData
-                (nodeToNodeDictVersion version)
                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
@@ -322,7 +319,6 @@ run runargs@RunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 nodeToClientVersionData
-                nodeToClientDictVersion
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]

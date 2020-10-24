@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -11,11 +12,8 @@ module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
   , Application (..)
   , Version (..)
-  , Sigma (..)
   , Accept (..)
   , Acceptable (..)
-  , Dict (..)
-  , DictVersion (..)
   , VersionMismatch (..)
 
   -- * Simple or no versioning
@@ -28,10 +26,7 @@ import           Data.Foldable (toList)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Text (Text)
-import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.CodecCBORTerm
 
 
 -- Description of versions.
@@ -59,18 +54,13 @@ import           Ouroboros.Network.CodecCBORTerm
 -- >          ]
 -- >
 --
-newtype Versions vNum extra r = Versions
-  { getVersions :: Map vNum (Sigma (Version extra r))
+newtype Versions vNum vData r = Versions
+  { getVersions :: Map vNum (Version vData r)
   }
-  deriving (Semigroup)
+  deriving Semigroup
 
 instance Functor (Versions vNum extra) where
-    fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
-      where
-        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x -> f (app x)) extra)
-
-data Sigma f where
-  Sigma :: !t -> !(f t) -> Sigma f
+    fmap f (Versions vs) = Versions $ Map.map (fmap f)  vs
 
 
 -- | Useful for folding multiple 'Versions'.
@@ -104,35 +94,21 @@ class Acceptable v where
   acceptableVersion :: v -> v -> Accept v
 
 -- | Takes a pair of version data: local then remote.
-newtype Application r vData = Application
+newtype Application vData r = Application
   { runApplication :: vData -> r
   }
+  deriving Functor
 
-data Version extra r vData = Version
-  { versionApplication :: Application r vData
-  , versionExtra       :: extra vData
+
+data Version vData r = Version
+  { versionApplication :: Application vData r
+  , versionData        :: vData
   }
+  deriving Functor
 
 data VersionMismatch vNum where
   NoCommonVersion     :: VersionMismatch vNum
   InconsistentVersion :: vNum -> VersionMismatch vNum
-
-data Dict constraint thing where
-  Dict :: constraint thing => Dict constraint thing
-
--- | 'DictVersion' is used to instantiate the 'extra' param of 'Version'.
--- 'hanshakeParams' is instatiated in either "Ouroboros.Network.NodeToNode" or
--- "Ouroboros.Network.NodeToClient" to 'HandshakeParams'.
---
-data DictVersion vNumber agreedOptions vData where
-     DictVersion :: ( Typeable vData
-                    , Acceptable vData
-                    , Show vData
-                    )
-                 => CodecCBORTerm Text vData
-                 -> (vNumber -> vData -> agreedOptions)
-                 -- ^ agreed vData
-                 -> DictVersion vNumber agreedOptions vData
 
 --
 -- Simple version negotation
@@ -143,10 +119,9 @@ data DictVersion vNumber agreedOptions vData where
 simpleSingletonVersions
   :: vNum
   -> vData
-  -> extra vData
   -> r
-  -> Versions vNum extra r
-simpleSingletonVersions vNum vData extra r =
+  -> Versions vNum vData r
+simpleSingletonVersions vNum vData r =
   Versions
     $ Map.singleton vNum
-        (Sigma vData (Version (Application $ \_ -> r) extra))
+      (Version (Application (\_ -> r)) vData)

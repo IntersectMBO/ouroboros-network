@@ -17,15 +17,20 @@ tests = testGroup "Ouroboros.Network.NodeToClient.Version"
     [ testProperty "nodeToClientCodecCBORTerm" prop_nodeToClientCodec
     ]
 
-instance Arbitrary NodeToClientVersionData where
-    arbitrary =
-      NodeToClientVersionData
-        <$> (NetworkMagic <$> arbitrary)
+data VersionAndVersionData =
+    VersionAndVersionData NodeToClientVersion NodeToClientVersionData
+  deriving Show
 
-prop_nodeToClientCodec :: NodeToClientVersionData -> Bool
-prop_nodeToClientCodec ntcData =
-      case decodeTerm (encodeTerm ntcData) of
-        Right ntcData' -> networkMagic ntcData' == networkMagic  ntcData
-        Left {}        -> False
+instance Arbitrary VersionAndVersionData where
+    arbitrary =
+      VersionAndVersionData
+        <$> elements [ NodeToClientV_1, NodeToClientV_2, NodeToClientV_3 ]
+        <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary)
+
+prop_nodeToClientCodec :: VersionAndVersionData -> Bool
+prop_nodeToClientCodec (VersionAndVersionData vNumber vData) =
+      case decodeTerm (encodeTerm vData) of
+        Right vData' -> networkMagic vData' == networkMagic vData
+        Left {}      -> False
     where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToClientCodecCBORTerm
+      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToClientCodecCBORTerm vNumber
