@@ -14,13 +14,14 @@ import qualified Codec.CBOR.Write    as CBOR
 import           Control.Exception
 import           Control.Monad (replicateM, when, unless)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson hiding (Options, json)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as C8 (putStrLn)
+import qualified Data.ByteString.Lazy.Char8 as BSC (pack, putStr)
 import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Word
 import           Data.TDigest
@@ -46,10 +47,11 @@ handshakeNum = MiniProtocolNum 0
 keepaliveNum :: MiniProtocolNum
 keepaliveNum = MiniProtocolNum 8
 
-data Flag = HostF String | PortF String | MagicF String | QuietF | JsonF deriving Show
+data Flag = CountF String | HostF String | PortF String | MagicF String | QuietF | JsonF deriving Show
 
 optionDescriptions :: [OptDescr Flag]
 optionDescriptions = [
+    Option "c" ["count"]  (ReqArg CountF "count")  "number of pings to send",
     Option "h" ["host"]  (ReqArg HostF "host")  "hostname/ip, e.g relay.iohk.example",
     Option "m" ["magic"] (ReqArg MagicF "magic") ("magic, defaults to " ++ show mainnetMagic),
     Option "j" ["json"]  (NoArg JsonF ) "json output flag",
@@ -58,28 +60,53 @@ optionDescriptions = [
   ]
 
 data Options = Options {
-      host  :: Maybe String
-    , port  :: String
-    , magic :: Word32
-    , json :: Bool
-    , quiet :: Bool
+      maxCount :: Word32
+    , host     :: Maybe String
+    , port     :: String
+    , magic    :: Word32
+    , json     :: Bool
+    , quiet    :: Bool
     } deriving Show
 
 defaultOpts :: Options
 defaultOpts = Options {
-      host  = Nothing
-    , port  = "3001"
-    , json  = False
-    , quiet = False
-    , magic = mainnetMagic
+      maxCount = maxBound
+    , host     = Nothing
+    , port     = "3001"
+    , json     = False
+    , quiet    = False
+    , magic    = mainnetMagic
     }
 
 buildOptions ::  Flag -> Options -> Options
+buildOptions (CountF c)   opt = opt { maxCount = Prelude.read c }
 buildOptions (HostF host) opt = opt { host = Just host }
 buildOptions (PortF port) opt = opt { port = port }
 buildOptions (MagicF m)   opt = opt { magic = Prelude.read m }
 buildOptions JsonF        opt = opt { json = True }
 buildOptions QuietF       opt = opt { quiet = True }
+
+data LogMsg = LogMsg ByteString
+            | LogEnd
+
+logger :: StrictTMVar IO LogMsg -> Bool -> IO ()
+logger msgQueue json = go True
+  where
+    go first = do
+        msg <- atomically $ takeTMVar  msgQueue
+        case msg of
+             LogMsg bs -> do
+                 let bs' = case (json, first) of
+                                (True, False)  -> BSC.pack ",\n" <> bs
+                                (True, True)   -> BSC.pack "{ \"pongs\": [ " <> bs
+                                (False, True)  -> BSC.pack "                           timestamp,                 host,  cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                                (False, False) -> bs
+
+                 BSC.putStr bs'
+                 go False
+             LogEnd ->
+                 when json $ putStrLn "] }"
+
 
 main :: IO ()
 main = do
@@ -88,17 +115,23 @@ main = do
         options = foldr buildOptions defaultOpts flags
         hints = Socket.defaultHints { Socket.addrSocketType = Socket.Stream }
 
+    msgQueue <- newEmptyTMVarIO
+
     when (isNothing $ host options) $ do
         putStrLn "Specify host/ip with '-h <hostname>'"
         exitWith (ExitFailure 1)
 
     addresses <- Socket.getAddrInfo (Just hints) (host options) (Just $ port options)
 
-    unless (json options) $
-        putStrLn "                           timestamp,                 host,  cookie,  sample,  median,     p90,    mean,     min,     max,     std"
-
-    caids <- mapM (async . pingClient options) addresses
+    laid <- async $ logger msgQueue $ json options
+    caids <- mapM (async . pingClient (Tracer $ doLog msgQueue) options) addresses
     mapM_ wait caids
+    doLog msgQueue LogEnd
+    wait laid
+
+  where
+    doLog :: StrictTMVar IO LogMsg -> LogMsg -> IO ()
+    doLog msgQueue msg = atomically $ putTMVar msgQueue msg
 
 data NodeToNodeVersion = NodeToNodeVersionV1 Word32
                        | NodeToNodeVersionV2 Word32
@@ -269,8 +302,8 @@ toStatPoint ts host cookie sample td =
     stddev' = fromMaybe 0 (stddev td)
 
 
-pingClient :: Options -> AddrInfo -> IO ()
-pingClient Options{quiet, magic, json} peer = bracket
+pingClient :: Tracer IO LogMsg -> Options -> AddrInfo -> IO ()
+pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
     (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
     Socket.close
     (\sd -> withTimeoutSerial $ \timeoutfn -> do
@@ -320,9 +353,11 @@ pingClient Options{quiet, magic, json} peer = bracket
            then return (msBlob sdu, t_e)
            else nextMsg bearer timeoutfn ptclNum
 
-    keepAlive :: MuxBearer IO -> TimeoutFn IO -> String -> TDigest 5 -> Word16 -> IO ()
+    keepAlive :: MuxBearer IO -> TimeoutFn IO -> String -> TDigest 5 -> Word32 -> IO ()
+    keepAlive _ _ _ _ cookie | cookie == maxCount = return ()
     keepAlive bearer timeoutfn peerStr td cookie = do
-        !t_s <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq cookie)
+        let cookie16 = fromIntegral cookie
+        !t_s <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq cookie16)
         (!msg, !t_e) <- nextMsg bearer timeoutfn keepaliveNum
         let rtt = toSample t_e t_s
             td' = insert rtt td
@@ -330,14 +365,14 @@ pingClient Options{quiet, magic, json} peer = bracket
              Left err -> eprint $ printf "%s keepalive decoding error %s\n" peerStr (show err)
              Right (_, Left err) -> eprint $ printf "%s keepalive protocol error %s\n" peerStr (show err)
              Right (_, Right cookie') -> do
-                 when (cookie' /= cookie) $ eprint $ printf "%s cookie missmatch %d /= %d\n"
+                 when (cookie' /= cookie16) $ eprint $ printf "%s cookie missmatch %d /= %d\n"
                      peerStr cookie' cookie
 
                  now <- getCurrentTime
-                 let point = toStatPoint now peerStr cookie rtt td'
+                 let point = toStatPoint now peerStr cookie16 rtt td'
                  if json
-                    then C8.putStrLn (encode point)
-                    else print point
+                    then traceWith tracer $ LogMsg (encode point)
+                    else traceWith tracer $ LogMsg $ BSC.pack $ show point <> "\n"
                  hFlush stdout
                  threadDelay 1
                  keepAlive bearer timeoutfn peerStr td' (cookie + 1)
