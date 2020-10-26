@@ -116,6 +116,14 @@ module Ouroboros.Consensus.Cardano.Block (
       , LedgerStateAllegra
       , LedgerStateMary
       )
+    -- * ChainDepState
+  , CardanoChainDepState
+  , HardForkState (
+        ChainDepStateByron
+      , ChainDepStateShelley
+      , ChainDepStateAllegra
+      , ChainDepStateMary
+      )
     -- * EraMismatch
   , EraMismatch (..)
   ) where
@@ -128,6 +136,7 @@ import           Ouroboros.Consensus.HeaderValidation (OtherHeaderEnvelopeError,
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerError)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
+import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -757,3 +766,48 @@ pattern LedgerStateMary st <-
            , LedgerStateShelley
            , LedgerStateAllegra
            , LedgerStateMary #-}
+
+{-------------------------------------------------------------------------------
+  ChainDepState
+-------------------------------------------------------------------------------}
+
+-- | The 'ChainDepState' for 'CardanoBlock'.
+--
+-- NOTE: the 'CardanoChainDepState' contains more than just the current era's
+-- 'ChainDepState'. We don't give access to those internal details through the
+-- pattern synonyms. This is also the reason the pattern synonyms are not
+-- bidirectional.
+type CardanoChainDepState c = HardForkChainDepState (CardanoEras c)
+
+pattern ChainDepStateByron
+  :: ChainDepState (BlockProtocol ByronBlock)
+  -> CardanoChainDepState c
+pattern ChainDepStateByron st <-
+    State.HardForkState
+      (TZ (State.Current { currentState = WrapChainDepState st }))
+
+pattern ChainDepStateShelley
+  :: ChainDepState (BlockProtocol (ShelleyBlock (ShelleyEra c)))
+  -> CardanoChainDepState c
+pattern ChainDepStateShelley st <-
+    State.HardForkState
+      (TS _ (TZ (State.Current { currentState = WrapChainDepState st })))
+
+pattern ChainDepStateAllegra
+  :: ChainDepState (BlockProtocol (ShelleyBlock (AllegraEra c)))
+  -> CardanoChainDepState c
+pattern ChainDepStateAllegra st <-
+    State.HardForkState
+      (TS _ (TS _ (TZ (State.Current { currentState = WrapChainDepState st }))))
+
+pattern ChainDepStateMary
+  :: ChainDepState (BlockProtocol (ShelleyBlock (MaryEra c)))
+  -> CardanoChainDepState c
+pattern ChainDepStateMary st <-
+    State.HardForkState
+      (TS _ (TS _ (TS _ (TZ (State.Current { currentState = WrapChainDepState st })))))
+
+{-# COMPLETE ChainDepStateByron
+           , ChainDepStateShelley
+           , ChainDepStateAllegra
+           , ChainDepStateMary #-}
