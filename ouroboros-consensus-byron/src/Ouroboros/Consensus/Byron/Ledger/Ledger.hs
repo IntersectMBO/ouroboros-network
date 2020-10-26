@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..))
@@ -197,7 +198,7 @@ data instance Query ByronBlock :: Type -> Type where
   GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
 instance QueryLedger ByronBlock where
-  answerQuery _cfg GetUpdateInterfaceState ledgerState =
+  answerQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
 instance SameDepIndex (Query ByronBlock) where
@@ -479,11 +480,11 @@ encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (SomeBlock Query ByronBlock)
+decodeByronQuery :: Decoder s (SomeSecond Query ByronBlock)
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
-      0 -> return $ SomeBlock GetUpdateInterfaceState
+      0 -> return $ SomeSecond GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
 encodeByronResult :: Query ByronBlock result -> result -> Encoding

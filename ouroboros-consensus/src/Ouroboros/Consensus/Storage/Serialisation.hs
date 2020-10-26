@@ -72,13 +72,13 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
                      PrefixLen (..), addPrefixLen, takePrefix)
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 {-------------------------------------------------------------------------------
@@ -121,11 +121,11 @@ class DecodeDisk blk a where
 
 -- | Encode dependent index
 class EncodeDiskDepIx f blk where
-  encodeDiskDepIx :: CodecConfig blk -> SomeBlock f blk -> Encoding
+  encodeDiskDepIx :: CodecConfig blk -> SomeSecond f blk -> Encoding
 
   default encodeDiskDepIx
     :: TrivialDependency (f blk)
-    => CodecConfig blk -> SomeBlock f blk -> Encoding
+    => CodecConfig blk -> SomeSecond f blk -> Encoding
   encodeDiskDepIx _ _ = encode ()
     where
       _ = keepRedundantConstraint (Proxy @(TrivialDependency (f blk)))
@@ -143,12 +143,12 @@ class EncodeDiskDep f blk where
 
 -- | Decode dependent index
 class DecodeDiskDepIx f blk where
-  decodeDiskDepIx :: CodecConfig blk -> Decoder s (SomeBlock f blk)
+  decodeDiskDepIx :: CodecConfig blk -> Decoder s (SomeSecond f blk)
 
   default decodeDiskDepIx
     :: TrivialDependency (f blk)
-    => CodecConfig blk -> Decoder s (SomeBlock f blk)
-  decodeDiskDepIx _ = (\() -> SomeBlock indexIsTrivial) <$> decode
+    => CodecConfig blk -> Decoder s (SomeSecond f blk)
+  decodeDiskDepIx _ = (\() -> SomeSecond indexIsTrivial) <$> decode
 
 -- | Decode a dependent value
 --
@@ -191,14 +191,14 @@ decodeDepPair ccfg (GenDepPair fa serialised) =
 instance EncodeDiskDepIx f blk => EncodeDisk blk (GenDepPair Serialised (f blk)) where
   encodeDisk ccfg (GenDepPair fa serialised) = mconcat [
         CBOR.encodeListLen 2
-      , encodeDiskDepIx ccfg (SomeBlock fa)
+      , encodeDiskDepIx ccfg (SomeSecond fa)
       , encode serialised
       ]
 
 instance DecodeDiskDepIx f blk => DecodeDisk blk (GenDepPair Serialised (f blk)) where
   decodeDisk ccfg = do
       enforceSize "DecodeDisk GenDepPair" 2
-      SomeBlock fa <- decodeDiskDepIx ccfg
+      SomeSecond fa <- decodeDiskDepIx ccfg
       serialised   <- decode
       return $ GenDepPair fa serialised
 
@@ -228,15 +228,15 @@ instance StandardHash blk => StandardHash (SerialisedHeader blk)
 
 serialisedHeaderToPair ::
      SerialisedHeader blk
-  -> (SomeBlock (NestedCtxt Header) blk, Lazy.ByteString)
+  -> (SomeSecond (NestedCtxt Header) blk, Lazy.ByteString)
 serialisedHeaderToPair hdr =
     case serialisedHeaderToDepPair hdr of
-      GenDepPair ctxt (Serialised bs) -> (SomeBlock ctxt, bs)
+      GenDepPair ctxt (Serialised bs) -> (SomeSecond ctxt, bs)
 
 serialisedHeaderFromPair ::
-     (SomeBlock (NestedCtxt Header) blk, Lazy.ByteString)
+     (SomeSecond (NestedCtxt Header) blk, Lazy.ByteString)
   -> SerialisedHeader blk
-serialisedHeaderFromPair (SomeBlock ctxt, bs) =
+serialisedHeaderFromPair (SomeSecond ctxt, bs) =
     SerialisedHeaderFromDepPair $
       GenDepPair ctxt (Serialised bs)
 
@@ -276,7 +276,7 @@ decodeTrivialSerialisedHeader ::
   => forall s. Decoder s (SerialisedHeader blk)
 decodeTrivialSerialisedHeader =
     ( serialisedHeaderFromPair
-    . (SomeBlock (NestedCtxt indexIsTrivial), )
+    . (SomeSecond (NestedCtxt indexIsTrivial), )
     . unSerialised
     ) <$> decode
 
@@ -298,7 +298,7 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
        proxy (f blk)
     -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> SomeBlock (NestedCtxt f) blk
+    -> SomeSecond (NestedCtxt f) blk
 
   -- Defaults if there is only one type
 
@@ -314,8 +314,8 @@ class HasNestedContent f blk => ReconstructNestedCtxt f blk where
     => proxy (f blk)
     -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> SomeBlock (NestedCtxt f) blk
-  reconstructNestedCtxt _ _ _ = SomeBlock indexIsTrivial
+    -> SomeSecond (NestedCtxt f) blk
+  reconstructNestedCtxt _ _ _ = SomeSecond indexIsTrivial
 
 {-------------------------------------------------------------------------------
   Binary block info

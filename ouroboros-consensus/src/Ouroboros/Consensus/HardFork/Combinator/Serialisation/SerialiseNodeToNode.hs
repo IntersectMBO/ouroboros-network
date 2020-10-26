@@ -66,7 +66,7 @@ dispatchEncoder ccfg version ns =
             encodeNodeToNode c0 v0 x0
           (_, HardForkNodeToNodeDisabled _, S later) ->
             throw $ futureEraException (notFirstEra later)
-          (_, HardForkNodeToNodeEnabled versions, _) ->
+          (_, HardForkNodeToNodeEnabled _ versions, _) ->
             encodeNS (hczipWith pSHFC aux ccfgs versions) ns
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
@@ -93,7 +93,7 @@ dispatchDecoder ccfg version =
         case (ccfgs, version) of
           (c0 :* _, HardForkNodeToNodeDisabled v0) ->
             Z <$> decodeNodeToNode c0 v0
-          (_, HardForkNodeToNodeEnabled versions) ->
+          (_, HardForkNodeToNodeEnabled _ versions) ->
             decodeNS (hczipWith pSHFC aux ccfgs versions)
   where
     ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg

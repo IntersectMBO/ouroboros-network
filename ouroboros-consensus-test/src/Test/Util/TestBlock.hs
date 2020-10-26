@@ -90,6 +90,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -383,7 +384,7 @@ data instance Query TestBlock result where
   QueryLedgerTip :: Query TestBlock (Point TestBlock)
 
 instance QueryLedger TestBlock where
-  answerQuery _cfg QueryLedgerTip (TestLedger { lastAppliedPoint }) =
+  answerQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
 instance SameDepIndex (Query TestBlock) where

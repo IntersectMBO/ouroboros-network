@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -41,7 +42,8 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Query (Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -122,12 +124,12 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
-     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (SomeSecond (NestedCtxt Header) blk)
 
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeBlock Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
   => CodecConfig blk
@@ -193,7 +195,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 -- For example, a certain constructor can only be used after a certain version
 -- and can thus not be generated for any prior versions.
 data WithVersion v a = WithVersion v a
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
 
 instance Arbitrary a => Arbitrary (WithVersion () a) where
   arbitrary = WithVersion () <$> arbitrary
@@ -307,7 +309,7 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeBlock Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
 
        -- Needed for testing the @Serialised blk@
@@ -317,10 +319,10 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                   "blk"
-    , rt (Proxy @(GenTx blk))           "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))      "ApplyTxErr"
-    , rt (Proxy @(SomeBlock Query blk)) "Query"
+    [ rt (Proxy @blk)                    "blk"
+    , rt (Proxy @(GenTx blk))            "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))       "ApplyTxErr"
+    , rt (Proxy @(SomeSecond Query blk)) "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -377,9 +379,9 @@ roundtrip_envelopes ::
      , HasNestedContent Header blk
      )
   => CodecConfig blk
-  -> WithVersion (BlockNodeToNodeVersion blk) (SomeBlock (NestedCtxt Header) blk)
+  -> WithVersion (BlockNodeToNodeVersion blk) (SomeSecond (NestedCtxt Header) blk)
   -> Property
-roundtrip_envelopes ccfg (WithVersion v (SomeBlock ctxt)) =
+roundtrip_envelopes ccfg (WithVersion v (SomeSecond ctxt)) =
     roundtrip
       (encodeNodeToNode ccfg v . unBase16)
       (Base16 <$> decodeNodeToNode ccfg v)

@@ -29,8 +29,6 @@ module Ouroboros.Consensus.Block.Abstract (
   , ConvertRawHash(..)
   , encodeRawHash
   , decodeRawHash
-    -- * Existentials
-  , SomeBlock(..)
     -- * Utilities for working with WithOrigin
   , succWithOrigin
     -- * Re-export basic definitions from @ouroboros-network@
@@ -237,17 +235,6 @@ encodeRawHash p = Serialise.encode . toShortRawHash p
 decodeRawHash :: ConvertRawHash blk
               => proxy blk -> forall s. Decoder s (HeaderHash blk)
 decodeRawHash p = fromShortRawHash p <$> Serialise.decode
-
-{-------------------------------------------------------------------------------
-  Existentials
--------------------------------------------------------------------------------}
-
--- | Hide the type argument of a block-indexed GADT
---
--- @SomeBlock f blk@ is isomorphic to @Some (f blk)@, but is more convenient
--- in partial applications.
-data SomeBlock (f :: Type -> Type -> Type) blk where
-  SomeBlock :: !(f blk a) -> SomeBlock f blk
 
 {-------------------------------------------------------------------------------
   Utilities for working with WithOrigin

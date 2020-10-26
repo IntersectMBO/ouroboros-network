@@ -15,7 +15,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Forging (
 import           Data.Functor.Product
 import           Data.SOP.BasicFunctors
 import           Data.SOP.Strict
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -141,9 +140,9 @@ hardForkCheckCanForge blockForging
         -- We know all three NSs must be from the same era, because they were
         -- all produced from the same 'BlockForging'. Unfortunately, we can't
         -- enforce it statically.
-      $ matchNS' "ForgeStateInfo"       (getOneEraForgeStateInfo forgeStateInfo)
-      $ matchNS' "IsLeader"             (getOneEraIsLeader isLeader)
-      $ matchNS' "Ticked ChainDepState" (State.tip chainDepState)
+      $ Match.mustMatchNS "ForgeStateInfo"       (getOneEraForgeStateInfo forgeStateInfo)
+      $ Match.mustMatchNS "IsLeader"             (getOneEraIsLeader isLeader)
+      $ Match.mustMatchNS "Ticked ChainDepState" (State.tip chainDepState)
       $ blockForging
   where
     distrib ::
@@ -215,8 +214,8 @@ hardForkForgeBlock blockForging
         -- We know both NSs must be from the same era, because they were all
         -- produced from the same 'BlockForging'. Unfortunately, we can't
         -- enforce it statically.
-      $ matchNS' "IsLeader"           (getOneEraIsLeader isLeader)
-      $ matchNS' "Ticked LedgerState" (State.tip ledgerState)
+      $ Match.mustMatchNS "IsLeader"           (getOneEraIsLeader isLeader)
+      $ Match.mustMatchNS "Ticked LedgerState" (State.tip ledgerState)
       $ blockForging
   where
     ei = State.epochInfoPrecomputedTransitionInfo
@@ -250,16 +249,3 @@ hardForkForgeBlock blockForging
           ledgerState'
           txs'
           isLeader'
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- | Variant of 'matchNS' for when we know the two 'NS's must match. Otherwise
--- an error, mentioning the given 'String', is thrown.
-matchNS' ::
-     forall f g xs. HasCallStack
-  => String -> NS f xs -> NS g xs -> NS (Product f g) xs
-matchNS' lbl f g = case Match.matchNS f g of
-    Left _mismatch -> error $ lbl <> " from wrong era"
-    Right matched  -> matched

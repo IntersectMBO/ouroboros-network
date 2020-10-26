@@ -159,7 +159,7 @@ data BlockComponent blk a where
   GetIsEBB         :: BlockComponent blk IsEBB
   GetBlockSize     :: BlockComponent blk Word32
   GetHeaderSize    :: BlockComponent blk Word16
-  GetNestedCtxt    :: BlockComponent blk (SomeBlock (NestedCtxt Header) blk)
+  GetNestedCtxt    :: BlockComponent blk (SomeSecond (NestedCtxt Header) blk)
   GetPure          :: a
                    -> BlockComponent blk a
   GetApply         :: BlockComponent blk (a -> b)

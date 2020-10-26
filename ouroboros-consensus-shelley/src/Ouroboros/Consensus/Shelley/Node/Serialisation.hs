@@ -5,7 +5,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node.Serialisation () where
 
+import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Codec.Serialise (decode, encode)
@@ -115,6 +117,17 @@ instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (GenTxId 
   SerialiseNodeToClient
 -------------------------------------------------------------------------------}
 
+-- | Exception thrown in the encoders
+data ShelleyEncoderException era =
+    -- | A query was submitted that is not supported by the given
+    -- 'ShelleyNodeToClientVersion'.
+    ShelleyEncoderUnsupportedQuery
+         (SomeSecond Query (ShelleyBlock era))
+         ShelleyNodeToClientVersion
+  deriving (Show)
+
+instance Typeable era => Exception (ShelleyEncoderException era)
+
 instance ShelleyBasedEra era => SerialiseNodeToClientConstraints (ShelleyBlock era)
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
@@ -137,9 +150,14 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SL.App
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SomeBlock Query (ShelleyBlock era)) where
-  encodeNodeToClient _ _ (SomeBlock q) = encodeShelleyQuery q
-  decodeNodeToClient _ _               = decodeShelleyQuery
+instance ShelleyBasedEra era
+      => SerialiseNodeToClient (ShelleyBlock era) (SomeSecond Query (ShelleyBlock era)) where
+  encodeNodeToClient _ version (SomeSecond q)
+    | querySupportedVersion q version
+    = encodeShelleyQuery q
+    | otherwise
+    = throw $ ShelleyEncoderUnsupportedQuery (SomeSecond q) version
+  decodeNodeToClient _ _ = decodeShelleyQuery
 
 instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (Query (ShelleyBlock era)) where
   encodeResult _ _ = encodeShelleyResult

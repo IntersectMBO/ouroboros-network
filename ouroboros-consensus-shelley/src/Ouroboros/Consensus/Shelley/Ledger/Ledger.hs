@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -27,8 +28,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTransition(..)
   , LedgerState (..)
   , Ticked(..)
-  , QueryLedger (..)
   , Query (..)
+  , querySupportedVersion
   , NonMyopicMemberRewards (..)
     -- * Ledger config
   , ShelleyLedgerConfig (..)
@@ -84,6 +85,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..), (...:), (..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
@@ -98,9 +100,11 @@ import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
+                     (ShelleyNodeToClientVersion (..))
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
-                     Ticked (TickedPraosLedgerView))
+                     TPraosState (..), Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Shelley.Protocol.Util (isNewEpoch)
 
 {-------------------------------------------------------------------------------
@@ -444,16 +448,15 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 
   -- | Only for debugging purposes, we don't guarantee binary compatibility.
   -- Moreover, it is huge.
-  GetCurrentEpochState
+  DebugEpochState
     :: Query (ShelleyBlock era) (SL.EpochState era)
 
   -- | Wrap the result of the query using CBOR-in-CBOR.
   --
-  -- For example, when a client is running a different version than the
-  -- server and it sends a 'GetCurrentEpochState' query, the client's
-  -- decoder might fail to deserialise the epoch state as it might have
-  -- changed between the two different versions. The client will then
-  -- disconnect.
+  -- For example, when a client is running a different version than the server
+  -- and it sends a 'DebugEpochState' query, the client's decoder might fail to
+  -- deserialise the epoch state as it might have changed between the two
+  -- different versions. The client will then disconnect.
   --
   -- By using CBOR-in-CBOR, the client always successfully decodes the outer
   -- CBOR layer (so no disconnect) and can then manually try to decode the
@@ -469,28 +472,45 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     :: Set (SL.Credential 'SL.Staking era)
     -> Query (ShelleyBlock era) (Delegations era, SL.RewardAccounts era)
 
+  GetGenesisConfig
+    :: Query (ShelleyBlock era) (CompactGenesis era)
+
+  -- | Only for debugging purposes, we don't guarantee binary compatibility.
+  -- Moreover, it is huge.
+  DebugNewEpochState
+    :: Query (ShelleyBlock era) (SL.NewEpochState era)
+
+  -- | Only for debugging purposes, we don't guarantee binary compatibility.
+  DebugChainDepState
+    :: Query (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
+
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
-  answerQuery cfg query st = case query of
-      GetLedgerTip -> shelleyLedgerTipPoint st
-      GetEpochNo -> SL.nesEL $ shelleyLedgerState st
+  answerQuery cfg query ext@(ExtLedgerState ledgerState headerState) = case query of
+      GetLedgerTip -> shelleyLedgerTipPoint ledgerState
+      GetEpochNo -> SL.nesEL $ shelleyLedgerState ledgerState
       GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
-          SL.getNonMyopicMemberRewards globals (shelleyLedgerState st) creds
-      GetCurrentPParams -> getPParams $ shelleyLedgerState st
-      GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyLedgerState st
-      GetStakeDistribution -> SL.poolsByTotalStakeFraction globals (shelleyLedgerState st)
-      GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyLedgerState st) addrs
-      GetUTxO -> SL.getUTxO $ shelleyLedgerState st
-      GetCurrentEpochState -> getCurrentEpochState $ shelleyLedgerState st
+          SL.getNonMyopicMemberRewards globals st creds
+      GetCurrentPParams -> getPParams st
+      GetProposedPParamsUpdates -> getProposedPPUpdates st
+      GetStakeDistribution -> SL.poolsByTotalStakeFraction globals st
+      GetFilteredUTxO addrs -> SL.getFilteredUTxO st addrs
+      GetUTxO -> SL.getUTxO st
+      DebugEpochState -> getEpochState st
       GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
-          answerQuery cfg query' st
+          answerQuery cfg query' ext
       GetFilteredDelegationsAndRewardAccounts creds ->
         getFilteredDelegationsAndRewardAccounts
-          (shelleyLedgerState st)
+          st
           creds
+      GetGenesisConfig -> shelleyLedgerCompactGenesis lcfg
+      DebugNewEpochState -> st
+      DebugChainDepState -> tpraosStateChainDepState (headerStateChainDep headerState)
     where
-      globals = shelleyLedgerGlobals cfg
+      lcfg    = configLedger $ getExtLedgerCfg cfg
+      globals = shelleyLedgerGlobals lcfg
+      st      = shelleyLedgerState ledgerState
 
 instance SameDepIndex (Query (ShelleyBlock era)) where
   sameDepIndex GetLedgerTip GetLedgerTip
@@ -531,9 +551,9 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Just Refl
   sameDepIndex GetUTxO _
     = Nothing
-  sameDepIndex GetCurrentEpochState GetCurrentEpochState
+  sameDepIndex DebugEpochState DebugEpochState
     = Just Refl
-  sameDepIndex GetCurrentEpochState _
+  sameDepIndex DebugEpochState _
     = Nothing
   sameDepIndex (GetCBOR q) (GetCBOR q')
     = apply Refl <$> sameDepIndex q q'
@@ -547,22 +567,59 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Nothing
   sameDepIndex (GetFilteredDelegationsAndRewardAccounts _) _
     = Nothing
+  sameDepIndex GetGenesisConfig GetGenesisConfig
+    = Just Refl
+  sameDepIndex GetGenesisConfig _
+    = Nothing
+  sameDepIndex DebugNewEpochState DebugNewEpochState
+    = Just Refl
+  sameDepIndex DebugNewEpochState _
+    = Nothing
+  sameDepIndex DebugChainDepState DebugChainDepState
+    = Just Refl
+  sameDepIndex DebugChainDepState _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock era) result)
 deriving instance Show (Query (ShelleyBlock era) result)
 
 instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
-  showResult GetLedgerTip                                 = show
-  showResult GetEpochNo                                   = show
-  showResult (GetNonMyopicMemberRewards {})               = show
-  showResult GetCurrentPParams                            = show
-  showResult GetProposedPParamsUpdates                    = show
-  showResult GetStakeDistribution                         = show
-  showResult (GetFilteredUTxO {})                         = show
-  showResult GetUTxO                                      = show
-  showResult GetCurrentEpochState                         = show
-  showResult (GetCBOR {})                                 = show
-  showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
+  showResult = \case
+      GetLedgerTip                               -> show
+      GetEpochNo                                 -> show
+      GetNonMyopicMemberRewards {}               -> show
+      GetCurrentPParams                          -> show
+      GetProposedPParamsUpdates                  -> show
+      GetStakeDistribution                       -> show
+      GetFilteredUTxO {}                         -> show
+      GetUTxO                                    -> show
+      DebugEpochState                            -> show
+      GetCBOR {}                                 -> show
+      GetFilteredDelegationsAndRewardAccounts {} -> show
+      GetGenesisConfig                           -> show
+      DebugNewEpochState                         -> show
+      DebugChainDepState                         -> show
+
+-- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
+querySupportedVersion :: Query (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
+querySupportedVersion = \case
+    GetLedgerTip                               -> (>= v1)
+    GetEpochNo                                 -> (>= v1)
+    GetNonMyopicMemberRewards {}               -> (>= v1)
+    GetCurrentPParams                          -> (>= v1)
+    GetProposedPParamsUpdates                  -> (>= v1)
+    GetStakeDistribution                       -> (>= v1)
+    GetFilteredUTxO {}                         -> (>= v1)
+    GetUTxO                                    -> (>= v1)
+    DebugEpochState                            -> (>= v1)
+    GetCBOR q                                  -> querySupportedVersion q
+    GetFilteredDelegationsAndRewardAccounts {} -> (>= v1)
+    GetGenesisConfig                           -> (>= v2)
+    DebugNewEpochState                         -> (>= v2)
+    DebugChainDepState                         -> (>= v2)
+  where
+    v1 = ShelleyNodeToClientVersion1
+    v2 = ShelleyNodeToClientVersion2
 
 instance ShelleyBasedEra era
       => CommonProtocolParams (ShelleyBlock era) where
@@ -596,9 +653,9 @@ getProposedPPUpdates :: SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
 
--- Get the current EpochState. This is mainly for debugging.
-getCurrentEpochState :: SL.NewEpochState era -> SL.EpochState era
-getCurrentEpochState = SL.nesEs
+-- Get the current 'EpochState.' This is mainly for debugging.
+getEpochState :: SL.NewEpochState era -> SL.EpochState era
+getEpochState = SL.nesEs
 
 getDState :: SL.NewEpochState era -> SL.DState era
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
@@ -735,31 +792,40 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
     GetUTxO ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
-    GetCurrentEpochState ->
+    DebugEpochState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
     GetCBOR query' ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
     GetFilteredDelegationsAndRewardAccounts creds ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
+    GetGenesisConfig ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 11
+    DebugNewEpochState ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 12
+    DebugChainDepState ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 13
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
-  => Decoder s (SomeBlock Query (ShelleyBlock era))
+  => Decoder s (SomeSecond Query (ShelleyBlock era))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
     case (len, tag) of
-      (1, 0)  -> return $ SomeBlock GetLedgerTip
-      (1, 1)  -> return $ SomeBlock GetEpochNo
-      (2, 2)  -> SomeBlock . GetNonMyopicMemberRewards <$> fromCBOR
-      (1, 3)  -> return $ SomeBlock GetCurrentPParams
-      (1, 4)  -> return $ SomeBlock GetProposedPParamsUpdates
-      (1, 5)  -> return $ SomeBlock GetStakeDistribution
-      (2, 6)  -> SomeBlock . GetFilteredUTxO <$> fromCBOR
-      (1, 7)  -> return $ SomeBlock GetUTxO
-      (1, 8)  -> return $ SomeBlock GetCurrentEpochState
-      (2, 9)  -> (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> decodeShelleyQuery
-      (2, 10) -> SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (1, 0)  -> return $ SomeSecond GetLedgerTip
+      (1, 1)  -> return $ SomeSecond GetEpochNo
+      (2, 2)  -> SomeSecond . GetNonMyopicMemberRewards <$> fromCBOR
+      (1, 3)  -> return $ SomeSecond GetCurrentPParams
+      (1, 4)  -> return $ SomeSecond GetProposedPParamsUpdates
+      (1, 5)  -> return $ SomeSecond GetStakeDistribution
+      (2, 6)  -> SomeSecond . GetFilteredUTxO <$> fromCBOR
+      (1, 7)  -> return $ SomeSecond GetUTxO
+      (1, 8)  -> return $ SomeSecond DebugEpochState
+      (2, 9)  -> (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> decodeShelleyQuery
+      (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (1, 11) -> return $ SomeSecond GetGenesisConfig
+      (1, 12) -> return $ SomeSecond DebugNewEpochState
+      (1, 13) -> return $ SomeSecond DebugChainDepState
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -776,9 +842,12 @@ encodeShelleyResult query = case query of
     GetStakeDistribution                       -> toCBOR
     GetFilteredUTxO {}                         -> toCBOR
     GetUTxO                                    -> toCBOR
-    GetCurrentEpochState                       -> toCBOR
+    DebugEpochState                            -> toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
+    GetGenesisConfig                           -> toCBOR
+    DebugNewEpochState                         -> toCBOR
+    DebugChainDepState                         -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -793,6 +862,9 @@ decodeShelleyResult query = case query of
     GetStakeDistribution                       -> fromCBOR
     GetFilteredUTxO {}                         -> fromCBOR
     GetUTxO                                    -> fromCBOR
-    GetCurrentEpochState                       -> fromCBOR
+    DebugEpochState                            -> fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
+    GetGenesisConfig                           -> fromCBOR
+    DebugNewEpochState                         -> fromCBOR
+    DebugChainDepState                         -> fromCBOR

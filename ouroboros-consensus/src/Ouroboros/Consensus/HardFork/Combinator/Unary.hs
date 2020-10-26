@@ -553,9 +553,9 @@ instance Isomorphic WrapLedgerView where
           . Telescope.TZ
           . Current History.initBound
 
-instance Isomorphic (SomeBlock (NestedCtxt f)) where
-  project (SomeBlock ctxt) = SomeBlock $ projNestedCtxt ctxt
-  inject  (SomeBlock ctxt) = SomeBlock $ injNestedCtxt  ctxt
+instance Isomorphic (SomeSecond (NestedCtxt f)) where
+  project (SomeSecond ctxt) = SomeSecond $ projNestedCtxt ctxt
+  inject  (SomeSecond ctxt) = SomeSecond $ injNestedCtxt  ctxt
 
 instance Isomorphic WrapLedgerErr where
   project = WrapLedgerErr . aux . unwrapLedgerErr

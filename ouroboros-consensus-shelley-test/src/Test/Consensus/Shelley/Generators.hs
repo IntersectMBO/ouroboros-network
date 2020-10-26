@@ -66,17 +66,19 @@ instance CanMock era => Arbitrary (SL.ApplyTxError era) where
   arbitrary = SL.ApplyTxError <$> arbitrary
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
-instance CanMock era => Arbitrary (SomeBlock Query (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (SomeSecond Query (ShelleyBlock era)) where
   arbitrary = oneof
-    [ pure $ SomeBlock GetLedgerTip
-    , pure $ SomeBlock GetEpochNo
-    , SomeBlock . GetNonMyopicMemberRewards <$> arbitrary
-    , pure $ SomeBlock GetCurrentPParams
-    , pure $ SomeBlock GetProposedPParamsUpdates
-    , pure $ SomeBlock GetStakeDistribution
-    , pure $ SomeBlock GetCurrentEpochState
-    , (\(SomeBlock q) -> SomeBlock (GetCBOR q)) <$> arbitrary
-    , SomeBlock . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
+    [ pure $ SomeSecond GetLedgerTip
+    , pure $ SomeSecond GetEpochNo
+    , SomeSecond . GetNonMyopicMemberRewards <$> arbitrary
+    , pure $ SomeSecond GetCurrentPParams
+    , pure $ SomeSecond GetProposedPParamsUpdates
+    , pure $ SomeSecond GetStakeDistribution
+    , pure $ SomeSecond DebugEpochState
+    , (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> arbitrary
+    , SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
+    , pure $ SomeSecond GetGenesisConfig
+    , pure $ SomeSecond DebugNewEpochState
     ]
 
 instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
@@ -87,11 +89,13 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
     , SomeResult GetCurrentPParams <$> genPParams (Proxy @era)
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
-    , SomeResult GetCurrentEpochState <$> arbitrary
+    , SomeResult DebugEpochState <$> arbitrary
     , (\(SomeResult q r) ->
         SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
       arbitrary
     , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
+    , SomeResult GetGenesisConfig . compactGenesis <$> arbitrary
+    , SomeResult DebugNewEpochState <$> arbitrary
     ]
 
 instance CanMock era => Arbitrary (NonMyopicMemberRewards era) where
@@ -136,8 +140,8 @@ instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
 instance ShelleyBasedEra era
-      => Arbitrary (SomeBlock (NestedCtxt f) (ShelleyBlock era)) where
-  arbitrary = return (SomeBlock indexIsTrivial)
+      => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock era)) where
+  arbitrary = return (SomeSecond indexIsTrivial)
 
 {-------------------------------------------------------------------------------
   Generators for cardano-ledger-specs
@@ -162,9 +166,18 @@ instance TPraosCrypto c => Arbitrary (SL.ChainDepState c) where
 instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToNodeVersion a) where
   arbitrary = WithVersion <$> arbitrary <*> arbitrary
 
--- | We only have single version, so no special casing required.
---
--- This blanket orphan instance will have to be replaced with more specific
--- ones, once we introduce a different Shelley version.
-instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
+-- | This is @OVERLAPPABLE@ because we have to override the default behaviour
+-- for 'Query's.
+instance {-# OVERLAPPABLE #-} Arbitrary a
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
   arbitrary = WithVersion <$> arbitrary <*> arbitrary
+
+-- | Some 'Query's are only supported by 'ShelleyNodeToClientVersion2', so we
+-- make sure to not generate those queries in combination with
+-- 'ShelleyNodeToClientVersion1'.
+instance CanMock era
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond Query (ShelleyBlock era))) where
+  arbitrary = do
+      query@(SomeSecond q) <- arbitrary
+      version <- arbitrary `suchThat` querySupportedVersion q
+      return $ WithVersion version query

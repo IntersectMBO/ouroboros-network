@@ -117,8 +117,8 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
           . serialisedHeaderToDepPair
         where
           aux :: GenDepPair Serialised (f blk)
-              -> (SomeBlock f blk, Lazy.ByteString)
-          aux (GenDepPair ix (Serialised bytes)) = (SomeBlock ix, bytes)
+              -> (SomeSecond f blk, Lazy.ByteString)
+          aux (GenDepPair ix (Serialised bytes)) = (SomeSecond ix, bytes)
 
       ByronNodeToNodeVersion2 -> encodeDisk ccfg
 
@@ -128,9 +128,9 @@ instance SerialiseNodeToNode ByronBlock (SerialisedHeader ByronBlock) where
           either fail (return . SerialisedHeaderFromDepPair) $
             runExcept $ aux <$> dropV1Envelope bs
         where
-          aux :: (SomeBlock f blk, Lazy.ByteString)
+          aux :: (SomeSecond f blk, Lazy.ByteString)
               -> GenDepPair Serialised (f blk)
-          aux (SomeBlock ix, bytes) = GenDepPair ix (Serialised bytes)
+          aux (SomeSecond ix, bytes) = GenDepPair ix (Serialised bytes)
 
       ByronNodeToNodeVersion2 -> decodeDisk ccfg
 
@@ -173,8 +173,8 @@ instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where
   encodeNodeToClient _ _ = encodeByronApplyTxError
   decodeNodeToClient _ _ = decodeByronApplyTxError
 
-instance SerialiseNodeToClient ByronBlock (SomeBlock Query ByronBlock) where
-  encodeNodeToClient _ _ (SomeBlock q) = encodeByronQuery q
+instance SerialiseNodeToClient ByronBlock (SomeSecond Query ByronBlock) where
+  encodeNodeToClient _ _ (SomeSecond q) = encodeByronQuery q
   decodeNodeToClient _ _               = decodeByronQuery
 
 instance SerialiseResult ByronBlock (Query ByronBlock) where
@@ -191,12 +191,12 @@ instance ReconstructNestedCtxt Header ByronBlock where
       -- The first byte is @encodeListLen 2@, the second (index 1) is 0 for
       -- EBB, 1 for regular block
       case Short.index prefix 1 of
-        0 -> SomeBlock $ NestedCtxt (CtxtByronBoundary size)
-        1 -> SomeBlock $ NestedCtxt (CtxtByronRegular  size)
+        0 -> SomeSecond $ NestedCtxt (CtxtByronBoundary size)
+        1 -> SomeSecond $ NestedCtxt (CtxtByronRegular  size)
         _ -> error $ "invalid ByronBlock with prefix: " <> show prefix
 
 instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
-  encodeDiskDepIx _ccfg (SomeBlock (NestedCtxt ctxt)) = mconcat [
+  encodeDiskDepIx _ccfg (SomeSecond (NestedCtxt ctxt)) = mconcat [
         CBOR.encodeListLen 2
       , case ctxt of
           CtxtByronBoundary size -> mconcat [
@@ -224,8 +224,8 @@ instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
   decodeDiskDepIx _ccfg = do
       enforceSize "decodeDiskDepIx ByronBlock" 2
       CBOR.decodeWord8 >>= \case
-        0 -> SomeBlock . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
-        1 -> SomeBlock . NestedCtxt . CtxtByronRegular  <$> CBOR.decodeWord32
+        0 -> SomeSecond . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
+        1 -> SomeSecond . NestedCtxt . CtxtByronRegular  <$> CBOR.decodeWord32
         t -> cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
 
 instance DecodeDiskDep (NestedCtxt Header) ByronBlock where

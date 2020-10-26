@@ -24,7 +24,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History.Summary (Bound, Summary,
                      initBound, neverForksSummary)
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -115,6 +114,7 @@ singleEraCompatQuery epochSize slotLen f = go
 
     goHardFork :: QueryHardFork '[era] result -> m result
     goHardFork GetInterpreter = return $ Qry.mkInterpreter summary
+    goHardFork GetCurrentEra  = return $ eraIndexZero
 
     summary :: Summary '[era]
     summary = neverForksSummary epochSize slotLen

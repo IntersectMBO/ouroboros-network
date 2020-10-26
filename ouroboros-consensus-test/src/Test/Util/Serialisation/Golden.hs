@@ -48,11 +48,12 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SomeBlock)
+                     HeaderHash, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, Query)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
+import           Ouroboros.Consensus.Ledger.Query (Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -122,7 +123,13 @@ goldenTestCBOR testName example enc goldenFile =
                    . enc
                    $ example
         return $ case (actualRes, decodeAsFlatTerm golden) of
-          (Left e, Right goldenFlatTerm) -> Just $ unlines [
+          (Left e, Right goldenFlatTerm)
+              -- Encoder threw an exception and the golden output was valid
+              -- CBOR. However, sometimes the 'show'n exception is also valid
+              -- CBOR. So if the exception and the golden output match, the test
+              -- passes.
+            | exceptionToByteString e == golden -> Nothing
+            | otherwise -> Just $ unlines [
                 "Exception thrown by encoder doesn't match the golden CBOR output"
               , "Exception:"
               , show e
@@ -204,7 +211,7 @@ data Examples blk = Examples {
     , exampleGenTx            :: Labelled (GenTx blk)
     , exampleGenTxId          :: Labelled (GenTxId blk)
     , exampleApplyTxErr       :: Labelled (ApplyTxErr blk)
-    , exampleQuery            :: Labelled (SomeBlock Query blk)
+    , exampleQuery            :: Labelled (SomeSecond Query blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)

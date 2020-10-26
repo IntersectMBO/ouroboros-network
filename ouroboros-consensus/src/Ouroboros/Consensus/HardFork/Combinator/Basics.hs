@@ -45,14 +45,13 @@ import           NoThunks.Class (NoThunks)
 
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Util.ShowProxy
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -200,7 +199,7 @@ distribLedgerConfig ei cfg =
       (completeLedgerConfig'' ei)
       (getPerEraLedgerConfig $ hardForkLedgerConfigPerEra cfg)
 
-distribTopLevelConfig :: CanHardFork xs
+distribTopLevelConfig :: All SingleEraBlock xs
                       => EpochInfo Identity
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs

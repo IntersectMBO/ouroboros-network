@@ -17,6 +17,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
   , eraIndexFromNS
   , eraIndexZero
   , eraIndexSucc
+  , eraIndexToInt
   ) where
 
 import           Codec.Serialise
@@ -32,6 +33,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
@@ -150,3 +152,6 @@ eraIndexZero = EraIndex (Z (K ()))
 
 eraIndexSucc :: EraIndex xs -> EraIndex (x ': xs)
 eraIndexSucc (EraIndex ix) = EraIndex (S ix)
+
+eraIndexToInt :: EraIndex xs -> Int
+eraIndexToInt = index_NS . getEraIndex

@@ -161,7 +161,7 @@ instance SerialiseNodeToClient DualByronBlock (DualGenTxErr ByronBlock ByronSpec
   encodeNodeToClient _ _ = encodeDualGenTxErr encodeByronApplyTxError
   decodeNodeToClient _ _ = decodeDualGenTxErr decodeByronApplyTxError
 
-instance SerialiseNodeToClient DualByronBlock (SomeBlock Query DualByronBlock) where
+instance SerialiseNodeToClient DualByronBlock (SomeSecond Query DualByronBlock) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = error "DualByron: no query to decode"
 

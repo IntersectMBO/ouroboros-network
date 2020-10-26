@@ -23,7 +23,7 @@ import qualified Cardano.Chain.Byron.API as CC
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -354,13 +354,13 @@ instance SerialiseNodeToClient ByronToCardano CC.ApplyMempoolPayloadErr where
   encodeNodeToClient = encodeNodeToClientB2C (Proxy @WrapApplyTxErr) id
   decodeNodeToClient = decodeNodeToClientB2C (Proxy @WrapApplyTxErr) (\(ApplyTxErrByron err) -> err)
 
-instance SerialiseNodeToClient ByronToCardano (SomeBlock Query ByronToCardano) where
+instance SerialiseNodeToClient ByronToCardano (SomeSecond Query ByronToCardano) where
   encodeNodeToClient = encodeNodeToClientB2C
-                         (Proxy @(SomeBlock Query))
-                         (\(SomeBlock q) -> SomeBlock (unQueryB2C q))
+                         (Proxy @(SomeSecond Query))
+                         (\(SomeSecond q) -> SomeSecond (unQueryB2C q))
   decodeNodeToClient = decodeNodeToClientB2C
-                         (Proxy @(SomeBlock Query))
-                         (\(SomeBlock (QueryIfCurrentByron q)) -> SomeBlock (QueryB2C q))
+                         (Proxy @(SomeSecond Query))
+                         (\(SomeSecond (QueryIfCurrentByron q)) -> SomeSecond (QueryB2C q))
 
 instance SerialiseResult ByronToCardano (Query ByronToCardano) where
   encodeResult (CodecConfigB2C ccfg) () (QueryB2C q) r =
@@ -399,8 +399,8 @@ instance Arbitrary (GenTx ByronToCardano) where
 instance Arbitrary (GenTxId ByronToCardano) where
   arbitrary = GenTxIdB2C <$> arbitrary
 
-instance Arbitrary (SomeBlock Query ByronToCardano) where
-  arbitrary = (\(SomeBlock q) -> SomeBlock (QueryB2C q)) <$> arbitrary
+instance Arbitrary (SomeSecond Query ByronToCardano) where
+  arbitrary = (\(SomeSecond q) -> SomeSecond (QueryB2C q)) <$> arbitrary
 
 instance Arbitrary (SomeResult ByronToCardano) where
   arbitrary = (\(SomeResult q r) -> SomeResult (QueryB2C q) r) <$> arbitrary
@@ -637,15 +637,15 @@ instance SerialiseNodeToClient CardanoToByron CC.ApplyMempoolPayloadErr where
   encodeNodeToClient = encodeNodeToClientC2B (Proxy @WrapApplyTxErr) ApplyTxErrByron
   decodeNodeToClient = decodeNodeToClientC2B (Proxy @WrapApplyTxErr) id
 
-instance SerialiseNodeToClient CardanoToByron (SomeBlock Query CardanoToByron) where
+instance SerialiseNodeToClient CardanoToByron (SomeSecond Query CardanoToByron) where
   encodeNodeToClient =
       encodeNodeToClientC2B
-        (Proxy @(SomeBlock Query))
-        (\(SomeBlock q) -> SomeBlock (QueryIfCurrentByron (unQueryC2B q)))
+        (Proxy @(SomeSecond Query))
+        (\(SomeSecond q) -> SomeSecond (QueryIfCurrentByron (unQueryC2B q)))
   decodeNodeToClient =
       decodeNodeToClientC2B
-        (Proxy @(SomeBlock Query))
-        (\(SomeBlock q) -> SomeBlock (QueryC2B q))
+        (Proxy @(SomeSecond Query))
+        (\(SomeSecond q) -> SomeSecond (QueryC2B q))
 
 instance SerialiseResult CardanoToByron (Query CardanoToByron) where
   encodeResult (CodecConfigC2B ccfg) () (QueryC2B q) (r :: result) =
@@ -682,8 +682,8 @@ instance Arbitrary (GenTx CardanoToByron) where
 instance Arbitrary (GenTxId CardanoToByron) where
   arbitrary = GenTxIdC2B <$> arbitrary
 
-instance Arbitrary (SomeBlock Query CardanoToByron) where
-  arbitrary = (\(SomeBlock q) -> SomeBlock (QueryC2B q)) <$> arbitrary
+instance Arbitrary (SomeSecond Query CardanoToByron) where
+  arbitrary = (\(SomeSecond q) -> SomeSecond (QueryC2B q)) <$> arbitrary
 
 instance Arbitrary (SomeResult CardanoToByron) where
   arbitrary = (\(SomeResult q r) -> SomeResult (QueryC2B q) r) <$> arbitrary

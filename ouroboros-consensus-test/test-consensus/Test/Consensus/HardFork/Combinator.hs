@@ -376,16 +376,22 @@ instance CanHardFork '[BlockA, BlockB] where
   hardForkInjectTxs = InPairs.mk2 injectTx_AtoB
 
 versionN2N :: BlockNodeToNodeVersion TestBlock
-versionN2N = HardForkNodeToNodeEnabled $
-                  EraNodeToNodeEnabled ()
-               :* EraNodeToNodeEnabled ()
-               :* Nil
+versionN2N =
+    HardForkNodeToNodeEnabled
+      maxBound
+      (  EraNodeToNodeEnabled ()
+      :* EraNodeToNodeEnabled ()
+      :* Nil
+      )
 
 versionN2C :: BlockNodeToClientVersion TestBlock
-versionN2C = HardForkNodeToClientEnabled $
-                  EraNodeToClientEnabled ()
-               :* EraNodeToClientEnabled ()
-               :* Nil
+versionN2C =
+    HardForkNodeToClientEnabled
+      maxBound
+      (  EraNodeToClientEnabled ()
+      :* EraNodeToClientEnabled ()
+      :* Nil
+      )
 
 instance SupportedNetworkProtocolVersion TestBlock where
   supportedNodeToNodeVersions   _ = Map.singleton maxBound versionN2N

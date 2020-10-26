@@ -31,6 +31,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
   , isFirstEra
   , notFirstEra
     -- * Versioning
+  , HardForkSpecificNodeToNodeVersion(..)
+  , HardForkSpecificNodeToClientVersion(..)
   , HardForkNodeToNodeVersion(..)
   , HardForkNodeToClientVersion(..)
   , EraNodeToNodeVersion(..)
@@ -85,12 +87,10 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -138,6 +138,21 @@ notFirstEra = hcmap proxySingle aux
   Versioning
 -------------------------------------------------------------------------------}
 
+-- | Versioning of the specific additions made by the HFC to the @NodeToNode@
+-- protocols, e.g., the era tag.
+data HardForkSpecificNodeToNodeVersion =
+    HardForkSpecificNodeToNodeVersion1
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Versioning of the specific additions made by the HFC to the @NodeToClient@
+-- protocols, e.g., the era tag or the hard-fork specific queries.
+data HardForkSpecificNodeToClientVersion =
+    HardForkSpecificNodeToClientVersion1
+
+    -- | Enable the 'GetCurrentEra' query in 'QueryHardFork'.
+  | HardForkSpecificNodeToClientVersion2
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
 data HardForkNodeToNodeVersion xs where
   -- | Disable the HFC
   --
@@ -152,9 +167,11 @@ data HardForkNodeToNodeVersion xs where
   -- Each era can be enabled or disabled individually by passing
   -- 'EraNodeToNodeDisabled' as its configuration, but serialised values will
   -- always include tags inserted by the HFC to distinguish one era from
-  -- another.
+  -- another. We also version the hard-fork specific parts with
+  -- 'HardForkSpecificNodeToNodeVersion'.
   HardForkNodeToNodeEnabled ::
-       NP EraNodeToNodeVersion xs
+       HardForkSpecificNodeToNodeVersion
+    -> NP EraNodeToNodeVersion xs
     -> HardForkNodeToNodeVersion xs
 
 data HardForkNodeToClientVersion xs where
@@ -169,7 +186,8 @@ data HardForkNodeToClientVersion xs where
   --
   -- See 'HardForkNodeToNodeEnabled'
   HardForkNodeToClientEnabled ::
-       NP EraNodeToClientVersion xs
+       HardForkSpecificNodeToClientVersion
+    -> NP EraNodeToClientVersion xs
     -> HardForkNodeToClientVersion xs
 
 data EraNodeToNodeVersion blk =
@@ -297,11 +315,11 @@ class ( CanHardFork xs
        proxy (Header (HardForkBlock xs))
     -> ShortByteString  -- ^ First bytes ('reconstructPrefixLen') of the block
     -> SizeInBytes      -- ^ Block size
-    -> SomeBlock (NestedCtxt Header) (HardForkBlock xs)
+    -> SomeSecond (NestedCtxt Header) (HardForkBlock xs)
   reconstructHfcNestedCtxt _ prefix blockSize =
      case nsFromIndex tag of
        Nothing -> error $ "invalid HardForkBlock with tag: " <> show tag
-       Just ns -> injSomeBlock $ hcmap proxySingle reconstructOne ns
+       Just ns -> injSomeSecond $ hcmap proxySingle reconstructOne ns
     where
       tag :: Word8
       tag = Short.index prefix 1
@@ -310,16 +328,16 @@ class ( CanHardFork xs
       prefixOne = Short.pack . drop 2 . Short.unpack $ prefix
 
       reconstructOne :: forall blk. SingleEraBlock blk
-                     => K () blk -> SomeBlock (NestedCtxt Header) blk
+                     => K () blk -> SomeSecond (NestedCtxt Header) blk
       reconstructOne _ =
           reconstructNestedCtxt (Proxy @(Header blk)) prefixOne blockSize
 
-      injSomeBlock :: NS (SomeBlock (NestedCtxt Header)) xs'
-                   -> SomeBlock (NestedCtxt Header) (HardForkBlock xs')
-      injSomeBlock (Z x) = case x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCZ y))
-      injSomeBlock (S x) = case injSomeBlock x of
-          SomeBlock (NestedCtxt y) -> SomeBlock (NestedCtxt (NCS y))
+      injSomeSecond :: NS (SomeSecond (NestedCtxt Header)) xs'
+                   -> SomeSecond (NestedCtxt Header) (HardForkBlock xs')
+      injSomeSecond (Z x) = case x of
+          SomeSecond (NestedCtxt y) -> SomeSecond (NestedCtxt (NCZ y))
+      injSomeSecond (S x) = case injSomeSecond x of
+          SomeSecond (NestedCtxt y) -> SomeSecond (NestedCtxt (NCS y))
 
   -- | Used as the implementation of 'getBinaryBlockInfo' for
   -- 'HardForkBlock'.
@@ -360,7 +378,11 @@ data HardForkEncoderException where
   HardForkEncoderDisabledEra :: SingleEraInfo blk -> HardForkEncoderException
 
   -- | HFC disabled, but we saw a query that is only supported by the HFC
-  HardForkEncoderUnsupportedQuery :: HardForkEncoderException
+  HardForkEncoderQueryHfcDisabled :: HardForkEncoderException
+
+  -- | HFC enabled, but we saw a HFC query that is not supported by the
+  -- HFC-specific version used
+  HardForkEncoderQueryWrongVersion :: HardForkEncoderException
 
 deriving instance Show HardForkEncoderException
 instance Exception HardForkEncoderException
@@ -500,9 +522,9 @@ decodeNested = \ccfg (NestedCtxt ctxt) ->
 
 encodeNestedCtxt :: All (EncodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
-                 -> SomeBlock (NestedCtxt f) (HardForkBlock xs)
+                 -> SomeSecond (NestedCtxt f) (HardForkBlock xs)
                  -> Encoding
-encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
+encodeNestedCtxt = \ccfg (SomeSecond ctxt) ->
     go (getPerEraCodecConfig (hardForkCodecConfigPerEra ccfg))
        npWithIndices
        (flipNestedCtxt ctxt)
@@ -517,12 +539,12 @@ encodeNestedCtxt = \ccfg (SomeBlock ctxt) ->
     go (c :* _)  (K i :* _)  (NCZ ctxt) = mconcat [
           Enc.encodeListLen 2
         , Serialise.encode i
-        , encodeDiskDepIx c (SomeBlock (NestedCtxt ctxt))
+        , encodeDiskDepIx c (SomeSecond (NestedCtxt ctxt))
         ]
 
 decodeNestedCtxt :: All (DecodeDiskDepIx (NestedCtxt f)) xs
                  => CodecConfig (HardForkBlock xs)
-                 -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs))
+                 -> forall s. Decoder s (SomeSecond (NestedCtxt f) (HardForkBlock xs))
 decodeNestedCtxt = \ccfg -> do
     enforceSize "decodeNestedCtxt" 2
     tag <- Serialise.decode
@@ -534,7 +556,7 @@ decodeNestedCtxt = \ccfg -> do
     go :: All (DecodeDiskDepIx (NestedCtxt f)) xs'
        => NP CodecConfig xs'
        -> NS (K ()) xs'
-       -> forall s. Decoder s (SomeBlock (NestedCtxt f) (HardForkBlock xs'))
+       -> forall s. Decoder s (SomeSecond (NestedCtxt f) (HardForkBlock xs'))
     go Nil       i     = case i of {}
     go (c :* _)  (Z _) = mapSomeNestedCtxt NCZ <$> decodeDiskDepIx c
     go (_ :* cs) (S i) = mapSomeNestedCtxt NCS <$> go cs i
@@ -552,15 +574,15 @@ encodeEitherMismatch :: forall xs a. SListI xs
                      -> (Either (MismatchEraInfo xs) a -> Encoding)
 encodeEitherMismatch version enc ma =
     case (version, ma) of
-      (HardForkNodeToClientDisabled _, Right a) ->
+      (HardForkNodeToClientDisabled {}, Right a) ->
           enc a
-      (HardForkNodeToClientDisabled _, Left err) ->
+      (HardForkNodeToClientDisabled {}, Left err) ->
           throw $ futureEraException (mismatchFutureEra err)
-      (HardForkNodeToClientEnabled _, Right a) -> mconcat [
+      (HardForkNodeToClientEnabled {}, Right a) -> mconcat [
             Enc.encodeListLen 1
           , enc a
           ]
-      (HardForkNodeToClientEnabled _, Left (MismatchEraInfo err)) -> mconcat [
+      (HardForkNodeToClientEnabled {}, Left (MismatchEraInfo err)) -> mconcat [
             Enc.encodeListLen 2
           , encodeNS (hpure (fn encodeName)) era1
           , encodeNS (hpure (fn (encodeName . getLedgerEraInfo))) era2
@@ -579,9 +601,9 @@ decodeEitherMismatch :: SListI xs
                      -> Decoder s (Either (MismatchEraInfo xs) a)
 decodeEitherMismatch version dec =
     case version of
-      HardForkNodeToClientDisabled _ ->
+      HardForkNodeToClientDisabled {} ->
         Right <$> dec
-      HardForkNodeToClientEnabled _ -> do
+      HardForkNodeToClientEnabled {} -> do
         tag <- Dec.decodeListLen
         case tag of
           1 -> Right <$> dec
@@ -598,25 +620,6 @@ decodeEitherMismatch version dec =
 {-------------------------------------------------------------------------------
   Distributive properties
 -------------------------------------------------------------------------------}
-
-distribAnnTip :: SListI xs => AnnTip (HardForkBlock xs) -> NS AnnTip xs
-distribAnnTip AnnTip{..} =
-    hmap distrib (getOneEraTipInfo annTipInfo)
-  where
-    distrib :: WrapTipInfo blk -> AnnTip blk
-    distrib (WrapTipInfo info) =
-        AnnTip annTipSlotNo annTipBlockNo info
-
-undistribAnnTip :: SListI xs => NS AnnTip xs -> AnnTip (HardForkBlock xs)
-undistribAnnTip = hcollapse . hzipWith undistrib injections
-  where
-    undistrib :: (WrapTipInfo -.-> K (NS WrapTipInfo xs)) blk
-              -> AnnTip blk
-              -> K (AnnTip (HardForkBlock xs)) blk
-    undistrib inj AnnTip{..} = K $
-        AnnTip annTipSlotNo
-               annTipBlockNo
-               (OneEraTipInfo $ unK . apFn inj . WrapTipInfo $ annTipInfo)
 
 distribSerialisedHeader :: SerialisedHeader (HardForkBlock xs)
                         -> NS SerialisedHeader xs
@@ -645,21 +648,21 @@ undistribSerialisedHeader =
 
 distribQueryIfCurrent ::
      Some (QueryIfCurrent xs)
-  -> NS (SomeBlock Query) xs
+  -> NS (SomeSecond Query) xs
 distribQueryIfCurrent = \(Some qry) -> go qry
   where
-    go :: QueryIfCurrent xs result -> NS (SomeBlock Query) xs
-    go (QZ qry) = Z (SomeBlock qry)
+    go :: QueryIfCurrent xs result -> NS (SomeSecond Query) xs
+    go (QZ qry) = Z (SomeSecond qry)
     go (QS qry) = S (go qry)
 
 undistribQueryIfCurrent ::
-     NS (SomeBlock Query) xs
+     NS (SomeSecond Query) xs
   -> Some (QueryIfCurrent xs)
 undistribQueryIfCurrent = go
   where
-    go :: NS (SomeBlock Query) xs -> Some (QueryIfCurrent xs)
+    go :: NS (SomeSecond Query) xs -> Some (QueryIfCurrent xs)
     go (Z qry) = case qry of
-                   SomeBlock qry' ->
+                   SomeSecond qry' ->
                      Some (QZ qry')
     go (S qry) = case go qry of
                    Some qry' ->
@@ -677,7 +680,7 @@ undistribQueryIfCurrent = go
 -- Example
 --
 -- > deriving via SerialiseNS Header SomeEras
--- >          instance Serialise (Header SomeBlock)
+-- >          instance Serialise (Header SomeSecond)
 newtype SerialiseNS f xs = SerialiseNS {
       getSerialiseNS :: NS f xs
     }

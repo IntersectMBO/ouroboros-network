@@ -126,6 +126,6 @@ data InternalBlockInfo blk = InternalBlockInfo {
     , ibiBlockOffset :: !BlockOffset
     , ibiBlockSize   :: !BlockSize
     , ibiBlockInfo   :: !(BlockInfo blk)
-    , ibiNestedCtxt  :: !(SomeBlock (NestedCtxt Header) blk)
+    , ibiNestedCtxt  :: !(SomeSecond (NestedCtxt Header) blk)
     }
   deriving (Generic, NoThunks)

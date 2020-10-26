@@ -202,25 +202,25 @@ examples = Golden.Examples {
     }
   where
     queries = labelled [
-          ("GetLedgerTip",              SomeBlock GetLedgerTip)
-        , ("GetEpochNo",                SomeBlock GetEpochNo)
-        , ("GetCurrentPParams",         SomeBlock GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeBlock GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeBlock GetStakeDistribution)
+          ("GetLedgerTip",              SomeSecond GetLedgerTip)
+        , ("GetEpochNo",                SomeSecond GetEpochNo)
+        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
         , ("GetNonMyopicMemberRewards",
-            SomeBlock $ GetNonMyopicMemberRewards $ Set.fromList [
+            SomeSecond $ GetNonMyopicMemberRewards $ Set.fromList [
                 Left  (SL.Coin 100)
               , Right (SL.ScriptHashObj (mkScriptHash 1))
               , Right (SL.KeyHashObj (mkKeyHash 2))
               ])
-
+        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
       ]
 
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint exampleBlock))
         , ("EpochNo",                SomeResult GetEpochNo 10)
         , ("EmptyPParams",           SomeResult GetCurrentPParams SL.emptyPParams)
-        , ("ProposedPParamsUpdatse", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
+        , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
         , ("StakeDistribution",      SomeResult GetStakeDistribution examplePoolDistr)
         , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
             (NonMyopicMemberRewards $ Map.fromList [
@@ -228,6 +228,7 @@ examples = Golden.Examples {
               , (Right (SL.ScriptHashObj (mkScriptHash 1)), Map.empty)
               , (Right (SL.KeyHashObj (mkKeyHash 2)), Map.singleton (mkKeyHash 3) (SL.Coin 9))
               ]))
+        , ("GenesisConfig",          SomeResult GetGenesisConfig (compactGenesis testShelleyGenesis))
         ]
 
     proposedPParamsUpdates :: SL.ProposedPPUpdates StandardShelley

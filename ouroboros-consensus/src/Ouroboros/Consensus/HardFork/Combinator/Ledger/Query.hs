@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -37,6 +38,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.Bifunctor
+import           Data.Functor.Product
 import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict
@@ -44,20 +46,26 @@ import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (enforceSize)
-import           Ouroboros.Network.Util.ShowProxy
 
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
                      Shape (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
+import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
-import           Ouroboros.Consensus.Util.DepPair
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -65,7 +73,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..), Situated (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
-                     (Mismatch (..))
+                     (Mismatch (..), mustMatchNS)
 
 instance Typeable xs => ShowProxy (Query (HardForkBlock xs)) where
 
@@ -105,30 +113,58 @@ data instance Query (HardForkBlock xs) :: Type -> Type where
     -> Query (HardForkBlock (x ': xs)) result
 
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
-  answerQuery hardForkConfig@HardForkLedgerConfig{..}
+  answerQuery (ExtLedgerCfg cfg)
               query
-              st@(HardForkLedgerState hardForkState) =
+              ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
       case query of
         QueryIfCurrent queryIfCurrent ->
           interpretQueryIfCurrent
-            ei
             cfgs
             queryIfCurrent
-            (State.tip hardForkState)
+            (distribExtLedgerState ext)
         QueryAnytime queryAnytime (EraIndex era) ->
           interpretQueryAnytime
-            hardForkConfig
+            lcfg
             queryAnytime
             (EraIndex era)
             hardForkState
         QueryHardFork queryHardFork ->
           interpretQueryHardFork
-            hardForkConfig
+            lcfg
             queryHardFork
             st
     where
-      cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
-      ei   = State.epochInfoLedger hardForkConfig hardForkState
+      cfgs = hmap ExtLedgerCfg $ distribTopLevelConfig ei cfg
+      lcfg = configLedger cfg
+      ei   = State.epochInfoLedger lcfg hardForkState
+
+-- | Precondition: the 'ledgerState' and 'headerState' should be from the same
+-- era. In practice, this is _always_ the case, unless the 'ExtLedgerState' was
+-- manually crafted.
+distribExtLedgerState ::
+     All SingleEraBlock xs
+  => ExtLedgerState (HardForkBlock xs) -> NS ExtLedgerState xs
+distribExtLedgerState (ExtLedgerState ledgerState headerState) =
+    hmap (\(Pair hst lst) -> ExtLedgerState lst hst) $
+      mustMatchNS
+        "HeaderState"
+        (distribHeaderState headerState)
+        (State.tip (hardForkLedgerStatePerEra ledgerState))
+
+-- | Precondition: the 'headerStateTip' and 'headerStateChainDep' should be from
+-- the same era. In practice, this is _always_ the case, unless the
+-- 'HeaderState' was manually crafted.
+distribHeaderState ::
+     All SingleEraBlock xs
+  => HeaderState (HardForkBlock xs) -> NS HeaderState xs
+distribHeaderState (HeaderState tip chainDepState) =
+    case tip of
+      Origin ->
+        hmap (HeaderState Origin . unwrapChainDepState) (State.tip chainDepState)
+      NotOrigin annTip ->
+        hmap
+          (\(Pair t cds) -> HeaderState (NotOrigin t) (unwrapChainDepState cds))
+          (mustMatchNS "AnnTip" (distribAnnTip annTip) (State.tip chainDepState))
 
 instance All SingleEraBlock xs => SameDepIndex (Query (HardForkBlock xs)) where
   sameDepIndex (QueryIfCurrent qry) (QueryIfCurrent qry') =
@@ -192,20 +228,19 @@ instance All SingleEraBlock xs => SameDepIndex (QueryIfCurrent xs) where
 
 interpretQueryIfCurrent ::
      forall result xs. All SingleEraBlock xs
-  => EpochInfo Identity
-  -> NP WrapPartialLedgerConfig xs
+  => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs result
-  -> NS LedgerState xs
+  -> NS ExtLedgerState xs
   -> HardForkQueryResult xs result
-interpretQueryIfCurrent ei = go
+interpretQueryIfCurrent = go
   where
     go :: All SingleEraBlock xs'
-       => NP WrapPartialLedgerConfig xs'
+       => NP ExtLedgerCfg xs'
        -> QueryIfCurrent xs' result
-       -> NS LedgerState xs'
+       -> NS ExtLedgerState xs'
        -> HardForkQueryResult xs' result
     go (c :* _)  (QZ qry) (Z st) =
-        Right $ answerQuery (completeLedgerConfig' ei c) qry st
+        Right $ answerQuery c qry st
     go (_ :* cs) (QS qry) (S st) =
         first shiftMismatch $ go cs qry st
     go _         (QZ qry) (S st) =
@@ -275,14 +310,23 @@ answerQueryAnytime HardForkLedgerConfig{..} =
 
 data QueryHardFork xs result where
   GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
+  GetCurrentEra  :: QueryHardFork xs (EraIndex xs)
 
 deriving instance Show (QueryHardFork xs result)
 
-instance ShowQuery (QueryHardFork xs) where
+instance All SingleEraBlock xs => ShowQuery (QueryHardFork xs) where
   showResult GetInterpreter = show
+  showResult GetCurrentEra  = show
 
 instance SameDepIndex (QueryHardFork xs) where
-  sameDepIndex GetInterpreter GetInterpreter = Just Refl
+  sameDepIndex GetInterpreter GetInterpreter =
+      Just Refl
+  sameDepIndex GetInterpreter _ =
+      Nothing
+  sameDepIndex GetCurrentEra GetCurrentEra =
+      Just Refl
+  sameDepIndex GetCurrentEra _ =
+      Nothing
 
 interpretQueryHardFork ::
      All SingleEraBlock xs
@@ -292,7 +336,10 @@ interpretQueryHardFork ::
   -> result
 interpretQueryHardFork cfg query st =
     case query of
-      GetInterpreter -> History.mkInterpreter $ hardForkSummary cfg st
+      GetInterpreter ->
+        History.mkInterpreter $ hardForkSummary cfg st
+      GetCurrentEra  ->
+        eraIndexFromNS $ State.tip $ hardForkLedgerStatePerEra st
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -320,32 +367,23 @@ decodeQueryAnytimeResult GetEraStart = decode
 encodeQueryHardForkResult ::
      SListI xs
   => QueryHardFork xs result -> result -> Encoding
-encodeQueryHardForkResult GetInterpreter = encode
+encodeQueryHardForkResult = \case
+    GetInterpreter -> encode
+    GetCurrentEra  -> encode
 
 decodeQueryHardForkResult ::
      SListI xs
   => QueryHardFork xs result -> forall s. Decoder s result
-decodeQueryHardForkResult GetInterpreter = decode
-
-instance Serialise (Some (QueryHardFork xs)) where
-  encode (Some GetInterpreter) = mconcat [
-        Enc.encodeListLen 1
-      , Enc.encodeWord8 0
-      ]
-
-  decode = do
-    enforceSize "QueryHardFork" 1
-    tag <- Dec.decodeWord8
-    case tag of
-      0 -> return $ Some GetInterpreter
-      _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
+decodeQueryHardForkResult = \case
+    GetInterpreter -> decode
+    GetCurrentEra  -> decode
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall blk. SingleEraBlock blk
-           => LedgerState blk
+           => ExtLedgerState blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 

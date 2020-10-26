@@ -650,7 +650,7 @@ extractBlockComponent hasFS chunkInfo chunk ccfg checkIntegrity eHnd
           (Secondary.unBlockOffset blockOffset) +
           fromIntegral (Secondary.unHeaderOffset headerOffset)
 
-    readNestedCtxt :: m (SomeBlock (NestedCtxt Header) blk)
+    readNestedCtxt :: m (SomeSecond (NestedCtxt Header) blk)
     readNestedCtxt = do
         bytes <- Short.toShort . Lazy.toStrict <$>
                    hGetExactlyAt hasFS eHnd size offset
@@ -667,10 +667,10 @@ extractBlockComponent hasFS chunkInfo chunk ccfg checkIntegrity eHnd
         CBOR.deserialiseFromBytes (decodeDisk ccfg) bytes
 
     parseHeader ::
-         SomeBlock (NestedCtxt Header) blk
+         SomeSecond (NestedCtxt Header) blk
       -> Lazy.ByteString
       -> m (Header blk)
-    parseHeader (SomeBlock ctxt) bytes = throwParseErrors bytes $
+    parseHeader (SomeSecond ctxt) bytes = throwParseErrors bytes $
         CBOR.deserialiseFromBytes
           ((\f -> nest . DepPair ctxt . f) <$> decodeDiskDep ccfg ctxt)
           bytes

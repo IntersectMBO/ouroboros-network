@@ -59,11 +59,10 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
@@ -73,6 +72,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -114,7 +114,7 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
             getMempool
       , hStateQueryServer =
           localStateQueryServer
-            (configLedger cfg)
+            (ExtLedgerCfg cfg)
             (ChainDB.getPastLedger getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
       }
@@ -182,8 +182,8 @@ defaultCodecs ccfg version = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeBlock)
-          ((\(SomeBlock qry) -> Some qry) <$> dec)
+          (enc . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> dec)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
@@ -229,8 +229,8 @@ clientCodecs ccfg version = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeBlock)
-          ((\(SomeBlock qry) -> Some qry) <$> dec)
+          (enc . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> dec)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }

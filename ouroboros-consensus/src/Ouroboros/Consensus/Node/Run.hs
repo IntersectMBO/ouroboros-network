@@ -18,19 +18,19 @@ module Ouroboros.Consensus.Node.Run (
   ) where
 
 import           Ouroboros.Network.Block (Serialised)
-import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Util (ShowProxy)
 
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
@@ -68,7 +68,7 @@ class ( ConvertRawHash blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
       , SerialiseNodeToClient blk (ApplyTxErr blk)
-      , SerialiseNodeToClient blk (SomeBlock Query blk)
+      , SerialiseNodeToClient blk (SomeSecond Query blk)
       , SerialiseResult       blk (Query blk)
       ) => SerialiseNodeToClientConstraints blk
 

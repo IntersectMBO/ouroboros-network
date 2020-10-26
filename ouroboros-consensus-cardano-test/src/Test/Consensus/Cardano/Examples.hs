@@ -35,8 +35,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-                     (undistribAnnTip)
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -238,14 +236,14 @@ headerHashShelley :: HeaderHash (ShelleyBlock StandardShelley) -> HeaderHash (Ca
 headerHashShelley = OneEraHash . toShortRawHash (Proxy @(ShelleyBlock StandardShelley))
 
 someQueryByron ::
-     SomeBlock Query ByronBlock
-  -> SomeBlock Query (CardanoBlock Crypto)
-someQueryByron (SomeBlock q) = SomeBlock (QueryIfCurrentByron q)
+     SomeSecond Query ByronBlock
+  -> SomeSecond Query (CardanoBlock Crypto)
+someQueryByron (SomeSecond q) = SomeSecond (QueryIfCurrentByron q)
 
 someQueryShelley ::
-     SomeBlock Query (ShelleyBlock StandardShelley)
-  -> SomeBlock Query (CardanoBlock Crypto)
-someQueryShelley (SomeBlock q) = SomeBlock (QueryIfCurrentShelley q)
+     SomeSecond Query (ShelleyBlock StandardShelley)
+  -> SomeSecond Query (CardanoBlock Crypto)
+someQueryShelley (SomeSecond q) = SomeSecond (QueryIfCurrentShelley q)
 
 someResultByron :: SomeResult ByronBlock -> SomeResult (CardanoBlock Crypto)
 someResultByron (SomeResult q r) =
@@ -393,25 +391,25 @@ exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto)
 exampleApplyTxErrWrongEraShelley =
       HardForkApplyTxErrWrongEra exampleEraMismatchShelley
 
-exampleQueryEraMismatchByron :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryEraMismatchByron :: SomeSecond Query (CardanoBlock Crypto)
 exampleQueryEraMismatchByron =
-    SomeBlock (QueryIfCurrentShelley Shelley.GetLedgerTip)
+    SomeSecond (QueryIfCurrentShelley Shelley.GetLedgerTip)
 
-exampleQueryEraMismatchShelley :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryEraMismatchShelley :: SomeSecond Query (CardanoBlock Crypto)
 exampleQueryEraMismatchShelley =
-    SomeBlock (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
+    SomeSecond (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
-exampleQueryAnytimeByron :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryAnytimeByron :: SomeSecond Query (CardanoBlock Crypto)
 exampleQueryAnytimeByron =
-    SomeBlock (QueryAnytimeByron GetEraStart)
+    SomeSecond (QueryAnytimeByron GetEraStart)
 
-exampleQueryAnytimeShelley :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryAnytimeShelley :: SomeSecond Query (CardanoBlock Crypto)
 exampleQueryAnytimeShelley =
-    SomeBlock (QueryAnytimeShelley GetEraStart)
+    SomeSecond (QueryAnytimeShelley GetEraStart)
 
-exampleQueryHardFork :: SomeBlock Query (CardanoBlock Crypto)
+exampleQueryHardFork :: SomeSecond Query (CardanoBlock Crypto)
 exampleQueryHardFork =
-    SomeBlock (QueryHardFork GetInterpreter)
+    SomeSecond (QueryHardFork GetInterpreter)
 
 exampleResultEraMismatchByron :: SomeResult (CardanoBlock Crypto)
 exampleResultEraMismatchByron =

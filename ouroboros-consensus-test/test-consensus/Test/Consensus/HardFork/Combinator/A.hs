@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
@@ -555,7 +556,7 @@ instance SerialiseNodeToClient BlockA Void where
   encodeNodeToClient _ _ = absurd
   decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
 
-instance SerialiseNodeToClient BlockA (SomeBlock Query BlockA) where
+instance SerialiseNodeToClient BlockA (SomeSecond Query BlockA) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 
