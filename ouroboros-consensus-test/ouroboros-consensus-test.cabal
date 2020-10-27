@@ -97,6 +97,7 @@ library
                      , quiet             >=0.2   && <0.3
                      , random
                      , serialise         >=0.2   && <0.3
+                     , sop-core
                      , tasty
                      , tasty-golden
                      , tasty-hunit

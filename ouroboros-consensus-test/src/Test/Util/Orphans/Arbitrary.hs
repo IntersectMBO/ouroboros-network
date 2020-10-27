@@ -1,6 +1,13 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE NumericUnderscores   #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -12,6 +19,9 @@ module Test.Util.Orphans.Arbitrary
     , SmallDiffTime (..)
     ) where
 
+import           Data.Coerce (coerce)
+import           Data.SOP.Dict (Dict (..), all_NP, mapAll)
+import           Data.SOP.Strict
 import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
@@ -20,7 +30,22 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.HardFork.History (Bound (..))
+import           Ouroboros.Consensus.HeaderValidation (TipInfo)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP (IsNonEmpty, ProofNonEmpty (..),
+                     checkIsNonEmpty, isNonEmpty)
+
+import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
+                     HardForkChainDepState, HardForkState (..),
+                     LedgerEraInfo (..), LedgerState (..), Mismatch (..),
+                     MismatchEraInfo (..), SingleEraBlock (..), SingleEraInfo,
+                     Telescope (..), proxySingle)
+import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
+                     Past (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
@@ -182,3 +207,163 @@ daysPerYear = 365.2425
 -- | Seconds per day
 secondsPerDay :: Double
 secondsPerDay = 24 * 60 * 60
+
+{-------------------------------------------------------------------------------
+  Forwarding instances
+-------------------------------------------------------------------------------}
+
+-- | Forwarding
+instance Arbitrary (ChainDepState (BlockProtocol blk))
+      => Arbitrary (WrapChainDepState blk) where
+  arbitrary = WrapChainDepState <$> arbitrary
+  shrink x  = WrapChainDepState <$> shrink (unwrapChainDepState x)
+
+-- | Forwarding
+instance Arbitrary (HeaderHash blk)
+      => Arbitrary (WrapHeaderHash blk) where
+  arbitrary = WrapHeaderHash <$> arbitrary
+  shrink x  = WrapHeaderHash <$> shrink (unwrapHeaderHash x)
+
+-- | Forwarding
+instance Arbitrary (TipInfo blk)
+      => Arbitrary (WrapTipInfo blk) where
+  arbitrary = WrapTipInfo <$> arbitrary
+  shrink x  = WrapTipInfo <$> shrink (unwrapTipInfo x)
+
+-- | Forwarding
+instance Arbitrary a => Arbitrary (I a) where
+  arbitrary = I <$> arbitrary
+  shrink  x = I <$> shrink (unI x)
+
+{-------------------------------------------------------------------------------
+  NS
+-------------------------------------------------------------------------------}
+
+instance (All (Arbitrary `Compose` f) xs, IsNonEmpty xs)
+      => Arbitrary (NS f xs) where
+  arbitrary = case isNonEmpty (Proxy @xs) of
+      ProofNonEmpty _ pf -> case checkIsNonEmpty pf of
+        Nothing                    -> Z <$> arbitrary
+        Just (ProofNonEmpty _ pf') -> frequency
+          [ (1, Z <$> arbitrary)
+            -- Use the number of remaining cases (one less than @xs@) as the
+            -- weight so that the distribution is uniform
+          , (lengthSList pf', S <$> arbitrary)
+          ]
+
+{-------------------------------------------------------------------------------
+  Telescope & HardForkState
+-------------------------------------------------------------------------------}
+
+instance Arbitrary Bound where
+  arbitrary =
+      Bound
+        <$> (RelativeTime <$> arbitrary)
+        <*> (SlotNo       <$> arbitrary)
+        <*> (EpochNo      <$> arbitrary)
+
+instance Arbitrary (K Past blk) where
+  arbitrary = K <$> (Past <$> arbitrary <*> arbitrary)
+
+instance Arbitrary (f blk) => Arbitrary (Current f blk) where
+  arbitrary = Current <$> arbitrary <*> arbitrary
+
+instance ( IsNonEmpty xs
+         , All (Arbitrary `Compose` f) xs
+         , All (Arbitrary `Compose` g) xs
+         ) => Arbitrary (Telescope g f xs) where
+  arbitrary = case isNonEmpty (Proxy @xs) of
+      ProofNonEmpty _ pf -> case checkIsNonEmpty pf of
+        Nothing                    -> TZ <$> arbitrary
+        Just (ProofNonEmpty _ pf') -> frequency
+          [ (1, TZ <$> arbitrary)
+          , (lengthSList pf', TS <$> arbitrary <*> arbitrary)
+          ]
+
+instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` LedgerState) xs)
+      => Arbitrary (LedgerState (HardForkBlock xs)) where
+  arbitrary = case (dictKPast, dictCurrentLedgerState) of
+      (Dict, Dict) -> inj <$> arbitrary
+    where
+      inj ::
+           Telescope (K Past) (Current LedgerState) xs
+        -> LedgerState (HardForkBlock xs)
+      inj = coerce
+
+      dictKPast :: Dict (All (Arbitrary `Compose` (K Past))) xs
+      dictKPast = all_NP $ hpure Dict
+
+      dictCurrentLedgerState ::
+           Dict (All (Arbitrary `Compose` (Current LedgerState))) xs
+      dictCurrentLedgerState =
+          mapAll
+            @(Arbitrary `Compose` LedgerState)
+            @(Arbitrary `Compose` Current LedgerState)
+            (\Dict -> Dict)
+            Dict
+
+instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` WrapChainDepState) xs)
+      => Arbitrary (HardForkChainDepState xs) where
+  arbitrary = case (dictKPast, dictCurrentWrapChainDepState) of
+      (Dict, Dict) -> inj <$> arbitrary
+    where
+      inj ::
+           Telescope (K Past) (Current WrapChainDepState) xs
+        -> HardForkChainDepState xs
+      inj = coerce
+
+      dictKPast :: Dict (All (Arbitrary `Compose` (K Past))) xs
+      dictKPast = all_NP $ hpure Dict
+
+      dictCurrentWrapChainDepState ::
+           Dict (All (Arbitrary `Compose` (Current WrapChainDepState))) xs
+      dictCurrentWrapChainDepState =
+          mapAll
+            @(Arbitrary `Compose` WrapChainDepState)
+            @(Arbitrary `Compose` Current WrapChainDepState)
+            (\Dict -> Dict)
+            Dict
+
+{-------------------------------------------------------------------------------
+  Mismatch & MismatchEraInfo
+-------------------------------------------------------------------------------}
+
+instance ( IsNonEmpty xs
+         , All (Arbitrary `Compose` f) (x ': xs)
+         , All (Arbitrary `Compose` g) (x ': xs)
+         ) => Arbitrary (Mismatch f g (x ': xs)) where
+ arbitrary = case isNonEmpty (Proxy @xs) of
+    ProofNonEmpty _ pf -> frequency $ mconcat [
+        -- length (x ': xs) = n + 1
+        -- This line: n cases, the line below: also n cases.
+        [ (1, ML <$> arbitrary <*> arbitrary)
+        , (1, MR <$> arbitrary <*> arbitrary)
+        ]
+      , case checkIsNonEmpty pf of
+          Nothing                     -> []
+          -- The line below: n * (n - 1) cases. We want the weights to be
+          -- proportional so that the distribution is uniform. We divide each
+          -- weight by n to get 1 and 1 for the ML and MR cases above and n - 1 (=
+          -- lengthSList pxs') for the MS case below.
+          Just (ProofNonEmpty _ pxs') -> [(lengthSList pxs', MS <$> arbitrary)]
+      ]
+
+instance SingleEraBlock blk => Arbitrary (SingleEraInfo blk) where
+  arbitrary = return $ singleEraInfo (Proxy @blk)
+
+instance SingleEraBlock blk => Arbitrary (LedgerEraInfo blk) where
+  arbitrary = return $ LedgerEraInfo $ singleEraInfo (Proxy @blk)
+
+instance (All SingleEraBlock (x ': xs), IsNonEmpty xs)
+      => Arbitrary (MismatchEraInfo (x ': xs)) where
+  arbitrary =
+      case (dictSingleEraInfo, dictLedgerEraInfo) of
+        (Dict, Dict) -> MismatchEraInfo <$> arbitrary
+    where
+      dictSingleEraInfo ::
+           Dict (All (Arbitrary `Compose` SingleEraInfo)) (x ': xs)
+      dictSingleEraInfo = all_NP $ hcpure proxySingle Dict
+
+      dictLedgerEraInfo ::
+           Dict (All (Arbitrary `Compose` LedgerEraInfo)) (x ': xs)
+      dictLedgerEraInfo = all_NP $ hcpure proxySingle Dict
