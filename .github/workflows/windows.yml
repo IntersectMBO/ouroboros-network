@@ -25,9 +25,6 @@ jobs:
       - name: Install GHC
         run: |
           choco install -y ghc --version 8.10.2 --allow-downgrade
-      - name: Fix GHC-8.10.2 installation
-        run: |
-          (Get-Content "C:\ProgramData\chocolatey\lib\ghc.8.10.2\tools\ghc-8.10.2\lib\settings") -replace('\("Merge objects command", .*\)', '("Merge objects command", "C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/mingw/bin/ld.exe")') | Out-File -FilePath "C:\ProgramData\chocolatey\lib\ghc.8.10.2\tools\ghc-8.10.2\lib\settings"
       - name: Print version
         run: |
           cabal --version
