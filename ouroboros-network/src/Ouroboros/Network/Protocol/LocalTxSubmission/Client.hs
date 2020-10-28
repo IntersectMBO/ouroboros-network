@@ -27,8 +27,11 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
     -- * Execution as a typed protocol
   , localTxSubmissionClientPeer
 
-      -- * Null local tx submission client
+    -- * Null local tx submission client
   , localTxSubmissionClientNull
+
+    -- * Utilities
+  , mapLocalTxSubmissionClient
   ) where
 
 import           Control.Monad (forever)
@@ -73,6 +76,30 @@ data LocalTxClientStIdle tx reject m a where
      --
      SendMsgDone
        :: a -> LocalTxClientStIdle tx reject m a
+
+
+-- | Transform a 'LocalTxSubmissionClient' by mapping over the tx and the
+-- rejection errors.
+--
+-- Note the mapping of the errors is contravariant since errors are an output
+-- of the protocol, not an input.
+--
+mapLocalTxSubmissionClient :: forall tx tx' reject reject' m a.
+                              Functor m
+                           => (tx -> tx')
+                           -> (reject' -> reject)
+                           -> LocalTxSubmissionClient tx  reject  m a
+                           -> LocalTxSubmissionClient tx' reject' m a
+mapLocalTxSubmissionClient ftx frej =
+    \(LocalTxSubmissionClient c) -> LocalTxSubmissionClient (fmap go c)
+  where
+    go :: LocalTxClientStIdle tx  reject  m a
+       -> LocalTxClientStIdle tx' reject' m a
+    go (SendMsgSubmitTx tx k) =
+      SendMsgSubmitTx (ftx tx) (\res -> fmap go (k (fmap frej res)))
+
+    go (SendMsgDone a) = SendMsgDone a
+
 
 -- | A non-pipelined 'Peer' representing the 'LocalTxSubmissionClient'.
 --

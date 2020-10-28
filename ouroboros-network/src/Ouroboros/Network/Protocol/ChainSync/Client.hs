@@ -25,6 +25,9 @@ module Ouroboros.Network.Protocol.ChainSync.Client (
 
       -- * Null chain sync client
     , chainSyncClientNull
+
+      -- * Utilities
+    , mapChainSyncClient
     ) where
 
 import Control.Monad (forever)
@@ -118,6 +121,61 @@ data ClientStIntersect header tip m a =
        recvMsgIntersectNotFound :: tip          -- information about tip of the chain
                                 -> ChainSyncClient header tip m a
      }
+
+
+-- | Transform a 'ChainSyncClient' by mapping over the tx header and the
+-- chain tip values.
+--
+-- Note the mapping is contravariant in both types since they are outputs of
+-- the protocol, not inputs.
+--
+mapChainSyncClient :: forall header header' tip tip' m a.
+                      Functor m
+                   => (Point header  -> Point header')
+                   -> (Point header' -> Point header)
+                   -> (header' -> header)
+                   -> (tip' -> tip)
+                   -> ChainSyncClient header  tip  m a
+                   -> ChainSyncClient header' tip' m a
+mapChainSyncClient fpoint fpoint' fheader ftip =
+    goClient
+  where
+    goClient :: ChainSyncClient header  tip  m a
+             -> ChainSyncClient header' tip' m a
+    goClient (ChainSyncClient c) = ChainSyncClient (fmap goIdle c)
+
+    goIdle :: ClientStIdle header  tip  m a
+           -> ClientStIdle header' tip' m a
+    goIdle (SendMsgRequestNext stNext stAwait) =
+      SendMsgRequestNext (goNext stNext) (fmap goNext stAwait)
+
+    goIdle (SendMsgFindIntersect points stIntersect) =
+      SendMsgFindIntersect (map fpoint points) (goIntersect stIntersect)
+
+    goIdle (SendMsgDone a) = SendMsgDone a
+
+    goNext :: ClientStNext header  tip  m a
+           -> ClientStNext header' tip' m a
+    goNext ClientStNext{recvMsgRollForward, recvMsgRollBackward} =
+      ClientStNext {
+        recvMsgRollForward  = \hdr tip ->
+          goClient (recvMsgRollForward (fheader hdr) (ftip tip)),
+
+        recvMsgRollBackward = \pt  tip ->
+          goClient (recvMsgRollBackward (fpoint' pt) (ftip tip))
+      }
+
+    goIntersect :: ClientStIntersect header  tip  m a
+                -> ClientStIntersect header' tip' m a
+    goIntersect ClientStIntersect { recvMsgIntersectFound,
+                                    recvMsgIntersectNotFound } =
+      ClientStIntersect {
+        recvMsgIntersectFound = \pt tip ->
+          goClient (recvMsgIntersectFound (fpoint' pt) (ftip tip)),
+
+        recvMsgIntersectNotFound = \tip ->
+          goClient (recvMsgIntersectNotFound (ftip tip))
+      }
 
 
 -- | Interpret a 'ChainSyncClient' action sequence as a 'Peer' on the client
