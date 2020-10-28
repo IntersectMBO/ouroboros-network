@@ -15,21 +15,18 @@ module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
   ) where
 
-import           Data.Coerce
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (K (..), NP (..), NS (..), SListI, lengthSList)
+import           Data.SOP.Strict
 
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (RelativeTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
                      nonEmptyFromList)
@@ -37,7 +34,6 @@ import           Ouroboros.Consensus.Util.SOP (nsFromIndex)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import           Ouroboros.Consensus.HardFork.Combinator.State
 
 import           Ouroboros.Consensus.Byron.Ledger
 
@@ -61,92 +57,29 @@ import           Test.Consensus.Cardano.MockCrypto
 -------------------------------------------------------------------------------}
 
 instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
-  arbitrary = oneof
-    [ BlockByron   <$> arbitrary
-    , BlockShelley <$> arbitrary
-    , BlockAllegra <$> arbitrary
-    , BlockMary    <$> arbitrary
-    ]
+  arbitrary = HardForkBlock . OneEraBlock <$> arbitrary
 
 instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
   arbitrary = getHeader <$> arbitrary
 
--- TODO if we try to use arbitrary instances for 'SlotNo' and 'EpochNo' here, we
--- hit a conflict, since they exist both in byron generators and shelley
--- generators.
-instance Arbitrary History.Bound where
-  arbitrary =
-      History.Bound <$> (RelativeTime <$> arbitrary)
-                    <*> (SlotNo       <$> arbitrary)
-                    <*> (EpochNo      <$> arbitrary)
-
-arbitraryHardForkState
-  :: forall f c a.
-     ( Arbitrary (f ByronBlock)
-     , Arbitrary (f (ShelleyBlock (ShelleyEra c)))
-     , Coercible a (HardForkState f (CardanoEras c))
-     )
-  => Proxy f
-  -> Gen a
-arbitraryHardForkState _ = coerce <$> oneof
-    [ TZ
-        <$> genCurrent (Proxy @ByronBlock)
-    , TS
-        <$> (K  <$> genPast)
-        <*> (TZ <$> genCurrent (Proxy @(ShelleyBlock (ShelleyEra c))))
-    , TS
-        <$> (K  <$> genPast)
-        <*> (TS
-              <$> (K  <$> genPast)
-              <*> (TZ <$> genCurrent (Proxy @(ShelleyBlock (AllegraEra c)))))
-    , TS
-        <$> (K  <$> genPast)
-        <*> (TS
-              <$> (K  <$> genPast)
-              <*> (TS
-                    <$> (K  <$> genPast)
-                    <*> (TZ <$> genCurrent (Proxy @(ShelleyBlock (MaryEra c))))))
-    ]
-  where
-    genCurrent
-      :: forall blk. Arbitrary (f blk)
-      => Proxy blk
-      -> Gen (Current f blk)
-    genCurrent _ = Current <$> arbitrary <*> (arbitrary @(f blk))
-
-    genPast :: Gen Past
-    genPast = Past <$> arbitrary <*> arbitrary
-
-instance (c ~ MockCryptoCompatByron, ShelleyBasedEra (ShelleyEra c))
-      => Arbitrary (CardanoLedgerState c) where
-  arbitrary = arbitraryHardForkState (Proxy @LedgerState)
-
-instance c ~ MockCryptoCompatByron
-      => Arbitrary (HardForkChainDepState (CardanoEras c)) where
-  arbitrary = arbitraryHardForkState (Proxy @WrapChainDepState)
-
--- | Forwarding
-instance Arbitrary (ChainDepState (BlockProtocol blk))
-      => Arbitrary (WrapChainDepState blk) where
-  arbitrary = WrapChainDepState <$> arbitrary
-
 instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
       => Arbitrary (OneEraHash (CardanoEras c)) where
-  arbitrary = OneEraHash <$> oneof
-    [ toShortRawHash (Proxy @ByronBlock) <$> arbitrary
-    , toShortRawHash (Proxy @(ShelleyBlock (ShelleyEra c))) <$> arbitrary
-    , toShortRawHash (Proxy @(ShelleyBlock (AllegraEra c))) <$> arbitrary
-    , toShortRawHash (Proxy @(ShelleyBlock (MaryEra    c))) <$> arbitrary
-    ]
+  arbitrary = inj <$> arbitrary
+    where
+      inj :: NS WrapHeaderHash (CardanoEras c) -> OneEraHash (CardanoEras c)
+      inj = hcollapse . hcmap proxySingle aux
+
+      aux ::
+           forall blk. SingleEraBlock blk
+        => WrapHeaderHash blk -> K (OneEraHash (CardanoEras c)) blk
+      aux = K . OneEraHash . toShortRawHash (Proxy @blk) . unwrapHeaderHash
 
 instance (c ~ MockCryptoCompatByron, ShelleyBasedEra (ShelleyEra c))
       => Arbitrary (AnnTip (CardanoBlock c)) where
-  arbitrary = oneof
-    [ mapAnnTip TipInfoByron   <$> arbitrary @(AnnTip (ByronBlock))
-    , mapAnnTip TipInfoShelley <$> arbitrary @(AnnTip (ShelleyBlock (ShelleyEra c)))
-    , mapAnnTip TipInfoAllegra <$> arbitrary @(AnnTip (ShelleyBlock (AllegraEra c)))
-    , mapAnnTip TipInfoMary    <$> arbitrary @(AnnTip (ShelleyBlock (MaryEra    c)))
-    ]
+  arbitrary = AnnTip
+      <$> (SlotNo <$> arbitrary)
+      <*> arbitrary
+      <*> (OneEraTipInfo <$> arbitrary)
 
 {-------------------------------------------------------------------------------
   NodeToNode
@@ -579,28 +512,3 @@ instance c ~ MockCryptoCompatByron
           [ SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
           , SomeResult (QueryHardFork GetCurrentEra)  <$> arbitrary
           ]
-
-instance c ~ MockCryptoCompatByron
-      => Arbitrary (MismatchEraInfo (CardanoEras c)) where
-  arbitrary = MismatchEraInfo <$> elements
-      [ ML eraInfoByron       (Z (LedgerEraInfo eraInfoShelley))
-      , ML eraInfoByron    (S (Z (LedgerEraInfo eraInfoAllegra)))
-      , ML eraInfoByron (S (S (Z (LedgerEraInfo eraInfoMary))))
-
-      , MR (Z  eraInfoShelley)      (LedgerEraInfo eraInfoByron)
-      , MS (ML eraInfoShelley    (Z (LedgerEraInfo eraInfoAllegra)))
-      , MS (ML eraInfoShelley (S (Z (LedgerEraInfo eraInfoMary))))
-
-      , MR (S  (Z  eraInfoAllegra))  (LedgerEraInfo eraInfoByron)
-      , MS (MR (Z  eraInfoAllegra)   (LedgerEraInfo eraInfoShelley))
-      , MS (MS (ML eraInfoAllegra (Z (LedgerEraInfo eraInfoMary))))
-
-      , MR (S  (S  (Z eraInfoMary))) (LedgerEraInfo eraInfoByron)
-      , MS (MR (S  (Z eraInfoMary))  (LedgerEraInfo eraInfoShelley))
-      , MS (MS (MR (Z eraInfoMary)   (LedgerEraInfo eraInfoAllegra)))
-      ]
-    where
-      eraInfoByron   = singleEraInfo (Proxy @ByronBlock)
-      eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock (ShelleyEra c)))
-      eraInfoAllegra = singleEraInfo (Proxy @(ShelleyBlock (AllegraEra c)))
-      eraInfoMary    = singleEraInfo (Proxy @(ShelleyBlock (MaryEra    c)))

@@ -267,11 +267,14 @@ instance Arbitrary ByronTransition where
 instance Arbitrary (LedgerState ByronBlock) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
+instance Arbitrary (TipInfoIsEBB ByronBlock) where
+  arbitrary = TipInfoIsEBB <$> arbitrary <*> elements [IsEBB, IsNotEBB]
+
 instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
-    <*> (TipInfoIsEBB <$> arbitrary <*> elements [IsEBB, IsNotEBB])
+    <*> arbitrary
 
 instance Arbitrary (PBftState PBftByronCrypto) where
   arbitrary = do
