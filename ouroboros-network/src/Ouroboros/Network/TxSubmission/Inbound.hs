@@ -13,7 +13,7 @@ module Ouroboros.Network.TxSubmission.Inbound (
     TxSubmissionProtocolError(..),
   ) where
 
-import           Data.Foldable (foldl')
+import           Data.Foldable (foldl', toList)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -71,6 +71,7 @@ data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
 data TxSubmissionProtocolError =
        ProtocolErrorTxNotRequested
      | ProtocolErrorTxIdsNotRequested
+     | ProtocolErrorTxIdNotNew
   deriving Show
 
 instance Exception TxSubmissionProtocolError where
@@ -78,6 +79,8 @@ instance Exception TxSubmissionProtocolError where
       "The peer replied with a transaction we did not ask for."
   displayException ProtocolErrorTxIdsNotRequested =
       "The peer replied with more txids than we asked for."
+  displayException ProtocolErrorTxIdNotNew =
+      "The peer replied with a txid it recently sent us."
 
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
@@ -101,7 +104,7 @@ data ServerState txid tx = ServerState {
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the size.
-       availableTxids         :: !(Map txid TxSizeInBytes),
+       availableTxids          :: !(StrictSeq (txid, TxSizeInBytes)),
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This needed because we can request
@@ -148,7 +151,7 @@ instance ( NoUnexpectedThunks txid
          ) => NoUnexpectedThunks (ServerState txid tx)
 
 initialServerState :: ServerState txid tx
-initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
+initialServerState = ServerState 0 Seq.empty Seq.empty Map.empty 0
 
 
 txSubmissionInbound
@@ -200,7 +203,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             let numTxIdsToRequest = maxTxIdsToRequest `min` maxUnacked
             assert (requestedTxIdsInFlight st == 0
                   && Seq.null (unacknowledgedTxIds st)
-                  && Map.null (availableTxids st)
+                  && Seq.null (availableTxids st)
                   && Map.null (bufferedTxs st)) $
               pure $
               SendMsgRequestTxIdsBlocking
@@ -241,7 +244,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
       where
         canRequestMoreTxs :: ServerState k tx -> Bool
         canRequestMoreTxs st =
-            not (Map.null (availableTxids st))
+            not (Seq.null (availableTxids st))
 
     handleReply :: forall (n :: N).
                    Nat n
@@ -253,10 +256,17 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         -- elsewhere, and for the non-blocking case it is quite normal for
         -- them to send us none.
         let txidsSeq = Seq.fromList (map fst txids)
-            txidsMap = Map.fromList txids
+            txidsAndSizeSeq = Seq.fromList txids
+            txidsSet = Set.fromList (map fst txids)
+            unAckSet = Set.fromList $ toList $ unacknowledgedTxIds st
 
         unless (Seq.length txidsSeq <= fromIntegral reqNo) $
           throwM ProtocolErrorTxIdsNotRequested
+
+        -- We are requesting *new* txids from the peer. There shouldn't
+        -- be any overlap with txids that we still haven't processed.
+        unless (Set.intersection txidsSet unAckSet == Set.empty) $
+          throwM ProtocolErrorTxIdNotNew
 
         -- Upon receiving a batch of new txids we extend our available set,
         -- and extended the unacknowledged sequence.
@@ -267,7 +277,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         let st' = st {
           requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo,
           unacknowledgedTxIds    = unacknowledgedTxIds st <> txidsSeq,
-          availableTxids         = availableTxids st <> txidsMap
+          availableTxids         = availableTxids st <> txidsAndSizeSeq
         }
         mpSnapshot <- atomically mempoolGetSnapshot
         continueWithStateM
@@ -350,12 +360,21 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
                               + fromIntegral (Seq.length acknowledgedTxIds)
         }
       where
+
+        -- TODO: Add to StrictSeq.
+        partition :: (a -> Bool) -> StrictSeq a -> (StrictSeq a, StrictSeq a)
+        partition cond = foldl' part (Seq.empty, Seq.empty)
+          where
+            part (ls, rs) e
+              | cond e    = ((Seq.|>) ls e, rs)
+              | otherwise = (ls, (Seq.|>) rs e)
+
         -- Divide the available txs in two: those that are already in the
         -- mempool and those that are not. We'll request some txs from the
         -- latter.
         (ignoredTxids, availableTxids') =
-          Map.partitionWithKey
-            (\txid _ -> mempoolHasTx txid)
+          partition
+            (\(txid,_) -> mempoolHasTx txid)
             (availableTxids st)
 
         -- The txs that we intentionally don't request, because they are
@@ -365,7 +384,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         -- no corresponding reply).
         bufferedTxs' = forceElemsToWHNF $
                        bufferedTxs st
-                    <> Map.map (const Nothing) ignoredTxids
+                    <> (Map.fromList $ zip (map fst $ toList ignoredTxids) (repeat Nothing))
 
         -- Check if having decided not to request more txs we can now
         -- confirm any txids (in strict order in the unacknowledgedTxIds
@@ -384,20 +403,12 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
                     Nat n
                  -> Stateful (ServerState txid tx) n txid tx m
     serverReqTxs n = Stateful $ \st -> do
-        -- TODO: This implementation is deliberately naive, we pick in an
-        -- arbitrary order and up to a fixed limit. This is to illustrate
-        -- that we can request txs out of order. In the final version we will
-        -- try to pick in-order and only pick out of order when we have to.
-        -- We will also uses the size of txs in bytes as our limit for
-        -- upper and lower watermarks for pipelining. We'll also use the
-        -- amount in flight and delta-Q to estimate when we're in danger of
-        -- becomming idle, and need to request stalled txs.
-        --
-        let (txsToRequest, availableTxids') =
-              Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
+        -- Request txs in the order they where presented to us.
+        let (txsToRequest, availableTxids') = Seq.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
+            txsToRequestIds = map fst $ toList txsToRequest
 
         SendMsgRequestTxsPipelined
-          (Map.keys txsToRequest)
+          txsToRequestIds
           (continueWithStateM (serverReqTxIds (Succ n)) st {
              availableTxids = availableTxids'
            })
