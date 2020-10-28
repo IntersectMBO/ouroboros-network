@@ -6,6 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveFunctor       #-}
+
 
 -- | The type of the local transaction submission protocol.
 --
@@ -64,7 +66,7 @@ instance ( ShowProxy tx
 data SubmitResult reason
   = SubmitSuccess
   | SubmitFail reason
-  deriving Eq
+  deriving (Eq, Functor)
 
 instance Protocol (LocalTxSubmission tx reject) where
 
