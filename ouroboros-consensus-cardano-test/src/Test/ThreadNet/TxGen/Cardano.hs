@@ -31,8 +31,6 @@ import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
                      applyChainTick)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
-import           Cardano.Binary (toCBOR)
-
 import           Cardano.Crypto (toVerification)
 import qualified Cardano.Crypto.Signing as Byron
 
@@ -45,9 +43,10 @@ import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
                      (makeBootstrapWitness)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval)
-import qualified Shelley.Spec.Ledger.Keys as SL (hashWithSerialiser,
-                     signedDSIGN)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
+import qualified Shelley.Spec.Ledger.TxBody as SL (EraIndependentTxBody,
+                     eraIndTxBodyHash)
+import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessVKey)
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
@@ -187,8 +186,8 @@ migrateUTxO migrationInfo curSlot lcfg lst
           , SL._wdrls    = SL.Wdrl Map.empty
           }
 
-        bodyHash :: SL.Hash c (SL.TxBody (ShelleyEra c))
-        bodyHash = SL.hashWithSerialiser toCBOR body
+        bodyHash :: SL.Hash c SL.EraIndependentTxBody
+        bodyHash = SL.eraIndTxBodyHash body
 
         -- Witness the use of bootstrap address's utxo.
         byronWit :: SL.BootstrapWitness (ShelleyEra c)
@@ -199,16 +198,16 @@ migrateUTxO migrationInfo curSlot lcfg lst
         -- Witness the stake delegation.
         delegWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
         delegWit =
-            SL.WitVKey
-              (Shelley.mkVerKey stakingSK)
-              (SL.signedDSIGN @c stakingSK bodyHash)
+            SL.makeWitnessVKey
+              bodyHash
+              (Shelley.mkKeyPair stakingSK)
 
         -- Witness the pool registration.
         poolWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
         poolWit =
-            SL.WitVKey
-              (Shelley.mkVerKey poolSK)
-              (SL.signedDSIGN @c poolSK bodyHash)
+            SL.makeWitnessVKey
+              bodyHash
+              (Shelley.mkKeyPair poolSK)
 
     in
     if Map.null picked then Nothing else
@@ -217,10 +216,9 @@ migrateUTxO migrationInfo curSlot lcfg lst
       { SL._body       = body
       , SL._metadata   = SL.SNothing
       , SL._witnessSet = SL.WitnessSet
-          { SL.addrWits = Set.fromList [delegWit, poolWit]
-          , SL.bootWits = Set.singleton byronWit
-          , SL.msigWits = Map.empty
-          }
+                           (Set.fromList [delegWit, poolWit])
+                           mempty
+                           (Set.singleton byronWit)
       }
 
     | otherwise           = Nothing
@@ -262,7 +260,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
         , SL._poolMargin = SL.truncateUnitInterval 0
         , SL._poolOwners = Set.singleton $ Shelley.mkKeyHash poolSK
         , SL._poolPledge = pledge
-        , SL._poolPubKey = Shelley.mkKeyHash poolSK
+        , SL._poolId     = Shelley.mkKeyHash poolSK
         , SL._poolRAcnt  =
             SL.RewardAcnt Shelley.networkId $ Shelley.mkCredential poolSK
         , SL._poolRelays = StrictSeq.empty

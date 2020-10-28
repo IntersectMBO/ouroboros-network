@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
