@@ -109,9 +109,9 @@ clientPingPong pipelined =
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
       nullNetworkConnectTracers
-      (\DictVersion {} -> acceptableVersion)
+      acceptableVersion
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -150,8 +150,8 @@ serverPingPong =
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
@@ -205,9 +205,9 @@ clientPingPong2 =
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
       nullNetworkConnectTracers
-      (\DictVersion {} -> acceptableVersion)
+      acceptableVersion
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -259,8 +259,8 @@ serverPingPong2 =
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       unversionedHandshakeCodec
-      cborTermVersionDataCodec
-      (\DictVersion {} -> acceptableVersion)
+      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->

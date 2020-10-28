@@ -75,7 +75,7 @@ tryHandshake doHandshake = do
 
 -- | Common arguments for both 'Handshake' client & server.
 --
-data HandshakeArguments connectionId vNumber extra m application agreedOptions = HandshakeArguments {
+data HandshakeArguments connectionId vNumber vData m application = HandshakeArguments {
       -- | 'Handshake' tracer
       --
       haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
@@ -88,10 +88,10 @@ data HandshakeArguments connectionId vNumber extra m application agreedOptions =
       -- | A codec for protocol parameters.
       --
       haVersionDataCodec
-        ::  VersionDataCodec extra CBOR.Term vNumber agreedOptions,
+        ::  VersionDataCodec CBOR.Term vNumber vData,
 
       -- | versioned application aggreed upon with the 'Handshake' protocol.
-      haVersions :: Versions vNumber extra application
+      haVersions :: Versions vNumber vData application
     }
 
 
@@ -108,10 +108,10 @@ runHandshakeClient
        )
     => MuxBearer m
     -> connectionId
-    -> (forall vData. extra vData -> vData -> vData -> Accept vData)
-    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> (vData -> vData -> Accept vData)
+    -> HandshakeArguments connectionId vNumber vData m application
     -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
-                 (application, agreedOptions))
+                 (application, vNumber, vData))
 runHandshakeClient bearer
                    connectionId
                    acceptVersion
@@ -145,11 +145,11 @@ runHandshakeServer
        )
     => MuxBearer m
     -> connectionId
-    -> (forall vData. extra vData -> vData -> vData -> Accept vData)
-    -> HandshakeArguments connectionId vNumber extra m application agreedOptions
+    -> (vData -> vData -> Accept vData)
+    -> HandshakeArguments connectionId vNumber vData m application
     -> m (Either
            (HandshakeException (RefuseReason vNumber))
-           (application, agreedOptions))
+           (application, vNumber, vData))
 runHandshakeServer bearer
                    connectionId
                    acceptVersion

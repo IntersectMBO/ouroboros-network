@@ -27,15 +27,15 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 handshakeClientPeer
   :: Ord vNumber
-  => VersionDataCodec extra CBOR.Term vNumber agreedOptions
-  -> (forall vData. extra vData -> vData -> vData -> Accept vData)
-  -> Versions vNumber extra r
+  => VersionDataCodec CBOR.Term vNumber vData
+  -> (vData -> vData -> Accept vData)
+  -> Versions vNumber vData r
   -> Peer (Handshake vNumber CBOR.Term)
           AsClient StPropose m
           (Either
             (HandshakeClientProtocolError vNumber)
-            (r, agreedOptions))
-handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} acceptVersion versions =
+            (r, vNumber, vData))
+handshakeClientPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
@@ -50,27 +50,29 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
       MsgAcceptVersion vNumber vParams ->
         case vNumber `Map.lookup` getVersions versions of
           Nothing -> Done TokDone (Left $ NotRecognisedVersion vNumber)
-          Just (Sigma vData version) ->
-            case decodeData (versionExtra version) vParams of
+          Just (Version app vData) ->
+            case decodeData vNumber vParams of
 
               Left err ->
                 Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
-                case acceptVersion (versionExtra version) vData vData' of
+                case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ ( runApplication (versionApplication version) agreedData
-                                           , getAgreedOptions (versionExtra version) vNumber agreedData
+                    Done TokDone $ Right $ ( runApplication app agreedData
+                                           , vNumber
+                                           , agreedData
                                            )
                   Refuse err ->
                     Done TokDone (Left (InvalidServerSelection vNumber err))
 
+
 encodeVersions
-  :: forall vNumber extra r vParams.
-     (forall vData. extra vData -> vData -> vParams)
-  -> Versions vNumber extra r
+  :: forall vNumber r vParams vData.
+     (vNumber -> vData -> vParams)
+  -> Versions vNumber vData r
   -> Map vNumber vParams
-encodeVersions encoder (Versions vs) = go <$> vs
+encodeVersions encoder (Versions vs) = go `Map.mapWithKey` vs
     where
-      go :: Sigma (Version extra r) -> vParams
-      go (Sigma vData Version {versionExtra}) = encoder versionExtra vData
+      go :: vNumber -> Version vData r -> vParams
+      go vNumber Version {versionData} = encoder vNumber versionData

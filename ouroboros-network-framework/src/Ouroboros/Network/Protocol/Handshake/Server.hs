@@ -25,13 +25,13 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 --
 handshakeServerPeer
   :: Ord vNumber
-  => VersionDataCodec extra vParams vNumber agreedOptions
-  -> (forall vData. extra vData -> vData -> vData -> Accept vData)
-  -> Versions vNumber extra r
+  => VersionDataCodec vParams vNumber vData
+  -> (vData -> vData -> Accept vData)
+  -> Versions vNumber vData r
   -> Peer (Handshake vNumber vParams)
           AsServer StPropose m
-          (Either (RefuseReason vNumber) (r, agreedOptions))
-handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} acceptVersion versions =
+          (Either (RefuseReason vNumber) (r, vNumber, vData))
+handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
@@ -48,7 +48,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
 
           vNumber:_ ->
             case (getVersions versions Map.! vNumber, vMap Map.! vNumber) of
-              (Sigma vData version, vParams) -> case decodeData (versionExtra version) vParams of
+              (Version app vData, vParams) -> case decodeData vNumber vParams of
                 Left err ->
                   let vReason = HandshakeDecodeError vNumber err
                   in Yield (ServerAgency TokConfirm)
@@ -56,17 +56,18 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData, getAgreedOptions} 
                            (Done TokDone $ Left vReason)
 
                 Right vData' ->
-                  case acceptVersion (versionExtra version) vData vData' of
+                  case acceptVersion vData vData' of
 
                     -- We agree on the version; send back the agreed version
                     -- number @vNumber@ and encoded data associated with our
                     -- version.
                     Accept agreedData ->
                       Yield (ServerAgency TokConfirm)
-                            (MsgAcceptVersion vNumber (encodeData (versionExtra version) agreedData))
+                            (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
                             (Done TokDone $ Right $
-                              ( runApplication (versionApplication version) agreedData
-                              , getAgreedOptions (versionExtra version) vNumber agreedData
+                              ( runApplication app agreedData
+                              , vNumber
+                              , agreedData
                               ))
 
                     -- We disagree on the version.

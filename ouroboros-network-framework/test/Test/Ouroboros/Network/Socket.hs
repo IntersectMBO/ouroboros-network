@@ -245,17 +245,17 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
         unversionedHandshakeCodec
-        cborTermVersionDataCodec
-        (\DictVersion {} -> acceptableVersion)
+        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        acceptableVersion
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           connectToNode
             snocket
             unversionedHandshakeCodec
-            cborTermVersionDataCodec
+            (cborTermVersionDataCodec unversionedProtocolDataCodec)
             (NetworkConnectTracers activeMuxTracer nullTracer)
-            (\DictVersion {} -> acceptableVersion)
+            acceptableVersion
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -488,9 +488,9 @@ prop_socket_client_connect_error _ xs =
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
         unversionedHandshakeCodec
-        cborTermVersionDataCodec
+        (cborTermVersionDataCodec unversionedProtocolDataCodec)
         nullNetworkConnectTracers
-        (\DictVersion {} -> acceptableVersion)
+        acceptableVersion
         (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)

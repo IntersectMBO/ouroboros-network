@@ -42,7 +42,6 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.
@@ -51,24 +50,21 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 -- is instatiated to 'NodeToNodeVersionData' in "Ouroboros.Network.NodeToNode"
 -- or to '()' in "Ouroboros.Network.NodeToClient".
 --
-data VersionDataCodec extra bytes vNumber agreedOptions = VersionDataCodec {
-    encodeData :: forall vData. extra vData -> vData -> bytes,
+data VersionDataCodec bytes vNumber vData = VersionDataCodec {
+    encodeData :: vNumber -> vData -> bytes,
     -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
     -- extra instances into the scope (by means of pattern matching on a GADT).
-    decodeData :: forall vData. extra vData -> bytes -> Either Text vData,
+    decodeData :: vNumber -> bytes -> Either Text vData
     -- ^ decoder of 'vData'.
-    getAgreedOptions :: forall vData. extra vData -> vNumber -> vData -> agreedOptions
-    -- ^ map negotiated 'vData' into version independent representation
-    -- 'agreedOptions'.
   }
 
 -- TODO: remove this from top level API, this is the only way we encode or
 -- decode version data.
-cborTermVersionDataCodec :: VersionDataCodec (DictVersion vNumber agreedOptions) CBOR.Term vNumber agreedOptions
-cborTermVersionDataCodec = VersionDataCodec {
-      encodeData = \(DictVersion codec _) -> encodeTerm codec,
-      decodeData = \(DictVersion codec _) -> decodeTerm codec,
-      getAgreedOptions = \(DictVersion _ f) -> f
+cborTermVersionDataCodec :: (vNumber -> CodecCBORTerm Text vData)
+                         -> VersionDataCodec CBOR.Term vNumber vData
+cborTermVersionDataCodec codec = VersionDataCodec {
+      encodeData = encodeTerm . codec,
+      decodeData = decodeTerm . codec
     }
 
 -- |
