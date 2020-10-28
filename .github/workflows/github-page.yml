@@ -70,7 +70,7 @@ jobs:
           cp -r ./haddocks/* ./
           rm -rf haddocks
           git add -A
-          git commit -m "Deployed haddocks" --alow-empty
+          git commit -m "Deployed haddocks" || true
           git push https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git HEAD:gh-pages
 
 
