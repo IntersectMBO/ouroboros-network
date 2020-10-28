@@ -28,6 +28,7 @@ module Test.ThreadNet.Infra.Shelley (
   , mkProtocolShelley
   , mkSetDecentralizationParamTxs
   , mkVerKey
+  , mkKeyPair
   , networkId
   , tpraosSlotLength
   , initialLovelacePerCoreNode
@@ -85,7 +86,6 @@ import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 
-import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as CSL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 
 {-------------------------------------------------------------------------------
@@ -143,13 +143,13 @@ data CoreNodeKeyInfo c = CoreNodeKeyInfo
       )
   }
 
-coreNodeKeys :: forall c. CSL.Mock c => CoreNode c -> CoreNodeKeyInfo c
+coreNodeKeys :: forall c. TPraosCrypto c => CoreNode c -> CoreNodeKeyInfo c
 coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
     CoreNodeKeyInfo {
         cnkiCoreNode =
-          ( mkDSIGNKeyPair cnGenesisKey
+          ( mkKeyPair cnGenesisKey
           , Gen.AllIssuerKeys
-            { Gen.cold = mkDSIGNKeyPair cnDelegateKey
+            { Gen.cold = mkKeyPair cnDelegateKey
               -- 'CoreNodeKeyInfo' is used for all sorts of generators, not
               -- only transaction generators. To generate transactions we
               -- don't need all these keys, hence the 'error's.
@@ -158,11 +158,8 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
             , Gen.hk   = error "hk used while generating transactions"
             }
           )
-      , cnkiKeyPair = (mkDSIGNKeyPair cnDelegateKey, mkDSIGNKeyPair cnStakingKey)
+      , cnkiKeyPair = (mkKeyPair cnDelegateKey, mkKeyPair cnStakingKey)
       }
-  where
-    mkDSIGNKeyPair :: SL.SignKeyDSIGN c -> SL.KeyPair kd c
-    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k) k
 
 genCoreNode ::
      forall c. TPraosCrypto c
@@ -358,7 +355,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     initialStake = ShelleyGenesisStaking
       { sgsPools = Map.fromList
           [ (pk, pp)
-          | pp@(SL.PoolParams { _poolPubKey = pk }) <- Map.elems coreNodeToPoolMapping
+          | pp@(SL.PoolParams { _poolId = pk }) <- Map.elems coreNodeToPoolMapping
           ]
         -- The staking key maps to the key hash of the pool, which is set to the
         -- "delegate key" in order that nodes may issue blocks both as delegates
@@ -376,7 +373,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
         coreNodeToPoolMapping = Map.fromList [
               ( SL.hashKey . SL.VKey . deriveVerKeyDSIGN $ cnStakingKey
               , SL.PoolParams
-                { SL._poolPubKey = poolHash
+                { SL._poolId = poolHash
                 , SL._poolVrf = vrfHash
                   -- Each core node pledges its full stake to the pool.
                 , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
@@ -441,11 +438,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     scheduledEpoch = EpochNo 0
 
     witnessSet :: SL.WitnessSet (ShelleyEra c)
-    witnessSet = SL.WitnessSet
-      { addrWits = signatures
-      , bootWits = Set.empty
-      , msigWits = Map.empty
-      }
+    witnessSet = SL.WitnessSet signatures mempty mempty
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
@@ -526,6 +519,9 @@ mkKeyHash = SL.hashKey . mkVerKey
 
 mkVerKey :: TPraosCrypto c => SL.SignKeyDSIGN c -> SL.VKey r c
 mkVerKey = SL.VKey . deriveVerKeyDSIGN
+
+mkKeyPair :: TPraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
+mkKeyPair sk = SL.KeyPair { vKey = mkVerKey sk, sKey = sk }
 
 mkKeyHashVrf :: (HashAlgorithm h, VRFAlgorithm vrf)
              => SignKeyVRF vrf

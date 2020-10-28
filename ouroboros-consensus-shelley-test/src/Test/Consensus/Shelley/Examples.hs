@@ -440,7 +440,7 @@ exampleNewEpochState = SL.NewEpochState {
     rewardUpdate :: SL.RewardUpdate era
     rewardUpdate = SL.RewardUpdate {
           deltaT    = SL.Coin 10
-        , deltaR    = SL.Coin (- 100)
+        , deltaR    = SL.DeltaCoin (- 100)
         , rs        = Map.singleton (keyToCredential exampleStakeKey) (SL.Coin 10)
         , deltaF    = SL.DeltaCoin (- 3)
         , nonMyopic = nonMyopic
@@ -491,7 +491,7 @@ exampleKeys =
 
 examplePoolParams :: forall era. ShelleyBasedEra era => SL.PoolParams era
 examplePoolParams = SL.PoolParams {
-      _poolPubKey = SL.hashKey $ SL.vKey $ SL.cold poolKeys
+      _poolId     = SL.hashKey $ SL.vKey $ SL.cold poolKeys
     , _poolVrf    = SL.hashVerKeyVRF $ snd $ SL.vrf poolKeys
     , _poolPledge = SL.Coin 1
     , _poolCost   = SL.Coin 5

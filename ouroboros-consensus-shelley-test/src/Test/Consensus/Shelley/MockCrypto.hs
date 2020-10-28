@@ -12,11 +12,16 @@ module Test.Consensus.Shelley.MockCrypto (
   , CanMock
   ) where
 
+import           Test.QuickCheck (Arbitrary)
+
 import           Cardano.Crypto.DSIGN (MockDSIGN)
 import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES (MockKES)
 
+import           Cardano.Ledger.Core (Value)
 import           Cardano.Ledger.Crypto (Crypto (..))
+import qualified Shelley.Spec.Ledger.API as SL
+
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL (Mock)
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (ShelleyTest)
@@ -53,4 +58,6 @@ type CanMock era =
   , SL.Mock (EraCrypto era)
     -- TODO #2677 the generators in the ledger impose this constraint
   , SL.ShelleyTest era
+  , Arbitrary (SL.WitnessSet era)
+  , Arbitrary (Value era)
   )

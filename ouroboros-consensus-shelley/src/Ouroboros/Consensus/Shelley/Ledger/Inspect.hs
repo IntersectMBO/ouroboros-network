@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (strictMaybeToMaybe)
-import qualified Shelley.Spec.Ledger.LedgerState as SL (proposals)
 import qualified Shelley.Spec.Ledger.PParams as SL (PParamsUpdate)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
