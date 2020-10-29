@@ -81,8 +81,8 @@ data LocalTxClientStIdle tx reject m a where
 -- | Transform a 'LocalTxSubmissionClient' by mapping over the tx and the
 -- rejection errors.
 --
--- Note the mapping of the errors is contravariant since errors are an output
--- of the protocol, not an input.
+-- Note the direction of the individual mapping functions corresponds to
+-- whether the types are used as protocol inputs or outputs.
 --
 mapLocalTxSubmissionClient :: forall tx tx' reject reject' m a.
                               Functor m

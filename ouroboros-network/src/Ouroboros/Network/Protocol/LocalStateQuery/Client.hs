@@ -98,11 +98,11 @@ data ClientStQuerying block query m a result = ClientStQuerying {
       recvMsgResult :: result -> m (ClientStAcquired block query m a)
     }
 
--- | Transform a 'LocalStateQueryClient' by mapping over the tx header and the
--- chain tip values.
+-- | Transform a 'LocalStateQueryClient' by mapping over the query and query
+-- result values.
 --
--- Note the mapping is contravariant in both types since they are outputs of
--- the protocol, not inputs.
+-- Note the direction of the individual mapping functions corresponds to
+-- whether the types are used as protocol inputs or outputs.
 --
 mapLocalStateQueryClient :: forall block block' query query' m a.
                             Functor m

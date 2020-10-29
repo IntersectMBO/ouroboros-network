@@ -126,8 +126,9 @@ data ClientStIntersect header tip m a =
 -- | Transform a 'ChainSyncClient' by mapping over the tx header and the
 -- chain tip values.
 --
--- Note the mapping is contravariant in both types since they are outputs of
--- the protocol, not inputs.
+-- Note the direction of the individual mapping functions corresponds to
+-- whether the types are used as protocol inputs or outputs (or both, as is
+-- the case for points).
 --
 mapChainSyncClient :: forall header header' tip tip' m a.
                       Functor m
