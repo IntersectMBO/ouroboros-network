@@ -420,21 +420,37 @@ data TracePeerSelection peeraddr =
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Set peeraddr) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
-     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr) -- target, actual, selected
+     -- | target known peers, actual known peers, peers available for gossip,
+     -- peers selected for gossip
+     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr)
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
-     | TraceForgetColdPeers    Int Int (Set peeraddr) -- target, actual, selected
+     -- | target known peers, actual known peers, selected peers
+     | TraceForgetColdPeers    Int Int (Set peeraddr)
+     -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
-     | TracePromoteColdFailed  peeraddr DiffTime SomeException
-     | TracePromoteColdDone    peeraddr
+     -- | target established, actual established, peer, delay until next
+     -- promotion, reason
+     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
+     -- | target established, actual established, peer
+     | TracePromoteColdDone    Int Int peeraddr
+     -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
-     | TracePromoteWarmFailed  peeraddr SomeException
-     | TracePromoteWarmDone    peeraddr
-     | TraceDemoteWarmPeers    Int Int (Set peeraddr) -- target, actual, selected
-     | TraceDemoteWarmFailed   peeraddr SomeException
-     | TraceDemoteWarmDone     peeraddr
+     -- | target active, actual active, peer, reason
+     | TracePromoteWarmFailed  Int Int peeraddr SomeException
+     -- | target active, actual active, peer
+     | TracePromoteWarmDone    Int Int peeraddr
+     -- | target established, actual established, selected peers
+     | TraceDemoteWarmPeers    Int Int (Set peeraddr)
+     -- | target established, actual established, peer, reason
+     | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
+     -- | target established, actual established, peer
+     | TraceDemoteWarmDone     Int Int peeraddr
+     -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
-     | TraceDemoteHotFailed    peeraddr SomeException
-     | TraceDemoteHotDone      peeraddr
+     -- | target active, actual active, peer, reason
+     | TraceDemoteHotFailed    Int Int peeraddr SomeException
+     -- | target active, actual active, peer
+     | TraceDemoteHotDone      Int Int peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
   deriving Show
