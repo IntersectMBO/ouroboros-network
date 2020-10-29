@@ -1,7 +1,11 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -14,6 +18,8 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
+import           Data.Sequence.Strict (StrictSeq)
+import           GHC.Records (HasField, getField)
 import           Options.Applicative
 
 import qualified Cardano.Ledger.Core as Core
@@ -34,15 +40,13 @@ import           HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyBasedEra era
-           -- TODO this will have to be generalised for the real Mary era (and
-           -- Allegra?), which will have a different 'Core.TxBody'.
-         , Core.TxBody era ~ SL.TxBody era
+         , HasField "outputs" (Core.TxBody era) (StrictSeq (SL.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
     where
       countOutputs :: SL.Tx era -> Int
-      countOutputs = length . SL._outputs . SL._body
+      countOutputs = length . getField @"outputs" . SL._body
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) ->

@@ -71,6 +71,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Ledger.Era as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -478,7 +479,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Allegra
 
     genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = genesisShelley
+    genesisAllegra = SL.translateEra' () genesisShelley
 
     blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
     blockConfigAllegra =
@@ -501,7 +502,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Mary
 
     genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = genesisAllegra
+    genesisMary = SL.translateEra' () genesisAllegra
 
     blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
     blockConfigMary =

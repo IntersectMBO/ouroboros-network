@@ -25,11 +25,11 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   ) where
 
 import           Control.Monad
-import           Control.Monad.Except (Except, throwError)
+import           Control.Monad.Except (Except, runExcept, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict ((:.:) (..), NP (..))
+import           Data.SOP.Strict ((:.:) (..), NP (..), unComp)
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -667,37 +668,45 @@ translateLedgerViewAcrossShelley =
 -------------------------------------------------------------------------------}
 
 translateLedgerStateShelleyToAllegraWrapper ::
-    RequiringBoth
+     PraosCrypto c
+  => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
        (ShelleyBlock (ShelleyEra c))
        (ShelleyBlock (AllegraEra c))
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ledgerShelley -> ledgerShelley
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' () . Comp
 
 translateTxShelleyToAllegraWrapper ::
-     InjectTx
+     PraosCrypto c
+  => InjectTx
        (ShelleyBlock (ShelleyEra c))
        (ShelleyBlock (AllegraEra c))
-translateTxShelleyToAllegraWrapper = InjectTx Just
+translateTxShelleyToAllegraWrapper = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 {-------------------------------------------------------------------------------
   Translation from Shelley to Allegra
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAllegraToMaryWrapper ::
-    RequiringBoth
+     PraosCrypto c
+  => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
 translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ledgerAllegra -> ledgerAllegra
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' () . Comp
 
 translateTxAllegraToMaryWrapper ::
-     InjectTx
+     PraosCrypto c
+  => InjectTx
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
-translateTxAllegraToMaryWrapper = InjectTx Just
+translateTxAllegraToMaryWrapper = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
