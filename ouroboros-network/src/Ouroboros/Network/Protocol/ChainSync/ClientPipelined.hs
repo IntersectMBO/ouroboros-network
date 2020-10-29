@@ -19,8 +19,8 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.Block (Point)
 import Ouroboros.Network.Protocol.ChainSync.Type
+
 
 -- | Pipelined chain sync client.  It can only pipeline 'MsgRequestNext'
 -- messages, while the 'MsgFindIntersect' are non pipelined.  This has a penalty
@@ -28,8 +28,9 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 -- impact how many messages one would like to pipeline.  It also simplifies the
 -- receiver callback.
 --
-newtype ChainSyncClientPipelined header point m a = ChainSyncClientPipelined {
-    runChainSyncClientPipelined :: m (ClientPipelinedStIdle Z header point m a)
+newtype ChainSyncClientPipelined header point tip m a =
+  ChainSyncClientPipelined {
+    runChainSyncClientPipelined :: m (ClientPipelinedStIdle Z header point tip m a)
   }
 
 
@@ -48,30 +49,30 @@ newtype ChainSyncClientPipelined header point m a = ChainSyncClientPipelined {
 --
 -- * Terminate the protocol with by sending 'MsgDone'.
 --
-data ClientPipelinedStIdle n header tip  m a where
+data ClientPipelinedStIdle n header point tip  m a where
 
     SendMsgRequestNext
-      ::    ClientStNext       Z header tip m a
-      -> m (ClientStNext       Z header tip m a)
-      -> ClientPipelinedStIdle Z header tip m a
+      ::    ClientStNext       Z header point tip m a
+      -> m (ClientStNext       Z header point tip m a)
+      -> ClientPipelinedStIdle Z header point tip m a
 
     SendMsgRequestNextPipelined
-      :: ClientPipelinedStIdle (S n) header tip m a
-      -> ClientPipelinedStIdle    n  header tip m a
+      :: ClientPipelinedStIdle (S n) header point tip m a
+      -> ClientPipelinedStIdle    n  header point tip m a
 
     SendMsgFindIntersect
-      :: [Point header]
-      -> ClientPipelinedStIntersect   header tip m a
-      -> ClientPipelinedStIdle      Z header tip m a
+      :: [point]
+      -> ClientPipelinedStIntersect   header point tip m a
+      -> ClientPipelinedStIdle      Z header point tip m a
 
     CollectResponse
-      :: Maybe (ClientPipelinedStIdle (S n) header tip m a)
-      -> ClientStNext                    n  header tip m a
-      -> ClientPipelinedStIdle        (S n) header tip m a
+      :: Maybe (ClientPipelinedStIdle (S n) header point tip m a)
+      -> ClientStNext                    n  header point tip m a
+      -> ClientPipelinedStIdle        (S n) header point tip m a
 
     SendMsgDone
       :: a
-      -> ClientPipelinedStIdle Z header tip m a
+      -> ClientPipelinedStIdle Z header point tip m a
 
 -- | Callback for responses received after sending 'MsgRequestNext'.
 --
@@ -79,38 +80,38 @@ data ClientPipelinedStIdle n header tip  m a where
 -- message which must be 'MsgRollForward' or 'MsgRollBackward'; thus we need
 -- only the two callbacks.
 --
-data ClientStNext n header tip m a =
+data ClientStNext n header point tip m a =
      ClientStNext {
        -- | Callback for 'MsgRollForward' message.
        --
        recvMsgRollForward
          :: header
          -> tip
-         -> m (ClientPipelinedStIdle n header tip m a),
+         -> m (ClientPipelinedStIdle n header point tip m a),
 
        -- | Callback for 'MsgRollBackward' message.
        --
        recvMsgRollBackward
-         :: Point header
+         :: point
          -> tip
-         -> m (ClientPipelinedStIdle n header tip m a)
+         -> m (ClientPipelinedStIdle n header point tip m a)
      }
 
 -- | Callbacks for messages received after sending 'MsgFindIntersect'.
 --
 -- We might receive either 'MsgIntersectFound' or 'MsgIntersectNotFound'.
 --
-data ClientPipelinedStIntersect header tip m a =
+data ClientPipelinedStIntersect header point tip m a =
      ClientPipelinedStIntersect {
 
        recvMsgIntersectFound
-         :: Point header
+         :: point
          -> tip
-          -> m (ClientPipelinedStIdle Z header tip m a),
+          -> m (ClientPipelinedStIdle Z header point tip m a),
 
        recvMsgIntersectNotFound
          :: tip
-         -> m (ClientPipelinedStIdle Z header tip m a)
+         -> m (ClientPipelinedStIdle Z header point tip m a)
      }
 
 
@@ -125,29 +126,29 @@ data ClientPipelinedStIntersect header tip m a =
 --
 -- Note: internal API, not exposed by this module.
 --
-data ChainSyncInstruction header tip
-    = RollForward  !header         !tip
-    | RollBackward !(Point header) !tip
+data ChainSyncInstruction header point tip
+    = RollForward  !header !tip
+    | RollBackward !point  !tip
 
 
 chainSyncClientPeerPipelined
-    :: forall header tip m a.
+    :: forall header point tip m a.
        Monad m
-    => ChainSyncClientPipelined header tip m a
-    -> PeerPipelined (ChainSync header tip) AsClient StIdle m a
+    => ChainSyncClientPipelined header point tip m a
+    -> PeerPipelined (ChainSync header point tip) AsClient StIdle m a
 
 chainSyncClientPeerPipelined (ChainSyncClientPipelined mclient) =
     PeerPipelined $ SenderEffect $ chainSyncClientPeerSender Zero <$> mclient
 
 
 chainSyncClientPeerSender
-    :: forall n header tip m a.
+    :: forall n header point tip m a.
        Monad m
     => Nat n
-    -> ClientPipelinedStIdle n header tip m a
-    -> PeerSender (ChainSync header tip)
+    -> ClientPipelinedStIdle n header point tip m a
+    -> PeerSender (ChainSync header point tip)
                   AsClient StIdle n
-                  (ChainSyncInstruction header tip)
+                  (ChainSyncInstruction header point tip)
                   m a
 
 chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =

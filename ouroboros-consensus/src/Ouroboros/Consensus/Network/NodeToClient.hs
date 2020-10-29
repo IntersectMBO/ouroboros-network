@@ -87,7 +87,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 data Handlers m peer blk = Handlers {
       hChainSyncServer
         :: ResourceRegistry m
-        -> ChainSyncServer (Serialised blk) (Tip blk) m ()
+        -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
 
     , hTxSubmissionServer
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
@@ -125,7 +125,7 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 
 -- | Node-to-client protocol codecs needed to run 'Handlers'.
 data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
-      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Tip blk))              e m bCS
+      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))  e m bCS
     , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
     , cStateQueryCodec   :: Codec (LocalStateQuery blk (Query blk))                e m bSQ
     }
@@ -247,7 +247,7 @@ clientCodecs ccfg version = Codecs {
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)
                => Codecs blk CodecFailure m
-                    (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
+                    (AnyMessage (ChainSync (Serialised blk) (Point blk) (Tip blk)))
                     (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
                     (AnyMessage (LocalStateQuery blk (Query blk)))
 identityCodecs = Codecs {
@@ -265,7 +265,7 @@ type Tracers m peer blk e =
      Tracers'  peer blk e (Tracer m)
 
 data Tracers' peer blk e f = Tracers {
-      tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
+      tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Point blk) (Tip blk))))
     , tTxSubmissionTracer :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
     , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
     }

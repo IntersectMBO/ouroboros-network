@@ -611,8 +611,8 @@ type LocalConnectionId = ConnectionId LocalAddress
 --
 
 chainSyncPeerNull
-    :: forall (header :: Type) (tip :: Type) m a. MonadTimer m
-    => Peer (ChainSync.ChainSync header tip)
+    :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadTimer m
+    => Peer (ChainSync.ChainSync header point tip)
             AsClient ChainSync.StIdle m a
 chainSyncPeerNull =
     ChainSync.chainSyncClientPeer

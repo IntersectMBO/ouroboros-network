@@ -212,11 +212,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
 
-codecChainSync :: ( CBOR.Serialise (HeaderHash block)
-                  , CBOR.Serialise block
+codecChainSync :: ( CBOR.Serialise block
+                  , CBOR.Serialise point
                   , CBOR.Serialise tip
                   )
-               => Codec (ChainSync.ChainSync block tip)
+               => Codec (ChainSync.ChainSync block point tip)
                         CBOR.DeserialiseFailure
                         IO LBS.ByteString
 codecChainSync =
@@ -464,7 +464,7 @@ codecBlockFetch =
 --
 
 chainSyncClient :: ChainSync.ChainSyncClient
-                     BlockHeader (Point BlockHeader) IO ()
+                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient =
     ChainSync.ChainSyncClient $ do
       curvar   <- newTVarIO genesisChainFragment
@@ -477,19 +477,19 @@ chainSyncClient' :: Tracer IO (Point BlockHeader, Point BlockHeader)
                  -> TVar (AF.AnchoredFragment BlockHeader)
                  -> TVar (AF.AnchoredFragment BlockHeader)
                  -> ChainSync.ChainSyncClient
-                      BlockHeader (Point BlockHeader) IO ()
+                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient' syncTracer _currentChainVar candidateChainVar =
     ChainSync.ChainSyncClient (return requestNext)
   where
     requestNext :: ChainSync.ClientStIdle
-                     BlockHeader (Point BlockHeader) IO ()
+                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     requestNext =
       ChainSync.SendMsgRequestNext
         handleNext
         (return handleNext) -- wait case, could trace
 
     handleNext :: ChainSync.ClientStNext
-                    BlockHeader (Point BlockHeader) IO ()
+                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     handleNext =
       ChainSync.ClientStNext {
         recvMsgRollForward  = \header _pHead ->
@@ -533,14 +533,14 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
 chainSyncServer :: RandomGen g
                 => g
                 -> ChainSync.ChainSyncServer
-                     BlockHeader (Point BlockHeader) IO ()
+                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncServer seed =
     let blocks = chainGenerator seed in
     ChainSync.ChainSyncServer (return (idleState blocks))
   where
     idleState :: [Block]
               -> ChainSync.ServerStIdle
-                   BlockHeader (Point BlockHeader) IO ()
+                   BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
       ChainSync.ServerStIdle {
         recvMsgRequestNext   = do threadDelay 500000
@@ -551,7 +551,7 @@ chainSyncServer seed =
 
     nextState :: [Block]
               -> ChainSync.ServerStNext
-                   BlockHeader (Point BlockHeader) IO ()
+                   BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     nextState [] = error "chainSyncServer: impossible"
     nextState (block:blocks) =
       ChainSync.SendMsgRollForward
@@ -562,7 +562,7 @@ chainSyncServer seed =
 
     intersectState :: [Block]
                    -> ChainSync.ServerStIntersect
-                        BlockHeader (Point BlockHeader) IO ()
+                        BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     intersectState blocks =
       ChainSync.SendMsgIntersectNotFound
          -- pretend chain head is next one:

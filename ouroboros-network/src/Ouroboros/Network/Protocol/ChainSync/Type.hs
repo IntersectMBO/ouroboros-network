@@ -13,37 +13,39 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
-import Ouroboros.Network.Block (Point, StandardHash)
-import Ouroboros.Network.Util.ShowProxy
+import           Data.Proxy (Proxy(..))
 
-import Network.TypedProtocol.Core
+import           Network.TypedProtocol.Core (Protocol (..))
+
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy(..))
 
 
 -- | A kind to identify our protocol, and the types of the states in the state
 -- transition diagram of the protocol.
 --
-data ChainSync header tip where
+data ChainSync header point tip where
 
   -- | Both client and server are idle. The client can send a request and
   -- the server is waiting for a request.
-  StIdle      :: ChainSync header tip
+  StIdle      :: ChainSync header point tip
 
   -- | The client has sent a next update request. The client is now waiting
   -- for a response, and the server is busy getting ready to send a response.
   -- There are two possibilities here, since the server can send a reply
   -- immediately or it can send an initial await message followed later by
   -- the normal reply.
-  StNext      :: StNextKind -> ChainSync header tip
+  StNext      :: StNextKind -> ChainSync header point tip
 
   -- | The client has sent an intersection request. The client is now waiting
   -- for a response, and the server is busy getting ready to send a response.
-  StIntersect :: ChainSync header tip
+  StIntersect :: ChainSync header point tip
 
   -- | Both the client and server are in the terminal state. They're done.
-  StDone      :: ChainSync header tip
+  StDone      :: ChainSync header point tip
 
 
-instance (ShowProxy header, ShowProxy tip) => ShowProxy (ChainSync header tip) where
+instance (ShowProxy header, ShowProxy tip)
+      => ShowProxy (ChainSync header point tip) where
     showProxy _ = concat
       [ "ChainSync ("
       , showProxy (Proxy :: Proxy header)
@@ -62,26 +64,26 @@ data StNextKind where
   StMustReply :: StNextKind
 
 
-instance Protocol (ChainSync header tip) where
+instance Protocol (ChainSync header point tip) where
 
   -- | The messages in the chain sync protocol.
   --
   -- In this protocol the consumer always initiates things and the producer
   -- replies.
   --
-  data Message (ChainSync header tip) from to where
+  data Message (ChainSync header point tip) from to where
 
     -- | Request the next update from the producer. The response can be a roll
     -- forward, a roll back or wait.
     --
-    MsgRequestNext :: Message (ChainSync header tip)
+    MsgRequestNext :: Message (ChainSync header point tip)
                               StIdle (StNext StCanAwait)
 
     -- | Acknowledge the request but require the consumer to wait for the next
     -- update. This means that the consumer is synced with the producer, and
     -- the producer is waiting for its own chain state to change.
     --
-    MsgAwaitReply :: Message (ChainSync header tip)
+    MsgAwaitReply :: Message (ChainSync header point tip)
                              (StNext StCanAwait) (StNext StMustReply)
 
     -- | Tell the consumer to extend their chain with the given header.
@@ -89,15 +91,15 @@ instance Protocol (ChainSync header tip) where
     -- The message also tells the consumer about the head point of the producer.
     --
     MsgRollForward :: header -> tip
-                   -> Message (ChainSync header tip)
+                   -> Message (ChainSync header point tip)
                               (StNext any) StIdle
 
     -- | Tell the consumer to roll back to a given point on their chain.
     --
     -- The message also tells the consumer about the head point of the producer.
     --
-    MsgRollBackward :: Point header -> tip
-                    -> Message (ChainSync header tip)
+    MsgRollBackward :: point -> tip
+                    -> Message (ChainSync header point tip)
                                (StNext any) StIdle
 
     -- | Ask the producer to try to find an improved intersection point between
@@ -105,8 +107,8 @@ instance Protocol (ChainSync header tip) where
     -- points and it is up to the producer to find the first intersection point
     -- on its chain and send it back to the consumer.
     --
-    MsgFindIntersect :: [Point header]
-                     -> Message (ChainSync header tip)
+    MsgFindIntersect :: [point]
+                     -> Message (ChainSync header point tip)
                                 StIdle StIntersect
 
     -- | The reply to the consumer about an intersection found.
@@ -114,9 +116,9 @@ instance Protocol (ChainSync header tip) where
     --
     -- The message also tells the consumer about the head point of the producer.
     --
-    MsgIntersectFound  :: Point header -> tip
-                          -> Message (ChainSync header tip)
-                                     StIntersect StIdle
+    MsgIntersectFound  :: point -> tip
+                       -> Message (ChainSync header point tip)
+                                  StIntersect StIdle
 
     -- | The reply to the consumer that no intersection was found: none of the
     -- points the consumer supplied are on the producer chain.
@@ -124,12 +126,12 @@ instance Protocol (ChainSync header tip) where
     -- The message also tells the consumer about the head point of the producer.
     --
     MsgIntersectNotFound :: tip
-                         -> Message (ChainSync header tip)
+                         -> Message (ChainSync header point tip)
                                     StIntersect StIdle
 
     -- | Terminating messages
     --
-    MsgDone :: Message (ChainSync header tip)
+    MsgDone :: Message (ChainSync header point tip)
                        StIdle StDone
 
   -- | We have to explain to the framework what our states mean, in terms of
@@ -158,7 +160,8 @@ data TokNextKind (k :: StNextKind) where
   TokMustReply :: TokNextKind StMustReply
 
 
-instance (StandardHash header, Show header, Show tip) => Show (Message (ChainSync header tip) from to) where
+instance (Show header, Show point, Show tip)
+      => Show (Message (ChainSync header point tip) from to) where
   show MsgRequestNext             = "MsgRequestNext"
   show MsgAwaitReply              = "MsgAwaitReply"
   show (MsgRollForward h tip)     = "MsgRollForward "
@@ -178,10 +181,10 @@ instance (StandardHash header, Show header, Show tip) => Show (Message (ChainSyn
                                   ++ show tip
   show MsgDone{}                  = "MsgDone"
 
-instance Show (ClientHasAgency (st :: ChainSync header tip)) where
+instance Show (ClientHasAgency (st :: ChainSync header point tip)) where
     show TokIdle = "TokIdle"
 
-instance Show (ServerHasAgency (st :: ChainSync header tip)) where
+instance Show (ServerHasAgency (st :: ChainSync header point tip)) where
     show (TokNext TokCanAwait)  = "TokNext TokCanAwait"
     show (TokNext TokMustReply) = "TokNext TokMustReply"
     show TokIntersect           = "TokIntersect"

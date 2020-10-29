@@ -121,7 +121,8 @@ demo chain0 updates delay = do
                (encodeTip encode) (decodeTip decode))
             consumerPeer
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Tip block)) AsClient ChainSync.StIdle m ()
+        consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
+                             AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -138,7 +139,8 @@ demo chain0 updates delay = do
                (encodeTip encode) (decodeTip decode))
             producerPeer
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Tip block)) AsServer ChainSync.StIdle m ()
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
+                        AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
 
     let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
@@ -187,7 +189,7 @@ demo chain0 updates delay = do
     consumerClient :: StrictTMVar m Bool
                    -> Point block
                    -> StrictTVar m (Chain block)
-                   -> ChainSync.Client block (Tip block) m ()
+                   -> ChainSync.Client block (Point block) (Tip block) m ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

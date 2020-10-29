@@ -27,16 +27,16 @@ import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-data Client header tip m t = Client
-  { rollbackward :: Point header -> tip -> m (Either t (Client header tip m t))
-  , rollforward  :: header -> m (Either t (Client header tip m t))
-  , points       :: [Point header] -> m (Client header tip m t)
+data Client header point tip m t = Client
+  { rollbackward :: point -> tip -> m (Either t (Client header point tip m t))
+  , rollforward  :: header -> m (Either t (Client header point tip m t))
+  , points       :: [point] -> m (Client header point tip m t)
   }
 
 -- | A client which doesn't do anything and never ends. Used with
 -- 'chainSyncClientExample', the StrictTVar m (Chain header) will be updated but
 -- nothing further will happen.
-pureClient :: Applicative m => Client header tip m void
+pureClient :: Applicative m => Client header point tip m void
 pureClient = Client
   { rollbackward = \_ _ -> pure (Right pureClient)
   , rollforward  = \_ -> pure (Right pureClient)
@@ -52,13 +52,13 @@ pureClient = Client
 chainSyncClientExample :: forall header tip m a.
                           (HasHeader header, MonadSTM m)
                        => StrictTVar m (Chain header)
-                       -> Client header tip m a
-                       -> ChainSyncClient header tip m a
+                       -> Client header (Point header) tip m a
+                       -> ChainSyncClient header (Point header) tip m a
 chainSyncClientExample chainvar client = ChainSyncClient $
     initialise <$> getChainPoints
   where
-    initialise :: ([Point header], Client header tip m a)
-               -> ClientStIdle header tip m a
+    initialise :: ([Point header], Client header (Point header) tip m a)
+               -> ClientStIdle header (Point header) tip m a
     initialise (points, client') =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -73,8 +73,8 @@ chainSyncClientExample chainvar client = ChainSyncClient $
         recvMsgIntersectNotFound = \  _ -> ChainSyncClient (return (requestNext client'))
       }
 
-    requestNext :: Client header tip m a
-                -> ClientStIdle header tip m a
+    requestNext :: Client header (Point header) tip m a
+                -> ClientStIdle header (Point header) tip m a
     requestNext client' =
       SendMsgRequestNext
         (handleNext client')
@@ -82,8 +82,8 @@ chainSyncClientExample chainvar client = ChainSyncClient $
         -- something. In this example we don't take up that opportunity.
         (return (handleNext client'))
 
-    handleNext :: Client header tip m a
-               -> ClientStNext header tip m a
+    handleNext :: Client header (Point header) tip m a
+               -> ClientStNext header (Point header) tip m a
     handleNext client' =
       ClientStNext {
         recvMsgRollForward  = \header _tip -> ChainSyncClient $ do
@@ -101,7 +101,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
             Right client'' -> requestNext client''
       }
 
-    getChainPoints :: m ([Point header], Client header tip m a)
+    getChainPoints :: m ([Point header], Client header (Point header) tip m a)
     getChainPoints = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
       client' <- points client pts
@@ -142,11 +142,11 @@ chainSyncServerExample :: forall blk header m a.
                           )
                        => a
                        -> StrictTVar m (ChainProducerState header)
-                       -> ChainSyncServer header (Tip blk) m a
+                       -> ChainSyncServer header (Point blk) (Tip blk) m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader
   where
-    idle :: ReaderId -> ServerStIdle header (Tip blk) m a
+    idle :: ReaderId -> ServerStIdle header (Point blk) (Tip blk) m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
@@ -154,12 +154,12 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
-    idle' :: ReaderId -> ChainSyncServer header (Tip blk) m a
+    idle' :: ReaderId -> ChainSyncServer header (Point blk) (Tip blk) m a
     idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Tip blk) m a)
-                                (m (ServerStNext header (Tip blk) m a)))
+                      -> m (Either (ServerStNext header (Point blk) (Tip blk) m a)
+                                (m (ServerStNext header (Point blk) (Tip blk) m a)))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
@@ -170,13 +170,13 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
 
     sendNext :: ReaderId
              -> (Tip blk, ChainUpdate header header)
-             -> ServerStNext header (Tip blk) m a
+             -> ServerStNext header (Point blk) (Tip blk) m a
     sendNext r (tip, AddBlock b) = SendMsgRollForward  b             tip (idle' r)
     sendNext r (tip, RollBack p) = SendMsgRollBackward (castPoint p) tip (idle' r)
 
     handleFindIntersect :: ReaderId
-                        -> [Point header]
-                        -> m (ServerStIntersect header (Tip blk) m a)
+                        -> [Point blk]
+                        -> m (ServerStIntersect header (Point blk) (Tip blk) m a)
     handleFindIntersect r points = do
       -- TODO: guard number of points
       -- Find the first point that is on our chain
@@ -193,8 +193,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       return rid
 
     improveReadPoint :: ReaderId
-                     -> [Point header]
-                     -> m (Maybe (Point header), Tip blk)
+                     -> [Point blk]
+                     -> m (Maybe (Point blk), Tip blk)
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
@@ -205,7 +205,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
             let chain = ChainProducerState.chainState cps'
-            return (Just ipoint, castTip (Chain.headTip chain))
+            return (Just (castPoint ipoint), castTip (Chain.headTip chain))
 
     tryReadChainUpdate :: ReaderId
                        -> m (Maybe (Tip blk, ChainUpdate header header))
