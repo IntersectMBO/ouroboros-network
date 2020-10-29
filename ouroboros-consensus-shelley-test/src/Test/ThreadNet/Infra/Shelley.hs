@@ -143,7 +143,7 @@ data CoreNodeKeyInfo c = CoreNodeKeyInfo
       )
   }
 
-coreNodeKeys :: forall c. TPraosCrypto c => CoreNode c -> CoreNodeKeyInfo c
+coreNodeKeys :: forall c. PraosCrypto c => CoreNode c -> CoreNodeKeyInfo c
 coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
     CoreNodeKeyInfo {
         cnkiCoreNode =
@@ -162,7 +162,7 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
       }
 
 genCoreNode ::
-     forall c. TPraosCrypto c
+     forall c. PraosCrypto c
   => SL.KESPeriod
   -> Gen (CoreNode c)
 genCoreNode startKESPeriod = do
@@ -200,7 +200,7 @@ genCoreNode startKESPeriod = do
     genSeed :: Integral a => a -> Gen Cardano.Crypto.Seed
     genSeed = fmap mkSeedFromBytes . genBytes
 
-mkLeaderCredentials :: TPraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
+mkLeaderCredentials :: PraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
     TPraosLeaderCredentials {
         tpraosLeaderCredentialsInitSignKey = cnKES
@@ -265,7 +265,7 @@ mkEpochSize (SecurityParam k) f =
 -- but we can configure a potentially lower maximum for the ledger, that's why
 -- we take it as an argument.
 mkGenesisConfig
-  :: forall era. TPraosCrypto (EraCrypto era)
+  :: forall era. PraosCrypto (EraCrypto era)
   => ProtVer   -- ^ Initial protocol version
   -> SecurityParam
   -> Rational  -- ^ Initial active slot coefficient
@@ -510,17 +510,17 @@ initialLovelacePerCoreNode :: Word64
 initialLovelacePerCoreNode = 1000
 
 mkCredential ::
-     TPraosCrypto (EraCrypto era)
+     PraosCrypto (EraCrypto era)
   => SL.SignKeyDSIGN (EraCrypto era) -> SL.Credential r era
 mkCredential = SL.KeyHashObj . mkKeyHash
 
-mkKeyHash :: TPraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyHash r c
+mkKeyHash :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyHash r c
 mkKeyHash = SL.hashKey . mkVerKey
 
-mkVerKey :: TPraosCrypto c => SL.SignKeyDSIGN c -> SL.VKey r c
+mkVerKey :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.VKey r c
 mkVerKey = SL.VKey . deriveVerKeyDSIGN
 
-mkKeyPair :: TPraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
+mkKeyPair :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
 mkKeyPair sk = SL.KeyPair { vKey = mkVerKey sk, sKey = sk }
 
 mkKeyHashVrf :: (HashAlgorithm h, VRFAlgorithm vrf)
