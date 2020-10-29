@@ -144,12 +144,12 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
-  answerQuery cfg query ext@(ExtLedgerState ledgerState headerState) =
+  answerQuery cfg query ext =
       case query of
         GetLedgerTip ->
-          shelleyLedgerTipPoint ledgerState
+          shelleyLedgerTipPoint lst
         GetEpochNo ->
-          SL.nesEL $ shelleyLedgerState ledgerState
+          SL.nesEL st
         GetNonMyopicMemberRewards creds ->
           NonMyopicMemberRewards $
             SL.getNonMyopicMemberRewards globals st creds
@@ -175,11 +175,20 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
         DebugNewEpochState ->
           st
         DebugChainDepState ->
-          tpraosStateChainDepState (headerStateChainDep headerState)
+          tpraosStateChainDepState (headerStateChainDep hst)
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
-      st      = shelleyLedgerState ledgerState
+      -- NOTE: we are not pattern matching on @ext@ but using the accessors
+      -- here. The reason for that is that that pattern match blows up the
+      -- compile time (in particular the time spent desugaring, which is when
+      -- the compiler looks at pattern matches) to 2m30s! We don't really
+      -- understand why, but our guess is that it has to do with the combination
+      -- of the strictness of 'ExtLedgerState', the fact that @LedgerState@ is a
+      -- data family, and the 'ShelleyBasedEra' constraint.
+      lst = ledgerState ext
+      hst = headerState ext
+      st  = shelleyLedgerState lst
 
 instance SameDepIndex (Query (ShelleyBlock era)) where
   sameDepIndex GetLedgerTip GetLedgerTip
