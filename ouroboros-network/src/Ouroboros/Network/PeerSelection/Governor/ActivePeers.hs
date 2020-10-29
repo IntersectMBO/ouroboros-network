@@ -115,8 +115,16 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
     handler e =
       --TODO: decide what happens if promotion fails, do we stay warm or go to
       -- cold? Will this be reported asynchronously via the state monitoring?
-      Completion $ \st _now -> Decision {
-        decisionTrace = TracePromoteWarmFailed peeraddr e,
+      Completion $ \st@PeerSelectionState {
+                               activePeers,
+                               targets = PeerSelectionTargets {
+                                           targetNumberOfActivePeers
+                                         }
+                             }
+                    _now -> Decision {
+        decisionTrace = TracePromoteWarmFailed targetNumberOfActivePeers
+                                               (Set.size activePeers) 
+                                               peeraddr e,
         decisionState = st {
                           inProgressPromoteWarm = Set.delete peeraddr
                                                     (inProgressPromoteWarm st)
@@ -129,13 +137,21 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of activatePeerConnection
       activatePeerConnection peerconn
-      return $ Completion $ \st _now ->
-        assert (peeraddr `EstablishedPeers.member` establishedPeers st)
+      return $ Completion $ \st@PeerSelectionState {
+                               activePeers,
+                               targets = PeerSelectionTargets {
+                                           targetNumberOfActivePeers
+                                         }
+                             }
+                           _now ->
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+        let activePeers' = Set.insert peeraddr activePeers in
         Decision {
-          decisionTrace = TracePromoteWarmDone peeraddr,
+          decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
+                                               (Set.size activePeers')
+                                               peeraddr,
           decisionState = st {
-                            activePeers           = Set.insert peeraddr
-                                                      (activePeers st),
+                            activePeers           = activePeers',
                             establishedPeers      = EstablishedPeers.updateStatus
                                                       peeraddr PeerHot
                                                       (establishedPeers st),
@@ -228,8 +244,15 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
       -- the state where we believed these peers are still warm, since then we
       -- can have another go at the ones we didn't yet try to close, or perhaps
       -- it'll be closed for other reasons and our monitoring will notice it.
-      Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotFailed peeraddr e,
+      Completion $ \st@PeerSelectionState {
+                      activePeers,
+                      targets = PeerSelectionTargets {
+                                  targetNumberOfActivePeers
+                                }
+                    }
+                    _now -> Decision {
+        decisionTrace = TraceDemoteHotFailed targetNumberOfActivePeers
+                                             (Set.size activePeers) peeraddr e,
         decisionState = st {
                           inProgressDemoteHot = Set.delete peeraddr
                                                   (inProgressDemoteHot st)
@@ -240,13 +263,21 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
     job :: m (Completion m peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
-      return $ Completion $ \st _now ->
-        assert (peeraddr `EstablishedPeers.member` establishedPeers st)
+      return $ Completion $ \st@PeerSelectionState {
+                                activePeers,
+                                targets = PeerSelectionTargets {
+                                            targetNumberOfActivePeers
+                                          }
+                             }
+                             _now ->
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+        let activePeers' = Set.delete peeraddr activePeers in
         Decision {
-          decisionTrace = TraceDemoteHotDone peeraddr,
+          decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
+                                             (Set.size activePeers')
+                                             peeraddr,
           decisionState = st {
-                            activePeers         = Set.delete peeraddr
-                                                    (activePeers st),
+                            activePeers         = activePeers',
                             establishedPeers    = EstablishedPeers.updateStatus peeraddr PeerWarm
                                                     (establishedPeers st),
                             inProgressDemoteHot = Set.delete peeraddr
