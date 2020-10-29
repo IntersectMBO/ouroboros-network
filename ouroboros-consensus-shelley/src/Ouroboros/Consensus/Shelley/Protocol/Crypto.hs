@@ -1,9 +1,6 @@
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 module Ouroboros.Consensus.Shelley.Protocol.Crypto (
-    TPraosCrypto
+    PraosCrypto
   , StandardCrypto
   ) where
 
@@ -13,19 +10,7 @@ import           Cardano.Crypto.KES.Sum
 import           Cardano.Crypto.VRF.Praos (PraosVRF)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
-import           Shelley.Spec.Ledger.API (BHBody, Hash)
-import           Shelley.Spec.Ledger.BaseTypes (Seed)
-import qualified Shelley.Spec.Ledger.Keys as SL (DSignable, KESignable,
-                     VRFSignable)
-import           Shelley.Spec.Ledger.OCert (OCertSignable)
-import           Shelley.Spec.Ledger.TxBody (EraIndependentTxBody)
-
-class ( Crypto c
-      , SL.DSignable    c (OCertSignable c)
-      , SL.DSignable    c (Hash c EraIndependentTxBody)
-      , SL.KESignable   c (BHBody c)
-      , SL.VRFSignable  c Seed
-      ) => TPraosCrypto c
+import           Shelley.Spec.Ledger.API (PraosCrypto)
 
 data StandardCrypto
 
@@ -36,4 +21,4 @@ instance Crypto StandardCrypto where
   type HASH     StandardCrypto = Blake2b_256
   type ADDRHASH StandardCrypto = Blake2b_224
 
-instance TPraosCrypto StandardCrypto
+instance PraosCrypto StandardCrypto

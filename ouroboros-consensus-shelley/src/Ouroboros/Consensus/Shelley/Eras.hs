@@ -1,6 +1,3 @@
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
     ShelleyEra
@@ -19,12 +16,10 @@ module Ouroboros.Consensus.Shelley.Eras (
   ) where
 
 import           Cardano.Ledger.Era (Crypto)
-import           Cardano.Ledger.Shelley (ShelleyBased, ShelleyEra)
+import           Cardano.Ledger.Shelley (ShelleyEra)
 
-import qualified Shelley.Spec.Ledger.API as SL
-
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto,
-                     TPraosCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
+import           Shelley.Spec.Ledger.API (ShelleyBasedEra)
 
 {-------------------------------------------------------------------------------
   Eras based on the Shelley ledger
@@ -57,20 +52,6 @@ type StandardAllegra = AllegraEra StandardCrypto
 
 -- | The Mary era with standard crypto
 type StandardMary = MaryEra StandardCrypto
-
-{-------------------------------------------------------------------------------
-  Shelley-based era
--------------------------------------------------------------------------------}
-
--- | Constraints needed by a Shelley-based era
-class ( TPraosCrypto (EraCrypto era)
-      , ShelleyBased            era
-      , SL.ApplyBlock           era
-      , SL.GetLedgerView        era
-      , SL.ApplyTx              era
-      ) => ShelleyBasedEra era
-
-instance TPraosCrypto c => ShelleyBasedEra (ShelleyEra c)
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience

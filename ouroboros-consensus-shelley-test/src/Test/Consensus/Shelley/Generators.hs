@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
+import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))
 
 import           Generic.Random (genericArbitraryU)
@@ -104,7 +104,7 @@ instance CanMock era => Arbitrary (NonMyopicMemberRewards era) where
 instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
-instance TPraosCrypto c => Arbitrary (TPraosState c) where
+instance PraosCrypto c => Arbitrary (TPraosState c) where
   arbitrary = do
       lastSlot <- frequency
         [ (1, return Origin)
@@ -151,7 +151,7 @@ instance Arbitrary (SL.PParams' SL.StrictMaybe era) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
-instance TPraosCrypto c => Arbitrary (SL.ChainDepState c) where
+instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
   arbitrary = genericArbitraryU
   shrink = genericShrink
 

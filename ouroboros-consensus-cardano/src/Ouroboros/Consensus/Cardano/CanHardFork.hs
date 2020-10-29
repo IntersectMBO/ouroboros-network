@@ -310,7 +310,7 @@ instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
       singleEraName = "Shelley"
     }
 
-instance TPraosCrypto c => HasPartialConsensusConfig (TPraos c) where
+instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
   type PartialConsensusConfig (TPraos c) = TPraosParams
 
   completeConsensusConfig _ tpraosEpochInfo tpraosParams = TPraosConfig {..}
@@ -347,7 +347,7 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
 -------------------------------------------------------------------------------}
 
 type CardanoHardForkConstraints c =
-  ( TPraosCrypto c
+  ( PraosCrypto c
   , ShelleyBasedEra (ShelleyEra c)
   , ShelleyBasedEra (AllegraEra c)
   , ShelleyBasedEra (MaryEra    c)

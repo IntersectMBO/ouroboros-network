@@ -95,7 +95,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosCrypto,
+import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -236,7 +236,7 @@ examples = Golden.Examples {
         (mkKeyHash 0)
         (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
 
-examplePoolDistr :: forall c. TPraosCrypto c => SL.PoolDistr c
+examplePoolDistr :: forall c. PraosCrypto c => SL.PoolDistr c
 examplePoolDistr = SL.PoolDistr $ Map.fromList [
       (mkKeyHash 1, SL.IndividualPoolStake
                       1

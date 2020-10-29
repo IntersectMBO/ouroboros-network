@@ -13,7 +13,7 @@ import           Cardano.Crypto.KES (MockKES)
 import           Cardano.Ledger.Crypto (Crypto (..))
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (TPraosCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (PraosCrypto)
 
 -- | A replacement for 'Test.Consensus.Shelley.MockCrypto' that is compatible
 -- with bootstrapping from Byron.
@@ -42,4 +42,4 @@ instance Crypto MockCryptoCompatByron where
   type KES      MockCryptoCompatByron = MockKES 10
   type VRF      MockCryptoCompatByron = FakeVRF
 
-instance TPraosCrypto MockCryptoCompatByron
+instance PraosCrypto MockCryptoCompatByron
