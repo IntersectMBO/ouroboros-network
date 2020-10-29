@@ -357,13 +357,11 @@ setGossipTime peeraddrs time
 -- Tracking when we can (re)connect
 --
 
-minConnectTime :: Ord peeraddr => KnownPeers peeraddr -> Maybe Time
-minConnectTime KnownPeers {
-                   availableToConnect,
-                   nextConnectTimes
-                 }
-  | Set.null availableToConnect
-  , Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
+minConnectTime :: Ord peeraddr
+               => KnownPeers peeraddr
+               -> Maybe Time
+minConnectTime KnownPeers { nextConnectTimes }
+  | Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
   = Just t
 
   | otherwise

@@ -203,9 +203,8 @@ setCurrentTime now ep@EstablishedPeers { nextActivateTimes } =
 minActivateTime :: Ord peeraddr
                 => EstablishedPeers peeraddr peerconn
                 -> Maybe Time
-minActivateTime ep@EstablishedPeers { nextActivateTimes }
-  | Map.null (readyPeers ep)
-  , Just (_k, t, _, _psq) <- PSQ.minView nextActivateTimes
+minActivateTime EstablishedPeers { nextActivateTimes }
+  | Just (_k, t, _, _psq) <- PSQ.minView nextActivateTimes
   = Just t
 
   | otherwise
