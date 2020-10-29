@@ -229,7 +229,7 @@ instance Arbitrary AcquireFailure where
 instance Arbitrary (Query (Point Block)) where
   arbitrary = pure QueryPoint
 
-instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query)) where
+instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
         (MsgAcquire <$> arbitrary)
@@ -259,7 +259,7 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query)) where
 instance ShowQuery Query where
   showResult QueryPoint = show
 
-instance  Eq (AnyMessage (LocalStateQuery Block Query)) where
+instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 
   (==) (AnyMessage (MsgAcquire pt))
        (AnyMessage (MsgAcquire pt')) = pt == pt'
@@ -293,7 +293,7 @@ instance  Eq (AnyMessage (LocalStateQuery Block Query)) where
 
 
 codec :: MonadST m
-      => Codec (LocalStateQuery Block Query)
+      => Codec (LocalStateQuery Block (Point Block) Query)
                 DeserialiseFailure
                 m ByteString
 codec = codecLocalStateQuery
@@ -317,24 +317,30 @@ codec = codecLocalStateQuery
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
+prop_codec
+  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  -> Bool
 prop_codec msg =
   runST (prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
+prop_codec_splits2
+  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  -> Bool
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
+prop_codec_splits3
+  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  -> Bool
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block Query)
+  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)

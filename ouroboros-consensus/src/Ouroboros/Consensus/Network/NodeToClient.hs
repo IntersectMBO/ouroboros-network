@@ -93,7 +93,7 @@ data Handlers m peer blk = Handlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , hStateQueryServer
-        :: LocalStateQueryServer blk (Query blk) m ()
+        :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
     }
 
 mkHandlers
@@ -127,7 +127,7 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
       cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))  e m bCS
     , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
-    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Query blk))                e m bSQ
+    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))    e m bSQ
     }
 
 type Codecs blk e m bCS bTX bSQ =
@@ -249,7 +249,7 @@ identityCodecs :: (Monad m, QueryLedger blk)
                => Codecs blk CodecFailure m
                     (AnyMessage (ChainSync (Serialised blk) (Point blk) (Tip blk)))
                     (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-                    (AnyMessage (LocalStateQuery blk (Query blk)))
+                    (AnyMessage (LocalStateQuery blk (Point blk) (Query blk)))
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
@@ -267,7 +267,7 @@ type Tracers m peer blk e =
 data Tracers' peer blk e f = Tracers {
       tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Point blk) (Tip blk))))
     , tTxSubmissionTracer :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
-    , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
+    , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Point blk) (Query blk))))
     }
 
 instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk e f) where

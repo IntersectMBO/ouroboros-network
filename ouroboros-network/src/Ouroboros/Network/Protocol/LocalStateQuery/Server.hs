@@ -20,12 +20,11 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Server (
 import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryServer block (query :: Type -> Type) m a = LocalStateQueryServer {
-      runLocalStateQueryServer :: m (ServerStIdle block query m a)
+newtype LocalStateQueryServer block point (query :: Type -> Type) m a = LocalStateQueryServer {
+      runLocalStateQueryServer :: m (ServerStIdle block point query m a)
     }
 
 -- | In the 'StIdle' protocol state, the server does not have agency. Instead
@@ -36,9 +35,9 @@ newtype LocalStateQueryServer block (query :: Type -> Type) m a = LocalStateQuer
 --
 -- It must be prepared to handle either.
 --
-data ServerStIdle block query m a = ServerStIdle {
-       recvMsgAcquire :: Point block
-                      -> m (ServerStAcquiring block query m a),
+data ServerStIdle block point query m a = ServerStIdle {
+       recvMsgAcquire :: point
+                      -> m (ServerStAcquiring block point query m a),
 
        recvMsgDone    :: m a
      }
@@ -49,13 +48,13 @@ data ServerStIdle block query m a = ServerStIdle {
 --  * acquired
 --  * failure to acquire
 --
-data ServerStAcquiring block query m a where
-  SendMsgAcquired :: ServerStAcquired  block query m a
-                  -> ServerStAcquiring block query m a
+data ServerStAcquiring block point query m a where
+  SendMsgAcquired :: ServerStAcquired  block point query m a
+                  -> ServerStAcquiring block point query m a
 
   SendMsgFailure  :: AcquireFailure
-                  -> ServerStIdle      block query m a
-                  -> ServerStAcquiring block query m a
+                  -> ServerStIdle      block point query m a
+                  -> ServerStAcquiring block point query m a
 
 -- | In the 'StAcquired' protocol state, the server does not have agency.
 -- Instead it is waiting for:
@@ -66,40 +65,40 @@ data ServerStAcquiring block query m a where
 --
 -- It must be prepared to handle either.
 --
-data ServerStAcquired block query m a = ServerStAcquired {
+data ServerStAcquired block point query m a = ServerStAcquired {
       recvMsgQuery     :: forall result.
                           query result
-                       -> m (ServerStQuerying  block query m a result),
+                       -> m (ServerStQuerying  block point query m a result),
 
-      recvMsgReAcquire :: Point block
-                       -> m (ServerStAcquiring block query m a),
+      recvMsgReAcquire :: point
+                       -> m (ServerStAcquiring block point query m a),
 
-      recvMsgRelease   :: m (ServerStIdle      block query m a)
+      recvMsgRelease   :: m (ServerStIdle      block point query m a)
     }
 
 -- | In the 'StQuerying' protocol state, the server has agency and must send:
 --
 --  * a result
 --
-data ServerStQuerying block query m a result where
+data ServerStQuerying block point query m a result where
   SendMsgResult :: result
-                -> ServerStAcquired block query m a
-                -> ServerStQuerying block query m a result
+                -> ServerStAcquired block point query m a
+                -> ServerStQuerying block point query m a result
 
 -- | Interpret a 'LocalStateQueryServer' action sequence as a 'Peer' on the server
 -- side of the 'LocalStateQuery' protocol.
 --
 localStateQueryServerPeer
-  :: forall block (query :: Type -> Type) m a.
+  :: forall block point (query :: Type -> Type) m a.
      Monad m
-  => LocalStateQueryServer block query m a
-  -> Peer (LocalStateQuery block query) AsServer StIdle m a
+  => LocalStateQueryServer block point query m a
+  -> Peer (LocalStateQuery block point query) AsServer StIdle m a
 localStateQueryServerPeer (LocalStateQueryServer handler) =
     Effect $ handleStIdle <$> handler
   where
     handleStIdle
-      :: ServerStIdle block query m a
-      -> Peer (LocalStateQuery block query) AsServer StIdle m a
+      :: ServerStIdle block point query m a
+      -> Peer (LocalStateQuery block point query) AsServer StIdle m a
     handleStIdle ServerStIdle{recvMsgAcquire, recvMsgDone} =
       Await (ClientAgency TokIdle) $ \req -> case req of
         MsgAcquire pt -> Effect $
@@ -108,8 +107,8 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
           Done TokDone <$> recvMsgDone
 
     handleStAcquiring
-      :: ServerStAcquiring block query m a
-      -> Peer (LocalStateQuery block query) AsServer StAcquiring m a
+      :: ServerStAcquiring block point query m a
+      -> Peer (LocalStateQuery block point query) AsServer StAcquiring m a
     handleStAcquiring req = case req of
       SendMsgAcquired stAcquired    ->
         Yield (ServerAgency TokAcquiring)
@@ -121,8 +120,8 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
               (handleStIdle stIdle)
 
     handleStAcquired
-      :: ServerStAcquired block query m a
-      -> Peer (LocalStateQuery block query) AsServer StAcquired m a
+      :: ServerStAcquired block point query m a
+      -> Peer (LocalStateQuery block point query) AsServer StAcquired m a
     handleStAcquired ServerStAcquired{recvMsgQuery, recvMsgReAcquire, recvMsgRelease} =
       Await (ClientAgency TokAcquired) $ \req -> case req of
         MsgQuery query  -> Effect $ handleStQuerying query <$> recvMsgQuery query
@@ -131,8 +130,8 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
 
     handleStQuerying
       :: query result
-      -> ServerStQuerying block query m a result
-      -> Peer (LocalStateQuery block query) AsServer (StQuerying result) m a
+      -> ServerStQuerying block point query m a result
+      -> Peer (LocalStateQuery block point query) AsServer (StQuerying result) m a
     handleStQuerying query (SendMsgResult result stAcquired) =
       Yield (ServerAgency (TokQuerying query))
             (MsgResult query result)

@@ -8,10 +8,10 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 
 direct
-  :: forall block query m a b.
+  :: forall block point query m a b.
      Monad m
-  => LocalStateQueryClient block query m a
-  -> LocalStateQueryServer block query m b
+  => LocalStateQueryClient block point query m a
+  -> LocalStateQueryServer block point query m b
   -> m (a, b)
 direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
     client <- mclient
@@ -19,8 +19,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
     directIdle client server
   where
     directIdle
-      :: ClientStIdle block query m a
-      -> ServerStIdle block query m b
+      :: ClientStIdle block point query m a
+      -> ServerStIdle block point query m b
       -> m (a, b)
     directIdle (SendMsgAcquire pt client') ServerStIdle{recvMsgAcquire} = do
       server' <- recvMsgAcquire pt
@@ -30,8 +30,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
       return (a, b)
 
     directAcquiring
-      :: ClientStAcquiring block query m a
-      -> ServerStAcquiring block query m b
+      :: ClientStAcquiring block point query m a
+      -> ServerStAcquiring block point query m b
       -> m (a, b)
     directAcquiring ClientStAcquiring{recvMsgAcquired} (SendMsgAcquired server') =
       let client' = recvMsgAcquired
@@ -41,8 +41,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
       directIdle client' server'
 
     directAcquired
-      :: ClientStAcquired block query m a
-      -> ServerStAcquired block query m b
+      :: ClientStAcquired block point query m a
+      -> ServerStAcquired block point query m b
       -> m (a, b)
     directAcquired (SendMsgQuery query client') ServerStAcquired{recvMsgQuery} = do
       server' <- recvMsgQuery query
@@ -56,8 +56,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
       directIdle client' server'
 
     directQuerying
-      :: ClientStQuerying block query m a result
-      -> ServerStQuerying block query m b result
+      :: ClientStQuerying block point query m a result
+      -> ServerStQuerying block point query m b result
       -> m (a, b)
     directQuerying ClientStQuerying{recvMsgResult} (SendMsgResult result server') = do
       client' <- recvMsgResult result
