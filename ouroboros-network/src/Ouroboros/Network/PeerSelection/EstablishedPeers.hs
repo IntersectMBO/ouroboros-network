@@ -80,7 +80,7 @@ invariant EstablishedPeers { establishedReady,
      <> (Set.fromList (PSQ.keys nextActivateTimes))
      == Map.keysSet establishedStatus
 
-     -- there are ony warm peers in 'nextActiveTimes'
+     -- there are only warm peers in 'nextActiveTimes'
   && all (== PeerWarm)
          (Map.filterWithKey
            (\peeraddr _ -> PSQ.member peeraddr nextActivateTimes)
