@@ -2,7 +2,9 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Network.Protocol.LocalStateQuery.Client (
       -- * Protocol type for the client
       -- | The protocol states from the point of view of the client.
@@ -17,6 +19,9 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client (
 
       -- * Null local state query client
     , localStateQueryClientNull
+
+      -- * Utilities
+    , mapLocalStateQueryClient
     ) where
 
 import           Control.Monad (forever)
@@ -92,6 +97,62 @@ data ClientStAcquired block query m a where
 data ClientStQuerying block query m a result = ClientStQuerying {
       recvMsgResult :: result -> m (ClientStAcquired block query m a)
     }
+
+-- | Transform a 'LocalStateQueryClient' by mapping over the query and query
+-- result values.
+--
+-- Note the direction of the individual mapping functions corresponds to
+-- whether the types are used as protocol inputs or outputs.
+--
+mapLocalStateQueryClient :: forall block block' query query' m a.
+                            Functor m
+                         => (Point block -> Point block')
+                         -> (forall result result'. query result -> query' result')
+                         -> (forall result result'.
+                                    query result
+                                 -> query' result'
+                                 -> result' -> result)
+                         -> LocalStateQueryClient block  query  m a
+                         -> LocalStateQueryClient block' query' m a
+mapLocalStateQueryClient fpoint fquery fresult =
+    \(LocalStateQueryClient c) -> LocalStateQueryClient (fmap goIdle c)
+  where
+    goIdle :: ClientStIdle block  query  m a
+           -> ClientStIdle block' query' m a
+    goIdle (SendMsgAcquire pt k) =
+      SendMsgAcquire (fpoint pt) (goAcquiring k)
+
+    goIdle (SendMsgDone a) = SendMsgDone a
+
+    goAcquiring :: ClientStAcquiring block  query  m a
+                -> ClientStAcquiring block' query' m a
+    goAcquiring ClientStAcquiring { recvMsgAcquired, recvMsgFailure } =
+      ClientStAcquiring {
+        recvMsgAcquired = goAcquired recvMsgAcquired,
+        recvMsgFailure  = \failure -> fmap goIdle (recvMsgFailure failure)
+      }
+
+    goAcquired :: ClientStAcquired block  query  m a
+               -> ClientStAcquired block' query' m a
+    goAcquired (SendMsgQuery     q  k) = SendMsgQuery q' (goQuerying q q' k)
+                                           where
+                                             q' = fquery q
+    goAcquired (SendMsgReAcquire pt k) = SendMsgReAcquire (fpoint pt) (goAcquiring k)
+    goAcquired (SendMsgRelease      k) = SendMsgRelease (fmap goIdle k)
+
+    goQuerying :: forall result result'.
+                  query  result
+               -> query' result'
+               -> ClientStQuerying block  query  m a result
+               -> ClientStQuerying block' query' m a result'
+    goQuerying q q' ClientStQuerying {recvMsgResult} =
+      ClientStQuerying {
+        recvMsgResult = \result' ->
+          let result :: result
+              result = fresult q q' result' in
+          fmap goAcquired (recvMsgResult result)
+      }
+
 
 -- | Interpret a 'LocalStateQueryClient' action sequence as a 'Peer' on the
 -- client side of the 'LocalStateQuery' protocol.
