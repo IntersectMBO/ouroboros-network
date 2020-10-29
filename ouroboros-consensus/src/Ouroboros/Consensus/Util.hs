@@ -63,7 +63,7 @@ module Ouroboros.Consensus.Util (
   , pairSnd
     -- * Miscellaneous
   , fib
-  , rightToMaybe
+  , eitherToMaybe
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
@@ -383,6 +383,6 @@ fib n = round $ phi ** fromIntegral n / sq5
     sq5 = sqrt 5
     phi = (1 + sq5) / 2
 
-rightToMaybe :: Either a b -> Maybe b
-rightToMaybe (Left _)  = Nothing
-rightToMaybe (Right x) = Just x
+eitherToMaybe :: Either a b -> Maybe b
+eitherToMaybe (Left _)  = Nothing
+eitherToMaybe (Right x) = Just x

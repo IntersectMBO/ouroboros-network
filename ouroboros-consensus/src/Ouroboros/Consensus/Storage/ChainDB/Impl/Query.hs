@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (rightToMaybe)
+import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
@@ -279,7 +279,7 @@ getAnyBlockComponent immutableDB volatileDB blockComponent p = do
           -- didn't contain it, so return 'Nothing'.
           return Nothing
         else
-          rightToMaybe <$>
+          eitherToMaybe <$>
             ImmutableDB.getBlockComponent immutableDB blockComponent p
   where
     hash = realPointHash p

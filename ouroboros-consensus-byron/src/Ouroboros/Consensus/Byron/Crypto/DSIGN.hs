@@ -42,6 +42,7 @@ import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
 import qualified Cardano.Crypto.Wallet as CC
 
+import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.Condense
 
 class (HasSignTag a, Decoded a) => ByronSignable a
@@ -121,9 +122,6 @@ instance DSIGNAlgorithm ByronDSIGN where
       SignKeyByronDSIGN . SigningKey <$> (eitherToMaybe $ CC.xprv bs)
     rawDeserialiseSigDSIGN bs =
       SigByronDSIGN . Signature <$> (eitherToMaybe $ CC.xsignature bs)
-
-eitherToMaybe :: Either a b -> Maybe b
-eitherToMaybe = either (const Nothing) (Just)
 
 instance Condense (SigDSIGN ByronDSIGN) where
     condense (SigByronDSIGN s) = show s
