@@ -122,7 +122,7 @@ data Handlers m peer blk = Handlers {
     , hBlockFetchServer
         :: NodeToNodeVersion
         -> ResourceRegistry m
-        -> BlockFetchServer (Serialised blk) m ()
+        -> BlockFetchServer (Serialised blk) (Point blk) m ()
 
     , hTxSubmissionClient
         :: NodeToNodeVersion
@@ -210,8 +210,8 @@ mkHandlers
 data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
       cChainSyncCodec            :: Codec (ChainSync (Header blk) (Point blk) (Tip blk))           e m bCS
     , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
-    , cBlockFetchCodec           :: Codec (BlockFetch blk)                                         e m bBF
-    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))                            e m bSBF
+    , cBlockFetchCodec           :: Codec (BlockFetch blk (Point blk))                             e m bBF
+    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk) (Point blk))                e m bSBF
     , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))                 e m bTX
     , cKeepAliveCodec            :: Codec KeepAlive                                                e m bKA
     }
@@ -245,15 +245,15 @@ defaultCodecs ccfg version = Codecs {
         codecBlockFetch
           enc
           dec
-          (encodeRawHash p)
-          (decodeRawHash p)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
 
     , cBlockFetchCodecSerialised =
         codecBlockFetch
           enc
           dec
-          (encodeRawHash p)
-          (decodeRawHash p)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
 
     , cTxSubmissionCodec =
         codecTxSubmission
@@ -280,8 +280,8 @@ identityCodecs :: Monad m
                => Codecs blk CodecFailure m
                     (AnyMessage (ChainSync (Header blk) (Point blk) (Tip blk)))
                     (AnyMessage (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)))
-                    (AnyMessage (BlockFetch blk))
-                    (AnyMessage (BlockFetch (Serialised blk)))
+                    (AnyMessage (BlockFetch blk (Point blk)))
+                    (AnyMessage (BlockFetch (Serialised blk) (Point blk)))
                     (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                     (AnyMessage KeepAlive)
 identityCodecs = Codecs {
@@ -304,8 +304,8 @@ type Tracers m peer blk e =
 data Tracers' peer blk e f = Tracers {
       tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Point blk) (Tip blk))))
     , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk))))
-    , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk)))
-    , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk))))
+    , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk (Point blk))))
+    , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk) (Point blk))))
     , tTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
     }
 

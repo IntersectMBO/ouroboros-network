@@ -450,7 +450,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
          codecBlockFetch
         (BlockFetch.blockFetchServerPeer (blockFetchServer prng))
 
-codecBlockFetch :: Codec (BlockFetch.BlockFetch Block)
+codecBlockFetch :: Codec (BlockFetch.BlockFetch Block (Point Block))
                          CBOR.DeserialiseFailure
                          IO LBS.ByteString
 codecBlockFetch =
@@ -572,7 +572,7 @@ chainSyncServer seed =
 
 blockFetchServer :: RandomGen g
                  => g
-                 -> BlockFetch.BlockFetchServer Block IO ()
+                 -> BlockFetch.BlockFetchServer Block (Point Block) IO ()
 blockFetchServer seed =
     let blocks = chainGenerator seed in
     idleState blocks
@@ -599,7 +599,7 @@ blockFetchServer seed =
         threadDelay 1000000
         return (sendingState batch blocks)
 
-selectBlockRange :: BlockFetch.ChainRange Block
+selectBlockRange :: BlockFetch.ChainRange (Point Block)
                  -> [Block]
                  -> Maybe ([Block], [Block])
 selectBlockRange (BlockFetch.ChainRange lower upper) blocks0 = do

@@ -71,7 +71,7 @@ instance Exception BlockFetchProtocolFailure
 --         to avoid large types leaking into the consensus layer.
 type BlockFetchClient header block m a =
   FetchClientContext header block m ->
-  PeerPipelined (BlockFetch block) AsClient BFIdle m a
+  PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a
 
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
@@ -83,7 +83,7 @@ blockFetchClient :: forall header block m.
                  => NodeToNodeVersion
                  -> ControlMessageSTM m
                  -> FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
+                 -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m ()
 blockFetchClient _version controlMessageSTM
                  FetchClientContext {
                    fetchClientCtxTracer    = tracer,
@@ -98,7 +98,7 @@ blockFetchClient _version controlMessageSTM
   where
     senderIdle :: forall n.
                   Nat n
-               -> PeerSender (BlockFetch block) AsClient
+               -> PeerSender (BlockFetch block (Point block)) AsClient
                              BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
@@ -125,7 +125,7 @@ blockFetchClient _version controlMessageSTM
 
     senderAwait :: forall n.
                    Nat n
-                -> PeerSender (BlockFetch block) AsClient
+                -> PeerSender (BlockFetch block (Point block)) AsClient
                               BFIdle n () m ()
     senderAwait outstanding =
       SenderEffect $ do
@@ -155,7 +155,7 @@ blockFetchClient _version controlMessageSTM
                  -> PeerGSV
                  -> PeerFetchInFlightLimits
                  -> [AnchoredFragment header]
-                 -> PeerSender (BlockFetch block) AsClient
+                 -> PeerSender (BlockFetch block (Point block)) AsClient
                                BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
@@ -179,7 +179,7 @@ blockFetchClient _version controlMessageSTM
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
-        let range :: ChainRange header
+        let range :: ChainRange (Point header)
             !range = assert (not (AF.null fragment)) $
                      ChainRange (blockPoint lower)
                                 (blockPoint upper)
@@ -201,7 +201,7 @@ blockFetchClient _version controlMessageSTM
     -- Terminate the sender; 'controlMessageSTM' returned 'Terminate'.
     senderTerminate :: forall n.
                        Nat n
-                    -> PeerSender (BlockFetch block) AsClient
+                    -> PeerSender (BlockFetch block (Point block)) AsClient
                                   BFIdle n () m ()
     senderTerminate Zero =
       SenderYield (ClientAgency TokIdle)
@@ -212,10 +212,10 @@ blockFetchClient _version controlMessageSTM
                     (\_ -> senderTerminate n)
 
 
-    receiverBusy :: ChainRange header
+    receiverBusy :: ChainRange (Point header)
                  -> AnchoredFragment header
                  -> PeerFetchInFlightLimits
-                 -> PeerReceiver (BlockFetch block) AsClient
+                 -> PeerReceiver (BlockFetch block (Point block)) AsClient
                                  BFBusy BFIdle m ()
     receiverBusy range fragment inflightlimits =
       ReceiverAwait
@@ -248,9 +248,9 @@ blockFetchClient _version controlMessageSTM
               headers = AF.toOldestFirst fragment
 
     receiverStreaming :: PeerFetchInFlightLimits
-                      -> ChainRange header
+                      -> ChainRange (Point header)
                       -> [header]
-                      -> PeerReceiver (BlockFetch block) AsClient
+                      -> PeerReceiver (BlockFetch block (Point block)) AsClient
                                       BFStreaming BFIdle m ()
     receiverStreaming inflightlimits range headers =
       ReceiverAwait
@@ -308,5 +308,6 @@ blockFetchClient _version controlMessageSTM
           (MsgBlock _, []) -> ReceiverEffect $
             throwIO BlockFetchProtocolFailureTooManyBlocks
 
-castRange :: (HeaderHash a ~ HeaderHash b) => ChainRange a -> ChainRange b
+castRange :: (HeaderHash a ~ HeaderHash b)
+          => ChainRange (Point a) -> ChainRange (Point b)
 castRange (ChainRange l u) = ChainRange (castPoint l) (castPoint u)

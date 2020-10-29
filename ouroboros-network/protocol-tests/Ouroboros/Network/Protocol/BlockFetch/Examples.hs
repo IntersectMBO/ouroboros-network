@@ -12,7 +12,7 @@ import Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.MockChain.Chain (Chain, HasHeader)
+import Ouroboros.Network.MockChain.Chain (Chain, HasHeader, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
@@ -38,9 +38,10 @@ constantBlockFetchReceiver onBlock handleBatchDone =
 -- oldest.
 --
 blockFetchClientMap
-  :: forall block m. MonadSTM m
-  => [ChainRange block]
-  -> BlockFetchClient block m [block]
+  :: forall block point m.
+     MonadSTM m
+  => [ChainRange point]
+  -> BlockFetchClient block point m [block]
 blockFetchClientMap ranges = BlockFetchClient $ do
   var <- newTVarIO []
   donevar <- newTVarIO (length ranges)
@@ -58,9 +59,9 @@ blockFetchClientMap ranges = BlockFetchClient $ do
   goBlockFetch
     :: StrictTVar m Int
     -> StrictTVar m [block]
-    -> [ChainRange block]
+    -> [ChainRange point]
     -> BlockFetchResponse block m [block]
-    -> m (BlockFetchRequest block m [block])
+    -> m (BlockFetchRequest block point m [block])
 
   goBlockFetch donevar var []       _response = do
     -- wait for all responses to be fulfilled
@@ -80,19 +81,20 @@ blockFetchClientMap ranges = BlockFetchClient $ do
 -- This presents maximum pipelining and presents minmimum choice to the
 -- environment (drivers).
 --
--- It returns the interleaving of `ChainRange block` requests and list of
+-- It returns the interleaving of `ChainRange point` requests and list of
 -- received block bodies in the order from newest to oldest (received block
 -- bodies are also ordered in this way).
 --
 blockFetchClientPipelinedMax
-  :: forall block m.  Monad m
-  => [ChainRange block]
-  -> BlockFetchClientPipelined block m [Either (ChainRange block) [block]]
+  :: forall block point m.
+     Monad m
+  => [ChainRange point]
+  -> BlockFetchClientPipelined block point m [Either (ChainRange point) [block]]
 blockFetchClientPipelinedMax ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
-  go :: [Either (ChainRange block) [block]] -> [ChainRange block] -> Nat o
-     -> BlockFetchSender o [block] block m [Either (ChainRange block) [block]]
+  go :: [Either (ChainRange point) [block]] -> [ChainRange point] -> Nat o
+     -> BlockFetchSender o [block] block point m [Either (ChainRange point) [block]]
   go acc (req : reqs) o        = SendMsgRequestRangePipelined
                                     req
                                     []
@@ -110,22 +112,23 @@ blockFetchClientPipelinedMax ranges0 =
 -- collect any replies as soon as they are available.  This keeps pipelining to
 -- bare minimum, and gives maximum choice to the environment (drivers).
 --
--- It returns the interleaving of `ChainRange block` requests and list of
+-- It returns the interleaving of `ChainRange point` requests and list of
 -- received block bodies in the order from newest to oldest (received block
 -- bodies are also ordered in this way).
 --
 blockFetchClientPipelinedMin
-  :: forall block m.  Monad m
-  => [ChainRange block]
-  -> BlockFetchClientPipelined block m [Either (ChainRange block) [block]]
+  :: forall block point m.
+     Monad m
+  => [ChainRange point]
+  -> BlockFetchClientPipelined block point m [Either (ChainRange point) [block]]
 blockFetchClientPipelinedMin ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
-  go :: [Either (ChainRange block) [block]]
-     -> [ChainRange block]
+  go :: [Either (ChainRange point) [block]]
+     -> [ChainRange point]
      -> Nat n
-     -> BlockFetchSender n [block] block m
-                         [Either (ChainRange block) [block]]
+     -> BlockFetchSender n [block] block point m
+                         [Either (ChainRange point) [block]]
   go acc []           (Succ n) = CollectBlocksPipelined
                                   Nothing
                                   (\bs -> go (Right bs : acc) [] n)
@@ -135,11 +138,11 @@ blockFetchClientPipelinedMin ranges0 =
   go acc (req : reqs) Zero     = requestMore acc req reqs Zero
   go acc []           Zero     = SendMsgDonePipelined acc
 
-  requestMore :: [Either (ChainRange block) [block]]
-              -> ChainRange block -> [ChainRange block]
+  requestMore :: [Either (ChainRange point) [block]]
+              -> ChainRange point -> [ChainRange point]
               -> Nat n
-              -> BlockFetchSender n [block] block m
-                                  [Either (ChainRange block) [block]]
+              -> BlockFetchSender n [block] block point m
+                                  [Either (ChainRange point) [block]]
   requestMore acc req reqs n = SendMsgRequestRangePipelined
                                 req
                                 []
@@ -153,23 +156,24 @@ blockFetchClientPipelinedMin ranges0 =
 -- they are available.  This allows limited pipelining and correspondingly
 -- limited choice to the environment (drivers).
 --
--- It returns the interleaving of `ChainRange block` requests and list of
+-- It returns the interleaving of `ChainRange point` requests and list of
 -- received block bodies in the order from newest to oldest (received block
 -- bodies are also ordered in this way).
 --
 blockFetchClientPipelinedLimited
-  :: forall block m. Monad m
+  :: forall block point m.
+     Monad m
   => Int
-  -> [ChainRange block]
-  -> BlockFetchClientPipelined block m [Either (ChainRange block) [block]]
+  -> [ChainRange point]
+  -> BlockFetchClientPipelined block point m [Either (ChainRange point) [block]]
 blockFetchClientPipelinedLimited omax ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
-  go :: [Either (ChainRange block) [block]]
-     -> [ChainRange block]
+  go :: [Either (ChainRange point) [block]]
+     -> [ChainRange point]
      -> Nat n
-     -> BlockFetchSender n [block] block m
-                         [Either (ChainRange block) [block]]
+     -> BlockFetchSender n [block] block point m
+                         [Either (ChainRange point) [block]]
   go acc []              (Succ n) = CollectBlocksPipelined
                                       Nothing
                                       (\bs -> go (Right bs : acc) [] n)
@@ -184,11 +188,11 @@ blockFetchClientPipelinedLimited omax ranges0 =
 
   go acc []           Zero        = SendMsgDonePipelined acc
 
-  requestMore :: [Either (ChainRange block) [block]]
-              -> ChainRange block -> [ChainRange block]
+  requestMore :: [Either (ChainRange point) [block]]
+              -> ChainRange point -> [ChainRange point]
               -> Nat n
-              -> BlockFetchSender n [block] block m
-                                  [Either (ChainRange block) [block]]
+              -> BlockFetchSender n [block] block point m
+                                  [Either (ChainRange point) [block]]
   requestMore acc req reqs n = SendMsgRequestRangePipelined
                                 req
                                 []
@@ -211,7 +215,7 @@ blockFetchClientPipelinedLimited omax ranges0 =
 -- block@ requests.
 --
 newtype RangeRequests m block = RangeRequests {
-    runRangeRequest :: ChainRange block
+    runRangeRequest :: ChainRange (Point block)
                     -> Pipes.Producer block m (RangeRequests m block)
   }
 
@@ -219,7 +223,7 @@ newtype RangeRequests m block = RangeRequests {
 --
 constantRangeRequests
   :: Monad m
-  => (ChainRange block -> Pipes.Producer block m ())
+  => (ChainRange (Point block) -> Pipes.Producer block m ())
   -> RangeRequests m block
 constantRangeRequests f = RangeRequests (\range -> f range $> constantRangeRequests f)
 
@@ -241,12 +245,12 @@ blockFetchServer
   :: forall m block.
      Monad m
   => RangeRequests m block
-  -> BlockFetchServer block m ()
+  -> BlockFetchServer block (Point block) m ()
 blockFetchServer (RangeRequests rangeRequest) = BlockFetchServer handleRequest ()
  where
   handleRequest
-    :: ChainRange block
-    -> m (BlockFetchBlockSender block m ())
+    :: ChainRange (Point block)
+    -> m (BlockFetchBlockSender block (Point block) m ())
   handleRequest range = do
     stream <- Pipes.next $ rangeRequest range
     case stream of
@@ -258,7 +262,7 @@ blockFetchServer (RangeRequests rangeRequest) = BlockFetchServer handleRequest (
   sendStream
     :: block
     -> Pipes.Producer block m (RangeRequests m block)
-    -> m (BlockFetchSendBlocks block m ())
+    -> m (BlockFetchSendBlocks block (Point block) m ())
   sendStream block stream =
     return $ SendMsgBlock block $ do
       next <- Pipes.next stream

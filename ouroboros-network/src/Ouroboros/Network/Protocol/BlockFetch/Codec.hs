@@ -25,18 +25,18 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Text.Printf
 
-import           Ouroboros.Network.Block (HeaderHash, Point)
-import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
-byteLimitsBlockFetch :: forall bytes block. (bytes -> Word) -> ProtocolSizeLimits (BlockFetch block) bytes
+byteLimitsBlockFetch :: forall bytes block point.
+                        (bytes -> Word)
+                     -> ProtocolSizeLimits (BlockFetch block point) bytes
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
+    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block point).
                     PeerHasAgency pr st -> Word
     stateToLimit (ClientAgency TokIdle)      = smallByteLimit
     stateToLimit (ServerAgency TokBusy)      = smallByteLimit
@@ -47,10 +47,11 @@ byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
 -- `TokIdle' No timeout
 -- `TokBusy` `longWait` timeout
 -- `TokStreaming` `longWait` timeout
-timeLimitsBlockFetch :: forall block. ProtocolTimeLimits (BlockFetch block)
+timeLimitsBlockFetch :: forall block point.
+                        ProtocolTimeLimits (BlockFetch block point)
 timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
+    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block point).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokIdle)      = waitForever
     stateToLimit (ServerAgency TokBusy)      = longWait
@@ -61,20 +62,20 @@ timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
 -- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a block type that has annotations.
 codecBlockFetch
-  :: forall block m.
+  :: forall block point m.
      MonadST m
   => (block            -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s block)
-  -> (HeaderHash block -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (HeaderHash block))
-  -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
+  -> (point -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s point)
+  -> Codec (BlockFetch block point) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetch encodeBlock decodeBlock
-                encodeBlockHash decodeBlockHash =
+                encodePoint decodePoint =
     mkCodecCborLazyBS encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (BlockFetch block) st st'
+         -> Message (BlockFetch block point) st st'
          -> CBOR.Encoding
   encode (ClientAgency TokIdle) (MsgRequestRange (ChainRange from to)) =
     CBOR.encodeListLen 3 <> CBOR.encodeWord 0 <> encodePoint from
@@ -90,7 +91,7 @@ codecBlockFetch encodeBlock decodeBlock
   encode (ServerAgency TokStreaming) MsgBatchDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 5
 
-  decode :: forall (pr :: PeerRole) s (st :: BlockFetch block).
+  decode :: forall (pr :: PeerRole) s (st :: BlockFetch block point).
             PeerHasAgency pr st
          -> CBOR.Decoder s (SomeMessage st)
   decode stok = do
@@ -120,28 +121,22 @@ codecBlockFetch encodeBlock decodeBlock
         fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
 
 
-
-  encodePoint :: Point block -> CBOR.Encoding
-  encodePoint = Block.encodePoint encodeBlockHash
-
-  decodePoint :: forall s. CBOR.Decoder s (Point block)
-  decodePoint = Block.decodePoint decodeBlockHash
-
-
 codecBlockFetchId
-  :: forall block m. Monad m
-  => Codec (BlockFetch block) CodecFailure m (AnyMessage (BlockFetch block))
+  :: forall block point m.
+     Monad m
+  => Codec (BlockFetch block point) CodecFailure m
+           (AnyMessage (BlockFetch block point))
 codecBlockFetchId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (BlockFetch block) st st'
-         -> AnyMessage (BlockFetch block)
+         -> Message (BlockFetch block point) st st'
+         -> AnyMessage (BlockFetch block point)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) (st :: BlockFetch block).
+  decode :: forall (pr :: PeerRole) (st :: BlockFetch block point).
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (BlockFetch block))
+         -> m (DecodeStep (AnyMessage (BlockFetch block point))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
     (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput

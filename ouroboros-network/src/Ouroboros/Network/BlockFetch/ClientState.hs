@@ -371,7 +371,7 @@ data TraceFetchClientState header =
        -- 'CompletedFetchBatch'.
        --
      | StartedFetchBatch
-         (ChainRange header)
+         (ChainRange (Point header))
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
@@ -388,7 +388,7 @@ data TraceFetchClientState header =
        -- | Mark the successful end of receiving a streaming batch of blocks
        --
      | CompletedFetchBatch
-         (ChainRange header)
+         (ChainRange (Point header))
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
@@ -397,7 +397,7 @@ data TraceFetchClientState header =
        -- instead of 'StartedFetchBatch' and 'CompletedFetchBatch'.
        --
      | RejectedFetchBatch
-         (ChainRange header)
+         (ChainRange (Point header))
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
@@ -504,7 +504,7 @@ acknowledgeFetchRequest tracer controlMessageSTM FetchClientStateVars {fetchClie
 startedFetchBatch :: MonadSTM m
                   => Tracer m (TraceFetchClientState header)
                   -> PeerFetchInFlightLimits
-                  -> ChainRange header
+                  -> ChainRange (Point header)
                   -> FetchClientStateVars m header
                   -> m ()
 startedFetchBatch tracer inflightlimits range
@@ -560,7 +560,7 @@ completeBlockDownload tracer blockFetchSize inflightlimits header
 completeFetchBatch :: MonadSTM m
                    => Tracer m (TraceFetchClientState header)
                    -> PeerFetchInFlightLimits
-                   -> ChainRange header
+                   -> ChainRange (Point header)
                    -> FetchClientStateVars m header
                    -> m ()
 completeFetchBatch tracer inflightlimits range
@@ -600,7 +600,7 @@ rejectedFetchBatch :: (MonadSTM m, HasHeader header)
                    => Tracer m (TraceFetchClientState header)
                    -> (header -> SizeInBytes)
                    -> PeerFetchInFlightLimits
-                   -> ChainRange header
+                   -> ChainRange (Point header)
                    -> [header]
                    -> FetchClientStateVars m header
                    -> m ()

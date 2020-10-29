@@ -85,7 +85,7 @@ tests specPath =
 -- The concrete/monomorphic types used for the test.
 type MonoCodec x = Codec x DeserialiseFailure IO ByteString
 type CS = ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader)
-type BF = BlockFetch Block
+type BF = BlockFetch Block (Point Block)
 type HS = Handshake VersionNumber CBOR.Term
 type TS = TxSubmission TxId Tx
 type LT = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
