@@ -26,6 +26,9 @@ module Ouroboros.Network.Mux
   , MuxErrorType(..)
   , HasInitiator
   , HasResponder
+
+    -- * For Consensus ThreadNet Tests
+  , runMuxPeer
   ) where
 
 import           Control.Monad.Class.MonadAsync
