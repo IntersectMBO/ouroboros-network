@@ -210,7 +210,7 @@ newtype ServerUpdates =
 
 type TraceEvent = (Tick, Either
   (TraceChainSyncClientEvent TestBlock)
-  (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))))
+  (TraceSendRecv (ChainSync (Header TestBlock) (Point TestBlock) (Tip TestBlock))))
 
 data ChainSyncOutcome = ChainSyncOutcome {
       finalClientChain :: Chain TestBlock
@@ -299,7 +299,8 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Tip TestBlock) m ()
+    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock)
+                                  (Tip TestBlock) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains

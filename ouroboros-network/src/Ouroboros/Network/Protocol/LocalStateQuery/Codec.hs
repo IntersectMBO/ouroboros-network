@@ -24,23 +24,23 @@ import           Text.Printf
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Block (Point)
+
 
 data Some (f :: k -> Type) where
     Some :: f a -> Some f
 
 codecLocalStateQuery
-  :: forall block query m.
+  :: forall block point query m.
      ( MonadST m
      , ShowQuery query
      )
-  => (Point block -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Point block))
+  => (point -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s point)
   -> (forall result . query result -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s (Some query))
   -> (forall result . query result -> result -> CBOR.Encoding)
   -> (forall result . query result -> forall s . CBOR.Decoder s result)
-  -> Codec (LocalStateQuery block query) CBOR.DeserialiseFailure m ByteString
+  -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
 codecLocalStateQuery encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
@@ -59,10 +59,10 @@ codecLocalStateQuery encodePoint  decodePoint
         _ -> fail $ "decodeFailure: invalid tag " <> show tag
 
     encode :: forall (pr  :: PeerRole)
-                     (st  :: LocalStateQuery block query)
-                     (st' :: LocalStateQuery block query).
+                     (st  :: LocalStateQuery block point query)
+                     (st' :: LocalStateQuery block point query).
               PeerHasAgency pr st
-           -> Message (LocalStateQuery block query) st st'
+           -> Message (LocalStateQuery block point query) st st'
            -> CBOR.Encoding
     encode (ClientAgency TokIdle) (MsgAcquire pt) =
         CBOR.encodeListLen 2
@@ -101,7 +101,7 @@ codecLocalStateQuery encodePoint  decodePoint
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 7
 
-    decode :: forall (pr :: PeerRole) s (st :: LocalStateQuery block query).
+    decode :: forall (pr :: PeerRole) s (st :: LocalStateQuery block point query).
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -155,28 +155,28 @@ codecLocalStateQuery encodePoint  decodePoint
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block (query :: Type -> Type) m.
+  :: forall block point (query :: Type -> Type) m.
      Monad m
   => (forall result1 result2.
           query result1
        -> query result2
        -> Maybe (result1 :~: result2)
      )
-  -> Codec (LocalStateQuery block query)
+  -> Codec (LocalStateQuery block point query)
            CodecFailure m
-           (AnyMessage (LocalStateQuery block query))
+           (AnyMessage (LocalStateQuery block point query))
 codecLocalStateQueryId eqQuery =
   Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (LocalStateQuery block query) st st'
-         -> AnyMessage (LocalStateQuery block query)
+         -> Message (LocalStateQuery block point query) st st'
+         -> AnyMessage (LocalStateQuery block point query)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) (st :: LocalStateQuery block query).
+  decode :: forall (pr :: PeerRole) (st :: LocalStateQuery block point query).
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (LocalStateQuery block query))
+         -> m (DecodeStep (AnyMessage (LocalStateQuery block point query))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
     (ClientAgency TokIdle,         Just (AnyMessage msg@(MsgAcquire{})))   -> res msg
@@ -192,7 +192,7 @@ codecLocalStateQueryId eqQuery =
     (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
     (_, _)       -> return (DecodeFail (CodecFailure failmsg))
 
-  res :: Message (LocalStateQuery block query) st st'
+  res :: Message (LocalStateQuery block point query) st st'
       -> m (DecodeStep bytes failure m (SomeMessage st))
   res msg = return (DecodeDone (SomeMessage msg) Nothing)
   failmsg = "codecLocalStateQueryId: no matching message"

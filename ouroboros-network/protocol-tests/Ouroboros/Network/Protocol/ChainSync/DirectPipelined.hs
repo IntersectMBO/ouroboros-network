@@ -11,17 +11,17 @@ import Ouroboros.Network.Protocol.ChainSync.Server as Server
 
 
 directPipelined :: Monad m
-                => ChainSyncServer header tip m a
-                -> ChainSyncClientPipelined header tip m b
+                => ChainSyncServer header point tip m a
+                -> ChainSyncClientPipelined header point tip m b
                 -> m (a, b)
 directPipelined (ChainSyncServer mserver) (ChainSyncClientPipelined mclient) =
     directStIdleM EmptyQ mserver mclient
 
 
 directStIdleM :: Monad m
-                 => Queue n (ChainSyncInstruction header tip)
-                 -> m (ServerStIdle            header tip m a)
-                 -> m (ClientPipelinedStIdle n header tip m b)
+                 => Queue n (ChainSyncInstruction header point tip)
+                 -> m (ServerStIdle            header point tip m a)
+                 -> m (ClientPipelinedStIdle n header point tip m b)
                  -> m (a, b)
 
 directStIdleM queue mServerStIdle mClientStIdle = do
@@ -31,9 +31,9 @@ directStIdleM queue mServerStIdle mClientStIdle = do
 
 
 directStIdle :: Monad m
-             => Queue n (ChainSyncInstruction header tip)
-             -> ServerStIdle            header tip m a
-             -> ClientPipelinedStIdle n header tip m b
+             => Queue n (ChainSyncInstruction header point tip)
+             -> ServerStIdle            header point tip m a
+             -> ClientPipelinedStIdle n header point tip m b
              -> m (a, b)
 directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestNext} (SendMsgRequestNext stClientNext stClientAwait) = do
     mStServerNext <- recvMsgRequestNext

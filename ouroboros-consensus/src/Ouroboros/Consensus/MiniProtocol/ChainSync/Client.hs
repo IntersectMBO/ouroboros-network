@@ -80,8 +80,8 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
-type Consensus (client :: Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
-   client (Header blk) (Tip blk) m ChainSyncClientResult
+type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
+   client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {
@@ -471,7 +471,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
       -- was an intersection within the last @k@ blocks of our current chain.
       -- If not, we could never switch to this candidate chain anyway.
       let maxOffset = fromIntegral (AF.length ourFrag)
-          points    = AF.selectPoints
+          points    = map castPoint
+                    $ AF.selectPoints
                         (map fromIntegral (offsets maxOffset))
                         ourFrag
           ourTip    = ourTipFromChain ourFrag

@@ -18,7 +18,6 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
 
-import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -35,12 +34,12 @@ import           Text.Printf
 
 
 -- | Byte Limits
-byteLimitsChainSync :: forall bytes header tip .
+byteLimitsChainSync :: forall bytes header point tip .
                        (bytes -> Word)
-                    -> ProtocolSizeLimits (ChainSync header tip) bytes
+                    -> ProtocolSizeLimits (ChainSync header point tip) bytes
 byteLimitsChainSync = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
+    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
                     PeerHasAgency pr st -> Word
     stateToLimit (ClientAgency TokIdle)                = smallByteLimit
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = smallByteLimit
@@ -66,9 +65,9 @@ data ChainSyncTimeout = ChainSyncTimeout
 -- > 'TokNext TokCanAwait'   the given 'canAwaitTimeout'
 -- > 'TokNext TokMustReply'  the given 'mustReplyTimeout'
 -- > 'TokIntersect'          'shortWait'
-timeLimitsChainSync :: forall header tip.
+timeLimitsChainSync :: forall header point tip.
                        ChainSyncTimeout
-                    -> ProtocolTimeLimits (ChainSync header tip)
+                    -> ProtocolTimeLimits (ChainSync header point tip)
 timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
   where
     ChainSyncTimeout
@@ -76,7 +75,7 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
       , mustReplyTimeout
       } = csTimeouts
 
-    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
+    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokIdle)                = waitForever
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
@@ -88,15 +87,15 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
 -- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a header type that has annotations.
 codecChainSync
-  :: forall header tip m.
+  :: forall header point tip m.
      (MonadST m)
   => (header -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s header)
-  -> (Point header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Point header))
+  -> (point -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s point)
   -> (tip -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s tip)
-  -> Codec (ChainSync header tip)
+  -> Codec (ChainSync header point tip)
            CBOR.DeserialiseFailure m LBS.ByteString
 codecChainSync encodeHeader decodeHeader
                encodePoint  decodePoint
@@ -104,10 +103,10 @@ codecChainSync encodeHeader decodeHeader
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr  :: PeerRole)
-                     (st  :: ChainSync header tip)
-                     (st' :: ChainSync header tip).
+                     (st  :: ChainSync header point tip)
+                     (st' :: ChainSync header point tip).
               PeerHasAgency pr st
-           -> Message (ChainSync header tip) st st'
+           -> Message (ChainSync header point tip) st st'
            -> CBOR.Encoding
 
     encode (ClientAgency TokIdle) MsgRequestNext =
@@ -145,7 +144,7 @@ codecChainSync encodeHeader decodeHeader
     encode (ClientAgency TokIdle) MsgDone =
       encodeListLen 1 <> encodeWord 7
 
-    decode :: forall (pr :: PeerRole) (st :: ChainSync header tip) s.
+    decode :: forall (pr :: PeerRole) (st :: ChainSync header point tip) s.
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -212,20 +211,20 @@ decodeList dec = do
 -- | An identity 'Codec' for the 'ChainSync' protocol. It does not do any
 -- serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
-codecChainSyncId :: forall header tip m. Monad m
-                 => Codec (ChainSync header tip)
-                          CodecFailure m (AnyMessage (ChainSync header tip))
+codecChainSyncId :: forall header point tip m. Monad m
+                 => Codec (ChainSync header point tip)
+                          CodecFailure m (AnyMessage (ChainSync header point tip))
 codecChainSyncId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (ChainSync header tip) st st'
-         -> AnyMessage (ChainSync header tip)
+         -> Message (ChainSync header point tip) st st'
+         -> AnyMessage (ChainSync header point tip)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) (st :: ChainSync header tip).
+  decode :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (ChainSync header tip))
+         -> m (DecodeStep (AnyMessage (ChainSync header point tip))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
 

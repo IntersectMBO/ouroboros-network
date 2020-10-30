@@ -36,13 +36,13 @@ chainSyncClientPipelined
          )
       => MkPipelineDecision
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
 chainSyncClientPipelined mkPipelineDecision0 chainvar =
     ChainSyncClientPipelined . fmap initialise . getChainPoints
   where
-    initialise :: ([Point header], Client header (Tip header) m a)
-               -> ClientPipelinedStIdle Z header (Tip header) m a
+    initialise :: ([Point header], Client header (Point header) (Tip header) m a)
+               -> ClientPipelinedStIdle Z header (Point header) (Tip header) m a
     initialise (points, client) =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -63,8 +63,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
        -- ^ our head
        -> Tip header
        -- ^ head of the server
-       -> Client header (Tip header) m a
-       -> ClientPipelinedStIdle n header (Tip header) m a
+       -> Client header (Point header) (Tip header) m a
+       -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
 
     go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
       let srvTipBlockNo = getTipBlockNo srvTip in
@@ -143,7 +143,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
     -- outstanding responses and send 'MsgDone'.
     collectAndDone :: Nat n
                    -> a
-                   -> ClientPipelinedStIdle n header (Tip header) m a
+                   -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
 
     collectAndDone Zero     a = SendMsgDone a
 
@@ -157,8 +157,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                                     }
 
 
-    getChainPoints :: Client header (Tip header) m a
-                   -> m ([Point header], Client header (Tip header) m a)
+    getChainPoints :: Client header (Point header) (Tip header) m a
+                   -> m ([Point header], Client header (Point header) (Tip header) m a)
     getChainPoints client = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
       client' <- points client pts
@@ -243,8 +243,8 @@ chainSyncClientPipelinedMax
       => Word32
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
 chainSyncClientPipelinedMax omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMax omax)
 
 -- | A pipelined chain-sycn client that pipelines at most @omax@ requests and
@@ -296,8 +296,8 @@ chainSyncClientPipelinedMin
       => Word32
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
 chainSyncClientPipelinedMin omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMin omax)
 
 
@@ -311,6 +311,6 @@ chainSyncClientPipelinedLowHigh
       -> Word32
       -- ^ high mark
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
 chainSyncClientPipelinedLowHigh lowMark highMark = chainSyncClientPipelined (pipelineDecisionLowHighMark lowMark highMark)

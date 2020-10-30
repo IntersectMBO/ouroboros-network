@@ -68,7 +68,7 @@ blockFetchExample0 :: forall m.
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
-                                 (TraceSendRecv (BlockFetch Block)))
+                                 (TraceSendRecv (BlockFetch Block (Point Block))))
                    -> Maybe DiffTime -- ^ client's channel delay
                    -> Maybe DiffTime -- ^ servers's channel delay
                    -> ControlMessageSTM m
@@ -80,7 +80,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                    controlMessageSTM
                    currentChain candidateChain = do
 
-    registry    <- newFetchClientRegistry
+    registry    <- newFetchClientRegistry :: m (FetchClientRegistry Int BlockHeader Block m)
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
 
     (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
@@ -171,7 +171,7 @@ blockFetchExample1 :: forall m.
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
-                                 (TraceSendRecv (BlockFetch Block)))
+                                 (TraceSendRecv (BlockFetch Block (Point Block))))
                    -> Maybe DiffTime -- ^ client's channel delay
                    -> Maybe DiffTime -- ^ server's channel delay
                    -> ControlMessageSTM m
@@ -305,14 +305,14 @@ exampleFixedPeerGSVs =
 
 runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
-                   Ord peerid, Serialise block, Serialise (HeaderHash block),
+                   Ord peerid, Serialise block, Serialise point,
                    Typeable block, ShowProxy block)
-                => Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
+                   -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \clientCtx ->
@@ -324,13 +324,12 @@ runFetchClient tracer registry peerid channel client =
 
 runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
-                   Serialise block,
-                   Serialise (HeaderHash block),
+                   Serialise block, Serialise point,
                    Typeable block,
                    ShowProxy block)
-                => Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> Channel m LBS.ByteString
-                -> BlockFetchServer block m a
+                -> BlockFetchServer block point m a
                 -> m a 
 runFetchServer tracer channel server =
     fst <$>
@@ -340,22 +339,23 @@ runFetchServer tracer channel server =
     codec = codecBlockFetch encode decode encode decode
 
 runFetchClientAndServerAsync
-               :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+               :: forall peerid block header m a b.
+                  (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Show peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block),
                    Typeable block,
                    ShowProxy block)
-                => Tracer m (TraceSendRecv (BlockFetch block))
-                -> Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block (Point block)))
+                -> Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> Maybe DiffTime -- ^ client's channel delay
                 -> Maybe DiffTime -- ^ server's channel delay
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
-                -> BlockFetchServer block m b
+                   -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a)
+                -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
                              clientDelay  serverDelay
@@ -410,15 +410,15 @@ runFetchClientAndServerAsync clientTracer serverTracer
 mockBlockFetchServer1 :: forall block m.
                         (MonadSTM m, HasHeader block)
                       => ChainFragment block
-                      -> BlockFetchServer block m ()
+                      -> BlockFetchServer block (Point block) m ()
 mockBlockFetchServer1 chain =
     senderSide
   where
-    senderSide :: BlockFetchServer block m ()
+    senderSide :: BlockFetchServer block (Point block) m ()
     senderSide = BlockFetchServer receiveReq ()
 
-    receiveReq :: ChainRange block
-               -> m (BlockFetchBlockSender block m ())
+    receiveReq :: ChainRange (Point block)
+               -> m (BlockFetchBlockSender block (Point block) m ())
     receiveReq (ChainRange lpoint upoint) =
       -- We can only assert this for tests, not for the real thing.
       assert (pointSlot lpoint <= pointSlot upoint) $
@@ -428,7 +428,7 @@ mockBlockFetchServer1 chain =
           where blocks = ChainFragment.toOldestFirst chain'
 
 
-    sendBlocks :: [block] -> m (BlockFetchSendBlocks block m ())
+    sendBlocks :: [block] -> m (BlockFetchSendBlocks block (Point block) m ())
     sendBlocks []     = return $ SendMsgBatchDone (return senderSide)
     sendBlocks (b:bs) = return $ SendMsgBlock b (sendBlocks bs)
 

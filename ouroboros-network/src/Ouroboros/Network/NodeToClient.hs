@@ -611,16 +611,17 @@ type LocalConnectionId = ConnectionId LocalAddress
 --
 
 chainSyncPeerNull
-    :: forall (header :: Type) (tip :: Type) m a. MonadTimer m
-    => Peer (ChainSync.ChainSync header tip)
+    :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadTimer m
+    => Peer (ChainSync.ChainSync header point tip)
             AsClient ChainSync.StIdle m a
 chainSyncPeerNull =
     ChainSync.chainSyncClientPeer
       (ChainSync.ChainSyncClient untilTheCowsComeHome )
 
 localStateQueryPeerNull
-    :: forall (block :: Type) (query :: Type -> Type) m a. MonadTimer m
-    => Peer (LocalStateQuery.LocalStateQuery block query)
+    :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m a.
+       MonadTimer m
+    => Peer (LocalStateQuery.LocalStateQuery block point query)
             AsClient LocalStateQuery.StIdle m a
 localStateQueryPeerNull =
     LocalStateQuery.localStateQueryClientPeer

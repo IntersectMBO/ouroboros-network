@@ -170,7 +170,7 @@ demo chain0 updates = do
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar)))
 
-            server :: ChainSyncServer block (Tip block) IO ()
+            server :: ChainSyncServer block (Point block) (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
             producerApp ::OuroborosApplication ResponderMode String BL.ByteString IO Void ()
@@ -226,7 +226,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (Tip block) IO ()
+                   -> ChainSync.Client block (Point block) (Tip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

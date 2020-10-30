@@ -105,7 +105,7 @@ testClient
   :: MonadSTM m
   => StrictTVar m Bool
   -> Point Block
-  -> ChainSyncExamples.Client Block blockInfo m ()
+  -> ChainSyncExamples.Client Block (Point Block) blockInfo m ()
 testClient doneVar tip =
   ChainSyncExamples.Client {
       ChainSyncExamples.rollbackward = \point _ ->
@@ -131,8 +131,9 @@ chainSyncForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Tip Block) m a
-      -> ChainSyncClient Block (Tip Block) m b
+  => (forall a b.
+         ChainSyncServer Block (Point Block) (Tip Block) m a
+      -> ChainSyncClient Block (Point Block) (Tip Block) m b
       -> m ())
   -> ChainProducerStateForkTest
   -> m Property
@@ -189,12 +190,12 @@ chainSyncPipelinedForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m b
+  => (forall a b. ChainSyncServer Block (Point Block) (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Point Block) (Tip Block) m b
       -> m ())
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m a)
+      -> Client Block (Point Block) (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Point Block) (Tip Block) m a)
   -> ChainProducerStateForkTest
   -> m Bool
 chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps chain) = do
@@ -205,7 +206,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
-      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client :: ChainSyncClientPipelined Block (Point Block) (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
@@ -325,10 +326,10 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-genChainSync :: Gen (Point header)
+genChainSync :: Gen point
              -> Gen header
              -> Gen tip
-             -> Gen (AnyMessageAndAgency (ChainSync header tip))
+             -> Gen (AnyMessageAndAgency (ChainSync header point tip))
 genChainSync genPoint genHeader genTip = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
@@ -363,12 +364,19 @@ genChainSync genPoint genHeader genTip = oneof
     ]
 
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
+-- type aliases to keep sizes down
+type ChainSync_BlockHeader =
+     ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader)
+
+type ChainSync_Serialised_BlockHeader =
+     ChainSync (Serialised BlockHeader) (Point BlockHeader) (Tip BlockHeader)
+
+instance Arbitrary (AnyMessageAndAgency ChainSync_BlockHeader) where
   arbitrary = genChainSync arbitrary arbitrary genTip
     where
       genTip = legacyTip <$> arbitrary <*> arbitrary
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))) where
+instance Arbitrary (AnyMessageAndAgency ChainSync_Serialised_BlockHeader) where
   arbitrary = genChainSync (castPoint <$> genPoint)
                            (serialiseBlock <$> arbitrary)
                            genTip
@@ -383,8 +391,9 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip
 
 instance ( StandardHash header
          , Eq header
+         , Eq point
          , Eq tip
-         ) => Eq (AnyMessage (ChainSync header tip)) where
+         ) => Eq (AnyMessage (ChainSync header point tip)) where
   AnyMessage MsgRequestNext              == AnyMessage MsgRequestNext              = True
   AnyMessage MsgAwaitReply               == AnyMessage MsgAwaitReply               = True
   AnyMessage (MsgRollForward h1 tip1)    == AnyMessage (MsgRollForward h2 tip2)    = h1 == h2 && tip1 == tip2
@@ -399,7 +408,7 @@ codec :: ( MonadST m
          , S.Serialise block
          , S.Serialise (Chain.HeaderHash block)
          )
-      => Codec (ChainSync block (Tip block))
+      => Codec (ChainSync block (Point block) (Tip block))
                S.DeserialiseFailure
                m ByteString
 codec = codecChainSync S.encode             S.decode
@@ -410,7 +419,7 @@ codecWrapped :: ( MonadST m
                 , S.Serialise block
                 , S.Serialise (Chain.HeaderHash block)
                 )
-             => Codec (ChainSync block (Tip block))
+             => Codec (ChainSync block (Point block) (Tip block))
                       S.DeserialiseFailure
                       m ByteString
 codecWrapped =
@@ -419,13 +428,13 @@ codecWrapped =
                    (encodeTip S.encode)      (decodeTip S.decode)
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -434,7 +443,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -442,7 +451,7 @@ prop_codec_splits3_ChainSync msg =
       codec
       msg
 prop_codec_cbor
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
@@ -451,7 +460,7 @@ codecSerialised
   :: ( MonadST m
      , S.Serialise (Chain.HeaderHash block)
      )
-  => Codec (ChainSync (Serialised block) (Tip block))
+  => Codec (ChainSync (Serialised block) (Point block) (Tip block))
            S.DeserialiseFailure
            m ByteString
 codecSerialised = codecChainSync
@@ -460,13 +469,13 @@ codecSerialised = codecChainSync
     (encodeTip S.encode) (decodeTip S.decode)
 
 prop_codec_ChainSyncSerialised
-  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_ChainSyncSerialised msg =
     ST.runST $ prop_codecM codecSerialised msg
 
 prop_codec_splits2_ChainSyncSerialised
-  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -475,7 +484,7 @@ prop_codec_splits2_ChainSyncSerialised msg =
       msg
 
 prop_codec_splits3_ChainSyncSerialised
-  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -484,21 +493,21 @@ prop_codec_splits3_ChainSyncSerialised msg =
       msg
 
 prop_codec_cbor_ChainSyncSerialised
-  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_cbor_ChainSyncSerialised msg =
     ST.runST (prop_codec_cborM codecSerialised msg)
 
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
     ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync BlockHeader (Tip BlockHeader)).
+      :: forall pr (stA :: ChainSync_BlockHeader).
          PeerHasAgency pr stA
-      -> SamePeerHasAgency pr (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+      -> SamePeerHasAgency pr ChainSync_Serialised_BlockHeader
     stokEq (ClientAgency ca) = case ca of
       TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
     stokEq (ServerAgency sa) = case sa of
@@ -506,15 +515,15 @@ prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
       TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
 
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync
-  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync (Serialised BlockHeader) (Tip BlockHeader)).
+      :: forall pr (stA :: ChainSync_Serialised_BlockHeader).
          PeerHasAgency pr stA
-      -> SamePeerHasAgency pr (ChainSync BlockHeader (Tip BlockHeader))
+      -> SamePeerHasAgency pr ChainSync_BlockHeader
     stokEq (ClientAgency ca) = case ca of
       TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
     stokEq (ServerAgency sa) = case sa of
@@ -538,12 +547,12 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Tip Block) m a
+  let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClient Block (Tip Block) m ()
+      client :: ChainSyncClient Block (Point Block) (Tip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
@@ -596,8 +605,8 @@ chainSyncDemoPipelined
   => Channel m ByteString
   -> Channel m ByteString
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m a)
+      -> Client                   Block (Point Block) (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Point Block) (Tip Block) m a)
   -> ChainProducerStateForkTest
   -> m Property
 chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTest cps chain) = do
@@ -606,12 +615,12 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Tip Block) m a
+  let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client :: ChainSyncClientPipelined Block (Point Block) (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))

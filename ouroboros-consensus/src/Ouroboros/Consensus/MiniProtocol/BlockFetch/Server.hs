@@ -75,14 +75,14 @@ blockFetchServer
     -> ChainDB m blk
     -> NodeToNodeVersion
     -> ResourceRegistry m
-    -> BlockFetchServer (Serialised blk) m ()
+    -> BlockFetchServer (Serialised blk) (Point blk) m ()
 blockFetchServer _tracer chainDB _version registry = senderSide
   where
-    senderSide :: BlockFetchServer (Serialised blk) m ()
+    senderSide :: BlockFetchServer (Serialised blk) (Point blk) m ()
     senderSide = BlockFetchServer receiveReq' ()
 
-    receiveReq' :: ChainRange (Serialised blk)
-                -> m (BlockFetchBlockSender (Serialised blk) m ())
+    receiveReq' :: ChainRange (Point blk)
+                -> m (BlockFetchBlockSender (Serialised blk) (Point blk) m ())
     receiveReq' (ChainRange start end) =
       case (start, end) of
         (BlockPoint s h, BlockPoint s' h') ->
@@ -92,7 +92,7 @@ blockFetchServer _tracer chainDB _version registry = senderSide
 
     receiveReq :: RealPoint blk
                -> RealPoint blk
-               -> m (BlockFetchBlockSender (Serialised blk) m ())
+               -> m (BlockFetchBlockSender (Serialised blk) (Point blk) m ())
     receiveReq start end = do
       errIt <- ChainDB.stream
         chainDB
@@ -110,7 +110,7 @@ blockFetchServer _tracer chainDB _version registry = senderSide
         Right it -> SendMsgStartBatch $ sendBlocks it
 
     sendBlocks :: ChainDB.Iterator m blk (WithPoint blk (Serialised blk))
-               -> m (BlockFetchSendBlocks (Serialised blk) m ())
+               -> m (BlockFetchSendBlocks (Serialised blk) (Point blk) m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of

@@ -108,10 +108,10 @@ chainValidation peerChainVar candidateChainVar = do
 -- | Simulated network channels for a given network node.
 --
 data NodeChannels m block tip = NodeChannels
-  { consumerChans :: [Channel m (AnyMessage (ChainSync block tip))]
+  { consumerChans :: [Channel m (AnyMessage (ChainSync block (Point block) tip))]
     -- ^ channels on which the node will play the consumer role:
     -- sending @consMsg@ and receiving @prodMsg@ messages.
-  , producerChans :: [Channel m (AnyMessage (ChainSync block tip))]
+  , producerChans :: [Channel m (AnyMessage (ChainSync block (Point block) tip))]
     -- ^ channels on which the node will play the producer role:
     -- sending @prodMsg@ and receiving @consMsg@ messages.
   }
@@ -304,7 +304,7 @@ relayNode _nid initChain chans = do
     -- state between producers than necessary (here are producers share chain
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
-                  -> Channel m (AnyMessage (ChainSync block (Tip block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m (StrictTVar m (Chain block))
     startConsumer _cid channel = do
       chainVar <- atomically $ newTVar Genesis
@@ -315,9 +315,9 @@ relayNode _nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Tip block)) AsServer StIdle m ()
+    startProducer :: Peer (ChainSync block (Point block) (Tip block)) AsServer StIdle m ()
                   -> Int
-                  -> Channel m (AnyMessage (ChainSync block (Tip block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m ()
     startProducer producer _pid channel =
       -- use 'void' because 'forkIO' only works with 'm ()'

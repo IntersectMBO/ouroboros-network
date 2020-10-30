@@ -102,7 +102,7 @@ data Handlers m peer blk = Handlers {
         :: NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ChainSyncClientResult
+        -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -111,7 +111,7 @@ data Handlers m peer blk = Handlers {
     , hChainSyncServer
         :: NodeToNodeVersion
         -> ResourceRegistry m
-        -> ChainSyncServer (SerialisedHeader blk) (Tip blk) m ()
+        -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , hBlockFetchClient
@@ -122,7 +122,7 @@ data Handlers m peer blk = Handlers {
     , hBlockFetchServer
         :: NodeToNodeVersion
         -> ResourceRegistry m
-        -> BlockFetchServer (Serialised blk) m ()
+        -> BlockFetchServer (Serialised blk) (Point blk) m ()
 
     , hTxSubmissionClient
         :: NodeToNodeVersion
@@ -208,12 +208,12 @@ mkHandlers
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
 data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
-      cChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))           e m bCS
-    , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Tip blk)) e m bSCS
-    , cBlockFetchCodec           :: Codec (BlockFetch blk)                             e m bBF
-    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))                e m bSBF
-    , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))     e m bTX
-    , cKeepAliveCodec            :: Codec KeepAlive                                    e m bKA
+      cChainSyncCodec            :: Codec (ChainSync (Header blk) (Point blk) (Tip blk))           e m bCS
+    , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
+    , cBlockFetchCodec           :: Codec (BlockFetch blk (Point blk))                             e m bBF
+    , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk) (Point blk))                e m bSBF
+    , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))                 e m bTX
+    , cKeepAliveCodec            :: Codec KeepAlive                                                e m bKA
     }
 
 -- | Protocol codecs for the node-to-node protocols
@@ -245,15 +245,15 @@ defaultCodecs ccfg version = Codecs {
         codecBlockFetch
           enc
           dec
-          (encodeRawHash p)
-          (decodeRawHash p)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
 
     , cBlockFetchCodecSerialised =
         codecBlockFetch
           enc
           dec
-          (encodeRawHash p)
-          (decodeRawHash p)
+          (encodePoint (encodeRawHash p))
+          (decodePoint (decodeRawHash p))
 
     , cTxSubmissionCodec =
         codecTxSubmission
@@ -278,10 +278,10 @@ defaultCodecs ccfg version = Codecs {
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m
                => Codecs blk CodecFailure m
-                    (AnyMessage (ChainSync (Header blk) (Tip blk)))
-                    (AnyMessage (ChainSync (SerialisedHeader blk) (Tip blk)))
-                    (AnyMessage (BlockFetch blk))
-                    (AnyMessage (BlockFetch (Serialised blk)))
+                    (AnyMessage (ChainSync (Header blk) (Point blk) (Tip blk)))
+                    (AnyMessage (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)))
+                    (AnyMessage (BlockFetch blk (Point blk)))
+                    (AnyMessage (BlockFetch (Serialised blk) (Point blk)))
                     (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                     (AnyMessage KeepAlive)
 identityCodecs = Codecs {
@@ -302,10 +302,10 @@ type Tracers m peer blk e =
      Tracers'  peer blk e (Tracer m)
 
 data Tracers' peer blk e f = Tracers {
-      tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Tip blk))))
-    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Tip blk))))
-    , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk)))
-    , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk))))
+      tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Point blk) (Tip blk))))
+    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk))))
+    , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk (Point blk))))
+    , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk) (Point blk))))
     , tTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
     }
 
