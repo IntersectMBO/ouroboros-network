@@ -301,9 +301,8 @@ instance CardanoHardForkConstraints c
       [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
       , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
       , (NodeToNodeV_3, CardanoNodeToNodeVersion2)
-      -- TODO #2670 enable these
-      -- , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
-      -- , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
+      , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
+      , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
@@ -311,9 +310,8 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_2, CardanoNodeToClientVersion1)
       , (NodeToClientV_3, CardanoNodeToClientVersion2)
       , (NodeToClientV_4, CardanoNodeToClientVersion3)
-      -- TODO #2670 enable these
-      -- , (NodeToClientV_5, CardanoNodeToClientVersion4)
-      -- , (NodeToClientV_6, CardanoNodeToClientVersion5)
+      , (NodeToClientV_5, CardanoNodeToClientVersion4)
+      , (NodeToClientV_6, CardanoNodeToClientVersion5)
       ]
 
 {-------------------------------------------------------------------------------
