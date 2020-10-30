@@ -20,6 +20,7 @@ import           Cardano.Crypto.KES (MockKES)
 
 import           Cardano.Ledger.Core (Value)
 import           Cardano.Ledger.Crypto (Crypto (..))
+import           Cardano.Ledger.Torsor (Delta)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
@@ -60,4 +61,5 @@ type CanMock era =
   , SL.ShelleyTest era
   , Arbitrary (SL.WitnessSet era)
   , Arbitrary (Value era)
+  , Arbitrary (Delta (Value era))
   )
