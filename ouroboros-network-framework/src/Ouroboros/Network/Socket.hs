@@ -248,13 +248,13 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
       runHandshakeClient
         (Snocket.toBearer sn sduHandshakeTimeout muxTracer sd)
         connectionId
-        acceptVersion
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
           haHandshakeTracer  = nctHandshakeTracer,
           haHandshakeCodec   = handshakeCodec,
           haVersionDataCodec = versionDataCodec,
-          haVersions         = versions
+          haVersions         = versions,
+          haAcceptVersion    = acceptVersion
         }
     ts_end <- getMonotonicTime
     case app_e of
@@ -368,12 +368,12 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
           runHandshakeServer
             (Snocket.toBearer sn sduHandshakeTimeout muxTracer' sd)
             connectionId
-            acceptVersion
             HandshakeArguments {
               haHandshakeTracer  = handshakeTracer,
               haHandshakeCodec   = handshakeCodec,
               haVersionDataCodec = versionDataCodec,
-              haVersions         = versions
+              haVersions         = versions,
+              haAcceptVersion    = acceptVersion
             }
 
         case app_e of
