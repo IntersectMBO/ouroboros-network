@@ -944,22 +944,24 @@ runThreadNetwork systemTime ThreadNetworkArgs
           --
           -- o We assume a node will only backoff when it joins late and only
           --   until it syncs enough of the net's existing common prefix.
-          backoffDelay =
+          hfbtBackoffDelay =
               BackoffDelay <$> OracularClock.delayUntilNextSlot clock
-      btime <- hardForkBlockchainTime
-                 registry
-                 (contramap
-                    (\(t, e) ->
-                       TraceCurrentSlotUnknown
-                         -- We don't really have a SystemStart in the tests
-                         (fromRelativeTime (SystemStart dawnOfTime) t)
-                         e)
-                    (blockchainTimeTracer tracers))
-                 (OracularClock.finiteSystemTime clock)
-                 (configLedger pInfoConfig)
-                 backoffDelay
-                 (ledgerState <$>
-                    ChainDB.getCurrentLedger chainDB)
+      btime <- hardForkBlockchainTime HardForkBlockchainTimeArgs
+        { hfbtBackoffDelay
+        , hfbtGetLedgerState =
+            ledgerState <$> ChainDB.getCurrentLedger chainDB
+        , hfbtLedgerConfig   = configLedger pInfoConfig
+        , hfbtRegistry       = registry
+        , hfbtSystemTime     = OracularClock.finiteSystemTime clock
+        , hfbtTracer         =
+            contramap
+              (\(t, e) ->
+                 TraceCurrentSlotUnknown
+                   -- We don't really have a SystemStart in the tests
+                   (fromRelativeTime (SystemStart dawnOfTime) t)
+                   e)
+              (blockchainTimeTracer tracers)
+        }
 
       let kaRng = case seed of
                     Seed s -> mkStdGen s

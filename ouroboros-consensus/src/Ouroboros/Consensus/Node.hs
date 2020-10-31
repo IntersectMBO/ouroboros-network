@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Node
   , ProtocolInfo (..)
   , LastShutDownWasClean (..)
   , ChainDbArgs (..)
+  , HardForkBlockchainTimeArgs (..)
   , NodeArgs (..)
   , NodeKernel (..)
   , MaxTxCapacityOverride (..)
@@ -127,6 +128,10 @@ data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | Customise the 'ChainDbArgs'
     , rnCustomiseChainDbArgs :: ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk
 
+      -- | Customise the 'HardForkBlockchainTimeArgs'
+    , rnCustomiseHardForkBlockchainTimeArgs :: HardForkBlockchainTimeArgs IO blk
+                                            -> HardForkBlockchainTimeArgs IO blk
+
       -- | Customise the 'NodeArgs'
     , rnCustomiseNodeArgs :: NodeArgs IO RemoteConnectionId LocalConnectionId blk
                           -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
@@ -216,19 +221,24 @@ run RunNodeArgs{..} =
           rnMkChainDbHasFS customiseChainDbArgs')
         ChainDB.closeDB
 
-      btime      <- hardForkBlockchainTime
-                      registry
-                      (contramap
-                         (\(t, ex) ->
-                              TraceCurrentSlotUnknown
-                                (fromRelativeTime systemStart t)
-                                ex)
-                         (blockchainTimeTracer rnTraceConsensus))
-                      systemTime
-                      (configLedger cfg)
-                      (pure $ BackoffDelay 60) -- see 'BackoffDelay'
-                      (ledgerState <$>
-                         ChainDB.getCurrentLedger chainDB)
+      btime <-
+        hardForkBlockchainTime $
+        rnCustomiseHardForkBlockchainTimeArgs $
+        HardForkBlockchainTimeArgs
+          { hfbtBackoffDelay   = pure $ BackoffDelay 60
+          , hfbtGetLedgerState =
+              ledgerState <$> ChainDB.getCurrentLedger chainDB
+          , hfbtLedgerConfig   = configLedger cfg
+          , hfbtRegistry       = registry
+          , hfbtSystemTime     = systemTime
+          , hfbtTracer         =
+              contramap
+                (\(t, ex) ->
+                    TraceCurrentSlotUnknown
+                      (fromRelativeTime systemStart t)
+                      ex)
+                (blockchainTimeTracer rnTraceConsensus)
+          }
 
       nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
                       mkNodeArgs
