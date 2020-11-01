@@ -46,6 +46,7 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
                                               , AcceptedConnectionsLimit (..)
                                               , AcceptConnectionsPolicyTrace (..)
                                               , DiffusionMode (..)
+                                              , RemoteAddress
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
@@ -100,30 +101,30 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ run in initiator only mode
     }
 
-data DiffusionApplications = DiffusionApplications {
+data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m = DiffusionApplications {
 
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
-                                       NodeToNodeVersionData
+                                       ntnVersionData
                                        (OuroborosApplication
-                                         ResponderMode SockAddr
-                                         ByteString IO Void ())
+                                         ResponderMode ntnAddr
+                                         ByteString m Void ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
-                                       NodeToNodeVersionData
+                                       ntnVersionData
                                        (OuroborosApplication
-                                         InitiatorMode SockAddr
-                                         ByteString IO () Void)
+                                         InitiatorMode ntnAddr
+                                         ByteString m () Void)
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
-                                       NodeToClientVersionData
+                                       ntcVersionData
                                        (OuroborosApplication
-                                         ResponderMode LocalAddress
-                                         ByteString IO Void ())
+                                         ResponderMode ntcAddr
+                                         ByteString m Void ())
       -- ^ NodeToClient responder applicaton (server role)
 
     , daErrorPolicies :: ErrorPolicies
@@ -140,6 +141,9 @@ runDataDiffusion
     :: DiffusionTracers
     -> DiffusionArguments 
     -> DiffusionApplications
+         RemoteAddress LocalAddress
+         NodeToNodeVersionData NodeToClientVersionData
+         IO
     -> IO ()
 runDataDiffusion tracers
                  DiffusionArguments { daIPv4Address

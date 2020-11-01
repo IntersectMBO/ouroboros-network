@@ -46,11 +46,12 @@ import           System.Random (newStdGen, randomIO, randomRIO)
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient (LocalConnectionId,
-                     NodeToClientVersionData (..))
+import           Ouroboros.Network.NodeToClient (LocalAddress,
+                     LocalConnectionId, NodeToClientVersionData (..))
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
-                     NodeToNodeVersionData (..), RemoteConnectionId,
-                     combineVersions, defaultMiniProtocolParameters)
+                     NodeToNodeVersionData (..), RemoteAddress,
+                     RemoteConnectionId, combineVersions,
+                     defaultMiniProtocolParameters)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -299,6 +300,9 @@ run runargs@RunNodeArgs{..} =
           -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()
          )
       -> DiffusionApplications
+           RemoteAddress LocalAddress
+           NodeToNodeVersionData NodeToClientVersionData
+           IO
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
           daResponderApplication = combineVersions [
