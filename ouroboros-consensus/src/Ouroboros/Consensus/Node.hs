@@ -37,7 +37,6 @@ module Ouroboros.Consensus.Node
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
-  , RemoteConnectionId
   , ChainDB.RelativeMountPoint (..)
     -- * Internal helpers
   , openChainDB
@@ -51,8 +50,10 @@ import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Identity (Identity)
+import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable (Typeable)
 import           System.FilePath ((</>))
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
@@ -63,10 +64,10 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalAddress,
-                     LocalConnectionId, NodeToClientVersionData (..))
+                     NodeToClientVersionData (..))
 import           Ouroboros.Network.NodeToNode (DiffusionMode,
                      MiniProtocolParameters (..), NodeToNodeVersionData (..),
-                     RemoteAddress, RemoteConnectionId, combineVersions,
+                     RemoteAddress, combineVersions,
                      defaultMiniProtocolParameters)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
@@ -109,15 +110,15 @@ import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
 -- | Arguments required by 'runNode'
-data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
+data RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | Consensus tracers
-      rnTraceConsensus :: Tracers m RemoteConnectionId LocalConnectionId blk
+      rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Protocol tracers for node-to-node communication
-    , rnTraceNTN :: NTN.Tracers m RemoteConnectionId blk DeserialiseFailure
+    , rnTraceNTN :: NTN.Tracers m (ConnectionId addrNTN) blk DeserialiseFailure
 
       -- | Protocol tracers for node-to-client communication
-    , rnTraceNTC :: NTC.Tracers m LocalConnectionId blk DeserialiseFailure
+    , rnTraceNTC :: NTC.Tracers m (ConnectionId addrNTC) blk DeserialiseFailure
 
       -- | ChainDB tracer
     , rnTraceDB :: Tracer m (ChainDB.TraceEvent blk)
@@ -145,8 +146,8 @@ data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
                                             -> HardForkBlockchainTimeArgs m blk
 
       -- | Customise the 'NodeArgs'
-    , rnCustomiseNodeArgs :: NodeArgs m RemoteConnectionId LocalConnectionId blk
-                          -> NodeArgs m RemoteConnectionId LocalConnectionId blk
+    , rnCustomiseNodeArgs :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                          -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | node-to-node protocol versions to run.
     , rnNodeToNodeVersions   :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
@@ -159,7 +160,7 @@ data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
     , rnNodeKernelHook :: ResourceRegistry m
-                       -> NodeKernel m RemoteConnectionId LocalConnectionId blk
+                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
                        -> m ()
 
       -- | Maximum clock skew.
@@ -176,7 +177,7 @@ data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
     , rnRunDataDiffusion ::
            ResourceRegistry m
         -> DiffusionApplications
-             RemoteAddress LocalAddress
+             addrNTN        addrNTC
              versionDataNTN versionDataNTC
              m
         -> m ()
@@ -193,9 +194,11 @@ data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-run :: forall m versionDataNTN versionDataNTC blk.
-     (RunNode blk, IOLike m, MonadTime m, MonadTimer m)
-  => RunNodeArgs m versionDataNTN versionDataNTC blk
+run :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
+     ( RunNode blk
+     , IOLike m, MonadTime m, MonadTimer m
+     , Hashable addrNTN, Ord addrNTN, Typeable addrNTN)
+  => RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
   -> m ()
 run RunNodeArgs{..} =
 
@@ -287,10 +290,10 @@ run RunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeArgs   m RemoteConnectionId LocalConnectionId blk
-      -> NodeKernel m RemoteConnectionId LocalConnectionId blk
+      :: NodeArgs   m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps m RemoteConnectionId ByteString ByteString ByteString ByteString ()
+      -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
@@ -300,10 +303,10 @@ run RunNodeArgs{..} =
           (NTN.mkHandlers nodeArgs nodeKernel)
 
     mkNodeToClientApps
-      :: NodeArgs   m RemoteConnectionId LocalConnectionId blk
-      -> NodeKernel m RemoteConnectionId LocalConnectionId blk
+      :: NodeArgs   m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToClientVersion blk
-      -> NTC.Apps m LocalConnectionId ByteString ByteString ByteString ()
+      -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
     mkNodeToClientApps nodeArgs nodeKernel version =
         NTC.mkApps
           rnTraceNTC
@@ -313,13 +316,13 @@ run RunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps m RemoteConnectionId ByteString ByteString ByteString ByteString ()
+          -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
-          -> NTC.Apps m LocalConnectionId      ByteString ByteString ByteString ()
+          -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
          )
       -> DiffusionApplications
-           RemoteAddress LocalAddress
+           addrNTN addrNTC
            versionDataNTN versionDataNTC
            m
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
@@ -442,16 +445,16 @@ mkChainDbArgs tracer registry inFuture cfg initLedger
     k = configSecurityParam cfg
 
 mkNodeArgs
-  :: forall m blk. (RunNode blk, IOLike m)
+  :: forall m addrNTN addrNTC blk. (RunNode blk, IOLike m)
   => ResourceRegistry m
   -> Int
   -> StdGen
   -> TopLevelConfig blk
   -> [m (BlockForging m blk)]
-  -> Tracers m RemoteConnectionId LocalConnectionId blk
+  -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
-  -> m (NodeArgs m RemoteConnectionId LocalConnectionId blk)
+  -> m (NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
 mkNodeArgs registry bfcSalt keepAliveRng cfg initBlockForging tracers btime chainDB = do
     blockForging <- sequence initBlockForging
     return NodeArgs
@@ -484,8 +487,8 @@ mkNodeArgs registry bfcSalt keepAliveRng cfg initBlockForging tracers btime chai
 -- function makes sure we don't exceed those limits and that the values are
 -- consistent.
 nodeArgsEnforceInvariants
-  :: NodeArgs m RemoteConnectionId LocalConnectionId blk
-  -> NodeArgs m RemoteConnectionId LocalConnectionId blk
+  :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
