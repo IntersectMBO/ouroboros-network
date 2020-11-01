@@ -1,5 +1,6 @@
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -12,6 +13,7 @@ module Ouroboros.Consensus.Node
   , stdRunDataDiffusion
   , stdVersionDataNTC
   , stdVersionDataNTN
+  , stdWithCheckedDB
     -- * Exposed by 'run' et al
   , DiffusionTracers (..)
   , DiffusionArguments (..)
@@ -21,6 +23,7 @@ module Ouroboros.Consensus.Node
   , Tracers' (..)
   , ChainDB.TraceEvent (..)
   , ProtocolInfo (..)
+  , LastShutDownWasClean (..)
   , ChainDbArgs (..)
   , NodeArgs (..)
   , NodeKernel (..)
@@ -108,6 +111,9 @@ data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | ChainDB tracer
     , rnTraceDB :: Tracer IO (ChainDB.TraceEvent blk)
 
+      -- | How to manage the clean-shutdown marker on disk
+    , rnWithCheckedDB :: forall a. (LastShutDownWasClean -> IO a) -> IO a
+
       -- | Database path
     , rnDatabasePath :: FilePath
 
@@ -167,9 +173,9 @@ run :: forall versionDataNTN versionDataNTC blk.
      RunNode blk
   => RunNodeArgs versionDataNTN versionDataNTC blk
   -> IO ()
-run runargs@RunNodeArgs{..} =
+run RunNodeArgs{..} =
 
-    withDBChecks runargs $ \lastShutDownWasClean ->
+    rnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
     withRegistry $ \registry -> do
 
       let systemStart :: SystemStart
@@ -333,23 +339,27 @@ run runargs@RunNodeArgs{..} =
         , daErrorPolicies = consensusErrorPolicy
         }
 
+-- | Did the ChainDB already have existing clean-shutdown marker on disk?
+newtype LastShutDownWasClean = LastShutDownWasClean Bool
+  deriving (Eq, Show)
+
 -- | Check the DB marker, lock the DB and look for the clean shutdown marker.
 --
 -- Run the body action with the DB locked, and if the last shutdown was clean.
 --
-withDBChecks :: forall versionDataNTN versionDataNTC blk a.
-                RunNode blk
-             => RunNodeArgs versionDataNTN versionDataNTC blk
-             -> (Bool -> IO a)  -- ^ Body action with last shutdown was clean.
-             -> IO a
-withDBChecks RunNodeArgs{..} body = do
+stdWithCheckedDB :: forall a.
+     FilePath
+  -> NetworkMagic
+  -> (LastShutDownWasClean -> IO a)  -- ^ Body action with last shutdown was clean.
+  -> IO a
+stdWithCheckedDB databasePath networkMagic body = do
 
     -- Check the DB marker first, before doing the lock file, since if the
     -- marker is not present, it expects an empty DB dir.
     either throwIO return =<< checkDbMarker
       hasFS
       mountPoint
-      (getNetworkMagic (configBlock pInfoConfig))
+      networkMagic
 
     -- Then create the lock file.
     withLockDB mountPoint $ do
@@ -367,11 +377,10 @@ withDBChecks RunNodeArgs{..} body = do
       -- next time we start up, we know we don't have to validate the whole
       -- database.
       createMarkerOnCleanShutdown hasFS $
-        body lastShutDownWasClean
+        body (LastShutDownWasClean lastShutDownWasClean)
   where
-    mountPoint                   = MountPoint rnDatabasePath
+    mountPoint                   = MountPoint databasePath
     hasFS                        = ioHasFS mountPoint
-    ProtocolInfo { pInfoConfig } = rnProtocolInfo
 
 openChainDB
   :: forall blk. RunNode blk
