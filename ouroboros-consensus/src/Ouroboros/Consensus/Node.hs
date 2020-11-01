@@ -95,7 +95,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
 -- | Arguments required by 'runNode'
-data RunNodeArgs blk = RunNodeArgs {
+data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers IO RemoteConnectionId LocalConnectionId blk
 
@@ -147,13 +147,13 @@ data RunNodeArgs blk = RunNodeArgs {
            ResourceRegistry IO
         -> DiffusionApplications
              RemoteAddress LocalAddress
-             NodeToNodeVersionData NodeToClientVersionData
+             versionDataNTN versionDataNTC
              IO
         -> IO ()
 
-    , rnVersionDataNTC :: NodeToClientVersionData
+    , rnVersionDataNTC :: versionDataNTC
 
-    , rnVersionDataNTN :: NodeToNodeVersionData
+    , rnVersionDataNTN :: versionDataNTN
 
     }
 
@@ -163,7 +163,10 @@ data RunNodeArgs blk = RunNodeArgs {
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-run :: forall blk. RunNode blk => RunNodeArgs blk -> IO ()
+run :: forall versionDataNTN versionDataNTC blk.
+     RunNode blk
+  => RunNodeArgs versionDataNTN versionDataNTC blk
+  -> IO ()
 run runargs@RunNodeArgs{..} =
 
     withDBChecks runargs $ \lastShutDownWasClean ->
@@ -302,7 +305,7 @@ run runargs@RunNodeArgs{..} =
          )
       -> DiffusionApplications
            RemoteAddress LocalAddress
-           NodeToNodeVersionData NodeToClientVersionData
+           versionDataNTN versionDataNTC
            IO
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
@@ -334,9 +337,9 @@ run runargs@RunNodeArgs{..} =
 --
 -- Run the body action with the DB locked, and if the last shutdown was clean.
 --
-withDBChecks :: forall blk a.
+withDBChecks :: forall versionDataNTN versionDataNTC blk a.
                 RunNode blk
-             => RunNodeArgs blk
+             => RunNodeArgs versionDataNTN versionDataNTC blk
              -> (Bool -> IO a)  -- ^ Body action with last shutdown was clean.
              -> IO a
 withDBChecks RunNodeArgs{..} body = do
