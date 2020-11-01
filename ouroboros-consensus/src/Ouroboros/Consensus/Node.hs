@@ -10,6 +10,9 @@
 --
 module Ouroboros.Consensus.Node
   ( run
+  , stdBfcSaltIO
+  , stdChainSyncTimeout
+  , stdKeepAliveRngIO
   , stdMkChainDbHasFS
   , stdRunDataDiffusion
   , stdVersionDataNTC
@@ -51,7 +54,10 @@ import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.FilePath ((</>))
-import           System.Random (newStdGen, randomIO, randomRIO)
+import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
+
+import           Control.Monad.Class.MonadTime (MonadTime)
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
@@ -103,38 +109,44 @@ import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
 -- | Arguments required by 'runNode'
-data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
+data RunNodeArgs m versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | Consensus tracers
-      rnTraceConsensus :: Tracers IO RemoteConnectionId LocalConnectionId blk
+      rnTraceConsensus :: Tracers m RemoteConnectionId LocalConnectionId blk
 
       -- | Protocol tracers for node-to-node communication
-    , rnTraceNTN :: NTN.Tracers IO RemoteConnectionId blk DeserialiseFailure
+    , rnTraceNTN :: NTN.Tracers m RemoteConnectionId blk DeserialiseFailure
 
       -- | Protocol tracers for node-to-client communication
-    , rnTraceNTC :: NTC.Tracers IO LocalConnectionId blk DeserialiseFailure
+    , rnTraceNTC :: NTC.Tracers m LocalConnectionId blk DeserialiseFailure
 
       -- | ChainDB tracer
-    , rnTraceDB :: Tracer IO (ChainDB.TraceEvent blk)
+    , rnTraceDB :: Tracer m (ChainDB.TraceEvent blk)
 
       -- | How to manage the clean-shutdown marker on disk
-    , rnWithCheckedDB :: forall a. (LastShutDownWasClean -> IO a) -> IO a
+    , rnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
 
       -- | How to access a file system relative to the ChainDB mount point
-    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
+    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS m
 
       -- | Protocol info
-    , rnProtocolInfo :: ProtocolInfo IO blk
+    , rnProtocolInfo :: ProtocolInfo m blk
 
       -- | Customise the 'ChainDbArgs'
-    , rnCustomiseChainDbArgs :: ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk
+    , rnCustomiseChainDbArgs :: ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk
+
+      -- | Ie 'bfcSalt'
+    , rnBfcSalt :: Int
+
+      -- | Ie 'keepAliveRng'
+    , rnKeepAliveRng :: StdGen
 
       -- | Customise the 'HardForkBlockchainTimeArgs'
-    , rnCustomiseHardForkBlockchainTimeArgs :: HardForkBlockchainTimeArgs IO blk
-                                            -> HardForkBlockchainTimeArgs IO blk
+    , rnCustomiseHardForkBlockchainTimeArgs :: HardForkBlockchainTimeArgs m blk
+                                            -> HardForkBlockchainTimeArgs m blk
 
       -- | Customise the 'NodeArgs'
-    , rnCustomiseNodeArgs :: NodeArgs IO RemoteConnectionId LocalConnectionId blk
-                          -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
+    , rnCustomiseNodeArgs :: NodeArgs m RemoteConnectionId LocalConnectionId blk
+                          -> NodeArgs m RemoteConnectionId LocalConnectionId blk
 
       -- | node-to-node protocol versions to run.
     , rnNodeToNodeVersions   :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
@@ -146,25 +158,28 @@ data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
       --
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
-    , rnNodeKernelHook :: ResourceRegistry IO
-                       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
-                       -> IO ()
+    , rnNodeKernelHook :: ResourceRegistry m
+                       -> NodeKernel m RemoteConnectionId LocalConnectionId blk
+                       -> m ()
 
       -- | Maximum clock skew.
       --
       -- Use 'defaultClockSkew' when unsure.
     , rnMaxClockSkew :: ClockSkew
 
+      -- | See 'NTN.ChainSyncTimeout'
+    , rnChainSyncTimeout :: m NTN.ChainSyncTimeout
+
       -- | How to run the data diffusion applications
       --
       -- 'run' will not return before this does.
     , rnRunDataDiffusion ::
-           ResourceRegistry IO
+           ResourceRegistry m
         -> DiffusionApplications
              RemoteAddress LocalAddress
              versionDataNTN versionDataNTC
-             IO
-        -> IO ()
+             m
+        -> m ()
 
     , rnVersionDataNTC :: versionDataNTC
 
@@ -178,10 +193,10 @@ data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-run :: forall versionDataNTN versionDataNTC blk.
-     RunNode blk
-  => RunNodeArgs versionDataNTN versionDataNTC blk
-  -> IO ()
+run :: forall m versionDataNTN versionDataNTC blk.
+     (RunNode blk, IOLike m, MonadTime m, MonadTimer m)
+  => RunNodeArgs m versionDataNTN versionDataNTC blk
+  -> m ()
 run RunNodeArgs{..} =
 
     rnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
@@ -190,12 +205,12 @@ run RunNodeArgs{..} =
       let systemStart :: SystemStart
           systemStart = getSystemStart (configBlock cfg)
 
-          systemTime :: SystemTime IO
+          systemTime :: SystemTime m
           systemTime = defaultSystemTime
                          systemStart
                          (blockchainTimeTracer rnTraceConsensus)
 
-          inFuture :: CheckInFuture IO blk
+          inFuture :: CheckInFuture m blk
           inFuture = InFuture.reference
                        (configLedger cfg)
                        rnMaxClockSkew
@@ -243,6 +258,8 @@ run RunNodeArgs{..} =
       nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
                       mkNodeArgs
                         registry
+                        rnBfcSalt
+                        rnKeepAliveRng
                         cfg
                         blockForging
                         rnTraceConsensus
@@ -260,11 +277,6 @@ run RunNodeArgs{..} =
 
       rnRunDataDiffusion registry diffusionApplications
   where
-    randomElem :: [a] -> IO a
-    randomElem xs = do
-      ix <- randomRIO (0, length xs - 1)
-      return $ xs !! ix
-
     ProtocolInfo
       { pInfoConfig       = cfg
       , pInfoInitLedger   = initLedger
@@ -275,41 +287,23 @@ run RunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
-      -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
+      :: NodeArgs   m RemoteConnectionId LocalConnectionId blk
+      -> NodeKernel m RemoteConnectionId LocalConnectionId blk
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ByteString ()
+      -> NTN.Apps m RemoteConnectionId ByteString ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
-          chainSyncTimeout
+          rnChainSyncTimeout
           (NTN.mkHandlers nodeArgs nodeKernel)
-      where
-        chainSyncTimeout :: IO NTN.ChainSyncTimeout
-        chainSyncTimeout = do
-            -- These values approximately correspond to false positive
-            -- thresholds for streaks of empty slots with 99% probability,
-            -- 99.9% probability up to 99.999% probability.
-            -- t = T_s [log (1-Y) / log (1-f)]
-            -- Y = [0.99, 0.999...]
-            -- T_s = slot length of 1s.
-            -- f = 0.05
-            -- The timeout is randomly picked per bearer to avoid all bearers
-            -- going down at the same time in case of a long streak of empty
-            -- slots. TODO: workaround until peer selection governor.
-            mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
-            return NTN.ChainSyncTimeout
-              { canAwaitTimeout  = shortWait
-              , mustReplyTimeout
-              }
 
     mkNodeToClientApps
-      :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
-      -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
+      :: NodeArgs   m RemoteConnectionId LocalConnectionId blk
+      -> NodeKernel m RemoteConnectionId LocalConnectionId blk
       -> BlockNodeToClientVersion blk
-      -> NTC.Apps IO LocalConnectionId ByteString ByteString ByteString ()
+      -> NTC.Apps m LocalConnectionId ByteString ByteString ByteString ()
     mkNodeToClientApps nodeArgs nodeKernel version =
         NTC.mkApps
           rnTraceNTC
@@ -319,15 +313,15 @@ run RunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ByteString ()
+          -> NTN.Apps m RemoteConnectionId ByteString ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
-          -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()
+          -> NTC.Apps m LocalConnectionId      ByteString ByteString ByteString ()
          )
       -> DiffusionApplications
            RemoteAddress LocalAddress
            versionDataNTN versionDataNTC
-           IO
+           m
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
           daResponderApplication = combineVersions [
@@ -448,41 +442,41 @@ mkChainDbArgs tracer registry inFuture cfg initLedger
     k = configSecurityParam cfg
 
 mkNodeArgs
-  :: forall blk. RunNode blk
-  => ResourceRegistry IO
+  :: forall m blk. (RunNode blk, IOLike m)
+  => ResourceRegistry m
+  -> Int
+  -> StdGen
   -> TopLevelConfig blk
-  -> [IO (BlockForging IO blk)]
-  -> Tracers IO RemoteConnectionId LocalConnectionId blk
-  -> BlockchainTime IO
-  -> ChainDB IO blk
-  -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg initBlockForging tracers btime chainDB = do
+  -> [m (BlockForging m blk)]
+  -> Tracers m RemoteConnectionId LocalConnectionId blk
+  -> BlockchainTime m
+  -> ChainDB m blk
+  -> m (NodeArgs m RemoteConnectionId LocalConnectionId blk)
+mkNodeArgs registry bfcSalt keepAliveRng cfg initBlockForging tracers btime chainDB = do
     blockForging <- sequence initBlockForging
-    bfsalt <- randomIO -- Per-node specific value used by blockfetch when ranking peers.
-    keepAliveRng <- newStdGen
     return NodeArgs
       { tracers
       , registry
       , cfg
       , btime
       , chainDB
-      , blockForging            = blockForging
+      , blockForging
       , initChainDB             = nodeInitChainDB
       , blockFetchSize          = estimateBlockSize
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters
-      , blockFetchConfiguration = defaultBlockFetchConfiguration bfsalt
-      , keepAliveRng            = keepAliveRng
+      , blockFetchConfiguration = defaultBlockFetchConfiguration
+      , keepAliveRng
       }
   where
-    defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
-    defaultBlockFetchConfiguration bfsalt = BlockFetchConfiguration
+    defaultBlockFetchConfiguration :: BlockFetchConfiguration
+    defaultBlockFetchConfiguration = BlockFetchConfiguration
       { bfcMaxConcurrencyBulkSync = 1
       , bfcMaxConcurrencyDeadline = 1
       , bfcMaxRequestsInflight    = blockFetchPipeliningMax defaultMiniProtocolParameters
       , bfcDecisionLoopInterval   = 0.01 -- 10ms
-      , bfcSalt                   = bfsalt
+      , bfcSalt
       }
 
 -- | We allow the user running the node to customise the 'NodeArgs' through
@@ -519,6 +513,34 @@ stdMkChainDbHasFS ::
   -> SomeHasFS IO
 stdMkChainDbHasFS rootPath (ChainDB.RelativeMountPoint relPath) =
     SomeHasFS $ ioHasFS $ MountPoint $ rootPath </> relPath
+
+stdBfcSaltIO :: IO Int
+stdBfcSaltIO = randomIO
+
+stdKeepAliveRngIO :: IO StdGen
+stdKeepAliveRngIO = newStdGen
+
+stdChainSyncTimeout :: IO NTN.ChainSyncTimeout
+stdChainSyncTimeout = do
+    -- These values approximately correspond to false positive
+    -- thresholds for streaks of empty slots with 99% probability,
+    -- 99.9% probability up to 99.999% probability.
+    -- t = T_s [log (1-Y) / log (1-f)]
+    -- Y = [0.99, 0.999...]
+    -- T_s = slot length of 1s.
+    -- f = 0.05
+    -- The timeout is randomly picked per bearer to avoid all bearers
+    -- going down at the same time in case of a long streak of empty
+    -- slots. TODO: workaround until peer selection governor.
+    mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
+    return NTN.ChainSyncTimeout
+      { canAwaitTimeout  = shortWait
+      , mustReplyTimeout
+      }
+  where
+    randomElem xs = do
+      ix <- randomRIO (0, length xs - 1)
+      return $ xs !! ix
 
 stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
 stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData
