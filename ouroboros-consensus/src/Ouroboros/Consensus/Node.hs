@@ -10,6 +10,7 @@
 --
 module Ouroboros.Consensus.Node
   ( run
+  , stdMkChainDbHasFS
   , stdRunDataDiffusion
   , stdVersionDataNTC
   , stdVersionDataNTN
@@ -33,6 +34,7 @@ module Ouroboros.Consensus.Node
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
   , RemoteConnectionId
+  , ChainDB.RelativeMountPoint (..)
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
@@ -47,6 +49,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           System.FilePath ((</>))
 import           System.Random (newStdGen, randomIO, randomRIO)
 
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -86,6 +89,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
@@ -114,8 +118,8 @@ data RunNodeArgs versionDataNTN versionDataNTC blk = RunNodeArgs {
       -- | How to manage the clean-shutdown marker on disk
     , rnWithCheckedDB :: forall a. (LastShutDownWasClean -> IO a) -> IO a
 
-      -- | Database path
-    , rnDatabasePath :: FilePath
+      -- | How to access a file system relative to the ChainDB mount point
+    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
 
       -- | Protocol info
     , rnProtocolInfo :: ProtocolInfo IO blk
@@ -208,8 +212,8 @@ run RunNodeArgs{..} =
 
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
-          rnTraceDB registry inFuture rnDatabasePath cfg initLedger
-          customiseChainDbArgs')
+          rnTraceDB registry inFuture cfg initLedger
+          rnMkChainDbHasFS customiseChainDbArgs')
         ChainDB.closeDB
 
       btime      <- hardForkBlockchainTime
@@ -225,6 +229,7 @@ run RunNodeArgs{..} =
                       (pure $ BackoffDelay 60) -- see 'BackoffDelay'
                       (ledgerState <$>
                          ChainDB.getCurrentLedger chainDB)
+
       nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
                       mkNodeArgs
                         registry
@@ -383,40 +388,39 @@ stdWithCheckedDB databasePath networkMagic body = do
     hasFS                        = ioHasFS mountPoint
 
 openChainDB
-  :: forall blk. RunNode blk
-  => Tracer IO (ChainDB.TraceEvent blk)
-  -> ResourceRegistry IO
-  -> CheckInFuture IO blk
-  -> FilePath
-     -- ^ Database path
+  :: forall m blk. (RunNode blk, IOLike m)
+  => Tracer m (ChainDB.TraceEvent blk)
+  -> ResourceRegistry m
+  -> CheckInFuture m blk
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> (ChainDbArgs Identity IO blk -> ChainDbArgs Identity IO blk)
+  -> (ChainDB.RelativeMountPoint -> SomeHasFS m)
+  -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
       -- ^ Customise the 'ChainDbArgs'
-  -> IO (ChainDB IO blk)
-openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
+  -> m (ChainDB m blk)
+openChainDB tracer registry inFuture cfg initLedger mkHasFS customiseArgs =
     ChainDB.openDB args
   where
-    args :: ChainDbArgs Identity IO blk
+    args :: ChainDbArgs Identity m blk
     args = customiseArgs $
-             mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
+             mkChainDbArgs tracer registry inFuture cfg initLedger
              (nodeImmutableDbChunkInfo (configStorage cfg))
+             mkHasFS
 
 mkChainDbArgs
-  :: forall blk. RunNode blk
-  => Tracer IO (ChainDB.TraceEvent blk)
-  -> ResourceRegistry IO
-  -> CheckInFuture IO blk
-  -> FilePath
-     -- ^ Database path
+  :: forall m blk. (RunNode blk, IOLike m)
+  => Tracer m (ChainDB.TraceEvent blk)
+  -> ResourceRegistry m
+  -> CheckInFuture m blk
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChunkInfo
-  -> ChainDbArgs Identity IO blk
-mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-              chunkInfo = (ChainDB.defaultArgs dbPath) {
+  -> (ChainDB.RelativeMountPoint -> SomeHasFS m)
+  -> ChainDbArgs Identity m blk
+mkChainDbArgs tracer registry inFuture cfg initLedger
+              chunkInfo mkHasFS = (ChainDB.defaultArgs mkHasFS) {
       ChainDB.cdbMaxBlocksPerFile      = mkBlocksPerFile 1000
     , ChainDB.cdbChunkInfo             = chunkInfo
     , ChainDB.cdbGenesis               = return initLedger
@@ -497,6 +501,14 @@ nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
 {-------------------------------------------------------------------------------
   Arguments for use in the real node
 -------------------------------------------------------------------------------}
+
+-- | How to locate the ChainDB on disk
+stdMkChainDbHasFS ::
+     FilePath
+  -> ChainDB.RelativeMountPoint
+  -> SomeHasFS IO
+stdMkChainDbHasFS rootPath (ChainDB.RelativeMountPoint relPath) =
+    SomeHasFS $ ioHasFS $ MountPoint $ rootPath </> relPath
 
 stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
 stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData

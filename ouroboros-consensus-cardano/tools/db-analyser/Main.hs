@@ -165,8 +165,10 @@ analyse CmdLine {..} args =
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
-          args' = Node.mkChainDbArgs tracer registry InFuture.dontCheck
-                    dbDir cfg initLedger chunkInfo
+          args' =
+            Node.mkChainDbArgs
+              tracer registry InFuture.dontCheck cfg initLedger chunkInfo $
+              Node.stdMkChainDbHasFS dbDir
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy

@@ -61,7 +61,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -80,9 +79,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
                      createDirectoryIfMissing)
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError,
-                     MountPoint (..), mkFsPath)
-import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
@@ -157,11 +154,11 @@ data LgrDbArgs f m blk = LgrDbArgs {
     }
 
 -- | Default arguments
-defaultArgs :: FilePath -> LgrDbArgs Defaults IO blk
-defaultArgs fp = LgrDbArgs {
+defaultArgs :: Applicative m => SomeHasFS m -> LgrDbArgs Defaults m blk
+defaultArgs lgrHasFS = LgrDbArgs {
       lgrDiskPolicy     = NoDefault
     , lgrGenesis        = NoDefault
-    , lgrHasFS          = SomeHasFS $ ioHasFS $ MountPoint (fp </> "ledger")
+    , lgrHasFS
     , lgrParams         = NoDefault
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer

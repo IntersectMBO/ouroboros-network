@@ -107,7 +107,6 @@ import           Control.Tracer (Tracer, traceWith)
 import           Control.Tracer (nullTracer)
 import qualified Data.ByteString.Lazy as Lazy
 import           GHC.Stack (HasCallStack)
-import           System.FilePath ((</>))
 
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -120,7 +119,6 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
 import           Ouroboros.Consensus.Storage.FS.CRC
-import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
@@ -153,14 +151,14 @@ data ImmutableDbArgs f m blk = ImmutableDbArgs {
     , immValidationPolicy :: ValidationPolicy
     }
 
--- | Default arguments when using the 'IO' monad
-defaultArgs :: FilePath -> ImmutableDbArgs Defaults IO blk
-defaultArgs fp = ImmutableDbArgs {
+-- | Default arguments
+defaultArgs :: Applicative m => SomeHasFS m -> ImmutableDbArgs Defaults m blk
+defaultArgs immHasFS = ImmutableDbArgs {
       immCacheConfig      = cacheConfig
     , immCheckIntegrity   = NoDefault
     , immChunkInfo        = NoDefault
     , immCodecConfig      = NoDefault
-    , immHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "immutable")
+    , immHasFS
     , immRegistry         = NoDefault
     , immTracer           = nullTracer
     , immValidationPolicy = ValidateMostRecentChunk
