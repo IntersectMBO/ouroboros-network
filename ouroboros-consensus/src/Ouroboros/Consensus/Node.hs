@@ -8,10 +8,13 @@
 -- Intended for qualified import.
 --
 module Ouroboros.Consensus.Node
-  ( DiffusionTracers (..)
+  ( run
+  , stdRunDataDiffusion
+  , stdVersionDataNTC
+  , stdVersionDataNTN
+    -- * Exposed by 'run' et al
+  , DiffusionTracers (..)
   , DiffusionArguments (..)
-  , run
-    -- * Exposed by 'run'
   , RunNodeArgs (..)
   , RunNode
   , Tracers
@@ -48,9 +51,9 @@ import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalAddress,
                      LocalConnectionId, NodeToClientVersionData (..))
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
-                     NodeToNodeVersionData (..), RemoteAddress,
-                     RemoteConnectionId, combineVersions,
+import           Ouroboros.Network.NodeToNode (DiffusionMode,
+                     MiniProtocolParameters (..), NodeToNodeVersionData (..),
+                     RemoteAddress, RemoteConnectionId, combineVersions,
                      defaultMiniProtocolParameters)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
@@ -105,15 +108,6 @@ data RunNodeArgs blk = RunNodeArgs {
       -- | ChainDB tracer
     , rnTraceDB :: Tracer IO (ChainDB.TraceEvent blk)
 
-      -- | Diffusion tracers
-    , rnTraceDiffusion :: DiffusionTracers
-
-      -- | Diffusion arguments
-    , rnDiffusionArguments :: DiffusionArguments
-
-      -- | Network magic
-    , rnNetworkMagic :: NetworkMagic
-
       -- | Database path
     , rnDatabasePath :: FilePath
 
@@ -145,6 +139,22 @@ data RunNodeArgs blk = RunNodeArgs {
       --
       -- Use 'defaultClockSkew' when unsure.
     , rnMaxClockSkew :: ClockSkew
+
+      -- | How to run the data diffusion applications
+      --
+      -- 'run' will not return before this does.
+    , rnRunDataDiffusion ::
+           ResourceRegistry IO
+        -> DiffusionApplications
+             RemoteAddress LocalAddress
+             NodeToNodeVersionData NodeToClientVersionData
+             IO
+        -> IO ()
+
+    , rnVersionDataNTC :: NodeToClientVersionData
+
+    , rnVersionDataNTN :: NodeToNodeVersionData
+
     }
 
 -- | Start a node.
@@ -224,21 +234,12 @@ run runargs@RunNodeArgs{..} =
                                     ntnApps
                                     ntcApps
 
-      runDataDiffusion rnTraceDiffusion
-                       rnDiffusionArguments
-                       diffusionApplications
+      rnRunDataDiffusion registry diffusionApplications
   where
     randomElem :: [a] -> IO a
     randomElem xs = do
       ix <- randomRIO (0, length xs - 1)
       return $ xs !! ix
-
-    nodeToNodeVersionData = NodeToNodeVersionData
-      { networkMagic  = rnNetworkMagic
-      , diffusionMode = daDiffusionMode rnDiffusionArguments
-      }
-    nodeToClientVersionData = NodeToClientVersionData
-      { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -308,21 +309,21 @@ run runargs@RunNodeArgs{..} =
           daResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
-                nodeToNodeVersionData
+                rnVersionDataNTN
                 (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daInitiatorApplication = combineVersions [
               simpleSingletonVersions
                 version
-                nodeToNodeVersionData
+                rnVersionDataNTN
                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
-                nodeToClientVersionData
+                rnVersionDataNTC
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]
@@ -480,3 +481,28 @@ nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
                 (blockFetchPipeliningMax miniProtocolParameters)
         }
     }
+
+{-------------------------------------------------------------------------------
+  Arguments for use in the real node
+-------------------------------------------------------------------------------}
+
+stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
+stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData
+    { networkMagic
+    , diffusionMode
+    }
+
+stdVersionDataNTC :: NetworkMagic -> NodeToClientVersionData
+stdVersionDataNTC networkMagic = NodeToClientVersionData
+    { networkMagic
+    }
+
+stdRunDataDiffusion ::
+     DiffusionTracers
+  -> DiffusionArguments
+  -> DiffusionApplications
+       RemoteAddress LocalAddress
+       NodeToNodeVersionData NodeToClientVersionData
+       IO
+  -> IO ()
+stdRunDataDiffusion = runDataDiffusion
