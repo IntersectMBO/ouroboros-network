@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingVia   #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Test.Util.Slots (
   NumSlots (..),
@@ -7,13 +8,14 @@ module Test.Util.Slots (
 
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import           Quiet (Quiet (..))
 import           Test.QuickCheck (Arbitrary (..))
 import qualified Test.QuickCheck as QC
 
 -- | Number of slots
 newtype NumSlots = NumSlots {unNumSlots :: Word64}
-  deriving (Eq, Generic)
+  deriving (Eq, Generic, NoThunks)
   deriving (Show) via (Quiet NumSlots)
 
 {-------------------------------------------------------------------------------
