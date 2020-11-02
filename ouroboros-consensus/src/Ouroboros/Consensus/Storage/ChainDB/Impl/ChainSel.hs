@@ -253,12 +253,11 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     let immBlockNo = AF.anchorBlockNo curChain
 
     -- We follow the steps from section "## Adding a block" in ChainDB.md
-
-    -- Note: we call 'chainSelectionForFutureBlocks' in all branches instead
-    -- of once, before branching, because we want to do it /after/ writing the
-    -- block to the VolatileDB and delivering the 'varBlockWrittenToDisk'
-    -- promise, as this is the promise the BlockFetch client waits for.
-    -- Otherwise, the BlockFetch client would have to wait for
+    --
+    -- Note: we call 'chainSelectionForFutureBlocks' in all branches instead of
+    -- once, before branching, because we want to do it /after/ writing the
+    -- block to the VolatileDB so that any threads waiting on the
+    -- 'varBlockWrittenToDisk' promise don't have to wait for the result of
     -- 'chainSelectionForFutureBlocks'.
 
     -- ### Ignore

@@ -41,11 +41,13 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
     -- * Future blocks
   , FutureBlocks
     -- * Blocks to add
-  , BlocksToAdd
+  , BlocksToAdd -- opaque
   , BlockToAdd (..)
   , newBlocksToAdd
   , addBlockToAdd
   , getBlockToAdd
+  , memberBlocksToAdd
+  , getBlocksToAddMaxSlotNo
     -- * Trace types
   , TraceEvent (..)
   , NewTipInfo (..)
@@ -61,6 +63,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
@@ -70,6 +73,7 @@ import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -424,23 +428,40 @@ type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
 -- | FIFO queue used to add blocks asynchronously to the ChainDB. Blocks are
 -- read from this queue by a background thread, which processes the blocks
 -- synchronously.
-newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
+data BlocksToAdd m blk = BlocksToAdd {
+       -- TODO use a better data structure, e.g., a heap from the @heaps@
+       -- package. Wish list:
+       -- + O(1) pop min value
+       -- + O(log n) insert
+       -- + O(n) get all
+       -- + Bounded in size
+       --
+       -- TODO join consecutive blocks into a fragment that can be added at
+       -- once.
+       blocksToAddQueue    :: !(StrictTVar m (Map (RealPoint blk) (BlockToAdd m blk)))
+     , blocksToAddCapacity :: !Word
+     }
   deriving NoThunks via OnlyCheckWhnfNamed "BlocksToAdd" (BlocksToAdd m blk)
 
 -- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
 -- to implement 'AddBlockPromise'.
-data BlockToAdd m blk = BlockToAdd
-  { blockToAdd            :: !blk
-  , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
-    -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
-  , varBlockProcessed     :: !(StrictTMVar m (Point blk))
-    -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
-  }
+data BlockToAdd m blk = BlockToAdd {
+      blockToAdd            :: !blk
+    , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
+      -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
+    , varBlockProcessed     :: !(StrictTMVar m (Point blk))
+      -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+    }
+  deriving NoThunks via OnlyCheckWhnfNamed "BlockToAdd" (BlockToAdd m blk)
 
 -- | Create a new 'BlocksToAdd' with the given size.
-newBlocksToAdd :: IOLike m => Word -> m (BlocksToAdd m blk)
-newBlocksToAdd queueSize = BlocksToAdd <$>
-    atomically (newTBQueue (fromIntegral queueSize))
+newBlocksToAdd :: (IOLike m, HasHeader blk) => Word -> m (BlocksToAdd m blk)
+newBlocksToAdd queueCapacity = do
+    varQueue <- newTVarIO mempty
+    return BlocksToAdd {
+        blocksToAddQueue    = varQueue
+      , blocksToAddCapacity = queueCapacity
+      }
 
 -- | Add a block to the 'BlocksToAdd' queue. Can block when the queue is full.
 addBlockToAdd
@@ -449,7 +470,7 @@ addBlockToAdd
   -> BlocksToAdd m blk
   -> blk
   -> m (AddBlockPromise m blk)
-addBlockToAdd tracer (BlocksToAdd queue) blk = do
+addBlockToAdd tracer (BlocksToAdd varQueue queueCapacity) blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
     let !toAdd = BlockToAdd
@@ -458,8 +479,12 @@ addBlockToAdd tracer (BlocksToAdd queue) blk = do
           , varBlockProcessed
           }
     queueSize <- atomically $ do
-      writeTBQueue  queue toAdd
-      lengthTBQueue queue
+      queue <- readTVar varQueue
+      let queue'    = Map.insert (blockRealPoint blk) toAdd queue
+          queueSize = Map.size queue'
+      check (fromIntegral queueSize <= queueCapacity)
+      writeTVar varQueue queue'
+      return queueSize
     traceWith tracer $
       AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
     return AddBlockPromise
@@ -470,7 +495,34 @@ addBlockToAdd tracer (BlocksToAdd queue) blk = do
 -- | Get the oldest block from the 'BlocksToAdd' queue. Can block when the
 -- queue is empty.
 getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
-getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
+getBlockToAdd (BlocksToAdd varQueue _) = atomically $ do
+    queue <- readTVar varQueue
+    case Map.minView queue of
+      Nothing                  -> retry
+      Just (toProcess, queue') -> do
+        writeTVar varQueue queue'
+        return toProcess
+
+-- | Return a function to test the membership for the given 'BlocksToAdd'.
+memberBlocksToAdd ::
+     (IOLike m, HasHeader blk)
+  => BlocksToAdd m blk
+  -> STM m (RealPoint blk -> Bool)
+memberBlocksToAdd (BlocksToAdd varQueue _) =
+    flip Map.member <$> readTVar varQueue
+
+getBlocksToAddMaxSlotNo ::
+     IOLike m
+  => BlocksToAdd m blk
+  -> STM m MaxSlotNo
+getBlocksToAddMaxSlotNo (BlocksToAdd varQueue _) = aux <$> readTVar varQueue
+  where
+    -- | The 'Ord' instance of 'RealPoint' orders by 'SlotNo' first, so the
+    -- maximal key of the map has the greatest 'SlotNo'.
+    aux :: Map (RealPoint blk) (BlockToAdd m blk) -> MaxSlotNo
+    aux queue = case Map.lookupMax queue of
+        Nothing                 -> NoMaxSlotNo
+        Just (RealPoint s _, _) -> MaxSlotNo s
 
 {-------------------------------------------------------------------------------
   Trace types
