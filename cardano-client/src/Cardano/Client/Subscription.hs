@@ -47,11 +47,11 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Versions,
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Consensus.Block (CodecConfig)
-import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
-                     cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
-                     clientCodecs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion, supportedNodeToClientVersions)
+import           Ouroboros.Consensus.Node.NodeToClient (ClientCodecs,
+                     cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
+                     clientCodecs)
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::

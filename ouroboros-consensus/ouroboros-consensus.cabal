@@ -122,22 +122,22 @@ library
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Server
                        Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
-                       Ouroboros.Consensus.Network.NodeToClient
-                       Ouroboros.Consensus.Network.NodeToNode
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbLock
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit
-                       Ouroboros.Consensus.NodeId
-                       Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.Node.InitStorage
+                       Ouroboros.Consensus.Node.Kernel
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
+                       Ouroboros.Consensus.Node.NodeToClient
+                       Ouroboros.Consensus.Node.NodeToNode
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.Tracers
+                       Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule

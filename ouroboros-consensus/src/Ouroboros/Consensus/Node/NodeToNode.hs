@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
-module Ouroboros.Consensus.Network.NodeToNode (
+module Ouroboros.Consensus.Node.NodeToNode (
     -- * Handlers
     Handlers (..)
   , mkHandlers
@@ -79,20 +79,22 @@ import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation
-import qualified Ouroboros.Consensus.Node.Tracers as Node
-import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
+
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import           Ouroboros.Consensus.Node.Kernel
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
+import qualified Ouroboros.Consensus.Node.Tracers as Node
+
 
 {-------------------------------------------------------------------------------
   Handlers

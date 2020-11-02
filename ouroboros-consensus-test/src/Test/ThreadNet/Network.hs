@@ -80,15 +80,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
-import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
-import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.InitStorage
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
@@ -106,6 +98,15 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+
+import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
+import           Ouroboros.Consensus.Node.InitStorage
+import           Ouroboros.Consensus.Node.Kernel as NodeKernel
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import qualified Ouroboros.Consensus.Node.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Tracers
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan

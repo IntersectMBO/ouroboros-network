@@ -62,18 +62,6 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
-import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
-import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.DbLock
-import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Node.ErrorPolicy
-import           Ouroboros.Consensus.Node.InitStorage
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Recovery
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -90,6 +78,19 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (ledgerDbDefaultParams)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
+
+import           Ouroboros.Consensus.Node.DbLock
+import           Ouroboros.Consensus.Node.DbMarker
+import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.InitStorage
+import           Ouroboros.Consensus.Node.Kernel
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import qualified Ouroboros.Consensus.Node.NodeToClient as NTC
+import qualified Ouroboros.Consensus.Node.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Recovery
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Tracers
 
 -- | Arguments required by 'runNode'
 data RunNodeArgs blk = RunNodeArgs {

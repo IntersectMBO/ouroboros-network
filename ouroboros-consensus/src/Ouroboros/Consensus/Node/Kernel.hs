@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Consensus.NodeKernel (
+module Ouroboros.Consensus.Node.Kernel (
     -- * Node kernel
     NodeKernel (..)
   , MaxTxCapacityOverride (..)
