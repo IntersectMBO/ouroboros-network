@@ -50,10 +50,11 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (unsafeNoThunks)
 
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.Tip (Tip, getTipBlockNo, getTipPoint)
+
 import           Network.TypedProtocol.Pipelined
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (Tip, getTipBlockNo, getTipPoint)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision

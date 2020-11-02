@@ -36,7 +36,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
+import           Ouroboros.Chain.Size (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
 

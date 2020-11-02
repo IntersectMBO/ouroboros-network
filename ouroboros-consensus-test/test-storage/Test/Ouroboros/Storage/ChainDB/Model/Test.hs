@@ -15,8 +15,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

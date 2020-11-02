@@ -37,7 +37,7 @@ import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Typeable
 
-import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
+import           Ouroboros.Chain.Serialised (Serialised (..), fromSerialised,
                      mkSerialised)
 
 import           Ouroboros.Consensus.Block

@@ -40,10 +40,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 -- Support for tests
 import qualified Data.List.NonEmpty as NE
+import           Ouroboros.Chain.MockChain (Chain (..))
+import qualified Ouroboros.Chain.MockChain as Chain
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 -- | Maintain a history of 'HeaderState's.
 data HeaderStateHistory blk = HeaderStateHistory {

@@ -36,7 +36,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
-import           Ouroboros.Network.Block (MaxSlotNo)
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike

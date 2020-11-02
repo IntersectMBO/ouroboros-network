@@ -14,7 +14,7 @@ import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           GHC.Stack
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Chain.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))

@@ -32,8 +32,8 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain)
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

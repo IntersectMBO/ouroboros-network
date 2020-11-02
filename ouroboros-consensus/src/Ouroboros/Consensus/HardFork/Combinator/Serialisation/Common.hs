@@ -84,7 +84,7 @@ import           Data.Word
 
 import           Cardano.Binary (enforceSize)
 
-import           Ouroboros.Network.Block (Serialised)
+import           Ouroboros.Chain.Serialised (Serialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion

@@ -36,8 +36,8 @@ import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
-import           Ouroboros.Network.Block (Serialised (..), decodePoint,
-                     encodePoint, mkSerialised)
+import           Ouroboros.Chain.Point (decodePoint, encodePoint)
+import           Ouroboros.Chain.Serialised (Serialised (..), mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

@@ -13,8 +13,7 @@ module Ouroboros.Consensus.Ledger.Query (
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (ShowQuery (..))
+import           Ouroboros.Chain.Util.ShowQuery (ShowQuery (..))
 
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util (SomeSecond (..))

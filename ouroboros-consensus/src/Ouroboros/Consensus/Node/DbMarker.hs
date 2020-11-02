@@ -20,7 +20,7 @@ import           Data.Text (Text)
 import           Data.Word
 import           Text.Read (readMaybe)
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Chain.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 

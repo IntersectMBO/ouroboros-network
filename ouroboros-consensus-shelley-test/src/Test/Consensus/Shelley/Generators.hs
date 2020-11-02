@@ -16,7 +16,7 @@ module Test.Consensus.Shelley.Generators (
     SomeResult (..)
   ) where
 
-import           Ouroboros.Network.Block (mkSerialised)
+import           Ouroboros.Chain.Serialised (mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation

@@ -64,7 +64,7 @@ library
                      , nothunks
                      , text              >=1.2   && <1.3
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
 
   default-language:    Haskell2010
@@ -98,7 +98,7 @@ executable db-converter
                      , streaming
                      , text
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
 

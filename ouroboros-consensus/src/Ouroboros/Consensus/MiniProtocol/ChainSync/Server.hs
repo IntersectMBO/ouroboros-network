@@ -14,8 +14,10 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainUpdate (..), Serialised,
-                     Tip (..))
+import           Ouroboros.Chain.ChainUpdate (ChainUpdate (..))
+import           Ouroboros.Chain.Serialised (Serialised)
+import           Ouroboros.Chain.Tip (Tip (..))
+
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,

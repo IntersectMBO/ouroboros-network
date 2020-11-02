@@ -54,14 +54,14 @@ import           Data.Void (Void)
 import           GHC.Stack
 import           System.Random (mkStdGen)
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.MockChain (Chain (Genesis))
+
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import qualified Ouroboros.Network.Codec as Codec
-import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
@@ -723,8 +723,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
         }
       where
         prj af = case AF.headBlockNo af of
-            At bno -> bno
-            Origin -> error "selTracer"
+            NotOrigin bno -> bno
+            Origin        -> error "selTracer"
 
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case

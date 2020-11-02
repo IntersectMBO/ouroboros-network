@@ -28,7 +28,7 @@ import           Data.SOP.Strict
 
 import           Cardano.Binary (enforceSize)
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+import           Ouroboros.Chain.Serialised (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block

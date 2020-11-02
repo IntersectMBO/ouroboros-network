@@ -14,15 +14,24 @@
 -- This is used by local clients (like wallets and CLI tools) to query the
 -- ledger state of a local node.
 --
-module Ouroboros.Network.Protocol.LocalStateQuery.Type where
+module Ouroboros.Network.Protocol.LocalStateQuery.Type (
+    LocalStateQuery (..)
+  , Message (..)
+  , ClientHasAgency (..)
+  , ServerHasAgency (..)
+  , NobodyHasAgency (..)
+  , AcquireFailure (..)
+    -- * Re-exported
+  , ShowQuery (..)
+  ) where
 
 import           Data.Kind (Type)
-import           Data.Proxy (Proxy(..))
+import           Data.Proxy (Proxy (..))
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy(..))
-
+import           Ouroboros.Chain.Util.ShowQuery (ShowQuery (..))
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | The kind of the local state query protocol, and the types of
 -- the states in the protocol state machine.
@@ -167,18 +176,6 @@ instance (forall result. Show (query result))
     => Show (ServerHasAgency (st :: LocalStateQuery block point query)) where
   show TokAcquiring        = "TokAcquiring"
   show (TokQuerying query) = "TokQuerying " ++ show query
-
--- | To implement 'Show' for:
---
--- > ('Message' ('LocalStateQuery' block query) st st')
---
--- we need a way to print the @query@ GADT and its type index, @result@. This
--- class contain the method we need to provide this 'Show' instance.
---
--- We use a type class for this, as this 'Show' constraint propagates to a lot
--- of places.
-class (forall result. Show (query result)) => ShowQuery query where
-    showResult :: forall result. query result -> result -> String
 
 instance (ShowQuery query, Show point)
       => Show (Message (LocalStateQuery block point query) st st') where

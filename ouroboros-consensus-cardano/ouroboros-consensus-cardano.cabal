@@ -51,7 +51,6 @@ library
                      , shelley-spec-ledger
                      , cardano-ledger-shelley-ma
 
-                     , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-shelley
@@ -90,7 +89,6 @@ executable db-analyser
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-shelley
-                     , ouroboros-network
   other-modules:
                        Analysis
                      , Block.Byron

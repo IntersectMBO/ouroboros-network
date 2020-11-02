@@ -49,7 +49,6 @@ library
                      , small-steps
                      , transformers
 
-                     , ouroboros-network
                      , ouroboros-consensus
 
   default-language:    Haskell2010

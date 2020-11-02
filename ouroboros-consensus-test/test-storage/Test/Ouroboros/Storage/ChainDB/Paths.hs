@@ -15,8 +15,8 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))

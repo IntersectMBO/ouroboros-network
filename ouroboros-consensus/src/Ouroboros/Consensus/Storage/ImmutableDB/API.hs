@@ -63,7 +63,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CallStack

@@ -16,8 +16,8 @@ import qualified Data.Map.Strict as Map
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain)
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Condense (condense)

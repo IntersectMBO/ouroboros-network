@@ -1,6 +1,7 @@
 index-state: 2020-10-01T00:00:00Z
 
-packages: ./typed-protocols
+packages: ./ouroboros-chain
+          ./typed-protocols
           ./typed-protocols-examples
           ./ouroboros-network-testing
           ./network-mux
@@ -56,6 +57,8 @@ package ouroboros-network
   tests: True
   flags: +asserts +cddl
 
+package ouroboros-chain
+  flags: +asserts
 
 package ouroboros-consensus
   flags: +asserts

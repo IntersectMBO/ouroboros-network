@@ -43,9 +43,10 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.Random (newStdGen, randomIO, randomRIO)
 
+import           Ouroboros.Chain.Magic
+
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import           Ouroboros.Network.Diffusion
-import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (LocalConnectionId,
                      NodeToClientVersionData (..))
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),

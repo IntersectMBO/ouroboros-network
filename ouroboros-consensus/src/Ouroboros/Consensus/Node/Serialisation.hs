@@ -32,8 +32,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode, encode))
 import           Data.SOP.BasicFunctors
 
-import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
+import           Ouroboros.Chain.Serialised (unwrapCBORinCBOR, wrapCBORinCBOR)
+import           Ouroboros.Chain.Util (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,

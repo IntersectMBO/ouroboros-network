@@ -41,9 +41,11 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import           Ouroboros.Network.Block (Serialised (..), decodePoint,
-                     decodeTip, encodePoint, encodeTip)
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Chain.Point (decodePoint, encodePoint)
+import           Ouroboros.Chain.Serialised (Serialised (..))
+import           Ouroboros.Chain.Tip (decodeTip, encodeTip)
+
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)

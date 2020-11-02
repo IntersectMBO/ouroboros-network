@@ -25,7 +25,7 @@ module Ouroboros.Consensus.Mempool.API (
 
 import           Data.Word (Word32)
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
+import           Ouroboros.Chain.Size (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract

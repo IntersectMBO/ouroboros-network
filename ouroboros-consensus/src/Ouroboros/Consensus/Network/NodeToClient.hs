@@ -39,9 +39,11 @@ import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
-                     encodePoint, encodeTip)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.Point (decodePoint, encodePoint)
+import           Ouroboros.Chain.Serialised (Serialised)
+import           Ouroboros.Chain.Tip (decodeTip, encodeTip)
+
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec

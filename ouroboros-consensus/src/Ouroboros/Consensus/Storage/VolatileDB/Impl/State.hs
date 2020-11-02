@@ -41,7 +41,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Ouroboros.Network.Block (MaxSlotNo (..))
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (whenJust, (.:))

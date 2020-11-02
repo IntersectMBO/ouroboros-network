@@ -25,16 +25,17 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto.DSIGN.Mock
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (getTipPoint)
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.MockChain (Chain (Genesis))
+import qualified Ouroboros.Chain.MockChain as Chain
+import           Ouroboros.Chain.MockChain.ProducerState (chainState,
+                     initChainProducerState)
+import qualified Ouroboros.Chain.MockChain.ProducerState as CPS
+import           Ouroboros.Chain.Tip (getTipPoint)
+
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (chainState,
-                     initChainProducerState)
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Mux (ControlMessage (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)

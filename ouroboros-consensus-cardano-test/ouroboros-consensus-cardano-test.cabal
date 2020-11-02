@@ -48,7 +48,7 @@ library
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
@@ -99,7 +99,7 @@ test-suite test
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron

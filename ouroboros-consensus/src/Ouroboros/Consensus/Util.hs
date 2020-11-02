@@ -84,7 +84,8 @@ import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Ouroboros.Chain.Util (Some (..))
+import           Ouroboros.Chain.Util.ShowProxy (ShowProxy (..))
 
 {-------------------------------------------------------------------------------
   Type-level utility
@@ -95,9 +96,6 @@ data Dict :: Constraint -> Type where
 
 class Empty a
 instance Empty a
-
-data Some (f :: k -> Type) where
-    Some :: f a -> Some f
 
 -- | Pair of functors instantiated to the /same/ existential
 data SomePair (f :: k -> Type) (g :: k -> Type) where

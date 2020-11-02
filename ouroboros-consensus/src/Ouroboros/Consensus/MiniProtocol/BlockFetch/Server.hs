@@ -19,7 +19,8 @@ module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
 import           Control.Tracer (Tracer)
 import           Data.Typeable (Typeable)
 
-import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Chain.Serialised (Serialised (..))
+
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))

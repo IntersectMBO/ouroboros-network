@@ -69,7 +69,7 @@ import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -374,7 +374,7 @@ data ReaderState m blk b
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoThunks)
 
--- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
+-- | Similar to 'Ouroboros.Chain.MockChain.ProducerState.ReaderState'.
 data ReaderRollState blk
   = RollBackTo      !(Point blk)
     -- ^ We don't know at which point the user is, but the next message we'll

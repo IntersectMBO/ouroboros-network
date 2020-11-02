@@ -9,7 +9,7 @@ module Test.Consensus.Cardano.Serialisation (tests) where
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 
-import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Chain.Serialised (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Serialisation

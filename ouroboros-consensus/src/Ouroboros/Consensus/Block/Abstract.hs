@@ -78,12 +78,12 @@ import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      withOrigin, withOriginFromMaybe, withOriginToMaybe)
 import qualified Cardano.Slotting.Slot as Cardano
 
-import           Ouroboros.Network.Block (BlockMeasure, pattern BlockPoint,
-                     ChainHash (..), pattern GenesisPoint, HasHeader (..),
-                     HeaderFields (..), HeaderHash, Point, StandardHash,
-                     blockHash, blockMeasure, blockNo, blockPoint, blockSlot,
-                     castHash, castHeaderFields, castPoint, pointHash,
-                     pointSlot)
+import           Ouroboros.Chain.HasHeader (BlockMeasure, ChainHash (..),
+                     HasHeader (..), HeaderFields (..), HeaderHash,
+                     StandardHash, blockHash, blockMeasure, blockNo, blockSlot,
+                     castHash, castHeaderFields)
+import           Ouroboros.Chain.Point (Point (BlockPoint, GenesisPoint),
+                     blockPoint, castPoint, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block.EBB
 

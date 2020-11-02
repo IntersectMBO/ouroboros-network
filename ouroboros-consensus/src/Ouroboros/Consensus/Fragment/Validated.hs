@@ -19,8 +19,8 @@ module Ouroboros.Consensus.Fragment.Validated (
 
 import           GHC.Stack
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract

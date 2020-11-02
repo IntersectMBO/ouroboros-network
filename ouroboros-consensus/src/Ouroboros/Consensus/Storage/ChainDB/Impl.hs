@@ -40,7 +40,7 @@ import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF

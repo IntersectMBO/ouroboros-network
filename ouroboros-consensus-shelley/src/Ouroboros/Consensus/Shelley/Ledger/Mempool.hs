@@ -33,7 +33,7 @@ import           NoThunks.Class (NoThunks (..))
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
                      FullByteString (..), ToCBOR (..))
 
-import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
+import           Ouroboros.Chain.Serialised (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract

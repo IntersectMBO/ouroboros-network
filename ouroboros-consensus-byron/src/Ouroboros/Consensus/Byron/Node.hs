@@ -33,7 +33,7 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Chain.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))

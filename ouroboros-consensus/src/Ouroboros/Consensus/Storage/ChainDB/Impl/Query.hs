@@ -31,9 +31,9 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

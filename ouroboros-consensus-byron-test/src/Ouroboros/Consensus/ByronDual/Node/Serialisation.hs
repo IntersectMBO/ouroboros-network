@@ -11,7 +11,7 @@ import           Data.Proxy
 
 import           Cardano.Chain.Slotting (EpochSlots)
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+import           Ouroboros.Chain.Serialised (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block

@@ -57,9 +57,9 @@ import           Cardano.Slotting.EpochInfo
 
 import           Test.Util.Time (dawnOfTime)
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+import           Ouroboros.Chain.Magic
+import           Ouroboros.Chain.Serialised (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
-import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

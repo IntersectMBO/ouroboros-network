@@ -158,6 +158,7 @@ library
                        cardano-slotting,
                        contra-tracer,
 
+                       ouroboros-chain,
                        io-sim-classes    >=0.1 && < 0.3,
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
@@ -228,6 +229,7 @@ library ouroboros-protocol-tests
                        cardano-slotting,
                        contra-tracer,
 
+                       ouroboros-chain,
                        io-sim,
                        io-sim-classes,
                        ouroboros-network,
@@ -298,6 +300,7 @@ test-suite test-network
                        io-sim,
                        io-sim-classes,
                        network-mux,
+                       ouroboros-chain,
                        ouroboros-network,
                        ouroboros-network-framework,
                        ouroboros-network-testing,

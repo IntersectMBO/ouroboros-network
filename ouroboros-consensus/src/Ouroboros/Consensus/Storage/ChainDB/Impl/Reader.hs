@@ -22,9 +22,9 @@ import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate (..))
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.ChainUpdate (ChainUpdate (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

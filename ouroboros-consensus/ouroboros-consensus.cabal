@@ -298,11 +298,12 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-sim-classes    >=0.2   && <0.3 
-                     , typed-protocols
+                     , io-sim-classes    >=0.2   && <0.3
                      , network-mux
-                     , ouroboros-network-framework
+                     , ouroboros-chain
                      , ouroboros-network
+                     , ouroboros-network-framework
+                     , typed-protocols
 
 
   if os(windows)

@@ -45,7 +45,7 @@ import           System.FilePath (takeDirectory, (</>))
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
-import           Ouroboros.Network.Block (Serialised)
+import           Ouroboros.Chain.Serialised (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SomeSecond)

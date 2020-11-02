@@ -30,7 +30,7 @@ import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC
 
-import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Chain.Serialised (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

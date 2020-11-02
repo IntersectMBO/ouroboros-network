@@ -37,6 +37,9 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      SingleKES, SumKES, VerKeyKES, pattern VerKeyMockKES,
                      pattern VerKeySingleKES, pattern VerKeySumKES)
 
+import           Ouroboros.Chain.HasHeader (ChainHash (..), HeaderHash)
+import           Ouroboros.Chain.Tip (Tip (..))
+
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
 
@@ -44,7 +47,6 @@ import qualified Ouroboros.Consensus.Util.HList as HList
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
                      WithOrigin (..))
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
 
 {-------------------------------------------------------------------------------
   Main class

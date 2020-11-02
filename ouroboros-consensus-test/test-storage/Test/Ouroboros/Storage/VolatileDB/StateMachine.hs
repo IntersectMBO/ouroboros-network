@@ -36,7 +36,7 @@ import           GHC.Stack
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
-import           Ouroboros.Network.Block (MaxSlotNo)
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike

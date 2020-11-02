@@ -35,7 +35,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
+import           Ouroboros.Chain.Size (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Mempool.API (MempoolSize (..))
 

@@ -65,7 +65,7 @@ library
                      , shelley-spec-non-integral
                      , small-steps
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
 
   default-language:    Haskell2010

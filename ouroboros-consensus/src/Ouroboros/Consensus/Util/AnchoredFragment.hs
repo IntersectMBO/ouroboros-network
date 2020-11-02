@@ -17,9 +17,9 @@ import           Data.Proxy
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Ouroboros.Network.AnchoredFragment
+import           Ouroboros.Chain.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

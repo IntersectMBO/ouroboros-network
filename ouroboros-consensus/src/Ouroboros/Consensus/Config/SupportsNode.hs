@@ -2,7 +2,7 @@ module Ouroboros.Consensus.Config.SupportsNode (
     ConfigSupportsNode (..)
   ) where
 
-import           Ouroboros.Network.Magic (NetworkMagic)
+import           Ouroboros.Chain.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.Block.Abstract (BlockConfig)
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)

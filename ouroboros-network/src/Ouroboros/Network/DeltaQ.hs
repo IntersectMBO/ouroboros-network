@@ -38,7 +38,8 @@ module Ouroboros.Network.DeltaQ (
 
 import           Control.Monad.Class.MonadTime (Time (..), diffTime)
 import           Data.Time.Clock (DiffTime)
-import           Data.Word (Word32)
+
+import           Ouroboros.Chain.Size (SizeInBytes)
 
 
 --
@@ -200,8 +201,6 @@ ballisticGSV g s v = GSV g (\sz -> s * fromIntegral sz) v
 --
 -- Basic calculations based on GSV
 --
-
-type SizeInBytes = Word32
 
 -- | The 𝚫Q for when the leading edge of a transmission unit arrives at the
 -- destination. This is just the convolution of the /G/ and /V/ components.

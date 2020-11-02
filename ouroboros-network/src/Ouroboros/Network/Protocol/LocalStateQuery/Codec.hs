@@ -1,10 +1,10 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.Protocol.LocalStateQuery.Codec (
     codecLocalStateQuery
@@ -22,12 +22,10 @@ import           Data.Kind (Type)
 import           Data.Type.Equality ((:~:) (..))
 import           Text.Printf
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import           Ouroboros.Chain.Util (Some (..))
+
 import           Ouroboros.Network.Codec
-
-
-data Some (f :: k -> Type) where
-    Some :: f a -> Some f
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 codecLocalStateQuery
   :: forall block point query m.

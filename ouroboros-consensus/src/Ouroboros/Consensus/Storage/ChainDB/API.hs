@@ -62,11 +62,13 @@ import           Control.Monad (void)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
-                     Serialised (..))
-import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo)
+import           Ouroboros.Chain.Serialised (Serialised (..))
+import qualified Ouroboros.Chain.Tip as Chain
+
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.ChainUpdate (ChainUpdate)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
@@ -83,8 +85,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain (..))
+import qualified Ouroboros.Chain.MockChain as Chain
 
 -- | The chain database
 --
@@ -335,12 +337,12 @@ data ChainDB m blk = ChainDB {
     }
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
-              => ChainDB m blk -> STM m (Network.Tip blk)
+              => ChainDB m blk -> STM m (Chain.Tip blk)
 getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
 
 getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (WithOrigin BlockNo)
-getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
+getTipBlockNo = fmap Chain.getTipBlockNo . getCurrentTip
 
 {-------------------------------------------------------------------------------
   Adding a block

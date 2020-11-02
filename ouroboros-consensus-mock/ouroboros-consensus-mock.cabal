@@ -62,7 +62,7 @@ library
                      , serialise         >=0.2   && <0.3
                      , time
 
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-consensus
 
   default-language:    Haskell2010

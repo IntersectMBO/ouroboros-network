@@ -20,7 +20,7 @@ import           Data.SOP.BasicFunctors
 
 import qualified Cardano.Chain.Byron.API as CC
 
-import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Chain.Serialised (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Query

@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Node.Run (
   , RunNode
   ) where
 
-import           Ouroboros.Network.Block (Serialised)
+import           Ouroboros.Chain.Serialised
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode

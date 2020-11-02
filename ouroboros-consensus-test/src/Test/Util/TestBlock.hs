@@ -77,8 +77,8 @@ import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain (..))
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.BlockchainTime

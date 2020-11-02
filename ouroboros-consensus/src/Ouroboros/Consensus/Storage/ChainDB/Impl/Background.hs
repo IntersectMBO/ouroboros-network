@@ -51,8 +51,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Chain.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

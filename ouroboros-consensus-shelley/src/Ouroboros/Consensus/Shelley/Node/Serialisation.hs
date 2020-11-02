@@ -12,7 +12,7 @@ import           Data.Typeable (Typeable)
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Codec.Serialise (decode, encode)
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+import           Ouroboros.Chain.Serialised (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block

@@ -112,6 +112,7 @@ library
                      , io-sim-classes
                      , io-sim
                      , typed-protocols
+                     , ouroboros-chain
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus
@@ -181,6 +182,7 @@ test-suite test-consensus
                      , io-sim-classes
                      , io-sim
                      , typed-protocols
+                     , ouroboros-chain
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus
@@ -263,7 +265,7 @@ test-suite test-storage
 
                      , io-sim-classes
                      , io-sim
-                     , ouroboros-network
+                     , ouroboros-chain
                      , ouroboros-network-testing
                      , ouroboros-consensus
                      , ouroboros-consensus-test

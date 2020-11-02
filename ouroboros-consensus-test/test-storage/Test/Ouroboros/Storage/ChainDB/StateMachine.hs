@@ -57,14 +57,15 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.ChainUpdate (ChainUpdate)
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo)
+import           Ouroboros.Chain.MockChain (Chain (..))
+import qualified Ouroboros.Chain.MockChain as Chain
+import           Ouroboros.Chain.MockChain.ProducerState (ChainProducerState,
                      ReaderNext, ReaderState)
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import qualified Ouroboros.Chain.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

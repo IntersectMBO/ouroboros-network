@@ -27,7 +27,7 @@ import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.Block (MaxSlotNo (..))
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo (..))

@@ -22,7 +22,7 @@ import           Control.Exception (throw)
 import           Data.Proxy
 import           Data.SOP.Strict
 
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+import           Ouroboros.Chain.Serialised (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block

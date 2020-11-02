@@ -95,12 +95,12 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (MaxSlotNo (..))
-import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Chain.AnchoredFragment as Fragment
+import           Ouroboros.Chain.MaxSlotNo (MaxSlotNo (..))
+import           Ouroboros.Chain.MockChain (Chain (..), ChainUpdate)
+import qualified Ouroboros.Chain.MockChain as Chain
+import qualified Ouroboros.Chain.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

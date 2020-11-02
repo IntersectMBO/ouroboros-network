@@ -39,8 +39,7 @@ import           Data.Maybe (catMaybes, listToMaybe)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..), block,
-                     blockPointHash, blockPointSlot, origin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -113,15 +112,12 @@ instance Arbitrary ConcreteHeaderHash where
 instance Arbitrary (Point BlockHeader) where
   arbitrary =
       -- Sometimes pick the genesis point
-      frequency [ (1, pure (Point Origin))
-                , (4, Point <$> (block <$> arbitrary <*> arbitrary)) ]
-  shrink (Point Origin)   = []
-  shrink (Point (At blk)) =
-      Point origin
-    : [ Point (block s' h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
-    where
-    h = blockPointHash blk
-    s = blockPointSlot blk
+      frequency [ (1, pure GenesisPoint)
+                , (4, BlockPoint <$> arbitrary <*> arbitrary) ]
+  shrink GenesisPoint   = []
+  shrink (BlockPoint s h) =
+      GenesisPoint
+    : [ BlockPoint s' h' | (s', h') <- shrink (s, h), s > SlotNo 0 ]
 
 instance Arbitrary (Point Block) where
   arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary

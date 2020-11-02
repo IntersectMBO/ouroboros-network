@@ -22,7 +22,7 @@ module Test.Consensus.Cardano.Examples (
 import           Data.Bifunctor (first)
 import           Data.SOP.Strict
 
-import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Chain.Serialised (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History

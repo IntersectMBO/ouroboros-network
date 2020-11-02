@@ -25,7 +25,7 @@ import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR, ToCBOR)
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Chain.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

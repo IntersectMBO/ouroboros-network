@@ -33,8 +33,8 @@ import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain (..))
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam

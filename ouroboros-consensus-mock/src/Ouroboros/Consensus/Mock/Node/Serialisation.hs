@@ -18,7 +18,7 @@ import           Codec.Serialise (Serialise, decode, encode, serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable (Typeable)
 
-import           Ouroboros.Network.Block (Serialised)
+import           Ouroboros.Chain.Serialised (Serialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip,

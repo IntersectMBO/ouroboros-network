@@ -11,8 +11,8 @@ import           Data.Function (on)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe)
 
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Chain.MockChain (Chain)
+import qualified Ouroboros.Chain.MockChain as Chain
 
 import           Ouroboros.Consensus.Protocol.Abstract
 

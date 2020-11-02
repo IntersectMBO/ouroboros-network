@@ -30,7 +30,7 @@ import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 import           Control.Monad.Class.MonadSTM
 
 
-import           Ouroboros.Network.AnchoredFragment
+import           Ouroboros.Chain.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
 
 import           Ouroboros.Consensus.Block

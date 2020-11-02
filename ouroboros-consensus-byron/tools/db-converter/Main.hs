@@ -32,7 +32,7 @@ import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Epoch.File as CC
 import           Cardano.Chain.Slotting (EpochSlots (..))
 
-import           Ouroboros.Network.Magic
+import           Ouroboros.Chain.Magic
 
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.Orphans ()

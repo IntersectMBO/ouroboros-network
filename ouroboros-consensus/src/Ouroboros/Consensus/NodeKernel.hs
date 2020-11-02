@@ -34,9 +34,10 @@ import           System.Random (StdGen)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo)
+import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Chain.AnchoredFragment as AF
+import           Ouroboros.Chain.MaxSlotNo
+
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.TxSubmission.Inbound

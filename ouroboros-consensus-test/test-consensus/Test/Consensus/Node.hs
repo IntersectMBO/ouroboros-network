@@ -16,7 +16,7 @@ import           System.IO.Temp (withTempDirectory)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Chain.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
