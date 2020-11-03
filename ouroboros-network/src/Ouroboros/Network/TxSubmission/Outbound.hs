@@ -13,12 +13,9 @@ module Ouroboros.Network.TxSubmission.Outbound (
 import           Data.Word (Word16)
 import           Data.Maybe (isNothing, catMaybes)
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Sequence.Strict (StrictSeq)
-import           Data.Foldable (foldl')
-import qualified Data.Foldable as Foldable
+import           Data.Foldable (find)
 
 import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadSTM
@@ -88,19 +85,12 @@ txSubmissionOutbound
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
 txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
-    TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
+    TxSubmissionClient (pure (client Seq.empty mempoolZeroIdx))
   where
-    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
-    client !unackedSeq !unackedMap !lastIdx =
-        assert invariant
+    client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()
+    client !unackedSeq !lastIdx =
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye }
       where
-        invariant =
-          Map.isSubmapOfBy
-            (\_ _ -> True)
-            unackedMap
-            (Map.fromList [ (x, ()) | x <- Foldable.toList unackedSeq ])
-
         recvMsgRequestTxIds :: forall blocking.
                                TokBlockingStyle blocking
                             -> Word16
@@ -120,8 +110,6 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- Update our tracking state to remove the number of txids that the
           -- peer has acknowledged.
           let !unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
-              !unackedMap' = foldl' (flip Map.delete) unackedMap
-                                    (Seq.take (fromIntegral ackNo) unackedSeq)
 
           -- Grab info about any new txs after the last tx idx we've seen,
           -- up to  the number that the peer has requested.
@@ -158,15 +146,13 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
                 -- Update our tracking state with any extra txs available.
                 let !unackedSeq'' = unackedSeq' <> Seq.fromList
-                                      [ txid | (txid, _, _) <- txs ]
-                    !unackedMap'' = unackedMap' <> Map.fromList
                                       [ (txid, idx) | (txid, idx, _) <- txs ]
                     !lastIdx'
                       | null txs  = lastIdx
                       | otherwise = idx where (_, idx, _) = last txs
                     txs'         :: [(txid, TxSizeInBytes)]
                     txs'          = [ (txid, size) | (txid, _, size) <- txs ]
-                    client'       = client unackedSeq'' unackedMap'' lastIdx'
+                    client'       = client unackedSeq'' lastIdx'
 
                 -- Our reply type is different in the blocking vs non-blocking cases
                 in case blocking of
@@ -188,8 +174,8 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
 
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
-          let txidxs  = [ Map.lookup txid unackedMap | txid <- txids ]
-              txidxs' = catMaybes txidxs
+          let txidxs  = [ find (\(t,_) -> t == txid) unackedSeq | txid <- txids ]
+              txidxs' = map snd $ catMaybes txidxs
 
           when (any isNothing txidxs) $
             throwIO ProtocolErrorRequestedUnavailableTx
@@ -198,8 +184,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward txs that are no longer of interest.
           let txs          = catMaybes (map mempoolLookupTx txidxs')
-              !unackedMap' = foldl' (flip Map.delete) unackedMap txids
-              client'      = client unackedSeq unackedMap' lastIdx
+              client'      = client unackedSeq lastIdx
 
           -- Trace the transactions to be sent in the response.
           traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
