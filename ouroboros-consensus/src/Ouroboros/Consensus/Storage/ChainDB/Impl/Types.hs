@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , newBlocksToAdd
   , addBlockToAdd
   , getBlockToAdd
+  , deleteBlockToAdd
   , memberBlocksToAdd
   , getBlocksToAddMaxSlotNo
     -- * Trace types
@@ -245,6 +246,17 @@ data ChainDbEnv m blk = CDB
   , cdbCheckInFuture   :: !(CheckInFuture m blk)
   , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
     -- ^ Queue of blocks that still have to be added.
+    --
+    -- NOTE: the set of blocks in this queue are /not/ disjoint from the set of
+    -- blocks in the VolatileDB. When processing the next block in the queue, we
+    -- do not remove the block from the queue /until/ it has been added to the
+    -- VolatileDB and processed by chain selection. This means the block
+    -- currently being added will be both in the queue and the VolatileDB for a
+    -- short while.
+    --
+    -- If we would remove the block from the queue before adding it to the
+    -- VolatileDB, then it would be in /neither/ for a short time, and
+    -- 'getIsFetched' would incorrectly return 'False'.
   , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks blk))
     -- ^ Blocks from the future
     --
@@ -492,8 +504,11 @@ addBlockToAdd tracer (BlocksToAdd varQueue queueCapacity) blk = do
       , blockProcessed          = readTMVar varBlockProcessed
       }
 
--- | Get the oldest block from the 'BlocksToAdd' queue. Can block when the
--- queue is empty.
+-- | Get the next block from the 'BlocksToAdd' queue. Blocks when the queue is
+-- empty.
+--
+-- NOTE: does not remove the block from the queue, 'deleteBlockToAdd' can be
+-- used for that.
 getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
 getBlockToAdd (BlocksToAdd varQueue _) = atomically $ do
     queue <- readTVar varQueue
@@ -502,6 +517,17 @@ getBlockToAdd (BlocksToAdd varQueue _) = atomically $ do
       Just (toProcess, queue') -> do
         writeTVar varQueue queue'
         return toProcess
+
+-- | Delete the given 'BlockToAdd' from the 'BlocksToAdd'.
+--
+-- PRECONDITION: the given 'BlockToAdd' is in 'BlocksToAdd'.
+deleteBlockToAdd ::
+     (IOLike m, HasHeader blk)
+  => BlockToAdd m blk
+  -> BlocksToAdd m blk
+  -> m ()
+deleteBlockToAdd (BlockToAdd blk _ _) (BlocksToAdd varQueue _) =
+    atomically $ modifyTVar varQueue $ Map.delete (blockRealPoint blk)
 
 -- | Return a function to test the membership for the given 'BlocksToAdd'.
 memberBlocksToAdd ::
