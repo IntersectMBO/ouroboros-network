@@ -10,6 +10,10 @@
 --
 module Ouroboros.Consensus.Node
   ( run
+  , runWith
+    -- * Standard arguments
+  , StdRunNodeArgs (..)
+  , stdLowLevelRunNodeArgsIO
   , stdBfcSaltIO
   , stdChainSyncTimeout
   , stdKeepAliveRngIO
@@ -21,6 +25,7 @@ module Ouroboros.Consensus.Node
     -- * Exposed by 'run' et al
   , DiffusionTracers (..)
   , DiffusionArguments (..)
+  , LowLevelRunNodeArgs (..)
   , RunNodeArgs (..)
   , RunNode
   , Tracers
@@ -109,8 +114,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
--- | Arguments required by 'runNode'
-data RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = RunNodeArgs {
+-- | Arguments expected from any invocation of 'runWith'
+data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
@@ -123,27 +128,11 @@ data RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = RunNodeAr
       -- | ChainDB tracer
     , rnTraceDB :: Tracer m (ChainDB.TraceEvent blk)
 
-      -- | How to manage the clean-shutdown marker on disk
-    , rnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
-
-      -- | How to access a file system relative to the ChainDB mount point
-    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS m
-
       -- | Protocol info
     , rnProtocolInfo :: ProtocolInfo m blk
 
       -- | Customise the 'ChainDbArgs'
     , rnCustomiseChainDbArgs :: ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk
-
-      -- | Ie 'bfcSalt'
-    , rnBfcSalt :: Int
-
-      -- | Ie 'keepAliveRng'
-    , rnKeepAliveRng :: StdGen
-
-      -- | Customise the 'HardForkBlockchainTimeArgs'
-    , rnCustomiseHardForkBlockchainTimeArgs :: HardForkBlockchainTimeArgs m blk
-                                            -> HardForkBlockchainTimeArgs m blk
 
       -- | Customise the 'NodeArgs'
     , rnCustomiseNodeArgs :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
@@ -168,6 +157,31 @@ data RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = RunNodeAr
       -- Use 'defaultClockSkew' when unsure.
     , rnMaxClockSkew :: ClockSkew
 
+    }
+
+-- | Arguments that a non-testing invocation of 'runWith' would not need to
+-- directly specify, but invocations from tests usually do.
+--
+-- See 'run' and 'stdLowLevelRunNodeArgsIO'.
+data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = LowLevelRunNodeArgs {
+
+      -- | How to manage the clean-shutdown marker on disk
+      rnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
+
+      -- | How to access a file system relative to the ChainDB mount point
+    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS m
+
+      -- | Ie 'bfcSalt'
+    , rnBfcSalt :: Int
+
+      -- | Ie 'keepAliveRng'
+    , rnKeepAliveRng :: StdGen
+
+      -- | Customise the 'HardForkBlockchainTimeArgs'
+    , rnCustomiseHardForkBlockchainTimeArgs ::
+           HardForkBlockchainTimeArgs m blk
+        -> HardForkBlockchainTimeArgs m blk
+
       -- | See 'NTN.ChainSyncTimeout'
     , rnChainSyncTimeout :: m NTN.ChainSyncTimeout
 
@@ -188,19 +202,29 @@ data RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = RunNodeAr
 
     }
 
+-- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
+run :: forall blk.
+     RunNode blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk
+  -> StdRunNodeArgs
+  -> IO ()
+run args stdArgs = stdLowLevelRunNodeArgsIO stdArgs >>= runWith args
+
 -- | Start a node.
 --
 -- This opens the 'ChainDB', sets up the 'NodeKernel' and initialises the
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-run :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
+runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
-     , Hashable addrNTN, Ord addrNTN, Typeable addrNTN)
-  => RunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
+     , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     )
+  => RunNodeArgs m addrNTN addrNTC blk
+  -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
   -> m ()
-run RunNodeArgs{..} =
+runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
     rnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
     withRegistry $ \registry -> do
@@ -391,8 +415,8 @@ stdWithCheckedDB databasePath networkMagic body = do
       createMarkerOnCleanShutdown hasFS $
         body (LastShutDownWasClean lastShutDownWasClean)
   where
-    mountPoint                   = MountPoint databasePath
-    hasFS                        = ioHasFS mountPoint
+    mountPoint = MountPoint databasePath
+    hasFS      = ioHasFS mountPoint
 
 openChainDB
   :: forall m blk. (RunNode blk, IOLike m)
@@ -565,3 +589,46 @@ stdRunDataDiffusion ::
        IO
   -> IO ()
 stdRunDataDiffusion = runDataDiffusion
+
+-- | Arguments needed even from a standard non-testing invocation.
+data StdRunNodeArgs = StdRunNodeArgs
+  { srnDatabasePath       :: FilePath
+    -- ^ Location of the DBs
+  , srnDiffusionArguments :: DiffusionArguments
+  , srnDiffusionTracers   :: DiffusionTracers
+  , srnNetworkMagic       :: NetworkMagic
+  }
+
+-- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
+-- non-testing invocation.
+stdLowLevelRunNodeArgsIO ::
+     StdRunNodeArgs
+  -> IO (LowLevelRunNodeArgs
+          IO
+          RemoteAddress
+          LocalAddress
+          NodeToNodeVersionData
+          NodeToClientVersionData
+          blk)
+stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
+    rnBfcSalt      <- stdBfcSaltIO
+    rnKeepAliveRng <- stdKeepAliveRngIO
+    pure LowLevelRunNodeArgs
+      { rnBfcSalt
+      , rnChainSyncTimeout = stdChainSyncTimeout
+      , rnCustomiseHardForkBlockchainTimeArgs = id
+      , rnKeepAliveRng
+      , rnMkChainDbHasFS =
+          stdMkChainDbHasFS srnDatabasePath
+      , rnRunDataDiffusion =
+          \_reg apps ->
+            stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
+      , rnVersionDataNTC =
+          stdVersionDataNTC srnNetworkMagic
+      , rnVersionDataNTN =
+          stdVersionDataNTN
+            srnNetworkMagic
+            (daDiffusionMode srnDiffusionArguments)
+      , rnWithCheckedDB =
+          stdWithCheckedDB srnDatabasePath srnNetworkMagic
+      }
