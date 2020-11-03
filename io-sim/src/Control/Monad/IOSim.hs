@@ -41,6 +41,7 @@ module Control.Monad.IOSim (
 import           Prelude
 
 import           Data.Dynamic (fromDynamic)
+import           Data.List (intercalate)
 import           Data.Typeable (Typeable)
 
 import           Control.Exception (throw)
@@ -111,7 +112,14 @@ data Failure =
      | FailureSloppyShutdown [LabeledThread]
   deriving Show
 
-instance Exception Failure
+instance Exception Failure where
+    displayException (FailureException err) = displayException  err
+    displayException FailureDeadlock = "<<io-sim deadlock>>"
+    displayException (FailureSloppyShutdown threads) =
+      concat [ "<<io-sim sloppy shutdown: "
+             , intercalate "," (show `map` threads)
+             , ">>"
+             ]
 
 -- | 'IOSim' is a pure monad.
 --
