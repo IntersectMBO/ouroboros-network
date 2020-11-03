@@ -8,8 +8,8 @@ module Ouroboros.Network.Protocol.Handshake.Server
   ( handshakeServerPeer
   ) where
 
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.List (intersect)
 
 import           Network.TypedProtocol.Core
 
@@ -36,19 +36,16 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
       MsgProposeVersions vMap ->
-        -- Compute intersection of local and remote versions.  We cannot
-        -- intersect @vMap@ and @getVersions versions@ as the values have
-        -- different types.
-        case map fst (Map.toDescList vMap) `intersect` map fst (Map.toDescList (getVersions versions)) of
-          [] ->
+        -- Compute intersection of local and remote versions.
+        case lookupGreatestCommonKey vMap (getVersions versions) of
+          Nothing ->
             let vReason = VersionMismatch (Map.keys $ getVersions versions) []
             in Yield (ServerAgency TokConfirm)
                      (MsgRefuse vReason)
                      (Done TokDone (Left vReason))
 
-          vNumber:_ ->
-            case (getVersions versions Map.! vNumber, vMap Map.! vNumber) of
-              (Version app vData, vParams) -> case decodeData vNumber vParams of
+          Just (vNumber, (vParams, Version app vData)) ->
+              case decodeData vNumber vParams of
                 Left err ->
                   let vReason = HandshakeDecodeError vNumber err
                   in Yield (ServerAgency TokConfirm)
@@ -77,3 +74,5 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                                (MsgRefuse vReason)
                                (Done TokDone $ Left $ vReason)
 
+lookupGreatestCommonKey :: Ord k => Map k a -> Map k b -> Maybe (k, (a, b))
+lookupGreatestCommonKey l r = Map.lookupMax $ Map.intersectionWith (,) l r
