@@ -381,7 +381,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         -- latter.
         (ignoredTxids, availableTxids') =
           Map.partitionWithKey
-            (\txid _ -> mempoolHasTx txid)
+            (\txid _ -> mempoolHasTx txid || elem txid (unacknowledgedTxIds st))
             (availableTxids st)
 
         -- The txs that we intentionally don't request, because they are
