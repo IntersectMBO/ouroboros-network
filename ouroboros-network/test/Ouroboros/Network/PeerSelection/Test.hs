@@ -32,7 +32,7 @@ import qualified Data.Tree as Tree
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
-import           Control.Exception (Exception, throw)
+import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
