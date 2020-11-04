@@ -57,10 +57,10 @@ protocolInfoMockPBFT params eraParams nid =
         }
 
     ledgerView :: PBftLedgerView PBftMockCrypto
-    ledgerView = PBftLedgerView $
-        Bimap.fromList [ (verKey n, verKey n)
-                       | n <- enumCoreNodes (pbftNumNodes params)
-                       ]
+    ledgerView = PBftLedgerView $ Bimap.fromList [
+          (PBftMockVerKeyHash (verKey n), PBftMockVerKeyHash (verKey n))
+        | n <- enumCoreNodes (pbftNumNodes params)
+        ]
 
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN
     signKey (CoreNodeId n) = SignKeyMockDSIGN n
