@@ -41,7 +41,7 @@ selectChain :: forall proxy p hdr l. ChainSelection p
             -> Maybe (Chain hdr, l)
 selectChain p view cfg ours candidates =
     listToMaybe $
-      sortBy (flip (compareCandidates' `on` fst)) preferredCandidates
+      sortBy (flip (compareChains' `on` fst)) preferredCandidates
   where
     preferredCandidates :: [(Chain hdr, l)]
     preferredCandidates = filter (preferCandidate' . fst) candidates
@@ -58,14 +58,14 @@ selectChain p view cfg ours candidates =
         go (Just _) Nothing  = False
         go (Just a) (Just b) = preferCandidate p cfg (view a) (view b)
 
-    compareCandidates' :: Chain hdr -> Chain hdr -> Ordering
-    compareCandidates' = go `on` Chain.head
+    compareChains' :: Chain hdr -> Chain hdr -> Ordering
+    compareChains' = go `on` Chain.head
       where
         go :: Maybe hdr -> Maybe hdr -> Ordering
         go Nothing  Nothing  = EQ
         go Nothing  (Just _) = LT
         go (Just _) Nothing  = GT
-        go (Just a) (Just b) = compareCandidates p cfg (view a) (view b)
+        go (Just a) (Just b) = compareChains p cfg (view a) (view b)
 
 -- | Chain selection on unvalidated chains
 selectUnvalidatedChain :: ChainSelection p

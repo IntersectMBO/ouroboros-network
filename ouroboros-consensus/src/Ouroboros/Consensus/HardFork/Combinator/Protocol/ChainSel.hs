@@ -38,7 +38,7 @@ data AcrossEraSelection :: Type -> Type -> Type where
 
   -- | Two eras running the same protocol
   --
-  -- In this case, we can just call @compareCandidates@ even across eras.
+  -- In this case, we can just call @compareChains@ even across eras.
   -- (The 'ChainSelConfig' must also be the same in both eras: we assert this
   -- at the value level.)
   --
@@ -74,7 +74,7 @@ withinEra ::
   -> WrapSelectView blk
   -> Ordering
 withinEra (WrapChainSelConfig cfg) (WrapSelectView l) (WrapSelectView r) =
-    compareCandidates (Proxy @(BlockProtocol blk)) cfg l r
+    compareChains (Proxy @(BlockProtocol blk)) cfg l r
 
 acrossEras ::
      forall blk blk'. SingleEraBlock blk
@@ -91,7 +91,7 @@ acrossEras (WrapChainSelConfig cfgL)
     CompareBlockNo     -> compare bnoL bnoR
     CustomChainSel f   -> f cfgL cfgR l r
     SelectSameProtocol -> assertEqWithMsg (cfgL, cfgR) $
-                            compareCandidates
+                            compareChains
                               (Proxy @(BlockProtocol blk))
                               cfgL
                               l

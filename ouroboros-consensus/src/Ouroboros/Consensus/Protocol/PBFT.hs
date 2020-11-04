@@ -248,10 +248,10 @@ data instance ConsensusConfig (PBft c) = PBftConfig {
     }
   deriving (Generic, NoThunks)
 
-instance PBftCrypto c => ChainSelection (PBft c) where
+instance ChainSelection (PBft c) where
   type SelectView (PBft c) = PBftSelectView
 
-  compareCandidates _proxy _config (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
+  compareChains _proxy _config (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
       -- Prefer the highest block number, as it is a proxy for chain length
       case lBlockNo `compare` rBlockNo of
         LT -> LT

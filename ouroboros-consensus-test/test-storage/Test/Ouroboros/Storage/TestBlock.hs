@@ -463,12 +463,12 @@ mkNextEBB canContainEBB tb =
 
 data BftWithEBBs
 
-ebbAwareCompareCandidates
+ebbAwareCompareChains
     :: (BlockNo, IsEBB, ChainLength, TestHeaderHash)
     -> (BlockNo, IsEBB, ChainLength, TestHeaderHash)
     -> Ordering
-ebbAwareCompareCandidates (lBlockNo, lIsEBB, lChainLength, lHash)
-                          (rBlockNo, rIsEBB, rChainLength, rHash) =
+ebbAwareCompareChains (lBlockNo, lIsEBB, lChainLength, lHash)
+                      (rBlockNo, rIsEBB, rChainLength, rHash) =
     -- Prefer the highest block number, as it is a proxy for chain length
     case lBlockNo `compare` rBlockNo of
       LT -> LT
@@ -497,7 +497,7 @@ ebbAwareCompareCandidates (lBlockNo, lIsEBB, lChainLength, lHash)
 instance ChainSelection BftWithEBBs where
   type SelectView BftWithEBBs = (BlockNo, IsEBB, ChainLength, TestHeaderHash)
 
-  compareCandidates _ _ = ebbAwareCompareCandidates
+  compareChains _ _ = ebbAwareCompareChains
 
 type instance BlockProtocol TestBlock =
   ModChainSel (Bft BftMockCrypto) BftWithEBBs

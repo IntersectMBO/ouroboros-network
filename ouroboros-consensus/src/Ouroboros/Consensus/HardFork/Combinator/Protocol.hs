@@ -76,7 +76,7 @@ instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
 
   -- We leave 'preferCandidate' at the default
 
-  compareCandidates _ (PerEraChainSelConfig cfgs) l r =
+  compareChains _ (PerEraChainSelConfig cfgs) l r =
        acrossEraSelection
          cfgs
          hardForkChainSel

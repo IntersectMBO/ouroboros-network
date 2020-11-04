@@ -35,8 +35,7 @@ instance ChainSelection s => ChainSelection (ModChainSel p s) where
   type ChainSelConfig (ModChainSel p s) = ChainSelConfig s
   type SelectView     (ModChainSel p s) = SelectView     s
 
-  preferCandidate   _ = preferCandidate   (Proxy @s)
-  compareCandidates _ = compareCandidates (Proxy @s)
+  compareChains _ = compareChains (Proxy @s)
 
 instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
       => ConsensusProtocol (ModChainSel p s) where
