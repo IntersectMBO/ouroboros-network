@@ -278,7 +278,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     compareCandidateChains :: AnchoredFragment (Header blk)
                            -> AnchoredFragment (Header blk)
                            -> Ordering
-    compareCandidateChains = compareAnchoredCandidates cfg
+    compareCandidateChains = compareAnchoredFragments cfg
 
 forkBlockForging
     :: forall m remotePeer localPeer blk.

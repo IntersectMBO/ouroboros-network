@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
   , ChainSelection(..)
+  , preferCandidate
   , ConsensusConfig
     -- * Convenience re-exports
   , SecurityParam(..)
@@ -47,39 +48,37 @@ class ( NoThunks (ChainSelConfig p)
   type family SelectView p :: Type
   type SelectView p = BlockNo
 
-  -- | Do we prefer the candidate chain over ours?
-  --
-  -- Should return 'True' when we prefer the candidate over our chain.
+  -- | Compare two chains
   --
   -- We pass only the tips of the chains; for all consensus protocols we are
   -- interested in, this provides sufficient context. (Ouroboros Genesis is
   -- the only exception, but we will handle the genesis rule elsewhere.)
   --
-  -- PRECONDITIONS:
+  -- Implementations of 'compareChains' are /not/ responsible for checking
+  -- intersection points; maximum rollback is implemented by the chain database
+  -- independent from the choice of consensus protocol.
   --
-  -- * The candidate chain does not extend into the future.
-  -- * The candidate must intersect with our chain within @k@ blocks from
-  --   our tip.
+  -- Similarly, implementations of 'compareChains' do not need to check
+  -- chain validity (including whether or not the chains contain future blocks);
+  -- this too is handled by the chain database.
+  --
+  -- The chains may represent candidate chains or our own chain. Note that
+  -- chain selection is a partial order (reflexive, antisymmetric, and
+  -- transitive), but not a total order: we might have two chains, neither of
+  -- which is preferred over the other, but neither are they the same chain.
+  -- By a slight abuse of nomenclature we refer to such chains as "equally
+  -- preferable" and indicate this by returning 'EQ'.
   --
   -- NOTE: An assumption that is quite deeply ingrained in the design of the
-  -- consensus layer is that if a chain can be extended, it always should (e.g.,
-  -- see the chain database spec in @ChainDB.md@). This means that any chain
-  -- is always preferred over the empty chain, and 'preferCandidate' does not
-  -- need (indeed, cannot) be called if our current chain is empty.
-  preferCandidate :: proxy          p
-                  -> ChainSelConfig p
-                  -> SelectView     p      -- ^ Tip of our chain
-                  -> SelectView     p      -- ^ Tip of the candidate
-                  -> Bool
-
-  -- | Compare two candidates, both of which we prefer to our own chain
-  --
-  -- PRECONDITION: both candidates must be preferred to our own chain
-  compareCandidates :: proxy          p
-                    -> ChainSelConfig p
-                    -> SelectView     p
-                    -> SelectView     p
-                    -> Ordering
+  -- consensus layer is that if a chain can be extended, it always should (see
+  -- the Consensus Report). This means that any chain is always preferred over
+  -- the empty chain, and 'preferCandidate' does not need (indeed, cannot) be
+  -- called if our current chain is empty.
+  compareChains :: proxy          p
+                -> ChainSelConfig p
+                -> SelectView     p
+                -> SelectView     p
+                -> Ordering
 
   --
   -- Default chain selection
@@ -88,15 +87,26 @@ class ( NoThunks (ChainSelConfig p)
   -- simply uses the block number.
   --
 
-  preferCandidate p cfg ours cand = compareCandidates p cfg ours cand == LT
+  default compareChains :: Ord (SelectView p)
+                          => proxy          p
+                          -> ChainSelConfig p
+                          -> SelectView     p
+                          -> SelectView     p
+                          -> Ordering
+  compareChains _ _ = compare
 
-  default compareCandidates :: Ord (SelectView p)
-                            => proxy          p
-                            -> ChainSelConfig p
-                            -> SelectView     p
-                            -> SelectView     p
-                            -> Ordering
-  compareCandidates _ _ = compare
+-- | Compare a candidate chain to our own
+--
+-- This is defined in terms of 'compareChains': if both chains are
+-- equally preferable, the Ouroboros class of consensus protocols /always/
+-- sticks with the current chain.
+preferCandidate :: ChainSelection p
+                => proxy          p
+                -> ChainSelConfig p
+                -> SelectView     p      -- ^ Tip of our chain
+                -> SelectView     p      -- ^ Tip of the candidate
+                -> Bool
+preferCandidate p cfg ours cand = compareChains p cfg ours cand == LT
 
 -- | The (open) universe of Ouroboros protocols
 --

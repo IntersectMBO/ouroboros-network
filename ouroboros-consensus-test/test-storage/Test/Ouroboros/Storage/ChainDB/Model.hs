@@ -795,7 +795,7 @@ validChains cfg m bs =
     sortChains $ chains bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
-    sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
+    sortChains = sortBy (flip (Fragment.compareAnchoredFragments cfg `on`
                                  (Chain.toAnchoredFragment . fmap getHeader)))
 
     classify :: ValidatedChain blk

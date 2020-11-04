@@ -75,8 +75,7 @@ instance ChainSelection p => ChainSelection (WithLeaderSchedule p) where
   type ChainSelConfig (WithLeaderSchedule p) = ChainSelConfig p
   type SelectView     (WithLeaderSchedule p) = SelectView     p
 
-  preferCandidate   _ = preferCandidate   (Proxy @p)
-  compareCandidates _ = compareCandidates (Proxy @p)
+  compareChains _ = compareChains (Proxy @p)
 
 data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
   { wlsConfigSchedule :: !LeaderSchedule

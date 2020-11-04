@@ -787,7 +787,7 @@ chainSelection chainSelEnv chainDiffs =
 
     sortCandidates :: [ChainDiff (Header blk)] -> [ChainDiff (Header blk)]
     sortCandidates =
-      sortBy (flip (compareAnchoredCandidates cfg) `on` Diff.getSuffix)
+      sortBy (flip (compareAnchoredFragments cfg) `on` Diff.getSuffix)
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
