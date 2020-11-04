@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
+  , PBftMockVerKeyHash(..)
   , PBftValidateView(..)
   , pbftValidateRegular
   , pbftValidateBoundary
