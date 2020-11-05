@@ -1148,7 +1148,6 @@ deriving instance ToExpr Fingerprint
 deriving instance ToExpr ReaderNext
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
-deriving instance ToExpr (HeaderHash blk) => ToExpr (RealPoint blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ReaderState blk)
 deriving instance ToExpr blk => ToExpr (Chain blk)
 deriving instance ( ToExpr blk

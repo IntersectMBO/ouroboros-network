@@ -166,7 +166,7 @@ data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
   | Ledger (ExtLedgerState TestBlock)
-  | Snapped (ss, Point TestBlock)
+  | Snapped (Maybe (ss, RealPoint TestBlock))
   | Restored (MockInitLog ss, ExtLedgerState TestBlock)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
@@ -178,22 +178,22 @@ newtype Resp ss = Resp (Success ss)
   Pure model
 -------------------------------------------------------------------------------}
 
--- The mock ledger records the blocks and ledger values (new to old)
+-- | The mock ledger records the blocks and ledger values (new to old)
 type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
 
--- | We simply enumerate snapshots
+-- | We use the slot number of the ledger state as the snapshot number
 --
 -- We only keep track of this to be able to give more meaningful statistics
 -- about generated tests. The mock implementation doesn't actually " take "
--- any snapshots (instead it stores the legder state at each point).
-newtype MockSnap = MockSnap Int
+-- any snapshots (instead it stores the ledger state at each point).
+newtype MockSnap = MockSnap Word64
   deriving (Show, Eq, Ord, Generic, ToExpr)
 
 -- | State of all snapshots on disk
 --
 -- In addition to the state of the snapshot we also record the tip of the chain
 -- at the time we took the snapshot; this is important for 'mockMaxRollback'.
-type MockSnaps = Map MockSnap (Point TestBlock, SnapState)
+type MockSnaps = Map MockSnap (RealPoint TestBlock, SnapState)
 
 -- | Mock implementation
 --
@@ -212,9 +212,6 @@ data Mock = Mock {
       -- See also 'applyMockLog', 'mockMaxRollback'.
     , mockRestore :: Point TestBlock
 
-      -- | Counter to assign 'MockSnap's
-    , mockNext    :: Int
-
       -- | Ledger DB params
       --
       -- We need the ledger DB params only to compute which snapshots the real
@@ -224,11 +221,11 @@ data Mock = Mock {
     }
   deriving (Show, Generic, ToExpr)
 
-data SnapState = SnapOk | SnapCorrupted Corruption
+data SnapState = SnapOk | SnapCorrupted
   deriving (Show, Eq, Generic, ToExpr)
 
 mockInit :: LedgerDbParams -> Mock
-mockInit = Mock [] Map.empty GenesisPoint 1
+mockInit = Mock [] Map.empty GenesisPoint
 
 mockCurrent :: Mock -> ExtLedgerState TestBlock
 mockCurrent Mock{..} =
@@ -252,10 +249,7 @@ mockUpdateLedger f mock =
       Right (a, ledger') -> (Right a, mock { mockLedger = ledger' })
 
 mockRecentSnap :: Mock -> Maybe SnapState
-mockRecentSnap Mock{..} =
-    case Map.toDescList mockSnaps of
-      []             -> Nothing
-      (_, (_, st)):_ -> Just st
+mockRecentSnap Mock{..} = snd . snd <$> Map.lookupMax mockSnaps
 
 {-------------------------------------------------------------------------------
   Modelling restoration
@@ -269,9 +263,10 @@ mockRecentSnap Mock{..} =
 
 data MockInitLog ss =
     MockFromGenesis
-  | MockFromSnapshot ss (Point TestBlock)
-  | MockReadFailure  ss                   (MockInitLog ss)
-  | MockTooRecent    ss (Point TestBlock) (MockInitLog ss)
+  | MockFromSnapshot    ss (RealPoint TestBlock)
+  | MockReadFailure     ss                       (MockInitLog ss)
+  | MockTooRecent       ss (RealPoint TestBlock) (MockInitLog ss)
+  | MockGenesisSnapshot ss                       (MockInitLog ss)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 fromInitLog :: InitLog TestBlock -> MockInitLog DiskSnapshot
@@ -279,55 +274,51 @@ fromInitLog  InitFromGenesis          = MockFromGenesis
 fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
 fromInitLog (InitFailure ss err log') =
     case err of
-      InitFailureRead _err     -> MockReadFailure ss     (fromInitLog log')
-      InitFailureTooRecent tip -> MockTooRecent   ss tip (fromInitLog log')
+      InitFailureRead _err     -> MockReadFailure     ss     (fromInitLog log')
+      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')
+      InitFailureGenesis       -> MockGenesisSnapshot ss     (fromInitLog log')
 
 mockInitLog :: Mock -> MockInitLog MockSnap
 mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
   where
-    go :: [(MockSnap, (Point TestBlock, SnapState))] -> MockInitLog MockSnap
-    go []                         = MockFromGenesis
-    go ((snap, (mr, state)):snaps) =
-        case (state, pointToWithOriginRealPoint mr) of
-          (SnapCorrupted Delete, _) ->
-            -- The real DB won't even see deleted snapshots
-            go snaps
-          (SnapCorrupted Truncate, _) ->
+    go :: [(MockSnap, (RealPoint TestBlock, SnapState))] -> MockInitLog MockSnap
+    go []                          = MockFromGenesis
+    go ((snap, (pt, state)):snaps) =
+        case state of
+          SnapCorrupted ->
             -- If it's truncated, it will skip it
             MockReadFailure snap $ go snaps
-          (SnapOk, Origin) ->
-            -- Took Snapshot at genesis: definitely useable
-            MockFromSnapshot snap mr
-          (SnapOk, NotOrigin r) ->
-            if onChain r
-              then MockFromSnapshot snap mr
-              else MockTooRecent    snap mr $ go snaps
+          SnapOk ->
+            if onChain pt
+              then MockFromSnapshot snap pt
+              else MockTooRecent    snap pt $ go snaps
 
     onChain :: RealPoint TestBlock -> Bool
-    onChain r = any (\(b, _) -> blockRealPoint b == r) mockLedger
+    onChain pt = any (\(b, _) -> blockRealPoint b == pt) mockLedger
 
 applyMockLog :: MockInitLog MockSnap -> Mock -> Mock
 applyMockLog = go
   where
     go :: MockInitLog MockSnap -> Mock -> Mock
-    go  MockFromGenesis             mock = mock { mockRestore = GenesisPoint }
-    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip          }
-    go (MockReadFailure  ss   log') mock = go log' $ deleteSnap ss mock
-    go (MockTooRecent    ss _ log') mock = go log' $ deleteSnap ss mock
+    go  MockFromGenesis                mock = mock { mockRestore = GenesisPoint         }
+    go (MockFromSnapshot    _  tip)    mock = mock { mockRestore = realPointToPoint tip }
+    go (MockReadFailure     ss   log') mock = go log' $ deleteSnap ss mock
+    go (MockTooRecent       ss _ log') mock = go log' $ deleteSnap ss mock
+    go (MockGenesisSnapshot ss   log') mock = go log' $ deleteSnap ss mock
 
     deleteSnap :: MockSnap -> Mock -> Mock
     deleteSnap ss mock = mock {
-          mockSnaps = Map.alter setIsDeleted ss (mockSnaps mock)
+          mockSnaps = Map.alter delete ss (mockSnaps mock)
         }
 
-    setIsDeleted :: Maybe (Point TestBlock, SnapState)
-                 -> Maybe (Point TestBlock, SnapState)
-    setIsDeleted Nothing         = error "setIsDeleted: impossible"
-    setIsDeleted (Just (tip, _)) = Just (tip, SnapCorrupted Delete)
+    delete :: Maybe (RealPoint TestBlock, SnapState)
+           -> Maybe (RealPoint TestBlock, SnapState)
+    delete Nothing  = error "setIsDeleted: impossible"
+    delete (Just _) = Nothing
 
--- | Compute theretical maximum rollback
+-- | Compute theoretical maximum rollback
 --
--- The actual maximum rollback will be restricted by the mledger DB params.
+-- The actual maximum rollback will be restricted by the ledger DB params.
 mockMaxRollback :: Mock -> Word64
 mockMaxRollback Mock{..} = go mockLedger
   where
@@ -356,52 +347,69 @@ runMock cmd initMock =
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
-    go Snap          mock = (
-          Snapped (MockSnap (mockNext mock), snapped)
-        , mock { mockNext  = mockNext mock + 1
-               , mockSnaps = Map.insert (MockSnap (mockNext mock))
-                                        (snapped, SnapOk)
-                                        (mockSnaps mock)
-               }
-        )
+    go Snap          mock = case mbSnapshot of
+        Just pt
+          | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
+          , Map.notMember mockSnap (mockSnaps mock)
+          -> ( Snapped (Just (mockSnap, pt))
+             , mock {
+                   mockSnaps =
+                     Map.insert mockSnap (pt, SnapOk) (mockSnaps mock)
+                 }
+             )
+        _otherwise
+          -- No snapshot to take or one already exists
+          -> (Snapped Nothing, mock)
       where
-        blocksAfterAnchor ::
-             WithOrigin (RealPoint TestBlock)
-          -> [(TestBlock, ExtLedgerState TestBlock)] -- old to new
-          -> [(TestBlock, ExtLedgerState TestBlock)]
-        blocksAfterAnchor Origin        = id
-        blocksAfterAnchor (NotOrigin r) =
-              tail
-            . dropWhile ((/= r) . blockRealPoint . fst)
-
-        -- The snapshot that the real implementation will write to disk
+        -- | The snapshot that the real implementation will possibly write to
+        -- disk.
         --
-        -- The real implementation keeps the length of the snapshots at @k@
-        -- (provided that there are enough blocks). The function
-        -- 'ledgerDbCountToPrune' computes how many (old) blocks should be
-        -- dropped to get back into that range; the last (most recent) block to
-        -- be dropped will become the new anchor. It is the anchor that gets
-        -- written to disk.
-        snapped :: Point TestBlock
-        snapped
-          | n == 0    = mockRestore mock
-          | otherwise = case drop (n - 1) blocks of
-                          []       -> error "snapped: impossible"
-                          (b, _):_ -> blockPoint b
+        -- 1. We will write the snapshot of the ledger state @k@ blocks back
+        --    from the tip to disk.
+        --
+        --    For example, with @k = 2@:
+        --
+        --    > A -> B -> C -> D -> E
+        --
+        --    We will write C to disk.
+        --
+        -- 2. In case we don't have enough snapshots for (1), i.e., @<= k@, we
+        --    look at the snapshot from which we restored ('mockRestore').
+        --
+        --    a. When that corresponds to the genesis ledger state, we don't
+        --       write a snapshot to disk.
+        --
+        --    b. Otherwise, we write 'mockRestore' to disk. Note that we later
+        --       check whether that snapshots still exists on disk, in which
+        --       case we wouldn't write it to disk again.
+        mbSnapshot :: Maybe (RealPoint TestBlock)
+        mbSnapshot = case drop k untilRestore of
+            (blk, _):_ -> Just (blockRealPoint blk)  -- 1
+            []         -> case pointToWithOriginRealPoint (mockRestore mock) of
+                            Origin       -> Nothing  -- 2a
+                            NotOrigin pt -> Just pt  -- 2b
           where
-            n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
-            blocks = blocksAfterAnchor
-                       (pointToWithOriginRealPoint (mockRestore mock))
-                       (reverse (mockLedger mock))
+            k :: Int
+            k = fromIntegral $ maxRollbacks $ ledgerDbSecurityParam $ mockParams mock
+
+            -- The snapshots from new to old until 'mockRestore' (inclusive)
+            untilRestore :: [(TestBlock, ExtLedgerState TestBlock)]
+            untilRestore =
+              takeWhile
+                ((/= (mockRestore mock)) . blockPoint . fst)
+                (mockLedger mock)
+
     go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
         )
       where
-        corrupt :: Maybe (Point TestBlock, SnapState)
-                -> Maybe (Point TestBlock, SnapState)
+        corrupt :: Maybe (RealPoint TestBlock, SnapState)
+                -> Maybe (RealPoint TestBlock, SnapState)
         corrupt Nothing         = error "corrupt: impossible"
-        corrupt (Just (ref, _)) = Just $ (ref, SnapCorrupted c)
+        corrupt (Just (ref, _)) = case c of
+          Delete   -> Nothing
+          Truncate -> Just (ref, SnapCorrupted)
     go (Drop n) mock =
         go Restore $ mock {
             mockLedger = drop (fromIntegral n) (mockLedger mock)
@@ -502,24 +510,19 @@ dbStreamAPI DB{..} = StreamAPI {..}
   where
     streamAfter ::
          Point TestBlock
-      -> (Maybe (m (NextBlock TestBlock)) -> m a)
+      -> (Either (RealPoint TestBlock) (m (NextBlock TestBlock)) -> m a)
       -> m a
     streamAfter tip k = do
-        rs <- atomically $ reverse . fst <$> readTVar dbState
-        if unknownBlock tip' rs
-          then k Nothing
-          else do
-            toStream <- uncheckedNewTVarM (blocksToStream tip' rs)
-            k (Just (getNext toStream))
+        pts <- atomically $ reverse . fst <$> readTVar dbState
+        case tip' of
+          NotOrigin pt
+            | pt `L.notElem` pts
+            -> k $ Left pt
+          _otherwise
+            -> do toStream <- uncheckedNewTVarM (blocksToStream tip' pts)
+                  k (Right (getNext toStream))
      where
        tip' = pointToWithOriginRealPoint tip
-
-    -- Ignore requests to start streaming from blocks not on the current chain
-    unknownBlock ::
-         WithOrigin (RealPoint TestBlock)
-      -> [RealPoint TestBlock] -> Bool
-    unknownBlock Origin        _  = False
-    unknownBlock (NotOrigin r) rs = r `L.notElem` rs
 
     -- Blocks to stream
     --
@@ -797,12 +800,12 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
               Just (_tip, state) ->
                 map (, diskSnap) $ possibleCorruptionsInState state
               Nothing ->
-                error "possibleCorruptions: impossible"
+                -- The snapshot has already been deleted
+                []
 
     possibleCorruptionsInState :: SnapState -> [Corruption]
-    possibleCorruptionsInState SnapOk                   = [Delete, Truncate]
-    possibleCorruptionsInState (SnapCorrupted Truncate) = [Delete]
-    possibleCorruptionsInState (SnapCorrupted Delete)   = []
+    possibleCorruptionsInState SnapOk        = [Delete, Truncate]
+    possibleCorruptionsInState SnapCorrupted = [Delete]
 
 shrinker :: Model Symbolic -> Cmd :@ Symbolic -> [Cmd :@ Symbolic]
 shrinker _ (At cmd) =
@@ -987,8 +990,7 @@ tagEvents k = C.classify [
     , tagMaxDrop
     , tagRestore Nothing
     , tagRestore (Just SnapOk)
-    , tagRestore (Just (SnapCorrupted Truncate))
-    , tagRestore (Just (SnapCorrupted Delete))
+    , tagRestore (Just SnapCorrupted)
     ]
   where
     tagMaxRollback :: EventPred

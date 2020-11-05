@@ -295,7 +295,6 @@ updateLedgerSnapshots
   :: (IOLike m, LgrDbSerialiseConstraints blk)
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
-    -- TODO avoid taking multiple snapshots corresponding to the same tip.
     void $ LgrDB.takeSnapshot  cdbLgrDB
     void $ LgrDB.trimSnapshots cdbLgrDB
 
