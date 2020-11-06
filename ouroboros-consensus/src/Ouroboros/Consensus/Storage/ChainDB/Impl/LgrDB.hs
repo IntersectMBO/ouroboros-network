@@ -331,7 +331,7 @@ currentPoint = castPoint
 
 takeSnapshot :: forall m blk.
                 (IOLike m, LgrDbSerialiseConstraints blk)
-             => LgrDB m blk -> m (DiskSnapshot, Point blk)
+             => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
@@ -437,7 +437,7 @@ streamAPI immutableDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack
                 => Point blk
-                -> (Maybe (m (NextBlock blk)) -> m a)
+                -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
                 -> m a
     streamAfter tip k = withRegistry $ \registry -> do
         eItr <-
@@ -448,13 +448,11 @@ streamAPI immutableDB = StreamAPI streamAfter
             tip
         case eItr of
           -- Snapshot is too recent
-          Left _err -> k $ Nothing
-          Right itr -> k $ streamUsing itr
+          Left  err -> k $ Left  $ ImmutableDB.missingBlockPoint err
+          Right itr -> k $ Right $ streamUsing itr
 
-    streamUsing ::
-         ImmutableDB.Iterator m blk blk
-      -> Maybe (m (NextBlock blk))
-    streamUsing itr = Just $ ImmutableDB.iteratorNext itr >>= \case
+    streamUsing :: ImmutableDB.Iterator m blk blk -> m (NextBlock blk)
+    streamUsing itr = ImmutableDB.iteratorNext itr >>= \case
       ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
       ImmutableDB.IteratorResult blk -> return $ NextBlock blk
 

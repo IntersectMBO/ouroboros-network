@@ -28,6 +28,7 @@ instance ToExpr BlockNo
 
 instance ToExpr t => ToExpr (WithOrigin t)
 instance ToExpr (HeaderHash blk) => ToExpr (Point blk)
+instance ToExpr (HeaderHash blk) => ToExpr (RealPoint blk)
 instance (ToExpr slot, ToExpr hash) => ToExpr (Block slot hash)
 
 {-------------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -30,6 +31,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Low-level API (primarily exposed for testing)
   , DiskSnapshot -- opaque
   , deleteSnapshot
+  , snapshotToFileName
   , snapshotToPath
     -- * Trace events
   , TraceEvent(..)
@@ -42,7 +44,8 @@ import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.List as List
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (isJust, mapMaybe)
+import           Data.Ord (Down (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -97,15 +100,17 @@ data StreamAPI m blk = StreamAPI {
       streamAfter :: forall a. HasCallStack
         => Point blk
         -- Reference to the block corresponding to the snapshot we found
-        -- (or 'TipGen' if we didn't find any)
+        -- (or 'GenesisPoint' if we didn't find any)
 
-        -> (Maybe (m (NextBlock blk)) -> m a)
+        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
         -- Get the next block (by value)
         --
-        -- Should be 'Nothing' if the snapshot we found is more recent than
-        -- the tip of the immutable DB; since we only store snapshots to disk
-        -- for blocks in the immutable DB, this can only happen if the
-        -- immutable DB got truncated due to disk corruption.
+        -- Should be @Left pt@ if the snapshot we found is more recent than the
+        -- tip of the immutable DB. Since we only store snapshots to disk for
+        -- blocks in the immutable DB, this can only happen if the immutable DB
+        -- got truncated due to disk corruption. The returned @pt@ is a
+        -- 'RealPoint', not a 'Point', since it must always be possible to
+        -- stream after genesis.
         -> m a
     }
 
@@ -113,15 +118,16 @@ data StreamAPI m blk = StreamAPI {
 streamAll ::
      forall m blk e a. (Monad m, HasCallStack)
   => StreamAPI m blk
-  -> Point blk         -- ^ Starting point for streaming
-  -> (Point blk -> e)  -- ^ Error when tip not found
-  -> a                 -- ^ Starting point when tip /is/ found
-  -> (blk -> a -> m a) -- ^ Update function for each block
+  -> Point blk             -- ^ Starting point for streaming
+  -> (RealPoint blk -> e)  -- ^ Error when tip not found
+  -> a                     -- ^ Starting point when tip /is/ found
+  -> (blk -> a -> m a)     -- ^ Update function for each block
   -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
-      Nothing      -> return $ Left (notFound tip)
-      Just getNext -> do
+      Left tip' -> return $ Left (notFound tip')
+
+      Right getNext -> do
         let go :: a -> m a
             go a = do mNext <- getNext
                       case mNext of
@@ -146,7 +152,7 @@ data InitLog blk =
     InitFromGenesis
 
     -- | Used a snapshot corresponding to the specified tip
-  | InitFromSnapshot DiskSnapshot (Point blk)
+  | InitFromSnapshot DiskSnapshot (RealPoint blk)
 
     -- | Initialization skipped a snapshot
     --
@@ -171,7 +177,7 @@ data InitLog blk =
 --
 -- It is possible that the Ledger DB will not be able to roll back @k@ blocks
 -- after initialization if the chain has been truncated (data corruption).
-
+--
 -- We do /not/ attempt to use multiple ledger states from disk to construct the
 -- ledger DB. Instead we load only a /single/ ledger state from disk, and
 -- /compute/ all subsequent ones. This is important, because the ledger states
@@ -230,7 +236,10 @@ initLedgerDB replayTracer
                              s
         case ml of
           Left err -> do
-            deleteSnapshot hasFS s
+            when (diskSnapshotIsTemporary s) $
+              -- We don't delete permanent snapshots, even if we couldn't parse
+              -- them
+              deleteSnapshot hasFS s
             traceWith tracer $ InvalidSnapshot s err
             tryNewestFirst (acc . InitFailure s err) ss
           Right (r, l, replayed) ->
@@ -247,7 +256,11 @@ data InitFailure blk =
     InitFailureRead ReadIncrementalErr
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
-  | InitFailureTooRecent (Point blk)
+  | InitFailureTooRecent (RealPoint blk)
+
+    -- | This snapshot was of the ledger state at genesis, even though we never
+    -- take snapshots at genesis, so this is unexpected.
+  | InitFailureGenesis
   deriving (Show, Eq, Generic)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
@@ -270,13 +283,21 @@ initFromSnapshot ::
   -> ExtLedgerCfg blk
   -> StreamAPI m blk
   -> DiskSnapshot
-  -> ExceptT (InitFailure blk) m (Point blk, LedgerDB' blk, Word64)
+  -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
 initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
-    lift $ traceWith tracer $ ReplayFromSnapshot ss (csTip' initSS) ()
-    (initDB, replayed) <- initStartingWith tracer conf streamAPI (ledgerDbWithAnchor params initSS)
-    return (csTip' initSS, initDB, replayed)
+    case csTip initSS of
+      Origin        -> throwError InitFailureGenesis
+      NotOrigin tip -> do
+        lift $ traceWith tracer $ ReplayFromSnapshot ss tip ()
+        (initDB, replayed) <-
+          initStartingWith
+            tracer
+            conf
+            streamAPI
+            (ledgerDbWithAnchor params initSS)
+        return (tip, initDB, replayed)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith ::
@@ -324,9 +345,16 @@ initStartingWith tracer conf streamAPI initDb = do
 -- testing purposes, 'takeSnapshot' returns the block reference corresponding
 -- to the snapshot that we wrote.
 --
--- NOTE: This is a lower-level API that unconditionally takes a snapshot
--- (i.e., independent from whether this snapshot corresponds to a state that
--- is more than @k@ back).
+-- If a snapshot with the same number already exists on disk or if the tip is at
+-- genesis, no snapshot is taken.
+--
+-- Note that an EBB can have the same slot number and thus snapshot number as
+-- the block after it. This doesn't matter. The one block difference in the
+-- ledger state doesn't warrant an additional snapshot. The number in the name
+-- of the snapshot is only indicative, we don't rely on it being correct.
+--
+-- NOTE: This is a lower-level API that takes a snapshot independent from
+-- whether this snapshot corresponds to a state that is more than @k@ back.
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot ::
@@ -335,12 +363,21 @@ takeSnapshot ::
   -> SomeHasFS m
   -> (ExtLedgerState blk -> Encoding)
   -> (RealPoint blk -> Encoding)
-  -> LedgerDB' blk -> m (DiskSnapshot, Point blk)
-takeSnapshot tracer hasFS encLedger encRef db = do
-    ss <- nextAvailable <$> listSnapshots hasFS
-    writeSnapshot hasFS encLedger encRef ss oldest
-    traceWith tracer $ TookSnapshot ss (csTip' oldest)
-    return (ss, csTip' oldest)
+  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot tracer hasFS encLedger encRef db =
+    case csTip oldest of
+      Origin ->
+        return Nothing
+      NotOrigin tip -> do
+        let number   = unSlotNo (realPointSlot tip)
+            snapshot = DiskSnapshot number Nothing
+        snapshots <- listSnapshots hasFS
+        if List.any ((== number) . dsNumber) snapshots then
+          return Nothing
+        else do
+          writeSnapshot hasFS encLedger encRef snapshot oldest
+          traceWith tracer $ TookSnapshot snapshot tip
+          return $ Just (snapshot, tip)
   where
     oldest :: ChainSummary' blk
     oldest = ledgerDbAnchor db
@@ -356,7 +393,8 @@ trimSnapshots ::
   -> DiskPolicy
   -> m [DiskSnapshot]
 trimSnapshots tracer hasFS DiskPolicy{..} = do
-    snapshots <- listSnapshots hasFS
+    -- We only trim temporary snapshots
+    snapshots <- filter diskSnapshotIsTemporary <$> listSnapshots hasFS
     -- The snapshot are most recent first, so we can simply drop from the
     -- front to get the snapshots that are "too" old.
     forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
@@ -368,14 +406,36 @@ trimSnapshots tracer hasFS DiskPolicy{..} = do
   Internal: reading from disk
 -------------------------------------------------------------------------------}
 
--- | On disk snapshots are numbered monotonically
-newtype DiskSnapshot = DiskSnapshot Int
+data DiskSnapshot = DiskSnapshot {
+      -- | Snapshots are numbered. We will try the snapshots with the highest
+      -- number first.
+      --
+      -- When creating a snapshot, we use the slot number of the ledger state it
+      -- corresponds to as the snapshot number. This gives an indication of how
+      -- recent the snapshot is.
+      --
+      -- Note that the snapshot names are only indicative, we don't rely on the
+      -- snapshot number matching the slot number of the corresponding ledger
+      -- state. We only use the snapshots numbers to determine the order in
+      -- which we try them.
+      dsNumber :: Word64
+
+      -- | Snapshots can optionally have a suffix, separated by the snapshot
+      -- number with an underscore, e.g., @4492799_last_Byron@. This suffix acts
+      -- as metadata for the operator of the node. Snapshots with a suffix will
+      -- /not be trimmed/.
+    , dsSuffix :: Maybe String
+    }
   deriving (Show, Eq, Ord, Generic)
 
--- | Number of the next snapshot, given snapshots currently on disk
-nextAvailable :: [DiskSnapshot] -> DiskSnapshot
-nextAvailable [] = DiskSnapshot 1
-nextAvailable ss = let DiskSnapshot n = maximum ss in DiskSnapshot (n + 1)
+-- | Named snapshot are permanent, they will never be deleted when trimming.
+diskSnapshotIsPermanent :: DiskSnapshot -> Bool
+diskSnapshotIsPermanent = isJust . dsSuffix
+
+-- | The snapshots that are periodically created are temporary, they will be
+-- deleted when trimming
+diskSnapshotIsTemporary :: DiskSnapshot -> Bool
+diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
 
 -- | Read snapshot from disk
 readSnapshot ::
@@ -411,19 +471,36 @@ writeSnapshot (SomeHasFS hasFS) encLedger encRef ss cs = do
 deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
 deleteSnapshot (SomeHasFS HasFS{..}) = removeFile . snapshotToPath
 
--- | List on-disk snapshots, most recent first
+-- | List on-disk snapshots, highest number first.
 listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
 listSnapshots (SomeHasFS HasFS{..}) =
     aux <$> listDirectory (mkFsPath [])
   where
     aux :: Set String -> [DiskSnapshot]
-    aux = List.sortBy (flip compare) . mapMaybe snapshotFromPath . Set.toList
+    aux = List.sortOn (Down . dsNumber) . mapMaybe snapshotFromPath . Set.toList
+
+snapshotToFileName :: DiskSnapshot -> String
+snapshotToFileName DiskSnapshot { dsNumber, dsSuffix } =
+    show dsNumber <> suffix
+  where
+    suffix = case dsSuffix of
+      Nothing -> ""
+      Just s  -> "_" <> s
 
 snapshotToPath :: DiskSnapshot -> FsPath
-snapshotToPath (DiskSnapshot ss) = mkFsPath [show ss]
+snapshotToPath = mkFsPath . (:[]) . snapshotToFileName
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
-snapshotFromPath = fmap DiskSnapshot . readMaybe
+snapshotFromPath fileName = do
+    number <- readMaybe prefix
+    return $ DiskSnapshot number suffix'
+  where
+    (prefix, suffix) = break (== '_') fileName
+
+    suffix' :: Maybe String
+    suffix' = case suffix of
+      ""      -> Nothing
+      _ : str -> Just str
 
 {-------------------------------------------------------------------------------
   Trace events
@@ -432,7 +509,7 @@ snapshotFromPath = fmap DiskSnapshot . readMaybe
 data TraceEvent blk
   = InvalidSnapshot DiskSnapshot (InitFailure blk)
     -- ^ An on disk snapshot was skipped because it was invalid.
-  | TookSnapshot DiskSnapshot (Point blk)
+  | TookSnapshot DiskSnapshot (RealPoint blk)
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
@@ -452,7 +529,7 @@ data TraceReplayEvent blk replayTo
     --
     -- The @replayTo@ parameter corresponds to the block at the tip of the
     -- ImmutableDB, i.e., the last block to replay.
-  | ReplayFromSnapshot DiskSnapshot (Point blk) replayTo
+  | ReplayFromSnapshot DiskSnapshot (RealPoint blk) replayTo
     -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
     -- We're replaying more recent blocks against it.
     --
