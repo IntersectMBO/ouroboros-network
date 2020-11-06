@@ -12,7 +12,9 @@ module Ouroboros.Consensus.Util.AnchoredFragment (
   , compareAnchoredFragments
   ) where
 
+import           Control.Monad.Except (throwError)
 import           Data.Function (on)
+import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -24,6 +26,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
   Utility functions on anchored fragments
@@ -65,7 +68,7 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 
 -- | Lift 'compareChains' to 'AnchoredFragment'
 --
--- PRECONDITION: The fragments must intersect.
+-- PRECONDITION: Either both fragments are non-empty or they intersect.
 --
 -- For a detailed discussion of this precondition, and a justification for the
 -- definition of this function, please refer to the Consensus Report.
@@ -86,8 +89,9 @@ compareAnchoredFragments ::
   -> AnchoredFragment (Header blk)
   -> AnchoredFragment (Header blk)
   -> Ordering
-compareAnchoredFragments cfg ours theirs =
-    case (ours, theirs) of
+compareAnchoredFragments cfg frag1 frag2 =
+    assertWithMsg precondition $
+    case (frag1, frag2) of
       (Empty _, Empty _) ->
         -- The fragments intersect but are equal: their anchors must be equal,
         -- and hence the fragments represent the same chain. They are therefore
@@ -114,12 +118,22 @@ compareAnchoredFragments cfg ours theirs =
           (chainSelConfig (configConsensus cfg))
           (selectView (configBlock cfg) tip)
           (selectView (configBlock cfg) tip')
+  where
+    precondition :: Either String ()
+    precondition
+      | not (AF.null frag1), not (AF.null frag2)
+      = return ()
+      | isJust (AF.intersectionPoint frag1 frag2)
+      = return ()
+      | otherwise
+      = throwError
+          "precondition violated: fragments both empty or don't intersect"
 
 -- | Lift 'preferCandidate' to 'AnchoredFragment'
 --
 -- See discussion for 'compareAnchoredCandidates'.
 preferAnchoredCandidate ::
-     forall blk. BlockSupportsProtocol blk
+     forall blk. (BlockSupportsProtocol blk, HasCallStack)
   => TopLevelConfig blk
   -> AnchoredFragment (Header blk)      -- ^ Our chain
   -> AnchoredFragment (Header blk)      -- ^ Candidate

@@ -30,6 +30,7 @@ import           Data.Maybe (isJust)
 import           Data.Proxy
 import qualified Data.Text as Text
 import           Data.Word (Word32)
+import           GHC.Stack (HasCallStack)
 import           System.Random (StdGen)
 
 import           Control.Tracer
@@ -270,10 +271,59 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
 
-    plausibleCandidateChain :: AnchoredFragment (Header blk)
+    -- Note that @ours@ comes from the ChainDB and @cand@ from the ChainSync
+    -- client.
+    --
+    -- Fragments are proxies for their corresponding chains; it is possible, in
+    -- principle, that an empty fragment corresponds to the chain we want to
+    -- adopt, and should therefore be preferred over other fragments (whose
+    -- blocks we therefore do not want to download). The precondition to
+    -- 'preferAnchoredCandidates' is designed precisely to rule out this
+    -- possibility (for details, see the Consensus Report), but unfortunately we
+    -- cannot always satisfy this precondition: although the chain sync client
+    -- preserves an invariant that relates our current chain to the candidate
+    -- fragment, by the time the block fetch download logic considers the
+    -- fragment, our current chain might have changed.
+    plausibleCandidateChain :: HasCallStack
+                            => AnchoredFragment (Header blk)
                             -> AnchoredFragment (Header blk)
                             -> Bool
-    plausibleCandidateChain = preferAnchoredCandidate cfg
+    plausibleCandidateChain ours cand
+      -- 1. The ChainDB maintains the invariant that the anchor of our fragment
+      --    corresponds to the immutable tip.
+      --
+      -- 2. The ChainSync client locally maintains the invariant that our
+      --    fragment and the candidate fragment have the same anchor point. This
+      --    establishes the precondition required by @preferAnchoredCandidate@.
+      --
+      -- 3. However, by the time that the BlockFetch logic processes a fragment
+      --    presented to it by the ChainSync client, our current fragment might
+      --    have changed, and they might no longer be anchored at the same
+      --    point. This means that we are no longer guaranteed that the
+      --    precondition holds.
+      --
+      -- 4. Our chain's anchor can only move forward. We can detect this by
+      --    looking at the block numbers of the anchors.
+      --
+      | AF.anchorBlockNo cand < AF.anchorBlockNo ours  -- (4)
+      = case (AF.null ours, AF.null cand) of
+          -- Both are non-empty, the precondition trivially holds.
+          (False, False) -> preferAnchoredCandidate cfg ours cand
+          -- The candidate is shorter than our chain and, worse, we'd have to
+          -- roll back past our immutable tip (the anchor of @cand@).
+          (_,     True)  -> False
+          -- As argued above we can only reach this case when our chain's anchor
+          -- has changed (4).
+          --
+          -- It is impossible for our chain to change /and/ still be empty: the
+          -- anchor of our chain only changes when a new block becomes
+          -- immutable. For a new block to become immutable, we must have
+          -- extended our chain with at least @k + 1@ blocks. Which means our
+          -- fragment can't be empty.
+          (True,  _)     -> error "impossible"
+
+      | otherwise
+      = preferAnchoredCandidate cfg ours cand
 
     compareCandidateChains :: AnchoredFragment (Header blk)
                            -> AnchoredFragment (Header blk)
