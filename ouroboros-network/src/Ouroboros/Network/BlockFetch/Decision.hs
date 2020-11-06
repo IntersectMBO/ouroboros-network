@@ -1,7 +1,8 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.BlockFetch.Decision (
     -- * Deciding what to fetch
@@ -29,6 +30,7 @@ import           Data.Function (on)
 import           Data.Hashable
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
+import           GHC.Stack (HasCallStack)
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
@@ -61,10 +63,12 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        decisionLoopInterval    :: DiffTime,
        peerSalt                :: Int,
 
-       plausibleCandidateChain :: AnchoredFragment header
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
 
-       compareCandidateChains  :: AnchoredFragment header
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
                                -> AnchoredFragment header
                                -> Ordering,
 

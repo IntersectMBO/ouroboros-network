@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -102,6 +103,7 @@ module Ouroboros.Network.BlockFetch (
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import           Data.Void
+import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
@@ -181,14 +183,16 @@ data BlockFetchConsensusInterface peer header block m =
        -- with operational key certificates there are also cases where
        -- we would consider a chain of equal length to the current chain.
        --
-       plausibleCandidateChain :: AnchoredFragment header
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
 
        -- | Compare two candidate chains and return a preference ordering.
        -- This is used as part of selecting which chains to prioritise for
        -- downloading block bodies.
        --
-       compareCandidateChains  :: AnchoredFragment header
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
                                -> AnchoredFragment header
                                -> Ordering,
 
