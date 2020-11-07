@@ -521,3 +521,4 @@ addBlockRunner
 addBlockRunner cdb@CDB{..} = forever $ do
     blockToAdd <- getBlockToAdd cdbBlocksToAdd
     addBlockSync cdb blockToAdd
+    deleteBlockToAdd blockToAdd cdbBlocksToAdd
