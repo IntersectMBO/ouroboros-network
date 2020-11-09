@@ -112,16 +112,13 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         , maryLeaderCredentials = Nothing
         }
       ProtocolParamsTransition {
-          transitionLowerBound = Nothing
-        , transitionTrigger    = TriggerHardForkAtVersion 2
+          transitionTrigger    = TriggerHardForkAtVersion 2
         }
       ProtocolParamsTransition {
-          transitionLowerBound = Nothing
-        , transitionTrigger    = TriggerHardForkAtVersion 3
+          transitionTrigger    = TriggerHardForkAtVersion 3
         }
       ProtocolParamsTransition {
-          transitionLowerBound = Nothing
-        , transitionTrigger    = TriggerHardForkAtVersion 4
+          transitionTrigger    = TriggerHardForkAtVersion 4
         }
 
 castHeaderHash ::

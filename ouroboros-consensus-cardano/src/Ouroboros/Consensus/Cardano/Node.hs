@@ -324,17 +324,7 @@ instance CardanoHardForkConstraints c
 -- The two eras are phantom type parameters of this type to avoid mixing up
 -- multiple 'ProtocolParamsTransition's
 data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
-       -- | Lower bound on first epoch of @eraTo@
-       --
-       -- Setting this to @Just@ when a true lower bound is known may
-       -- particularly improve performance of bulk syncing. For example, for the
-       -- transition from Byron to Shelley, @Just 208@ would be sound for the
-       -- Cardano mainnet, since we know now that the Shelley era began in epoch
-       -- 208.
-       --
-       -- The @Nothing@ case is useful for test and possible alternative nets.
-      transitionLowerBound :: Maybe EpochNo
-    , transitionTrigger    :: TriggerHardFork
+      transitionTrigger    :: TriggerHardFork
     }
 
 protocolInfoCardano ::
@@ -372,16 +362,13 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , maryLeaderCredentials = mCredsMary
                       }
                     ProtocolParamsTransition {
-                        transitionLowerBound = mbLowerBoundShelley
-                      , transitionTrigger    = triggerHardForkByronShelley
+                        transitionTrigger    = triggerHardForkByronShelley
                       }
                     ProtocolParamsTransition {
-                        transitionLowerBound = mbLowerBoundAllegra
-                      , transitionTrigger    = triggerHardForkShelleyAllegra
+                        transitionTrigger    = triggerHardForkShelleyAllegra
                       }
                     ProtocolParamsTransition {
-                        transitionLowerBound = mbLowerBoundMary
-                      , transitionTrigger    = triggerHardForkAllegraMary
+                        transitionTrigger    = triggerHardForkAllegraMary
                       } =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
@@ -528,14 +515,11 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     shape :: History.Shape (CardanoEras c)
     shape = History.Shape $ Exactly $
-           K (Byron.byronEraParams     (safeBefore mbLowerBoundShelley) genesisByron)
-        :* K (Shelley.shelleyEraParams (safeBefore mbLowerBoundAllegra) genesisShelley)
-        :* K (Shelley.shelleyEraParams (safeBefore mbLowerBoundMary)    genesisShelley)
-        :* K (Shelley.shelleyEraParams (safeBefore Nothing)             genesisShelley)
+           K (Byron.byronEraParams     History.NoLowerBound genesisByron)
+        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
+        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
+        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
         :* Nil
-      where
-        safeBefore :: Maybe EpochNo -> History.SafeBeforeEpoch
-        safeBefore = maybe History.NoLowerBound History.LowerBound
 
     cfg :: TopLevelConfig (CardanoBlock c)
     cfg = TopLevelConfig {
