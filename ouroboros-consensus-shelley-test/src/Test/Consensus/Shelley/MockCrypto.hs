@@ -18,14 +18,14 @@ import           Cardano.Crypto.DSIGN (MockDSIGN)
 import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES (MockKES)
 
-import           Cardano.Ledger.Core (Value)
+import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
-import           Cardano.Ledger.Torsor (Delta)
+import           Control.State.Transition.Extended (PredicateFailure)
 import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL (Mock)
-import qualified Test.Shelley.Spec.Ledger.Utils as SL (ShelleyTest)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
                      ShelleyEra)
@@ -57,9 +57,9 @@ type Block h = ShelleyBlock (MockShelley h)
 type CanMock era =
   ( ShelleyBasedEra era
   , SL.Mock (EraCrypto era)
-    -- TODO #2677 the generators in the ledger impose this constraint
-  , SL.ShelleyTest era
-  , Arbitrary (SL.WitnessSet era)
-  , Arbitrary (Value era)
-  , Arbitrary (Delta (Value era))
+  , SL.ValidateScript era
+  , Arbitrary (Core.TxBody era)
+  , Arbitrary (Core.Value era)
+  , Arbitrary (Core.Script era)
+  , Arbitrary (PredicateFailure (SL.UTXOW era))
   )

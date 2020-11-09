@@ -45,8 +45,10 @@ library
                      , transformers
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-shelley-ma-test
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
+                     , small-steps
 
                      , ouroboros-network
                      , ouroboros-consensus

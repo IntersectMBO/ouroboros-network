@@ -31,7 +31,7 @@ data NodeToNodeVersion
     --
     -- * Enable block size hints for Byron headers in ChainSync
     -- * Enable Keep-Alive miniprotocol
-    -- * Enable @CardanoNodeToNodeVersion2@
+    -- * Enable @CardanoNodeToNodeVersion2@, i.e., Shelley
     | NodeToNodeV_3
     -- ^ Changes:
     --
@@ -39,8 +39,12 @@ data NodeToNodeVersion
     | NodeToNodeV_4
     -- ^ Changes:
     --
-    -- * Added 'DiffusionMode' Handshake argument.  Also from this version up
-    -- the node will use duplex connections.
+    -- * Added 'DiffusionMode' Handshake argument.
+    -- * Enable @CardanoNodeToNodeVersion3@, i.e., Allegra
+    | NodeToNodeV_5
+    -- ^ Changes:
+    --
+    -- * Enable @CardanoNodeToNodeVersion4@, i.e., Mary
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -50,11 +54,13 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_2  = CBOR.TInt 2
     encodeTerm NodeToNodeV_3  = CBOR.TInt 3
     encodeTerm NodeToNodeV_4  = CBOR.TInt 4
+    encodeTerm NodeToNodeV_5  = CBOR.TInt 5
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
     decodeTerm (CBOR.TInt 3) = Right NodeToNodeV_3
     decodeTerm (CBOR.TInt 4) = Right NodeToNodeV_4
+    decodeTerm (CBOR.TInt 5) = Right NodeToNodeV_5
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n

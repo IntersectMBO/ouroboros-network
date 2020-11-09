@@ -15,30 +15,13 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardCrypto
   ) where
 
+import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Era (Crypto)
+import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import           Shelley.Spec.Ledger.API (ShelleyBasedEra)
-
-{-------------------------------------------------------------------------------
-  Eras based on the Shelley ledger
--------------------------------------------------------------------------------}
-
--- | The era after Shelley is Allegra, the illegitimate daughter of Byron.
---
--- In this era, we introduce time locks and miscellaneous fixes for the Shelley
--- era.
---
--- TODO #2668 Change this to the proper Allegra era
-type AllegraEra c = ShelleyEra c
-
--- | The era after Allegra is Mary (Shelley), the wife of Percy Shelley.
---
--- In this era, we introduce multi-asset (hence MA-ry).
---
--- TODO #2668 Change this to the proper Mary era
-type MaryEra c = ShelleyEra c
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto

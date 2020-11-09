@@ -59,7 +59,6 @@ import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
@@ -272,7 +271,7 @@ instance Arbitrary (TipInfoIsEBB ByronBlock) where
 
 instance Arbitrary (AnnTip ByronBlock) where
   arbitrary = AnnTip
-    <$> arbitrary
+    <$> (SlotNo  <$> arbitrary)
     <*> (BlockNo <$> arbitrary)
     <*> arbitrary
 

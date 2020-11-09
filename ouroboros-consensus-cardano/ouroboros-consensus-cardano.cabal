@@ -77,6 +77,8 @@ executable db-analyser
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger
+                     , cardano-ledger-shelley-ma
+                     , cardano-prelude
                      , containers
                      , contra-tracer
                      , directory

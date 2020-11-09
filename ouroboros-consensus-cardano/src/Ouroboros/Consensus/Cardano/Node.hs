@@ -71,6 +71,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Ledger.Era as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -300,9 +301,8 @@ instance CardanoHardForkConstraints c
       [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
       , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
       , (NodeToNodeV_3, CardanoNodeToNodeVersion2)
-      -- TODO #2670 enable these
-      -- , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
-      -- , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
+      , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
+      , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
@@ -310,9 +310,8 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_2, CardanoNodeToClientVersion1)
       , (NodeToClientV_3, CardanoNodeToClientVersion2)
       , (NodeToClientV_4, CardanoNodeToClientVersion3)
-      -- TODO #2670 enable these
-      -- , (NodeToClientV_5, CardanoNodeToClientVersion4)
-      -- , (NodeToClientV_6, CardanoNodeToClientVersion5)
+      , (NodeToClientV_5, CardanoNodeToClientVersion4)
+      , (NodeToClientV_6, CardanoNodeToClientVersion5)
       ]
 
 {-------------------------------------------------------------------------------
@@ -478,7 +477,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Allegra
 
     genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = genesisShelley
+    genesisAllegra = SL.translateEra' () genesisShelley
 
     blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
     blockConfigAllegra =
@@ -501,7 +500,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Mary
 
     genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = genesisAllegra
+    genesisMary = SL.translateEra' () genesisAllegra
 
     blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
     blockConfigMary =

@@ -61,6 +61,7 @@ library
                      , transformers
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-shelley-ma
                      , shelley-spec-ledger
                      , shelley-spec-non-integral
                      , small-steps

@@ -18,16 +18,11 @@ tests = testGroup "Ouroboros.Network.NodeToNode.Version"
     ]
 
 instance Arbitrary NodeToNodeVersion where
-    arbitrary = oneof [ pure NodeToNodeV_1
-                      , pure NodeToNodeV_2
-                      , pure NodeToNodeV_3
-                      , pure NodeToNodeV_4
-                      ]
+    arbitrary = arbitraryBoundedEnum
 
-    shrink NodeToNodeV_4 = [NodeToNodeV_3]
-    shrink NodeToNodeV_3 = [NodeToNodeV_2]
-    shrink NodeToNodeV_2 = [NodeToNodeV_1]
-    shrink NodeToNodeV_1 = []
+    shrink v
+      | v == minBound = []
+      | otherwise     = [pred v]
 
 instance Arbitrary NodeToNodeVersionData where
     arbitrary =
