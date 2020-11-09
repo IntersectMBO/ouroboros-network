@@ -13,7 +13,7 @@ module Test.ThreadNet.Cardano (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (guard, replicateM)
+import           Control.Monad (replicateM)
 import           Control.Monad.Identity (Identity (runIdentity))
 import           Data.Functor ((<&>))
 import qualified Data.Map as Map
@@ -108,9 +108,7 @@ partitionExclusiveUpperBound (Partition s (NumSlots dur)) =
 -- and endorse it literally as soon as possible. Therefore, if the test reaches
 -- the end of the first epoch, the proposal will be adopted.
 data TestSetup = TestSetup
-  { setupByronLowerBound   :: Bool
-    -- ^ whether to use the @HardFork.LowerBound@ optimization
-  , setupD                 :: Shelley.DecentralizationParam
+  { setupD                 :: Shelley.DecentralizationParam
   , setupHardFork          :: Bool
     -- ^ whether the proposal should trigger a hard fork or not
   , setupInitialNonce      :: SL.Nonce
@@ -149,7 +147,6 @@ instance Arbitrary TestSetup where
     setupTestConfig                       <- genTestConfig setupK
     let TestConfig{numCoreNodes, numSlots} = setupTestConfig
 
-    setupByronLowerBound <- arbitrary
     setupHardFork        <- frequency [(49, pure True), (1, pure False)]
     setupPartition       <- genPartition numCoreNodes numSlots setupK
 
@@ -158,8 +155,7 @@ instance Arbitrary TestSetup where
                               (Proxy @(CardanoBlock Crypto))
 
     pure TestSetup
-      { setupByronLowerBound
-      , setupD
+      { setupD
       , setupHardFork
       , setupInitialNonce
       , setupK
@@ -361,8 +357,7 @@ tests = testGroup "Cardano ThreadNet" $
 
 prop_simple_cardano_convergence :: TestSetup -> Property
 prop_simple_cardano_convergence TestSetup
-  { setupByronLowerBound
-  , setupD
+  { setupD
   , setupHardFork
   , setupInitialNonce
   , setupK
@@ -446,9 +441,7 @@ prop_simple_cardano_convergence TestSetup
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
                   ProtocolParamsTransition {
-                      transitionLowerBound =
-                        guard setupByronLowerBound *> Just numByronEpochs
-                    , transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
+                      transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
                     }
             , mkRekeyM = Nothing
             }
@@ -774,12 +767,10 @@ mkProtocolCardanoAndHardForkTxs
           }
         protocolParamsByronShelley
         ProtocolParamsTransition {
-            transitionLowerBound = Nothing
-          , transitionTrigger    = TriggerHardForkAtVersion allegraMajorVersion
+            transitionTrigger    = TriggerHardForkAtVersion allegraMajorVersion
           }
         ProtocolParamsTransition {
-            transitionLowerBound = Nothing
-          , transitionTrigger    = TriggerHardForkAtVersion maryMajorVersion
+            transitionTrigger    = TriggerHardForkAtVersion maryMajorVersion
           }
 
     -- Byron
