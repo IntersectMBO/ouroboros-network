@@ -280,8 +280,8 @@ exampleMultiAssetValue =
     policyId :: MA.PolicyID era
     policyId = MA.PolicyID $ mkScriptHash 1
 
-    couttsCoin :: MA.AssetID
-    couttsCoin = MA.AssetID "couttsCoin"
+    couttsCoin :: MA.AssetName
+    couttsCoin = MA.AssetName "couttsCoin"
 
 exampleTxBodyShelley :: SL.TxBody StandardShelley
 exampleTxBodyShelley = SL.TxBody
@@ -525,7 +525,7 @@ exampleNewEpochState value = SL.NewEpochState {
 
     rewardUpdate :: SL.RewardUpdate era
     rewardUpdate = SL.RewardUpdate {
-          deltaT    = SL.Coin 10
+          deltaT    = SL.DeltaCoin 10
         , deltaR    = SL.DeltaCoin (- 100)
         , rs        = Map.singleton (keyToCredential exampleStakeKey) (SL.Coin 10)
         , deltaF    = SL.DeltaCoin (- 3)
