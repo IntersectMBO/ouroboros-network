@@ -31,8 +31,15 @@ module Ouroboros.Consensus.Util.SOP (
   , IsNonEmpty(..)
   , ProofNonEmpty(..)
   , checkIsNonEmpty
+    -- * Indexing SOP types
+  , Index(..)
+  , dictIndexAll
+  , injectNS
+  , injectNS'
+  , projectNP
   ) where
 
+import           Data.Coerce
 import           Data.Kind (Type)
 import           Data.SOP.Dict
 import           Data.SOP.Strict
@@ -169,3 +176,30 @@ checkIsNonEmpty :: forall xs. SListI xs => Proxy xs -> Maybe (ProofNonEmpty xs)
 checkIsNonEmpty _ = case sList @xs of
     SNil  -> Nothing
     SCons -> Just $ ProofNonEmpty Proxy Proxy
+
+{-------------------------------------------------------------------------------
+  Indexing SOP types
+-------------------------------------------------------------------------------}
+
+data Index x xs where
+  IZ ::               Index x (x ': xs)
+  IS :: Index x xs -> Index x (y ': xs)
+
+dictIndexAll :: All c xs => Proxy c -> Index x xs -> Dict c x
+dictIndexAll p = \case
+    IZ      -> Dict
+    IS idx' -> dictIndexAll p idx'
+
+injectNS :: forall f x xs. Index x xs -> f x -> NS f xs
+injectNS idx x = case idx of
+    IZ      -> Z x
+    IS idx' -> S (injectNS idx' x)
+
+injectNS' ::
+     forall f a b x xs. (Coercible a (f x), Coercible b (NS f xs))
+  => Proxy f -> Index x xs -> a -> b
+injectNS' _ idx = coerce . injectNS @f idx . coerce
+
+projectNP :: Index x xs -> NP f xs -> f x
+projectNP IZ        (x :* _) = x
+projectNP (IS idx) (_ :* xs) = projectNP idx xs
