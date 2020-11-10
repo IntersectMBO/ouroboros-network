@@ -54,7 +54,6 @@ import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor.Identity (Identity)
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -96,6 +95,7 @@ import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -112,7 +112,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (ledgerDbDefaultParams)
 import           Ouroboros.Consensus.Storage.VolatileDB
-                     (BlockValidationPolicy (..), mkBlocksPerFile)
+                     (BlockValidationPolicy (..))
 
 -- | Arguments expected from any invocation of 'runWith'
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
@@ -124,9 +124,6 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
 
       -- | Protocol tracers for node-to-client communication
     , rnTraceNTC :: NTC.Tracers m (ConnectionId addrNTC) blk DeserialiseFailure
-
-      -- | ChainDB tracer
-    , rnTraceDB :: Tracer m (ChainDB.TraceEvent blk)
 
       -- | Protocol info
     , rnProtocolInfo :: ProtocolInfo m blk
@@ -168,8 +165,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
       -- | How to manage the clean-shutdown marker on disk
       rnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
 
-      -- | How to access a file system relative to the ChainDB mount point
-    , rnMkChainDbHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS m
+      -- | The " static " ChainDB arguments
+    , rnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
 
       -- | Ie 'bfcSalt'
     , rnBfcSalt :: Int
@@ -206,7 +203,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 run :: forall blk.
      RunNode blk
   => RunNodeArgs IO RemoteAddress LocalAddress blk
-  -> StdRunNodeArgs
+  -> StdRunNodeArgs IO blk
   -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO stdArgs >>= runWith args
 
@@ -259,8 +256,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
-          rnTraceDB registry inFuture cfg initLedger
-          rnMkChainDbHasFS customiseChainDbArgs')
+          registry inFuture cfg initLedger
+          rnChainDbArgsDefaults customiseChainDbArgs')
         ChainDB.closeDB
 
       btime <-
@@ -420,50 +417,52 @@ stdWithCheckedDB databasePath networkMagic body = do
 
 openChainDB
   :: forall m blk. (RunNode blk, IOLike m)
-  => Tracer m (ChainDB.TraceEvent blk)
-  -> ResourceRegistry m
+  => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> (ChainDB.RelativeMountPoint -> SomeHasFS m)
+  -> ChainDbArgs Defaults m blk
   -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
       -- ^ Customise the 'ChainDbArgs'
   -> m (ChainDB m blk)
-openChainDB tracer registry inFuture cfg initLedger mkHasFS customiseArgs =
+openChainDB registry inFuture cfg initLedger defArgs customiseArgs =
     ChainDB.openDB args
   where
     args :: ChainDbArgs Identity m blk
     args = customiseArgs $
-             mkChainDbArgs tracer registry inFuture cfg initLedger
+             mkChainDbArgs registry inFuture cfg initLedger
              (nodeImmutableDbChunkInfo (configStorage cfg))
-             mkHasFS
+             defArgs
 
 mkChainDbArgs
   :: forall m blk. (RunNode blk, IOLike m)
-  => Tracer m (ChainDB.TraceEvent blk)
-  -> ResourceRegistry m
+  => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChunkInfo
-  -> (ChainDB.RelativeMountPoint -> SomeHasFS m)
+  -> ChainDbArgs Defaults m blk
   -> ChainDbArgs Identity m blk
-mkChainDbArgs tracer registry inFuture cfg initLedger
-              chunkInfo mkHasFS = (ChainDB.defaultArgs mkHasFS) {
-      ChainDB.cdbMaxBlocksPerFile      = mkBlocksPerFile 1000
-    , ChainDB.cdbChunkInfo             = chunkInfo
-    , ChainDB.cdbGenesis               = return initLedger
-    , ChainDB.cdbDiskPolicy            = defaultDiskPolicy k
-    , ChainDB.cdbCheckIntegrity        = nodeCheckIntegrity (configStorage cfg)
-    , ChainDB.cdbParamsLgrDB           = ledgerDbDefaultParams k
-    , ChainDB.cdbTopLevelConfig        = cfg
-    , ChainDB.cdbRegistry              = registry
-    , ChainDB.cdbTracer                = tracer
-    , ChainDB.cdbImmutableDbValidation = ValidateMostRecentChunk
-    , ChainDB.cdbVolatileDbValidation  = NoValidation
-    , ChainDB.cdbCheckInFuture         = inFuture
+mkChainDbArgs
+  registry
+  inFuture
+  cfg
+  initLedger
+  chunkInfo
+  defArgs
+  = defArgs {
+      ChainDB.cdbParamsLgrDB    = ledgerDbDefaultParams k
+    , ChainDB.cdbDiskPolicy     = defaultDiskPolicy k
+
+    , ChainDB.cdbTopLevelConfig = cfg
+    , ChainDB.cdbChunkInfo      = chunkInfo
+    , ChainDB.cdbCheckIntegrity = nodeCheckIntegrity (configStorage cfg)
+    , ChainDB.cdbGenesis        = return initLedger
+    , ChainDB.cdbCheckInFuture  = inFuture
+
+    , ChainDB.cdbRegistry       = registry
     }
   where
     k = configSecurityParam cfg
@@ -591,18 +590,20 @@ stdRunDataDiffusion ::
 stdRunDataDiffusion = runDataDiffusion
 
 -- | Arguments needed even from a standard non-testing invocation.
-data StdRunNodeArgs = StdRunNodeArgs
+data StdRunNodeArgs m blk = StdRunNodeArgs
   { srnDatabasePath       :: FilePath
     -- ^ Location of the DBs
   , srnDiffusionArguments :: DiffusionArguments
   , srnDiffusionTracers   :: DiffusionTracers
   , srnNetworkMagic       :: NetworkMagic
+  , srnTraceChainDB       :: Tracer m (ChainDB.TraceEvent blk)
+    -- ^ ChainDB Tracer
   }
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
-     StdRunNodeArgs
+     StdRunNodeArgs IO blk
   -> IO (LowLevelRunNodeArgs
           IO
           RemoteAddress
@@ -618,8 +619,10 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
       , rnChainSyncTimeout = stdChainSyncTimeout
       , rnCustomiseHardForkBlockchainTimeArgs = id
       , rnKeepAliveRng
-      , rnMkChainDbHasFS =
-          stdMkChainDbHasFS srnDatabasePath
+      , rnChainDbArgsDefaults =
+          (ChainDB.defaultArgs mkHasFS)
+            { ChainDB.cdbTracer = srnTraceChainDB
+            }
       , rnRunDataDiffusion =
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
@@ -632,3 +635,6 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
       , rnWithCheckedDB =
           stdWithCheckedDB srnDatabasePath srnNetworkMagic
       }
+  where
+    mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
+    mkHasFS = stdMkChainDbHasFS srnDatabasePath
