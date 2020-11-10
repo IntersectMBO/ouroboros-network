@@ -4,24 +4,21 @@
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE TypeApplications   #-}
 {-# LANGUAGE TypeOperators      #-}
 
 module Ouroboros.Consensus.HardFork.History.EraParams (
     -- * API
     EraParams(..)
   , SafeZone(..)
-  , SafeBeforeEpoch(..)
-  , noLowerBoundSafeZone
     -- * Defaults
   , defaultEraParams
-    -- * Queries
-  , safeBeforeEpoch
-  , maxSafeBeforeEpoch
   ) where
 
-import           Codec.CBOR.Decoding (decodeListLen, decodeWord8)
-import           Codec.CBOR.Encoding (encodeListLen, encodeWord8)
+import           Codec.CBOR.Decoding (Decoder, decodeListLen, decodeWord8)
+import           Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord8)
 import           Codec.Serialise (Serialise (..))
+import           Control.Monad (void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -154,7 +151,7 @@ defaultEraParams :: SecurityParam -> SlotLength -> EraParams
 defaultEraParams (SecurityParam k) slotLength = EraParams {
       eraEpochSize  = EpochSize (k * 10)
     , eraSlotLength = slotLength
-    , eraSafeZone   = noLowerBoundSafeZone (k * 2)
+    , eraSafeZone   = StandardSafeZone (k * 2)
     }
 
 -- | Zone in which it is guaranteed that no hard fork can take place
@@ -167,7 +164,7 @@ data SafeZone =
     --   This should be (at least) the number of slots in which we are
     --   guaranteed to have @k@ blocks.
     -- * Optionally, an 'EpochNo' before which no hard fork can take place.
-    StandardSafeZone !Word64 !SafeBeforeEpoch
+    StandardSafeZone !Word64
 
     -- | Pretend the transition to the next era will not take place.
     --
@@ -192,68 +189,18 @@ data SafeZone =
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoThunks)
 
--- | The safe zone with given 'safeFromTip' and 'NoLowerBound'
-noLowerBoundSafeZone :: Word64 -> SafeZone
-noLowerBoundSafeZone n = StandardSafeZone n NoLowerBound
-
--- | Lower bound on when a transition can take place
-data SafeBeforeEpoch =
-    -- | No such lower bound is known
-    NoLowerBound
-
-    -- | 'EpochNo' before which a transition is guaranteed not to take place
-    --
-    -- Often such a value is available, since a new era is planned only after
-    -- the current era has already been running for a while. For example, at
-    -- the time of writing, we know the Byron to Shelley transition cannot
-    -- happen before epoch 180, since we are currently already in epoch 179.
-    --
-    -- Moreover, for epoch transitions that have /already/ taken place, the
-    -- exact 'EpochNo' of the transition can be used.
-    --
-    -- Providing this value is strictly an optimization; for example, it will
-    -- reduce the frequency with which 'summaryToEpochInfo' must update its
-    -- summary of the hard fork history.
-  | LowerBound !EpochNo
-  deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoThunks)
-
-{-------------------------------------------------------------------------------
-  Queries
--------------------------------------------------------------------------------}
-
--- | Returns 'Nothing' if the era is unbounded.
-safeBeforeEpoch :: SafeZone -> Maybe SafeBeforeEpoch
-safeBeforeEpoch (StandardSafeZone _ bound) = Just bound
-safeBeforeEpoch UnsafeIndefiniteSafeZone   = Nothing
-
-maxSafeBeforeEpoch :: SafeBeforeEpoch -> EpochNo -> EpochNo
-maxSafeBeforeEpoch NoLowerBound    e = e
-maxSafeBeforeEpoch (LowerBound e') e = max e' e
-
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance Serialise SafeBeforeEpoch where
-  encode = \case
-      NoLowerBound    -> encodeListLen 1 <> encodeWord8 0
-      LowerBound e    -> encodeListLen 2 <> encodeWord8 1 <> encode e
-  decode = do
-      size <- decodeListLen
-      tag  <- decodeWord8
-      case (size, tag) of
-        (1, 0) -> return NoLowerBound
-        (2, 1) -> LowerBound <$> decode
-        _      -> fail $ "SafeBeforeEpoch: invalid size and tag " <> show (size, tag)
-
 instance Serialise SafeZone where
   encode = \case
-      StandardSafeZone safeFromTip safeBefore -> mconcat [
+      StandardSafeZone safeFromTip -> mconcat [
           encodeListLen 3
         , encodeWord8 0
         , encode safeFromTip
-        , encode safeBefore
+          -- For backward compatibility we still encode safeBeforeEpoch
+        , encodeSafeBeforeEpoch
         ]
       UnsafeIndefiniteSafeZone -> mconcat [
           encodeListLen 1
@@ -263,9 +210,23 @@ instance Serialise SafeZone where
     size <- decodeListLen
     tag  <- decodeWord8
     case (size, tag) of
-      (3, 0) -> StandardSafeZone <$> decode <*> decode
+      (3, 0) -> StandardSafeZone <$> decode <* decodeSafeBeforeEpoch
       (1, 1) -> return UnsafeIndefiniteSafeZone
       _      -> fail $ "SafeZone: invalid size and tag " <> show (size, tag)
+
+-- | Artificial encoder for backward compatibility, see #2646.
+encodeSafeBeforeEpoch :: Encoding
+encodeSafeBeforeEpoch = encodeListLen 1 <> encodeWord8 0
+
+-- | Artificial decoder for backward compatibility, see #2646.
+decodeSafeBeforeEpoch :: Decoder s ()
+decodeSafeBeforeEpoch = do
+    size <- decodeListLen
+    tag  <- decodeWord8
+    case (size, tag) of
+      (1, 0) -> return ()
+      (2, 1) -> void $ decode @EpochNo
+      _      -> fail $ "SafeBeforeEpoch: invalid size and tag " <> show (size, tag)
 
 instance Serialise EraParams where
   encode EraParams{..} = mconcat [

@@ -40,7 +40,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams)
+import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
+                     SafeZone (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -600,7 +601,7 @@ inspectHardForkLedger = go
                 HardForkWarningTransitionInFinalEra eraIndexZero transition
             ((:*){}, Nothing, Just transition) ->
               return $
-                if validLowerBound (History.safeBeforeEpoch safeZone) transition
+                if validLowerBound (History.eraSafeZone ps)
                   then LedgerUpdate $
                          HardForkUpdateTransitionConfirmed
                            eraIndexZero
@@ -621,9 +622,6 @@ inspectHardForkLedger = go
                   transition'
         ]
       where
-        safeZone :: History.SafeZone
-        safeZone = History.eraSafeZone ps
-
         confirmedBefore, confirmedAfter :: Maybe EpochNo
         confirmedBefore = singleEraTransition
                             (unwrapPartialLedgerConfig pc)
@@ -654,10 +652,9 @@ inspectHardForkLedger = go
               (eraIndexSucc $ eraIndexFromNS before)
               eraIndexZero
 
-    validLowerBound :: Maybe History.SafeBeforeEpoch -> EpochNo -> Bool
-    validLowerBound Nothing                       _  = False
-    validLowerBound (Just History.NoLowerBound  ) _  = True
-    validLowerBound (Just (History.LowerBound e)) e' = e' >= e
+    validLowerBound :: SafeZone -> Bool
+    validLowerBound (StandardSafeZone _)     = True
+    validLowerBound UnsafeIndefiniteSafeZone = False
 
 {-------------------------------------------------------------------------------
   Internal auxiliary: lifting and shifting events

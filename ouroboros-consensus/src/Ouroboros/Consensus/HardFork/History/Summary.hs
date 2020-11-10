@@ -330,10 +330,9 @@ summarize ledgerTip = \(Shape shape) (Transitions transitions) ->
         hi = case eraSafeZone of
                UnsafeIndefiniteSafeZone ->
                    EraUnbounded
-               StandardSafeZone safeFromTip safeBefore ->
+               StandardSafeZone safeFromTip ->
                    EraEnd
                  . mkUpperBound params lo
-                 . maxSafeBeforeEpoch safeBefore
                  . slotToEpochBound params lo
                  . addSlots safeFromTip
                    -- If the tip is already in this era, safe zone applies from the
@@ -382,25 +381,9 @@ invariantShape = \(Shape shape) ->
     go :: EpochNo -- Lower bound on the start of the era
        -> Exactly xs EraParams -> Except String ()
     go _           ExactlyNil                    = return ()
-    go lowerBound (ExactlyCons curParams shape') = do
-        nextLowerBound <-
-          case safeBeforeEpoch (eraSafeZone curParams) of
-            Nothing ->
-              return $ addEpochs 1 lowerBound
-            Just NoLowerBound ->
-              return $ addEpochs 1 lowerBound
-            Just (LowerBound e) -> do
-              unless (e > lowerBound) $
-                throwError $ mconcat [
-                    "Invalid safeBeforeEpoch in "
-                  , show curParams
-                  , " (should be greater than "
-                  , show lowerBound
-                  ,  ")"
-                  ]
-              return $ e
-
-        go nextLowerBound shape'
+    go lowerBound (ExactlyCons _ shape') =
+        let nextLowerBound = addEpochs 1 lowerBound
+        in go nextLowerBound shape'
 
 -- | Check 'Summary' invariants
 invariantSummary :: Summary xs -> Except String ()
@@ -441,19 +424,6 @@ invariantSummary = \(Summary summary) ->
 
             unless (boundEpoch curEnd > boundEpoch curStart) $
               throwError "Empty era"
-
-            case safeBeforeEpoch (eraSafeZone curParams) of
-              Nothing             -> return ()
-              Just NoLowerBound   -> return ()
-              Just (LowerBound e) ->
-                unless (boundEpoch curEnd >= e) $
-                  throwError $ mconcat [
-                      "Invalid upper epoch bound "
-                    , show (boundEpoch curStart)
-                    , " (should be greater than "
-                    , show e
-                    , ")"
-                    ]
 
             unless (boundSlot curEnd == addSlots slotsInEra (boundSlot curStart)) $
               throwError $ mconcat [

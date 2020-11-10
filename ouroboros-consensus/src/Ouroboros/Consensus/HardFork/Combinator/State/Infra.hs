@@ -229,10 +229,9 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
         case eraSafeZone of
           UnsafeIndefiniteSafeZone ->
               const EraUnbounded
-          StandardSafeZone safeFromTip safeBefore ->
+          StandardSafeZone safeFromTip ->
               EraEnd
             . History.mkUpperBound params start
-            . History.maxSafeBeforeEpoch safeBefore
             . History.slotToEpochBound params start
             . History.addSlots safeFromTip
 

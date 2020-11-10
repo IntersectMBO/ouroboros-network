@@ -514,10 +514,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     shape :: History.Shape (CardanoEras c)
     shape = History.Shape $ Exactly $
-           K (Byron.byronEraParams     History.NoLowerBound genesisByron)
-        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
-        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
-        :* K (Shelley.shelleyEraParams History.NoLowerBound genesisShelley)
+           K (Byron.byronEraParams     genesisByron)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
         :* Nil
 
     cfg :: TopLevelConfig (CardanoBlock c)

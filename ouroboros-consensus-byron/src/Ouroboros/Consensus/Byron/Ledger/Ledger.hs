@@ -268,11 +268,11 @@ instance LedgerSupportsProtocol ByronBlock where
           NotOrigin s -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 -- | To be used for a Byron-to-X (where X is typically Shelley) chain.
-byronEraParams :: HardFork.SafeBeforeEpoch -> Gen.Config -> HardFork.EraParams
-byronEraParams safeBeforeEpoch genesis = HardFork.EraParams {
+byronEraParams :: Gen.Config -> HardFork.EraParams
+byronEraParams genesis = HardFork.EraParams {
       eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
     , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
-    , eraSafeZone   = HardFork.StandardSafeZone (2 * k) safeBeforeEpoch
+    , eraSafeZone   = HardFork.StandardSafeZone (2 * k)
     }
   where
     SecurityParam k = genesisSecurityParam genesis
