@@ -119,6 +119,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X
 -- * "Ouroboros.Consensus.HardFork.Combinator.Unary"
 --   Mostly used in combination with 'DegenFork'.
 --
+-- * "Ouroboros.Consensus.HardFork.Combinator.Nary"
+--   Used for injection into n-ary sums. Alternative to @Unary@.
+--
 -- * Most of @Ouroboros.Consensus.HardFork.Combinator.SingleEra.*@
 --   These types are primarily used internally to define the HFC types.
 --   In a few cases some of the HFC types /are/ types from the SingleEra

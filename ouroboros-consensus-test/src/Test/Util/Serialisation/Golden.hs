@@ -14,6 +14,8 @@
 module Test.Util.Serialisation.Golden (
     Examples (..)
   , combineExamples
+  , mapExamples
+  , prefixExamples
   , Labelled
   , unlabelled
   , labelled
@@ -269,6 +271,29 @@ instance Semigroup (Examples blk) where
 instance Monoid (Examples blk) where
   mempty  = emptyExamples
   mappend = (<>)
+
+mapExamples ::
+     forall blk.
+     (forall a. Labelled a -> Labelled a)
+  -> Examples blk
+  -> Examples blk
+mapExamples f = combineExamples (const f) mempty
+
+-- | Add the given prefix to each labelled example.
+--
+-- When a label is empty, the prefix is used as the label. If the label is not
+-- empty, the prefix and @_@ are prepended.
+prefixExamples :: String -> Examples blk -> Examples blk
+prefixExamples prefix = mapExamples addPrefix
+  where
+    addPrefix :: Labelled a -> Labelled a
+    addPrefix l = [
+          (Just label, x)
+        | (mbLabel, x) <- l
+        , let label = case mbLabel of
+                Nothing  -> prefix
+                Just lbl -> prefix <> "_" <> lbl
+        ]
 
 {-------------------------------------------------------------------------------
   Skeletons
