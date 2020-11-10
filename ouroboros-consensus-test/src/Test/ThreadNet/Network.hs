@@ -965,7 +965,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
       let kaRng = case seed of
                     Seed s -> mkStdGen s
-      let nodeArgs = NodeArgs
+      let nodeKernelArgs = NodeKernelArgs
             { tracers
             , registry
             , cfg                     = pInfoConfig
@@ -994,7 +994,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 }
             }
 
-      nodeKernel <- initNodeKernel nodeArgs
+      nodeKernel <- initNodeKernel nodeKernelArgs
       let mempool = getMempool nodeKernel
       let app = NTN.mkApps
                   nodeKernel
@@ -1007,7 +1007,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                      { canAwaitTimeout  = waitForever
                      , mustReplyTimeout = waitForever
                      })
-                  (NTN.mkHandlers nodeArgs nodeKernel)
+                  (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction
       -- until it appears on the chain. This thread adds robustness for the

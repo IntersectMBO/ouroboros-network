@@ -99,10 +99,10 @@ data Handlers m peer blk = Handlers {
 mkHandlers
   :: forall m blk remotePeer localPeer.
      (IOLike m, LedgerSupportsMempool blk, QueryLedger blk)
-  => NodeArgs   m remotePeer localPeer blk
-  -> NodeKernel m remotePeer localPeer blk
-  -> Handlers   m            localPeer blk
-mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
+  => NodeKernelArgs m remotePeer localPeer blk
+  -> NodeKernel     m remotePeer localPeer blk
+  -> Handlers       m            localPeer blk
+mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
     Handlers {
         hChainSyncServer =
           chainSyncBlocksServer

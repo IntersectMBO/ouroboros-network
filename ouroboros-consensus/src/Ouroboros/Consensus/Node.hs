@@ -35,7 +35,7 @@ module Ouroboros.Consensus.Node
   , LastShutDownWasClean (..)
   , ChainDbArgs (..)
   , HardForkBlockchainTimeArgs (..)
-  , NodeArgs (..)
+  , NodeKernelArgs (..)
   , NodeKernel (..)
   , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
@@ -46,8 +46,8 @@ module Ouroboros.Consensus.Node
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
-  , mkNodeArgs
-  , nodeArgsEnforceInvariants
+  , mkNodeKernelArgs
+  , nodeKernelArgsEnforceInvariants
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
@@ -167,8 +167,9 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
         -> ChainDbArgs Identity m blk
 
       -- | Customise the 'NodeArgs'
-    , rnCustomiseNodeArgs :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-                          -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+    , rnCustomiseNodeKernelArgs ::
+           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Ie 'bfcSalt'
     , rnBfcSalt :: Int
@@ -281,23 +282,24 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 (blockchainTimeTracer rnTraceConsensus)
           }
 
-      nodeArgs   <- nodeArgsEnforceInvariants . rnCustomiseNodeArgs <$>
-                      mkNodeArgs
-                        registry
-                        rnBfcSalt
-                        rnKeepAliveRng
-                        cfg
-                        blockForging
-                        rnTraceConsensus
-                        btime
-                        chainDB
-      nodeKernel <- initNodeKernel nodeArgs
+      nodeKernelArgs <-
+          fmap (nodeKernelArgsEnforceInvariants . rnCustomiseNodeKernelArgs) $
+          mkNodeKernelArgs
+            registry
+            rnBfcSalt
+            rnKeepAliveRng
+            cfg
+            blockForging
+            rnTraceConsensus
+            btime
+            chainDB
+      nodeKernel <- initNodeKernel nodeKernelArgs
       rnNodeKernelHook registry nodeKernel
 
-      let ntnApps = mkNodeToNodeApps   nodeArgs nodeKernel
-          ntcApps = mkNodeToClientApps nodeArgs nodeKernel
+      let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel
+          ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
           diffusionApplications = mkDiffusionApplications
-                                    (miniProtocolParameters nodeArgs)
+                                    (miniProtocolParameters nodeKernelArgs)
                                     ntnApps
                                     ntcApps
 
@@ -313,28 +315,28 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeArgs   m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToNodeVersion blk
       -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ()
-    mkNodeToNodeApps nodeArgs nodeKernel version =
+    mkNodeToNodeApps nodeKernelArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
           rnChainSyncTimeout
-          (NTN.mkHandlers nodeArgs nodeKernel)
+          (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
-      :: NodeArgs   m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToClientVersion blk
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
-    mkNodeToClientApps nodeArgs nodeKernel version =
+    mkNodeToClientApps nodeKernelArgs nodeKernel version =
         NTC.mkApps
           rnTraceNTC
           (NTC.defaultCodecs codecConfig version)
-          (NTC.mkHandlers nodeArgs nodeKernel)
+          (NTC.mkHandlers nodeKernelArgs nodeKernel)
 
     mkDiffusionApplications
       :: MiniProtocolParameters
@@ -469,7 +471,7 @@ mkChainDbArgs
   where
     k = configSecurityParam cfg
 
-mkNodeArgs
+mkNodeKernelArgs
   :: forall m addrNTN addrNTC blk. (RunNode blk, IOLike m)
   => ResourceRegistry m
   -> Int
@@ -479,10 +481,19 @@ mkNodeArgs
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
-  -> m (NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
-mkNodeArgs registry bfcSalt keepAliveRng cfg initBlockForging tracers btime chainDB = do
+  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
+mkNodeKernelArgs
+  registry
+  bfcSalt
+  keepAliveRng
+  cfg
+  initBlockForging
+  tracers
+  btime
+  chainDB
+  = do
     blockForging <- sequence initBlockForging
-    return NodeArgs
+    return NodeKernelArgs
       { tracers
       , registry
       , cfg
@@ -507,14 +518,14 @@ mkNodeArgs registry bfcSalt keepAliveRng cfg initBlockForging tracers btime chai
       , bfcSalt
       }
 
--- | We allow the user running the node to customise the 'NodeArgs' through
--- 'rnCustomiseNodeArgs', but there are some limits to some values. This
--- function makes sure we don't exceed those limits and that the values are
--- consistent.
-nodeArgsEnforceInvariants
-  :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
+-- | We allow the user running the node to customise the 'NodeKernelArgs'
+-- through 'rnCustomiseNodeKernelArgs', but there are some limits to some
+-- values. This function makes sure we don't exceed those limits and that the
+-- values are consistent.
+nodeKernelArgsEnforceInvariants
+  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+nodeKernelArgsEnforceInvariants nodeKernelArgs = nodeKernelArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
         -- would be a protocol violation.
@@ -529,6 +540,8 @@ nodeArgsEnforceInvariants nodeArgs@NodeArgs{..} = nodeArgs
                 (blockFetchPipeliningMax miniProtocolParameters)
         }
     }
+  where
+    NodeKernelArgs{..} = nodeKernelArgs
 
 {-------------------------------------------------------------------------------
   Arguments for use in the real node
@@ -628,7 +641,7 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
       , rnChainDbArgsDefaults =
           updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS
       , rnCustomiseChainDbArgs = id
-      , rnCustomiseNodeArgs
+      , rnCustomiseNodeKernelArgs
       , rnRunDataDiffusion =
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
@@ -655,10 +668,10 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
           , ChainDB.cdbVolatileDbValidation  = ValidateAll
           })
 
-    rnCustomiseNodeArgs ::
-         NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-    rnCustomiseNodeArgs = overBlockFetchConfiguration $
+    rnCustomiseNodeKernelArgs ::
+         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+    rnCustomiseNodeKernelArgs = overBlockFetchConfiguration $
           maybe id
             (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
             srnBfcMaxConcurrencyDeadline
@@ -672,10 +685,10 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
 
 overBlockFetchConfiguration ::
      (BlockFetchConfiguration -> BlockFetchConfiguration)
-  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 overBlockFetchConfiguration f args = args {
       blockFetchConfiguration = f blockFetchConfiguration
     }
   where
-    NodeArgs { blockFetchConfiguration } = args
+    NodeKernelArgs { blockFetchConfiguration } = args

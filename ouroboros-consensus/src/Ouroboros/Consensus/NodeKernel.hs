@@ -15,7 +15,7 @@ module Ouroboros.Consensus.NodeKernel (
     NodeKernel (..)
   , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
-  , NodeArgs (..)
+  , NodeKernelArgs (..)
   , TraceForgeEvent (..)
   , initNodeKernel
   , getMempoolReader
@@ -114,7 +114,7 @@ data MaxTxCapacityOverride
     -- of a block.
 
 -- | Arguments required when initializing a node
-data NodeArgs m remotePeer localPeer blk = NodeArgs {
+data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
@@ -138,11 +138,12 @@ initNodeKernel
        , Ord remotePeer
        , Hashable remotePeer
        )
-    => NodeArgs m remotePeer localPeer blk
+    => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
-initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
-                             , blockForging, chainDB, initChainDB
-                             , blockFetchConfiguration } = do
+initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverride
+                                   , blockForging, chainDB, initChainDB
+                                   , blockFetchConfiguration
+                                   } = do
 
     initChainDB (configStorage cfg) (InitChainDB.fromFull chainDB)
 
@@ -196,11 +197,12 @@ initInternalState
        , NoThunks remotePeer
        , RunNode blk
        )
-    => NodeArgs m remotePeer localPeer blk
+    => NodeKernelArgs m remotePeer localPeer blk
     -> m (InternalState m remotePeer localPeer blk)
-initInternalState NodeArgs { tracers, chainDB, registry, cfg,
-                             blockFetchSize, btime,
-                             mempoolCapacityOverride } = do
+initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
+                                 , blockFetchSize, btime
+                                 , mempoolCapacityOverride
+                                 } = do
     varCandidates <- newTVarIO mempty
     mempool       <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
