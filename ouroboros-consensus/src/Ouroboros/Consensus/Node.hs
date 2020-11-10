@@ -128,13 +128,6 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- | Protocol info
     , rnProtocolInfo :: ProtocolInfo m blk
 
-      -- | Customise the 'ChainDbArgs'
-    , rnCustomiseChainDbArgs :: ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk
-
-      -- | Customise the 'NodeArgs'
-    , rnCustomiseNodeArgs :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-                          -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-
       -- | node-to-node protocol versions to run.
     , rnNodeToNodeVersions   :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
 
@@ -167,6 +160,15 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 
       -- | The " static " ChainDB arguments
     , rnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
+
+      -- | Customise the 'ChainDbArgs'
+    , rnCustomiseChainDbArgs ::
+           ChainDbArgs Identity m blk
+        -> ChainDbArgs Identity m blk
+
+      -- | Customise the 'NodeArgs'
+    , rnCustomiseNodeArgs :: NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                          -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Ie 'bfcSalt'
     , rnBfcSalt :: Int
@@ -591,18 +593,22 @@ stdRunDataDiffusion = runDataDiffusion
 
 -- | Arguments needed even from a standard non-testing invocation.
 data StdRunNodeArgs m blk = StdRunNodeArgs
-  { srnDatabasePath       :: FilePath
+  { srnBfcMaxConcurrencyBulkSync :: Maybe Word
+  , srnBfcMaxConcurrencyDeadline :: Maybe Word
+  , srcChainDbValidateOverride   :: Bool
+    -- ^ If @True@, validate the ChainDB on init no matter what
+  , srnDatabasePath              :: FilePath
     -- ^ Location of the DBs
-  , srnDiffusionArguments :: DiffusionArguments
-  , srnDiffusionTracers   :: DiffusionTracers
-  , srnNetworkMagic       :: NetworkMagic
-  , srnTraceChainDB       :: Tracer m (ChainDB.TraceEvent blk)
+  , srnDiffusionArguments        :: DiffusionArguments
+  , srnDiffusionTracers          :: DiffusionTracers
+  , srnNetworkMagic              :: NetworkMagic
+  , srnTraceChainDB              :: Tracer m (ChainDB.TraceEvent blk)
     -- ^ ChainDB Tracer
   }
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
-stdLowLevelRunNodeArgsIO ::
+stdLowLevelRunNodeArgsIO :: forall blk.
      StdRunNodeArgs IO blk
   -> IO (LowLevelRunNodeArgs
           IO
@@ -620,9 +626,9 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
       , rnCustomiseHardForkBlockchainTimeArgs = id
       , rnKeepAliveRng
       , rnChainDbArgsDefaults =
-          (ChainDB.defaultArgs mkHasFS)
-            { ChainDB.cdbTracer = srnTraceChainDB
-            }
+          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS
+      , rnCustomiseChainDbArgs = id
+      , rnCustomiseNodeArgs
       , rnRunDataDiffusion =
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
@@ -638,3 +644,38 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
   where
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
     mkHasFS = stdMkChainDbHasFS srnDatabasePath
+
+    updateChainDbDefaults ::
+         ChainDbArgs Defaults IO blk
+      -> ChainDbArgs Defaults IO blk
+    updateChainDbDefaults =
+        (\x -> x { ChainDB.cdbTracer = srnTraceChainDB }) .
+        (if not srcChainDbValidateOverride then id else \x -> x
+          { ChainDB.cdbImmutableDbValidation = ValidateAllChunks
+          , ChainDB.cdbVolatileDbValidation  = ValidateAll
+          })
+
+    rnCustomiseNodeArgs ::
+         NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+    rnCustomiseNodeArgs = overBlockFetchConfiguration $
+          maybe id
+            (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
+            srnBfcMaxConcurrencyDeadline
+        . maybe id
+            (\mc bfc -> bfc { bfcMaxConcurrencyBulkSync = mc })
+            srnBfcMaxConcurrencyBulkSync
+
+{-------------------------------------------------------------------------------
+  Miscellany
+-------------------------------------------------------------------------------}
+
+overBlockFetchConfiguration ::
+     (BlockFetchConfiguration -> BlockFetchConfiguration)
+  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+overBlockFetchConfiguration f args = args {
+      blockFetchConfiguration = f blockFetchConfiguration
+    }
+  where
+    NodeArgs { blockFetchConfiguration } = args
