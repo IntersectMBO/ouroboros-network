@@ -60,9 +60,13 @@ import qualified Test.Consensus.Shelley.Examples as Shelley
 
 type Crypto = StandardCrypto
 
--- TODO #2669
 eraExamples :: NP Examples (CardanoEras Crypto)
-eraExamples = Byron.examples :* Shelley.examples :* mempty :* mempty :* Nil
+eraExamples =
+       Byron.examples
+    :* Shelley.examplesShelley
+    :* Shelley.examplesAllegra
+    :* Shelley.examplesMary
+    :* Nil
 
 -- | By using this function, we can't forget to update this test when adding a
 -- new era to 'CardanoEras'.

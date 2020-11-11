@@ -13,7 +13,7 @@ import           Test.Util.Serialisation.Golden
 import           Test.Consensus.Shelley.Examples
 
 tests :: TestTree
-tests = goldenTest_all codecConfig $(getGoldenDir) examples
+tests = goldenTest_all codecConfig $(getGoldenDir) examplesShelley
 
 instance ToGoldenDirectory ShelleyNodeToNodeVersion
   -- Use defaults
