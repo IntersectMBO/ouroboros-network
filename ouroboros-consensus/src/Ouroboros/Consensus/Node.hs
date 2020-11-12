@@ -142,11 +142,6 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
                        -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
                        -> m ()
 
-      -- | Maximum clock skew.
-      --
-      -- Use 'defaultClockSkew' when unsure.
-    , rnMaxClockSkew :: ClockSkew
-
     }
 
 -- | Arguments that a non-testing invocation of 'runWith' would not need to
@@ -200,6 +195,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 
     , rnVersionDataNTN :: versionDataNTN
 
+      -- | Maximum clock skew
+    , rnMaxClockSkew :: ClockSkew
     }
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
@@ -653,6 +650,8 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
             (daDiffusionMode srnDiffusionArguments)
       , rnWithCheckedDB =
           stdWithCheckedDB srnDatabasePath srnNetworkMagic
+      , rnMaxClockSkew =
+          InFuture.defaultClockSkew
       }
   where
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
