@@ -19,7 +19,6 @@ module Ouroboros.Consensus.Block.Forging (
   , checkShouldForge
     -- * 'UpdateInfo'
   , UpdateInfo (..)
-  , castUpdateInfo
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
@@ -54,7 +53,6 @@ type family ForgeStateUpdateError blk :: Type
 newtype ForgeStateUpdateInfo blk = ForgeStateUpdateInfo {
       getForgeStateUpdateInfo :: UpdateInfo
                                    (ForgeStateInfo        blk)
-                                   (ForgeStateInfo        blk)
                                    (ForgeStateUpdateError blk)
     }
 
@@ -68,7 +66,6 @@ castForgeStateUpdateInfo ::
   => ForgeStateUpdateInfo blk -> ForgeStateUpdateInfo blk'
 castForgeStateUpdateInfo =
       ForgeStateUpdateInfo
-    . castUpdateInfo
     . getForgeStateUpdateInfo
 
 -- | Stateful wrapper around block production
@@ -95,8 +92,7 @@ data BlockForging m blk = BlockForging {
       -- When the node can be a leader, this will be called at the start of
       -- each slot, right before calling 'checkCanForge'.
       --
-      -- When 'Updated' or 'Unchanged' is returned, we trace the
-      -- 'ForgeStateInfo'.
+      -- When 'Updated' is returned, we trace the 'ForgeStateInfo'.
       --
       -- When 'UpdateFailed' is returned, we trace the 'ForgeStateUpdateError'
       -- and don't call 'checkCanForge'.
@@ -190,9 +186,6 @@ checkShouldForge BlockForging{..}
           Updated info -> do
             traceWith forgeStateInfoTracer info
             return $ Right info
-          Unchanged info -> do
-            traceWith forgeStateInfoTracer info
-            return $ Right info
           UpdateFailed err ->
             return $ Left err
 
@@ -218,20 +211,8 @@ checkShouldForge BlockForging{..}
 -------------------------------------------------------------------------------}
 
 -- | The result of updating something, e.g., the forge state.
-data UpdateInfo updated unchanged failed =
-    Updated      updated
-  | Unchanged    unchanged
+data UpdateInfo updated failed =
+    Updated updated
+    -- ^ The update have induced no change.
   | UpdateFailed failed
   deriving (Show)
-
-castUpdateInfo ::
-     ( updated   ~ updated'
-     , unchanged ~ unchanged'
-     , failed    ~ failed'
-     )
-  => UpdateInfo updated  unchanged  failed
-  -> UpdateInfo updated' unchanged' failed'
-castUpdateInfo = \case
-    Updated      updated   -> Updated      updated
-    Unchanged    unchanged -> Unchanged    unchanged
-    UpdateFailed failed    -> UpdateFailed failed

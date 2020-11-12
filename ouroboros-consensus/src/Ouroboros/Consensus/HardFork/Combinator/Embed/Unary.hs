@@ -394,9 +394,6 @@ instance Isomorphic ForgeStateUpdateInfo where
         Updated forgeStateInfo ->
           Updated
             (project' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        Unchanged forgeStateInfo ->
-          Unchanged
-            (project' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
         UpdateFailed forgeStateUpdateError ->
           UpdateFailed
             (project' (Proxy @(WrapForgeStateUpdateError blk)) forgeStateUpdateError)
@@ -407,9 +404,6 @@ instance Isomorphic ForgeStateUpdateInfo where
       case forgeStateUpdateInfo of
         Updated forgeStateInfo ->
           Updated
-            (inject' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        Unchanged forgeStateInfo ->
-          Unchanged
             (inject' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
         UpdateFailed forgeStateUpdateError ->
           UpdateFailed

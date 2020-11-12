@@ -136,7 +136,6 @@ hardForkUpdateForgeState blockForging
     injectSingle forgeStateUpdateInfo = ForgeStateUpdateInfo $
         case getForgeStateUpdateInfo forgeStateUpdateInfo of
           Updated      info -> Updated      $ injInfo        index info
-          Unchanged    info -> Unchanged    $ injInfo        index info
           UpdateFailed err  -> UpdateFailed $ injUpdateError index err
       where
         index :: Index '[blk] blk
@@ -189,11 +188,10 @@ hardForkUpdateForgeState blockForging
         inj index (Comp mForgeStateUpdateInfo) =
             K $ ForgeStateUpdateInfo $
               case mForgeStateUpdateInfo of
-                Nothing -> Unchanged $ CurrentEraLacksBlockForging $ eraIndexFromIndex index
+                Nothing -> Updated $ CurrentEraLacksBlockForging $ eraIndexFromIndex index
                 Just forgeStateUpdateInfo ->
                   case getForgeStateUpdateInfo forgeStateUpdateInfo of
                     Updated      info -> Updated      $ injInfo        index info
-                    Unchanged    info -> Unchanged    $ injInfo        index info
                     UpdateFailed err  -> UpdateFailed $ injUpdateError index err
 
 -- | PRECONDITION: the ticked 'ChainDepState', the 'HardForkIsLeader', and the

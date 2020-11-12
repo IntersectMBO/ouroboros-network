@@ -121,7 +121,7 @@ data KESEvolutionError =
   deriving (Show)
 
 -- | Result of evolving the KES key.
-type KESEvolutionInfo = UpdateInfo KESInfo KESInfo KESEvolutionError
+type KESEvolutionInfo = UpdateInfo KESInfo KESEvolutionError
 
 -- | API to interact with the key.
 data HotKey c m = HotKey {
@@ -212,7 +212,7 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 --
 -- When the given KES period is before the start period of the 'HotKey' or
 -- when the given period is before the key's period, we don't evolve the key
--- and return 'Unchanged'.
+-- and return 'Updated'.
 --
 -- When the given KES period is within the range of the 'HotKey' and the given
 -- period is after the key's period, we evolve the key and return 'Updated'.
@@ -238,7 +238,7 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
         -- update the key. 'checkCanForge' will say we can't forge because the
         -- key is not valid yet.
         BeforeKESStart {} ->
-            return (kesState, Unchanged info)
+            return (kesState, Updated info)
 
         -- When the absolute period is after the end period, we can't evolve
         -- anymore and poison the expired key.
@@ -249,7 +249,7 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
         InKESRange targetEvolution
           -- No evolving needed
           | targetEvolution <= kesEvolution info
-          -> return (kesState, Unchanged info)
+          -> return (kesState, Updated info)
 
           -- Evolving needed
           | otherwise

@@ -144,11 +144,11 @@ evolveKey ::
      PraosCrypto c
   => SlotNo
   -> HotKey c
-  -> (HotKey c, UpdateInfo (HotKey c) (HotKey c) HotKeyEvolutionError)
+  -> (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
 evolveKey slotNo hotKey = case hotKey of
     HotKey keyPeriod oldKey
       | keyPeriod >= targetPeriod
-      -> (hotKey, Unchanged hotKey)
+      -> (hotKey, Updated hotKey)
       | otherwise
       -> case updateKES () oldKey keyPeriod of
            Nothing     ->
