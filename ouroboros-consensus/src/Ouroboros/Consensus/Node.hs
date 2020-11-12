@@ -129,7 +129,7 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
     , rnProtocolInfo :: ProtocolInfo m blk
 
       -- | node-to-node protocol versions to run.
-    , rnNodeToNodeVersions   :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
+    , rnNodeToNodeVersions :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
 
       -- | node-to-client protocol versions to run.
     , rnNodeToClientVersions :: Map NodeToClientVersion (BlockNodeToClientVersion blk)
