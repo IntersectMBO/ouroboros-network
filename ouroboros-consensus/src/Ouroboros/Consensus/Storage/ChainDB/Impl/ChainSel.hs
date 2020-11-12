@@ -148,7 +148,7 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
         mapM constructChain suffixesAfterI
       where
         suffixesAfterI :: [NonEmpty (HeaderHash blk)]
-        suffixesAfterI = Paths.candidates succsOf (AF.anchorToPoint i)
+        suffixesAfterI = Paths.maximalCandidates succsOf (AF.anchorToPoint i)
 
         constructChain ::
              NonEmpty (HeaderHash blk)
@@ -510,7 +510,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- ^ The current chain and ledger
       -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger = do
-        let suffixesAfterB = Paths.candidates succsOf (realPointToPoint p)
+        let suffixesAfterB = Paths.maximalCandidates succsOf (realPointToPoint p)
 
         -- Fragments that are anchored at @curHead@, i.e. suffixes of the
         -- current chain.
