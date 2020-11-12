@@ -151,39 +151,39 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
 data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = LowLevelRunNodeArgs {
 
       -- | How to manage the clean-shutdown marker on disk
-      rnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
+      llrnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
 
       -- | The " static " ChainDB arguments
-    , rnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
+    , llrnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
 
       -- | Customise the 'ChainDbArgs'
-    , rnCustomiseChainDbArgs ::
+    , llrnCustomiseChainDbArgs ::
            ChainDbArgs Identity m blk
         -> ChainDbArgs Identity m blk
 
       -- | Customise the 'NodeArgs'
-    , rnCustomiseNodeKernelArgs ::
+    , llrnCustomiseNodeKernelArgs ::
            NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
         -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Ie 'bfcSalt'
-    , rnBfcSalt :: Int
+    , llrnBfcSalt :: Int
 
       -- | Ie 'keepAliveRng'
-    , rnKeepAliveRng :: StdGen
+    , llrnKeepAliveRng :: StdGen
 
       -- | Customise the 'HardForkBlockchainTimeArgs'
-    , rnCustomiseHardForkBlockchainTimeArgs ::
+    , llrnCustomiseHardForkBlockchainTimeArgs ::
            HardForkBlockchainTimeArgs m blk
         -> HardForkBlockchainTimeArgs m blk
 
       -- | See 'NTN.ChainSyncTimeout'
-    , rnChainSyncTimeout :: m NTN.ChainSyncTimeout
+    , llrnChainSyncTimeout :: m NTN.ChainSyncTimeout
 
       -- | How to run the data diffusion applications
       --
       -- 'run' will not return before this does.
-    , rnRunDataDiffusion ::
+    , llrnRunDataDiffusion ::
            ResourceRegistry m
         -> DiffusionApplications
              addrNTN        addrNTC
@@ -191,12 +191,12 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
              m
         -> m ()
 
-    , rnVersionDataNTC :: versionDataNTC
+    , llrnVersionDataNTC :: versionDataNTC
 
-    , rnVersionDataNTN :: versionDataNTN
+    , llrnVersionDataNTN :: versionDataNTN
 
       -- | Maximum clock skew
-    , rnMaxClockSkew :: ClockSkew
+    , llrnMaxClockSkew :: ClockSkew
     }
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
@@ -223,7 +223,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
   -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
-    rnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
+    llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
     withRegistry $ \registry -> do
 
       let systemStart :: SystemStart
@@ -237,19 +237,19 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           inFuture :: CheckInFuture m blk
           inFuture = InFuture.reference
                        (configLedger cfg)
-                       rnMaxClockSkew
+                       llrnMaxClockSkew
                        systemTime
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
-            = rnCustomiseChainDbArgs args
+            = llrnCustomiseChainDbArgs args
             | otherwise
               -- When the last shutdown was not clean, validate the complete
               -- ChainDB to detect and recover from any corruptions. This will
               -- override the default value /and/ the user-customised value of
               -- the 'ChainDB.cdbImmValidation' and the
               -- 'ChainDB.cdbVolValidation' fields.
-            = (rnCustomiseChainDbArgs args) {
+            = (llrnCustomiseChainDbArgs args) {
                   ChainDB.cdbImmutableDbValidation = ValidateAllChunks
                 , ChainDB.cdbVolatileDbValidation  = ValidateAll
                 }
@@ -257,12 +257,12 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
           registry inFuture cfg initLedger
-          rnChainDbArgsDefaults customiseChainDbArgs')
+          llrnChainDbArgsDefaults customiseChainDbArgs')
         ChainDB.closeDB
 
       btime <-
         hardForkBlockchainTime $
-        rnCustomiseHardForkBlockchainTimeArgs $
+        llrnCustomiseHardForkBlockchainTimeArgs $
         HardForkBlockchainTimeArgs
           { hfbtBackoffDelay   = pure $ BackoffDelay 60
           , hfbtGetLedgerState =
@@ -280,11 +280,11 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           }
 
       nodeKernelArgs <-
-          fmap (nodeKernelArgsEnforceInvariants . rnCustomiseNodeKernelArgs) $
+          fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
           mkNodeKernelArgs
             registry
-            rnBfcSalt
-            rnKeepAliveRng
+            llrnBfcSalt
+            llrnKeepAliveRng
             cfg
             blockForging
             rnTraceConsensus
@@ -300,7 +300,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                                     ntnApps
                                     ntcApps
 
-      rnRunDataDiffusion registry diffusionApplications
+      llrnRunDataDiffusion registry diffusionApplications
   where
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -321,7 +321,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
-          rnChainSyncTimeout
+          llrnChainSyncTimeout
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
@@ -352,21 +352,21 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           daResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
-                rnVersionDataNTN
+                llrnVersionDataNTN
                 (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daInitiatorApplication = combineVersions [
               simpleSingletonVersions
                 version
-                rnVersionDataNTN
+                llrnVersionDataNTN
                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
-                rnVersionDataNTC
+                llrnVersionDataNTC
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList rnNodeToClientVersions
             ]
@@ -516,7 +516,7 @@ mkNodeKernelArgs
       }
 
 -- | We allow the user running the node to customise the 'NodeKernelArgs'
--- through 'rnCustomiseNodeKernelArgs', but there are some limits to some
+-- through 'llrnCustomiseNodeKernelArgs', but there are some limits to some
 -- values. This function makes sure we don't exceed those limits and that the
 -- values are consistent.
 nodeKernelArgsEnforceInvariants
@@ -628,29 +628,29 @@ stdLowLevelRunNodeArgsIO :: forall blk.
           NodeToClientVersionData
           blk)
 stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
-    rnBfcSalt      <- stdBfcSaltIO
-    rnKeepAliveRng <- stdKeepAliveRngIO
+    llrnBfcSalt      <- stdBfcSaltIO
+    llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
-      { rnBfcSalt
-      , rnChainSyncTimeout = stdChainSyncTimeout
-      , rnCustomiseHardForkBlockchainTimeArgs = id
-      , rnKeepAliveRng
-      , rnChainDbArgsDefaults =
+      { llrnBfcSalt
+      , llrnChainSyncTimeout = stdChainSyncTimeout
+      , llrnCustomiseHardForkBlockchainTimeArgs = id
+      , llrnKeepAliveRng
+      , llrnChainDbArgsDefaults =
           updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS
-      , rnCustomiseChainDbArgs = id
-      , rnCustomiseNodeKernelArgs
-      , rnRunDataDiffusion =
+      , llrnCustomiseChainDbArgs = id
+      , llrnCustomiseNodeKernelArgs
+      , llrnRunDataDiffusion =
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
-      , rnVersionDataNTC =
+      , llrnVersionDataNTC =
           stdVersionDataNTC srnNetworkMagic
-      , rnVersionDataNTN =
+      , llrnVersionDataNTN =
           stdVersionDataNTN
             srnNetworkMagic
             (daDiffusionMode srnDiffusionArguments)
-      , rnWithCheckedDB =
+      , llrnWithCheckedDB =
           stdWithCheckedDB srnDatabasePath srnNetworkMagic
-      , rnMaxClockSkew =
+      , llrnMaxClockSkew =
           InFuture.defaultClockSkew
       }
   where
@@ -667,10 +667,10 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
           , ChainDB.cdbVolatileDbValidation  = ValidateAll
           })
 
-    rnCustomiseNodeKernelArgs ::
+    llrnCustomiseNodeKernelArgs ::
          NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-    rnCustomiseNodeKernelArgs = overBlockFetchConfiguration $
+    llrnCustomiseNodeKernelArgs = overBlockFetchConfiguration $
           maybe id
             (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
             srnBfcMaxConcurrencyDeadline
