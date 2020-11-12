@@ -205,7 +205,7 @@ run :: forall blk.
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
   -> IO ()
-run args stdArgs = stdLowLevelRunNodeArgsIO stdArgs >>= runWith args
+run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 
 -- | Start a node.
 --
@@ -611,7 +611,6 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
     -- ^ Location of the DBs
   , srnDiffusionArguments        :: DiffusionArguments
   , srnDiffusionTracers          :: DiffusionTracers
-  , srnNetworkMagic              :: NetworkMagic
   , srnTraceChainDB              :: Tracer m (ChainDB.TraceEvent blk)
     -- ^ ChainDB Tracer
   }
@@ -620,7 +619,8 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
      forall blk. RunNode blk
-  => StdRunNodeArgs IO blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk
+  -> StdRunNodeArgs IO blk
   -> IO (LowLevelRunNodeArgs
           IO
           RemoteAddress
@@ -628,7 +628,7 @@ stdLowLevelRunNodeArgsIO ::
           NodeToNodeVersionData
           NodeToClientVersionData
           blk)
-stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
@@ -644,23 +644,26 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
       , llrnVersionDataNTC =
-          stdVersionDataNTC srnNetworkMagic
+          stdVersionDataNTC networkMagic
       , llrnVersionDataNTN =
           stdVersionDataNTN
-            srnNetworkMagic
+            networkMagic
             (daDiffusionMode srnDiffusionArguments)
       , llrnNodeToNodeVersions =
           supportedNodeToNodeVersions (Proxy @blk)
       , llrnNodeToClientVersions =
           supportedNodeToClientVersions (Proxy @blk)
       , llrnWithCheckedDB =
-          stdWithCheckedDB srnDatabasePath srnNetworkMagic
+          stdWithCheckedDB srnDatabasePath networkMagic
       , llrnMaxClockSkew =
           InFuture.defaultClockSkew
       }
   where
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
     mkHasFS = stdMkChainDbHasFS srnDatabasePath
+
+    networkMagic :: NetworkMagic
+    networkMagic = getNetworkMagic $ configBlock $ pInfoConfig rnProtocolInfo
 
     updateChainDbDefaults ::
          ChainDbArgs Defaults IO blk
