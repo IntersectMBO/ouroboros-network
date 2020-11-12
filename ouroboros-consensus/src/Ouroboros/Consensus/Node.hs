@@ -128,12 +128,6 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- | Protocol info
     , rnProtocolInfo :: ProtocolInfo m blk
 
-      -- | node-to-node protocol versions to run.
-    , rnNodeToNodeVersions :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
-
-      -- | node-to-client protocol versions to run.
-    , rnNodeToClientVersions :: Map NodeToClientVersion (BlockNodeToClientVersion blk)
-
       -- | Hook called after the initialisation of the 'NodeKernel'
       --
       -- Called on the 'NodeKernel' after creating it, but before the network
@@ -194,6 +188,12 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
     , llrnVersionDataNTC :: versionDataNTC
 
     , llrnVersionDataNTN :: versionDataNTN
+
+      -- | node-to-node protocol versions to run.
+    , llrnNodeToNodeVersions :: Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
+
+      -- | node-to-client protocol versions to run.
+    , llrnNodeToClientVersions :: Map NodeToClientVersion (BlockNodeToClientVersion blk)
 
       -- | Maximum clock skew
     , llrnMaxClockSkew :: ClockSkew
@@ -354,21 +354,21 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 version
                 llrnVersionDataNTN
                 (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
+            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
             ]
         , daInitiatorApplication = combineVersions [
               simpleSingletonVersions
                 version
                 llrnVersionDataNTN
                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList rnNodeToNodeVersions
+            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
                 llrnVersionDataNTC
                 (NTC.responder version $ ntcApps blockVersion)
-            | (version, blockVersion) <- Map.toList rnNodeToClientVersions
+            | (version, blockVersion) <- Map.toList llrnNodeToClientVersions
             ]
         , daErrorPolicies = consensusErrorPolicy
         }
@@ -618,8 +618,9 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
-stdLowLevelRunNodeArgsIO :: forall blk.
-     StdRunNodeArgs IO blk
+stdLowLevelRunNodeArgsIO ::
+     forall blk. RunNode blk
+  => StdRunNodeArgs IO blk
   -> IO (LowLevelRunNodeArgs
           IO
           RemoteAddress
@@ -648,6 +649,10 @@ stdLowLevelRunNodeArgsIO StdRunNodeArgs{..} = do
           stdVersionDataNTN
             srnNetworkMagic
             (daDiffusionMode srnDiffusionArguments)
+      , llrnNodeToNodeVersions =
+          supportedNodeToNodeVersions (Proxy @blk)
+      , llrnNodeToClientVersions =
+          supportedNodeToClientVersions (Proxy @blk)
       , llrnWithCheckedDB =
           stdWithCheckedDB srnDatabasePath srnNetworkMagic
       , llrnMaxClockSkew =
