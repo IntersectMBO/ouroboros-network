@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceIteratorEvent (..)
   , LgrDB.TraceLedgerReplayEvent
     -- * Re-exported for convenience
+  , Args.RelativeMountPoint (..)
   , ImmutableDB.ImmutableDbSerialiseConstraints
   , LgrDB.LgrDbSerialiseConstraints
   , VolatileDB.VolatileDbSerialiseConstraints

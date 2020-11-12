@@ -130,7 +130,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-import           System.FilePath ((</>))
 
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
@@ -144,7 +143,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.VolatileDB.API
@@ -169,12 +167,12 @@ data VolatileDbArgs f m blk = VolatileDbArgs {
     , volValidationPolicy :: BlockValidationPolicy
     }
 
--- | Default arguments when using the 'IO' monad
-defaultArgs :: FilePath -> VolatileDbArgs Defaults IO blk
-defaultArgs fp = VolatileDbArgs {
+-- | Default arguments
+defaultArgs :: Applicative m => SomeHasFS m -> VolatileDbArgs Defaults m blk
+defaultArgs volHasFS = VolatileDbArgs {
       volCheckIntegrity   = NoDefault
     , volCodecConfig      = NoDefault
-    , volHasFS            = SomeHasFS $ ioHasFS $ MountPoint (fp </> "volatile")
+    , volHasFS
     , volMaxBlocksPerFile = mkBlocksPerFile 1000
     , volTracer           = nullTracer
     , volValidationPolicy = NoValidation

@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   ( ChainDbArgs (..)
   , ChainDbSpecificArgs (..)
+  , RelativeMountPoint (..)
   , defaultArgs
     -- * Internal
   , fromChainDbArgs
@@ -125,17 +126,24 @@ defaultSpecificArgs = ChainDbSpecificArgs {
     , cdbsTracer          = nullTracer
     }
 
--- | Default arguments for use within IO
+-- | Default arguments
 --
 -- See 'ImmutableDB.defaultArgs', 'VolatileDB.defaultArgs', 'LgrDB.defaultArgs',
 -- and 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
-defaultArgs :: FilePath -> ChainDbArgs Defaults IO blk
-defaultArgs fp = toChainDbArgs (ImmutableDB.defaultArgs fp)
-                               (VolatileDB.defaultArgs  fp)
-                               (LgrDB.defaultArgs       fp)
-                               defaultSpecificArgs
+defaultArgs :: forall m blk.
+     Monad m
+  => (RelativeMountPoint -> SomeHasFS m) -> ChainDbArgs Defaults m blk
+defaultArgs mkFS = toChainDbArgs (ImmutableDB.defaultArgs immFS)
+                                 (VolatileDB.defaultArgs  volFS)
+                                 (LgrDB.defaultArgs       lgrFS)
+                                 defaultSpecificArgs
+  where
+    immFS, volFS, lgrFS :: SomeHasFS m
 
+    immFS = mkFS $ RelativeMountPoint "immutable"
+    volFS = mkFS $ RelativeMountPoint "volatile"
+    lgrFS = mkFS $ RelativeMountPoint "ledger"
 
 -- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
@@ -224,3 +232,12 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
     , cdbGcInterval             = cdbsGcInterval
     , cdbBlocksToAddSize        = cdbsBlocksToAddSize
     }
+
+{-------------------------------------------------------------------------------
+  Relative mount points
+-------------------------------------------------------------------------------}
+
+-- | A relative path for a 'MountPoint'
+--
+-- The root is determined by context.
+newtype RelativeMountPoint = RelativeMountPoint FilePath

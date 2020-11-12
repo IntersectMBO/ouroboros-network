@@ -65,6 +65,7 @@ module Ouroboros.Network.NodeToNode (
 
   -- * Re-exports
   , ConnectionId (..)
+  , RemoteAddress
   , RemoteConnectionId
   , ProtocolLimitFailure
   , Handshake
@@ -749,4 +750,5 @@ localNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = []
     }
 
-type RemoteConnectionId = ConnectionId Socket.SockAddr
+type RemoteAddress      = Socket.SockAddr
+type RemoteConnectionId = ConnectionId RemoteAddress

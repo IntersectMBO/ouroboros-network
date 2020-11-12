@@ -158,11 +158,11 @@ mkHandlers
      , LedgerSupportsProtocol blk
      , Ord remotePeer
      )
-  => NodeArgs   m remotePeer localPeer blk
-  -> NodeKernel m remotePeer localPeer blk
-  -> Handlers   m remotePeer           blk
+  => NodeKernelArgs m remotePeer localPeer blk
+  -> NodeKernel     m remotePeer localPeer blk
+  -> Handlers       m remotePeer           blk
 mkHandlers
-      NodeArgs {keepAliveRng, miniProtocolParameters}
+      NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient =

@@ -6,6 +6,7 @@
 
 module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
     BackoffDelay (..),
+    HardForkBlockchainTimeArgs (..),
     hardForkBlockchainTime,
   ) where
 
@@ -46,26 +47,26 @@ import           Ouroboros.Consensus.Util.Time
 -- incur computational overhead.)
 newtype BackoffDelay = BackoffDelay NominalDiffTime
 
+data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
+  { hfbtBackoffDelay   :: m BackoffDelay
+    -- ^ See 'BackoffDelay'
+  , hfbtGetLedgerState :: STM m (LedgerState blk)
+  , hfbtLedgerConfig   :: LedgerConfig blk
+  , hfbtRegistry       :: ResourceRegistry m
+  , hfbtSystemTime     :: SystemTime m
+  , hfbtTracer         :: Tracer m (RelativeTime, HF.PastHorizonException)
+    -- ^ Tracer used when current slot is unknown
+  }
+
 -- | 'BlockchainTime' instance with support for the hard fork history
 hardForkBlockchainTime :: forall m blk.
                           ( IOLike m
                           , HasHardForkHistory blk
                           , HasCallStack
                           )
-                       => ResourceRegistry m
-                       -> Tracer m (RelativeTime, HF.PastHorizonException)
-                       -- ^ Tracer used when current slot is unknown
-                       -> SystemTime m
-                       -> LedgerConfig blk
-                       -> m BackoffDelay
-                       -> STM m (LedgerState blk)
+                       => HardForkBlockchainTimeArgs m blk
                        -> m (BlockchainTime m)
-hardForkBlockchainTime registry
-                       tracer
-                       time@SystemTime{..}
-                       cfg
-                       backoffDelay
-                       getLedgerState = do
+hardForkBlockchainTime args = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
     systemTimeWait
 
@@ -78,6 +79,15 @@ hardForkBlockchainTime registry
         getCurrentSlot = readTVar slotVar
       }
   where
+    HardForkBlockchainTimeArgs
+      { hfbtBackoffDelay   = backoffDelay
+      , hfbtGetLedgerState = getLedgerState
+      , hfbtLedgerConfig   = cfg
+      , hfbtRegistry       = registry
+      , hfbtSystemTime     = time@SystemTime{..}
+      , hfbtTracer         = tracer
+      } = args
+
     summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
     summarize st = hardForkSummary cfg st
 
