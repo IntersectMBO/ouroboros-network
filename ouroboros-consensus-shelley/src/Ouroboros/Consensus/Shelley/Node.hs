@@ -167,7 +167,7 @@ shelleySharedBlockForging
           forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
         , canBeLeader      = canBeLeader
         , updateForgeState = \_ curSlot _ ->
-                                 ForgeStateUpdateInfo <$>
+                                 forgeStateUpdateInfoFromUpdateInfo <$>
                                    HotKey.evolve hotKey (slotToPeriod curSlot)
         , checkCanForge    = \cfg curSlot _tickedChainDepState ->
                                  tpraosCheckCanForge

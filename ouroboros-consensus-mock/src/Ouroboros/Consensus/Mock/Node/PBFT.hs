@@ -87,7 +87,7 @@ pbftBlockForging ::
 pbftBlockForging canBeLeader = BlockForging {
       forgeLabel       = "pbftBlockForging"
     , canBeLeader
-    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdateInfo $ Updated ()
+    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
                            return $
                              pbftCheckCanForge
