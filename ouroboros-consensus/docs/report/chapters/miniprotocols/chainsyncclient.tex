@@ -1,0 +1,14 @@
+\chapter{Chain sync client}
+\label{chainsyncclient}
+
+\section{Trimming}
+\label{chainsyncclient:trimming}
+
+\section{Interface to the block fetch logic}
+\label{chainsyncclient:plausiblecandidates}
+
+We should discuss here the (very subtle!) reasoning about how we establish
+the precondition that allows us to compare candidates
+(\cref{chainsel:fragments:precondition}). See
+\lstinline!plausibleCandidateChain! in \lstinline!NodeKernel!
+(PR \#2735).
