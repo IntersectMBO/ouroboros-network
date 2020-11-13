@@ -237,8 +237,8 @@ maxSafeBeforeEpoch (LowerBound e') e = max e' e
 
 instance Serialise SafeBeforeEpoch where
   encode = \case
-      NoLowerBound    -> encodeListLen 1 <> encodeWord8 0
-      LowerBound e    -> encodeListLen 2 <> encodeWord8 1 <> encode e
+      NoLowerBound -> encodeListLen 1 <> encodeWord8 0
+      LowerBound e -> encodeListLen 2 <> encodeWord8 1 <> encode e
   decode = do
       size <- decodeListLen
       tag  <- decodeWord8
