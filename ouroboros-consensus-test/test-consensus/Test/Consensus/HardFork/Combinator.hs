@@ -59,8 +59,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-import           Ouroboros.Consensus.HardFork.History (EraParams (..),
-                     noLowerBoundSafeZone)
+import           Ouroboros.Consensus.HardFork.History (EraParams (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 
 import           Test.ThreadNet.General
@@ -156,7 +155,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         EraParams
         <$> testSetupEpochSize
         <*> testSetupSlotLength
-        <*> AB (noLowerBoundSafeZone (safeFromTipA k))
+        <*> AB (History.StandardSafeZone (safeFromTipA k))
                (safeZoneB k)
 
     shape :: History.Shape '[BlockA, BlockB]

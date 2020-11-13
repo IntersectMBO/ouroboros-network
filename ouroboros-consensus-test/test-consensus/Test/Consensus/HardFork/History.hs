@@ -679,8 +679,8 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
         mNextLo :: Maybe EpochNo
         mNextLo =
             case HF.eraSafeZone eraParams of
-              HF.UnsafeIndefiniteSafeZone                -> Nothing
-              HF.StandardSafeZone safeFromTip safeBefore -> Just $
+              HF.UnsafeIndefiniteSafeZone     -> Nothing
+              HF.StandardSafeZone safeFromTip -> Just $
                 -- The 'EventTime' of the first event after the safe zone
                 -- (The @+ 1@ here is required because the first step is to skip
                 -- over the 'Confirm' itself)
@@ -689,10 +689,9 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
                                       (stepEventTime eraParams)
                                       (safeFromTip + 1)
                                       timeEvent
-                in HF.maxSafeBeforeEpoch safeBefore $
-                     if eventTimeEpochSlot afterSafeZone == 0
-                       then eventTimeEpochNo afterSafeZone
-                       else eventTimeEpochNo afterSafeZone + 1
+                in  if eventTimeEpochSlot afterSafeZone == 0
+                      then eventTimeEpochNo afterSafeZone
+                      else eventTimeEpochNo afterSafeZone + 1
 
         pickStartOfNextEra :: EpochNo -> Gen EpochNo
         pickStartOfNextEra lo = (\d -> HF.addEpochs d lo) <$> choose (0, 10)
@@ -764,12 +763,10 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
        -> ([Event], [Event])
     go acc _ [] =
         (reverse acc, [])
-    go acc (HF.StandardSafeZone safeFromTip safeBefore) (e:es)
+    go acc (HF.StandardSafeZone safeFromTip) (e:es)
         -- Interpret the 'SafeZone' parameters
-      | eventTimeEpochNo (eventTime e) `before` safeBefore =
-          go (e:acc) (HF.StandardSafeZone (pred' safeFromTip) safeBefore) es
       | safeFromTip > 0 =
-          go (e:acc) (HF.StandardSafeZone (pred  safeFromTip) safeBefore) es
+          go (e:acc) (HF.StandardSafeZone (pred  safeFromTip)) es
       | otherwise =
           let (sameEpoch, rest) = span inLastEpoch (e:es)
           in (reverse acc ++ sameEpoch, rest)
@@ -784,25 +781,6 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
     go acc HF.UnsafeIndefiniteSafeZone (e:es) =
         go (e:acc) HF.UnsafeIndefiniteSafeZone es
 
-    before :: EpochNo -> HF.SafeBeforeEpoch -> Bool
-    before _ HF.NoLowerBound    = False
-    before e (HF.LowerBound e') = e < e'
-
-    -- Example. Suppose
-    --
-    -- * 'safeFromTip'     == 2
-    -- * 'safeBeforeEpoch' == 4
-    -- * 'eraEpochSize'    == 5
-    --
-    -- This means that the next era cannot start until slot 4 * 5 = 20.
-    -- If we are currently at slot 10, the safe zone extends to slot 20.
-    -- If we are currently at slot 19, the safe zone extends to slot 19 + 2 = 21.
-    --
-    -- This means the 'safeFromTip' is decremented even if we haven't reached
-    -- 'safeBeforeEpoch' yet, and will stay at 0 when it reaches 0.
-    pred' :: Word64 -> Word64
-    pred' 0 = 0
-    pred' n = pred n
 
 {-------------------------------------------------------------------------------
   Relation to the HardForkLedgerView

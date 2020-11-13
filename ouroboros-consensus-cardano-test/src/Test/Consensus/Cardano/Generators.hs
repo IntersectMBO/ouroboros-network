@@ -398,15 +398,9 @@ instance Arbitrary History.EraEnd where
       , return History.EraUnbounded
       ]
 
-instance Arbitrary History.SafeBeforeEpoch where
-  arbitrary = oneof
-      [ return History.NoLowerBound
-      , History.LowerBound . EpochNo <$> arbitrary
-      ]
-
 instance Arbitrary History.SafeZone where
   arbitrary = oneof
-      [ History.StandardSafeZone <$> arbitrary <*> arbitrary
+      [ History.StandardSafeZone <$> arbitrary
       , return History.UnsafeIndefiniteSafeZone
       ]
 

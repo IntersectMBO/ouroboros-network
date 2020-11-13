@@ -105,11 +105,8 @@ erasUnfoldAtMost f (Eras eras) = go eras
 -------------------------------------------------------------------------------}
 
 -- | Generate era parameters
---
--- Need to know the start of the era to generate a valid 'HF.LowerBound'.
--- We do /not/ assume that the 'safeFromTip' must be less than an epoch.
-genEraParams :: EpochNo -> Gen HF.EraParams
-genEraParams startOfEra = do
+genEraParams :: Gen HF.EraParams
+genEraParams = do
     eraEpochSize  <- EpochSize         <$> choose (1, 10)
     eraSlotLength <- slotLengthFromSec <$> choose (1, 5)
     eraSafeZone   <- genSafeZone
@@ -117,34 +114,24 @@ genEraParams startOfEra = do
   where
     genSafeZone :: Gen HF.SafeZone
     genSafeZone = oneof [
-          do safeFromTip <- choose (1, 10)
-             safeBefore  <- genSafeBeforeEpoch
-             return $ HF.StandardSafeZone safeFromTip safeBefore
+          HF.StandardSafeZone <$> choose (1, 10)
         , return HF.UnsafeIndefiniteSafeZone
-        ]
-
-    genSafeBeforeEpoch :: Gen HF.SafeBeforeEpoch
-    genSafeBeforeEpoch = oneof [
-          return HF.NoLowerBound
-        , (\n -> HF.LowerBound (HF.addEpochs n startOfEra)) <$> choose (1, 5)
         ]
 
 -- | Generate 'EpochNo' for the start of the next era
 genStartOfNextEra :: EpochNo ->  HF.EraParams -> Gen (Maybe EpochNo)
 genStartOfNextEra startOfEra HF.EraParams{..} =
-    case HF.safeBeforeEpoch eraSafeZone of
-      Nothing     -> return Nothing
-      Just mBound -> Just <$>
-        case mBound of
-          HF.LowerBound e -> (\n -> HF.addEpochs n e         ) <$> choose (0, 10)
-          HF.NoLowerBound -> (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)
+    case eraSafeZone of
+      HF.UnsafeIndefiniteSafeZone -> return Nothing
+      HF.StandardSafeZone _       ->
+        Just . (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)
 
 genShape :: Eras xs -> Gen (HF.Shape xs)
 genShape eras = HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
   where
     genParams :: Era -> EpochNo -> Gen (HF.EraParams, EpochNo)
     genParams _era startOfThis = do
-        params      <- genEraParams      startOfThis
+        params      <- genEraParams
         startOfNext <- genStartOfNextEra startOfThis params
         -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
         -- era. This means we should not be generating any events for any
@@ -159,7 +146,7 @@ genSummary is =
   where
     genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.EraEnd)
     genEraSummary _era lo = do
-        params <- genEraParams (HF.boundEpoch lo)
+        params <- genEraParams
         hi     <- genUpperBound lo params
         return (HF.EraSummary lo hi params, hi)
 

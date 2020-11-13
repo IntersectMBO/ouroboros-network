@@ -249,7 +249,7 @@ blockForgingB = BlockForging {
 -- safezone. However, we give it a default one anyway, since that makes the
 -- test more realistic.
 safeZoneB :: SecurityParam -> History.SafeZone
-safeZoneB (SecurityParam k) = History.noLowerBoundSafeZone k
+safeZoneB (SecurityParam k) = History.StandardSafeZone k
 
 data instance GenTx BlockB
   deriving (Show, Eq, Generic, NoThunks, Serialise)

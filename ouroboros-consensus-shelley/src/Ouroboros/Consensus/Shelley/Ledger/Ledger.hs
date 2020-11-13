@@ -110,15 +110,12 @@ shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
 shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
 
 shelleyEraParams ::
-     HardFork.SafeBeforeEpoch
-  -> SL.ShelleyGenesis era
+     SL.ShelleyGenesis era
   -> HardFork.EraParams
-shelleyEraParams safeBeforeEpoch genesis = HardFork.EraParams {
+shelleyEraParams genesis = HardFork.EraParams {
       eraEpochSize  = SL.sgEpochLength genesis
     , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
-    , eraSafeZone   = HardFork.StandardSafeZone
-                        stabilityWindow
-                        safeBeforeEpoch
+    , eraSafeZone   = HardFork.StandardSafeZone stabilityWindow
     }
   where
     stabilityWindow =

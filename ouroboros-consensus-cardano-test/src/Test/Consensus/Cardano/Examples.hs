@@ -138,16 +138,16 @@ instance Inject Examples where
 -------------------------------------------------------------------------------}
 
 byronEraParams :: History.EraParams
-byronEraParams = Byron.byronEraParams History.NoLowerBound Byron.ledgerConfig
+byronEraParams = Byron.byronEraParams Byron.ledgerConfig
 
 shelleyEraParams :: History.EraParams
-shelleyEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
+shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
 allegraEraParams :: History.EraParams
-allegraEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
+allegraEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
 maryEraParams :: History.EraParams
-maryEraParams = Shelley.shelleyEraParams History.NoLowerBound Shelley.testShelleyGenesis
+maryEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
 -- | We use 10, 20, 30, 40, ... as the transition epochs
 shelleyTransitionEpoch :: EpochNo
