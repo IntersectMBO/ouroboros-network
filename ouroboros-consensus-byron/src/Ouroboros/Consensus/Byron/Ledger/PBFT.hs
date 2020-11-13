@@ -74,7 +74,7 @@ instance BlockSupportsProtocol ByronBlock where
     where
       epochSlots = byronEpochSlots cfg
 
-  selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
+  selectView _ = mkPBftSelectView
 
 toPBftLedgerView :: Delegation.Map -> PBftLedgerView PBftByronCrypto
 toPBftLedgerView = PBftLedgerView . Delegation.unMap

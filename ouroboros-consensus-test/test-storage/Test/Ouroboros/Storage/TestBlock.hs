@@ -100,7 +100,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Signed
@@ -461,32 +460,34 @@ mkNextEBB canContainEBB tb =
   Test infrastructure: protocol
 -------------------------------------------------------------------------------}
 
-data BftWithEBBs
+data BftWithEBBsSelectView = BftWithEBBsSelectView {
+      bebbBlockNo     :: BlockNo
+    , bebbIsEBB       :: IsEBB
+    , bebbChainLength :: ChainLength
+    , bebbHash        :: TestHeaderHash
+    }
+  deriving (Show, Eq)
 
-ebbAwareCompareChains
-    :: (BlockNo, IsEBB, ChainLength, TestHeaderHash)
-    -> (BlockNo, IsEBB, ChainLength, TestHeaderHash)
-    -> Ordering
-ebbAwareCompareChains (lBlockNo, lIsEBB, lChainLength, lHash)
-                      (rBlockNo, rIsEBB, rChainLength, rHash) =
-    -- Prefer the highest block number, as it is a proxy for chain length
-    case lBlockNo `compare` rBlockNo of
-      LT -> LT
-      GT -> GT
-      -- If the block numbers are the same, check if one of them is an EBB.
-      -- An EBB has the same block number as the block before it, so the
-      -- chain ending with an EBB is actually longer than the one ending
-      -- with a regular block.
-      --
-      -- In case of a tie, look at the real chain length, so that we never
-      -- prefer a shorter chain over a longer one, see 'ChainLength'.
-      --
-      -- In case of another tie, pick the largest hash, so that the model and
-      -- the implementation will make the same choice, regardless
-      -- implementation details (e.g., sort order).
-      EQ -> mconcat
-        [ score lIsEBB `compare` score rIsEBB
+instance Ord BftWithEBBsSelectView where
+  compare (BftWithEBBsSelectView lBlockNo lIsEBB lChainLength lHash)
+          (BftWithEBBsSelectView rBlockNo rIsEBB rChainLength rHash) =
+      mconcat [
+          -- Prefer the highest block number, as it is a proxy for chain length
+          lBlockNo `compare` rBlockNo
+
+          -- If the block numbers are the same, check if one of them is an EBB.
+          -- An EBB has the same block number as the block before it, so the
+          -- chain ending with an EBB is actually longer than the one ending
+          -- with a regular block.
+        , score lIsEBB `compare` score rIsEBB
+
+          -- In case of a tie, look at the real chain length, so that we never
+          -- prefer a shorter chain over a longer one, see 'ChainLength'.
         , lChainLength `compare` rChainLength
+
+        -- In case of another tie, pick the largest hash, so that the model and
+        -- the implementation will make the same choice, regardless
+        -- implementation details (e.g., sort order).
         , lHash        `compare` rHash
         ]
    where
@@ -494,13 +495,8 @@ ebbAwareCompareChains (lBlockNo, lIsEBB, lChainLength, lHash)
      score IsEBB    = 1
      score IsNotEBB = 0
 
-instance ChainSelection BftWithEBBs where
-  type SelectView BftWithEBBs = (BlockNo, IsEBB, ChainLength, TestHeaderHash)
-
-  compareChains _ _ = ebbAwareCompareChains
-
 type instance BlockProtocol TestBlock =
-  ModChainSel (Bft BftMockCrypto) BftWithEBBs
+  ModChainSel (Bft BftMockCrypto) BftWithEBBsSelectView
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state
@@ -526,12 +522,12 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
-  selectView _ hdr =
-      ( blockNo hdr
-      , headerToIsEBB hdr
-      , thChainLength (unTestHeader hdr)
-      , blockHash hdr
-      )
+  selectView _ hdr = BftWithEBBsSelectView {
+        bebbBlockNo     = blockNo hdr
+      , bebbIsEBB       = headerToIsEBB hdr
+      , bebbChainLength = thChainLength (unTestHeader hdr)
+      , bebbHash        = blockHash hdr
+      }
 
 data TestBlockError =
     -- | The hashes don't line up
@@ -659,7 +655,7 @@ testInitExtLedger = ExtLedgerState {
 mkTestConfig :: SecurityParam -> ChunkSize -> TopLevelConfig TestBlock
 mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
     TopLevelConfig {
-        topLevelConfigProtocol = McsConsensusConfig () $ BftConfig {
+        topLevelConfigProtocol = McsConsensusConfig $ BftConfig {
             bftParams  = BftParams {
                              bftSecurityParam = k
                            , bftNumNodes      = numCoreNodes

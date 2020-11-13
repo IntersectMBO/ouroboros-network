@@ -115,12 +115,15 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
     let curChain          = Empty (AF.castAnchor i)
         curChainAndLedger = VF.ValidatedFragment curChain ledger
 
-    case NE.nonEmpty (filter (preferAnchoredCandidate cfg curChain) chains) of
+    case NE.nonEmpty (filter (preferAnchoredCandidate bcfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
       Nothing      -> return curChainAndLedger
       Just chains' -> maybe curChainAndLedger toChainAndLedger <$>
         chainSelection' curChainAndLedger chains'
   where
+    bcfg :: BlockConfig blk
+    bcfg = configBlock cfg
+
     -- | Turn the 'ValidatedChainDiff' into a 'ChainAndLedger'.
     --
     -- The rollback of the 'ChainDiff' must be empty, as the suffix starts
@@ -177,14 +180,14 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
         assert (all ((LgrDB.currentPoint ledger ==) .
                      castPoint . AF.anchorPoint)
                     candidates) $
-        assert (all (preferAnchoredCandidate cfg curChain) candidates) $
+        assert (all (preferAnchoredCandidate bcfg curChain) candidates) $
         chainSelection chainSelEnv (Diff.extend <$> candidates)
       where
         curChain = VF.validatedFragment curChainAndLedger
         ledger   = VF.validatedLedger   curChainAndLedger
         chainSelEnv = ChainSelEnv
           { lgrDB
-          , cfg
+          , bcfg
           , varInvalid
           , varFutureBlocks
           , futureCheck
@@ -491,7 +494,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     mkChainSelEnv :: ChainAndLedger blk -> ChainSelEnv m blk
     mkChainSelEnv curChainAndLedger = ChainSelEnv
       { lgrDB             = cdbLgrDB
-      , cfg               = cdbTopLevelConfig
+      , bcfg              = configBlock cdbTopLevelConfig
       , varInvalid        = cdbInvalid
       , varFutureBlocks   = cdbFutureBlocks
       , futureCheck       = cdbCheckInFuture
@@ -529,7 +532,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
         let chainDiffs = NE.nonEmpty
-              $ NE.filter ( preferAnchoredCandidate cdbTopLevelConfig curChain
+              $ NE.filter ( preferAnchoredCandidate (bcfg chainSelEnv) curChain
                           . Diff.getSuffix
                           )
               $ fmap Diff.extend candidates
@@ -587,7 +590,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           -- blocks, so it satisfies the precondition of 'preferCandidate'.
             fmap
               ( filter
-                  ( preferAnchoredCandidate cdbTopLevelConfig curChain
+                  ( preferAnchoredCandidate (bcfg chainSelEnv) curChain
                   . Diff.getSuffix
                   )
               )
@@ -745,7 +748,7 @@ getKnownHeaderThroughCache volatileDB hash = gets (Map.lookup hash) >>= \case
 data ChainSelEnv m blk = ChainSelEnv
     { lgrDB             :: LgrDB m blk
     , trace             :: TraceValidationEvent blk -> m ()
-    , cfg               :: TopLevelConfig blk
+    , bcfg              :: BlockConfig blk
     , varInvalid        :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
     , varFutureBlocks   :: StrictTVar m (FutureBlocks blk)
     , futureCheck       :: CheckInFuture m blk
@@ -774,20 +777,20 @@ chainSelection
      -- or 'Nothing' if there is no valid chain diff preferred over the
      -- current chain.
 chainSelection chainSelEnv chainDiffs =
-    assert (all (preferAnchoredCandidate cfg curChain . Diff.getSuffix)
+    assert (all (preferAnchoredCandidate bcfg curChain . Diff.getSuffix)
                 chainDiffs) $
     assert (all (isJust . Diff.apply curChain)
                 chainDiffs) $
     go (sortCandidates (NE.toList chainDiffs))
   where
-    ChainSelEnv { cfg, curChainAndLedger, varInvalid, varFutureBlocks } =
+    ChainSelEnv { bcfg, curChainAndLedger, varInvalid, varFutureBlocks } =
       chainSelEnv
 
     curChain = VF.validatedFragment curChainAndLedger
 
     sortCandidates :: [ChainDiff (Header blk)] -> [ChainDiff (Header blk)]
     sortCandidates =
-      sortBy (flip (compareAnchoredFragments cfg) `on` Diff.getSuffix)
+      sortBy (flip (compareAnchoredFragments bcfg) `on` Diff.getSuffix)
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -825,7 +828,7 @@ chainSelection chainSelEnv chainDiffs =
           -- it will be dropped here, as it will not be preferred over the
           -- current chain.
           let candidates2
-                | preferAnchoredCandidate cfg curChain (Diff.getSuffix candidate')
+                | preferAnchoredCandidate bcfg curChain (Diff.getSuffix candidate')
                 = candidate':candidates1
                 | otherwise
                 = candidates1
@@ -849,7 +852,7 @@ chainSelection chainSelEnv chainDiffs =
       let isRejected hdr =
                Map.member (headerHash hdr) (forgetFingerprint invalid)
             || Map.member (headerHash hdr) futureBlocks
-      return $ filter (preferAnchoredCandidate cfg curChain . Diff.getSuffix)
+      return $ filter (preferAnchoredCandidate bcfg curChain . Diff.getSuffix)
              $ map (Diff.takeWhileOldest (not . isRejected)) cands
 
     -- [Ouroboros]

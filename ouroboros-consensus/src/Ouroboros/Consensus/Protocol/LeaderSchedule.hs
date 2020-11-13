@@ -1,13 +1,9 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
     LeaderSchedule (..)
@@ -18,7 +14,6 @@ module Ouroboros.Consensus.Protocol.LeaderSchedule (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import           Data.Set (Set)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -70,21 +65,16 @@ instance Condense LeaderSchedule where
 -- | Extension of protocol @p@ by a static leader schedule.
 data WithLeaderSchedule p
 
--- | Chain selection is unchanged
-instance ChainSelection p => ChainSelection (WithLeaderSchedule p) where
-  type ChainSelConfig (WithLeaderSchedule p) = ChainSelConfig p
-  type SelectView     (WithLeaderSchedule p) = SelectView     p
-
-  compareChains _ = compareChains (Proxy @p)
-
-data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
-  { wlsConfigSchedule :: !LeaderSchedule
-  , wlsConfigP        :: !(ConsensusConfig p)
-  , wlsConfigNodeId   :: !CoreNodeId
-  }
+data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig {
+      wlsConfigSchedule :: !LeaderSchedule
+    , wlsConfigP        :: !(ConsensusConfig p)
+    , wlsConfigNodeId   :: !CoreNodeId
+    }
   deriving (Generic)
 
 instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
+  type SelectView    (WithLeaderSchedule p) = SelectView p
+
   type ChainDepState (WithLeaderSchedule p) = ()
   type LedgerView    (WithLeaderSchedule p) = ()
   type ValidationErr (WithLeaderSchedule p) = ()
@@ -93,7 +83,6 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type CanBeLeader   (WithLeaderSchedule p) = ()
 
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
-  chainSelConfig        = chainSelConfig        . wlsConfigP
 
   checkIsLeader WLSConfig{..} () slot _ =
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of

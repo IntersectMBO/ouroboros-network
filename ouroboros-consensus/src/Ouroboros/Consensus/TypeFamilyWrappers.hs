@@ -22,7 +22,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
     -- * Protocol based
   , WrapCanBeLeader(..)
   , WrapChainDepState(..)
-  , WrapChainSelConfig(..)
   , WrapConsensusConfig(..)
   , WrapIsLeader(..)
   , WrapLedgerView(..)
@@ -70,7 +69,6 @@ newtype WrapTipInfo               blk = WrapTipInfo               { unwrapTipInf
 
 newtype WrapCanBeLeader     blk = WrapCanBeLeader     { unwrapCanBeLeader     :: CanBeLeader     (BlockProtocol blk) }
 newtype WrapChainDepState   blk = WrapChainDepState   { unwrapChainDepState   :: ChainDepState   (BlockProtocol blk) }
-newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig  (BlockProtocol blk) }
 newtype WrapConsensusConfig blk = WrapConsensusConfig { unwrapConsensusConfig :: ConsensusConfig (BlockProtocol blk) }
 newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader        (BlockProtocol blk) }
 newtype WrapLedgerView      blk = WrapLedgerView      { unwrapLedgerView      :: LedgerView      (BlockProtocol blk) }
@@ -119,19 +117,19 @@ deriving instance NoThunks (TipInfo                  blk) => NoThunks (WrapTipIn
   .. consensus based
 -------------------------------------------------------------------------------}
 
-deriving instance Eq (ChainDepState  (BlockProtocol blk)) => Eq (WrapChainDepState  blk)
-deriving instance Eq (ChainSelConfig (BlockProtocol blk)) => Eq (WrapChainSelConfig blk)
-deriving instance Eq (ValidationErr  (BlockProtocol blk)) => Eq (WrapValidationErr  blk)
+deriving instance Eq (ChainDepState (BlockProtocol blk)) => Eq (WrapChainDepState blk)
+deriving instance Eq (SelectView    (BlockProtocol blk)) => Eq (WrapSelectView    blk)
+deriving instance Eq (ValidationErr (BlockProtocol blk)) => Eq (WrapValidationErr blk)
 
-deriving instance Show (ChainDepState  (BlockProtocol blk)) => Show (WrapChainDepState  blk)
-deriving instance Show (ChainSelConfig (BlockProtocol blk)) => Show (WrapChainSelConfig blk)
-deriving instance Show (LedgerView     (BlockProtocol blk)) => Show (WrapLedgerView     blk)
-deriving instance Show (SelectView     (BlockProtocol blk)) => Show (WrapSelectView     blk)
-deriving instance Show (ValidationErr  (BlockProtocol blk)) => Show (WrapValidationErr  blk)
+deriving instance Ord (SelectView (BlockProtocol blk)) => Ord (WrapSelectView blk)
 
-deriving instance NoThunks (ChainSelConfig (BlockProtocol blk)) => NoThunks (WrapChainSelConfig blk)
-deriving instance NoThunks (ChainDepState  (BlockProtocol blk)) => NoThunks (WrapChainDepState  blk)
-deriving instance NoThunks (ValidationErr  (BlockProtocol blk)) => NoThunks (WrapValidationErr  blk)
+deriving instance Show (ChainDepState (BlockProtocol blk)) => Show (WrapChainDepState blk)
+deriving instance Show (LedgerView    (BlockProtocol blk)) => Show (WrapLedgerView    blk)
+deriving instance Show (SelectView    (BlockProtocol blk)) => Show (WrapSelectView    blk)
+deriving instance Show (ValidationErr (BlockProtocol blk)) => Show (WrapValidationErr blk)
+
+deriving instance NoThunks (ChainDepState (BlockProtocol blk)) => NoThunks (WrapChainDepState blk)
+deriving instance NoThunks (ValidationErr (BlockProtocol blk)) => NoThunks (WrapValidationErr blk)
 
 {-------------------------------------------------------------------------------
   Versioning

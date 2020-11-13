@@ -95,7 +95,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
@@ -510,14 +509,12 @@ treeToBlocks = Tree.flatten . blockTree
 treeToChains :: BlockTree -> [Chain TestBlock]
 treeToChains = map Chain.fromOldestFirst . allPaths . blockTree
 
-treePreferredChain :: TopLevelConfig TestBlock
-                   -> BlockTree -> Chain TestBlock
-treePreferredChain cfg =
+treePreferredChain :: BlockTree -> Chain TestBlock
+treePreferredChain =
       fromMaybe Genesis
     . selectUnvalidatedChain
         (Proxy @(BlockProtocol TestBlock))
         blockNo
-        (chainSelConfig (configConsensus cfg))
         Genesis
     . treeToChains
 

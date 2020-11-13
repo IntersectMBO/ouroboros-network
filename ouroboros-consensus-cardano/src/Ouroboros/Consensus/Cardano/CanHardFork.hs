@@ -316,9 +316,6 @@ instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
 
   completeConsensusConfig _ tpraosEpochInfo tpraosParams = TPraosConfig {..}
 
-  -- 'ChainSelConfig' is ()
-  partialChainSelConfig _ _ = ()
-
 data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       -- | We cache the non-partial ledger config containing a dummy
       -- 'EpochInfo' that needs to be replaced with the correct one.

@@ -1,14 +1,6 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Protocol.ModChainSel (
     ModChainSel
@@ -16,7 +8,6 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , ConsensusConfig (..)
   ) where
 
-import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -25,20 +16,19 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 data ModChainSel p s
 
-data instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
-      mcsConfigS :: ChainSelConfig  s
-    , mcsConfigP :: ConsensusConfig p
+newtype instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
+      mcsConfigP :: ConsensusConfig p
     }
   deriving (Generic)
 
-instance ChainSelection s => ChainSelection (ModChainSel p s) where
-  type ChainSelConfig (ModChainSel p s) = ChainSelConfig s
-  type SelectView     (ModChainSel p s) = SelectView     s
+instance ( ConsensusProtocol p
+         , Ord  s
+         , Show s
+         , Typeable p
+         , Typeable s
+         ) => ConsensusProtocol (ModChainSel p s) where
+    type SelectView    (ModChainSel p s) = s
 
-  compareChains _ = compareChains (Proxy @s)
-
-instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
-      => ConsensusProtocol (ModChainSel p s) where
     type ChainDepState (ModChainSel p s) = ChainDepState p
     type IsLeader      (ModChainSel p s) = IsLeader      p
     type CanBeLeader   (ModChainSel p s) = CanBeLeader   p
@@ -52,7 +42,4 @@ instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
     reupdateChainDepState = reupdateChainDepState . mcsConfigP
     protocolSecurityParam = protocolSecurityParam . mcsConfigP
 
-    chainSelConfig = mcsConfigS
-
-instance (ConsensusProtocol p, ChainSelection s)
-      => NoThunks (ConsensusConfig (ModChainSel p s))
+instance ConsensusProtocol p => NoThunks (ConsensusConfig (ModChainSel p s))

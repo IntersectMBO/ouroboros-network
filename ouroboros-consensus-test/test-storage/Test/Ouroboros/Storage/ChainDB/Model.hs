@@ -463,7 +463,6 @@ addBlock cfg blk m = Model {
       . selectChain
           (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
-          (chainSelConfig (configConsensus cfg))
           (currentChain m)
       . filter (extendsImmutableChain . fst)
       $ candidates
@@ -795,8 +794,11 @@ validChains cfg m bs =
     sortChains $ chains bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
-    sortChains = sortBy (flip (Fragment.compareAnchoredFragments cfg `on`
-                                 (Chain.toAnchoredFragment . fmap getHeader)))
+    sortChains =
+      sortBy $ flip (
+               Fragment.compareAnchoredFragments (configBlock cfg)
+          `on` (Chain.toAnchoredFragment . fmap getHeader)
+        )
 
     classify :: ValidatedChain blk
              -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState blk)])
@@ -992,7 +994,6 @@ wipeVolatileDB cfg m =
       $ selectChain
           (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
-          (chainSelConfig (configConsensus cfg))
           Chain.genesis
       $ snd
       $ validChains cfg m (immutableDbBlocks m)

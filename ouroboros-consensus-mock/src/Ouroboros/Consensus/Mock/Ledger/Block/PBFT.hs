@@ -112,7 +112,7 @@ instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => BlockSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
   validateView _     = pbftValidateRegular () (simplePBftExt . simpleHeaderExt)
-  selectView   _ hdr = (blockNo hdr, IsNotEBB)
+  selectView   _     = mkPBftSelectView
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)

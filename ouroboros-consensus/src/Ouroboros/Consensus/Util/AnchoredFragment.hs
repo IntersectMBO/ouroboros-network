@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Util.AnchoredFragment (
 import           Control.Monad.Except (throwError)
 import           Data.Function (on)
 import           Data.Maybe (isJust)
-import           Data.Proxy
 import           Data.Word (Word64)
 import           GHC.Stack
 
@@ -24,8 +23,6 @@ import           Ouroboros.Network.AnchoredFragment
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
@@ -85,7 +82,7 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 --   our current chain, they must by transitivity also intersect each other.
 compareAnchoredFragments ::
      forall blk. (BlockSupportsProtocol blk, HasCallStack)
-  => TopLevelConfig blk
+  => BlockConfig blk
   -> AnchoredFragment (Header blk)
   -> AnchoredFragment (Header blk)
   -> Ordering
@@ -113,11 +110,9 @@ compareAnchoredFragments cfg frag1 frag2 =
           else GT
       (_ :> tip, _ :> tip') ->
         -- Case 4
-        compareChains
-          (Proxy @(BlockProtocol blk))
-          (chainSelConfig (configConsensus cfg))
-          (selectView (configBlock cfg) tip)
-          (selectView (configBlock cfg) tip')
+        compare
+          (selectView cfg tip)
+          (selectView cfg tip')
   where
     precondition :: Either String ()
     precondition
@@ -134,7 +129,7 @@ compareAnchoredFragments cfg frag1 frag2 =
 -- See discussion for 'compareAnchoredCandidates'.
 preferAnchoredCandidate ::
      forall blk. (BlockSupportsProtocol blk, HasCallStack)
-  => TopLevelConfig blk
+  => BlockConfig blk
   -> AnchoredFragment (Header blk)      -- ^ Our chain
   -> AnchoredFragment (Header blk)      -- ^ Candidate
   -> Bool
