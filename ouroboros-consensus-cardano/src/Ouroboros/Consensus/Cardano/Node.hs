@@ -516,8 +516,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     shape = History.Shape $ Exactly $
            K (Byron.byronEraParams     genesisByron)
         :* K (Shelley.shelleyEraParams genesisShelley)
-        :* K (Shelley.shelleyEraParams genesisShelley)
-        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisAllegra)
+        :* K (Shelley.shelleyEraParams genesisMary)
         :* Nil
 
     cfg :: TopLevelConfig (CardanoBlock c)
