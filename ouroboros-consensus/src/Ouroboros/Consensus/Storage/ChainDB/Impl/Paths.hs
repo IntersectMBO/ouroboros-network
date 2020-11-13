@@ -8,7 +8,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (
     -- * LookupBlockInfo
     LookupBlockInfo
     -- * Candidates
-  , candidates
+  , maximalCandidates
   , extendWithSuccessors
     -- * Path
   , Path (..)
@@ -53,7 +53,10 @@ type LookupBlockInfo blk = HeaderHash blk -> Maybe (VolatileDB.BlockInfo blk)
   Candidates
 -------------------------------------------------------------------------------}
 
--- | Compute all candidates starting at the specified point
+-- | Compute the /maximal/ candidates starting at the specified point
+--
+-- As discussed in the Consensus Report, the set of /maximal/ candidates doesn't
+-- include prefixes.
 --
 -- PRECONDITION: the block to which the given point corresponds is part of the
 -- VolatileDB.
@@ -64,15 +67,15 @@ type LookupBlockInfo blk = HeaderHash blk -> Maybe (VolatileDB.BlockInfo blk)
 --
 -- NOTE: it is possible that no candidates are found, but don't forget that
 -- the chain (fragment) ending with @B@ is also a potential candidate.
-candidates
-  :: forall blk.
+maximalCandidates ::
+     forall blk.
      (ChainHash blk -> Set (HeaderHash blk))
      -- ^ @filterByPredecessor@
   -> Point blk -- ^ @B@
   -> [NonEmpty (HeaderHash blk)]
      -- ^ Each element in the list is a list of hashes from which we can
      -- construct a fragment anchored at the point @B@.
-candidates succsOf b = mapMaybe NE.nonEmpty $ go (pointHash b)
+maximalCandidates succsOf b = mapMaybe NE.nonEmpty $ go (pointHash b)
   where
     go :: ChainHash blk -> [[HeaderHash blk]]
     go mbHash = case Set.toList $ succsOf mbHash of
@@ -82,7 +85,7 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (pointHash b)
                , candidate <- go (BlockHash next)
                ]
 
--- | Extend the 'ChainDiff' with the successors found by 'candidates'.
+-- | Extend the 'ChainDiff' with the successors found by 'maximalCandidates'.
 --
 -- In case no successors were found, the original 'ChainDiff' is returned as a
 -- singleton.
@@ -105,7 +108,7 @@ extendWithSuccessors succsOf lookupBlockInfo diff =
   where
     extensions =
         [ foldl' Diff.append diff (lookupHeaderFields <$> candHashes)
-        | candHashes <- candidates succsOf (castPoint (Diff.getTip diff))
+        | candHashes <- maximalCandidates succsOf (castPoint (Diff.getTip diff))
         ]
 
     lookupHeaderFields :: HeaderHash blk -> HeaderFields blk

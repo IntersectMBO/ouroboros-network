@@ -233,6 +233,9 @@ initBlockFetchConsensusInterface
 initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime =
     BlockFetchConsensusInterface {..}
   where
+    bcfg :: BlockConfig blk
+    bcfg = configBlock cfg
+
     blockMatchesHeader :: Header blk -> blk -> Bool
     blockMatchesHeader = Block.blockMatchesHeader
 
@@ -310,7 +313,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
       | AF.anchorBlockNo cand < AF.anchorBlockNo ours  -- (4)
       = case (AF.null ours, AF.null cand) of
           -- Both are non-empty, the precondition trivially holds.
-          (False, False) -> preferAnchoredCandidate cfg ours cand
+          (False, False) -> preferAnchoredCandidate bcfg ours cand
           -- The candidate is shorter than our chain and, worse, we'd have to
           -- roll back past our immutable tip (the anchor of @cand@).
           (_,     True)  -> False
@@ -325,12 +328,12 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
           (True,  _)     -> error "impossible"
 
       | otherwise
-      = preferAnchoredCandidate cfg ours cand
+      = preferAnchoredCandidate bcfg ours cand
 
     compareCandidateChains :: AnchoredFragment (Header blk)
                            -> AnchoredFragment (Header blk)
                            -> Ordering
-    compareCandidateChains = compareAnchoredFragments cfg
+    compareCandidateChains = compareAnchoredFragments bcfg
 
 forkBlockForging
     :: forall m remotePeer localPeer blk.

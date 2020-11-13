@@ -61,27 +61,24 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
   ChainSelection
 -------------------------------------------------------------------------------}
 
-type HardForkSelectView xs = WithBlockNo OneEraSelectView xs
+newtype HardForkSelectView xs = HardForkSelectView {
+      getHardForkSelectView :: WithBlockNo OneEraSelectView xs
+    }
+  deriving (Show, Eq)
+
+instance CanHardFork xs => Ord (HardForkSelectView xs) where
+  compare (HardForkSelectView l) (HardForkSelectView r) =
+     acrossEraSelection
+       hardForkChainSel
+       (mapWithBlockNo getOneEraSelectView l)
+       (mapWithBlockNo getOneEraSelectView r)
 
 mkHardForkSelectView ::
      BlockNo
   -> NS WrapSelectView xs
   -> HardForkSelectView xs
-mkHardForkSelectView bno view = WithBlockNo bno (OneEraSelectView view)
-
--- | Chain selection across eras
-instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
-  type ChainSelConfig (HardForkProtocol xs) = PerEraChainSelConfig xs
-  type SelectView     (HardForkProtocol xs) = HardForkSelectView   xs
-
-  -- We leave 'preferCandidate' at the default
-
-  compareChains _ (PerEraChainSelConfig cfgs) l r =
-       acrossEraSelection
-         cfgs
-         hardForkChainSel
-         (mapWithBlockNo getOneEraSelectView l)
-         (mapWithBlockNo getOneEraSelectView r)
+mkHardForkSelectView bno view =
+    HardForkSelectView $ WithBlockNo bno (OneEraSelectView view)
 
 {-------------------------------------------------------------------------------
   ConsensusProtocol
@@ -92,6 +89,7 @@ type HardForkChainDepState xs = HardForkState WrapChainDepState xs
 instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   type ChainDepState (HardForkProtocol xs) = HardForkChainDepState xs
   type ValidationErr (HardForkProtocol xs) = HardForkValidationErr xs
+  type SelectView    (HardForkProtocol xs) = HardForkSelectView    xs
   type LedgerView    (HardForkProtocol xs) = HardForkLedgerView    xs
   type CanBeLeader   (HardForkProtocol xs) = HardForkCanBeLeader   xs
   type IsLeader      (HardForkProtocol xs) = HardForkIsLeader      xs
@@ -110,20 +108,6 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
 
   -- Security parameter must be equal across /all/ eras
   protocolSecurityParam = hardForkConsensusConfigK
-
-  -- Extract 'ChainSelConfig'
-  chainSelConfig =
-        PerEraChainSelConfig
-      . hcmap proxySingle aux
-      . getPerEraConsensusConfig
-      . hardForkConsensusConfigPerEra
-    where
-      aux :: forall blk. SingleEraBlock blk
-          => WrapPartialConsensusConfig blk
-          -> WrapChainSelConfig blk
-      aux = WrapChainSelConfig
-          . partialChainSelConfig (Proxy @(BlockProtocol blk))
-          . unwrapPartialConsensusConfig
 
 {-------------------------------------------------------------------------------
   BlockSupportsProtocol

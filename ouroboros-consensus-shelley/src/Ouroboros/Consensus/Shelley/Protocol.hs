@@ -309,12 +309,6 @@ instance PraosCrypto c => Ord (TPraosChainSelectView c) where
         | otherwise
         = EQ
 
-instance PraosCrypto c => ChainSelection (TPraos c) where
-
-  -- | Chain selection is done on the basis of the chain length first, and then
-  -- operational certificate issue number.
-  type SelectView (TPraos c) = TPraosChainSelectView c
-
 -- | Ledger view at a particular slot
 newtype instance Ticked (SL.LedgerView c) = TickedPraosLedgerView {
       -- TODO: Perhaps it would be cleaner to define this as a separate type
@@ -362,6 +356,7 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
   type ChainDepState (TPraos c) = TPraosState c
   type IsLeader      (TPraos c) = TPraosIsLeader c
   type CanBeLeader   (TPraos c) = TPraosCanBeLeader c
+  type SelectView    (TPraos c) = TPraosChainSelectView c
   type LedgerView    (TPraos c) = SL.LedgerView c
   type ValidationErr (TPraos c) = SL.ChainTransitionError c
   type ValidateView  (TPraos c) = TPraosValidateView c

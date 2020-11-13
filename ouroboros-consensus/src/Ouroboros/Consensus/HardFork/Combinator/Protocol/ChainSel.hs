@@ -20,7 +20,6 @@ import           Data.SOP.Strict
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Assert
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
@@ -55,9 +54,7 @@ data AcrossEraSelection :: Type -> Type -> Type where
   -- This is the most general form, and allows to override chain selection for
   -- the specific combination of two eras with a custom comparison function.
   CustomChainSel ::
-       (    ChainSelConfig (BlockProtocol x)
-         -> ChainSelConfig (BlockProtocol y)
-         -> SelectView (BlockProtocol x)
+       (    SelectView (BlockProtocol x)
          -> SelectView (BlockProtocol y)
          -> Ordering
        )
@@ -67,79 +64,56 @@ data AcrossEraSelection :: Type -> Type -> Type where
   Compare two eras
 -------------------------------------------------------------------------------}
 
-withinEra ::
-     forall blk. SingleEraBlock blk
-  => WrapChainSelConfig blk
-  -> WrapSelectView blk
-  -> WrapSelectView blk
-  -> Ordering
-withinEra (WrapChainSelConfig cfg) (WrapSelectView l) (WrapSelectView r) =
-    compareChains (Proxy @(BlockProtocol blk)) cfg l r
-
 acrossEras ::
      forall blk blk'. SingleEraBlock blk
-  => WrapChainSelConfig blk
-  -> WrapChainSelConfig blk'
-  -> WithBlockNo WrapSelectView blk
+  => WithBlockNo WrapSelectView blk
   -> WithBlockNo WrapSelectView blk'
   -> AcrossEraSelection blk blk'
   -> Ordering
-acrossEras (WrapChainSelConfig cfgL)
-           (WrapChainSelConfig cfgR)
-           (WithBlockNo bnoL (WrapSelectView l))
+acrossEras (WithBlockNo bnoL (WrapSelectView l))
            (WithBlockNo bnoR (WrapSelectView r)) = \case
     CompareBlockNo     -> compare bnoL bnoR
-    CustomChainSel f   -> f cfgL cfgR l r
-    SelectSameProtocol -> assertEqWithMsg (cfgL, cfgR) $
-                            compareChains
-                              (Proxy @(BlockProtocol blk))
-                              cfgL
-                              l
-                              r
+    CustomChainSel f   -> f l r
+    SelectSameProtocol -> compare l r
 
 acrossEraSelection ::
      All SingleEraBlock              xs
-  => NP WrapChainSelConfig           xs
-  -> Tails AcrossEraSelection        xs
+  => Tails AcrossEraSelection        xs
   -> WithBlockNo (NS WrapSelectView) xs
   -> WithBlockNo (NS WrapSelectView) xs
   -> Ordering
-acrossEraSelection = \cfgs ffs l r ->
-    goLeft cfgs ffs (distribBlockNo l, distribBlockNo r)
+acrossEraSelection = \ffs l r ->
+    goLeft ffs (distribBlockNo l, distribBlockNo r)
   where
     goLeft ::
          All SingleEraBlock                xs
-      => NP WrapChainSelConfig             xs
-      -> Tails AcrossEraSelection          xs
+      => Tails AcrossEraSelection          xs
       -> ( NS (WithBlockNo WrapSelectView) xs
          , NS (WithBlockNo WrapSelectView) xs
          )
       -> Ordering
-    goLeft _         TNil            = \(a, _) -> case a of {}
-    goLeft (c :* cs) (TCons fs ffs') = \case
-        (Z a, Z b) -> withinEra c (dropBlockNo a) (dropBlockNo b)
-        (Z a, S b) ->          goRight c a cs fs b
-        (S a, Z b) -> invert $ goRight c b cs fs a
-        (S a, S b) -> goLeft cs ffs' (a, b)
+    goLeft TNil            = \(a, _) -> case a of {}
+    goLeft (TCons fs ffs') = \case
+        (Z a, Z b) -> compare (dropBlockNo a) (dropBlockNo b)
+        (Z a, S b) ->          goRight a fs b
+        (S a, Z b) -> invert $ goRight b fs a
+        (S a, S b) -> goLeft ffs' (a, b)
 
     goRight ::
          forall x xs. (SingleEraBlock x, All SingleEraBlock xs)
-      => WrapChainSelConfig         x
-      -> WithBlockNo WrapSelectView x
-      -> NP WrapChainSelConfig           xs
+      => WithBlockNo WrapSelectView x
       -> NP (AcrossEraSelection     x)   xs
       -> NS (WithBlockNo WrapSelectView) xs
       -> Ordering
-    goRight cfgL a = go
+    goRight a = go
       where
         go :: forall xs'. All SingleEraBlock  xs'
-           => NP WrapChainSelConfig           xs'
-           -> NP (AcrossEraSelection x)       xs'
+           => NP (AcrossEraSelection x)       xs'
            -> NS (WithBlockNo WrapSelectView) xs'
            -> Ordering
-        go _         Nil          b  = case b of {}
-        go (c :* _)  (f :* _)  (Z b) = acrossEras cfgL c a b f
-        go (_ :* cs) (_ :* fs) (S b) = go cs fs b
+        go Nil          b  = case b of {}
+        go (f :* _)  (Z b) = acrossEras a b f
+        go (_ :* fs) (S b) = go fs b
 
 {-------------------------------------------------------------------------------
   WithBlockNo
@@ -149,7 +123,7 @@ data WithBlockNo (f :: k -> Type) (a :: k) = WithBlockNo {
       getBlockNo  :: BlockNo
     , dropBlockNo :: f a
     }
-  deriving (Show)
+  deriving (Show, Eq)
 
 mapWithBlockNo :: (f x -> g y) -> WithBlockNo f x -> WithBlockNo g y
 mapWithBlockNo f (WithBlockNo bno fx) = WithBlockNo bno (f fx)

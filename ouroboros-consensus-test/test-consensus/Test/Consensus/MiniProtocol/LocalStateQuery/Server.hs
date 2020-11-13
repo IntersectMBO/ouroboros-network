@@ -79,7 +79,7 @@ prop_localStateQueryServer
 prop_localStateQueryServer k bt p = checkOutcome k chain actualOutcome
   where
     chain :: Chain TestBlock
-    chain = treePreferredChain (testCfg k) bt
+    chain = treePreferredChain bt
 
     points :: [Point TestBlock]
     points = blockPoint <$> permute p (treeToBlocks bt)

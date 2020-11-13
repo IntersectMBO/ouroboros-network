@@ -90,9 +90,6 @@ data instance ConsensusConfig ProtocolB = CfgB {
     }
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
 
-instance ChainSelection ProtocolB where
-  -- Use defaults
-
 instance ConsensusProtocol ProtocolB where
   type ChainDepState ProtocolB = ()
   type LedgerView    ProtocolB = ()

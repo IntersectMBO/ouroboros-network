@@ -47,15 +47,6 @@ class ( ConsensusProtocol p
                                   -> PartialConsensusConfig p -> ConsensusConfig p
   completeConsensusConfig _ _ = id
 
-  -- Some functions will not be reused from ConsensusProtocol directly:
-
-  -- | The 'ChainSelConfig' must be derivable from the partial config
-  partialChainSelConfig :: proxy p -> PartialConsensusConfig p -> ChainSelConfig p
-  default partialChainSelConfig :: (PartialConsensusConfig p ~ ConsensusConfig p)
-                                => proxy p
-                                -> PartialConsensusConfig p -> ChainSelConfig p
-  partialChainSelConfig _ = chainSelConfig
-
 -- | Partial ledger config
 class ( UpdateLedger blk
       , NoThunks (PartialLedgerConfig blk)

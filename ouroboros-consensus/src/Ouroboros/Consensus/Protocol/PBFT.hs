@@ -17,6 +17,8 @@
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
   , PBftSignatureThreshold(..)
+  , PBftSelectView(..)
+  , mkPBftSelectView
   , PBftLedgerView(..)
   , PBftFields(..)
   , PBftParams(..)
@@ -129,7 +131,34 @@ pbftValidateBoundary _hdr = PBftValidateBoundary
 -- we need to know if a block is an EBB or not (because a chain ending on an
 -- EBB with a particular block number is longer than a chain on a regular
 -- block with that same block number).
-type PBftSelectView = (BlockNo, IsEBB)
+data PBftSelectView = PBftSelectView {
+      pbftSelectViewBlockNo :: BlockNo
+    , pbftSelectViewIsEBB   :: IsEBB
+    }
+  deriving (Show, Eq)
+
+mkPBftSelectView :: GetHeader blk => Header blk -> PBftSelectView
+mkPBftSelectView hdr = PBftSelectView {
+      pbftSelectViewBlockNo = blockNo       hdr
+    , pbftSelectViewIsEBB   = headerToIsEBB hdr
+    }
+
+instance Ord PBftSelectView where
+  compare (PBftSelectView lBlockNo lIsEBB) (PBftSelectView rBlockNo rIsEBB) =
+      mconcat [
+          -- Prefer the highest block number, as it is a proxy for chain length
+          lBlockNo `compare` rBlockNo
+
+          -- If the block numbers are the same, check if one of them is an EBB.
+          -- An EBB has the same block number as the block before it, so the
+          -- chain ending with an EBB is actually longer than the one ending
+          -- with a regular block.
+        , score lIsEBB `compare` score rIsEBB
+        ]
+     where
+       score :: IsEBB -> Int
+       score IsEBB    = 1
+       score IsNotEBB = 0
 
 {-------------------------------------------------------------------------------
   Block forging
@@ -160,13 +189,13 @@ forgePBftFields contextDSIGN PBftIsLeader{..} toSign =
   Information PBFT requires from the ledger
 -------------------------------------------------------------------------------}
 
-data PBftLedgerView c = PBftLedgerView {
-    -- | ProtocolParameters: map from genesis to delegate keys.
-    pbftDelegates :: !(Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
-  }
+newtype PBftLedgerView c = PBftLedgerView {
+      -- | ProtocolParameters: map from genesis to delegate keys.
+      pbftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
+    }
   deriving (Generic)
 
-data instance Ticked (PBftLedgerView c) = TickedPBftLedgerView {
+newtype instance Ticked (PBftLedgerView c) = TickedPBftLedgerView {
       -- | The updated delegates
       tickedPBftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
     }
@@ -243,28 +272,10 @@ data PBftIsLeader c = PBftIsLeader {
 instance PBftCrypto c => NoThunks (PBftIsLeader c)
 
 -- | (Static) node configuration
-data instance ConsensusConfig (PBft c) = PBftConfig {
-      pbftParams :: !PBftParams
+newtype instance ConsensusConfig (PBft c) = PBftConfig {
+      pbftParams :: PBftParams
     }
   deriving (Generic, NoThunks)
-
-instance ChainSelection (PBft c) where
-  type SelectView (PBft c) = PBftSelectView
-
-  compareChains _proxy _config (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
-      -- Prefer the highest block number, as it is a proxy for chain length
-      case lBlockNo `compare` rBlockNo of
-        LT -> LT
-        GT -> GT
-        -- If the block numbers are the same, check if one of them is an EBB.
-        -- An EBB has the same block number as the block before it, so the
-        -- chain ending with an EBB is actually longer than the one ending
-        -- with a regular block.
-        EQ -> score lIsEBB `compare` score rIsEBB
-     where
-       score :: IsEBB -> Int
-       score IsEBB    = 1
-       score IsNotEBB = 0
 
 -- Ticking has no effect on the PBFtState, but we do need the ticked ledger view
 data instance Ticked (PBftState c) = TickedPBftState {
@@ -275,6 +286,7 @@ data instance Ticked (PBftState c) = TickedPBftState {
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
+  type SelectView    (PBft c) = PBftSelectView
 
   -- | We require two things from the ledger state:
   --

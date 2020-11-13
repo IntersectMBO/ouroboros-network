@@ -1,4 +1,3 @@
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
@@ -7,9 +6,9 @@ module Ouroboros.Consensus.Protocol.MockChainSel
   , selectUnvalidatedChain
   ) where
 
-import           Data.Function (on)
-import           Data.List (sortBy)
-import           Data.Maybe (listToMaybe)
+import           Data.List (sortOn)
+import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Ord (Down (..))
 
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -32,50 +31,43 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall proxy p hdr l. ChainSelection p
+selectChain :: forall proxy p hdr l. ConsensusProtocol p
             => proxy p
             -> (hdr -> SelectView p)
-            -> ChainSelConfig p
             -> Chain hdr           -- ^ Our chain
             -> [(Chain hdr, l)]    -- ^ Upstream chains
             -> Maybe (Chain hdr, l)
-selectChain p view cfg ours candidates =
-    listToMaybe $
-      sortBy (flip (compareChains' `on` fst)) preferredCandidates
+selectChain p view ours =
+      listToMaybe
+    . map snd
+    . sortOn (Down . fst)
+    . mapMaybe selectPreferredCandidate
   where
-    preferredCandidates :: [(Chain hdr, l)]
-    preferredCandidates = filter (preferCandidate' . fst) candidates
-
-    -- A non-empty chain is always preferred over an empty one
-
-    preferCandidate' :: Chain hdr -> Bool
-    preferCandidate' theirs =
-        go (Chain.head ours) (Chain.head theirs)
-      where
-        go :: Maybe hdr -> Maybe hdr -> Bool
-        go Nothing  Nothing  = False
-        go Nothing  (Just _) = True
-        go (Just _) Nothing  = False
-        go (Just a) (Just b) = preferCandidate p cfg (view a) (view b)
-
-    compareChains' :: Chain hdr -> Chain hdr -> Ordering
-    compareChains' = go `on` Chain.head
-      where
-        go :: Maybe hdr -> Maybe hdr -> Ordering
-        go Nothing  Nothing  = EQ
-        go Nothing  (Just _) = LT
-        go (Just _) Nothing  = GT
-        go (Just a) (Just b) = compareChains p cfg (view a) (view b)
+    -- | Only retain a candidate if it is preferred over the current chain. As
+    -- only a non-empty chain can be preferred over the current chain, we can
+    -- extract the 'SelectView' of the tip of the candidate.
+    selectPreferredCandidate ::
+         (Chain hdr, l)
+      -> Maybe (SelectView p, (Chain hdr, l))
+    selectPreferredCandidate x@(cand, _) =
+        case (Chain.head ours, Chain.head cand) of
+          (Nothing, Just candTip)
+            -> Just (view candTip, x)
+          (Just ourTip, Just candTip)
+            | let candView = view candTip
+            , preferCandidate p (view ourTip) candView
+            -> Just (candView, x)
+          _otherwise
+            -> Nothing
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: ChainSelection p
+selectUnvalidatedChain :: ConsensusProtocol p
                        => proxy p
                        -> (hdr -> SelectView p)
-                       -> ChainSelConfig p
                        -> Chain hdr
                        -> [Chain hdr]
                        -> Maybe (Chain hdr)
-selectUnvalidatedChain p view cfg ours =
+selectUnvalidatedChain p view ours =
       fmap fst
-    . selectChain p view cfg ours
+    . selectChain p view ours
     . map (, ())

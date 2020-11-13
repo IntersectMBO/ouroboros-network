@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
-  , ChainSelection(..)
   , preferCandidate
   , ConsensusConfig
     -- * Convenience re-exports
@@ -33,95 +32,21 @@ import           Ouroboros.Consensus.Ticked
 -- module).
 data family ConsensusConfig p :: Type
 
--- | Chain selection
-class ( NoThunks (ChainSelConfig p)
-        -- For the benefit of tests
-      , Show (SelectView     p)
-      , Show (ChainSelConfig p)
-      , Eq   (ChainSelConfig p)
-      ) => ChainSelection p where
-  -- | Configuration required for chain selection
-  type family ChainSelConfig p :: Type
-  type ChainSelConfig p = ()
-
-  -- | View on a header required for chain selection
-  type family SelectView p :: Type
-  type SelectView p = BlockNo
-
-  -- | Compare two chains
-  --
-  -- We pass only the tips of the chains; for all consensus protocols we are
-  -- interested in, this provides sufficient context. (Ouroboros Genesis is
-  -- the only exception, but we will handle the genesis rule elsewhere.)
-  --
-  -- Implementations of 'compareChains' are /not/ responsible for checking
-  -- intersection points; maximum rollback is implemented by the chain database
-  -- independent from the choice of consensus protocol.
-  --
-  -- Similarly, implementations of 'compareChains' do not need to check
-  -- chain validity (including whether or not the chains contain future blocks);
-  -- this too is handled by the chain database.
-  --
-  -- The chains may represent candidate chains or our own chain. Note that
-  -- chain selection is a partial order (reflexive, antisymmetric, and
-  -- transitive), but not a total order: we might have two chains, neither of
-  -- which is preferred over the other, but neither are they the same chain.
-  -- By a slight abuse of nomenclature we refer to such chains as "equally
-  -- preferable" and indicate this by returning 'EQ'.
-  --
-  -- NOTE: An assumption that is quite deeply ingrained in the design of the
-  -- consensus layer is that if a chain can be extended, it always should (see
-  -- the Consensus Report). This means that any chain is always preferred over
-  -- the empty chain, and 'preferCandidate' does not need (indeed, cannot) be
-  -- called if our current chain is empty.
-  compareChains :: proxy          p
-                -> ChainSelConfig p
-                -> SelectView     p
-                -> SelectView     p
-                -> Ordering
-
-  --
-  -- Default chain selection
-  --
-  -- The default preference uses the default comparison. The default comparison
-  -- simply uses the block number.
-  --
-
-  default compareChains :: Ord (SelectView p)
-                          => proxy          p
-                          -> ChainSelConfig p
-                          -> SelectView     p
-                          -> SelectView     p
-                          -> Ordering
-  compareChains _ _ = compare
-
--- | Compare a candidate chain to our own
---
--- This is defined in terms of 'compareChains': if both chains are
--- equally preferable, the Ouroboros class of consensus protocols /always/
--- sticks with the current chain.
-preferCandidate :: ChainSelection p
-                => proxy          p
-                -> ChainSelConfig p
-                -> SelectView     p      -- ^ Tip of our chain
-                -> SelectView     p      -- ^ Tip of the candidate
-                -> Bool
-preferCandidate p cfg ours cand = compareChains p cfg ours cand == LT
-
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
 class ( Show (ChainDepState   p)
       , Show (ValidationErr   p)
+      , Show (SelectView      p)
       , Show (LedgerView      p)
       , Eq   (ChainDepState   p)
       , Eq   (ValidationErr   p)
+      , Ord  (SelectView      p)
       , NoThunks (ConsensusConfig p)
       , NoThunks (ChainDepState   p)
       , NoThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
-      , ChainSelection p
       ) => ConsensusProtocol p where
   -- | Protocol-specific state
   --
@@ -134,6 +59,21 @@ class ( Show (ChainDepState   p)
 
   -- | Evidence that we /can/ be a leader
   type family CanBeLeader p :: Type
+
+  -- | View on a header required for chain selection
+  --
+  -- Chain selection is implemented by the chain database, which takes care of
+  -- two things independent of a choice of consensus protocol: we never switch
+  -- to chains that fork off more than @k@ blocks ago, and we never adopt an
+  -- invalid chain. The actual comparison of chains however depends on the chain
+  -- selection protocol. We define chain selection (which is itself a partial
+  -- order) in terms of a totally ordered /select view/ on the headers at the
+  -- tips of those chains: chain A is strictly preferred over chain B whenever
+  -- A's select view is greater than B's select view. When the select view on A
+  -- and B is the same, the chains are considered to be incomparable (neither
+  -- chain is preferred over the other).
+  type family SelectView p :: Type
+  type SelectView p = BlockNo
 
   -- | Projection of the ledger state the Ouroboros protocol needs access to
   --
@@ -181,12 +121,6 @@ class ( Show (ChainDepState   p)
 
   -- | View on a header required to validate it
   type family ValidateView p :: Type
-
-  -- | 'ConsensusConfig' must include the 'ChainSelConfig' p
-  chainSelConfig :: ConsensusConfig p -> ChainSelConfig p
-  default chainSelConfig :: (ChainSelConfig p ~ ())
-                         => ConsensusConfig p -> ChainSelConfig p
-  chainSelConfig _ = ()
 
   -- | Check if a node is the leader
   checkIsLeader :: HasCallStack
@@ -236,3 +170,14 @@ class ( Show (ChainDepState   p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: ConsensusConfig p -> SecurityParam
+
+-- | Compare a candidate chain to our own
+--
+-- If both chains are equally preferable, the Ouroboros class of consensus
+-- protocols /always/ sticks with the current chain.
+preferCandidate :: ConsensusProtocol p
+                => proxy      p
+                -> SelectView p  -- ^ Tip of our chain
+                -> SelectView p  -- ^ Tip of the candidate
+                -> Bool
+preferCandidate _ ours cand = cand > ours

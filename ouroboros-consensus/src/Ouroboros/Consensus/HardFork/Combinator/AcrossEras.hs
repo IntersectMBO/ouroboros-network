@@ -22,7 +22,6 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Value for /each/ era
     PerEraConsensusConfig(..)
   , PerEraBlockConfig(..)
-  , PerEraChainSelConfig(..)
   , PerEraCodecConfig(..)
   , PerEraLedgerConfig(..)
   , PerEraStorageConfig(..)
@@ -89,7 +88,6 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 -------------------------------------------------------------------------------}
 
 newtype PerEraBlockConfig     xs = PerEraBlockConfig     { getPerEraBlockConfig     :: NP BlockConfig                xs }
-newtype PerEraChainSelConfig  xs = PerEraChainSelConfig  { getPerEraChainSelConfig  :: NP WrapChainSelConfig         xs }
 newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig     :: NP CodecConfig                xs }
 newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusConfig :: NP WrapPartialConsensusConfig xs }
 newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
@@ -234,9 +232,6 @@ getSameValue values =
 deriving via LiftNamedNP "PerEraBlockConfig" BlockConfig xs
          instance CanHardFork xs => NoThunks (PerEraBlockConfig xs)
 
-deriving via LiftNamedNP "PerEraChainSelConfig" WrapChainSelConfig xs
-         instance CanHardFork xs => NoThunks (PerEraChainSelConfig xs)
-
 deriving via LiftNamedNP "PerEraCodecConfig" CodecConfig xs
          instance CanHardFork xs => NoThunks (PerEraCodecConfig xs)
 
@@ -277,20 +272,19 @@ deriving via LiftNamedMismatch "MismatchEraInfo" SingleEraInfo LedgerEraInfo xs
   Other instances
 -------------------------------------------------------------------------------}
 
-deriving via LiftNP WrapChainSelConfig xs instance CanHardFork xs => Eq (PerEraChainSelConfig xs)
-deriving via LiftNS WrapApplyTxErr     xs instance CanHardFork xs => Eq (OneEraApplyTxErr     xs)
-deriving via LiftNS WrapEnvelopeErr    xs instance CanHardFork xs => Eq (OneEraEnvelopeErr    xs)
-deriving via LiftNS GenTx              xs instance CanHardFork xs => Eq (OneEraGenTx          xs)
-deriving via LiftNS WrapGenTxId        xs instance CanHardFork xs => Eq (OneEraGenTxId        xs)
-deriving via LiftNS WrapLedgerErr      xs instance CanHardFork xs => Eq (OneEraLedgerError    xs)
-deriving via LiftNS WrapLedgerUpdate   xs instance CanHardFork xs => Eq (OneEraLedgerUpdate   xs)
-deriving via LiftNS WrapLedgerWarning  xs instance CanHardFork xs => Eq (OneEraLedgerWarning  xs)
-deriving via LiftNS WrapTipInfo        xs instance CanHardFork xs => Eq (OneEraTipInfo        xs)
-deriving via LiftNS WrapValidationErr  xs instance CanHardFork xs => Eq (OneEraValidationErr  xs)
+deriving via LiftNS WrapApplyTxErr    xs instance CanHardFork xs => Eq (OneEraApplyTxErr    xs)
+deriving via LiftNS WrapEnvelopeErr   xs instance CanHardFork xs => Eq (OneEraEnvelopeErr   xs)
+deriving via LiftNS GenTx             xs instance CanHardFork xs => Eq (OneEraGenTx         xs)
+deriving via LiftNS WrapGenTxId       xs instance CanHardFork xs => Eq (OneEraGenTxId       xs)
+deriving via LiftNS WrapLedgerErr     xs instance CanHardFork xs => Eq (OneEraLedgerError   xs)
+deriving via LiftNS WrapLedgerUpdate  xs instance CanHardFork xs => Eq (OneEraLedgerUpdate  xs)
+deriving via LiftNS WrapLedgerWarning xs instance CanHardFork xs => Eq (OneEraLedgerWarning xs)
+deriving via LiftNS WrapSelectView    xs instance CanHardFork xs => Eq (OneEraSelectView    xs)
+deriving via LiftNS WrapTipInfo       xs instance CanHardFork xs => Eq (OneEraTipInfo       xs)
+deriving via LiftNS WrapValidationErr xs instance CanHardFork xs => Eq (OneEraValidationErr xs)
 
 deriving via LiftNS WrapGenTxId xs instance CanHardFork xs => Ord (OneEraGenTxId xs)
 
-deriving via LiftNP WrapChainSelConfig        xs instance CanHardFork xs => Show (PerEraChainSelConfig        xs)
 deriving via LiftNS WrapEnvelopeErr           xs instance CanHardFork xs => Show (OneEraEnvelopeErr           xs)
 deriving via LiftNS WrapForgeStateInfo        xs instance CanHardFork xs => Show (OneEraForgeStateInfo        xs)
 deriving via LiftNS WrapForgeStateUpdateError xs instance CanHardFork xs => Show (OneEraForgeStateUpdateError xs)
