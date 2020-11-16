@@ -21,6 +21,7 @@ module Ouroboros.Consensus.NodeKernel (
   , getMempoolReader
   , getMempoolWriter
   , getPeersFromCurrentLedger
+  , getPeersFromCurrentLedger'
   ) where
 
 import           Control.Monad
@@ -70,6 +71,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
+
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
@@ -680,6 +682,26 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
-  -> STM m [(PoolStake, NonEmpty DomainAddress)]
+  -> STM m [(PoolStake, NonEmpty RelayAddress)]
 getPeersFromCurrentLedger kernel =
     getPeers . ledgerState <$> ChainDB.getCurrentLedger (getChainDB kernel)
+
+-- | Like 'getPeersFromCurrentLedger' but returns an empty list unless the tip
+-- is passed the provided slot number.
+getPeersFromCurrentLedger' :: forall blk localPeer m remotePeer.
+     ( HasHeader (Header blk)
+     , IOLike m
+     , LedgerSupportsPeerSelection blk
+     )
+  => NodeKernel m remotePeer localPeer blk
+  -> SlotNo
+  -> STM m (SlotNo, [(PoolStake, NonEmpty RelayAddress)])
+getPeersFromCurrentLedger' kernel afterSlot = do
+    curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain (getChainDB kernel)
+    case curChainSlot of
+      Origin      -> return (0, []) -- There's nothing in the chain so no usable peers on chain.
+      NotOrigin tip ->
+        if afterSlot < tip
+           then (,) tip <$> getPeersFromCurrentLedger kernel
+           else return (tip, [])
+
