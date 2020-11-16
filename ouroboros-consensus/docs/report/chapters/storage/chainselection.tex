@@ -15,7 +15,7 @@
 
 Chain selection is one of the central responsibilities of the chain database
 (\cref{chaindb}). It of course depends on chain selection as it is defined  by
-the consensus protocol (\cref{chain-selection:overview}), but needs to  take
+the consensus protocol (\cref{consensus:class:chainsel}), but needs to  take
 care of a lot of operational concerns. In this chapter we will take a closer
 look at the implementation of chain selection in the chain database, and state
 some properties and sketch some proofs to motivate it.
@@ -25,11 +25,11 @@ some properties and sketch some proofs to motivate it.
 
 \subsection{Introduction}
 
-Recall from \cref{chain-selection:overview} that while in the literature chain
-selection is defined in terms of comparisons between entire chains, we instead
-opted to model it in terms of a comparison between the \emph{headers} at the tip
-of those chains (or rather, a \emph{view} on those headers defined by the
-specific consensus protocol).
+Recall from \cref{consensus:overview:chainsel} that while in the literature
+chain selection is defined in terms of comparisons between entire chains, we
+instead opted to model it in terms of a comparison between the \emph{headers} at
+the tip of those chains (or rather, a \emph{view} on those headers defined by
+the specific consensus protocol).
 
 We saw in \cref{storage:inmemory} (specifically, \cref{storage:fragments}) that
 the consensus layer stores chain fragments in memory (the most recent headers on
@@ -42,7 +42,7 @@ selection interface to compare them. The question is, however, how to compare
 two fragments when one (or both) of them is \emph{empty}. This problem is more
 subtle than it might seem at first sight, and requires careful consideration.
 
-We mentioned in \cref{chain-selection:overview} that consensus imposes a
+We mentioned in \cref{consensus:overview:chainsel} that consensus imposes a
 fundamental assumption that the strict extension of a chain is always (strictly)
 preferred over that chain (\cref{prefer-extension}), and that consequently we
 \emph{always} prefer a non-empty chain over an empty one (and conversely we
@@ -93,7 +93,8 @@ In this chapter, we establish this precondition in two different ways:
 \item When we construct candidates chains (potential chains that we may wish
 to replace our own chain with), those candidate chains must intersect with
 our own chain within $k$ blocks from its tip; after all, if that is not the
-case, we would induce a roll back of more than $k$ blocks (\cref{param:k}).
+case, we would induce a roll back of more than $k$ blocks
+(\cref{consensus:overview:k}).
 
 \item When we compare fragments to each other, we only compare fragments from a
 set of fragments that are all anchored at the same point (i.e., the anchor of
@@ -182,7 +183,7 @@ The current chain is the best possible path through the volatile DB.
 \end{definition}
 
 ``Best'' of course is according to the chain selection rule defined by the
-consensus protocol (\cref{chain-selection:overview}). In this section we
+consensus protocol (\cref{consensus:class:chainsel}). In this section we
 describe how the chain database establishes and preserves this invariant.
 
 \subsection{Notation}
@@ -205,9 +206,9 @@ given as
 C \chainlt C'  \iff  \length{C} < \length{C'}
 \end{equation*}
 
-In general of course the exact rule depends on the choice of consensus
-protocol. \Cref{never-shrink} (\cref{chain-selection}) however means that
-we \emph{do} have that
+In general of course the exact rule depends on the choice of consensus protocol.
+\Cref{never-shrink} (\cref{consensus:overview:chainsel}) however means that we
+\emph{do} have that
 %
 \begin{equation}
 \label{eq:never-shrink}
@@ -216,7 +217,7 @@ we \emph{do} have that
 %
 independent of the particular choice of consensus protocol (in general, however,
 we cannot say anything about chains of equal length). \Cref{prefer-extension}
-(\cref{chain-selection:overview}) can now be rephrased as
+(\cref{consensus:overview:chainsel}) can now be rephrased as
 %
 \begin{equation}
 \label{eq:prefer-extension}

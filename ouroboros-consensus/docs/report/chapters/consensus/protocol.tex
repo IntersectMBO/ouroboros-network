@@ -1,4 +1,5 @@
 \chapter{Consensus Protocol}
+\label{consensus}
 
 % TODO: what kind of variation does this design support?
 % (counter-example: genesis rule)
@@ -11,16 +12,10 @@
 % of the paper implemented? How do additional design constraints change this?
 % (e.g. header/body split)
 
-\section{Fundamental parameters}
+\section{Overview}
 
-\subsection{The security parameter $k$}
-\label{param:k}
-
-\section{Chain selection}
-\label{chain-selection}
-
-\subsection{Overview}
-\label{chain-selection:overview}
+\subsection{Chain selection}
+\label{consensus:overview:chainsel}
 
 Chain selection is the process of choosing between multiple competing chains,
 and is one of the most important responsibilities of a consensus protocol. When
@@ -31,8 +26,8 @@ that is not realistic: the node has to do chain selection frequently, and
 scanning millions of blocks each time to make the comparison is of course out of
 the question.
 
-The consensus layer keeps the last $k$ headers as a \emph{chain fragment} in
-memory (\cref{storage:inmemory}); the rest of the chain is stored on disk.
+The consensus layer keeps the most recent headers as a \emph{chain fragment}
+in memory (\cref{storage:inmemory}); the rest of the chain is stored on disk.
 Similarly, we keep a chain fragment of headers in memory for every (upstream)
 node whose chain we are following and whose blocks we may wish to adopt
 (\cref{chainsyncclient}). Before the introduction of the hard fork combinator
@@ -80,35 +75,54 @@ the Ouroboros Genesis consensus protocol includes a chain selection rule
 It will therefore require special treatment; we will come back to this in
 \cref{future:genesis}.
 
-\subsection{Interface}
-\label{chain-selection:interface}
+\subsection{The security parameter $k$}
+\label{consensus:overview:k}
 
-We model chain selection as its own class\footnote{Here and elsewhere we elide
-superclass constraints that are not relevant to the discussion.}, separate from
-the full consensus algorithm (\cref{class:ConsensusProtocol}); this will allow
-us to more easily override this aspect of a consensus protocol when needed; see
-\cref{consensus:override-leader-schedule}.
+TODO\todo{TODO}.
+
+\section{The \lstinline!ConsensusProtocol! Class}
+\label{consensus:class}
+
+We model consensus protocols as a single class called
+\lstinline!ConsensusProtocol!; this class can be considered to be the
+central class within the consensus layer.
 
 \begin{lstlisting}
-class (..) => ChainSelection p where
+class (..) => ConsensusProtocol p where
 \end{lstlisting}
 
 The type variable $p$ is a type-level tag describing a particular consensus
 protocol; if Haskell had open kinds\footnote{We will come back to this in
 \cref{future:openkinds}.}, we could say \lstinline!(p :: ConsensusProtocol)!.
-Like most other things, chain selection may require some static configuration
-data, although most chain selection algorithms do not:\footnote{Explicitly
-modelling such a required context could be avoided if we used explicit records
-instead of type classes; we will discuss this point in more detail in
-\cref{technical:classes-vs-records}.}
-
+All functions within this class take an argument of type
+%
 \begin{lstlisting}
-type family ChainSelConfig p :: Type
-type ChainSelConfig p = ()
+data family ConsensusConfig p :: Type
 \end{lstlisting}
+%
+This allows the protocol to depend on some static configuration data; what
+configuration data is required will vary from protocol to
+protocol.\footnote{Explicitly modelling such a required context could be avoided
+if we used explicit records instead of type classes; we will discuss this point
+in more detail in \cref{technical:classes-vs-records}.}  The rest of the
+consensus layer does not really do much with this configuration, except make it
+available where required; however, we do require that whatever the configuration
+is, we can extract $k$ from it:
+%
+\begin{lstlisting}
+protocolSecurityParam :: ConsensusConfig p -> SecurityParam
+\end{lstlisting}
+%
+For example, this is used by the chain database to determine when blocks can be
+moved from the volatile DB to the immutable DB (\cref{storage:components}). In
+the rest of this section we will consider the various parts of the
+\lstinline!ConsensusProtocol! class one by one.
 
-As mentioned in \cref{chain-selection:overview}, chain selection will only look
-at the headers at the tip of the ledger. Since we are defining consensus
+\subsection{Chain selection}
+\label{consensus:class:chainsel}
+
+As mentioned in \cref{consensus:overview:chainsel}, chain selection will only
+look at the headers at the tip of the ledger. Since we are defining consensus
 protocols independent from a concrete choice of ledger, however
 (\cref{decouple-consensus-ledger}), we cannot use a concrete block or header
 type. Instead, we merely say that the chain selection requires \emph{some} view
@@ -124,45 +138,33 @@ required for the most important chain selection rule, simply preferring longer
 chains over shorter ones. It is the responsibility of the glue code that
 connects a specific choice of ledger to a consensus protocol to define the
 projection from a concrete block type to this \lstinline!SelectView!
-(\ref{BlockSupportsProtocol}).
-
-Chain selection itself is then simple a function that orders two
-\lstinline!SelectView!s:\footnote{Perhaps the use of \lstinline!Ordering!
-is a slight abuse of nomenclature. Chain selection is a partial ordering,
-not a total one. When neither change is preferred over the other, we will
-say that the chains are equally preferable, which this function indicates
-by returning \lstinline!EQ!.}
-
+(\ref{BlockSupportsProtocol}). We then require that these views must be
+comparable
+%
 \begin{lstlisting}
-compareChains :: proxy          p
-              -> ChainSelConfig p
-              -> SelectView     p
-              -> SelectView     p
-              -> Ordering
+class (Ord (SelectView p), ..) => ConsensusProtocol p where
 \end{lstlisting}
+%
+and say that one chain is (strictly) preferred over another if its
+\lstinline!SelectView! is greater. If two chains terminate in headers with
+the \emph{same} view, neither chain is preferred over the other, and we
+could pick either one (we say they are equally preferable).
 
-This function then is given a default which simply compares chain length:
-
-\begin{lstlisting}
-compareCandidates _ _ = compare
-\end{lstlisting}
-
-We will consider in more detail how the implementation of the consensus
-algorithms in consensus layer differs from the literature later in this chapter,
-but it is worth pointing out here that this function is \emph{not} responsible
-for
+Later in this chapter we will discuss in detail how our treatment of
+consensus algorithms differs from the research literature (\cref{bft,praos}),
+and in \cref{chainsel} we will see how the details of how chain selection
+is implemented in the chain database; it is worth pointing out here, however, that the comparion based on \lstinline!SelectView! is not intended to capture
 
 \begin{itemize}
-\item checking that the two chains are valid
-\item checking that the intersection point is not too far back (i.e.,
-preserving the invariant that we never roll back more than $k$ blocks,
-see \cref{param:k}
+\item chain validity
+\item the intersection point (checking that the intersection point is not too
+far back, preserving the invariant that we never roll back more than $k$ blocks,
+see \cref{consensus:overview:k})
 \end{itemize}
 
-Both of these responsibilities would of course require more than seeing just
-the tip of the chains. They are handled independent of the particular choice of
-consensus protocol by the chain database; we will describe how chain selection
-works in detail in \cref{chainsel}.
+Both of these responsibilities would require more than seeing just
+the tip of the chains. They are handled independent of the choice of
+consensus protocol by the chain database, as discussed in \cref{chainsel}.
 
 When two \emph{candidate} chains (that is, two chains that aren't our current)
 are equally preferable, we are free to choose either one. However, when a
@@ -172,68 +174,16 @@ and we define it once and for all:
 
 \begin{lstlisting}
 preferCandidate ::
-     ChainSelection p
-  => proxy          p
-  -> ChainSelConfig p
-  -> SelectView     p      -- ^ Tip of our chain
-  -> SelectView     p      -- ^ Tip of the candidate
+     ConsensusProtocol p
+  => proxy      p
+  -> SelectView p  -- ^ Tip of our chain
+  -> SelectView p  -- ^ Tip of the candidate
   -> Bool
-preferCandidate p cfg ours cand = compareChains p cfg ours cand == LT
+preferCandidate _ ours cand = cand > ours
 \end{lstlisting}
-
-\section{Full protocol}
-\label{class:ConsensusProtocol}
-
-The main class modelling the consensus protocol has chain selection as a
-superclass constraint:
-
-\begin{lstlisting}
-class (ChainSelection p, ..) => ConsensusProtocol p where
-\end{lstlisting}
-
-As for leader selection (and most of our other key abstractions), the consensus
-protocol may need its own configuration; the remainder of the class itself is
-split into two parts: the first part deals with updating the \emph{state} of the
-consensus protocol, and the second deals with leader selection. We will discuss
-these separately.
-
-\subsection{Configuration}
-\label{class:ConsensusProtocol:config}
-
-Each consensus protocol defines its own type of required static
-configuration:\footnote{This is defined as a data family rather than a type
-family: since all functions in the class take the configuration as an argument,
-it can serve as a hint to the type checker about which protocol we're interested
-in, avoiding the need for an explicit proxy. We did not do that for chain
-selection because there it was more useful to be able to specify a default (most
-chain selection algorithms don't require configuration), which is not possible
-with a data family.}
-
-\begin{lstlisting}
-data family ConsensusConfig p :: Type
-\end{lstlisting}
-
-Since chain selection is part of the consensus protocol, the chain selection
-configuration should be a subset of the full protocol configuration:
-
-\begin{lstlisting}
-chainSelConfig :: ConsensusConfig p -> ChainSelConfig p
-\end{lstlisting}
-
-The rest of the consensus layer does not really do much with this configuration,
-except make it available where required; however, we do require that whatever
-the configuration is, we can extract $k$ from it:
-
-\begin{lstlisting}
-protocolSecurityParam :: ConsensusConfig p -> SecurityParam
-\end{lstlisting}
-
-For example, this is used by the chain database to determine when blocks can be
-moved from the volatile DB to the immutable DB
-(\cref{storage:components}).
 
 \subsection{Ledger view}
-\label{class:ConsensusProtocol:ledgerview}
+\label{consensus:class:ledgerview}
 
 We mentioned in \cref{overview:ledger} that some consensus protocols may require
 limited information from the ledger; for instance, the Praos consensus protocol
@@ -250,7 +200,7 @@ state of the consensus protocol. We will discuss this state management in more
 detail next.
 
 \subsection{Protocol state management}
-\label{class:ConsensusProtocol:state}
+\label{consensus:class:state}
 
 Each consensus protocol has its own type chain dependent state\footnote{We are
 referring to this as the ``chain dependent state'' to emphasise that this is
@@ -342,7 +292,7 @@ relate to the best case == worst case thing? Or to the asymptotic
 attacker/defender costs?}
 
 \subsection{Leader selection}
-\label{class:ConsensusProtocol:leaderselection}
+\label{consensus:class:leaderselection}
 
 The final responsibility of the consensus protocol is leader selection. First,
 it is entirely possible for nodes to track the blockchain without ever producing
@@ -396,8 +346,8 @@ type family BlockProtocol blk :: Type
 %
 Of course, for the block to be usable with that consensus protocol, we need
 functions that construct the \lstinline!SelectView!
-(\cref{chain-selection:interface}) and \lstinline!ValidateView!
-(\cref{class:ConsensusProtocol:state}) projections from that block:
+(\cref{consensus:class:chainsel}) and \lstinline!ValidateView!
+(\cref{consensus:class:state}) projections from that block:
 %
 \begin{lstlisting}
 class (..) => BlockSupportsProtocol blk where
@@ -534,9 +484,9 @@ description below.
   longer. \emph{We do not satisfy this requirement.} The chain selection rule
   for Permissive BFT is indeed the longest chain rule, \emph{but} consensus
   imposes a global maximum rollback (the security parameter $k$;
-  \cref{param:k}). In other words, nodes \emph{will} prefer longer chains over
-  its own, \emph{provided} that the intersection between that chain and the
-  nodes own chain is no more than $k$ blocks away from the node's tip.
+  \cref{consensus:overview:k}). In other words, nodes \emph{will} prefer longer
+  chains over its own, \emph{provided} that the intersection between that chain
+  and the nodes own chain is no more than $k$ blocks away from the node's tip.
   \todo{Justify this maximum rollback?}
 
   Moreover, our definition of validity is also different. We do require that

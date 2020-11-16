@@ -109,10 +109,10 @@ yet known} if the transition to era 2 has not been decided yet.
 \section{Slots, blocks and stability}
 \label{time:slots-vs-blocks}
 
-In \cref{param:k} we discussed the fundamental parameter $k$: blocks that are
-more than $k$ blocks away from the tip of the chain are considered to be
-immutable by the consensus layer and no longer subject to rollback. We say that
-such blocks are \emph{stable}.
+In \cref{consensus:overview:k} we discussed the fundamental parameter $k$:
+blocks that are more than $k$ blocks away from the tip of the chain are
+considered to be immutable by the consensus layer and no longer subject to
+rollback. We say that such blocks are \emph{stable}.
 
 The ledger layer itself also depends on stability; for example, in Shelley the
 stake distribution to be used for the leadership check needs to be stable before
@@ -223,8 +223,8 @@ alternative chains) too, we will actually need a stronger property. Clearly,
 time conversions cannot be invariant under switching to arbitrary chains; after
 all, alternative chains might have era transitions in different places. The
 consensus layer however does not \emph{support} switching to arbitrary
-alternative chains; we have a maximum rollback (\cref{param:k}), and we never
-switch to a shorter chain (\cref{chain-selection:overview},
+alternative chains; we have a maximum rollback (\cref{consensus:overview:k}),
+and we never switch to a shorter chain (\cref{consensus:overview:chainsel},
 \cref{never-shrink}). This means that we can model switching to an alternative
 chain as $$\switch{n}{bs}{\sigma}$$ where $n \le k$ indicates how many blocks we
 want to rollback, $\mathit{bs}$ is a list of new blocks we want to apply, and
@@ -489,7 +489,7 @@ need to know the current time as a slot number (\todo{TODO.}We should discuss
 this somewhere. The chapter on the consensus protocol discusses the protocol
 side of things, but not the actual ``fork block production'' logic.)
 \item When we add new blocks to the chain DB, we need to check if their slot
-number is ahead of the wallclock (\cref{storage:infuture}).
+number is ahead of the wallclock (\cref{chainsel:infuture}).
 \item Specific consensus protocols may need to do time conversions; for example,
 Praos needs to know when various points in an epoch have been reached in order
 to update nonces, switch stake distribution, etc.
@@ -516,13 +516,13 @@ Recall from \cref{nonfunctional:network:headerbody} that block downloading
 proceeds in two steps: first, the chain sync client downloads the block header
 and validates it; if it finds that the header is valid, the block download logic
 may decide to also download the block body, depending on chain selection
-(\cref{chain-selection}).
+(\cref{consensus:overview:chainsel,consensus:class:chainsel}).
 
 Suppose the node's own ledger state is at point $P$, and the incoming header is
 at point $Q$. In order to validate the header, we need a ledger \emph{view} at
 point $Q$ without having the ledger \emph{state} at point $Q$; this means that
 point $Q$ must be within the ledger's forecast range at the common ancestor $A$
-of $P$ and $Q$ (\cref{class:ConsensusProtocol:ledgerview,ledger:forecasting}):
+of $P$ and $Q$ (\cref{,ledger:forecasting}):
 
 \begin{center}
 \begin{tikzpicture}
@@ -576,7 +576,7 @@ about the provenance of the block (where the block came from), that ledger state
 may also not be usable to translate the block's slot number to a wallclock
 time. We now circumvent this problem by delaying the in-future check until we
 have validated the block, and so can use the block's \emph{own} ledger state to
-do the time conversion (\cref{storage:infuture}).
+do the time conversion (\cref{chainsel:infuture}).
 
 We saw in the previous section that the chain sync client \emph{could} do the
 in-future check on headers, but the chain sync client is not the only way that
@@ -659,7 +659,7 @@ the new block.
 \label{time:imm-tip-in-future}
 
 The chain database never adopts blocks from the future
-(\cref{storage:infuture}). Nevertheless, it is possible that if the user sets
+(\cref{chainsel:infuture}). Nevertheless, it is possible that if the user sets
 their computer system clock back by (the equivalent of) more than $k$ blocks,
 the immutable database (\cref{storage:components}) might contain blocks
 whose slot numbers are ahead of the wall clock. We cannot verify this during a

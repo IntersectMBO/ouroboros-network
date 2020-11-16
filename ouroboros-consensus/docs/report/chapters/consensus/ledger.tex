@@ -61,7 +61,7 @@ class (GetTip l, GetTip (Ticked l), ..) => IsLedger l where
 \end{lstlisting}
 
 The type of \lstinline!applyChainTick! is similar to the type of
-\lstinline!tickChainDepState! we saw in \cref{class:ConsensusProtocol:state}.
+\lstinline!tickChainDepState! we saw in \cref{consensus:class:state}.
 Examples of the time-based changes in the ledger state include activating
 delegation certificates in the Byron ledger, or paying out staking rewards
 in the Shelley ledger.
@@ -102,7 +102,7 @@ If \lstinline!applyChainTick! was analogous to \lstinline!tickChainDepState!,
 then \lstinline!applyLedgerBlock! and \lstinline!reapplyLedgerBlock! are
 analogous to \lstinline!updateChainDepState! and
 \lstinline!reupdateChainDepState!, respectively
-(\cref{class:ConsensusProtocol:state}): apply a block to an already ticked
+(\cref{consensus:class:state}): apply a block to an already ticked
 ledger state:
 %
 \begin{lstlisting}
@@ -114,7 +114,7 @@ class (IsLedger l, ..) => ApplyBlock l blk where
 \end{lstlisting}
 %
 The discussion of the difference between, and motivation for, the distinction
-between application and reapplication in \cref{class:ConsensusProtocol:state}
+between application and reapplication in \cref{consensus:class:state}
 about the consensus protocol state applies here equally.
 
 \subsection{Linking a block to its ledger}
@@ -150,16 +150,16 @@ type TickedLedgerState blk = Ticked    (LedgerState blk)
 \label{ledger:api:LedgerSupportsProtocol}
 
 In \cref{overview:ledger} we mentioned that a consensus protocol may require
-some information from the ledger, and in
-\cref{class:ConsensusProtocol:ledgerview} we saw that this is modelled as the
-\lstinline!LedgerView! type family in the \lstinline!ConsensusProtocol! class. A
-ledger and a consensus protocol are linked through the block type (indeed, apart
-from the fundamental concepts we have discussed so far, most of consensus is
-parameterised over blocks, not ledgers or consensus protocols). Recall from
-\cref{BlockSupportsProtocol} that the \lstinline!BlockProtocol! type family
-defines for each block what the corresponding consensus protocol is; we  can use
-this to define the projection of the ledger view (defined by the consensus
-protocol) from the ledger state as follows:
+some information from the ledger, and in \cref{consensus:class:ledgerview} we
+saw that this is modelled as the \lstinline!LedgerView! type family in the
+\lstinline!ConsensusProtocol! class. A ledger and a consensus protocol are
+linked through the block type (indeed, apart from the fundamental concepts we
+have discussed so far, most of consensus is parameterised over blocks, not
+ledgers or consensus protocols). Recall from \cref{BlockSupportsProtocol} that
+the \lstinline!BlockProtocol! type family defines for each block what the
+corresponding consensus protocol is; we can use this to define the projection of
+the ledger view (defined by the consensus protocol) from the ledger state as
+follows:
 %
 \begin{lstlisting}
 class (..) => LedgerSupportsProtocol blk where
@@ -189,10 +189,10 @@ from the ledger state. For example, in order to verify whether a Shelley header
 was produced by the right node, we need to know the stake distribution (recall
 that in Shelley the probability of being elected a leader is proportional to the
 stake); this information is precisely what is captured by the
-\lstinline!LedgerView! (\cref{class:ConsensusProtocol:ledgerview}). However, we
-cannot update the ledger state with block headers only, we need the block
-bodies: after all, to stay with the Shelley example, the stake evolves based on
-the transactions that are made, which appear only in the block bodies.
+\lstinline!LedgerView! (\cref{consensus:class:ledgerview}). However, we cannot
+update the ledger state with block headers only, we need the block bodies: after
+all, to stay with the Shelley example, the stake evolves based on the
+transactions that are made, which appear only in the block bodies.
 
 Not all is lost, however. The stake distribution used by the Shelley ledger for
 the sake of the leadership check \emph{is not the \emph{current} stake
@@ -300,18 +300,19 @@ This function must satisfy two important properties:
 When we validate headers from an upstream node, the most recent usable ledger
 state we have is the ledger state at the intersection of our chain and the chain
 of the upstream node. That intersection will be at most $k$ blocks back, because
-that is our maximum rollback (\cref{param:k}). Furthermore, it is only useful to
-track an upstream peer if we might want to adopt their blocks, and we only
-switch to their chain if it is longer than ours (\cref{chain-selection}). This
-means that in the worst case scenario, with the intersection $k$ blocks back, we
-need to be able to evaluate $k + 1$ headers in order to adopt the alternative
-chain. However, the range of a forecast is based on \emph{slots}, not blocks;
-since not every slot may contain a block (\cref{time:slots-vs-blocks}), the
-range needs to be sufficient to \emph{guarantee} to contain at least $k + 1$
-blocks\footnote{Due to a misalignment between the consensus requirements and the
-Shelley specification, this is not the case for Shelley, where the effective
-maximum rollback is in fact $k - 1$; see \cref{shelley:forecasting}).}; we will
-come back to this in \cref{future:block-vs-slot}.
+that is our maximum rollback (\cref{consensus:overview:k}). Furthermore, it is
+only useful to track an upstream peer if we might want to adopt their blocks,
+and we only switch to their chain if it is longer than ours
+(\cref{consensus:overview:chainsel}). This means that in the worst case
+scenario, with the intersection $k$ blocks back, we need to be able to evaluate
+$k + 1$ headers in order to adopt the alternative chain. However, the range of a
+forecast is based on \emph{slots}, not blocks; since not every slot may contain
+a block (\cref{time:slots-vs-blocks}), the range needs to be sufficient to
+\emph{guarantee} to contain at least $k + 1$ blocks\footnote{Due to a
+misalignment between the consensus requirements and the Shelley specification,
+this is not the case for Shelley, where the effective maximum rollback is in
+fact $k - 1$; see \cref{shelley:forecasting}).}; we will come back to this in
+\cref{future:block-vs-slot}.
 
 The network layer may have additional reasons for wanting a long forecast
 range; see \cref{nonfunctional:network:headerbody}.
