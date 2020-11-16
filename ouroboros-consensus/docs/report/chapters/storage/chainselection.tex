@@ -82,7 +82,7 @@ rollback (and before the roll forward), the candidate fragment is empty.
 \label{chainsel:fragments:precondition}
 
 Since neither of these circumstances can be avoided, we must therefore impose a
-precondition for chain selecton between chain fragments to be definable:
+precondition for chain selection between chain fragments to be definable:
 
 \begin{definition}[Precondition for comparing chain fragments]
 The two fragments must either both be non-empty, or they must intersect.
@@ -107,7 +107,7 @@ they trivially all intersect with each other.
 There is one more use of fragment selection, which is rather more subtle;
 we will come back to this in \cref{chainsyncclient:plausiblecandidates}.
 
-\todo{TODO} TODO: Throughout we are talking about \emph{anchored} framgnents
+\todo{TODO} TODO: Throughout we are talking about \emph{anchored} fragments
 here. We should make sure that we discuss those somewhere.
 
 \subsection{Definition}
@@ -334,7 +334,7 @@ Then
 Suppose there exists $F' \in \candidates{A}{V \cup \{B\}}$ such that
 $F_\mathit{new} \chainlt F'$. By transitivity and
 assumption~\ref{focusonnewblock:betterthanold}, $F \chainlt F'$. As
-shown in \cref{candidates:properties} (\cref{candidates:musthavenew}), there are two possiblities:
+shown in \cref{candidates:properties} (\cref{candidates:musthavenew}), there are two possibilities:
 
 \begin{itemize}
 \item $F' \in \candidates{A}{V}$, which would violate
@@ -344,16 +344,16 @@ assumption~\cref{focusonnewblock:optimalamongstnew}.
 \end{itemize}
 \end{proof}
 
-\section{Initialization}
+\section{Initialisation}
 \label{chainsel:init}
 
-The initialization of the chain database proceeds as follows.
+The initialisation of the chain database proceeds as follows.
 
 \begin{enumerate}
 
 \item
 \label{chaindb:init:imm}
-Initialize the immutable database, determine its tip $I$, and ask the
+Initialise the immutable database, determine its tip $I$, and ask the
 ledger DB for the corresponding ledger state $L$.
 
 \item Compute the set of candidates anchored at the immutable database's tip
@@ -473,7 +473,7 @@ computed by
 Since all candidates would be strictly preferred over $F$ (since they are
 extensions of $F$), by \cref{focusonnewblock} it suffices to pick the best
 candidate amongst these extensions. Apart from the starting point, chain
-selection then proceeds in the same way as when we are initializing the database
+selection then proceeds in the same way as when we are initialising the database
 (\cref{chainsel:init}).
 
 This case takes care of the common case where we just add a block to our chain,
@@ -533,7 +533,7 @@ chain (\cref{chainsel:addtochain}). The new candidates in $\candidates{I}{V \cup
 extensions of $F_\mathit{prefix}$; we can compute these candidates
 using\footnote{The implementation of the chain database actually does not
 construct fragments that go back to $I$, but rather to the intersection point
-with the current chain. This can be considered to be an optimization of what we
+with the current chain. This can be considered to be an optimisation of what we
 describe here.}
 $$I \app \ldots \app B \app \candidates{B}{V \cup \{B\}}$$
 Not all of these fragments might be preferred over the current chain; we filter
