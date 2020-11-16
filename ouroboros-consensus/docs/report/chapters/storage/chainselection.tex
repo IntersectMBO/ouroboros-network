@@ -9,6 +9,7 @@
 \renewcommand{\iff}{\ensuremath{\qquad\mathrm{iff}\qquad}}
 \newcommand{\candidates}[2]{\ensuremath{\mathsf{candidates}_#1(#2)}}
 \newcommand{\blockNo}[1]{\ensuremath{\mathtt{blockNo}(#1)}}
+\newcommand{\selectviewle}{\ensuremath{\precsim}}
 
 \chapter{Chain Selection}
 \label{chainsel}
@@ -72,7 +73,7 @@ fit onto the tip of the immutable database).
 A \emph{genuinely} empty candidate fragment, representing an empty candidate
 chain, is never preferred over our chain. Unfortunately, however, the candidate
 fragment as maintained by the chain sync client (\cref{chainsyncclient}) can
-basically be empty at any point due to the way that a switch-to-fork is
+essentially be empty at any point due to the way that a switch-to-fork is
 implemented in terms of rollback followed by roll forward: after a maximum
 rollback (and before the roll forward), the candidate fragment is empty.
 \end{description}
@@ -193,9 +194,10 @@ but in order to precisely describe the algorithm and state some of its
 properties, we have to introduce some notation.
 
 \begin{definition}[Chain selection]
-We will model chain selection as a binary relation (\chainlt) between valid
-chains (it is undefined for invalid chains). We assume that (\chainle) is a
-partial order (reflexive, antisymmetric, and transitive).
+We will model chain selection as a transitive binary relation (\chainlt) between
+valid chains (it is undefined for invalid chains), and let $C \chainle C'$ if
+and only if $C \chainlt C'$ or $C = C'$. It follows that (\chainle) is a partial
+order (reflexive, antisymmetric, and transitive).
 \end{definition}
 
 For example, the simple ``prefer longest chain'' chain selection rule could be
@@ -610,3 +612,26 @@ the block in the volatile database, but in the current design, the volatile
 database does not store \emph{any} information on disk apart from raw blocks,
 so this would be quite a significant design change.
 \end{bug}
+
+\section{Sorting}
+
+In this chapter we have modelled chain selection as a partial order
+$(\chainle)$. This suffices for the formal treatment, and in theory also
+suffices for the implementation. However, at various points during the chain
+selection process we need to \emph{sort} candidates in order of preference. We
+can of course sort values based on a preorder only (topological sorting), but we
+can do slightly better. Recall from \cref{consensus:class:chainsel} that we
+require that the \lstinline!SelectView! on headers must be a total order. We can
+therefore define
+
+\begin{definition}[Same select view]
+Let $C \selectviewle C'$ if the select view at the tip of $C$ is less than
+or equal to the select view at the tip of $C'$.
+\end{definition}
+
+(\selectviewle) forms a total preorder (though not a partial order); if $C
+\selectviewle C'$ \emph{and} $C' \selectviewle C$ then the select views at the
+tips of $C$ and $C'$ are equal (though they might be different chains, of
+course). Since $C \selectviewle C'$ implies $C' \chainnotlt C$, we can use this
+preorder  to sort candidates (in order words, we will sort them \emph{on} their
+select view, in Haskell-parlance).
