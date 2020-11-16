@@ -25,11 +25,11 @@
 Chain selection is the process of choosing between multiple competing chains,
 and is one of the most important responsibilities of a consensus protocol. When
 choosing between two chains, in theory any part of those chains could be
-relevant; indeed, in the research papers chain selection is described as a
-comparison of two entire chains (\cref{bft-paper,praos-paper}). In practice that
-is not realistic: the node has to do chain selection frequently, and scanning
-millions of blocks each time to make the comparison is of course out of the
-question.
+relevant; indeed, the research literature typically describes chain selection as
+a comparison of two entire chains (\cref{bft-paper,praos-paper}). In practice
+that is not realistic: the node has to do chain selection frequently, and
+scanning millions of blocks each time to make the comparison is of course out of
+the question.
 
 The consensus layer keeps the last $k$ headers as a \emph{chain fragment} in
 memory (\cref{storage:inmemory}); the rest of the chain is stored on disk.
