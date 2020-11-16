@@ -3,19 +3,17 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
   , PoolStake
     -- * Re-exports for convenience
   , DomainAddress (..)
-  , Domain
   , PortNumber
+  , RelayAddress (..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
-
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (Domain,
-                     DomainAddress (..), PortNumber)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (DomainAddress (..), PoolStake, PortNumber,
+                     RelayAddress (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 
--- | The relative stake of the stakepool. A value in the [0, 1] range.
-type PoolStake = Rational
 
 class LedgerSupportsPeerSelection blk where
   -- | Return peers registered in the ledger ordered by descending 'PoolStake'.
@@ -24,4 +22,4 @@ class LedgerSupportsPeerSelection blk where
   -- ledger for the respective stake pools will be returned.
   --
   -- Ledgers/blocks that don't support staking can return an empty list.
-  getPeers :: LedgerState blk -> [(PoolStake, NonEmpty DomainAddress)]
+  getPeers :: LedgerState blk -> [(PoolStake, NonEmpty RelayAddress)]
