@@ -82,7 +82,9 @@ module Ouroboros.Network.NodeToClient (
   , HandshakeTr
   ) where
 
-import           Control.Exception (IOException)
+import           Cardano.Prelude (FatalError)
+
+import           Control.Exception (ErrorCall, IOException)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadST
@@ -583,6 +585,16 @@ networkErrorPolicies = ErrorPolicies
         -- never fire on other platofrms.
       , ErrorPolicy
           $ \(_ :: IOManagerError)
+                -> Just Throw
+
+        -- Using 'error' throws.
+      , ErrorPolicy
+          $ \(_ :: ErrorCall)
+                -> Just Throw
+
+        -- Using 'panic' throws.
+      , ErrorPolicy
+          $ \(_ :: FatalError)
                 -> Just Throw
       ]
     , epConErrorPolicies = [
