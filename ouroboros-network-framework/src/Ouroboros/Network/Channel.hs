@@ -14,6 +14,7 @@ module Ouroboros.Network.Channel
   , handlesAsChannel
   , createConnectedChannels
   , createConnectedBufferedChannels
+  , createConnectedBufferedChannelsSTM
   , createPipelineTestChannels
   , channelEffect
   , delayChannel
@@ -170,13 +171,26 @@ createConnectedChannels = do
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedBufferedChannels :: MonadSTM m
+createConnectedBufferedChannels :: forall m a. MonadSTM m
                                 => Natural -> m (Channel m a, Channel m a)
 createConnectedBufferedChannels sz = do
+    (chan1, chan2) <- atomically $ createConnectedBufferedChannelsSTM sz
+    pure (wrap chan1, wrap chan2)
+  where
+    wrap :: Channel (STM m) a -> Channel m a
+    wrap Channel{send, recv} = Channel
+      { send = atomically . send
+      , recv = atomically recv
+      }
+
+-- | As 'createConnectedBufferedChannels', but in 'STM'.
+createConnectedBufferedChannelsSTM :: MonadSTMTx m
+                                   => Natural -> m (Channel m a, Channel m a)
+createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
-    bufferA <- atomically $ newTBQueue sz
-    bufferB <- atomically $ newTBQueue sz
+    bufferA <- newTBQueue sz
+    bufferB <- newTBQueue sz
 
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
@@ -184,8 +198,8 @@ createConnectedBufferedChannels sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = atomically (writeTBQueue bufferWrite x)
-        recv   = atomically (Just <$> readTBQueue bufferRead)
+        send x = writeTBQueue bufferWrite x
+        recv   = Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
