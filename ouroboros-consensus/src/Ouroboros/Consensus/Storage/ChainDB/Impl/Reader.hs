@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Readers
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
@@ -49,25 +50,25 @@ import           Ouroboros.Consensus.Storage.Serialisation
 -- throw a 'ClosedReaderError'.
 --
 -- Otherwise, execute the given function on the 'ChainDbEnv'.
-getReader
-  :: forall m blk r. (IOLike m, HasCallStack)
+getReader ::
+     forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
   => ChainDbHandle m blk
   -> ReaderKey
   -> (ChainDbEnv m blk -> m r)
   -> m r
 getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
-      ChainDbClosed   -> throwIO $ ClosedDBError prettyCallStack
+      ChainDbClosed   -> throwIO $ ClosedDBError @blk prettyCallStack
       ChainDbOpen env -> do
         readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen
           then return env
-          else throwIO ClosedReaderError
+          else throwIO $ ClosedReaderError @blk
     f env
 
 -- | Variant 'of 'getReader' for functions taking one argument.
-getReader1
-  :: forall m blk a r. IOLike m
+getReader1 ::
+     forall m blk a r. (IOLike m, HasHeader blk)
   => ChainDbHandle m blk
   -> ReaderKey
   -> (ChainDbEnv m blk -> a -> m r)

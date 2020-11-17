@@ -111,23 +111,23 @@ newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
-getEnv :: forall m blk r. (IOLike m, HasCallStack)
+getEnv :: forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
        => ChainDbHandle m blk
        -> (ChainDbEnv m blk -> m r)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwIO $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwIO $ ClosedDBError @blk prettyCallStack
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
-getEnv1 :: (IOLike m, HasCallStack)
+getEnv1 :: (IOLike m, HasCallStack, HasHeader blk)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> m r)
         -> a -> m r
 getEnv1 h f a = getEnv h (\env -> f env a)
 
 -- | Variant 'of 'getEnv' for functions taking two arguments.
-getEnv2 :: (IOLike m, HasCallStack)
+getEnv2 :: (IOLike m, HasCallStack, HasHeader blk)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> b -> m r)
         -> a -> b -> m r
@@ -135,23 +135,23 @@ getEnv2 h f a b = getEnv h (\env -> f env a b)
 
 
 -- | Variant of 'getEnv' that works in 'STM'.
-getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
+getEnvSTM :: forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
           => ChainDbHandle m blk
           -> (ChainDbEnv m blk -> STM m r)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
-    ChainDbClosed   -> throwSTM $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwSTM $ ClosedDBError @blk prettyCallStack
 
 -- | Variant of 'getEnv1' that works in 'STM'.
 getEnvSTM1 ::
-     (IOLike m, HasCallStack)
+     forall m blk a r. (IOLike m, HasCallStack, HasHeader blk)
   => ChainDbHandle m blk
   -> (ChainDbEnv m blk -> a -> STM m r)
   -> a -> STM m r
 getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
     ChainDbOpen env -> f env a
-    ChainDbClosed   -> throwSTM $ ClosedDBError prettyCallStack
+    ChainDbClosed   -> throwSTM $ ClosedDBError @blk prettyCallStack
 
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)

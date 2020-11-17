@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Consensus.Node.Recovery
   ( createMarkerOnCleanShutdown
   , hasCleanShutdownMarker
@@ -7,7 +9,10 @@ module Ouroboros.Consensus.Node.Recovery
   ) where
 
 import           Control.Monad (unless, when)
+import           Data.Proxy (Proxy)
+import           Data.Typeable (Typeable)
 
+import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -28,13 +33,14 @@ cleanShutdownMarkerFile = mkFsPath ["clean"]
 --
 -- A /clean/ exception is an exception for 'exceptionRequiresRecovery' returns
 -- 'False'.
-createMarkerOnCleanShutdown
-  :: IOLike m
-  => HasFS m h
+createMarkerOnCleanShutdown ::
+     (IOLike m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
   -> m a  -- ^ Action to run
   -> m a
-createMarkerOnCleanShutdown mp = onExceptionIf
-    (not . exceptionRequiresRecovery)
+createMarkerOnCleanShutdown pb mp = onExceptionIf
+    (not . exceptionRequiresRecovery pb)
     (createCleanShutdownMarker mp)
 
 -- | Return 'True' when 'cleanShutdownMarkerFile' exists.
@@ -68,8 +74,12 @@ removeCleanShutdownMarker hasFS =
 
 -- | Return 'True' if the given exception indicates that recovery of the
 -- database is required on the next startup.
-exceptionRequiresRecovery :: SomeException -> Bool
-exceptionRequiresRecovery e = case toExitReason e of
+exceptionRequiresRecovery ::
+     forall blk. (StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> SomeException
+  -> Bool
+exceptionRequiresRecovery pb e = case toExitReason pb e of
     DatabaseCorruption -> True
     _                  -> False
 

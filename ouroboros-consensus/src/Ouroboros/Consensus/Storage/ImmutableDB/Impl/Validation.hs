@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
   ( validateAndReopen
   , ValidateEnv (..)
@@ -87,7 +88,7 @@ validateAndReopen ::
      -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
   -> WithTempRegistry (OpenState m blk h) m (OpenState m blk h)
-validateAndReopen validateEnv registry valPol = wrapFsError $ do
+validateAndReopen validateEnv registry valPol = wrapFsError (Proxy @blk) $ do
     (chunk, tip) <- lift $ validate validateEnv valPol
     index        <- lift $ cachedIndex
                       hasFS
@@ -220,7 +221,7 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
       NotOrigin _ -> do
         removeFilesStartingFrom hasFS (nextChunkNo lastValidChunk)
         when (lastValidChunk < lastValidatedChunk) $
-          Primary.unfinalise hasFS chunkInfo lastValidChunk
+          Primary.unfinalise (Proxy @blk) hasFS chunkInfo lastValidChunk
 
 -- | Validate the given most recent chunk. If that chunk contains no valid
 -- block, try the chunk before it, and so on. Stop as soon as an chunk with a
@@ -411,7 +412,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
                            (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
-        then tryJust isInvalidFileError (Primary.load hasFS chunk) >>= \case
+        then tryJust isInvalidFileError (Primary.load (Proxy @blk) hasFS chunk) >>= \case
           Left ()                    -> do
             traceWith tracer $ InvalidPrimaryIndex chunk
             return False
@@ -444,7 +445,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
     -- | 'InvalidFileError' is the only error that can be thrown while loading
     -- a primary or a secondary index file
-    isInvalidFileError :: ImmutableDBError -> Maybe ()
+    isInvalidFileError :: ImmutableDBError blk -> Maybe ()
     isInvalidFileError = \case
       UnexpectedFailure (InvalidFileError {}) -> Just ()
       _                                       -> Nothing
@@ -608,5 +609,5 @@ migrate ValidateEnv { hasFS, tracer } = do
     isEpochFile s = case parseDBFile s of
       Just (prefix, chunk)
         | prefix == "epoch"
-        -> Just (chunk)
+        -> Just chunk
       _ -> Nothing

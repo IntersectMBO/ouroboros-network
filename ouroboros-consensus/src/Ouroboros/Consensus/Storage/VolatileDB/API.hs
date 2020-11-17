@@ -1,15 +1,15 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingVia               #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+
 module Ouroboros.Consensus.Storage.VolatileDB.API (
     -- * API
     VolatileDB (..)
@@ -164,16 +164,17 @@ data BlockInfo blk = BlockInfo {
 ------------------------------------------------------------------------------}
 
 -- | Errors which might arise when working with this database.
-data VolatileDBError =
+data VolatileDBError blk =
     -- | An error thrown because of incorrect usage of the VolatileDB
     -- by the user.
     ApiMisuse ApiMisuse
 
     -- | An unexpected failure thrown because something went wrong.
-  | UnexpectedFailure UnexpectedFailure
-  deriving (Show)
+  | UnexpectedFailure (UnexpectedFailure blk)
 
-instance Exception VolatileDBError where
+deriving instance (StandardHash blk, Typeable blk) => Show (VolatileDBError blk)
+
+instance (StandardHash blk, Typeable blk) => Exception (VolatileDBError blk) where
   displayException = \case
       ApiMisuse {} ->
         "VolatileDB incorrectly used, indicative of a bug"
@@ -182,7 +183,7 @@ instance Exception VolatileDBError where
       UnexpectedFailure {} ->
         "The VolatileDB got corrupted, full validation will be enabled for the next startup"
 
-data ApiMisuse =
+newtype ApiMisuse =
     -- | The VolatileDB was closed. In case it was automatically closed
     -- because an unexpected error was thrown during a read operation or any
     -- exception was thrown during a write operation, that exception is
@@ -190,16 +191,14 @@ data ApiMisuse =
     ClosedDBError (Maybe SomeException)
   deriving (Show)
 
-data UnexpectedFailure =
+data UnexpectedFailure blk =
     FileSystemError FsError
 
     -- | A block failed to parse
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
+  | ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block we got some trailing data
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
+  | TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
 
     -- | Block missing
     --
@@ -207,8 +206,7 @@ data UnexpectedFailure =
     -- the VolatileDB, nonetheless was not found.
     --
     -- This exception will be thrown by @getKnownBlockComponent@.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      MissingBlockError (Proxy blk) (HeaderHash blk)
+  | MissingBlockError (HeaderHash blk)
 
     -- | A (parsed) block did not pass the integrity check.
     --
@@ -219,10 +217,9 @@ data UnexpectedFailure =
     -- VolatileDB. While this exception typically means the block has been
     -- corrupted, it could also mean the block didn't pass the check at the time
     -- it was added.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      CorruptBlockError (Proxy blk) (HeaderHash blk)
+  | CorruptBlockError (HeaderHash blk)
 
-deriving instance Show UnexpectedFailure
+deriving instance (Typeable blk, StandardHash blk) => Show (UnexpectedFailure blk)
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -266,11 +263,11 @@ getKnownBlockComponent db blockComponent hash = do
       Left err -> throwIO err
 
 mustExist ::
-     forall proxy blk b. (StandardHash blk, Typeable blk)
-  => proxy blk
+     forall proxy blk b.
+     proxy blk
   -> HeaderHash blk
   -> Maybe b
-  -> Either VolatileDBError b
+  -> Either (VolatileDBError blk) b
 mustExist _ hash = \case
-    Nothing -> Left  $ UnexpectedFailure $ MissingBlockError (Proxy @blk) hash
+    Nothing -> Left  $ UnexpectedFailure $ MissingBlockError @blk hash
     Just b  -> Right $ b

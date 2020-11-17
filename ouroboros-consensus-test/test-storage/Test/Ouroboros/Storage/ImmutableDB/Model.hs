@@ -165,8 +165,8 @@ newtype IteratorModel blk = IteratorModel [blk]
 ------------------------------------------------------------------------------}
 
 throwApiMisuse ::
-     (MonadError ImmutableDBError m, HasCallStack)
-  => ApiMisuse -> m a
+     (MonadError (ImmutableDBError blk) m, HasCallStack)
+  => ApiMisuse blk -> m a
 throwApiMisuse e = throwError $ ApiMisuse e prettyCallStack
 
 computeBlockSize :: EncodeDisk blk blk => CodecConfig blk -> blk -> Word64
@@ -495,7 +495,7 @@ appendBlockModel ::
      forall blk. (HasHeader blk, GetHeader blk, HasCallStack)
   => blk
   -> DBModel blk
-  -> Either ImmutableDBError (DBModel blk)
+  -> Either (ImmutableDBError blk) (DBModel blk)
 appendBlockModel blk dbm@DBModel { dbmSlots } = do
     -- Check that we're not appending to the past
     let inThePast =
@@ -516,7 +516,7 @@ streamModel ::
   => StreamFrom blk
   -> StreamTo   blk
   -> DBModel blk
-  -> Either ImmutableDBError
+  -> Either (ImmutableDBError blk)
             (Either (MissingBlock blk)
                     (IteratorId, DBModel blk))
 streamModel from to dbm = swizzle $ do
@@ -558,8 +558,8 @@ streamModel from to dbm = swizzle $ do
     liftLeft  = first Left
     liftRight = first Right
 
-    swizzle :: Either (Either ImmutableDBError (MissingBlock blk)) a
-            -> Either ImmutableDBError (Either (MissingBlock blk) a)
+    swizzle :: Either (Either (ImmutableDBError blk) (MissingBlock blk)) a
+            -> Either (ImmutableDBError blk) (Either (MissingBlock blk) a)
     swizzle (Left (Left e))  = Left e
     swizzle (Left (Right e)) = Right (Left e)
     swizzle (Right a)        = Right (Right a)

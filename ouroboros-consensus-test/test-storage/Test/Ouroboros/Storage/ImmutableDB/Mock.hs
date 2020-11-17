@@ -57,7 +57,7 @@ openDBMock chunkInfo ccfg = do
         update :: (DBModel blk -> (a, DBModel blk)) -> m a
         update f = atomically $ stateTVar dbVar (swap . f)
 
-        updateE_ :: (DBModel blk -> Either ImmutableDBError (DBModel blk)) -> m ()
+        updateE_ :: (DBModel blk -> Either (ImmutableDBError blk) (DBModel blk)) -> m ()
         updateE_ f = atomically $ do
           db <- readTVar dbVar
           case f db of
@@ -65,7 +65,7 @@ openDBMock chunkInfo ccfg = do
             Right db' -> writeTVar dbVar db'
 
         updateEE ::
-             (DBModel blk -> Either ImmutableDBError (Either e (a, DBModel blk)))
+             (DBModel blk -> Either (ImmutableDBError blk) (Either e (a, DBModel blk)))
           -> m (Either e a)
         updateEE f = atomically $ do
           db <- readTVar dbVar

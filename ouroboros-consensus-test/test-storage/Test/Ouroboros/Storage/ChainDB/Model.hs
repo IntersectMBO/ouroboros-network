@@ -189,7 +189,7 @@ getBlockComponentByPoint ::
      ModelSupportsBlock blk
   => BlockComponent blk b
   -> RealPoint blk -> Model blk
-  -> Either ChainDbError (Maybe b) -- Just to satify the API
+  -> Either (ChainDbError blk) (Maybe b) -- Just to satify the API
 getBlockComponentByPoint blockComponent pt m = Right $
     (`getBlockComponent` blockComponent) <$> getBlockByPoint pt m
 
@@ -500,7 +500,7 @@ stream
   -> StreamFrom  blk
   -> StreamTo    blk
   -> Model       blk
-  -> Either ChainDbError
+  -> Either (ChainDbError blk)
             (Either (UnknownRange blk) IteratorId, Model blk)
 stream securityParam from to m = do
     unless (validBounds from to) $ Left (InvalidIteratorRange from to)
@@ -564,7 +564,7 @@ readerExists rdrId = CPS.readerExists rdrId . cps
 
 checkIfReaderExists :: CPS.ReaderId -> Model blk
                     -> a
-                    -> Either ChainDbError a
+                    -> Either (ChainDbError blk) a
 checkIfReaderExists rdrId m a
     | readerExists rdrId m
     = Right a
@@ -581,7 +581,7 @@ readerInstruction
   => CPS.ReaderId
   -> BlockComponent blk b
   -> Model blk
-  -> Either ChainDbError
+  -> Either (ChainDbError blk)
             (Maybe (ChainUpdate blk b), Model blk)
 readerInstruction rdrId blockComponent m = checkIfReaderExists rdrId m $
     rewrap $ CPS.readerInstruction rdrId (cps m)
@@ -599,7 +599,7 @@ readerForward :: HasHeader blk
               => CPS.ReaderId
               -> [Point blk]
               -> Model blk
-              -> Either ChainDbError
+              -> Either (ChainDbError blk)
                         (Maybe (Point blk), Model blk)
 readerForward rdrId points m = checkIfReaderExists rdrId m $
     case CPS.findFirstPoint points (cps m) of

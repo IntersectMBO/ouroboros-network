@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 -- | In-memory model implementation of 'VolatileDB'
 module Test.Ouroboros.Storage.VolatileDB.Model
     ( DBModel (..)
@@ -133,7 +134,7 @@ restoreInvariants dbm = case fst <$> Map.maxViewWithKey fileIndex of
     DBModel { blocksPerFile, fileIndex } = dbm
 
 whenOpen ::
-     MonadError VolatileDBError m
+     MonadError (VolatileDBError blk) m
   => DBModel blk
   -> a
   -> m a
@@ -259,7 +260,7 @@ getBlockComponentModel ::
   => BlockComponent blk b
   -> HeaderHash blk
   -> DBModel blk
-  -> Either VolatileDBError (Maybe b)
+  -> Either (VolatileDBError blk) (Maybe b)
 getBlockComponentModel blockComponent hash dbm@DBModel { codecConfig } =
     whenOpen dbm $
       flip go blockComponent <$>
@@ -289,7 +290,7 @@ putBlockModel ::
      forall blk. HasHeader blk
   => blk
   -> DBModel blk
-  -> Either VolatileDBError (DBModel blk)
+  -> Either (VolatileDBError blk) (DBModel blk)
 putBlockModel blk dbm = whenOpen dbm $
     case Map.lookup (blockHash blk) (blockIndex dbm) of
       -- Block already stored
@@ -309,7 +310,7 @@ garbageCollectModel ::
      forall blk. HasHeader blk
   => SlotNo
   -> DBModel blk
-  -> Either VolatileDBError (DBModel blk)
+  -> Either (VolatileDBError blk) (DBModel blk)
 garbageCollectModel slot dbm = whenOpen dbm $
      dbm { fileIndex = fileIndex' }
   where
@@ -323,7 +324,7 @@ garbageCollectModel slot dbm = whenOpen dbm $
 filterByPredecessorModel ::
      forall blk. (HasHeader blk, GetPrevHash blk)
   => DBModel blk
-  -> Either VolatileDBError (ChainHash blk -> Set (HeaderHash blk))
+  -> Either (VolatileDBError blk) (ChainHash blk -> Set (HeaderHash blk))
 filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
     fromMaybe Set.empty $ Map.lookup predecessor successors
   where
@@ -337,14 +338,14 @@ filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
 getBlockInfoModel ::
      (HasHeader blk, GetPrevHash blk, HasBinaryBlockInfo blk)
   => DBModel blk
-  -> Either VolatileDBError (HeaderHash blk -> Maybe (BlockInfo blk))
+  -> Either (VolatileDBError blk) (HeaderHash blk -> Maybe (BlockInfo blk))
 getBlockInfoModel dbm = whenOpen dbm $ \hash ->
     extractBlockInfo <$> Map.lookup hash (blockIndex dbm)
 
 getMaxSlotNoModel ::
      HasHeader blk
   => DBModel blk
-  -> Either VolatileDBError MaxSlotNo
+  -> Either (VolatileDBError blk) MaxSlotNo
 getMaxSlotNoModel dbm = whenOpen dbm $
     foldMap fileMaxSlotNo $ fileIndex dbm
 

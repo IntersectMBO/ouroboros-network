@@ -1,12 +1,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+
 
 module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
+import           Data.Proxy (Proxy)
 import           Data.Time.Clock (DiffTime)
+import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
 import           Ouroboros.Network.ErrorPolicy
+
+import           Ouroboros.Consensus.Block (StandardHash)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure)
@@ -27,8 +33,11 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException,
                      TempRegistryException)
 
-consensusErrorPolicy :: ErrorPolicies
-consensusErrorPolicy = ErrorPolicies {
+consensusErrorPolicy ::
+     forall blk. (Typeable blk, StandardHash blk)
+  => Proxy blk
+  -> ErrorPolicies
+consensusErrorPolicy pb = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
@@ -56,18 +65,18 @@ consensusErrorPolicy = ErrorPolicies {
           -- them, we'd somehow have to distinguish between IO exceptions
           -- arising from disk I/O (shutdownNode) and those arising from
           -- network failures (SuspendConsumer).
-          ErrorPolicy $ \(_ :: DbMarkerError)    -> Just shutdownNode
-        , ErrorPolicy $ \(_ :: DbLocked)         -> Just shutdownNode
-        , ErrorPolicy $ \(_ :: ChainDbFailure)   -> Just shutdownNode
-        , ErrorPolicy $ \(e :: VolatileDBError)  ->
+          ErrorPolicy $ \(_ :: DbMarkerError)        -> Just shutdownNode
+        , ErrorPolicy $ \(_ :: DbLocked)             -> Just shutdownNode
+        , ErrorPolicy $ \(_ :: ChainDbFailure blk)   -> Just shutdownNode
+        , ErrorPolicy $ \(e :: VolatileDBError blk)  ->
             case e of
               VolatileDB.ApiMisuse{}         -> Just ourBug
               VolatileDB.UnexpectedFailure{} -> Just shutdownNode
-        , ErrorPolicy $ \(e :: ImmutableDBError) ->
+        , ErrorPolicy $ \(e :: ImmutableDBError blk) ->
             case e of
               ImmutableDB.ApiMisuse{}         -> Just ourBug
               ImmutableDB.UnexpectedFailure{} -> Just shutdownNode
-        , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
+        , ErrorPolicy $ \(_ :: FsError) -> Just shutdownNode
 
           -- When the system clock moved back, we have to restart the node,
           -- because the ImmutableDB validation might have to truncate some
@@ -80,7 +89,7 @@ consensusErrorPolicy = ErrorPolicies {
           -- Some chain DB errors are indicative of a bug in our code, others
           -- indicate an invalid request from the peer. If the DB is closed
           -- entirely, it will only be reopened after a node restart.
-        , ErrorPolicy $ \(e :: ChainDbError) ->
+        , ErrorPolicy $ \(e :: ChainDbError blk) ->
             case e of
               ClosedDBError{}        -> Just shutdownNode
               ClosedReaderError{}    -> Just ourBug
@@ -105,7 +114,7 @@ consensusErrorPolicy = ErrorPolicies {
 
           -- Dispatch on nested exception
         , ErrorPolicy $ \(ExceptionInLinkedThread _ e) ->
-            evalErrorPolicies e (epAppErrorPolicies consensusErrorPolicy)
+            evalErrorPolicies e (epAppErrorPolicies (consensusErrorPolicy pb))
         ]
     }
   where

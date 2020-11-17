@@ -530,7 +530,7 @@ instance Arbitrary MaxClockSkew where
 
 -- | Responses are either successful termination or an error.
 newtype Resp blk it rdr = Resp
-  { getResp :: Either ChainDbError (Success blk it rdr) }
+  { getResp :: Either (ChainDbError blk) (Success blk it rdr) }
   deriving (Functor, Foldable, Traversable)
 
 deriving instance (TestConstraints blk, Show it, Show rdr)

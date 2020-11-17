@@ -59,7 +59,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   ) where
 
 import           Control.Monad (void)
-import           Data.Typeable
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -646,20 +646,19 @@ traverseReader f rdr = Reader
 -- what went wrong, in case sysadmins want to investigate the disk failure.
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
-data ChainDbFailure =
+data ChainDbFailure blk =
     -- | The ledger DB threw a file-system error
     LgrDbFailure FsError
 
     -- | Block missing from the chain DB
     --
     -- Thrown when we are not sure in which DB the block /should/ have been.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ChainDbMissingBlock (RealPoint blk)
+  | ChainDbMissingBlock (RealPoint blk)
   deriving (Typeable)
 
-deriving instance Show ChainDbFailure
+deriving instance StandardHash blk => Show (ChainDbFailure blk)
 
-instance Exception ChainDbFailure where
+instance (Typeable blk, StandardHash blk) => Exception (ChainDbFailure blk) where
   displayException = \case
       LgrDbFailure fse       -> fsError fse
       ChainDbMissingBlock {} -> corruption
@@ -678,7 +677,7 @@ instance Exception ChainDbFailure where
 -- | Database error
 --
 -- Thrown upon incorrect use: invalid input.
-data ChainDbError =
+data ChainDbError blk =
     -- | The ChainDB is closed.
     --
     -- This will be thrown when performing any operation on the ChainDB except
@@ -698,13 +697,12 @@ data ChainDbError =
     -- * The lower and upper bound are not on the same chain.
     -- * The bounds don't make sense, e.g., the lower bound starts after the
     --   upper bound, or the lower bound starts from genesis, /inclusive/.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
+  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
   deriving (Typeable)
 
-deriving instance Show ChainDbError
+deriving instance (Typeable blk, StandardHash blk) => Show (ChainDbError blk)
 
-instance Exception ChainDbError where
+instance (Typeable blk, StandardHash blk) => Exception (ChainDbError blk) where
   displayException = \case
     -- The user should not see the exception below, a fatal exception with
     -- more information about the specific will have been thrown. This

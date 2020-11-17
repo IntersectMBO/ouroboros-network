@@ -29,7 +29,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import           Data.Typeable
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -284,7 +283,6 @@ getAnyBlockComponent immutableDB volatileDB blockComponent p = do
   where
     hash = realPointHash p
 
-mustExist :: (Typeable blk, StandardHash blk)
-          => RealPoint blk -> Maybe b -> Either ChainDbFailure b
+mustExist :: RealPoint blk -> Maybe b -> Either (ChainDbFailure blk) b
 mustExist p Nothing  = Left  $ ChainDbMissingBlock p
 mustExist _ (Just b) = Right $ b

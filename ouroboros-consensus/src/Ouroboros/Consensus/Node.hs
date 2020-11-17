@@ -370,7 +370,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 (NTC.responder version $ ntcApps blockVersion)
             | (version, blockVersion) <- Map.toList llrnNodeToClientVersions
             ]
-        , daErrorPolicies = consensusErrorPolicy
+        , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
         }
 
 -- | Did the ChainDB already have existing clean-shutdown marker on disk?
@@ -381,12 +381,14 @@ newtype LastShutDownWasClean = LastShutDownWasClean Bool
 --
 -- Run the body action with the DB locked, and if the last shutdown was clean.
 --
-stdWithCheckedDB :: forall a.
-     FilePath
+stdWithCheckedDB ::
+     forall blk a. (StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> FilePath
   -> NetworkMagic
   -> (LastShutDownWasClean -> IO a)  -- ^ Body action with last shutdown was clean.
   -> IO a
-stdWithCheckedDB databasePath networkMagic body = do
+stdWithCheckedDB pb databasePath networkMagic body = do
 
     -- Check the DB marker first, before doing the lock file, since if the
     -- marker is not present, it expects an empty DB dir.
@@ -410,7 +412,7 @@ stdWithCheckedDB databasePath networkMagic body = do
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole
       -- database.
-      createMarkerOnCleanShutdown hasFS $
+      createMarkerOnCleanShutdown pb hasFS $
         body (LastShutDownWasClean lastShutDownWasClean)
   where
     mountPoint = MountPoint databasePath
@@ -654,7 +656,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnNodeToClientVersions =
           supportedNodeToClientVersions (Proxy @blk)
       , llrnWithCheckedDB =
-          stdWithCheckedDB srnDatabasePath networkMagic
+          stdWithCheckedDB (Proxy @blk) srnDatabasePath networkMagic
       , llrnMaxClockSkew =
           InFuture.defaultClockSkew
       }
