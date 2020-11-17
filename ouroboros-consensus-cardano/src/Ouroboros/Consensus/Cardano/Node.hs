@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -41,7 +42,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict (K (..), NP (..), NS (..))
+import           Data.SOP.Strict (K (..), NP (..), NS (..), unComp)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -329,9 +330,10 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
-  -> ProtocolParamsShelley c Maybe
-  -> ProtocolParamsAllegra c Maybe
-  -> ProtocolParamsMary    c Maybe
+  -> ProtocolParamsShelleyBased (ShelleyEra c) Maybe
+  -> ProtocolParamsShelley
+  -> ProtocolParamsAllegra
+  -> ProtocolParamsMary
   -> ProtocolParamsTransition
        ByronBlock
        (ShelleyBlock (ShelleyEra c))
@@ -346,28 +348,28 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis           = genesisByron
                       , byronLeaderCredentials = mCredsByron
                       }
+                    ProtocolParamsShelleyBased {
+                        shelleyBasedGenesis           = genesisShelley
+                      , shelleyBasedInitialNonce      = initialNonceShelley
+                      , shelleyBasedLeaderCredentials = mCredsShelleyBased
+                      }
                     ProtocolParamsShelley {
-                        shelleyGenesis           = genesisShelley
-                      , shelleyInitialNonce      = initialNonceShelley
-                      , shelleyProtVer           = protVerShelley
-                      , shelleyLeaderCredentials = mCredsShelley
+                        shelleyProtVer = protVerShelley
                       }
                     ProtocolParamsAllegra {
-                        allegraProtVer           = protVerAllegra
-                      , allegraLeaderCredentials = mCredsAllegra
+                        allegraProtVer = protVerAllegra
                       }
                     ProtocolParamsMary {
-                        maryProtVer           = protVerMary
-                      , maryLeaderCredentials = mCredsMary
+                        maryProtVer = protVerMary
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkByronShelley
+                        transitionTrigger = triggerHardForkByronShelley
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkShelleyAllegra
+                        transitionTrigger = triggerHardForkShelleyAllegra
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkAllegraMary
+                        transitionTrigger = triggerHardForkAllegraMary
                       } =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
@@ -382,23 +384,26 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                   WrapChainDepState $
                     headerStateChainDep initHeaderStateByron
           }
-      , pInfoBlockForging = sequence $ mconcat [
-            [ return $ hardForkBlockForging $ Z $ byronBlockForging credsByron
-            | credsByron <- maybeToList mCredsByron
-            ]
-          , [ hardForkBlockForging . S . Z
-                <$> shelleyBlockForging tpraosParams credsShelley
-            | credsShelley <- maybeToList mCredsShelley
-            ]
-          , [ hardForkBlockForging . S . S . Z
-                <$> shelleyBlockForging tpraosParams credsAllegra
-            | credsAllegra <- maybeToList mCredsAllegra
-            ]
-          , [ hardForkBlockForging . S . S . S . Z
-                <$> shelleyBlockForging tpraosParams credsMary
-            | credsMary <- maybeToList mCredsMary
-            ]
-          ]
+      , pInfoBlockForging = do
+          let blockForgingByron =
+                [ hardForkBlockForging $ Z $ byronBlockForging creds
+                | creds <- maybeToList mCredsByron
+                ]
+          blockForgingShelleyBased <- case mCredsShelleyBased of
+            Nothing                -> return []
+            Just credsShelleyBased -> do
+              sharedBlockForgings <-
+                shelleySharedBlockForging
+                  (Proxy @'[ShelleyEra c, AllegraEra c, MaryEra c])
+                  tpraosParams
+                  credsShelleyBased
+              case sharedBlockForgings of
+                bfShelley :* bfAllegra :* bfMary :* Nil -> return [
+                    hardForkBlockForging $         S $ Z $ unComp bfShelley
+                  , hardForkBlockForging $     S $ S $ Z $ unComp bfAllegra
+                  , hardForkBlockForging $ S $ S $ S $ Z $ unComp bfMary
+                  ]
+          return $ blockForgingByron <> blockForgingShelleyBased
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
@@ -445,7 +450,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerShelley
           genesisShelley
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelley)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -471,7 +476,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerAllegra
           genesisAllegra
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsAllegra)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigAllegra ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
@@ -494,7 +499,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerMary
           genesisMary
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsMary)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigMary ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))

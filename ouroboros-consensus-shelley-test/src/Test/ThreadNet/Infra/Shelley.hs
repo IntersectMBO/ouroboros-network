@@ -401,12 +401,15 @@ mkProtocolShelley ::
   -> CoreNode c
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 mkProtocolShelley genesis initialNonce protVer coreNode =
-    protocolInfoShelley $ ProtocolParamsShelley {
-        shelleyGenesis           = genesis
-      , shelleyInitialNonce      = initialNonce
-      , shelleyProtVer           = protVer
-      , shelleyLeaderCredentials = Just $ mkLeaderCredentials coreNode
-      }
+    protocolInfoShelley
+      ProtocolParamsShelleyBased {
+          shelleyBasedGenesis           = genesis
+        , shelleyBasedInitialNonce      = initialNonce
+        , shelleyBasedLeaderCredentials = Just $ mkLeaderCredentials coreNode
+        }
+      ProtocolParamsShelley {
+          shelleyProtVer = protVer
+        }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'
 -------------------------------------------------------------------------------}
