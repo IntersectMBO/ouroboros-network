@@ -382,7 +382,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                   WrapChainDepState $
                     headerStateChainDep initHeaderStateByron
           }
-      , pInfoBlockForging = mconcat [
+      , pInfoBlockForging = sequence $ mconcat [
             [ return $ hardForkBlockForging $ Z $ byronBlockForging credsByron
             | credsByron <- maybeToList mCredsByron
             ]

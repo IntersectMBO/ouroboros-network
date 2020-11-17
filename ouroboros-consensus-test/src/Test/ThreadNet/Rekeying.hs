@@ -1,10 +1,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 
 module Test.ThreadNet.Rekeying (
   Rekeying (..),
   fromRekeyingToRekeyM,
   ) where
+
+import           Data.Functor ((<&>))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -33,7 +36,7 @@ data Rekeying m blk = forall opKey. Rekeying
       -> ProtocolInfo m blk
       -> EpochNo
       -> opKey
-      -> Maybe (TestNodeInitialization m blk)
+      -> m (Maybe (TestNodeInitialization m blk))
      -- ^ new config and any corresponding delegation certificate transactions
      --
      -- The given epoch contains the first nominal slot whose block will
@@ -57,6 +60,6 @@ fromRekeyingToRekeyM Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} = do
           x :< xs <- readTVar rekeyVar
           x <$ writeTVar rekeyVar xs
         eno <- mkEno s'
-        pure $ case rekeyUpd cid pInfo eno x of
+        rekeyUpd cid pInfo eno x <&> \case
           Nothing  -> plainTestNodeInitialization pInfo
           Just tni -> tni

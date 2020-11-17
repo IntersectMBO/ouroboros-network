@@ -196,7 +196,7 @@ protocolInfoByron ProtocolParamsByron {
           , headerState = genesisHeaderState S.empty
           }
       , pInfoBlockForging =
-          return . byronBlockForging <$> maybeToList mLeaderCreds
+          return $ byronBlockForging <$> maybeToList mLeaderCreds
       }
   where
     compactedGenesisConfig = compactGenesisConfig genesisConfig

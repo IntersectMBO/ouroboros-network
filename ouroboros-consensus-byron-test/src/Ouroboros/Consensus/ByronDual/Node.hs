@@ -119,8 +119,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
            , headerState = genesisHeaderState S.empty
            }
       , pInfoBlockForging =
-           return . dualByronBlockForging . byronLeaderCredentials
-             <$> credss
+           return $ dualByronBlockForging . byronLeaderCredentials <$> credss
       }
   where
     initUtxo :: Impl.UTxO

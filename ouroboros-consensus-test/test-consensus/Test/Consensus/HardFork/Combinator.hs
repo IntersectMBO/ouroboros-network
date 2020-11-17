@@ -235,9 +235,9 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
             }
-        , pInfoBlockForging =
-            [ return $ hardForkBlockForging $     Z blockForgingA
-            , return $ hardForkBlockForging $ S $ Z blockForgingB
+        , pInfoBlockForging = return
+            [ hardForkBlockForging $     Z blockForgingA
+            , hardForkBlockForging $ S $ Z blockForgingB
             ]
         }
 

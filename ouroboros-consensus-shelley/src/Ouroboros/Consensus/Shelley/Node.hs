@@ -194,7 +194,7 @@ protocolInfoShelley ProtocolParamsShelley {
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> toList credentialss
+      , pInfoBlockForging = sequence $ shelleyBlockForging tpraosParams <$> toList credentialss
       }
   where
     maxMajorProtVer :: MaxMajorProtVer

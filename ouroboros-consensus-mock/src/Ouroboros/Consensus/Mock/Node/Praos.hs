@@ -56,7 +56,7 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState (PraosChainDepState [])
           }
-      , pInfoBlockForging = [praosBlockForging nid initHotKey]
+      , pInfoBlockForging = sequence [praosBlockForging nid initHotKey]
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
