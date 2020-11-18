@@ -166,6 +166,7 @@ library
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.MonadSTM.RAWLock
                        Ouroboros.Consensus.Util.MonadSTM.StrictMVar
+                       Ouroboros.Consensus.Util.OptNP
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
@@ -295,6 +296,7 @@ library
                      , stm               >=2.5   && <2.6
                      , streaming
                      , text              >=1.2   && <1.3
+                     , these             >=1.1   && <1.2
                      , time
                      , transformers
                      , vector            >=0.12  && <0.13

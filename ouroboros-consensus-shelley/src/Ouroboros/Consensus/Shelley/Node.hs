@@ -161,7 +161,7 @@ shelleySharedBlockForging
     aux hotKey = BlockForging {
           forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
         , canBeLeader      = canBeLeader
-        , updateForgeState = \curSlot ->
+        , updateForgeState = \_ curSlot _ ->
                                  ForgeStateUpdateInfo <$>
                                    HotKey.evolve hotKey (slotToPeriod curSlot)
         , checkCanForge    = \cfg curSlot _tickedChainDepState ->

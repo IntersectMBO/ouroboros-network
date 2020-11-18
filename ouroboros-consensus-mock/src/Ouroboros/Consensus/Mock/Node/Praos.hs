@@ -99,7 +99,7 @@ praosBlockForging cid initHotKey = do
     return $ BlockForging {
         forgeLabel       = "praosBlockForging"
       , canBeLeader      = cid
-      , updateForgeState = \sno -> updateMVar varHotKey $
+      , updateForgeState = \_ sno _ -> updateMVar varHotKey $
                                second ForgeStateUpdateInfo . evolveKey sno
       , checkCanForge    = \_ _ _ _ _ -> return ()
       , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do

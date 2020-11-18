@@ -60,7 +60,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
 
 -- Combinator for 'BlockForging'
 import           Ouroboros.Consensus.HardFork.Combinator.Forging as X
-                     (HardForkForgeStateInfo, hardForkBlockForging)
+                     (HardForkForgeStateInfo (..), hardForkBlockForging)
 
 -- Instances for 'RunNode' and 'ConfigSupportsNode'
 import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()

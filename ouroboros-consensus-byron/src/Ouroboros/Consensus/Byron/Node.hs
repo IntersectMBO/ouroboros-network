@@ -130,7 +130,7 @@ byronBlockForging
 byronBlockForging creds = BlockForging {
       forgeLabel       = blcLabel creds
     , canBeLeader
-    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader () ->
                              pbftCheckCanForge
                                (configConsensus cfg)

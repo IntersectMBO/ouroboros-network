@@ -1,18 +1,19 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE InstanceSigs        #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
@@ -42,7 +43,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict (K (..), NP (..), NS (..), unComp)
+import           Data.SOP.Strict ((:.:), AllZip, K (..), NP (..), unComp)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -62,6 +63,9 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+import           Ouroboros.Consensus.Util.SOP (Index (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
@@ -384,26 +388,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                   WrapChainDepState $
                     headerStateChainDep initHeaderStateByron
           }
-      , pInfoBlockForging = do
-          let blockForgingByron =
-                [ hardForkBlockForging $ Z $ byronBlockForging creds
-                | creds <- maybeToList mCredsByron
-                ]
-          blockForgingShelleyBased <- case mCredsShelleyBased of
-            Nothing                -> return []
-            Just credsShelleyBased -> do
-              sharedBlockForgings <-
-                shelleySharedBlockForging
-                  (Proxy @'[ShelleyEra c, AllegraEra c, MaryEra c])
-                  tpraosParams
-                  credsShelleyBased
-              case sharedBlockForgings of
-                bfShelley :* bfAllegra :* bfMary :* Nil -> return [
-                    hardForkBlockForging $         S $ Z $ unComp bfShelley
-                  , hardForkBlockForging $     S $ S $ Z $ unComp bfAllegra
-                  , hardForkBlockForging $ S $ S $ S $ Z $ unComp bfMary
-                  ]
-          return $ blockForgingByron <> blockForgingShelleyBased
+      , pInfoBlockForging = maybeToList <$> mBlockForging
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
@@ -568,6 +553,31 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
       }
 
+    mBlockForging :: m (Maybe (BlockForging m (CardanoBlock c)))
+    mBlockForging = do
+        mShelleyBased <- mBlockForgingShelleyBased
+        return
+          $ fmap (hardForkBlockForging "Cardano")
+          $ OptNP.combine mBlockForgingByron mShelleyBased
+
+    mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
+    mBlockForgingByron = do
+        creds <- mCredsByron
+        return $ byronBlockForging creds `OptNP.at` IZ
+
+    mBlockForgingShelleyBased :: m (Maybe (OptNP 'False (BlockForging m) (CardanoEras c)))
+    mBlockForgingShelleyBased = do
+        mShelleyBased <-
+          traverse
+            (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
+            mCredsShelleyBased
+        return $ reassoc <$> mShelleyBased
+      where
+        reassoc ::
+             NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
+          -> OptNP 'False (BlockForging m) (CardanoEras c)
+        reassoc = OptSkip . injectShelley unComp . OptNP.fromNonEmptyNP
+
 protocolClientInfoCardano
   :: forall c.
      -- Byron
@@ -602,3 +612,22 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFo
               maxMajorProtVer
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }
+
+{-------------------------------------------------------------------------------
+  Injection from Shelley-based eras into the Cardano eras
+-------------------------------------------------------------------------------}
+
+-- | Witness the relation between the Cardano eras and the Shelley-based eras.
+class    cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
+instance cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
+
+injectShelley ::
+     AllZip InjectShelley shelleyEras cardanoEras
+  => (   forall shelleyEra cardanoEra.
+         InjectShelley shelleyEra cardanoEra
+      => f shelleyEra -> g cardanoEra
+     )
+  -> OptNP empty f shelleyEras -> OptNP empty g cardanoEras
+injectShelley _ OptNil         = OptNil
+injectShelley f (OptSkip   xs) = OptSkip (injectShelley f xs)
+injectShelley f (OptCons x xs) = OptCons (f x) (injectShelley f xs)

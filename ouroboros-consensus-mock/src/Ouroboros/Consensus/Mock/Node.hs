@@ -78,7 +78,7 @@ simpleBlockForging ::
 simpleBlockForging canBeLeader forgeExt = BlockForging {
       forgeLabel       = "simpleBlockForging"
     , canBeLeader      = canBeLeader
-    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \_ _ _ _ _ -> return ()
     , forgeBlock       = return .....: forgeSimple forgeExt
     }

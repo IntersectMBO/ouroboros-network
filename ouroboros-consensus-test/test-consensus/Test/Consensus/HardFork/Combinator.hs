@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -236,8 +237,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                                 (WrapChainDepState initChainDepState)
             }
         , pInfoBlockForging = return
-            [ hardForkBlockForging $     Z blockForgingA
-            , hardForkBlockForging $ S $ Z blockForgingB
+            [   hardForkBlockForging "Test"
+              $ OptCons blockForgingA
+              $ OptCons blockForgingB
+              $ OptNil
             ]
         }
 
