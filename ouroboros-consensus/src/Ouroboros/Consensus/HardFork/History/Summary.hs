@@ -184,7 +184,7 @@ data EraEnd =
 
     -- | Unbounded era
     --
-    -- This arises from the use of 'UnsafeUnbounded'.
+    -- This arises from the use of 'UnsafeIndefiniteSafeZone'.
   | EraUnbounded
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoThunks)

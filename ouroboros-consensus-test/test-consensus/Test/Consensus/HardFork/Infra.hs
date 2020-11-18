@@ -133,11 +133,11 @@ genShape eras = HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
     genParams _era startOfThis = do
         params      <- genEraParams
         startOfNext <- genStartOfNextEra startOfThis params
-        -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
-        -- era. This means we should not be generating any events for any
-        -- succeeding eras, but to determine the /shape/ of the eras, and
-        -- set subsequent lower bounds, we just need to make sure that we
-        -- generate a valid shape: the next era must start after this one.
+        -- If startOfNext is 'Nothing', we used 'UnsafeIndefiniteSafeZone' for
+        -- this era. This means we should not be generating any events for any
+        -- succeeding eras, but to determine the /shape/ of the eras, and set
+        -- subsequent lower bounds, we just need to make sure that we generate a
+        -- valid shape: the next era must start after this one.
         return (params, fromMaybe (succ startOfThis) startOfNext)
 
 genSummary :: Eras xs -> Gen (HF.Summary xs)
