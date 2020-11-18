@@ -670,7 +670,7 @@ genEvents = \(Eras eras) (HF.Shape shape) -> sized $ \sz -> do
               -- We are in the final era
               Nothing
           | Nothing <- mNextLo =
-              -- This era is 'UnsafeUnbounded'
+              -- This era is 'UnsafeIndefiniteSafeZone'
              Nothing
           | Just lo <- mNextLo =
               Just (pickStartOfNextEra lo)
