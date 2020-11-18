@@ -124,15 +124,15 @@ package small-steps-test
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 034962a2729e0afff82c367121c1cc9637c7f45a
-  --sha256: 0ga5j9r55r3ika48x2w39clp4qh8kjp27qanxsg1s6jrl125yjac
+  tag: 65834fcfde3d86461a8f8525b04e4bdf9cc06e41
+  --sha256: 0vlxfbfa4skagngwirx5fnyhl8bycskgk0gnhaawrbi3w9qxbd1s
   subdir: contra-tracer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: bec71e48b027b2022e7be1fb7dd265bbbd80490b
-  --sha256: 0jnxa9m84ka799a3i863sqvlygzf18941pi00d88ar45qdmzkagm
+  tag: 58e146c14e1349553d0ed75dd5245bbe65f0533e
+  --sha256: 166rm0sxldnf0g2g9jp4k0rgd01wcbm0g54fcw3bxilzr1dvwqfi
   subdir:
     cardano-prelude
     cardano-prelude-test
@@ -140,8 +140,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: acac87c7af2652b8d86d92c583b6c29234634866
-  --sha256: 1awxr663zgkn8dw13pjzzlzzz5y9y5l2fy14f87331gbrw6n2xdg
+  tag: 6226a0feb1d74f50a430242a1b4608fd48e10aad
+  --sha256: 034q2anpbc7bgp5draykz6lkzznxk31wy4nbgr4jv4f7778yls6b
   subdir:
     binary
     binary/test
@@ -152,8 +152,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 8d836e61bb88bda4a6a5c00694735928390067a1
-  --sha256: 0jpdz2294k5q8c90hbg7s808ypglar94j1rm2x81h69ilsp5g3j3
+  tag: 9ebcfedb3f93852fbeabfc8ce492ddb4d996b3b5
+  --sha256: 03n1m2030liv55b2jjjc7ga8w3fkbcxr6xpgsxa0gb9lhx41r4m5
   subdir:
     byron/chain/executable-spec
     byron/crypto

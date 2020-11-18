@@ -202,8 +202,8 @@ instance Condense (SigKES NeverKES) where
 instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d t)) where
     condense (SigSimpleKES sig) = condense sig
 
-instance Condense (SigKES (SingleKES d)) where
-    condense (SigSingleKES sig) = show sig
+instance Condense (SigDSIGN d) => Condense (SigKES (SingleKES d)) where
+    condense (SigSingleKES sig) = condense sig
 
 instance Show (VerKeyDSIGN d) => Condense (VerKeyDSIGN d) where
   condense = show
@@ -212,8 +212,8 @@ instance (Condense (SigKES d), Condense (VerKeyKES d))
   => Condense (SigKES (SumKES h d)) where
     condense (SigSumKES sk vk1 vk2) = condense (sk, vk1, vk2)
 
-instance Condense (VerKeyKES (SingleKES d)) where
-    condense (VerKeySingleKES h) = show h
+instance Condense (VerKeyDSIGN d) => Condense (VerKeyKES (SingleKES d)) where
+    condense (VerKeySingleKES h) = condense h
 
 instance Condense (VerKeyKES (SumKES h d)) where
     condense (VerKeySumKES h) = condense h
