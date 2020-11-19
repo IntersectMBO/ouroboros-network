@@ -7,12 +7,24 @@ ledger integration: as things were changing a lot, it made sense for consensus t
 \section{Genesis}
 \label{future:genesis}
 
+The genesis rule is an improved chain selection rule, designed to help new nodes
+safely join the network even in the presence of potential long range attacks
+\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
+however, the \emph{why} is less relevant than the \emph{what} and the
+\emph{how}.
+
+
+\debugsep{Old}
+
 Genesis is problematic for at least two reasons:
 
 \begin{itemize}
 \item It does not fit the look-at-tip-only approach we use
 \item It violates the ``we never roll back to a shorter chain'' assumption.
 \end{itemize}
+
+
+
 
 \section{On-disk ledger state}
 
