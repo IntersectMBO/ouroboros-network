@@ -1,166 +1,228 @@
-name: "Ouroboros-Network"
+name: Haskell CI
+
 on: [push]
 
-# One cannot specify builddir in `cabal.project`: cabal issue #5271
-#
-# Run commands are using PowerShell by default; the quoting rules for
-# PowerShell are described in this document:
-# https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_quoting_rules?view=powershell-7
-#
-# Quoting for tasty `-p` command, this works (i.e. one needs to pass `\"` to
-# tasty):
-# ```
-# -p '$0 != \"typed-protocols.Socket.socket send receive IPv4\"' 
-# ```
-# or this will do too:
-# ```
-# -p "`$0 != \""typed-protocols.Socket.socket send receive IPv4\""" 
-# ``
-
 jobs:
-  test-windows-8_10_2:
-    name: "Windows GHC-8.10.2"
-    runs-on: windows-latest
+  build:
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["8.6.5", "8.10.2"]
+        os: [ubuntu-latest, windows-latest]
+
     steps:
-      - name: Install GHC
-        run: |
-          choco install -y ghc --version 8.10.2 --allow-downgrade
-      - name: Print version
-        run: |
-          cabal --version
-      - name: Cabal config
-        run: |
-          cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\SR" -f -v3
+    - uses: actions/checkout@v1
 
-      # Cache cabal-store
-      - name: cache cabal store
-        uses: actions/cache@v1
-        with:
-          path: C:\SR
-          key: cabal-store-8.10.2
-      # Cache parts of dist-newstyle (C:\dist)
-      - name: cache buiddir [cache]
-        uses: actions/cache@v1
-        with:
-          path: C:\dist\cache
-          key: dist-cache
-      - name: cache buiddir [src]
-        uses: actions/cache@v1
-        with:
-          path: C:\dist\src
-          key: dist-src
-      - name: cache builddir [packagedb]
-        uses: actions/cache@v1
-        with:
-          path: C:\dist\packagedb
-          key: dist-packagedb
+    - name: Select build directory
+      run: |
+        if [ "$OS" == Windows_NT ]; then
+          CABAL_BUILDDIR="D:\\a\\_temp\\dist"
+        else
+          CABAL_BUILDDIR="dist-newstyle"
+        fi
 
-      - name: update Hackage index
-        run: cabal v2-update
+        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
+        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
 
-      # checkout repository
-      - name: checkout ouroboros-network repository
-        uses: actions/checkout@v2
+    - name: Install pkgconfiglite
+      if: matrix.os == 'windows-latest'
+      run: choco install -y pkgconfiglite
 
-      - name: Use cabal.project.local.windows
-        run: Copy-Item "./cabal.project.local.ci.windows" -Destination "./cabal.project.local"
+    - name: Install libsodium
+      if: matrix.os == 'windows-latest'
+      run: |
+        curl -Ls https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
+        tar zxvf libsodium-1.0.18-mingw.tar.gz
 
-      #
-      # Build & Test network packages
-      #
+        sed -i "s|/d/a/1/s/|D:/a/cardano-node/cardano-node/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
 
-      # Win32-network
-      - name: Win32-network [dependencies]
-        run: cabal v2-build --builddir "C:\dist" --only-dependencies Win32-network
+        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig)"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
-      - name: Win32-network [build]
-        run: cabal v2-build --builddir "C:\dist" Win32-network
+        export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
+        echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
+        echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
 
-      - name: Win32-network [test]
-        run: cabal v2-run --builddir "C:\dist" test-Win32-network
+    - name: Install libsodium
+      if: matrix.os == 'macos-latest'
+      run: brew install libsodium
 
-      # ntp-client
-      - name: ntp-client [dependencies]
-        run: cabal v2-build --builddir "C:\dist" ntp-client
+    - name: Configure to use libsodium
+      run: |
+        cat >> cabal.project <<EOF
+        package cardano-crypto-praos
+          flags: -external-libsodium-vrf
+        EOF
 
-      - name: ntp-client [build]
-        run: cabal v2-build --builddir "C:\dist" ntp-client
+    - uses: actions/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: '3.2.0.0'
 
-      - name: ntp-client [test]
-        run: cabal v2-run test-ntp-client
+    - name: Patch GHC 8.10.2 linker
+      if: matrix.os == 'windows-latest' && matrix.ghc == '8.10.2'
+      run: |
+        sed -i \
+          's|C:/GitLabRunner/builds/2WeHDSFP/0/ghc/ghc/inplace/mingw/bin/ld.exe|C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/mingw/bin/ld.exe|g' \
+          C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/lib/settings
+
+    - name: Install build environment
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libsodium23 libsodium-dev
+        sudo apt-get -y install libsystemd0 libsystemd-dev
+        sudo apt-get -y remove --purge software-properties-common
+        sudo apt-get -y autoremove
+
+    - name: Cabal config
+      run: |
+        cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\\SR" -f -v3
+
+    - name: Set up temp directory
+      run: |
+        echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
+        echo 'TMP=${{ runner.temp }}'     >> $GITHUB_ENV
+
+    # Cache cabal-store
+    - name: cache cabal store
+      uses: actions/cache@v1
+      with:
+        path: C:\SR
+        key: cabal-store-8.10.2
+    # Cache parts of dist-newstyle (C:\dist)
+    - name: cache buiddir [cache]
+      uses: actions/cache@v1
+      with:
+        path: C:\dist\cache
+        key: dist-cache
+    - name: cache buiddir [src]
+      uses: actions/cache@v1
+      with:
+        path: C:\dist\src
+        key: dist-src
+    - name: cache builddir [packagedb]
+      uses: actions/cache@v1
+      with:
+        path: C:\dist\packagedb
+        key: dist-packagedb
+
+    - name: update Hackage index
+      run: cabal v2-update
+
+    # checkout repository
+    - name: checkout ouroboros-network repository
+      uses: actions/checkout@v2
+
+    - name: Use cabal.project.local.windows
+      run: cp ./cabal.project.local.ci.windows ./cabal.project.local
+
+    #
+    # Build & Test network packages
+    #
+
+    # Win32-network
+    - name: Win32-network [dependencies]
+      if: matrix.os == 'windows-latest'
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies Win32-network
+
+    - name: Win32-network [build]
+      if: matrix.os == 'windows-latest'
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build Win32-network
+
+    - name: Win32-network [test]
+      if: matrix.os == 'windows-latest'
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-Win32-network
+
+    # ntp-client
+    - name: ntp-client [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ntp-client
+
+    - name: ntp-client [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ntp-client
+
+    - name: ntp-client [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-ntp-client
 
 
-      # io-sim-classes
-      - name: io-sim-classes [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" io-sim-classes
+    # io-sim-classes
+    - name: io-sim-classes [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies io-sim-classes
 
-      - name: io-sim-classes [build]
-        run: cabal v2-build --builddir "C:\dist" io-sim-classes
-
-
-      # io-sim
-      - name: io-sim [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" io-sim
-
-      - name: io-sim [build]
-        run: cabal v2-build --builddir "C:\dist" io-sim
-
-      - name: io-sim [test]
-        run: cabal v2-run --builddir "C:\dist" test-sim
+    - name: io-sim-classes [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build io-sim-classes
 
 
-      # typed-protocols
-      - name: typed-protcols [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" typed-protocols
+    # io-sim
+    - name: io-sim [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies io-sim
 
-      - name: typed-protocols [build]
-        run: cabal v2-build --builddir "C:\dist" typed-protocols
+    - name: io-sim [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build io-sim
 
-
-      # typed-protocols-examples
-      - name: typed-protocols-examples [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" typed-protocols-examples
-
-      - name: typed-protocols-examples [build]
-        run: cabal v2-build --builddir "C:\dist" typed-protocols-examples
-
-      - name: typed-protocols-examples [test]
-        run: cabal v2-run --builddir "C:\dist" typed-protocols-tests
+    - name: io-sim [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-sim
 
 
-      # network-mux
-      - name: network-mux [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" network-mux
+    # typed-protocols
+    - name: typed-protcols [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies typed-protocols
 
-      - name: network-mux [build]
-        run: cabal v2-build --builddir "C:\dist" network-mux
-
-      - name: network-mux [test]
-        run: cabal v2-run --builddir "C:\dist" test-network-mux
+    - name: typed-protocols [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build typed-protocols
 
 
-      # ouroboros-network-framework
-      - name: ouroboros-network-framework [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-network-framework
+    # typed-protocols-examples
+    - name: typed-protocols-examples [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies typed-protocols-examples
 
-      - name: ouroboros-network-framework [build]
-        run: cabal v2-build --builddir "C:\dist" ouroboros-network-framework
+    - name: typed-protocols-examples [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build typed-protocols-examples
 
-      # issue: #1818
-      - name: ourobors-network-framework [test]
-        run: cabal v2-run --builddir "C:\dist" ouroboros-network-framework-tests -- -p '$0 != \"typed-protocols.Socket.socket send receive IPv4\"' 
+    - name: typed-protocols-examples [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run typed-protocols-tests
 
 
-      # ouroboros-network
-      - name: ouroboros-network [dependencies]
-        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-network
+    # network-mux
+    - name: network-mux [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies network-mux
 
-      - name: ouroboros-network [build]
-        run: cabal v2-build --builddir "C:\dist" ouroboros-network
+    - name: network-mux [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build network-mux
 
-      - name: ouroboros-network [test]
-        run: cabal v2-run --builddir "C:\dist" test-network
+    - name: network-mux [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-network-mux
 
-      # TODO: we need to install the cddl tool
-      # - name: ouroboros-network [cddl]
-      #   run: cabal v2-run --builddir "C:\dist" test-cddl
+
+    # ouroboros-network-framework
+    - name: ouroboros-network-framework [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies ouroboros-network-framework
+
+    - name: ouroboros-network-framework [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ouroboros-network-framework
+
+    # issue: #1818
+    - name: ourobors-network-framework [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run ouroboros-network-framework-tests -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
+
+
+    # ouroboros-network
+    - name: ouroboros-network [dependencies]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies ouroboros-network
+
+    - name: ouroboros-network [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ouroboros-network
+
+    - name: ouroboros-network [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-network
+
+    # TODO: we need to install the cddl tool
+    # - name: ouroboros-network [cddl]
+    #   run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-cddl
