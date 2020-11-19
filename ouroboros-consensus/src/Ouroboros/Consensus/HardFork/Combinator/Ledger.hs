@@ -50,6 +50,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Counting (getExactly)
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -176,16 +177,13 @@ instance CanHardFork xs
             Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
         Right matched ->
           fmap HardForkLedgerState $ hsequence' $
-            hczipWith3 proxySingle apply cfgs errInjections matched
+            hcizipWith proxySingle apply cfgs matched
     where
       cfgs = distribLedgerConfig ei cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
                (hardForkLedgerConfigShape cfg)
                transition
                st
-
-      errInjections :: NP (Injection WrapLedgerErr xs) xs
-      errInjections = injections
 
   reapplyLedgerBlock cfg
                      (HardForkBlock (OneEraBlock block))
@@ -206,12 +204,12 @@ instance CanHardFork xs
                st
 
 apply :: SingleEraBlock blk
-      => WrapLedgerConfig                                  blk
-      -> Injection WrapLedgerErr xs                        blk
+      => Index xs                                          blk
+      -> WrapLedgerConfig                                  blk
       -> Product I (Ticked :.: LedgerState)                blk
       -> (Except (HardForkLedgerError xs) :.: LedgerState) blk
-apply (WrapLedgerConfig cfg) injectErr (Pair (I block) (Comp st)) = Comp $
-    withExcept (injectLedgerError injectErr) $
+apply index (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) = Comp $
+    withExcept (injectLedgerError index) $
       applyLedgerBlock cfg block st
 
 reapply :: SingleEraBlock blk
@@ -261,7 +259,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
             HardForkEnvelopeErrWrongEra . MismatchEraInfo $
               Match.bihcmap proxySingle singleEraInfo ledgerViewInfo mismatch
         Right matched ->
-          hcollapse $ hczipWith3 proxySingle aux cfgs errInjections matched
+          hcollapse $ hcizipWith proxySingle aux cfgs matched
     where
       ei :: EpochInfo Identity
       ei = State.epochInfoPrecomputedTransitionInfo
@@ -272,15 +270,12 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
       cfgs :: NP TopLevelConfig xs
       cfgs = distribTopLevelConfig ei tlc
 
-      errInjections :: NP (Injection WrapEnvelopeErr xs) xs
-      errInjections = injections
-
       aux :: forall blk. SingleEraBlock blk
-          => TopLevelConfig blk
-          -> Injection WrapEnvelopeErr xs blk
+          => Index xs blk
+          -> TopLevelConfig blk
           -> Product Header (Ticked :.: WrapLedgerView) blk
           -> K (Except (HardForkEnvelopeErr xs) ()) blk
-      aux cfg injErr (Pair hdr (Comp view)) = K $
+      aux index cfg (Pair hdr (Comp view)) = K $
           withExcept injErr' $
             additionalEnvelopeChecks
               cfg
@@ -290,7 +285,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
           injErr' :: OtherHeaderEnvelopeError blk -> HardForkEnvelopeErr xs
           injErr' = HardForkEnvelopeErrFromEra
                   . OneEraEnvelopeErr
-                  . unK . apFn injErr
+                  . injectNS index
                   . WrapEnvelopeErr
 
 {-------------------------------------------------------------------------------
@@ -743,12 +738,9 @@ ledgerViewInfo :: forall blk f. SingleEraBlock blk
                => (Ticked :.: f) blk -> LedgerEraInfo blk
 ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-injectLedgerError :: Injection WrapLedgerErr xs blk
-                  -> LedgerError blk
-                  -> HardForkLedgerError xs
-injectLedgerError inj =
+injectLedgerError :: Index xs blk -> LedgerError blk -> HardForkLedgerError xs
+injectLedgerError index =
       HardForkLedgerErrorFromEra
     . OneEraLedgerError
-    . unK
-    . apFn inj
+    . injectNS index
     . WrapLedgerErr

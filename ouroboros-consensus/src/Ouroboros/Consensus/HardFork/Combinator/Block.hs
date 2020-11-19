@@ -210,15 +210,15 @@ distribAnnTip AnnTip{..} =
         AnnTip annTipSlotNo annTipBlockNo info
 
 undistribAnnTip :: SListI xs => NS AnnTip xs -> AnnTip (HardForkBlock xs)
-undistribAnnTip = hcollapse . hzipWith undistrib injections
+undistribAnnTip = hcollapse . himap undistrib
   where
-    undistrib :: (WrapTipInfo -.-> K (NS WrapTipInfo xs)) blk
+    undistrib :: Index xs blk
               -> AnnTip blk
               -> K (AnnTip (HardForkBlock xs)) blk
-    undistrib inj AnnTip{..} = K $
+    undistrib index AnnTip{..} = K $
         AnnTip annTipSlotNo
                annTipBlockNo
-               (OneEraTipInfo $ unK . apFn inj . WrapTipInfo $ annTipInfo)
+               (OneEraTipInfo . injectNS index . WrapTipInfo $ annTipInfo)
 
 {-------------------------------------------------------------------------------
   BasicEnvelopeValidation

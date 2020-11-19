@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -235,13 +236,13 @@ check HardForkConsensusConfig{..}
             (unwrapTickedChainDepState chainDepState')
 
     undistrib :: NS (Maybe :.: WrapIsLeader) xs -> Maybe (HardForkIsLeader xs)
-    undistrib = hcollapse . hzipWith inj injections
+    undistrib = hcollapse . himap inj
       where
-        inj :: Injection WrapIsLeader xs blk
+        inj :: Index xs blk
             -> (Maybe :.: WrapIsLeader) blk
             -> K (Maybe (HardForkIsLeader xs)) blk
-        inj injIsLeader (Comp mIsLeader) = K $
-            OneEraIsLeader . unK . apFn injIsLeader <$> mIsLeader
+        inj index (Comp mIsLeader) = K $
+            OneEraIsLeader . injectNS index <$> mIsLeader
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward
@@ -275,24 +276,21 @@ update HardForkConsensusConfig{..}
             mismatch
       Right matched ->
            hsequence'
-         . hczipWith3 proxySingle (updateEra ei slot) cfgs errInjections
+         . hcizipWith proxySingle (updateEra ei slot) cfgs
          $ matched
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
-    errInjections :: NP (Injection WrapValidationErr xs) xs
-    errInjections = injections
-
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
+          -> Index xs blk
           -> WrapPartialConsensusConfig blk
-          -> Injection WrapValidationErr xs blk
           -> Product WrapValidateView (Ticked :.: WrapChainDepState) blk
           -> (Except (HardForkValidationErr xs) :.: WrapChainDepState) blk
-updateEra ei slot cfg injectErr
+updateEra ei slot index cfg
           (Pair view (Comp chainDepState)) = Comp $
-    withExcept (injectValidationErr injectErr) $
+    withExcept (injectValidationErr index) $
       fmap WrapChainDepState $
         updateChainDepState
           (completeConsensusConfig' ei cfg)
@@ -357,14 +355,13 @@ translateConsensus ei HardForkConsensusConfig{..} =
     pcfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     cfgs  = hcmap proxySingle (completeConsensusConfig'' ei) pcfgs
 
-injectValidationErr :: Injection WrapValidationErr xs blk
+injectValidationErr :: Index xs blk
                     -> ValidationErr (BlockProtocol blk)
                     -> HardForkValidationErr xs
-injectValidationErr inj =
+injectValidationErr index =
       HardForkValidationErrFromEra
     . OneEraValidationErr
-    . unK
-    . apFn inj
+    . injectNS index
     . WrapValidationErr
 
 {-------------------------------------------------------------------------------
