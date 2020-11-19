@@ -15,6 +15,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
   , EraIndex(..)
   , eraIndexEmpty
   , eraIndexFromNS
+  , eraIndexFromIndex
   , eraIndexZero
   , eraIndexSucc
   , eraIndexToInt
@@ -146,6 +147,9 @@ eraIndexEmpty (EraIndex ns) = case ns of {}
 
 eraIndexFromNS :: SListI xs => NS f xs -> EraIndex xs
 eraIndexFromNS = EraIndex . hmap (const (K ()))
+
+eraIndexFromIndex :: Index xs blk -> EraIndex xs
+eraIndexFromIndex index = EraIndex $ injectNS index (K ())
 
 eraIndexZero :: EraIndex (x ': xs)
 eraIndexZero = EraIndex (Z (K ()))
