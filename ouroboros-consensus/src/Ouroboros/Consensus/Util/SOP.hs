@@ -181,25 +181,25 @@ checkIsNonEmpty _ = case sList @xs of
   Indexing SOP types
 -------------------------------------------------------------------------------}
 
-data Index x xs where
-  IZ ::               Index x (x ': xs)
-  IS :: Index x xs -> Index x (y ': xs)
+data Index xs x where
+  IZ ::               Index (x ': xs) x
+  IS :: Index xs x -> Index (y ': xs) x
 
-dictIndexAll :: All c xs => Proxy c -> Index x xs -> Dict c x
+dictIndexAll :: All c xs => Proxy c -> Index xs x -> Dict c x
 dictIndexAll p = \case
     IZ      -> Dict
     IS idx' -> dictIndexAll p idx'
 
-injectNS :: forall f x xs. Index x xs -> f x -> NS f xs
+injectNS :: forall f x xs. Index xs x -> f x -> NS f xs
 injectNS idx x = case idx of
     IZ      -> Z x
     IS idx' -> S (injectNS idx' x)
 
 injectNS' ::
      forall f a b x xs. (Coercible a (f x), Coercible b (NS f xs))
-  => Proxy f -> Index x xs -> a -> b
+  => Proxy f -> Index xs x -> a -> b
 injectNS' _ idx = coerce . injectNS @f idx . coerce
 
-projectNP :: Index x xs -> NP f xs -> f x
+projectNP :: Index xs x -> NP f xs -> f x
 projectNP IZ        (x :* _) = x
 projectNP (IS idx) (_ :* xs) = projectNP idx xs
