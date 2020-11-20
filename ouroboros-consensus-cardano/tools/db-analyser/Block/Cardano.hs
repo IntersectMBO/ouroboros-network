@@ -97,28 +97,28 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         , byronSoftwareVersion        = Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2
         , byronLeaderCredentials      = Nothing
         }
+      ProtocolParamsShelleyBased {
+          shelleyBasedGenesis           = genesisShelley
+        , shelleyBasedInitialNonce      = initialNonce
+        , shelleyBasedLeaderCredentials = Nothing
+        }
       ProtocolParamsShelley {
-          shelleyGenesis           = genesisShelley
-        , shelleyInitialNonce      = initialNonce
-        , shelleyProtVer           = ProtVer 2 0
-        , shelleyLeaderCredentials = Nothing
+          shelleyProtVer = ProtVer 2 0
         }
       ProtocolParamsAllegra {
-          allegraProtVer           = ProtVer 3 0
-        , allegraLeaderCredentials = Nothing
+          allegraProtVer = ProtVer 3 0
         }
       ProtocolParamsMary {
-          maryProtVer           = ProtVer 4 0
-        , maryLeaderCredentials = Nothing
+          maryProtVer    = ProtVer 4 0
         }
       ProtocolParamsTransition {
-          transitionTrigger    = TriggerHardForkAtVersion 2
+          transitionTrigger = TriggerHardForkAtVersion 2
         }
       ProtocolParamsTransition {
-          transitionTrigger    = TriggerHardForkAtVersion 3
+          transitionTrigger = TriggerHardForkAtVersion 3
         }
       ProtocolParamsTransition {
-          transitionTrigger    = TriggerHardForkAtVersion 4
+          transitionTrigger = TriggerHardForkAtVersion 4
         }
 
 castHeaderHash ::

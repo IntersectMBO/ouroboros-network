@@ -1,17 +1,19 @@
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE InstanceSigs        #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
@@ -41,7 +43,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict (K (..), NP (..), NS (..))
+import           Data.SOP.Strict ((:.:), AllZip, K (..), NP (..), unComp)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -61,6 +63,9 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+import           Ouroboros.Consensus.Util.SOP (Index (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
@@ -329,9 +334,10 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
-  -> ProtocolParamsShelley c Maybe
-  -> ProtocolParamsAllegra c Maybe
-  -> ProtocolParamsMary    c Maybe
+  -> ProtocolParamsShelleyBased (ShelleyEra c) Maybe
+  -> ProtocolParamsShelley
+  -> ProtocolParamsAllegra
+  -> ProtocolParamsMary
   -> ProtocolParamsTransition
        ByronBlock
        (ShelleyBlock (ShelleyEra c))
@@ -346,28 +352,28 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis           = genesisByron
                       , byronLeaderCredentials = mCredsByron
                       }
+                    ProtocolParamsShelleyBased {
+                        shelleyBasedGenesis           = genesisShelley
+                      , shelleyBasedInitialNonce      = initialNonceShelley
+                      , shelleyBasedLeaderCredentials = mCredsShelleyBased
+                      }
                     ProtocolParamsShelley {
-                        shelleyGenesis           = genesisShelley
-                      , shelleyInitialNonce      = initialNonceShelley
-                      , shelleyProtVer           = protVerShelley
-                      , shelleyLeaderCredentials = mCredsShelley
+                        shelleyProtVer = protVerShelley
                       }
                     ProtocolParamsAllegra {
-                        allegraProtVer           = protVerAllegra
-                      , allegraLeaderCredentials = mCredsAllegra
+                        allegraProtVer = protVerAllegra
                       }
                     ProtocolParamsMary {
-                        maryProtVer           = protVerMary
-                      , maryLeaderCredentials = mCredsMary
+                        maryProtVer = protVerMary
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkByronShelley
+                        transitionTrigger = triggerHardForkByronShelley
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkShelleyAllegra
+                        transitionTrigger = triggerHardForkShelleyAllegra
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger    = triggerHardForkAllegraMary
+                        transitionTrigger = triggerHardForkAllegraMary
                       } =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
@@ -382,23 +388,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                   WrapChainDepState $
                     headerStateChainDep initHeaderStateByron
           }
-      , pInfoBlockForging = mconcat [
-            [ return $ hardForkBlockForging $ Z $ byronBlockForging credsByron
-            | credsByron <- maybeToList mCredsByron
-            ]
-          , [ hardForkBlockForging . S . Z
-                <$> shelleyBlockForging tpraosParams credsShelley
-            | credsShelley <- maybeToList mCredsShelley
-            ]
-          , [ hardForkBlockForging . S . S . Z
-                <$> shelleyBlockForging tpraosParams credsAllegra
-            | credsAllegra <- maybeToList mCredsAllegra
-            ]
-          , [ hardForkBlockForging . S . S . S . Z
-                <$> shelleyBlockForging tpraosParams credsMary
-            | credsMary <- maybeToList mCredsMary
-            ]
-          ]
+      , pInfoBlockForging = maybeToList <$> mBlockForging
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
@@ -445,7 +435,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerShelley
           genesisShelley
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelley)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -471,7 +461,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerAllegra
           genesisAllegra
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsAllegra)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigAllegra ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
@@ -494,7 +484,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerMary
           genesisMary
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsMary)
+          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
 
     partialConsensusConfigMary ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))
@@ -563,6 +553,31 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
       }
 
+    mBlockForging :: m (Maybe (BlockForging m (CardanoBlock c)))
+    mBlockForging = do
+        mShelleyBased <- mBlockForgingShelleyBased
+        return
+          $ fmap (hardForkBlockForging "Cardano")
+          $ OptNP.combine mBlockForgingByron mShelleyBased
+
+    mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
+    mBlockForgingByron = do
+        creds <- mCredsByron
+        return $ byronBlockForging creds `OptNP.at` IZ
+
+    mBlockForgingShelleyBased :: m (Maybe (OptNP 'False (BlockForging m) (CardanoEras c)))
+    mBlockForgingShelleyBased = do
+        mShelleyBased <-
+          traverse
+            (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
+            mCredsShelleyBased
+        return $ reassoc <$> mShelleyBased
+      where
+        reassoc ::
+             NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
+          -> OptNP 'False (BlockForging m) (CardanoEras c)
+        reassoc = OptSkip . injectShelley unComp . OptNP.fromNonEmptyNP
+
 protocolClientInfoCardano
   :: forall c.
      -- Byron
@@ -597,3 +612,22 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFo
               maxMajorProtVer
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }
+
+{-------------------------------------------------------------------------------
+  Injection from Shelley-based eras into the Cardano eras
+-------------------------------------------------------------------------------}
+
+-- | Witness the relation between the Cardano eras and the Shelley-based eras.
+class    cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
+instance cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
+
+injectShelley ::
+     AllZip InjectShelley shelleyEras cardanoEras
+  => (   forall shelleyEra cardanoEra.
+         InjectShelley shelleyEra cardanoEra
+      => f shelleyEra -> g cardanoEra
+     )
+  -> OptNP empty f shelleyEras -> OptNP empty g cardanoEras
+injectShelley _ OptNil         = OptNil
+injectShelley f (OptSkip   xs) = OptSkip (injectShelley f xs)
+injectShelley f (OptCons x xs) = OptCons (f x) (injectShelley f xs)

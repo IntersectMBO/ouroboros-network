@@ -41,7 +41,7 @@ class Inject f where
        forall x xs. CanHardFork xs
     => Exactly xs History.Bound
        -- ^ Start bound of each era
-    -> Index x xs
+    -> Index xs x
     -> f x
     -> f (HardForkBlock xs)
 
@@ -52,7 +52,7 @@ inject' ::
      , Coercible a (f x)
      , Coercible b (f (HardForkBlock xs))
      )
-  => Proxy f -> Exactly xs History.Bound -> Index x xs -> a -> b
+  => Proxy f -> Exactly xs History.Bound -> Index xs x -> a -> b
 inject' _ startBounds idx = coerce . inject @f startBounds idx . coerce
 
 {-------------------------------------------------------------------------------
@@ -61,7 +61,7 @@ inject' _ startBounds idx = coerce . inject @f startBounds idx . coerce
 
 injectNestedCtxt_ ::
      forall f x xs a.
-     Index x xs
+     Index xs x
   -> NestedCtxt_ x f a
   -> NestedCtxt_ (HardForkBlock xs) f a
 injectNestedCtxt_ idx nc = case idx of
@@ -70,7 +70,7 @@ injectNestedCtxt_ idx nc = case idx of
 
 injectQuery ::
      forall x xs result.
-     Index x xs
+     Index xs x
   -> Query x result
   -> QueryIfCurrent xs result
 injectQuery idx q = case idx of
@@ -81,7 +81,7 @@ injectHardForkState ::
      forall f x xs.
      Exactly xs History.Bound
      -- ^ Start bound of each era
-  -> Index x xs
+  -> Index xs x
   -> f x
   -> HardForkState f xs
 injectHardForkState startBounds idx x =
@@ -89,7 +89,7 @@ injectHardForkState startBounds idx x =
   where
     go ::
          Exactly xs' History.Bound
-      -> Index x xs'
+      -> Index xs' x
       -> Telescope (K State.Past) (State.Current f) xs'
     go (ExactlyCons start _) IZ =
         TZ (State.Current { currentStart = start, currentState = x })
@@ -115,7 +115,7 @@ instance Inject SerialisedHeader where
       . serialisedHeaderToPair
 
 instance Inject WrapHeaderHash where
-  inject _ (idx :: Index x xs) =
+  inject _ (idx :: Index xs x) =
     case dictIndexAll (Proxy @SingleEraBlock) idx of
       Dict ->
           WrapHeaderHash

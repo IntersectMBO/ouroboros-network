@@ -308,7 +308,7 @@ instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
               ledgerState
 
   singleEraInfo _ = SingleEraInfo {
-      singleEraName = "Shelley"
+      singleEraName = shelleyBasedEraName (Proxy @era)
     }
 
 instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where

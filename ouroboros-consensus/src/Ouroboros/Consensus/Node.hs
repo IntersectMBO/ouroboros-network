@@ -476,7 +476,7 @@ mkNodeKernelArgs
   -> Int
   -> StdGen
   -> TopLevelConfig blk
-  -> [m (BlockForging m blk)]
+  -> m [BlockForging m blk]
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
@@ -491,7 +491,7 @@ mkNodeKernelArgs
   btime
   chainDB
   = do
-    blockForging <- sequence initBlockForging
+    blockForging <- initBlockForging
     return NodeKernelArgs
       { tracers
       , registry

@@ -33,10 +33,20 @@ module Ouroboros.Consensus.Util.SOP (
   , checkIsNonEmpty
     -- * Indexing SOP types
   , Index(..)
+  , indices
   , dictIndexAll
   , injectNS
   , injectNS'
   , projectNP
+    -- * Zipping with indices
+  , himap
+  , hcimap
+  , hizipWith
+  , hcizipWith
+  , hizipWith3
+  , hcizipWith3
+  , hizipWith4
+  , hcizipWith4
   ) where
 
 import           Data.Coerce
@@ -181,25 +191,124 @@ checkIsNonEmpty _ = case sList @xs of
   Indexing SOP types
 -------------------------------------------------------------------------------}
 
-data Index x xs where
-  IZ ::               Index x (x ': xs)
-  IS :: Index x xs -> Index x (y ': xs)
+data Index xs x where
+  IZ ::               Index (x ': xs) x
+  IS :: Index xs x -> Index (y ': xs) x
 
-dictIndexAll :: All c xs => Proxy c -> Index x xs -> Dict c x
+indices :: forall xs. SListI xs => NP (Index xs) xs
+indices = case sList @xs of
+    SNil  -> Nil
+    SCons -> IZ :* hmap IS indices
+
+dictIndexAll :: All c xs => Proxy c -> Index xs x -> Dict c x
 dictIndexAll p = \case
     IZ      -> Dict
     IS idx' -> dictIndexAll p idx'
 
-injectNS :: forall f x xs. Index x xs -> f x -> NS f xs
+injectNS :: forall f x xs. Index xs x -> f x -> NS f xs
 injectNS idx x = case idx of
     IZ      -> Z x
     IS idx' -> S (injectNS idx' x)
 
 injectNS' ::
      forall f a b x xs. (Coercible a (f x), Coercible b (NS f xs))
-  => Proxy f -> Index x xs -> a -> b
+  => Proxy f -> Index xs x -> a -> b
 injectNS' _ idx = coerce . injectNS @f idx . coerce
 
-projectNP :: Index x xs -> NP f xs -> f x
+projectNP :: Index xs x -> NP f xs -> f x
 projectNP IZ        (x :* _) = x
 projectNP (IS idx) (_ :* xs) = projectNP idx xs
+
+{-------------------------------------------------------------------------------
+  Zipping with indices
+-------------------------------------------------------------------------------}
+
+hcimap ::
+     (HAp h, All c xs, Prod h ~ NP)
+  => proxy c
+  -> (forall a. c a => Index xs a -> f1 a -> f2 a)
+  -> h f1 xs
+  -> h f2 xs
+hcimap p f xs1 =
+    hcpure p (fn_2 f)
+      `hap` indices
+      `hap` xs1
+
+himap ::
+     (HAp h, SListI xs, Prod h ~ NP)
+  => (forall a. Index xs a -> f1 a -> f2 a)
+  -> h f1 xs
+  -> h f2 xs
+himap = hcimap (Proxy @Top)
+
+hcizipWith ::
+     (HAp h, All c xs, Prod h ~ NP)
+  => proxy c
+  -> (forall a. c a => Index xs a -> f1 a -> f2 a -> f3 a)
+  -> NP f1 xs
+  -> h  f2 xs
+  -> h  f3 xs
+hcizipWith p f xs1 xs2 =
+    hcpure p (fn_3 f)
+      `hap` indices
+      `hap` xs1
+      `hap` xs2
+
+hizipWith ::
+     (HAp h, SListI xs, Prod h ~ NP)
+  => (forall a. Index xs a -> f1 a -> f2 a -> f3 a)
+  -> NP f1 xs
+  -> h  f2 xs
+  -> h  f3 xs
+hizipWith = hcizipWith (Proxy @Top)
+
+hcizipWith3 ::
+     (HAp h, All c xs, Prod h ~ NP)
+  => proxy c
+  -> (forall a. c a => Index xs a -> f1 a -> f2 a -> f3 a -> f4 a)
+  -> NP f1 xs
+  -> NP f2 xs
+  -> h  f3 xs
+  -> h  f4 xs
+hcizipWith3 p f xs1 xs2 xs3 =
+    hcpure p (fn_4 f)
+      `hap` indices
+      `hap` xs1
+      `hap` xs2
+      `hap` xs3
+
+hizipWith3 ::
+     (HAp h, SListI xs, Prod h ~ NP)
+  => (forall a. Index xs a -> f1 a -> f2 a -> f3 a -> f4 a)
+  -> NP f1 xs
+  -> NP f2 xs
+  -> h  f3 xs
+  -> h  f4 xs
+hizipWith3 = hcizipWith3 (Proxy @Top)
+
+hcizipWith4 ::
+     (HAp h, All c xs, Prod h ~ NP)
+  => proxy c
+  -> (forall a. c a => Index xs a -> f1 a -> f2 a -> f3 a -> f4 a -> f5 a)
+  -> NP f1 xs
+  -> NP f2 xs
+  -> NP f3 xs
+  -> h  f4 xs
+  -> h  f5 xs
+hcizipWith4 p f xs1 xs2 xs3 xs4 =
+    hcpure p (fn_5 f)
+      `hap` indices
+      `hap` xs1
+      `hap` xs2
+      `hap` xs3
+      `hap` xs4
+
+hizipWith4 ::
+     (HAp h, SListI xs, Prod h ~ NP)
+  => (forall a. Index xs a -> f1 a -> f2 a -> f3 a -> f4 a -> f5 a)
+  -> NP f1 xs
+  -> NP f2 xs
+  -> NP f3 xs
+  -> h  f4 xs
+  -> h  f5 xs
+hizipWith4 = hcizipWith4 (Proxy @Top)

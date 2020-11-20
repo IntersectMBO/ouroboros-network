@@ -238,7 +238,7 @@ blockForgingB :: Monad m => BlockForging m BlockB
 blockForgingB = BlockForging {
      forgeLabel       = "BlockB"
    , canBeLeader      = ()
-   , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+   , updateForgeState = \_ _ _ -> return $ ForgeStateUpdateInfo $ Unchanged ()
    , checkCanForge    = \_ _ _ _ _ -> return ()
    , forgeBlock       = return .....: forgeBlockB
    }

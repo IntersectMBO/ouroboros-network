@@ -33,7 +33,8 @@ import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
-                     ProtocolParamsShelley (..), ShelleyGenesis,
+                     ProtocolParamsShelley (..),
+                     ProtocolParamsShelleyBased (..), ShelleyGenesis,
                      protocolInfoShelley)
 
 import           HasAnalysis
@@ -75,12 +76,15 @@ mkShelleyProtocolInfo ::
   -> Nonce
   -> ProtocolInfo IO (ShelleyBlock StandardShelley)
 mkShelleyProtocolInfo genesis initialNonce =
-    protocolInfoShelley $ ProtocolParamsShelley {
-        shelleyGenesis           = genesis
-      , shelleyInitialNonce      = initialNonce
-      , shelleyProtVer           = SL.ProtVer 2 0
-      , shelleyLeaderCredentials = []
-      }
+    protocolInfoShelley
+      ProtocolParamsShelleyBased {
+          shelleyBasedGenesis           = genesis
+        , shelleyBasedInitialNonce      = initialNonce
+        , shelleyBasedLeaderCredentials = []
+        }
+      ProtocolParamsShelley {
+          shelleyProtVer = SL.ProtVer 2 0
+        }
 
 parseShelleyArgs :: Parser ShelleyBlockArgs
 parseShelleyArgs = ShelleyBlockArgs

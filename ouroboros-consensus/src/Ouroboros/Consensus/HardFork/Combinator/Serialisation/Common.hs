@@ -460,13 +460,13 @@ decodeNS ds = do
     i <- Dec.decodeWord8
     case nsFromIndex i of
       Nothing -> fail $ "decodeNS: invalid index " ++ show i
-      Just ns -> hcollapse $ hzipWith3 aux injections ds ns
+      Just ns -> hcollapse $ hizipWith aux ds ns
   where
-    aux :: (f -.-> K (NS f xs)) blk
+    aux :: Index xs blk
         -> (Decoder s :.: f) blk
         -> K () blk
         -> K (Decoder s (NS f xs)) blk
-    aux inj (Comp dec) (K ()) = K $ (unK . apFn inj) <$> dec
+    aux index (Comp dec) (K ()) = K $ injectNS index <$> dec
 
 decodeAnnNS :: SListI xs
             => NP (AnnDecoder f) xs
@@ -476,14 +476,13 @@ decodeAnnNS ds = do
     i <- Dec.decodeWord8
     case nsFromIndex i of
       Nothing -> fail $ "decodeAnnNS: invalid index " ++ show i
-      Just ns -> hcollapse $ hzipWith3 aux injections ds ns
+      Just ns -> hcollapse $ hizipWith aux ds ns
   where
-    aux :: (f -.-> K (NS f xs)) blk
+    aux :: Index xs blk
         -> AnnDecoder f blk
         -> K () blk
         -> K (Decoder s (Lazy.ByteString -> NS f xs)) blk
-    aux inj (AnnDecoder dec) (K ()) = K $
-       (\f -> unK . apFn inj . f ) <$> dec
+    aux index (AnnDecoder dec) (K ()) = K $ (injectNS index .) <$> dec
 
 {-------------------------------------------------------------------------------
   Dependent serialisation

@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
     module Ouroboros.Consensus.Shelley.Eras
   , CardanoEras
+  , ShelleyBasedEras
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -163,6 +164,9 @@ type CardanoEras c =
    , ShelleyBlock (AllegraEra c)
    , ShelleyBlock (MaryEra c)
    ]
+
+-- | The Shelley-based eras in the Cardano chain
+type ShelleyBasedEras c = '[ShelleyEra c, AllegraEra c, MaryEra c]
 
 {-------------------------------------------------------------------------------
   The block type of the Cardano block chain

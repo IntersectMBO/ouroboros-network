@@ -100,7 +100,11 @@ data BlockForging m blk = BlockForging {
       --
       -- When 'UpdateFailed' is returned, we trace the 'ForgeStateUpdateError'
       -- and don't call 'checkCanForge'.
-    , updateForgeState :: SlotNo -> m (ForgeStateUpdateInfo blk)
+    , updateForgeState ::
+           TopLevelConfig blk
+        -> SlotNo
+        -> Ticked (ChainDepState (BlockProtocol blk))
+        -> m (ForgeStateUpdateInfo blk)
 
       -- | After checking that the node indeed is a leader ('checkIsLeader'
       -- returned 'Just') and successfully updating the forge state
@@ -109,11 +113,10 @@ data BlockForging m blk = BlockForging {
       --
       -- When 'CannotForge' is returned, we don't call 'forgeBlock'.
     , checkCanForge ::
-           forall p. BlockProtocol blk ~ p
-        => TopLevelConfig blk
+           TopLevelConfig blk
         -> SlotNo
-        -> Ticked (ChainDepState p)
-        -> IsLeader p
+        -> Ticked (ChainDepState (BlockProtocol blk))
+        -> IsLeader (BlockProtocol blk)
         -> ForgeStateInfo blk  -- Proof that 'updateForgeState' did not fail
         -> Either (CannotForge blk) ()
 
@@ -182,7 +185,7 @@ checkShouldForge BlockForging{..}
                  slot
                  tickedChainDepState = do
     eForgeStateInfo <-
-      updateForgeState slot >>= \updateInfo ->
+      updateForgeState cfg slot tickedChainDepState >>= \updateInfo ->
         case getForgeStateUpdateInfo updateInfo of
           Updated info -> do
             traceWith forgeStateInfoTracer info
@@ -197,6 +200,12 @@ checkShouldForge BlockForging{..}
       case eForgeStateInfo of
         Left  err            -> ForgeStateUpdateError err
         Right forgeStateInfo ->
+          -- WARNING: It is critical that we do not depend on the 'BlockForging'
+          -- record for the implementation of 'checkIsLeader'. Doing so would
+          -- make composing multiple 'BlockForging' values responsible for also
+          -- composing the 'checkIsLeader' checks, but that should be the
+          -- responsibility of the 'ConsensusProtocol' instance for the
+          -- composition of those blocks.
           case checkIsLeader (configConsensus cfg) canBeLeader slot tickedChainDepState of
             Nothing       -> NotLeader
             Just isLeader ->

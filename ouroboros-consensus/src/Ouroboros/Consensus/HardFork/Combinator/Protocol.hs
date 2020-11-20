@@ -37,6 +37,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -193,7 +195,7 @@ type HardForkIsLeader xs = OneEraIsLeader xs
 
 -- | We have one or more 'BlockForging's, and thus 'CanBeLeader' proofs, for
 -- each era in which we can forge blocks.
-type HardForkCanBeLeader xs = OneEraCanBeLeader xs
+type HardForkCanBeLeader xs = SomeErasCanBeLeader xs
 
 -- | POSTCONDITION: if the result is @Just isLeader@, then 'HardForkCanBeLeader'
 -- and the ticked 'ChainDepState' must be in the same era. The returned
@@ -205,42 +207,42 @@ check :: forall xs. (CanHardFork xs, HasCallStack)
       -> Ticked (ChainDepState (HardForkProtocol xs))
       -> Maybe (HardForkIsLeader xs)
 check HardForkConsensusConfig{..}
-      (OneEraCanBeLeader canBeLeader)
+      (SomeErasCanBeLeader canBeLeader)
       slot
       (TickedHardForkChainDepState chainDepState ei) =
-    case State.match canBeLeader chainDepState of
-      -- Not a leader in this era
-      Left _mismatch -> Nothing
-      Right matched  -> undistrib $
-        hczipWith
-          proxySingle
-          checkOne
-          cfgs
-          (State.tip matched)
+    undistrib $
+      hczipWith3
+        proxySingle
+        checkOne
+        cfgs
+        (OptNP.toNP canBeLeader)
+        (State.tip chainDepState)
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
     checkOne ::
-         SingleEraBlock                                         blk
-      => WrapPartialConsensusConfig                             blk
-      -> Product WrapCanBeLeader (Ticked :.: WrapChainDepState) blk
-      -> (Maybe :.: WrapIsLeader)                               blk
-    checkOne cfg' (Pair canBeLeader' (Comp chainDepState')) = Comp $
-          WrapIsLeader <$>
-            checkIsLeader
-              (completeConsensusConfig' ei cfg')
-              (unwrapCanBeLeader canBeLeader')
-              slot
-              (unwrapTickedChainDepState chainDepState')
+         SingleEraBlock                 blk
+      => WrapPartialConsensusConfig     blk
+      -> (Maybe :.: WrapCanBeLeader)    blk
+      -> (Ticked :.: WrapChainDepState) blk
+      -> (Maybe :.: WrapIsLeader)       blk
+    checkOne cfg' (Comp mCanBeLeader) (Comp chainDepState') = Comp $ do
+        canBeLeader' <- mCanBeLeader
+        WrapIsLeader <$>
+          checkIsLeader
+            (completeConsensusConfig' ei cfg')
+            (unwrapCanBeLeader canBeLeader')
+            slot
+            (unwrapTickedChainDepState chainDepState')
 
     undistrib :: NS (Maybe :.: WrapIsLeader) xs -> Maybe (HardForkIsLeader xs)
-    undistrib = hcollapse . hzipWith inj injections
+    undistrib = hcollapse . himap inj
       where
-        inj :: Injection WrapIsLeader xs blk
+        inj :: Index xs blk
             -> (Maybe :.: WrapIsLeader) blk
             -> K (Maybe (HardForkIsLeader xs)) blk
-        inj injIsLeader (Comp mIsLeader) = K $
-            OneEraIsLeader . unK . apFn injIsLeader <$> mIsLeader
+        inj index (Comp mIsLeader) = K $
+            OneEraIsLeader . injectNS index <$> mIsLeader
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward
@@ -274,24 +276,21 @@ update HardForkConsensusConfig{..}
             mismatch
       Right matched ->
            hsequence'
-         . hczipWith3 proxySingle (updateEra ei slot) cfgs errInjections
+         . hcizipWith proxySingle (updateEra ei slot) cfgs
          $ matched
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
-    errInjections :: NP (Injection WrapValidationErr xs) xs
-    errInjections = injections
-
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
+          -> Index xs blk
           -> WrapPartialConsensusConfig blk
-          -> Injection WrapValidationErr xs blk
           -> Product WrapValidateView (Ticked :.: WrapChainDepState) blk
           -> (Except (HardForkValidationErr xs) :.: WrapChainDepState) blk
-updateEra ei slot cfg injectErr
+updateEra ei slot index cfg
           (Pair view (Comp chainDepState)) = Comp $
-    withExcept (injectValidationErr injectErr) $
+    withExcept (injectValidationErr index) $
       fmap WrapChainDepState $
         updateChainDepState
           (completeConsensusConfig' ei cfg)
@@ -356,14 +355,13 @@ translateConsensus ei HardForkConsensusConfig{..} =
     pcfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     cfgs  = hcmap proxySingle (completeConsensusConfig'' ei) pcfgs
 
-injectValidationErr :: Injection WrapValidationErr xs blk
+injectValidationErr :: Index xs blk
                     -> ValidationErr (BlockProtocol blk)
                     -> HardForkValidationErr xs
-injectValidationErr inj =
+injectValidationErr index =
       HardForkValidationErrFromEra
     . OneEraValidationErr
-    . unK
-    . apFn inj
+    . injectNS index
     . WrapValidationErr
 
 {-------------------------------------------------------------------------------

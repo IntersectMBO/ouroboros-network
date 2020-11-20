@@ -20,6 +20,7 @@ module Test.ThreadNet.Byron (
 import           Control.Monad (join)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
+import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Set as Set
@@ -1291,20 +1292,21 @@ mkRekeyUpd
   -> ProtocolInfo m ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (TestNodeInitialization m ByronBlock)
+  -> m (Maybe (TestNodeInitialization m ByronBlock))
 mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
-  case listToMaybe (pInfoBlockForging pInfo) of
-    Nothing -> Nothing
-    Just _  ->
-      let genSK = genesisSecretFor genesisConfig genesisSecrets cid
-          creds' = updSignKey genSK bcfg cid (coerce eno) newSK
-          blockForging' = byronBlockForging creds'
-          pInfo' = pInfo { pInfoBlockForging = [return blockForging'] }
+    pInfoBlockForging pInfo <&> \blockForging ->
+      case listToMaybe blockForging of
+        Nothing -> Nothing
+        Just _  ->
+          let genSK = genesisSecretFor genesisConfig genesisSecrets cid
+              creds' = updSignKey genSK bcfg cid (coerce eno) newSK
+              blockForging' = byronBlockForging creds'
+              pInfo' = pInfo { pInfoBlockForging = return [blockForging'] }
 
-      in Just TestNodeInitialization
-        { tniCrucialTxs = [dlgTx (blcDlgCert creds')]
-        , tniProtocolInfo = pInfo'
-        }
+          in Just TestNodeInitialization
+            { tniCrucialTxs = [dlgTx (blcDlgCert creds')]
+            , tniProtocolInfo = pInfo'
+            }
   where
     bcfg = configBlock (pInfoConfig pInfo)
 

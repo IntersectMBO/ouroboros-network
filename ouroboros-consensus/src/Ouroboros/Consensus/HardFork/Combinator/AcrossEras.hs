@@ -25,10 +25,11 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , PerEraCodecConfig(..)
   , PerEraLedgerConfig(..)
   , PerEraStorageConfig(..)
+    -- * Values for /some/ eras
+  , SomeErasCanBeLeader(..)
     -- * Value for /one/ era
   , OneEraApplyTxErr(..)
   , OneEraBlock(..)
-  , OneEraCanBeLeader(..)
   , OneEraCannotForge(..)
   , OneEraEnvelopeErr(..)
   , OneEraForgeStateInfo(..)
@@ -75,6 +76,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import           Ouroboros.Consensus.Util.OptNP (OptNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
@@ -94,12 +96,21 @@ newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig
 newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfig   :: NP StorageConfig              xs }
 
 {-------------------------------------------------------------------------------
+  Values for /some/ eras
+
+  The reason for using @OptNP 'False f xs@ as opposed to @NP (Maybe :.: f) xs@
+  is to maintain the isomorphism between @blk@ and @HardForkBlock '[blk]@ in
+  "Ouroboros.Consensus.HardFork.Combinator.Unary"
+-------------------------------------------------------------------------------}
+
+newtype SomeErasCanBeLeader xs = SomeErasCanBeLeader { getSomeErasCanBeLeader :: OptNP 'False WrapCanBeLeader xs }
+
+{-------------------------------------------------------------------------------
   Value for /one/ era
 -------------------------------------------------------------------------------}
 
 newtype OneEraApplyTxErr            xs = OneEraApplyTxErr            { getOneEraApplyTxErr            :: NS WrapApplyTxErr            xs }
 newtype OneEraBlock                 xs = OneEraBlock                 { getOneEraBlock                 :: NS I                         xs }
-newtype OneEraCanBeLeader           xs = OneEraCanBeLeader           { getOneEraCanBeLeader           :: NS WrapCanBeLeader           xs }
 newtype OneEraCannotForge           xs = OneEraCannotForge           { getOneEraCannotForge           :: NS WrapCannotForge           xs }
 newtype OneEraEnvelopeErr           xs = OneEraEnvelopeErr           { getOneEraEnvelopeErr           :: NS WrapEnvelopeErr           xs }
 newtype OneEraForgeStateInfo        xs = OneEraForgeStateInfo        { getOneEraForgeStateInfo        :: NS WrapForgeStateInfo        xs }

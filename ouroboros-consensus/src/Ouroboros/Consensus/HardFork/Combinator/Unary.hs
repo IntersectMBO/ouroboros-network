@@ -57,6 +57,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 
@@ -64,7 +65,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
-import           Ouroboros.Consensus.HardFork.Combinator.Forging ()
+import           Ouroboros.Consensus.HardFork.Combinator.Forging
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
@@ -200,10 +201,6 @@ instance Isomorphic LedgerState where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
-instance Isomorphic WrapCanBeLeader where
-  project = defaultProjectNS
-  inject  = defaultInjectNS
-
 instance Isomorphic WrapCannotForge where
   project = defaultProjectNS
   inject  = defaultInjectNS
@@ -211,10 +208,6 @@ instance Isomorphic WrapCannotForge where
 instance Isomorphic WrapChainDepState where
   project = defaultProjectSt
   inject  = defaultInjectSt
-
-instance Isomorphic WrapForgeStateInfo where
-  project = defaultProjectNS
-  inject  = defaultInjectNS
 
 instance Isomorphic WrapForgeStateUpdateError where
   project = defaultProjectNS
@@ -428,7 +421,14 @@ instance Functor m => Isomorphic (BlockForging m) where
   project BlockForging {..} = BlockForging {
         forgeLabel       = forgeLabel
       , canBeLeader      = project' (Proxy @(WrapCanBeLeader blk)) canBeLeader
-      , updateForgeState = \sno -> project <$> updateForgeState sno
+      , updateForgeState = \cfg sno tickedChainDepSt ->
+                               project <$>
+                                 updateForgeState
+                                   (inject cfg)
+                                   sno
+                                   (injTickedChainDepSt
+                                     (noHardForksEpochInfo cfg)
+                                     tickedChainDepSt)
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (project' (Proxy @(WrapCannotForge blk))) $
                                  checkCanForge
@@ -468,7 +468,12 @@ instance Functor m => Isomorphic (BlockForging m) where
   inject BlockForging {..} = BlockForging {
         forgeLabel       = forgeLabel
       , canBeLeader      = inject' (Proxy @(WrapCanBeLeader blk)) canBeLeader
-      , updateForgeState = \sno -> inject <$> updateForgeState sno
+      , updateForgeState = \cfg sno tickedChainDepSt ->
+                               inject <$>
+                                 updateForgeState
+                                   (project cfg)
+                                   sno
+                                   (projTickedChainDepSt tickedChainDepSt)
       , checkCanForge    = \cfg sno tickedChainDepSt isLeader forgeStateInfo ->
                                first (inject' (Proxy @(WrapCannotForge blk))) $
                                  checkCanForge
@@ -544,6 +549,20 @@ instance Isomorphic WrapEnvelopeErr where
       aux :: WrapEnvelopeErr b
           -> OtherHeaderEnvelopeError (HardForkBlock '[b])
       aux = HardForkEnvelopeErrFromEra . OneEraEnvelopeErr . Z
+
+instance Isomorphic WrapCanBeLeader where
+  project = OptNP.fromSingleton . getSomeErasCanBeLeader . unwrapCanBeLeader
+  inject  = WrapCanBeLeader . SomeErasCanBeLeader . OptNP.singleton
+
+instance Isomorphic WrapForgeStateInfo where
+  project (WrapForgeStateInfo forgeStateInfo) =
+      case forgeStateInfo of
+        CurrentEraForgeStateUpdated info -> unZ $ getOneEraForgeStateInfo info
+  inject  =
+        WrapForgeStateInfo
+      . CurrentEraForgeStateUpdated
+      . OneEraForgeStateInfo
+      . Z
 
 instance Isomorphic WrapLedgerView where
   project = State.fromTZ . hardForkLedgerViewPerEra . unwrapLedgerView

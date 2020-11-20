@@ -86,7 +86,7 @@ combineEras = mconcat . hcollapse . hap eraInjections
 
     injExamples ::
          String
-      -> Index blk (CardanoEras Crypto)
+      -> Index (CardanoEras Crypto) blk
       -> Examples blk
       -> Examples (CardanoBlock Crypto)
     injExamples eraName idx =
@@ -107,7 +107,7 @@ instance Inject SomeResult where
       SomeResult (QueryIfCurrent (injectQuery idx q)) (Right r)
 
 instance Inject Examples where
-  inject startBounds (idx :: Index x xs) Golden.Examples {..} = Golden.Examples {
+  inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
         exampleBlock            = inj (Proxy @I)                  exampleBlock
       , exampleSerialisedBlock  = inj (Proxy @Serialised)         exampleSerialisedBlock
       , exampleHeader           = inj (Proxy @Header)             exampleHeader

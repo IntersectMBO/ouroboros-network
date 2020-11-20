@@ -3,18 +3,23 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
 {-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableSuperClasses  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
+  , ProtocolParamsShelleyBased (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
@@ -23,6 +28,7 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
   , shelleyBlockForging
+  , shelleySharedBlockForging
   , tpraosBlockIssuerVKey
   , SL.ProtVer (..)
   , SL.Nonce (..)
@@ -35,6 +41,7 @@ import           Data.Bifunctor (first)
 import           Data.Foldable (toList)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.SOP.Strict
 import           Data.Text (Text)
 import qualified Data.Text as Text
 
@@ -65,6 +72,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
+import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 
 {-------------------------------------------------------------------------------
@@ -99,33 +107,72 @@ type instance ForgeStateInfo (ShelleyBlock era) = HotKey.KESInfo
 
 type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionError
 
+-- | Create a 'BlockForging' record for a single era.
+--
+-- In case the same credentials should be shared across multiple Shelley-based
+-- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
      forall m era. (ShelleyBasedEra era, IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
-shelleyBlockForging TPraosParams {..}
+shelleyBlockForging tpraosParams credentials =
+    aux <$> shelleySharedBlockForging (Proxy @'[era]) tpraosParams credentials
+  where
+    aux ::
+         NP (BlockForging m :.: ShelleyBlock) '[era]
+      -> BlockForging m (ShelleyBlock era)
+    aux = unComp . hd
+
+-- | Needed in 'shelleySharedBlockForging' because we can't partially apply
+-- equality constraints.
+class    (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+instance (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+
+-- | Create a 'BlockForging' record for each of the given Shelley-based eras,
+-- safely sharing the same set of credentials for all of them.
+--
+-- The name of the era (separated by a @_@) will be appended to each
+-- 'forgeLabel'.
+shelleySharedBlockForging ::
+     forall m c eras.
+     ( PraosCrypto c
+     , All (ShelleyEraWithCrypto c) eras
+     , IOLike m
+     )
+  => Proxy eras
+  -> TPraosParams
+  -> TPraosLeaderCredentials c
+  -> m (NP (BlockForging m :.: ShelleyBlock) eras)
+shelleySharedBlockForging
+                    _
+                    TPraosParams {..}
                     TPraosLeaderCredentials {
                         tpraosLeaderCredentialsInitSignKey = initSignKey
                       , tpraosLeaderCredentialsCanBeLeader = canBeLeader
                       , tpraosLeaderCredentialsLabel       = label
                       } = do
-    hotKey <- HotKey.mkHotKey initSignKey startPeriod tpraosMaxKESEvo
-    return BlockForging {
-        forgeLabel       = label
-      , canBeLeader      = canBeLeader
-      , updateForgeState = \curSlot ->
-                               ForgeStateUpdateInfo <$>
-                                 HotKey.evolve hotKey (slotToPeriod curSlot)
-      , checkCanForge    = \cfg curSlot _tickedChainDepState ->
-                               tpraosCheckCanForge
-                                 (configConsensus cfg)
-                                 forgingVRFHash
-                                 curSlot
-      , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
-      }
+    hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod tpraosMaxKESEvo
+    return $ hcpure (Proxy @(ShelleyEraWithCrypto c)) (Comp (aux hotKey))
   where
-    forgingVRFHash :: SL.Hash (EraCrypto era) (SL.VerKeyVRF (EraCrypto era))
+    aux ::
+         forall era. ShelleyEraWithCrypto c era
+      => HotKey c m -> BlockForging m (ShelleyBlock era)
+    aux hotKey = BlockForging {
+          forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
+        , canBeLeader      = canBeLeader
+        , updateForgeState = \_ curSlot _ ->
+                                 ForgeStateUpdateInfo <$>
+                                   HotKey.evolve hotKey (slotToPeriod curSlot)
+        , checkCanForge    = \cfg curSlot _tickedChainDepState ->
+                                 tpraosCheckCanForge
+                                   (configConsensus cfg)
+                                   forgingVRFHash
+                                   curSlot
+        , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
+        }
+
+    forgingVRFHash :: SL.Hash c (SL.VerKeyVRF c)
     forgingVRFHash =
           SL.hashVerKeyVRF
         . VRF.deriveVerKeyVRF
@@ -155,46 +202,58 @@ validateGenesis = first errsToString . SL.validateGenesis
         Text.unpack $ Text.unlines
           ("Invalid genesis config:" : map SL.describeValidationErr errs)
 
--- | Parameters needed to run Shelley
-data ProtocolParamsShelley c f = ProtocolParamsShelley {
-      shelleyGenesis           :: SL.ShelleyGenesis (ShelleyEra c)
+-- | Parameters common to all Shelley-based ledgers.
+--
+-- When running a chain with multiple Shelley-based eras, in addition to the
+-- per-era protocol parameters, one value of 'ProtocolParamsShelleyBased' will
+-- be needed, which is shared among all Shelley-based eras.
+--
+-- The @era@ parameter determines from which era the genesis config will be
+-- used.
+data ProtocolParamsShelleyBased era f = ProtocolParamsShelleyBased {
+      shelleyBasedGenesis           :: SL.ShelleyGenesis era
       -- | The initial nonce, typically derived from the hash of Genesis
       -- config JSON file.
       --
       -- WARNING: chains using different values of this parameter will be
       -- mutually incompatible.
-    , shelleyInitialNonce      :: SL.Nonce
-    , shelleyProtVer           :: SL.ProtVer
-    , shelleyLeaderCredentials :: f (TPraosLeaderCredentials c)
+    , shelleyBasedInitialNonce      :: SL.Nonce
+    , shelleyBasedLeaderCredentials :: f (TPraosLeaderCredentials (EraCrypto era))
+    }
+
+-- | Parameters needed to run Shelley
+data ProtocolParamsShelley = ProtocolParamsShelley {
+      shelleyProtVer :: SL.ProtVer
     }
 
 -- | Parameters needed to run Allegra
-data ProtocolParamsAllegra c f = ProtocolParamsAllegra {
-      allegraProtVer           :: SL.ProtVer
-    , allegraLeaderCredentials :: f (TPraosLeaderCredentials c)
+data ProtocolParamsAllegra = ProtocolParamsAllegra {
+      allegraProtVer :: SL.ProtVer
     }
 
 -- | Parameters needed to run Mary
-data ProtocolParamsMary c f = ProtocolParamsMary {
-      maryProtVer           :: SL.ProtVer
-    , maryLeaderCredentials :: f (TPraosLeaderCredentials c)
+data ProtocolParamsMary = ProtocolParamsMary {
+      maryProtVer :: SL.ProtVer
     }
 
 protocolInfoShelley ::
      forall m c f. (IOLike m, ShelleyBasedEra (ShelleyEra c), Foldable f)
-  => ProtocolParamsShelley c f
+  => ProtocolParamsShelleyBased (ShelleyEra c) f
+  -> ProtocolParamsShelley
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
-protocolInfoShelley ProtocolParamsShelley {
-                        shelleyGenesis           = genesis
-                      , shelleyInitialNonce      = initialNonce
-                      , shelleyProtVer           = protVer
-                      , shelleyLeaderCredentials = credentialss
+protocolInfoShelley ProtocolParamsShelleyBased {
+                        shelleyBasedGenesis           = genesis
+                      , shelleyBasedInitialNonce      = initialNonce
+                      , shelleyBasedLeaderCredentials = credentialss
+                      }
+                    ProtocolParamsShelley {
+                        shelleyProtVer = protVer
                       } =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> toList credentialss
+      , pInfoBlockForging = sequence $ shelleyBlockForging tpraosParams <$> toList credentialss
       }
   where
     maxMajorProtVer :: MaxMajorProtVer

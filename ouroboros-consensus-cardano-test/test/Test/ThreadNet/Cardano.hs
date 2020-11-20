@@ -751,26 +751,26 @@ mkProtocolCardanoAndHardForkTxs
           , byronSoftwareVersion        = softVerByron
           , byronLeaderCredentials      = Just leaderCredentialsByron
           }
+        ProtocolParamsShelleyBased {
+            shelleyBasedGenesis           = genesisShelley
+          , shelleyBasedInitialNonce      = initialNonce
+          , shelleyBasedLeaderCredentials = Just leaderCredentialsShelley
+          }
         ProtocolParamsShelley {
-            shelleyGenesis           = genesisShelley
-          , shelleyInitialNonce      = initialNonce
-          , shelleyProtVer           = SL.ProtVer shelleyMajorVersion 0
-          , shelleyLeaderCredentials = Just leaderCredentialsShelley
+            shelleyProtVer = SL.ProtVer shelleyMajorVersion 0
           }
         ProtocolParamsAllegra {
-            allegraProtVer           = SL.ProtVer allegraMajorVersion 0
-          , allegraLeaderCredentials = Nothing
+            allegraProtVer = SL.ProtVer allegraMajorVersion 0
           }
         ProtocolParamsMary {
-            maryProtVer           = SL.ProtVer maryMajorVersion 0
-          , maryLeaderCredentials = Nothing
+            maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
         protocolParamsByronShelley
         ProtocolParamsTransition {
-            transitionTrigger    = TriggerHardForkAtVersion allegraMajorVersion
+            transitionTrigger = TriggerHardForkAtVersion allegraMajorVersion
           }
         ProtocolParamsTransition {
-            transitionTrigger    = TriggerHardForkAtVersion maryMajorVersion
+            transitionTrigger = TriggerHardForkAtVersion maryMajorVersion
           }
 
     -- Byron

@@ -36,6 +36,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -138,7 +139,7 @@ applyHelper apply
         --    which we will remain to be) or we are forecasting, which is not
         --    applicable here.
         fmap (TickedHardForkLedgerState transition) $ hsequence' $
-          hczipWith3 proxySingle applyCurrent cfgs errInjections matched
+          hcizipWith proxySingle applyCurrent cfgs matched
   where
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
@@ -150,17 +151,14 @@ applyHelper apply
     injectTxs :: InPairs InjectTx xs
     injectTxs = InPairs.requiringBoth cfgs hardForkInjectTxs
 
-    errInjections :: NP (Injection WrapApplyTxErr xs) xs
-    errInjections = injections
-
     applyCurrent
       :: forall blk. SingleEraBlock blk
-      => WrapLedgerConfig                                              blk
-      -> Injection WrapApplyTxErr xs                                   blk
+      => Index xs                                                      blk
+      -> WrapLedgerConfig                                              blk
       -> Product GenTx (Ticked :.: LedgerState)                        blk
       -> (Except (HardForkApplyTxErr xs) :.: (Ticked :.: LedgerState)) blk
-    applyCurrent cfg injectErr (Pair tx (Comp st)) = Comp $ fmap Comp $
-      withExcept (injectApplyTxErr injectErr) $
+    applyCurrent index cfg (Pair tx (Comp st)) = Comp $ fmap Comp $
+      withExcept (injectApplyTxErr index) $
         apply (unwrapLedgerConfig cfg) slot tx st
 
 newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
@@ -184,13 +182,16 @@ instance CanHardFork xs => HasTxId (GenTx (HardForkBlock xs)) where
 instance All HasTxs xs => HasTxs (HardForkBlock xs) where
   extractTxs =
         hcollapse
-      . hzipWith (\inj -> K . map (mkTx inj) . unComp) injections
-      . hcmap (Proxy @HasTxs) (Comp . extractTxs . unI)
+      . hcimap (Proxy @HasTxs) aux
       . getOneEraBlock
       . getHardForkBlock
     where
-      mkTx :: Injection GenTx xs blk -> GenTx blk -> GenTx (HardForkBlock xs)
-      mkTx inj = HardForkGenTx . OneEraGenTx . unK . apFn inj
+      aux ::
+           HasTxs blk
+        => Index xs blk
+        -> I blk
+        -> K [GenTx (HardForkBlock xs)] blk
+      aux index = K . map (injectNS' (Proxy @GenTx) index) . extractTxs . unI
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -200,12 +201,9 @@ ledgerInfo :: forall blk. SingleEraBlock blk
            => State.Current (Ticked :.: LedgerState) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-injectApplyTxErr :: Injection WrapApplyTxErr xs blk
-                 -> ApplyTxErr blk
-                 -> HardForkApplyTxErr xs
-injectApplyTxErr inj =
+injectApplyTxErr :: Index xs blk -> ApplyTxErr blk -> HardForkApplyTxErr xs
+injectApplyTxErr index =
       HardForkApplyTxErrFromEra
     . OneEraApplyTxErr
-    . unK
-    . apFn inj
+    . injectNS index
     . WrapApplyTxErr

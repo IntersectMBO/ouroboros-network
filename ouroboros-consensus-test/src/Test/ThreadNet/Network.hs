@@ -884,9 +884,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   void $ ChainDB.addBlock chainDB ebb
                   pure blk
 
-      blockForging <- forM pInfoBlockForging $ \initBlockForging -> do
-        bf <- initBlockForging
-        return bf { forgeBlock = customForgeBlock bf }
+      origBlockForging <- pInfoBlockForging
+      let blockForging =
+            [ bf { forgeBlock = customForgeBlock bf }
+            | bf <- origBlockForging
+            ]
 
       -- This variable holds the number of the earliest slot in which the
       -- crucial txs have not yet been added. In other words, it holds the

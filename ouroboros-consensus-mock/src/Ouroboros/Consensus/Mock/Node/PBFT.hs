@@ -45,7 +45,7 @@ protocolInfoMockPBFT params eraParams nid =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoBlockForging = [return (pbftBlockForging canBeLeader)]
+      , pInfoBlockForging = return [pbftBlockForging canBeLeader]
       }
   where
     canBeLeader :: PBftCanBeLeader PBftMockCrypto
@@ -87,7 +87,7 @@ pbftBlockForging ::
 pbftBlockForging canBeLeader = BlockForging {
       forgeLabel       = "pbftBlockForging"
     , canBeLeader
-    , updateForgeState = \_ -> return $ ForgeStateUpdateInfo $ Unchanged ()
+    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdateInfo $ Unchanged ()
     , checkCanForge    = \cfg slot tickedPBftState _isLeader ->
                            return $
                              pbftCheckCanForge

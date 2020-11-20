@@ -89,15 +89,17 @@ data Protocol (m :: Type -> Type) blk p where
 
   -- | Run TPraos against the real Shelley ledger
   ProtocolShelley
-    :: ProtocolParamsShelley StandardCrypto []
+    :: ProtocolParamsShelleyBased StandardShelley []
+    -> ProtocolParamsShelley
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
 
   -- | Run the protocols of /the/ Cardano block
   ProtocolCardano
     :: ProtocolParamsByron
-    -> ProtocolParamsShelley StandardCrypto Maybe
-    -> ProtocolParamsAllegra StandardCrypto Maybe
-    -> ProtocolParamsMary    StandardCrypto Maybe
+    -> ProtocolParamsShelleyBased StandardShelley Maybe
+    -> ProtocolParamsShelley
+    -> ProtocolParamsAllegra
+    -> ProtocolParamsMary
     -> ProtocolParamsTransition
          ByronBlock
          (ShelleyBlock StandardShelley)
@@ -124,11 +126,12 @@ protocolInfo :: forall m blk p. IOLike m
 protocolInfo (ProtocolByron params) =
     inject $ protocolInfoByron params
 
-protocolInfo (ProtocolShelley params) =
-    inject $ protocolInfoShelley params
+protocolInfo (ProtocolShelley paramsShelleyBased paramsShelley) =
+    inject $ protocolInfoShelley paramsShelleyBased paramsShelley
 
 protocolInfo (ProtocolCardano
                paramsByron
+               paramsShelleyBased
                paramsShelley
                paramsAllegra
                paramsMary
@@ -137,6 +140,7 @@ protocolInfo (ProtocolCardano
                paramsAllegraMary) =
     protocolInfoCardano
       paramsByron
+      paramsShelleyBased
       paramsShelley
       paramsAllegra
       paramsMary

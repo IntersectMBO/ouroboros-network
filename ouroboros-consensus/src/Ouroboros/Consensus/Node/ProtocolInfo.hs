@@ -38,7 +38,7 @@ enumCoreNodes (NumCoreNodes numNodes) =
 data ProtocolInfo m b = ProtocolInfo {
         pInfoConfig       :: TopLevelConfig b
       , pInfoInitLedger   :: ExtLedgerState b -- ^ At genesis
-      , pInfoBlockForging :: [m (BlockForging m b)]
+      , pInfoBlockForging :: m [BlockForging m b]
       }
 
 -- | Data required by clients of a node running the specified protocol.
