@@ -1,6 +1,7 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An extension of 'Network.TypedProtocol.Channel', with additional 'Channel'
 -- implementations.
@@ -9,7 +10,9 @@ module Network.Mux.Channel
   ( Channel (..)
   , createBufferConnectedChannels
   , createPipeConnectedChannels
+#if !defined(mingw32_HOST_OS)
   , createSocketConnectedChannels
+#endif
   , withFifosAsChannel
   , socketAsChannel
   , channelEffect
@@ -167,7 +170,7 @@ socketAsChannel socket =
         then return Nothing
         else return (Just (LBS.fromStrict chunk))
 
-
+#if !defined(mingw32_HOST_OS)
 --- | Create a local socket, with both ends in this process, and expose that as
 --- a pair of 'ByteChannel's, one for each end.
 ---
@@ -183,7 +186,7 @@ createSocketConnectedChannels family = do
 
    return (socketAsChannel socketA,
            socketAsChannel socketB)
-
+#endif
 
 channelEffect :: forall m.
                  Monad m
