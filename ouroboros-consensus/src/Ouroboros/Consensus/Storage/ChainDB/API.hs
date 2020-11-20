@@ -159,6 +159,9 @@ data ChainDB m blk = ChainDB {
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
 
+      -- | Get the immutable ledger, i.e., @k@ blocks back.
+    , getImmutableLedger :: STM m (ExtLedgerState blk)
+
       -- | Get the ledger for the given point.
       --
       -- When the given point is not among the last @k@ blocks of the current

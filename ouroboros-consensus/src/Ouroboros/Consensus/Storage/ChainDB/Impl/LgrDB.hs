@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , getCurrent
   , setCurrent
   , getCurrentState
+  , getImmutableState
   , getPastState
   , getHeaderStateHistory
   , currentPoint
@@ -292,6 +293,10 @@ getCurrent LgrDB{..} = readTVar varDB
 
 getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
+
+getImmutableState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
+getImmutableState LgrDB{..} =
+    LedgerDB.csLedger . LedgerDB.ledgerDbAnchor <$> readTVar varDB
 
 getPastState :: (IOLike m, HasHeader blk)
              => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))

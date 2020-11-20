@@ -135,6 +135,7 @@ data Cmd blk it rdr
     -- future) and larger or equal to the current slot, and add the block.
   | GetCurrentChain
   | GetCurrentLedger
+  | GetImmutableLedger
   | GetPastLedger         (Point blk)
   | GetHeaderStateHistory
   | GetTipBlock
@@ -337,6 +338,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       AddFutureBlock blk s     -> Point               <$> (advanceAndAdd st s               blk)
       GetCurrentChain          -> Chain               <$> atomically getCurrentChain
       GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
+      GetImmutableLedger       -> Ledger              <$> atomically getImmutableLedger
       GetPastLedger pt         -> MbLedger            <$> atomically (getPastLedger pt)
       GetHeaderStateHistory    -> HdrStateHistory     <$> atomically getHeaderStateHistory
       GetTipBlock              -> MbBlock             <$> getTipBlock
@@ -554,6 +556,7 @@ runPure cfg = \case
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
     GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
+    GetImmutableLedger       -> ok  Ledger              $ query   (Model.immutableLedger cfg)
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
     GetHeaderStateHistory    -> ok  HdrStateHistory     $ query   (Model.getHeaderStateHistory cfg)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
@@ -783,6 +786,7 @@ generator genBlock m@Model {..} = At <$> frequency
     [ (30, genAddBlock)
     , (if empty then 1 else 10, return GetCurrentChain)
     , (if empty then 1 else 10, return GetCurrentLedger)
+    , (if empty then 1 else 10, return GetImmutableLedger)
     , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
     , (if empty then 1 else 10, return GetTipPoint)
