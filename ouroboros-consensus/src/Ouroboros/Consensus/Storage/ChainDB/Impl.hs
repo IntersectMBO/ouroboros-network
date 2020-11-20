@@ -189,6 +189,7 @@ openDBInternal args launchBgTasks = do
           { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
           , getCurrentChain       = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger      = getEnvSTM  h Query.getCurrentLedger
+          , getImmutableLedger    = getEnvSTM  h Query.getImmutableLedger
           , getPastLedger         = getEnvSTM1 h Query.getPastLedger
           , getHeaderStateHistory = getEnvSTM  h Query.getHeaderStateHistory
           , getTipBlock           = getEnv     h Query.getTipBlock

@@ -28,6 +28,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     -- * Queries
   , currentChain
   , currentLedger
+  , immutableLedger
   , currentSlot
   , futureBlocks
   , maxClockSkew
@@ -207,6 +208,20 @@ tipPoint = maybe GenesisPoint blockPoint . tipBlock
 
 getMaxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
 getMaxSlotNo = foldMap (MaxSlotNo . blockSlot) . blocks
+
+immutableLedger ::
+     forall blk. LedgerSupportsProtocol blk
+  => TopLevelConfig blk
+  -> Model blk
+  -> ExtLedgerState blk
+immutableLedger cfg m =
+    fromMaybe (error "impossible: couldn't not get immutable ledger") $
+      getPastLedger cfg immutablePoint m
+  where
+    k = protocolSecurityParam (configConsensus cfg)
+
+    immutablePoint :: Point blk
+    immutablePoint = Chain.headPoint $ immutableChain k m
 
 lastK :: HasHeader a
       => SecurityParam
