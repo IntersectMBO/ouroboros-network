@@ -82,10 +82,6 @@ jobs:
         sudo apt-get -y remove --purge software-properties-common
         sudo apt-get -y autoremove
 
-    - name: Cabal config
-      run: |
-        cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\\SR" -f -v3
-
     - name: Set up temp directory
       run: |
         echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
@@ -95,7 +91,7 @@ jobs:
     - name: cache cabal store
       uses: actions/cache@v1
       with:
-        path: C:\SR
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cabal-store-8.10.2
     # Cache parts of dist-newstyle (C:\dist)
     - name: cache buiddir [cache]
@@ -121,108 +117,84 @@ jobs:
     - name: checkout ouroboros-network repository
       uses: actions/checkout@v2
 
+    # Build dependencies
+    - name: Build dependencies
+      run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
+
     - name: Use cabal.project.local.windows
-      run: cp ./cabal.project.local.ci.windows ./cabal.project.local
+      run: |
+        cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+        cat ./cabal.project.local
+
+    # Build dependencies
+    - name: Build dependencies
+      run: |
+        cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
+
+    # Build dependencies
+    - name: Build dependencies
+      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
 
     #
     # Build & Test network packages
     #
 
-    # Win32-network
-    - name: Win32-network [dependencies]
-      if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies Win32-network
-
     - name: Win32-network [build]
       if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build Win32-network
+      run: cabal --builddir="$CABAL_BUILDDIR" build Win32-network
+
+    # ntp-client
+    - name: ntp-client [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build ntp-client
+
+    - name: io-sim-classes [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build io-sim-classes
+
+    - name: io-sim [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build io-sim
+
+    - name: typed-protocols [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols
+
+    - name: typed-protocols-examples [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols-examples
+
+    - name: network-mux [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build network-mux
+
+    - name: ouroboros-network-framework [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network-framework
+
+    - name: ouroboros-network [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network
+
+    #
+    # Test network packages
+    #
 
     - name: Win32-network [test]
       if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-Win32-network
-
-    # ntp-client
-    - name: ntp-client [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ntp-client
-
-    - name: ntp-client [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ntp-client
+      run: cabal --builddir="$CABAL_BUILDDIR" run test-Win32-network
 
     - name: ntp-client [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-ntp-client
-
-
-    # io-sim-classes
-    - name: io-sim-classes [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies io-sim-classes
-
-    - name: io-sim-classes [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build io-sim-classes
-
-
-    # io-sim
-    - name: io-sim [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies io-sim
-
-    - name: io-sim [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build io-sim
+      run: cabal --builddir="$CABAL_BUILDDIR" run test-ntp-client
 
     - name: io-sim [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-sim
-
-
-    # typed-protocols
-    - name: typed-protcols [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies typed-protocols
-
-    - name: typed-protocols [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build typed-protocols
-
-
-    # typed-protocols-examples
-    - name: typed-protocols-examples [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies typed-protocols-examples
-
-    - name: typed-protocols-examples [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build typed-protocols-examples
+      run: cabal --builddir="$CABAL_BUILDDIR" run test-sim
 
     - name: typed-protocols-examples [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run typed-protocols-tests
-
-
-    # network-mux
-    - name: network-mux [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies network-mux
-
-    - name: network-mux [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build network-mux
+      run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-tests
 
     - name: network-mux [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-network-mux
-
-
-    # ouroboros-network-framework
-    - name: ouroboros-network-framework [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies ouroboros-network-framework
-
-    - name: ouroboros-network-framework [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ouroboros-network-framework
+      run: cabal --builddir="$CABAL_BUILDDIR" run test-network-mux
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run ouroboros-network-framework-tests -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
-
-
-    # ouroboros-network
-    - name: ouroboros-network [dependencies]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build --only-dependencies ouroboros-network
-
-    - name: ouroboros-network [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-build ouroboros-network
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework-tests -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-network
+      run: cabal --builddir="$CABAL_BUILDDIR" run test-network
 
     # TODO: we need to install the cddl tool
     # - name: ouroboros-network [cddl]
-    #   run: cabal --builddir="$CABAL_BUILDDIR" v2-run test-cddl
+    #   run: cabal --builddir="$CABAL_BUILDDIR" run test-cddl
