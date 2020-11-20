@@ -6,6 +6,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+
 -- | Primary Index
 --
 -- Intended for qualified import
@@ -53,12 +55,15 @@ import qualified Data.Binary.Put as Put
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity (Identity (..))
+import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 import           Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -165,27 +170,36 @@ slots (MkPrimaryIndex _ offsets) = fromIntegral $ V.length offsets - 1
 -- | Read the 'SecondaryOffset' corresponding to the given relative slot in
 -- the primary index. Return 'Nothing' when the slot is empty.
 readOffset
-  :: forall m h. (HasCallStack, MonadThrow m)
-  => HasFS m h
+  :: forall blk m h.
+     (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkNo
   -> RelativeSlot
   -> m (Maybe SecondaryOffset)
-readOffset hasFS chunk slot = runIdentity <$>
-    readOffsets hasFS chunk (Identity slot)
+readOffset pb hasFS chunk slot = runIdentity <$>
+    readOffsets pb hasFS chunk (Identity slot)
 
 -- | Same as 'readOffset', but for multiple offsets.
 --
 -- NOTE: only use this for a few offsets, as we will seek (@pread@) for each
 -- offset. Use 'load' if you want to read the whole primary index.
 readOffsets
-  :: forall m h t. (HasCallStack, MonadThrow m, Traversable t)
-  => HasFS m h
+  :: forall blk m h t.
+     ( HasCallStack
+     , MonadThrow m
+     , Traversable t
+     , StandardHash blk
+     , Typeable blk
+     )
+  => Proxy blk
+  -> HasFS m h
   -> ChunkNo
   -> t RelativeSlot
   -> m (t (Maybe SecondaryOffset))
        -- ^ The offset in the secondary index file corresponding to the given
        -- slot. 'Nothing' when the slot is empty.
-readOffsets hasFS@HasFS { hGetSize } chunk toRead =
+readOffsets pb hasFS@HasFS { hGetSize } chunk toRead =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       size <- hGetSize pHnd
       forM toRead $ \relSlot -> do
@@ -198,7 +212,7 @@ readOffsets hasFS@HasFS { hGetSize } chunk toRead =
           return Nothing
         else do
           (secondaryOffset, nextSecondaryOffset) <-
-            runGet primaryIndexFile get =<<
+            runGet pb primaryIndexFile get =<<
             hGetExactlyAt hasFS pHnd nbBytes offset
           return $ if nextSecondaryOffset - secondaryOffset > 0
             then Just secondaryOffset
@@ -218,12 +232,14 @@ readOffsets hasFS@HasFS { hGetSize } chunk toRead =
 --
 -- May throw 'InvalidPrimaryIndexException'.
 readFirstFilledSlot
-  :: forall m h. (HasCallStack, MonadThrow m)
-  => HasFS m h
+  :: forall blk m h.
+     (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkInfo
   -> ChunkNo
   -> m (Maybe RelativeSlot)
-readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
+readFirstFilledSlot pb hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
       go pHnd $ NextRelativeSlot (firstBlockOrEBB chunkInfo chunk)
@@ -247,7 +263,11 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
           return Nothing
         (NoMoreRelativeSlots, Just _) ->
           throwIO $ UnexpectedFailure $
-            InvalidFileError primaryIndexFile "Index file too large" prettyCallStack
+            InvalidFileError
+              @blk
+              primaryIndexFile
+              "Index file too large"
+              prettyCallStack
         (NextRelativeSlot slot, Just offset)
           | offset == 0 -> go pHnd (nextRelativeSlot slot)
           | otherwise   -> return $ Just slot
@@ -271,17 +291,19 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
               -> goGet (remaining - n) acc'
               | otherwise      -- All bytes read, 'Get' the offset
               -> assert (n == remaining) $ Just <$>
-                 runGet primaryIndexFile getSecondaryOffset acc'
+                 runGet pb primaryIndexFile getSecondaryOffset acc'
 
 -- | Load a primary index file in memory.
 load
-  :: forall m h. (HasCallStack, MonadThrow m)
-  => HasFS m h
+  :: forall blk m h.
+     (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkNo
   -> m PrimaryIndex
-load hasFS chunk =
+load pb hasFS chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd ->
-      hGetAll hasFS pHnd >>= runGet primaryIndexFile get
+      hGetAll hasFS pHnd >>= runGet pb primaryIndexFile get
   where
     primaryIndexFile = fsPathPrimaryIndexFile chunk
 
@@ -364,14 +386,15 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk relSlot =
 -- POSTCONDITION: the last slot of the primary index file will be filled,
 -- unless the index itself is empty.
 unfinalise
-  :: (HasCallStack, MonadThrow m)
-  => HasFS m h
+  :: (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkInfo
   -> ChunkNo
   -> m ()
-unfinalise hasFS chunkInfo chunk = do
+unfinalise pb hasFS chunkInfo chunk = do
     -- TODO optimise so that we only need to open the file once
-    primaryIndex <- load hasFS chunk
+    primaryIndex <- load pb hasFS chunk
     case lastFilledSlot chunkInfo primaryIndex of
       Nothing   -> return ()
       Just slot -> truncateToSlotFS hasFS chunk slot

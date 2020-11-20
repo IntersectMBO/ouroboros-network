@@ -31,6 +31,7 @@ import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity (Identity (..))
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           Foreign.Storable (Storable (sizeOf))
 import           GHC.Generics (Generic)
@@ -156,7 +157,13 @@ data BlockSize
 -- | Read the entry at the given 'SecondaryOffset'. Interpret it as an EBB
 -- depending on the given 'IsEBB'.
 readEntry
-  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
+  :: forall m blk h.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , MonadThrow m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> ChunkNo
   -> IsEBB
@@ -172,7 +179,13 @@ readEntry hasFS chunk isEBB slotOffset = runIdentity <$>
 -- secondary index file.
 readEntries
   :: forall m blk h t.
-     (HasCallStack, ConvertRawHash blk, MonadThrow m, Traversable t)
+     ( HasCallStack
+     , ConvertRawHash blk
+     , MonadThrow m
+     , StandardHash blk
+     , Typeable blk
+     , Traversable t
+     )
   => HasFS m h
   -> ChunkNo
   -> t (IsEBB, SecondaryOffset)
@@ -191,7 +204,7 @@ readEntries hasFS chunk toRead =
         if anotherEntryAfter then do
           (entry, nextBlockOffset) <-
             hGetExactlyAt hasFS sHnd (nbBytes + nbBlockOffsetBytes) offset >>=
-            runGet secondaryIndexFile
+            runGet (Proxy @blk) secondaryIndexFile
               ((,) <$> getEntry isEBB <*> get)
           let blockSize = fromIntegral $
                 unBlockOffset nextBlockOffset -
@@ -199,7 +212,7 @@ readEntries hasFS chunk toRead =
           return (entry, BlockSize blockSize)
         else do
           entry <- hGetExactlyAt hasFS sHnd nbBytes offset >>=
-            runGet secondaryIndexFile (getEntry isEBB)
+            runGet (Proxy @blk) secondaryIndexFile (getEntry isEBB)
           return (entry, LastEntry)
   where
     secondaryIndexFile = fsPathSecondaryIndexFile chunk
@@ -212,7 +225,13 @@ readEntries hasFS chunk toRead =
 -- file is reached. The entry for which the stop condition is true will be the
 -- last in the returned list of entries.
 readAllEntries
-  :: forall m blk h. (HasCallStack, ConvertRawHash blk, MonadThrow m)
+  :: forall m blk h.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , MonadThrow m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> SecondaryOffset      -- ^ Start from this offset
   -> ChunkNo
@@ -241,7 +260,7 @@ readAllEntries hasFS secondaryOffset chunk stopAfter chunkFileSize = \isEBB ->
         (addBlockSize chunkFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
         (remaining, entry) <-
-          runGetWithUnconsumed secondaryIndexFile (getEntry isEBB) bl
+          runGetWithUnconsumed (Proxy @blk) secondaryIndexFile (getEntry isEBB) bl
         let offsetAfterPrevBlock = unBlockOffset (blockOffset entry)
             acc' = (addBlockSize offsetAfterPrevBlock <$> mbPrevEntry)
               `consMaybe` acc
@@ -257,7 +276,7 @@ readAllEntries hasFS secondaryOffset chunk stopAfter chunkFileSize = \isEBB ->
             -- next entry (unless the file is invalid) and definitely the
             -- next entry's block offset.
             (_, nextBlockOffset) <-
-              runGetWithUnconsumed secondaryIndexFile get remaining
+              runGetWithUnconsumed (Proxy @blk) secondaryIndexFile get remaining
             return $ reverse $ addBlockSize nextBlockOffset entry : acc'
 
         else

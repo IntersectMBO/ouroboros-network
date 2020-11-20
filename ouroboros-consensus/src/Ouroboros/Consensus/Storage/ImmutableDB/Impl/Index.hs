@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
   ( -- * Index
@@ -17,6 +18,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
 
 import           Control.Tracer (Tracer)
 import           Data.Functor.Identity (Identity (..))
+import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
@@ -145,23 +148,27 @@ readEntry index chunk isEBB slotOffset = runIdentity <$>
 ------------------------------------------------------------------------------}
 
 fileBackedIndex
-  :: forall m blk h. (ConvertRawHash blk, MonadCatch m)
+  :: forall m blk h.
+     (ConvertRawHash blk, MonadCatch m, StandardHash blk, Typeable blk)
   => HasFS m h
   -> ChunkInfo
   -> Index m blk h
 fileBackedIndex hasFS chunkInfo = Index
-    { readOffsets         = Primary.readOffsets         hasFS
-    , readFirstFilledSlot = Primary.readFirstFilledSlot hasFS chunkInfo
-    , openPrimaryIndex    = Primary.open                hasFS
-    , appendOffsets       = Primary.appendOffsets       hasFS
-    , readEntries         = Secondary.readEntries       hasFS
-    , readAllEntries      = Secondary.readAllEntries    hasFS
+    { readOffsets         = Primary.readOffsets         p hasFS
+    , readFirstFilledSlot = Primary.readFirstFilledSlot p hasFS chunkInfo
+    , openPrimaryIndex    = Primary.open                  hasFS
+    , appendOffsets       = Primary.appendOffsets         hasFS
+    , readEntries         = Secondary.readEntries         hasFS
+    , readAllEntries      = Secondary.readAllEntries      hasFS
     , appendEntry         = \_chunk h (WithBlockSize _ entry) ->
-                            Secondary.appendEntry       hasFS h entry
+                            Secondary.appendEntry         hasFS h entry
       -- Nothing to do
     , close               = return ()
     , restart             = \_newCurChunk -> return ()
     }
+  where
+    p :: Proxy blk
+    p = Proxy
 
 {------------------------------------------------------------------------------
   Cached index
@@ -173,7 +180,8 @@ fileBackedIndex hasFS chunkInfo = Index
 -- Spawns a background thread to expire past chunks from the cache that
 -- haven't been used for a while.
 cachedIndex
-  :: forall m blk h. (IOLike m, ConvertRawHash blk, StandardHash blk)
+  :: forall m blk h.
+     (IOLike m, ConvertRawHash blk, StandardHash blk, Typeable blk)
   => HasFS m h
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent

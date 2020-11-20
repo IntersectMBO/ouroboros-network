@@ -9,6 +9,8 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
   ( -- * State types
     ImmutableDBEnv (..)
@@ -27,6 +29,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer)
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
@@ -149,7 +152,7 @@ mkOpenState hasFS@HasFS{..} index chunk tip existing = do
 -- to use an existing 'HasFS' instance already in scope otherwise, since the
 -- @h@ parameters would not be known to match.
 getOpenState ::
-     (HasCallStack, IOLike m)
+     forall m blk. (HasCallStack, IOLike m, StandardHash blk, Typeable blk)
   => ImmutableDBEnv m blk
   -> STM m (SomePair (HasFS m) (OpenState m blk))
 getOpenState ImmutableDBEnv {..} = do
@@ -157,7 +160,7 @@ getOpenState ImmutableDBEnv {..} = do
     -- somebody's appending to the ImmutableDB at the same time.
     internalState <- readMVarSTM varInternalState
     case internalState of
-       DbClosed         -> throwApiMisuse ClosedDBError
+       DbClosed         -> throwApiMisuse $ ClosedDBError @blk
        DbOpen openState -> return (SomePair hasFS openState)
 
 -- | Shorthand
@@ -184,19 +187,19 @@ type ModifyOpenState m blk h =
 -- gotchas that @modifyMVar@ does; the effects are observable and it is
 -- susceptible to deadlock.
 modifyOpenState ::
-     forall m blk a. (HasCallStack, IOLike m)
+     forall m blk a. (HasCallStack, IOLike m, StandardHash blk, Typeable blk)
   => ImmutableDBEnv m blk
   -> (forall h. Eq h => HasFS m h -> ModifyOpenState m blk h a)
   -> m a
 modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
-    wrapFsError $ modifyWithTempRegistry getSt putSt (modSt hasFS)
+    wrapFsError (Proxy @blk) $ modifyWithTempRegistry getSt putSt (modSt hasFS)
   where
     getSt :: m (OpenState m blk h)
     getSt = mask_ $ takeMVar varInternalState >>= \case
       DbOpen ost -> return ost
       DbClosed   -> do
         putMVar varInternalState DbClosed
-        throwApiMisuse ClosedDBError
+        throwApiMisuse $ ClosedDBError @blk
 
     putSt :: OpenState m blk h -> ExitCase (OpenState m blk h) -> m ()
     putSt ost ec = do
@@ -219,7 +222,7 @@ modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
           -- down the node anway, so it is safe to close the ImmutableDB here.
           ExitCaseAbort         -> DbClosed
           ExitCaseException ex
-            | Just (ApiMisuse {}) <- fromException ex
+            | Just (ApiMisuse {} :: ImmutableDBError blk) <- fromException ex
             -> DbOpen ost
             | otherwise
             -> DbClosed
@@ -232,12 +235,13 @@ modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
 -- database is closed to prevent further appending to a database in a
 -- potentially inconsistent state.
 withOpenState ::
-     forall m blk r. (HasCallStack, IOLike m)
+     forall m blk r. (HasCallStack, IOLike m, StandardHash blk, Typeable blk)
   => ImmutableDBEnv m blk
   -> (forall h. HasFS m h -> OpenState m blk h -> m r)
   -> m r
 withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open (const close) (tryImmutableDB . access)
+    (mr, ()) <-
+      generalBracket open (const close) (tryImmutableDB (Proxy @blk) . access)
     case mr of
       Left  e -> throwIO e
       Right r -> return r
@@ -249,13 +253,13 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     open :: m (OpenState m blk h)
     open = atomically (readMVarSTM varInternalState) >>= \case
       DbOpen ost -> return ost
-      DbClosed   -> throwApiMisuse ClosedDBError
+      DbClosed   -> throwApiMisuse $ ClosedDBError @blk
 
     -- close doesn't take the state that @open@ returned, because the state
     -- may have been updated by someone else since we got it (remember we're
     -- using 'readMVarSTM' here, not 'takeMVar'). So we need to get the most
     -- recent state anyway.
-    close :: ExitCase (Either ImmutableDBError r)
+    close :: ExitCase (Either (ImmutableDBError blk) r)
           -> m ()
     close ec = case ec of
       ExitCaseAbort                                 -> return ()
@@ -267,7 +271,7 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
 
     shutDown :: m ()
     shutDown = swapMVar varInternalState DbClosed >>= \case
-      DbOpen ost -> wrapFsError $ cleanUp hasFS ost
+      DbOpen ost -> wrapFsError (Proxy @blk) $ cleanUp hasFS ost
       DbClosed   -> return ()
 
     access :: OpenState m blk h -> m r

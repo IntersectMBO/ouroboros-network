@@ -74,6 +74,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -123,7 +124,7 @@ data TestBlock = TestBlock {
       testHeader :: !TestHeader
     , testBody   :: !TestBody
     }
-  deriving stock    (Show, Eq, Generic)
+  deriving stock    (Show, Eq, Generic, Typeable)
   deriving anyclass (NoThunks, Serialise)
 
 -- | Hash of a 'TestHeader'

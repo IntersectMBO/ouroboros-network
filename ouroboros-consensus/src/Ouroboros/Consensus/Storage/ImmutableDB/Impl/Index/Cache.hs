@@ -46,6 +46,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
+import           Data.Typeable (Typeable)
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
 import           Data.Void (Void)
@@ -371,7 +372,12 @@ data CacheEnv m blk h = CacheEnv
 --
 -- PRECONDITION: 'pastChunksToCache' (in 'CacheConfig') > 0
 newEnv
-  :: (HasCallStack, IOLike m, ConvertRawHash blk, StandardHash blk)
+  :: ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
@@ -469,14 +475,15 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
 ------------------------------------------------------------------------------}
 
 readPrimaryIndex
-  :: (HasCallStack, IOLike m)
-  => HasFS m h
+  :: (HasCallStack, IOLike m, Typeable blk, StandardHash blk)
+  => Proxy blk
+  -> HasFS m h
   -> ChunkInfo
   -> ChunkNo
   -> m (PrimaryIndex, IsEBB)
      -- ^ The primary index and whether it starts with an EBB or not
-readPrimaryIndex hasFS chunkInfo chunk = do
-    primaryIndex <- Primary.load hasFS chunk
+readPrimaryIndex pb hasFS chunkInfo chunk = do
+    primaryIndex <- Primary.load pb hasFS chunk
     let firstIsEBB
           | Primary.containsSlot primaryIndex firstRelativeSlot
           , Primary.isFilledSlot primaryIndex firstRelativeSlot
@@ -489,7 +496,12 @@ readPrimaryIndex hasFS chunkInfo chunk = do
     firstRelativeSlot = firstBlockOrEBB chunkInfo chunk
 
 readSecondaryIndex
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> ChunkNo
   -> IsEBB
@@ -506,7 +518,13 @@ readSecondaryIndex hasFS@HasFS { hGetSize } chunk firstIsEBB = do
     stopCondition = const False
 
 loadCurrentChunkInfo
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: forall m h blk.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> ChunkInfo
   -> ChunkNo
@@ -516,7 +534,8 @@ loadCurrentChunkInfo hasFS chunkInfo chunk = do
     -- index file will also exist
     chunkExists <- doesFileExist hasFS primaryIndexFile
     if chunkExists then do
-      (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
+      (primaryIndex, firstIsEBB) <-
+        readPrimaryIndex (Proxy @blk) hasFS chunkInfo chunk
       entries <- readSecondaryIndex hasFS chunk firstIsEBB
       return CurrentChunkInfo
         { currentChunkNo      = chunk
@@ -531,13 +550,19 @@ loadCurrentChunkInfo hasFS chunkInfo chunk = do
     primaryIndexFile = fsPathPrimaryIndexFile chunk
 
 loadPastChunkInfo
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: forall blk m h.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => HasFS m h
   -> ChunkInfo
   -> ChunkNo
   -> m (PastChunkInfo blk)
 loadPastChunkInfo hasFS chunkInfo chunk = do
-    (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
+    (primaryIndex, firstIsEBB) <- readPrimaryIndex (Proxy @blk) hasFS chunkInfo chunk
     entries <- readSecondaryIndex hasFS chunk firstIsEBB
     return PastChunkInfo
       { pastChunkOffsets = primaryIndex
@@ -545,7 +570,13 @@ loadPastChunkInfo hasFS chunkInfo chunk = do
       }
 
 getChunkInfo
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: forall m blk h.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => CacheEnv m blk h
   -> ChunkNo
   -> m (Either (CurrentChunkInfo blk) (PastChunkInfo blk))
@@ -610,7 +641,7 @@ close CacheEnv { bgThreadVar } =
 -- PRECONDITION: the background thread expiring unused past chunks must have
 -- been terminated.
 restart
-  :: (ConvertRawHash blk, IOLike m)
+  :: (ConvertRawHash blk, IOLike m, StandardHash blk, Typeable blk)
   => CacheEnv m blk h
   -> ChunkNo  -- ^ The new current chunk
   -> m ()
@@ -632,7 +663,13 @@ restart cacheEnv chunk = do
 ------------------------------------------------------------------------------}
 
 readOffsets
-  :: (HasCallStack, ConvertRawHash blk, Traversable t, IOLike m)
+  :: ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     , Traversable t
+     )
   => CacheEnv m blk h
   -> ChunkNo
   -> t RelativeSlot
@@ -669,7 +706,12 @@ readOffsets cacheEnv chunk relSlots =
       = Nothing
 
 readFirstFilledSlot
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => CacheEnv m blk h
   -> ChunkNo
   -> m (Maybe RelativeSlot)
@@ -691,7 +733,12 @@ readFirstFilledSlot cacheEnv chunk =
 -- | This is called when a new chunk is started, which means we need to update
 -- 'Cached' to reflect this.
 openPrimaryIndex
-  :: (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => CacheEnv m blk h
   -> ChunkNo
   -> AllowExisting
@@ -741,7 +788,13 @@ appendOffsets CacheEnv { hasFS, cacheVar } pHnd offsets = do
 
 readEntries
   :: forall m blk h t.
-     (HasCallStack, ConvertRawHash blk, Traversable t, IOLike m)
+     ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     , Traversable t
+     )
   => CacheEnv m blk h
   -> ChunkNo
   -> t (IsEBB, SecondaryOffset)
@@ -769,13 +822,19 @@ readEntries cacheEnv chunk toRead =
     -- We don't know which of the two things happened, but the former is more
     -- likely, so we mention that file in the error message.
     noEntry :: SecondaryOffset -> m a
-    noEntry secondaryOffset = throwUnexpectedFailure $ InvalidFileError
+    noEntry secondaryOffset = throwUnexpectedFailure $ InvalidFileError @blk
       (fsPathSecondaryIndexFile chunk)
       ("no entry missing for " <> show secondaryOffset)
       prettyCallStack
 
 readAllEntries
-  :: forall m blk h. (HasCallStack, ConvertRawHash blk, IOLike m)
+  :: forall m blk h.
+     ( HasCallStack
+     , ConvertRawHash blk
+     , IOLike m
+     , StandardHash blk
+     , Typeable blk
+     )
   => CacheEnv m blk h
   -> SecondaryOffset
   -> ChunkNo

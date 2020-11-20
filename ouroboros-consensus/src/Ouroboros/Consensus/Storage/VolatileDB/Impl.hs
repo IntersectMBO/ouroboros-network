@@ -231,14 +231,17 @@ openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $
   VolatileDB API
 ------------------------------------------------------------------------------}
 
-closeDBImpl :: IOLike m => VolatileDBEnv m blk -> m ()
+closeDBImpl ::
+     forall m blk. (IOLike m, HasHeader blk)
+  => VolatileDBEnv m blk
+  -> m ()
 closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
     mbInternalState <-
       RAWLock.withWriteAccess varInternalState $ \st -> return (DbClosed, st)
     case mbInternalState of
       DbClosed -> traceWith tracer DBAlreadyClosed
       DbOpen ost ->
-        wrapFsError $ closeOpenHandles hasFS ost
+        wrapFsError (Proxy @blk) $ closeOpenHandles hasFS ost
 
 getBlockComponentImpl ::
      forall m blk b.
@@ -290,7 +293,7 @@ getBlockComponentImpl env@VolatileDBEnv { codecConfig, checkIntegrity } blockCom
         GetVerifiedBlock ->
           getBlockComponent hasFS ibi GetBlock >>= \blk -> do
             unless (checkIntegrity blk) $
-              throwIO $ UnexpectedFailure $ CorruptBlockError (Proxy @blk) hash
+              throwIO $ UnexpectedFailure $ CorruptBlockError @blk hash
             return blk
       where
         InternalBlockInfo { ibiBlockInfo = BlockInfo {..}, .. } = ibi
@@ -514,8 +517,8 @@ getBlockInfoImpl = getterSTM $ \st hash ->
     ibiBlockInfo <$> Map.lookup hash (currentRevMap st)
 
 getMaxSlotNoImpl ::
-     forall m blockId. IOLike m
-  => VolatileDBEnv m blockId
+     forall m blk. (IOLike m, HasHeader blk)
+  => VolatileDBEnv m blk
   -> STM m MaxSlotNo
 getMaxSlotNoImpl = getterSTM currentMaxSlotNo
 
@@ -551,12 +554,12 @@ nextFile hasFS = do
 
 -- | Gets part of the 'OpenState' in 'STM'.
 getterSTM ::
-     forall m blk a. IOLike m
+     forall m blk a. (IOLike m, HasHeader blk)
   => (forall h. OpenState blk h -> a)
   -> VolatileDBEnv m blk
   -> STM m a
 getterSTM fromSt VolatileDBEnv { varInternalState } = do
     mSt <- RAWLock.read varInternalState
     case mSt of
-      DbClosed  -> throwIO $ ApiMisuse $ ClosedDBError Nothing
+      DbClosed  -> throwIO $ ApiMisuse @blk $ ClosedDBError Nothing
       DbOpen st -> return $ fromSt st

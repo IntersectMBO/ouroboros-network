@@ -226,7 +226,7 @@ initFromDisk
   -> m (LedgerDB' blk, Word64)
 initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
              replayTracer
-             immutableDB = wrapFailure $ do
+             immutableDB = wrapFailure (Proxy @blk) $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
@@ -326,10 +326,11 @@ currentPoint = castPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 
-takeSnapshot :: forall m blk.
-                (IOLike m, LgrDbSerialiseConstraints blk)
-             => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure $ do
+takeSnapshot ::
+     forall m blk.
+     (IOLike m, LgrDbSerialiseConstraints blk, HasHeader blk)
+  => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
       tracer
@@ -346,8 +347,11 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure $ do
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)
 
-trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
-trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure $
+trimSnapshots ::
+     forall m blk. (MonadCatch m, HasHeader blk)
+  => LgrDB m blk
+  -> m [DiskSnapshot]
+trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
     LedgerDB.trimSnapshots tracer hasFS diskPolicy
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
@@ -472,8 +476,12 @@ garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
 
 -- | Wrap exceptions that may indicate disk failure in a 'ChainDbFailure'
 -- exception using the 'LgrDbFailure' constructor.
-wrapFailure :: forall m x. MonadCatch m => m x -> m x
-wrapFailure k = catch k rethrow
+wrapFailure ::
+     forall m x blk. (MonadCatch m, HasHeader blk)
+  => Proxy blk
+  -> m x
+  -> m x
+wrapFailure _ k = catch k rethrow
   where
     rethrow :: FsError -> m x
-    rethrow err = throwIO $ LgrDbFailure err
+    rethrow err = throwIO $ LgrDbFailure @blk err

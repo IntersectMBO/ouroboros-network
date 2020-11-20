@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
+
 module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
 
 import           Data.Functor ((<&>))
@@ -34,6 +35,8 @@ import           Test.Util.FS.Sim.MockFS (HandleMock)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import qualified Test.Util.FS.Sim.STM as Sim
 import           Test.Util.Orphans.Arbitrary ()
+
+import           Test.Ouroboros.Storage.TestBlock (TestBlock)
 
 {------------------------------------------------------------------------------
   The tests
@@ -72,7 +75,7 @@ prop_write_load (TestPrimaryIndex _chunkInfo chunk index _slot) =
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS chunk index
-      index' <- Primary.load hasFS chunk
+      index' <- Primary.load (Proxy @TestBlock) hasFS chunk
       return $ index === index'
 
 prop_open_appendOffsets_load :: TestPrimaryIndex -> Property
@@ -85,7 +88,7 @@ prop_open_appendOffsets_load (TestPrimaryIndex _chunkInfo chunk index _slot) =
       -- Don't write the first offset, which is always 0; it is written by
       -- 'Primary.open'.
       Primary.appendOffsets hasFS pHnd (drop 1 (Primary.toSecondaryOffsets index))
-      index' <- Primary.load hasFS chunk
+      index' <- Primary.load (Proxy @TestBlock) hasFS chunk
       return $ index === index'
 
 prop_truncateToSlotFS_truncateToSlot :: TestPrimaryIndex -> Property
@@ -96,7 +99,7 @@ prop_truncateToSlotFS_truncateToSlot (TestPrimaryIndex chunkInfo chunk index slo
     prop hasFS = do
       Primary.write hasFS chunk index
       Primary.truncateToSlotFS hasFS chunk slot
-      index' <- Primary.load hasFS chunk
+      index' <- Primary.load (Proxy @TestBlock) hasFS chunk
       return $ Primary.truncateToSlot chunkInfo slot index === index'
 
 prop_readFirstFilledSlot_load_firstFilledSlot :: TestPrimaryIndex -> Property
@@ -106,7 +109,8 @@ prop_readFirstFilledSlot_load_firstFilledSlot (TestPrimaryIndex chunkInfo chunk 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS chunk index
-      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS chunkInfo chunk
+      mbFirstFilledsLot <-
+        Primary.readFirstFilledSlot (Proxy @TestBlock) hasFS chunkInfo chunk
       return $ mbFirstFilledsLot === Primary.firstFilledSlot chunkInfo index
 
 {------------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
     ( -- * FileId utilities
       parseFd
@@ -22,12 +24,15 @@ import           Data.Bifunctor (first)
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Typeable (Typeable)
 import           Text.Read (readMaybe)
 
+import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -73,8 +78,12 @@ filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
   Exception handling
 ------------------------------------------------------------------------------}
 
-wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwIO . UnexpectedFailure . FileSystemError
+wrapFsError ::
+     forall m a blk. (MonadCatch m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> m a
+  -> m a
+wrapFsError _ = handle $ throwIO . UnexpectedFailure @blk . FileSystemError
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
@@ -84,10 +93,11 @@ wrapFsError = handle $ throwIO . UnexpectedFailure . FileSystemError
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
 tryVolatileDB ::
-     forall m a. MonadCatch m
-  => m a
-  -> m (Either VolatileDBError a)
-tryVolatileDB = try . wrapFsError
+     forall m a blk. (MonadCatch m, Typeable blk, StandardHash blk)
+  => Proxy blk
+  -> m a
+  -> m (Either (VolatileDBError blk) a)
+tryVolatileDB pb = try . wrapFsError pb
 
 {------------------------------------------------------------------------------
   Map of Set utilities

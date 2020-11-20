@@ -291,7 +291,7 @@ unmigrate HasFS { listDirectory, renameFile } = do
 -------------------------------------------------------------------------------}
 
 -- | Responses are either successful termination or an error.
-newtype Resp it = Resp { getResp :: Either ImmutableDBError (Success it) }
+newtype Resp it = Resp { getResp :: Either (ImmutableDBError TestBlock) (Success it) }
   deriving (Eq, Functor, Foldable, Traversable, Show)
 
 -- | Run the pure command against the given database.
@@ -321,9 +321,9 @@ runPure = \case
       Left  e  -> (Left e, m)
       Right m' -> (Right (), m')
     updateEE ::
-         (DBModel TestBlock -> Either ImmutableDBError (Either e (a, DBModel TestBlock)))
+         (DBModel TestBlock -> Either (ImmutableDBError TestBlock) (Either e (a, DBModel TestBlock)))
       -> DBModel TestBlock
-      -> (Either ImmutableDBError (Either e a), DBModel TestBlock)
+      -> (Either (ImmutableDBError TestBlock) (Either e a), DBModel TestBlock)
     updateEE f m = case f m of
       Left e                -> (Left e, m)
       Right (Left e)        -> (Right (Left e), m)
@@ -331,7 +331,7 @@ runPure = \case
 
     ok ::
          (a -> Success IteratorId)
-      -> (DBModel TestBlock -> (Either ImmutableDBError a, DBModel TestBlock))
+      -> (DBModel TestBlock -> (Either (ImmutableDBError TestBlock) a, DBModel TestBlock))
       -> DBModel TestBlock
       -> (Resp IteratorId, DBModel TestBlock)
     ok toSuccess f m = first (Resp . fmap toSuccess) $ f m
@@ -798,11 +798,12 @@ semantics ::
 semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd -> tryImmutableDB $ run env cmd
+      CmdErr Nothing       cmd -> tryImmutableDB (Proxy @TestBlock) $ run env cmd
 
       CmdErr (Just errors) cmd -> do
         tipBefore <- getImmutableDB env >>= atomically . getTip
-        res       <- withErrors varErrors errors $ tryImmutableDB $ run env cmd
+        res       <- withErrors varErrors errors $
+                       tryImmutableDB (Proxy @TestBlock) $ run env cmd
         case res of
           -- If the command resulted in a 'ApiMisuse', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -828,7 +829,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
   where
     ImmutableDbArgs { immRegistry } = args
 
-    truncateAndReopen cmd tipBefore = tryImmutableDB $ do
+    truncateAndReopen cmd tipBefore = tryImmutableDB (Proxy @TestBlock) $ do
       -- Close all open iterators as we will perform truncation
       closeOpenIterators varIters
       -- Close the database in case no errors occurred and it wasn't
@@ -918,7 +919,7 @@ successful f = C.predicate $ \ev -> case eventMockResp ev of
 
 -- | Convenience combinator for creating classifiers for failed commands
 failed :: (    Event m Symbolic
-            -> ImmutableDBError
+            -> ImmutableDBError TestBlock
             -> Either Tag (EventPred m)
           )
        -> EventPred m
@@ -929,7 +930,7 @@ failed f = C.predicate $ \ev -> case eventMockResp ev of
 -- | Convenience combinator for creating classifiers for commands failed with
 -- a @ApiMisuse@.
 failedApiMisuse :: (    Event m Symbolic
-                     -> ApiMisuse
+                     -> ApiMisuse TestBlock
                      -> Either Tag (EventPred m)
                    )
                 -> EventPred m

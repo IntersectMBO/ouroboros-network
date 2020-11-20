@@ -1,16 +1,15 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DeriveTraversable         #-}
-{-# LANGUAGE DerivingStrategies        #-}
-{-# LANGUAGE DerivingVia               #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.API (
     -- * API
     ImmutableDB (..)
@@ -303,16 +302,17 @@ instance Ord (CompareTip blk) where
 -------------------------------------------------------------------------------}
 
 -- | Errors that might arise when working with this database.
-data ImmutableDBError
-  = ApiMisuse ApiMisuse PrettyCallStack
+data ImmutableDBError blk =
+    ApiMisuse (ApiMisuse blk) PrettyCallStack
     -- ^ An error thrown because of incorrect usage of the immutable database
     -- by the user.
-  | UnexpectedFailure UnexpectedFailure
+  | UnexpectedFailure (UnexpectedFailure blk)
     -- ^ An unexpected error thrown because something went wrong on a lower
     -- layer.
   deriving (Generic, Show)
 
-instance Exception ImmutableDBError where
+instance (StandardHash blk, Typeable blk)
+      => Exception (ImmutableDBError blk) where
   displayException = \case
       ApiMisuse {} ->
         "ImmutableDB incorrectly used, indicative of a bug"
@@ -321,19 +321,17 @@ instance Exception ImmutableDBError where
       UnexpectedFailure {} ->
         "The ImmutableDB got corrupted, full validation will be enabled for the next startup"
 
-data ApiMisuse =
+data ApiMisuse blk =
     -- | When trying to append a new block, it was not newer than the current
     -- tip, i.e., the slot was older than or equal to the current tip's slot.
     --
     -- The 'RealPoint' corresponds to the new block and the 'Point' to the
     -- current tip.
-    forall blk. (Typeable blk, StandardHash blk) =>
-      AppendBlockNotNewerThanTipError (RealPoint blk) (Point blk)
+    AppendBlockNotNewerThanTipError (RealPoint blk) (Point blk)
 
     -- | When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      InvalidIteratorRangeError (StreamFrom blk) (StreamTo blk)
+  | InvalidIteratorRangeError (StreamFrom blk) (StreamTo blk)
 
     -- | When performing an operation on a closed DB that is only allowed when
     -- the database is open.
@@ -343,12 +341,14 @@ data ApiMisuse =
     -- the database is closed.
   | OpenDBError
 
-deriving instance Show ApiMisuse
+deriving instance (StandardHash blk, Typeable blk) => Show (ApiMisuse blk)
 
-throwApiMisuse :: (MonadThrow m, HasCallStack) => ApiMisuse -> m a
+throwApiMisuse ::
+     (MonadThrow m, HasCallStack, StandardHash blk, Typeable blk)
+  => ApiMisuse blk -> m a
 throwApiMisuse e = throwIO $ ApiMisuse e prettyCallStack
 
-data UnexpectedFailure =
+data UnexpectedFailure blk =
     -- | An IO operation on the file-system threw an error.
     FileSystemError FsError -- An FsError already stores the callstack
 
@@ -362,23 +362,19 @@ data UnexpectedFailure =
     -- | There was a checksum mismatch when reading the block with the given
     -- point. The first 'CRC' is the expected one, the second one the actual
     -- one.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ChecksumMismatchError (RealPoint blk) CRC CRC FsPath PrettyCallStack
+  | ChecksumMismatchError (RealPoint blk) CRC CRC FsPath PrettyCallStack
 
     -- | A block failed to parse
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
+  | ParseError FsPath (RealPoint blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block we got some trailing data
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
+  | TrailingDataError FsPath (RealPoint blk) Lazy.ByteString
 
     -- | Block missing
     --
     -- This exception gets thrown when a block that we /know/ it should be in
     -- the ImmutableDB, nonetheless was not found.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      MissingBlockError (MissingBlock blk)
+  | MissingBlockError (MissingBlock blk)
 
     -- | A (parsed) block did not pass the integrity check.
     --
@@ -389,12 +385,13 @@ data UnexpectedFailure =
     -- ImmutableDB. While this exception typically means the block has been
     -- corrupted, it could also mean the block didn't pass the check at the time
     -- it was added.
-  | forall blk. (Typeable blk, StandardHash blk) =>
-      CorruptBlockError (RealPoint blk)
+  | CorruptBlockError (RealPoint blk)
 
-deriving instance Show UnexpectedFailure
+deriving instance (StandardHash blk, Typeable blk) => Show (UnexpectedFailure blk)
 
-throwUnexpectedFailure :: MonadThrow m => UnexpectedFailure -> m a
+throwUnexpectedFailure ::
+     (StandardHash blk, Typeable blk, MonadThrow m)
+  => UnexpectedFailure blk -> m a
 throwUnexpectedFailure = throwIO . UnexpectedFailure
 
 -- | This type can be part of an exception, but also returned as part of an

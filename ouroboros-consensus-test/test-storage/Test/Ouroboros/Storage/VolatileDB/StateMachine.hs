@@ -143,7 +143,7 @@ data Success
     deriving (Show, Eq)
 
 newtype Resp = Resp {
-      getResp :: Either VolatileDBError Success
+      getResp :: Either (VolatileDBError Block) Success
     }
   deriving (Eq, Show)
 
@@ -253,7 +253,7 @@ runPure = \case
       Right m' -> (Right (), m')
 
     ok :: (a -> Success)
-       -> (DBModel Block -> (Either VolatileDBError a, DBModel Block))
+       -> (DBModel Block -> (Either (VolatileDBError Block) a, DBModel Block))
        -> DBModel Block
        -> (Resp, DBModel Block)
     ok toSuccess f m = first (Resp . fmap toSuccess) $ f m
@@ -489,15 +489,15 @@ reopenDB VolatileDBEnv { varDB, args } = do
 semanticsImpl :: VolatileDBEnv -> At CmdErr Concrete -> IO (At Resp Concrete)
 semanticsImpl env@VolatileDBEnv { varDB, varErrors }  (At (CmdErr cmd mbErrors)) =
     At . Resp <$> case mbErrors of
-      Nothing     -> tryVolatileDB (runDB env cmd)
+      Nothing     -> tryVolatileDB (Proxy @Block) (runDB env cmd)
       Just errors -> do
         _ <- withErrors varErrors errors $
-          tryVolatileDB (runDB env cmd)
+          tryVolatileDB (Proxy @Block) (runDB env cmd)
         -- As all operations on the VolatileDB are idempotent, close (not
         -- idempotent by default!), reopen it, and run the command again.
         readMVar varDB >>= idemPotentCloseDB
         reopenDB env
-        tryVolatileDB (runDB env cmd)
+        tryVolatileDB (Proxy @Block) (runDB env cmd)
 
 idemPotentCloseDB :: VolatileDB IO Block -> IO ()
 idemPotentCloseDB db =
@@ -506,6 +506,7 @@ idemPotentCloseDB db =
       (closeDB db)
       (const (return ()))
   where
+    isClosedDBError :: VolatileDBError Block -> Maybe ()
     isClosedDBError (ApiMisuse (ClosedDBError _)) = Just ()
     isClosedDBError _                             = Nothing
 

@@ -5,6 +5,8 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
+
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (
     -- * Utilities
     Two (..)
@@ -31,6 +33,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Typeable (Typeable)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Block hiding (hashSize)
@@ -109,8 +112,12 @@ removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
       removeFile (fsPathSecondaryIndexFile i)
 
 -- | Rewrap 'FsError' in a 'ImmutableDBError'.
-wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError = handle $ throwUnexpectedFailure . FileSystemError
+wrapFsError ::
+     forall blk m a. (MonadCatch m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> m a
+  -> m a
+wrapFsError _ = handle $ throwUnexpectedFailure @blk . FileSystemError
 
 -- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
@@ -119,38 +126,49 @@ wrapFsError = handle $ throwUnexpectedFailure . FileSystemError
 -- This should be used whenever you want to run an action on the ImmutableDB
 -- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryImmutableDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
-tryImmutableDB = try . wrapFsError
+tryImmutableDB ::
+     forall m blk a. (MonadCatch m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> m a
+  -> m (Either (ImmutableDBError blk) a)
+tryImmutableDB pb = try . wrapFsError pb
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
 -- it failed or when there was unconsumed input.
 runGet
-  :: (HasCallStack, MonadThrow m)
-  => FsPath
+  :: forall blk a m.
+     (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> FsPath
   -> Get a
   -> Lazy.ByteString
   -> m a
-runGet file get bl = case Get.runGetOrFail get bl of
+runGet _ file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       | Lazy.null unconsumed
       -> return primary
       | otherwise
-      -> throwUnexpectedFailure $ InvalidFileError file "left-over bytes" prettyCallStack
+      -> throwUnexpectedFailure $
+           InvalidFileError @blk file "left-over bytes" prettyCallStack
     Left (_, _, msg)
-      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
+      -> throwUnexpectedFailure $
+           InvalidFileError @blk file msg prettyCallStack
 
 -- | Same as 'runGet', but allows unconsumed input and returns it.
 runGetWithUnconsumed
-  :: (HasCallStack, MonadThrow m)
-  => FsPath
+  :: forall blk a m.
+     (HasCallStack, MonadThrow m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> FsPath
   -> Get a
   -> Lazy.ByteString
   -> m (Lazy.ByteString, a)
-runGetWithUnconsumed file get bl = case Get.runGetOrFail get bl of
+runGetWithUnconsumed _ file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       -> return (unconsumed, primary)
     Left (_, _, msg)
-      -> throwUnexpectedFailure $ InvalidFileError file msg prettyCallStack
+      -> throwUnexpectedFailure $
+           InvalidFileError @blk file msg prettyCallStack
 
 -- | Check whether the given checksums match. If not, throw a
 -- 'ChecksumMismatchError'.

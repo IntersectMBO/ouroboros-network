@@ -297,7 +297,7 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
         traceWith tracer DBClosed
 
 deleteAfterImpl ::
-     forall m blk. (HasCallStack, ConvertRawHash blk, IOLike m)
+     forall m blk. (HasCallStack, ConvertRawHash blk, IOLike m, HasHeader blk)
   => ImmutableDBEnv m blk
   -> WithOrigin (Tip blk)
   -> m ()
@@ -343,7 +343,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer, chunkInfo } newTip =
 
         -- Retrieve the needed info from the primary index file and then
         -- truncate it.
-        primaryIndex <- Primary.load hasFS chunk
+        primaryIndex <- Primary.load (Proxy @blk) hasFS chunk
         Primary.truncateToSlotFS hasFS chunk relSlot
         let lastSecondaryOffset = Primary.offsetOfSlot primaryIndex relSlot
             isEBB               = relativeSlotIsEBB relSlot
@@ -368,7 +368,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer, chunkInfo } newTip =
                         + fromIntegral size
 
 getTipImpl ::
-     forall m blk. (HasCallStack, IOLike m)
+     forall m blk. (HasCallStack, IOLike m, HasHeader blk)
   => ImmutableDBEnv m blk
   -> STM m (WithOrigin (Tip blk))
 getTipImpl dbEnv = do
