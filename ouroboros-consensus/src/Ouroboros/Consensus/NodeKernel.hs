@@ -25,6 +25,7 @@ module Ouroboros.Consensus.NodeKernel (
 
 import           Control.Monad
 import           Control.Monad.Except
+import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
@@ -670,9 +671,25 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 --
 -- For example, for Shelley, this will return the stake pool relays ordered by
 -- descending stake.
+--
+-- Only returns a 'Just' when the given predicate returns 'True'. This predicate
+-- can for example check whether the slot of the ledger state is older or newer
+-- than some slot number.
+--
+-- We don't use the ledger state at the tip of the chain, but the ledger state
+-- @k@ blocks back, i.e., at the tip of the immutable chain, because any stake
+-- pools registered in that ledger state are guaranteed to be stable. This
+-- justifies merging the future and current stake pools.
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
-  -> STM m [(PoolStake, NonEmpty StakePoolRelay)]
-getPeersFromCurrentLedger kernel =
-    getPeers . ledgerState <$> ChainDB.getCurrentLedger (getChainDB kernel)
+  -> (LedgerState blk -> Bool)
+  -> STM m (Maybe [(PoolStake, NonEmpty DomainAddress)])
+getPeersFromCurrentLedger kernel p = do
+    immutableLedger <-
+      ledgerState <$> ChainDB.getImmutableLedger (getChainDB kernel)
+    return $ do
+      guard (p immutableLedger)
+      return
+        $ map (second (fmap stakePoolRelayDomainAddress))
+        $ getPeers immutableLedger
