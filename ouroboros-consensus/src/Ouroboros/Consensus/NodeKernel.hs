@@ -673,6 +673,6 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
-  -> STM m [(PoolStake, NonEmpty DomainAddress)]
+  -> STM m [(PoolStake, NonEmpty StakePoolRelay)]
 getPeersFromCurrentLedger kernel =
     getPeers . ledgerState <$> ChainDB.getCurrentLedger (getChainDB kernel)
