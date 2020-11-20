@@ -39,4 +39,7 @@ class LedgerSupportsPeerSelection blk where
   -- ledger for the respective stake pools will be returned.
   --
   -- Ledgers/blocks that don't support staking can return an empty list.
+  --
+  -- Note: if the ledger state is old, the registered relays can also be old and
+  -- may no longer be online.
   getPeers :: LedgerState blk -> [(PoolStake, NonEmpty StakePoolRelay)]
