@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , getCurrentTip
   , getTipBlockNo
   , getCurrentLedger
+  , getImmutableLedger
   , getPastLedger
   , getHeaderStateHistory
     -- * Adding a block
@@ -343,6 +344,12 @@ getCurrentLedger ::
      (Monad (STM m), IsLedger (LedgerState blk))
   => ChainDB m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
+
+-- | Get the immutable ledger, i.e., typically @k@ blocks back.
+getImmutableLedger ::
+     Monad (STM m)
+  => ChainDB m blk -> STM m (ExtLedgerState blk)
+getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 
 -- | Get the ledger for the given point.
 --
