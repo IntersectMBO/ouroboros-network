@@ -64,17 +64,21 @@ instance LedgerSupportsPeerSelection (ShelleyBlock era) where
 
       -- | Note that a stake pool can have multiple registered relays
       pparamsDomainAddresses ::
-           SL.PoolParams era
-        -> Maybe (NonEmpty DomainAddress)
-      pparamsDomainAddresses =
-          NE.nonEmpty . map relayToDomainAddress . toList . SL._poolRelays
+           (DomainAddress -> StakePoolRelay)
+        -> SL.PoolParams era
+        -> Maybe (NonEmpty StakePoolRelay)
+      pparamsDomainAddresses injStakePoolRelay =
+            NE.nonEmpty
+          . map (injStakePoolRelay . relayToDomainAddress)
+          . toList
+          . SL._poolRelays
 
       -- | Combine the stake pools registered in the future and the current pool
       -- parameters, and remove duplicates.
       poolDomainAddresses ::
-           Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) (NonEmpty DomainAddress)
+           Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) (NonEmpty StakePoolRelay)
       poolDomainAddresses =
           Map.unionWith
             (\futureRelays currentRelays -> NE.nub (futureRelays <> currentRelays))
-            (Map.mapMaybe pparamsDomainAddresses futurePoolParams)
-            (Map.mapMaybe pparamsDomainAddresses poolParams)
+            (Map.mapMaybe (pparamsDomainAddresses FutureRelay)  futurePoolParams)
+            (Map.mapMaybe (pparamsDomainAddresses CurrentRelay) poolParams)
