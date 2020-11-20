@@ -65,6 +65,8 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Compat
                        Ouroboros.Consensus.HardFork.Combinator.Condense
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
+                       Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
+                       Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
                        Ouroboros.Consensus.HardFork.Combinator.Forging
                        Ouroboros.Consensus.HardFork.Combinator.Info
                        Ouroboros.Consensus.HardFork.Combinator.InjectTxs
@@ -72,7 +74,6 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
-                       Ouroboros.Consensus.HardFork.Combinator.Nary
                        Ouroboros.Consensus.HardFork.Combinator.Node
                        Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage
                        Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -90,7 +91,6 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.State.Lift
                        Ouroboros.Consensus.HardFork.Combinator.State.Types
                        Ouroboros.Consensus.HardFork.Combinator.Translation
-                       Ouroboros.Consensus.HardFork.Combinator.Unary
                        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
                        Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                        Ouroboros.Consensus.HardFork.Combinator.Util.Match

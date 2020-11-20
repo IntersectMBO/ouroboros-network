@@ -100,7 +100,7 @@ newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfi
 
   The reason for using @OptNP 'False f xs@ as opposed to @NP (Maybe :.: f) xs@
   is to maintain the isomorphism between @blk@ and @HardForkBlock '[blk]@ in
-  "Ouroboros.Consensus.HardFork.Combinator.Unary"
+  "Ouroboros.Consensus.HardFork.Combinator.Embed.Unary"
 -------------------------------------------------------------------------------}
 
 newtype SomeErasCanBeLeader xs = SomeErasCanBeLeader { getSomeErasCanBeLeader :: OptNP 'False WrapCanBeLeader xs }

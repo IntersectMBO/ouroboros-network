@@ -116,10 +116,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X
 --   fork combinator when applied to a single block results in a system
 --   that is equivalent to just using that single block directly.
 --
--- * "Ouroboros.Consensus.HardFork.Combinator.Unary"
+-- * "Ouroboros.Consensus.HardFork.Combinator.Embed.Unary"
 --   Mostly used in combination with 'DegenFork'.
 --
--- * "Ouroboros.Consensus.HardFork.Combinator.Nary"
+-- * "Ouroboros.Consensus.HardFork.Combinator.Embed.Nary"
 --   Used for injection into n-ary sums. Alternative to @Unary@.
 --
 -- * Most of @Ouroboros.Consensus.HardFork.Combinator.SingleEra.*@
