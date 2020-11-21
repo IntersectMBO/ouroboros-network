@@ -380,6 +380,31 @@ us blocks (DoS attack).
 
 \end{frame}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+
+\frametitle{Detecting whether we are in genesis mode}
+
+\begin{itemize}
+\item \textbf{Genesis \emph{cannot} be active when we are closer than $s$ \alert{slots} from the
+wallclock slot.}
+\\ (We would be unable to fill the window, by definition.)
+\item \textbf{Genesis \emph{does not need} to active when we within than $k = 2160$ \alert{blocks} from
+the wallclock slot.} [Handwavy] \\
+(Too?) liberal rephrasing of Theorem 2 of the genesis paper.
+\item \textbf{It is always sound to delay chain selection.} \\
+Enabling genesis mode for longer than required is okay.
+\item Paper suggests $s = \frac{1}{4} (k/f) = 10,800$ slots. \\
+(I.e. $s \times f = \frac{1}{4}k = 540$ blocks on average.)
+\end{itemize}
+
+\begin{alertblock}{}
+\textbf{Enable genesis if more than $s$ slots from the wallclock.} \\
+(If wallclock slot unknown,  must be more than $(3k/f) > s$ slots.)
+\end{alertblock}
+
+\end{frame}
 
 
 % TODO
