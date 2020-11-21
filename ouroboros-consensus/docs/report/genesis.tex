@@ -3,6 +3,7 @@
 
 \usepackage{tikz}
 \usepackage[utf8]{inputenc}
+\usepackage{setspace}
 
 %Information to be included in the title page:
 \title{Implementing the Genesis Chain Selection Rule}
@@ -137,20 +138,21 @@ in the network. An attacker \textbf{can't eclipse} us.
 
 \begin{center}
 \begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$} node[left]{tip};
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
 \draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
 \draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node[right]{$A$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
 \draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
 \draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
 \draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
 \draw [dashed]
      (tip)
-  -- ++(0, 2)
+  -- ++(0, 1.75)
   -- ++(3, 0)
-  -- ++(0, -3.5)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
   -- cycle;
+\path (tip) -- (A) node[pos=0.5, above=1cm]{$\overbrace{\hspace{3.5cm}}^{\text{$> k$ blocks}}$};
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -167,8 +169,7 @@ in the network. An attacker \textbf{can't eclipse} us.
 \onslide<5>{
 \begin{alertblock}{Committing}
 By assumption, we have seen all relevant chains. We will \emph{never} be
-interested in $C$ or $D$, so we can disconnect from them and never reconsider
-them.
+interested in $C$ or $D$, so we can disconnect from them.
 \end{alertblock}
 }
 
@@ -233,19 +234,20 @@ be rolled back.
 \begin{center}
 \begin{tikzpicture}[yscale=0.75]
 \path (0, 0) -- (5,0); % adjust bounding box
-\path (0, 0) coordinate (tip) node{$\bullet$} node[left]{tip};
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
 \draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
 \draw (tip) -- ++(1.5, -0.5) coordinate (cd);
 \draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node[right]{$A$};
 \draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
 \draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
 \path (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) coordinate (D);
+\path (tip) -- (A) node[pos=0.5, above=0.6cm]{$\overbrace{\hspace{3.5cm}}^{\text{$> k$ blocks}}$};
 
 \draw [dashed]
      (tip)
-  -- ++(0, 2)
+  -- ++(0, 1.75)
   -- ++(3, 0)
-  -- ++(0, -3.5)
+  -- ++(0, -3)
   -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
   -- cycle;
 \draw [dotted] (D) -- ++(-2.5,0) -- ++(-0.25,0.25);
@@ -266,14 +268,13 @@ be rolled back.
 \path (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) coordinate(D);
 
 \draw [dotted] (D) -- ++(-2.5,0) -- ++(-0.25,0.25);
-\node [left] at (tip) {tip};
+\node [below left] at (tip) {tip};
 \draw [red, very thick] (tip) -- ++(1.0,  0.0);
-\node [above left] at (branch) {tip};
 \draw [dashed]
      (tip)
-  -- ++(0, 1.5)
+  -- ++(0, 1.25)
   -- ++(3, 0)
-  -- ++(0, -3)
+  -- ++(0, -2.5)
   -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
   -- cycle;
 \draw (tip) + (-3,0) node{$\bullet$} -- (tip);
@@ -292,19 +293,20 @@ be rolled back.
 \begin{center}
 \begin{tikzpicture}[yscale=0.75]
 \path (0, 0) -- (5,0); % adjust bounding box
-\path (0, 0) coordinate (tip) node{$\bullet$} node[left]{tip};
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
 \draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
 \draw (tip) -- ++(1.5, -0.5) coordinate (cd);
 \draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node[right]{$A$};
 \draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
 \draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
 \draw (cd) -- ++(0.5, -0.5) node{$\bullet$} node[right]{$D$};
+\path (tip) -- (A) node[pos=0.5, above=0.6cm]{$\overbrace{\hspace{3.5cm}}^{\text{$> k$ blocks}}$};
 
 \draw [dashed]
      (tip)
-  -- ++(0, 2)
+  -- ++(0, 1.75)
   -- ++(3, 0)
-  -- ++(0, -3.5)
+  -- ++(0, -3.25)
   -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
   -- cycle;
 
@@ -323,14 +325,13 @@ be rolled back.
 \draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
 \draw (branch) -- ++(1.0, -0.9) node{$\bullet$} node[right]{D};
 
-\node [left] at (tip) {tip};
+\node [below left] at (tip) {tip};
 \draw [red, very thick] (tip) -- ++(1.0,  0.0);
-\node [above left] at (branch) {tip};
 \draw [dashed]
      (tip)
-  -- ++(0, 1.5)
+  -- ++(0, 1.25)
   -- ++(3, 0)
-  -- ++(0, -3)
+  -- ++(0, -2.5)
   -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
   -- cycle;
 \draw (tip) + (-3,0) node{$\bullet$} -- (tip);
@@ -390,7 +391,7 @@ us blocks (DoS attack).
 \item \textbf{Genesis \emph{cannot} be active when we are closer than $s$ \alert{slots} from the
 wallclock slot.}
 \\ (We would be unable to fill the window, by definition.)
-\item \textbf{Genesis \emph{does not need} to active when we within than $k = 2160$ \alert{blocks} from
+\item \textbf{Genesis \emph{does not need} to active when within $k = 2160$ \alert{blocks} from
 the wallclock slot.} [Handwavy] \\
 (Too?) liberal rephrasing of Theorem 2 of the genesis paper.
 \item \textbf{It is always sound to delay chain selection.} \\
@@ -406,9 +407,57 @@ Enabling genesis mode for longer than required is okay.
 
 \end{frame}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+
+\frametitle{Generalizing genesis mode}
+
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\path (tip) -- (A) node[pos=0.5, above=0.7cm]{$\overbrace{\hspace{3.5cm}}^{\text{may be fewer than $k$ blocks}}$};
+
+\draw (tip) -- ++(1.5, -0.5) node{$\bullet$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0);
+\draw (cd) node[below left]{$cd$} -- ++(0.5, -0.5) -- ++(1.5, 0);
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) ;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+\end{tikzpicture}
+\end{center}
+
+\vspace{-1em}
+
+\begin{itemize}
+\item Cannot reliable detect whether we have more than $k$ blocks \\
+(node reports tip but we cannot verify)
+\item \emph{Can still apply genesis condition}, independent of number of blocks. \\
+\begin{minipage}{0.9\textwidth}
+\tiny\linespread{0.5} Christian: ``Intuitively, right after the forking point, the lottery to elect slot leaders is still the same on both chains, and there, no adversarial chain can be denser.''
+\end{minipage}
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{frame}
+
 
 % TODO
 % If s > k, what about the no-man's-land between s and k?
 % does number of required peers shrink?
+
 
 \end{document}
