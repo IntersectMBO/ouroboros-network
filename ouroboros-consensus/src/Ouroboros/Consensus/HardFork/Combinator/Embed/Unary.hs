@@ -17,7 +17,7 @@
 {-# LANGUAGE TypeOperators         #-}
 
 -- | Witness isomorphism between @b@ and @HardForkBlock '[b]@
-module Ouroboros.Consensus.HardFork.Combinator.Unary (
+module Ouroboros.Consensus.HardFork.Combinator.Embed.Unary (
     Isomorphic(..)
   , project'
   , inject'

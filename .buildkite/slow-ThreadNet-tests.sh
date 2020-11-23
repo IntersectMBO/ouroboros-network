@@ -8,8 +8,8 @@ set -euo pipefail
 
 # A table of words as a Bash array
 #
-# Each row is <number of invocations per physical core> <suite> <number of
-# tests per invocation>.
+# Each row is <number of invocations per physical core> <suite> <test group
+# pattern> <number of tests per invocation>.
 #
 # INVARIANT: No whitespace in any word.
 #
@@ -24,16 +24,16 @@ set -euo pipefail
 # overhead and also more reliable percentages in their QuickCheck statistics.
 rows=(
     # From the slowest individual invocation ...
-    '1 Cardano    1500'  # ~70 minutes per invocation
-    '2 Shelley    2000'  # ~35 minutes per invocation
-    '8 Shelley     400'  # ~13 minutes per invocation
-    '5 Cardano     200'  # ~9  minutes per invocation
+    '1 Cardano Cardano        1500'  # ~95 minutes per invocation
+    '2 Shelley Shelley        2000'  # ~37 minutes per invocation
+    '2 Cardano ShelleyAllegra  400'  # ~37 minutes per invocation
+    '5 Cardano Cardano         200'  # ~12 minutes per invocation
     # ... to fastest individual invocation
     #
     # And the number of invocations is non-decreasing.
 )
 
-# The test suite names as a string of words
+# The test suite names as a string, one name per line
 listSuiteNames () {
     for row in "${rows[@]}"; do
         cols=($row)   # parse the row as another Bash array
@@ -41,6 +41,15 @@ listSuiteNames () {
     done
 }
 suites=$(listSuiteNames | sort -u)
+
+# The test suite-group name pairs as a string, one pair per line
+listSuiteGroupNames () {
+    for row in "${rows[@]}"; do
+        cols=($row)   # parse the row as another Bash array
+        echo ${cols[1]}-${cols[2]}
+    done
+}
+suitegroups=$(listSuiteGroupNames | sort -u)
 
 #-------------------------------------------------------------------------------
 # Script robustness
@@ -88,11 +97,11 @@ finish () {
     # Don't abort during this exception handler
     set +e
 
-    # Collect each suite's logs into one artifact file
-    for suite in $suites; do
-        forEachFile "$logAbsDir" "*-${suite}.log" \
+    # Collect each suite-group pairs's logs into one artifact file
+    for suitegroup in $suitegroups; do
+        forEachFile "$logAbsDir" "*-${suitegroup}.log" \
             'echo "==> {} <=="; cat "{}"; echo;' \
-            1>"${logAbsDir}/${suite}-artifact.log"
+            1>"${logAbsDir}/${suitegroup}-artifact.log"
     done
 
     if [ "true" = "${BUILDKITE-}" ]
@@ -155,13 +164,14 @@ done
 innerCommand () {
     uniqueInvocationId="$(printf %03d $PARALLEL_SEQ)"
     suite=$1
-    n=$2
+    group=$2
+    n=$3
 
-    logfile="${logAbsDir}/${uniqueInvocationId}-${suite}.log"
+    logfile="${logAbsDir}/${uniqueInvocationId}-${suite}-${group}.log"
 
     # Run the specified tests with the nightly flag set
     "${nixAbsDir}/${suite}/bin/test" \
-        --pattern "$suite ThreadNet" \
+        --pattern "$group ThreadNet" \
         --quickcheck-tests=$n \
         --iohk-enable-nightly-tests \
         1>"$logfile" 2>&1
@@ -173,7 +183,7 @@ innerCommand () {
     # Likely atomic, since it's almost surely less than PIPE_BUF.
     #
     # https://arto.s3.amazonaws.com/notes/posix#pipe-buf
-    echo Completed Invocation-${uniqueInvocationId}, $suite ${n}: \
+    echo Completed Invocation-${uniqueInvocationId}, $suite $group ${n}: \
         $(tail -n1 "$logfile")
 
     return $xc
@@ -192,10 +202,11 @@ genCommands () {
     expandRow () {
         numInvocations=$(expr $numCores "*" $1)
         suite=$2
-        numTests=$3
+        group=$3
+        numTests=$4
 
         for i in $(seq $numInvocations); do
-            echo innerCommand $suite $numTests
+            echo innerCommand $suite $group $numTests
         done
     }
 

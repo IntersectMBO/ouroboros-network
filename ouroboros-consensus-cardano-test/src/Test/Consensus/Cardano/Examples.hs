@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Util.Counting (Exactly (..))
 import           Ouroboros.Consensus.Util.SOP (Index (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Nary
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)

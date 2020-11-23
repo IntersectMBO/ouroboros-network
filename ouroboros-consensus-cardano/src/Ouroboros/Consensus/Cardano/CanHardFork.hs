@@ -22,6 +22,8 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , ByronPartialLedgerConfig (..)
   , ShelleyPartialLedgerConfig (..)
   , CardanoHardForkConstraints
+  , forecastAcrossShelley
+  , translateChainDepStateAcrossShelley
   ) where
 
 import           Control.Monad

@@ -508,7 +508,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 -------------------------------------------------------------------------------}
 
 initialLovelacePerCoreNode :: Word64
-initialLovelacePerCoreNode = 1000
+initialLovelacePerCoreNode = 1000000
 
 mkCredential ::
      PraosCrypto (EraCrypto era)

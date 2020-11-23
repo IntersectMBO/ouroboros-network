@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
-module Ouroboros.Consensus.HardFork.Combinator.Nary (
+module Ouroboros.Consensus.HardFork.Combinator.Embed.Nary (
     Inject (..)
   , inject'
     -- * Defaults

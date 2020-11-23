@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
                      ()
@@ -55,7 +56,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Serialise
                      ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode
                      ()
-import           Ouroboros.Consensus.HardFork.Combinator.Unary
 
 {-------------------------------------------------------------------------------
   Simple patterns
