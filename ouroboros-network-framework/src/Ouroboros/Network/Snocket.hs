@@ -280,7 +280,7 @@ type LocalHandle = Socket
 #endif
 
 -- | System dependent LocalSnocket type
-newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
+newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle } deriving (Eq, Show)
 
 -- | System dependent LocalSnocket
 type    LocalSnocket = Snocket IO LocalSocket LocalAddress
