@@ -5,6 +5,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage{setspace}
 \usepackage{bbding}
+\usepackage{microtype}
 
 %Information to be included in the title page:
 \title{Implementing the Genesis Chain Selection Rule}
@@ -25,12 +26,12 @@
 A candidate chain is preferred over our current chain if
 
 \begin{itemize}
-\item The intersection between the candidate chain and our chain is no more
-than $k$ blocks back, and the candidate chain is strictly longer than our
-chain.
+\item The intersection between the candidate chain and our chain is \textbf{no
+more than $k$} blocks back, and the candidate chain is strictly \textbf{longer}
+than our chain.
 
-\item If the intersection \emph{is} more than $k$ blocks back, and the
-candidate chain is \emph{denser} (contains more blocks) than our chain in
+\item If the intersection \emph{is} \textbf{more than $k$} blocks back, and the
+candidate chain is \textbf{denser} (contains more blocks) than our chain in
 a region of $s$ slots starting at the intersection.
 \end{itemize}
 \end{alertblock}
@@ -106,6 +107,26 @@ The strict extension of a chain is always preferred over that chain.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\begin{frame}{Towards an Alternative}
+
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) + (-3,0) -- (tip);
+\onslide<2->{\draw (tip) -- ++(1.0,  1.0) coordinate (ab);}
+\onslide<3->{\draw (tip) -- ++(1.5, -0.5) coordinate (cd);}
+\onslide<4->{\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0);}
+\onslide<5->{\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0);}
+\onslide<6->{\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0);}
+\onslide<7->{\draw (cd) -- ++(0.5, -0.5) -- ++(1.5, 0);}
+\onslide<8->{\draw [dashed] (tip) -- ++(0, 1.75) -- ++(3, 0) -- ++(0, -3) -- ++(-3, 0) -- cycle;}
+\end{tikzpicture}
+\end{center}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 \begin{frame}
 \frametitle{Towards an Alternative}
 
@@ -122,11 +143,58 @@ Assumptions:
 \begin{itemize}
 \item We can guarantee that we see (a representative sample of) all chains
 in the network. An attacker \textbf{can't eclipse} us.
-\item We can \textbf{detect when} the genesis rule applies. \\
-(We will come back to this point later.)
+\item We can \textbf{detect when} we should delay because the genesis condition
+might apply. \\
+(We will come back to this.) \\
 \end{itemize}
 
 \end{onlyenv}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+
+\frametitle<1-4>{Choosing between forks: at genesis}
+\frametitle<5>{Choosing between forks: general case}
+
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\path (tip) -- (A) node[pos=0.5, above=1cm]{$\overbrace{\hspace{3.5cm}}^{\text{$> k$ blocks}}$};
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\onslide<1-2>{\draw (tip) -- ++(1.5, -0.5) node{$\bullet$};}
+\onslide<1-2>{\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0);}
+\onslide<1-2>{\draw (cd) node[below left]{$cd$} -- ++(0.5, -0.5) -- ++(1.5, 0);}
+\onslide<2-5>{\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0) ;}
+\onslide<5>{\draw (tip) + (-3,0) node{$\bullet$} -- (tip);}
+\end{tikzpicture}
+\end{center}
+
+\vspace{-1em}
+
+\onslide<4-5>{
+\begin{alertblock}{Committing}
+By assumption, we have seen all relevant chains. We will \emph{never} be
+interested in $C$ or $D$, so we can disconnect from them.
+\end{alertblock}
+}
 
 \end{frame}
 
@@ -175,52 +243,6 @@ in the network. An attacker \textbf{can't eclipse} us.
 By assumption, we have seen all relevant chains. They all share a common prefix.
 We can \emph{commit to} the blocks on that common prefix: they will never
 be rolled back.
-\end{alertblock}
-}
-
-\end{frame}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\begin{frame}
-
-\frametitle<1-4>{Choosing between forks: at genesis}
-\frametitle<5>{Choosing between forks: general case}
-
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
-\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
-\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
-\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
-\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
-\draw [dashed]
-     (tip)
-  -- ++(0, 1.75)
-  -- ++(3, 0)
-  -- ++(0, -3)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
-  -- cycle;
-\path (tip) -- (A) node[pos=0.5, above=1cm]{$\overbrace{\hspace{3.5cm}}^{\text{$> k$ blocks}}$};
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\onslide<1-2>{\draw (tip) -- ++(1.5, -0.5) node{$\bullet$};}
-\onslide<1-2>{\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0);}
-\onslide<1-2>{\draw (cd) node[below left]{$cd$} -- ++(0.5, -0.5) -- ++(1.5, 0);}
-\onslide<2-5>{\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0) ;}
-\onslide<5>{\draw (tip) + (-3,0) node{$\bullet$} -- (tip);}
-\end{tikzpicture}
-\end{center}
-
-\vspace{-1em}
-
-\onslide<4-5>{
-\begin{alertblock}{Committing}
-By assumption, we have seen all relevant chains. We will \emph{never} be
-interested in $C$ or $D$, so we can disconnect from them.
 \end{alertblock}
 }
 
@@ -386,23 +408,23 @@ us blocks (DoS attack).
 
 \begin{frame}
 
-\frametitle{Detecting whether we are in genesis mode}
+\frametitle{Detecting when to delay}
 
 \begin{itemize}
-\item \textbf{Genesis \emph{cannot} be active when we are closer than $s$ \alert{slots} from the
+\item \textbf{\alert{Cannot} apply density rule when we are closer than $s$ slots from the
 wallclock slot.}
 \\ (We would be unable to fill the window, by definition.)
-\item \textbf{Genesis \emph{does not need} to active when within $k = 2160$ \alert{blocks} from
+\item \textbf{\alert{Don't need} to apply density rule when within $k = 2160$ blocks from
 the wallclock slot.} [Handwavy] \\
 (Too?) liberal rephrasing of Theorem 2 of the genesis paper.
-\item \textbf{It is always sound to delay chain selection.} \\
-Enabling genesis mode for longer than required is okay.
-\item Paper suggests $s = \frac{1}{4} (k/f) = 10,800$ slots. \\
+\item \textbf{Always sound to delay chain selection} \\
+(Unless \emph{really} near tip and we might have to forge a block) \\
+\item Paper suggests $s = \frac{1}{4} (k/f)$ = 10,800 slots. \\
 (I.e. $s \times f = \frac{1}{4}k = 540$ blocks on average.)
 \end{itemize}
 
 \begin{alertblock}{}
-\textbf{Enable genesis if more than $s$ slots from the wallclock.} \\
+\textbf{Delay if more than $s$ slots from the wallclock.} \\
 (If wallclock slot unknown,  must be more than $(3k/f) > s$ slots.)
 \end{alertblock}
 
@@ -412,7 +434,7 @@ Enabling genesis mode for longer than required is okay.
 
 \begin{frame}
 
-\frametitle{Generalizing genesis mode}
+\frametitle{Generalizing delay mode}
 
 \begin{center}
 \begin{tikzpicture}[yscale=0.75]
@@ -547,6 +569,38 @@ an attacker after all. Disconnect from all peers and start over.
 \item Concerns about invalid blocks with valid headers?
 \item Anything else..?
 \end{itemize}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+
+\frametitle{Flip-flopping}
+
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  0.5) -- ++(2.5, 0) coordinate(A) node[right]{$A$};
+\draw (tip) -- ++(1.0, -0.5) -- ++(3.5, 0) coordinate(B) node[right]{$B$};
+\draw [red, very thick] (tip) -- ++(1.0,  0.5) -- ++(2.0, 0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 0.75)
+  -- ++(3, 0)
+  -- ++(0, -1.5)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\path (tip) -- (A) node[pos=0.5, above=0.5cm]{$\overbrace{\hspace{3.5cm}}^{\text{fewer than $k$ blocks}}$};
+\path (tip) -- (B) node[pos=0.5, below=1.1cm]{$\underbrace{\hspace{4.5cm}}_{\text{more than $k$ blocks}}$};
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+\end{tikzpicture}
+\end{center}
+
+\pause
+
+$A$ is preferred over $B$, and $B$ is preferred over $A$!
+
 
 \end{frame}
 
