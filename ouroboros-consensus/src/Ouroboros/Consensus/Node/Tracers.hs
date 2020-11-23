@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)

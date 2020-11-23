@@ -10,18 +10,6 @@
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
-  , ForgeLedgerState(..)
-  , MempoolCapacityBytes (..)
-  , MempoolSnapshot(..)
-  , MempoolAddTxResult (..)
-  , isMempoolTxAdded
-  , isMempoolTxRejected
-  , MempoolSize (..)
-  , TraceEventMempool(..)
-    -- * Re-exports
-  , TxSizeInBytes
-  , TicketNo
-  , MempoolCapacityBytesOverride(..)
   , openMempool
   , openMempoolWithoutSyncThread
   ) where

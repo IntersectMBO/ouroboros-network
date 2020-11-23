@@ -174,7 +174,6 @@ newtype LedgerInterface m blk = LedgerInterface
   { getCurrentLedgerState :: STM m (LedgerState blk)
   }
 
-
 -- | The result of attempting to add a transaction to the mempool.
 data MempoolAddTxResult blk
   = MempoolTxAdded

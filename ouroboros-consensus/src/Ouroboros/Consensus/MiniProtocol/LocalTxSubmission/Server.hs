@@ -15,7 +15,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Util.IOLike
 
 
