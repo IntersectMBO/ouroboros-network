@@ -16,7 +16,7 @@ import           Data.Functor.Identity (Identity (..))
 
 import           Ouroboros.Network.Snocket ( LocalAddress
                                            , LocalSnocket
-                                           , LocalFD
+                                           , LocalSocket
                                            )
 import           Ouroboros.Network.ErrorPolicy ( ErrorPolicies
                                                , ErrorPolicyTrace
@@ -47,7 +47,7 @@ clientSubscriptionWorker
     -> Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams a
-    -> (LocalFD -> IO a)
+    -> (LocalSocket -> IO a)
     -> IO Void
 clientSubscriptionWorker snocket
                          tracer

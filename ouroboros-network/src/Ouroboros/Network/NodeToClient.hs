@@ -51,6 +51,7 @@ module Ouroboros.Network.NodeToClient (
   , withIOManager
   , LocalSnocket
   , localSnocket
+  , LocalSocket
   , LocalAddress (..)
 
     -- * Versions
@@ -327,7 +328,7 @@ withServer
   :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalFD
+  -> LocalSocket
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b)
@@ -354,7 +355,7 @@ withServer_V1
   :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalFD
+  -> LocalSocket
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
@@ -382,7 +383,7 @@ withServer_V2
   :: LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalFD
+  -> LocalSocket
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.

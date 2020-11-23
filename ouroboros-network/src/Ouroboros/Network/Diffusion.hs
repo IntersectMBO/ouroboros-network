@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP            #-}
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
@@ -30,7 +31,11 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo, SockAddr)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket)
+import           Ouroboros.Network.Snocket ( LocalAddress
+                                           , LocalSnocket
+                                           , LocalSocket (..)
+                                           , SocketSnocket
+                                           )
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -62,7 +67,7 @@ import           Ouroboros.Network.Tracers
 
 data DiffusionTracers = DiffusionTracers {
       dtIpSubscriptionTracer   :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
-       -- ^ IP subscription tracer
+      -- ^ IP subscription tracer
     , dtDnsSubscriptionTracer  :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr))
       -- ^ DNS subscription tracer
     , dtDnsResolverTracer      :: Tracer IO (WithDomainName DnsTrace)
@@ -78,7 +83,6 @@ data DiffusionTracers = DiffusionTracers {
     , dtErrorPolicyTracer      :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
     , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
     , dtAcceptPolicyTracer     :: Tracer IO AcceptConnectionsPolicyTrace
-      -- ^ Trace rate limiting of accepted connections
     }
 
 
@@ -139,7 +143,7 @@ instance Exception DiffusionFailure
 
 runDataDiffusion
     :: DiffusionTracers
-    -> DiffusionArguments 
+    -> DiffusionArguments
     -> DiffusionApplications
          RemoteAddress LocalAddress
          NodeToNodeVersionData NodeToClientVersionData
@@ -156,7 +160,6 @@ runDataDiffusion tracers
                                     }
                  applications@DiffusionApplications { daErrorPolicies } =
     withIOManager $ \iocp -> do
-
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
@@ -293,7 +296,12 @@ runDataDiffusion tracers
                    -> IO ()
     runLocalServer iocp networkLocalState =
       bracket
-        (
+        localServerInit
+        localServerCleanup
+        localServerBody
+      where
+        localServerInit :: IO (LocalSocket, LocalSnocket)
+        localServerInit =
           case daLocalAddress of
 #if defined(mingw32_HOST_OS)
                -- Windows uses named pipes so can't take advantage of existing sockets
@@ -303,23 +311,25 @@ runDataDiffusion tracers
                    a <- Socket.getSocketName sd
                    case a of
                         (Socket.SockAddrUnix path) ->
-                          return (sd, Snocket.localSnocket iocp path)
-                        _                          ->
-                            -- TODO: This should be logged.
-                            throwIO UnsupportedLocalSocketType
+                          return (LocalSocket sd, Snocket.localSnocket iocp path)
+                        _unsupportedAddr ->
+                          throwIO UnsupportedLocalSocketType
 #endif
-               Right a -> do
-                   let sn = Snocket.localSnocket iocp a
-                   sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath a)
+               Right addr -> do
+                   let sn = Snocket.localSnocket iocp addr
+                   sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath addr)
                    return (sd, sn)
-        )
-        (\(sd,sn) -> Snocket.close sn sd) -- We close the socket here, even if it was provided for us.
-        (\(sd,sn) -> do
 
+        -- We close the socket here, even if it was provided for us.
+        localServerCleanup :: (LocalSocket, LocalSnocket) -> IO ()
+        localServerCleanup (sd, sn) = Snocket.close sn sd
+
+        localServerBody :: (LocalSocket, LocalSnocket) -> IO ()
+        localServerBody (sd, sn) = do
           case daLocalAddress of
                Left _ -> pure () -- If a socket was provided it should be ready to accept
-               Right a -> do
-                 Snocket.bind sn sd $ Snocket.localAddressFromPath a
+               Right path -> do
+                 Snocket.bind sn sd $ Snocket.localAddressFromPath path
                  Snocket.listen sn sd
 
           void $ NodeToClient.withServer
@@ -333,7 +343,6 @@ runDataDiffusion tracers
             sd
             (daLocalResponderApplication applications)
             localErrorPolicy
-         )
 
     runServer :: SocketSnocket -> NetworkMutableState SockAddr -> Either Socket.Socket SockAddr -> IO ()
     runServer sn networkState address =
@@ -348,8 +357,8 @@ runDataDiffusion tracers
 
           case address of
                Left _ -> pure () -- If a socket was provided it should be ready to accept
-               Right a -> do
-                 Snocket.bind sn sd a
+               Right addr -> do
+                 Snocket.bind sn sd addr
                  Snocket.listen sn sd
 
           void $ NodeToNode.withServer
