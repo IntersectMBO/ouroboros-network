@@ -30,6 +30,9 @@ module Network.Mux (
     , StartOnDemandOrEagerly (..)
     , stopMux
 
+     -- * Monitoring
+    , miniProtocolStateMap
+
       -- * Errors
     , MuxError (..)
     , MuxErrorType (..)
@@ -71,6 +74,12 @@ data Mux (mode :: MuxMode) m =
        muxControlCmdQueue :: !(TQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m MuxStatus
      }
+
+
+miniProtocolStateMap :: Mux mode m -> Map (MiniProtocolNum, MiniProtocolDir)
+                                          (StrictTVar m MiniProtocolStatus)
+miniProtocolStateMap = fmap miniProtocolStatusVar . muxMiniProtocols
+
 
 data MuxStatus = MuxReady | MuxFailed SomeException | MuxStopped
 
