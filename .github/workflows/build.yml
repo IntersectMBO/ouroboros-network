@@ -182,6 +182,9 @@ jobs:
     - name: io-sim [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
 
+    - name: io-sim-classes [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
+
     - name: typed-protocols-examples [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests
 
