@@ -32,7 +32,7 @@ localTxSubmissionServer tracer mempool =
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer $ TraceReceivedTx tx
-        res <- addTxsBlock mempool [tx]
+        res <- addTxs mempool [tx]
         case res of
           [(_tx, addTxRes)] -> case addTxRes of
             MempoolTxAdded             -> return (SubmitSuccess, server)

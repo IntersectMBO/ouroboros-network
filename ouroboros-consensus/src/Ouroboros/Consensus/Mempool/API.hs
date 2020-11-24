@@ -12,6 +12,21 @@ module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
   , openMempool
   , openMempoolWithoutSyncThread
+-- from Data
+  , ForgeLedgerState(..)
+  , MempoolCapacityBytes (..)
+  , MempoolSnapshot(..)
+  , MempoolAddTxResult (..)
+  , isMempoolTxAdded
+  , isMempoolTxRejected
+  , TraceEventMempool(..)
+  , MempoolCapacityBytesOverride(..)
+  , LedgerInterface(..)
+-- from TxSeq
+  , MempoolSize (..)
+  , TicketNo
+-- from Impl
+  , chainDBLedgerInterface
   ) where
 
 import           Control.Tracer (Tracer)
@@ -27,6 +42,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Mempool.Impl
+import           Ouroboros.Consensus.Mempool.Pure (isMempoolTxAdded,
+                     isMempoolTxRejected)
+
 
 -- | Mempool
 --
@@ -129,7 +147,7 @@ data Mempool m blk idx = Mempool {
       -- > map fst processed == txs
       --
 
-    , addTxsBlock :: MonadSTM m
+    , addTxs :: MonadSTM m
         => [GenTx blk]
         -> m [(GenTx blk, MempoolAddTxResult blk)]
 
@@ -197,7 +215,7 @@ mkMempool
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { tryAddTxs      = implTryAddTxs      env
-    , addTxsBlock    = implAddTxsBlock   env
+    , addTxs         = implAddTxsBlock    env
     , removeTxs      = implRemoveTxs      env
     , syncWithLedger = implSyncWithLedger env
     , getSnapshot    = implGetSnapshot    env

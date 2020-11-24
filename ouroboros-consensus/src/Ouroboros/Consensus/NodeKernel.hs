@@ -655,5 +655,5 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
     , mempoolAddTxs = \txs ->
         map (txId . fst) . filter (isMempoolTxAdded . snd) <$>
-        addTxsBlock mempool txs
+        addTxs mempool txs
     }

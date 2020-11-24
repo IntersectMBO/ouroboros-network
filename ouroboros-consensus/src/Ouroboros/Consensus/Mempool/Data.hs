@@ -9,8 +9,18 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 
-module Ouroboros.Consensus.Mempool.Data
-  where
+module Ouroboros.Consensus.Mempool.Data (
+    MempoolEnv(..)
+  , ValidationResult(..)
+  , InternalState(..)
+  , LedgerInterface(..)
+  , MempoolAddTxResult(..)
+  , MempoolSnapshot(..)
+  , MempoolCapacityBytes(..)
+  , MempoolCapacityBytesOverride(..)
+  , ForgeLedgerState(..)
+  , TraceEventMempool(..)
+  ) where
 
 import           Control.Tracer (Tracer)
 import           Data.Set (Set)
@@ -184,14 +194,6 @@ data MempoolAddTxResult blk
 
 deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
 deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
-
-isMempoolTxAdded :: MempoolAddTxResult blk -> Bool
-isMempoolTxAdded MempoolTxAdded = True
-isMempoolTxAdded _              = False
-
-isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
-isMempoolTxRejected (MempoolTxRejected _) = True
-isMempoolTxRejected _                     = False
 
 -- | The ledger state wrt to which we should produce a block
 --

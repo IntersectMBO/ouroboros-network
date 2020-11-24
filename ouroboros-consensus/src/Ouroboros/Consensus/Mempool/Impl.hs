@@ -10,14 +10,13 @@
 
 module Ouroboros.Consensus.Mempool.Impl (
     implTryAddTxs
+  , implTryAddTxsAtomically
   , implAddTxsBlock
   , implRemoveTxs
   , implSyncWithLedger
   , implGetSnapshot
   , implGetSnapshotFor
   , implGetCapacity
-  , mpEnvTxSize
---  , zeroTicketNo
   , initMempoolEnv
   , forkSyncStateOnTipPointChange
   , chainDBLedgerInterface
@@ -27,7 +26,6 @@ import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Tracer
 import           Data.Maybe (isJust, isNothing, listToMaybe)
-import qualified Data.Set as Set
 import           Data.Typeable
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
@@ -39,8 +37,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.Data
 import           Ouroboros.Consensus.Mempool.Pure
-import           Ouroboros.Consensus.Mempool.TxSeq (MempoolSize, TicketNo,
-                     msNumBytes, zeroTicketNo)
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, msNumBytes,
+                     zeroTicketNo)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, getCurrentLedger)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -109,7 +107,8 @@ forkSyncStateOnTipPointChange registry menv =
 {-------------------------------------------------------------------------------
   Mempool Implementation
 -------------------------------------------------------------------------------}
--- Read the internal state, class the function with it and writes the state
+
+-- Read the internal state and the ledger state, calls the function with it and writes the state
 -- with the first element of the result of the function and returns the second
 -- part of the result of the function as result
 atomicallyDoWithState :: IOLike m
@@ -213,12 +212,22 @@ implTryAddTxs mpEnv = go []
                       ((firstTx, MempoolTxRejected err):acc)
                       toAdd'
 
--- implTryAddTxs mpEnv@MempoolEnv{mpEnvStateVar} toAdd = atomically $ do
---   inState <- readTVar mpEnvStateVar
---   --let (inState', res) = pureTryAddTx mpEnv (inState,[]) toAdd
---   --writeTVar mpEnvStateVar inState'
---   --return res
---   undefined
+-- | Variant of implTryAddTxs, everything happens here in one transaction
+implTryAddTxsAtomically
+  :: forall m blk. (IOLike m, LedgerSupportsMempool blk, HasTxId (GenTx blk))
+  => MempoolEnv m blk
+  -> [GenTx blk]
+  -> m ( [(GenTx blk, MempoolAddTxResult blk)]
+         -- Transactions that were added or rejected. A prefix of the input
+         -- list.
+       , [GenTx blk]
+         -- Transactions that have not yet been added because the capacity
+         -- of the Mempool has been reached. A suffix of the input list.
+       )
+implTryAddTxsAtomically mpEnv txs = do
+  (_ ,(txv, txu, traces)) <- atomicallyDoWithState mpEnv (pureTryAddTxsAtomically txs)
+  mapM_ (traceWith (mpEnvTracer mpEnv)) traces
+  return (txv, txu)
 
 -- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
 -- either been added to the Mempool or rejected.

@@ -4,7 +4,32 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.Mempool.Pure where
+module Ouroboros.Consensus.Mempool.Pure (
+    pureRemoveTxs
+  , pureSyncWithLedger
+  , updatedSnapshot
+  , validateIS
+  , isMempoolSize
+  , initInternalState
+  , computeMempoolCapacity
+  , extendVRNew
+  , internalStateFromVR
+  , validationResultFromIS
+  , pureTryAddTxsAtomically
+  , pureSnapshotFromIS
+  , pureSnapshotGetTxs
+  , pureSnapshotGetTxsAfter
+  , pureSnapshotGetTxsForSize
+  , pureSnapshotGetTx
+  , pureSnapshotHasTx
+  , pureSnapshotGetMempoolSize
+  , extendVRPrevApplied
+  , validateStateFor
+  , revalidateTxsFor
+  , tickLedgerState
+  , isMempoolTxAdded
+  , isMempoolTxRejected
+  ) where
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
@@ -28,6 +53,67 @@ import           Ouroboros.Consensus.Util (repeatedly)
 {-------------------------------------------------------------------------------
   Mempool Implementation
 -------------------------------------------------------------------------------}
+
+pureTryAddTxsAtomically
+  :: (LedgerSupportsMempool blk
+  , HasTxId (GenTx blk))
+  => [GenTx blk]
+  -> MempoolEnv m blk
+  -> InternalState blk
+  -> LedgerState blk
+  -> (InternalState blk,
+       ( [(GenTx blk, MempoolAddTxResult blk)]
+           -- Transactions that were added or rejected. A prefix of the input
+           -- list.
+       , [GenTx blk]
+           -- Transactions that have not yet been added because the capacity
+           -- of the Mempool has been reached. A suffix of the input list.
+       , [TraceEventMempool blk]
+     ))
+
+pureTryAddTxsAtomically txs mpEnv iState _ =
+  let (txv, txu, traces, iStateC) = foldl go ([],[],[],iState) txs
+  in  (iStateC, (reverse txv, reverse txu, reverse traces))
+  where
+    MempoolEnv
+      { mpEnvLedgerCfg
+      , mpEnvTxSize
+      } = mpEnv
+    accumulatorOutOfCapacity (_, txu, _, _) =
+      not (null txu)
+    accumulatorAddOutOfCapacity tx (txv, txu, traces, iStateC) =
+      (txv, tx:txu, traces, iStateC)
+    go acc@(txv, txu, traces, iStateC) tx
+      | accumulatorOutOfCapacity acc
+      = accumulatorAddOutOfCapacity tx acc
+      | -- No space in the Mempool.
+        let txSize = mpEnvTxSize tx
+            curSize = TxSeq.msNumBytes $ isMempoolSize iStateC
+      , curSize + txSize > getMempoolCapacityBytes (isCapacity iStateC)
+      = accumulatorAddOutOfCapacity tx acc
+      | otherwise
+      = let vr  = extendVRNew mpEnvLedgerCfg tx mpEnvTxSize
+                      $ validationResultFromIS iStateC
+            iStateC' = internalStateFromVR vr
+        in case listToMaybe (vrInvalid vr) of
+            Nothing ->
+              -- We only extended the ValidationResult with a single
+              -- transaction ('tx'). So if it's not in 'vrInvalid', it
+              -- must be in 'vrNewValid'.
+                let trace = TraceMempoolAddedTx
+                              tx
+                              (isMempoolSize iStateC)
+                              (isMempoolSize iStateC')
+                in  ((tx, MempoolTxAdded) : txv, txu, trace : traces, iStateC')
+            Just (_, err) ->
+                assert (isNothing (vrNewValid vr))  $
+                assert (length (vrInvalid vr) == 1) $
+                let trace = TraceMempoolRejectedTx
+                              tx
+                              err
+                              (isMempoolSize iStateC)
+                in ((tx, MempoolTxRejected err) : txv, txu, trace : traces, iStateC')
+
 
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk
@@ -237,60 +323,6 @@ validationResultFromIS is = ValidationResult {
       , isCapacity
       } = is
 
--- If snd part of result is Just, it is a transaction, that was added or rejected.
--- If it is Nothing their was no space for the transaction
--- pureTryAddTx
---   :: forall m blk. (IOLike m, LedgerSupportsMempool blk, HasTxId (GenTx blk))
---   => MempoolEnv m blk
---   -> InternalState blk
---   -> GenTx blk
---   -> ( InternalState blk
---      , Maybe (GenTx blk, MempoolAddTxResult blk)
---      )
---
--- pureTryAddTx MempoolEnv{mpEnvTxSize, mpEnvLedgerCfg} inState transaction
---           -- No space in the Mempool.
---           |  let transactionSize = mpEnvTxSize transaction
---                  curSize = msNumBytes $ isMempoolSize inState
---           , curSize + transactionSize > getMempoolCapacityBytes (isCapacity inState)
---           = (inState, Nothing)
---           | otherwise
---           = let vr  = extendVRNew mpEnvLedgerCfg transaction mpEnvTxSize $
---                           validationResultFromIS inState
---                 inState' = internalStateFromVR vr
---             in case vrNewValid vr of
---               Just _ ->
---                 -- Each time we have found a valid transaction, we update the
---                 -- Mempool. This keeps our STM transactions short, avoiding
---                 -- repeated work.
---                 --
---                 -- Note that even if the transaction were invalid, we could
---                 -- still write the state, because in that case we would have
---                 -- that @inState == is'@, but there's no reason to do that
---                 -- additional write.
---
---               -- We only extended the ValidationResult with a single
---               -- transaction ('transaction'). So if it's not in 'vrInvalid', it
---               -- must be in 'vrNewValid'.
---                 case listToMaybe (vrInvalid vr) of
---                   -- The transaction was valid
---                   Nothing       -> undefined
---                     -- traceWith mpEnvTracer
---                     -- $ TraceMempoolAddedTx
---                     --     transaction
---                     --     (isMempoolSize is)
---                     --     (isMempoolSize is')
---                     --     $ ((transaction, MempoolTxAdded):acc) toAdd'
---                   Just (a, err) -> undefined
---                     --    assert (isNothing (vrNewValid vr))
---                     -- $  assert (length (vrInvalid vr) == 1)
---                     -- $  traceWith mpEnvTracer
---                     -- $  TraceMempoolRejectedTx
---                     --       transaction
---                     --       err
---                     --       (isMempoolSize inState)
---                     -- $  ((transaction, MempoolTxRejected err):acc) toAdd'
-
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
@@ -438,3 +470,11 @@ tickLedgerState  cfg (ForgeInUnknownSlot st) =
     slot = case ledgerTipSlot st of
              Origin      -> minimumPossibleSlotNo (Proxy @blk)
              NotOrigin s -> succ s
+
+isMempoolTxAdded :: MempoolAddTxResult blk -> Bool
+isMempoolTxAdded MempoolTxAdded = True
+isMempoolTxAdded _              = False
+
+isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
+isMempoolTxRejected (MempoolTxRejected _) = True
+isMempoolTxRejected _                     = False

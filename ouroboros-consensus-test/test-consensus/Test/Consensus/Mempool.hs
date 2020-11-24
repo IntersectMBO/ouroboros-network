@@ -36,6 +36,8 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
 
+import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
