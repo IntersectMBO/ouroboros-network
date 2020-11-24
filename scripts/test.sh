@@ -3,13 +3,13 @@
 
 # Any arguments are passed to `cabal run` command.
 
-cabal run ${@} test-Win32-network && \
-cabal run ${@} test-sim && \
-cabal run ${@} test-network-mux && \
-cabal run ${@} ntp-client-test && \
-cabal run ${@} test-typed-protocols-cbor && \
-cabal run ${@} ouroboros-network-framework-tests && \
-cabal run ${@} test-network
+cabal run ${@} Win32-network:test && \
+cabal run ${@} io-sim:test && \
+cabal run ${@} network-mux:test && \
+cabal run ${@} ntp-client:test && \
+cabal run ${@} typed-protocols-examples:test && \
+cabal run ${@} ouroboros-network-framework:test && \
+cabal run ${@} ouroboros-network:test
 # consensus tests are disabled due to #1082
 # cabal run ${@} test-consensus && \
 # cabal run ${@} test-storage

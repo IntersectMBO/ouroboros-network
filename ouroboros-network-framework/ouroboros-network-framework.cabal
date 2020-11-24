@@ -99,7 +99,7 @@ library
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
 
-test-suite ouroboros-network-framework-tests
+test-suite test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test

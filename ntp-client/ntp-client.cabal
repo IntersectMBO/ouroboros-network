@@ -39,7 +39,7 @@ library
                         -Wredundant-constraints
   default-extensions:   GeneralizedNewtypeDeriving
 
-test-suite test-ntp-client
+test-suite test
   hs-source-dirs:     test, src
   main-is:            Test.hs
   other-modules:        Network.NTP.Client.Packet

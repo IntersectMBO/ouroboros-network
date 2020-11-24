@@ -56,7 +56,7 @@ library
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
 
-test-suite test-sim
+test-suite test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
