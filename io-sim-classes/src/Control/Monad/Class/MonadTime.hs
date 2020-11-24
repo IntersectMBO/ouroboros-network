@@ -2,15 +2,23 @@
 module Control.Monad.Class.MonadTime (
     MonadTime(..)
   , MonadMonotonicTime(..)
+
+  -- * 'DiffTime' and its action on 'Time'
   , Time(..)
   , diffTime
   , addTime
   , DiffTime
+
+  -- * 'NominalTime' and its action on 'UTCTime'
   , UTCTime
+  , diffUTCTime
+  , addUTCTime
+  , NominalDiffTime
   ) where
 
 import           Control.Monad.Reader
-import           Data.Time.Clock (DiffTime, UTCTime)
+import           Data.Time.Clock (DiffTime, NominalDiffTime, UTCTime,
+                   addUTCTime, diffUTCTime)
 import qualified Data.Time.Clock as Time
 import           Data.Word (Word64)
 

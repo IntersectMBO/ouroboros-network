@@ -14,7 +14,7 @@ import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
 import           Data.Function (on)
 import           Data.List (sortBy)
-import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
+import           Data.Time.Clock (picosecondsToDiffTime)
 
 import           Control.Exception (ArithException (..))
 import           Control.Monad

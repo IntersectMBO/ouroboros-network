@@ -49,8 +49,7 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Time (NominalDiffTime, UTCTime (..), addUTCTime,
-                     diffUTCTime, fromGregorian)
+import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Typeable (Typeable)
 
 import           Control.Applicative (Alternative (..))
