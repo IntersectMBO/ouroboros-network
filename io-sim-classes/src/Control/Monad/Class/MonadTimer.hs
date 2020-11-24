@@ -10,6 +10,7 @@ module Control.Monad.Class.MonadTimer (
   , MonadTimer(..)
   , TimeoutState(..)
 
+  , DiffTime
   , diffTimeToMicrosecondsAsInt
   , microsecondsAsIntToDiffTime
   ) where

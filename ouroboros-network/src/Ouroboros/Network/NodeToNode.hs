@@ -93,11 +93,11 @@ module Ouroboros.Network.NodeToNode (
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime (DiffTime)
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Time.Clock (DiffTime)
 import           Data.Void (Void)
 import           Data.Word
 import qualified Codec.CBOR.Read as CBOR

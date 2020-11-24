@@ -20,7 +20,6 @@ import           Data.Functor (void)
 import           Data.Monoid (First (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import           Data.Time.Clock (secondsToDiffTime)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
@@ -69,7 +68,7 @@ genSuspendDecision gen = oneof
     ]
 
 genDiffTime :: Gen DiffTime
-genDiffTime = secondsToDiffTime <$> arbitrary
+genDiffTime = fromIntegral @Int <$> arbitrary
 
 instance Arbitrary t => Arbitrary (ArbSuspendDecision t) where
     arbitrary = ArbSuspendDecision <$> genSuspendDecision arbitrary

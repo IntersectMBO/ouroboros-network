@@ -22,7 +22,6 @@ import           Data.Hashable
 import           Data.List hiding (inits)
 import           Data.Maybe (catMaybes)
 import           Data.Tuple (swap)
-import           Data.Time (DiffTime)
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadFork

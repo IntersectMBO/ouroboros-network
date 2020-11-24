@@ -95,7 +95,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Identity (Identity (..))
 import           Data.Functor.Contravariant (contramap)
 import           Data.Kind (Type)
-import           Data.Time.Clock
 import           Data.Void (Void)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
