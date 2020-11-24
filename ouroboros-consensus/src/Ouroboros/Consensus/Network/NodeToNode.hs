@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
@@ -102,6 +103,8 @@ data Handlers m peer blk = Handlers {
         :: NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
+        -> peer
+        -> (peer -> SlotNo -> DiffTime -> STM m ())
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
@@ -152,11 +155,13 @@ data Handlers m peer blk = Handlers {
 mkHandlers
   :: forall m blk remotePeer localPeer.
      ( IOLike m
+     , MonadTime m
      , MonadTimer m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Ord remotePeer
+     , Show remotePeer
      )
   => NodeKernelArgs m remotePeer localPeer blk
   -> NodeKernel     m remotePeer localPeer blk
@@ -418,8 +423,9 @@ mkApps
   -> Codecs blk e m bCS bCS bBF bBF bTX bKA
   -> m ChainSyncTimeout
   -> Handlers m remotePeer blk
+  -> (remotePeer -> SlotNo -> DiffTime -> STM m ())
   -> Apps m remotePeer bCS bBF bTX bKA ()
-mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} chainPeerMetric =
     Apps {..}
   where
     aChainSyncClient
@@ -451,7 +457,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate
+                  $ hChainSyncClient version controlMessageSTM varCandidate them chainPeerMetric
               return ((), trailing)
 
     aChainSyncServer

@@ -199,6 +199,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 
       -- | Maximum clock skew
     , llrnMaxClockSkew :: ClockSkew
+
+    , llrnPeerMetric :: PeerMetric m addrNTN
     }
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
@@ -218,7 +220,7 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
-     , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , Hashable addrNTN, Ord addrNTN, Show addrNTN, Typeable addrNTN
      )
   => RunNodeArgs m addrNTN addrNTC blk
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
@@ -323,6 +325,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.defaultCodecs codecConfig version)
           llrnChainSyncTimeout
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
+          (addPeerMetric llrnPeerMetric)
+          
 
     mkNodeToClientApps
       :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
@@ -598,6 +602,7 @@ stdVersionDataNTC networkMagic = NodeToClientVersionData
 stdRunDataDiffusion ::
      DiffusionTracers
   -> DiffusionArguments
+  -> PeerMetric IO RemoteAddress
   -> DiffusionApplications
        RemoteAddress LocalAddress
        NodeToNodeVersionData NodeToClientVersionData
@@ -635,6 +640,7 @@ stdLowLevelRunNodeArgsIO ::
 stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
+    peerMetrics <- initPeerMetric
     pure LowLevelRunNodeArgs
       { llrnBfcSalt
       , llrnChainSyncTimeout = stdChainSyncTimeout
@@ -646,7 +652,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =
           \_reg apps ->
-            stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
+            stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments peerMetrics apps
       , llrnVersionDataNTC =
           stdVersionDataNTC networkMagic
       , llrnVersionDataNTN =
@@ -661,6 +667,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
           stdWithCheckedDB (Proxy @blk) srnDatabasePath networkMagic
       , llrnMaxClockSkew =
           InFuture.defaultClockSkew
+      , llrnPeerMetric = peerMetrics
       }
   where
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO

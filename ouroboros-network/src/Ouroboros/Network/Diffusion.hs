@@ -19,6 +19,9 @@ module Ouroboros.Network.Diffusion
   , ConnectionId (..)
   , DiffusionInitializationTracer(..)
   , LedgerPeersConsensusInterface (..)
+  , initPeerMetric
+  , addPeerMetric
+  , PeerMetric
   )
   where
 
@@ -71,7 +74,10 @@ import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           )
 import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
                                                              , runLedgerPeers
-                                                             , TraceLedgerPeers)
+                                                             , TraceLedgerPeers
+                                                             , addPeerMetric
+                                                             , initPeerMetric
+                                                             , PeerMetric)
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
@@ -167,7 +173,7 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m = Dif
     , daErrorPolicies :: ErrorPolicies
       -- ^ error policies
 
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
+    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m SockAddr
     }
 
 data DiffusionFailure = UnsupportedLocalSocketType
@@ -179,6 +185,7 @@ instance Exception DiffusionFailure
 runDataDiffusion
     :: DiffusionTracers
     -> DiffusionArguments
+    -> PeerMetric IO SockAddr
     -> DiffusionApplications
          RemoteAddress LocalAddress
          NodeToNodeVersionData NodeToClientVersionData
@@ -193,6 +200,7 @@ runDataDiffusion tracers
                                     , daAcceptedConnectionsLimit
                                     , daDiffusionMode
                                     }
+                 peerMetric
                  applications@DiffusionApplications { daErrorPolicies
                                                     , daLedgerPeersCtx
                                                     } =
@@ -233,6 +241,7 @@ runDataDiffusion tracers
                       withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \serverThreads ->
                         Async.withAsync (runLedgerPeers ledgerPeersRng dtLedgerPeersTracer
                                                         daLedgerPeersCtx
+                                                        peerMetric
                                                       {- Not yet (runIpSubscriptionWorker snocket networkState lias)
                                                       (runDnsSubscriptionWorker snocket networkState lias)) -}
                                                       (\_ -> forever $ threadDelay 3600)

@@ -37,6 +37,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   ) where
 
 import           Control.Monad
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.Foldable as Foldable
@@ -44,6 +45,7 @@ import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Time.Clock (addUTCTime, diffUTCTime)
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -424,9 +426,11 @@ assertKnownIntersectionInvariants cfg kis =
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m blk.
+    :: forall m blk peer.
        ( IOLike m
        , LedgerSupportsProtocol blk
+       , MonadTime m
+       , Show peer
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
@@ -435,6 +439,8 @@ chainSyncClient
     -> NodeToNodeVersion
     -> ControlMessageSTM m
     -> StrictTVar m (AnchoredFragment (Header blk))
+    -> peer
+    -> (peer -> SlotNo -> DiffTime -> STM m ())
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
@@ -445,7 +451,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 }
                 _version
                 controlMessageSTM
-                varCandidate = ChainSyncClientPipelined $
+                varCandidate
+                peer
+                addSlotMetric = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
@@ -704,7 +712,17 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                -> Consensus (ClientStNext n) blk m
     handleNext kis mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
-          traceWith tracer $ TraceDownloadedHeader hdr
+          !now <- getCurrentTime
+          let hf = getHeaderFields hdr
+              slot = headerFieldSlot hf
+              firstShelleySlot = 4492800
+              shelleyStart = read "2020-07-29 21:44:51 UTC" :: UTCTime
+              expectedSlotTime = addUTCTime (fromIntegral $ (unSlotNo slot) - firstShelleySlot) shelleyStart
+              slotDiff = diffUTCTime now expectedSlotTime
+
+
+          atomically $ addSlotMetric peer slot $ realToFrac slotDiff
+          traceWith tracer $ TraceDownloadedHeader hdr (realToFrac  slotDiff) $ show peer
           continueWithState kis $
             rollForward mkPipelineDecision n hdr (Their theirTip)
       , recvMsgRollBackward = \intersection theirTip -> do
@@ -1227,7 +1245,7 @@ instance Exception ChainSyncClientException
 
 -- | Events traced by the Chain Sync Client.
 data TraceChainSyncClientEvent blk
-  = TraceDownloadedHeader (Header blk)
+  = TraceDownloadedHeader (Header blk) !DiffTime !String
     -- ^ While following a candidate chain, we rolled forward by downloading a
     -- header.
   | TraceRolledBack (Point blk)

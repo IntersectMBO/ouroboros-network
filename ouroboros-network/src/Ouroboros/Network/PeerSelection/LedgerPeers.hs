@@ -13,13 +13,16 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     TraceLedgerPeers (..),
     pickPeers,
     ackPoolStake,
+    addPeerMetric,
+    initPeerMetric,
+    PeerMetric,
 
     Socket.PortNumber
     ) where
 
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
@@ -33,16 +36,18 @@ import           Data.Map.Strict (Map)
 import           Data.Ratio
 import           Data.Word
 import qualified Network.Socket as Socket
+import           Network.Socket (SockAddr)
 import           System.Random
 
-import           Cardano.Slotting.Slot (SlotNo)
+import           Cardano.Slotting.Slot (SlotNo (..))
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAddress (..))
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 
 import           Text.Printf
 
-data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
+data LedgerPeersConsensusInterface m a = LedgerPeersConsensusInterface {
       lpGetPeers :: (SlotNo -> STM m (SlotNo, [(PoolStake, NonEmpty RelayAddress)]))
     }
 
@@ -50,6 +55,28 @@ data TraceLedgerPeers =
       PickedPeer !RelayAddress !AckPoolStake ! PoolStake
     | PickedPeers !Word16 ![RelayAddress]
     | FetchingNewLedgerState !SlotNo !Int
+    | LedgerPeersXXX !String
+
+type PeerMetric m a = StrictTVar m (Map a (Map SlotNo DiffTime))
+
+initPeerMetric :: MonadSTM m => m (PeerMetric m a)
+initPeerMetric = newTVarIO Map.empty
+
+addPeerMetric :: forall m a.
+       ( MonadSTM m
+       , Ord a
+       )
+    => PeerMetric m a
+    -> ConnectionId a
+    -> SlotNo
+    -> DiffTime
+    -> STM m ()
+addPeerMetric db conId slotNo dTime = do
+    readTVar db >>= Map.alterF fn (remoteAddress conId) >>= writeTVar db
+  where
+    fn :: Maybe (Map SlotNo DiffTime) -> STM m (Maybe (Map SlotNo DiffTime))
+    fn Nothing = return $ Just $ Map.singleton slotNo dTime
+    fn (Just pm) = return $ Just $ Map.insert slotNo dTime pm
 
 
 instance Show TraceLedgerPeers where
@@ -64,6 +91,7 @@ instance Show TraceLedgerPeers where
         printf "Fetching new ledgerstate at slot %s , %d registered pools"
             (show tip)
             cnt
+    show (LedgerPeersXXX msg) = msg
 
 
 data RelayAddress = RelayAddressDomain DomainAddress
@@ -119,18 +147,54 @@ pickPeers inRng tracer pools cnt = go inRng cnt []
                  go rng'' (n - 1) (relay : picked)
 
 
+pickWorstPeer :: forall m.
+       MonadSTM m
+    => PeerMetric m SockAddr
+    -> SlotNo
+    -> STM m (Map SlotNo (DiffTime, SockAddr))
+pickWorstPeer pmVar minSlotNo = do
+    pm <- readTVar pmVar
+
+    -- First remove all samples older than minSlotNo
+    let pm' = Map.map minFn pm
+
+    return (Map.foldlWithKey' foldByPeer Map.empty pm')
+  where
+    minFn :: Map SlotNo DiffTime -> Map SlotNo DiffTime
+    minFn pms = Map.filterWithKey (\k _ -> k >= minSlotNo) pms
+
+    foldByPeer :: Map SlotNo (DiffTime, SockAddr)
+               -> SockAddr
+               -> Map SlotNo DiffTime
+               -> Map SlotNo (DiffTime, SockAddr)
+    foldByPeer bestSlotM peer peerMetric = Map.foldlWithKey' foldBySlot bestSlotM peerMetric
+      where
+        foldBySlot :: Map SlotNo (DiffTime, SockAddr)
+                   -> SlotNo
+                   -> DiffTime
+                   -> Map SlotNo (DiffTime, SockAddr)
+        foldBySlot bestSlotM' slotNo dTime =
+            case Map.lookup slotNo bestSlotM of
+                 Nothing -> Map.insert slotNo (dTime, peer) bestSlotM'
+                 Just (oldTime, _) -> if dTime < oldTime
+                                    then Map.insert slotNo (dTime, peer) bestSlotM'
+                                    else bestSlotM'
+
+
+
 runLedgerPeers :: forall m.
                       ( MonadAsync m
                       , MonadDelay m
-                      , MonadMonotonicTime m
+                      , MonadTime m
                       )
                => StdGen
                -> Tracer m TraceLedgerPeers
-               -> LedgerPeersConsensusInterface m
+               -> LedgerPeersConsensusInterface m SockAddr
+               -> PeerMetric m SockAddr
                -> (IPSubscriptionTarget -> m ())
                -> (DnsSubscriptionTarget -> m ())
                -> m ()
-runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} runIP runDns =
+runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} peerMetric runIP runDns =
     go inRng Nothing Map.empty
   where
 
@@ -160,6 +224,11 @@ runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} runIP runDns =
         -- XXX let it run for 3 minutes, then repeat with a new set of random peers.
         ttlAid <- async (threadDelay 180)
 
+        wait ttlAid
+        currentSlot <- getCurrentSlotNo
+        pm <- atomically $ pickWorstPeer peerMetric (currentSlot - 1000)
+        traceWith tracer $ LedgerPeersXXX $ dumpMinPeers pm
+
         _ <- waitAnyCancel (ttlAid : ipAid : dnsAids)
         go rng' ts_m peerMap'
 
@@ -181,3 +250,18 @@ runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} runIP runDns =
         ( ipSub
         , dnsTarget : dnsSubs
         )
+
+    getCurrentSlotNo :: m SlotNo
+    getCurrentSlotNo = do
+        now <- getCurrentTime
+        let firstShelleySlot = 4492800
+            shelleyStart = read "2020-07-29 21:44:51 UTC" :: UTCTime
+            x = realToFrac $ diffUTCTime now shelleyStart :: Double
+
+        return $ SlotNo $ firstShelleySlot + (round x)
+
+    dumpMinPeers :: Map SlotNo (DiffTime, SockAddr) -> String
+    dumpMinPeers m =
+        let l = Map.toList m in
+        concatMap (\(k, (dTime, peer)) -> printf "XXY%d,%s,%s"
+            (unSlotNo k) (show dTime) (show peer)) l
