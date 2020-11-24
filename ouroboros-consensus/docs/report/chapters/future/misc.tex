@@ -1,50 +1,10 @@
-\chapter{Future work}
+\chapter{Miscellaneous}
+
+TODO\todo{TODO}: This is a mess at the moment.
 
 \section{On abstraction}
 
 ledger integration: as things were changing a lot, it made sense for consensus to define the ledger API internally and have the integration be done consensus side. but as things are stabilising, it might make more sense for that abstraction to live externally, so that you can literally plug in Shelley into consensus and we don't have to do anything
-
-\section{Genesis}
-\label{future:genesis}
-
-The genesis rule is an improved chain selection rule, designed to help new nodes
-safely join the network even in the presence of potential long range attacks
-\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
-however, the \emph{why} is less relevant than the \emph{what} and the
-\emph{how}. Let's start with the \emph{what}. The genesis chain selection
-rule defined as follows.
-
-\begin{definition}[Genesis chain selection rule]
-A candidate chain is preferred over our current chain if
-
-\begin{itemize}
-\item The intersection between the candidate chain and our chain is no more
-than $k$ blocks back, and the candidate chain is strictly longer than our
-chain.
-
-\item If the intersection \emph{is} more than $k$ blocks back, and the
-candidate chain is \emph{denser} (contains more blocks) than our chain in
-a region of $s$ slots starting at the intersection.
-\end{itemize}
-\end{definition}
-
-Part (2) if this definition of course is what sets the genesis rule apart
-from the Praos chain selection rule.\footnote{The \lstinline!TPraos! chain
-selection rule of the Shelley ledger may additionally prefer candidate chains
-of equal length under certain circumstances, see \cref{todo}.} It is problematic
-for the design of the consensus layer, for at least two reasons:
-
-\begin{itemize}
-\item It does not fit the look-at-tip-only approach
-(\cref{consensus:overview:chainsel})
-\item It violates the ``we never roll back to a shorter chain'' assumption
-(\cref{never-shrink})
-\end{itemize}
-
-
-
-
-
 
 \section{On-disk ledger state}
 

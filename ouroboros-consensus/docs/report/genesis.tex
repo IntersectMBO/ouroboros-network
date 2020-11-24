@@ -41,6 +41,28 @@ a region of $s$ slots starting at the intersection.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \begin{frame}
+\frametitle{The Genesis Rule}
+
+\begin{alertblock}{Alternative genesis rule}
+A candidate chain is preferred over our current chain if
+
+\begin{itemize}
+\item The intersection between the candidate chain and our chain is
+\textbf{at least $s$ slots} back, and the candidate chain is denser in a window
+of $s$ slots at the intersection, or
+
+\item The intersection between the candidate chain and our chain is \textbf{no
+more than $k$ blocks} back, and the candidate chain is strictly \textbf{longer}
+than our chain.
+\end{itemize}
+
+\end{alertblock}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
 \frametitle{Fundamental Assumptions within the Consensus Layer}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -468,9 +490,7 @@ the wallclock slot.} [Handwavy] \\
 \item \textbf{Cannot reliably detect} whether we have more than $k$ blocks \\
 (node reports tip but we cannot verify)
 \item \textbf{Can still apply genesis condition}, independent of \# blocks \\
-\begin{minipage}{0.9\textwidth}
-\tiny\linespread{0.5} Christian: ``Intuitively, right after the forking point, the lottery to elect slot leaders is still the same on both chains, and there, no adversarial chain can be denser.''
-\end{minipage}
+(justified by alternative genesis rule)
 \end{itemize}
 
 \end{frame}

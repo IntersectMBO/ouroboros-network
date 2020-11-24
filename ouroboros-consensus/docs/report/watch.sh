@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SOURCES=`find . -name '*.tex'`
-MAIN=genesis.tex
+MAIN=report.tex
 
 while inotifywait $SOURCES
 do

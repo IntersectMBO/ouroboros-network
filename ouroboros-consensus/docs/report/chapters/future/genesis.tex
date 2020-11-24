@@ -1,0 +1,268 @@
+\chapter{Ouroboros Genesis}
+\label{future:genesis}
+
+\section{Introduction}
+
+The genesis rule is an improved chain selection rule, designed to help new nodes
+safely join the network even in the presence of potential long range attacks
+\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
+however, the \emph{why} is less relevant than the \emph{what} and the
+\emph{how}. Let's start with the \emph{what}. The genesis chain selection
+rule defined as follows.
+
+\begin{definition}[Genesis chain selection rule]
+A candidate chain is preferred over our current chain if
+
+\begin{itemize}
+\item The intersection between the candidate chain and our chain is \textbf{no
+more than $k$} blocks back, and the candidate chain is strictly \textbf{longer}
+than our chain.
+
+\item If the intersection \emph{is} \textbf{more than $k$} blocks back, and the
+candidate chain is \textbf{denser} (contains more blocks) than our chain in
+a region of $s$ slots starting at the intersection.
+\end{itemize}
+\end{definition}
+
+Condition (B) of this definition is what sets the genesis rule apart from the
+Praos chain selection rule.\footnote{The \lstinline!TPraos! chain selection rule
+of the Shelley ledger may additionally prefer candidate chains of equal length
+under certain circumstances, see \cref{todo}.} The intuition is that an attacker
+will have less stake than the majority (if this is not true, the chain is no
+longer secure), and therefore if they try to construct an alternative history,
+they can only produce a chain that is less dense than the real chain.
+
+It is important that we compare density only \emph{at the intersection point}.
+An example will make this obvious. Suppose the chain is growing normally,
+then a malicious node with some stake intentionally skips their slot, after
+which the chain continues to grow again:
+%
+\begin{center}
+\begin{tikzpicture}
+\draw
+       (0,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node[above]{$\times$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$};
+\end{tikzpicture}
+\end{center}
+%
+It is now trivial for an attacker to create an alternative chain that
+\emph{does} have a block in that slot; if other nodes switch to the denser chain
+the moment they see a window of $s$ slots that is denser, they would adopt the
+attacker's chain; after all, it has one more block in the window than the real
+chain does:
+%
+\begin{center}
+\begin{tikzpicture}
+\draw
+       (0,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$} coordinate(s-anchor)
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$} coordinate(branch)
+  -- ++(1,0) node[above]{$\times$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$};
+\draw
+       (branch)
+  -- ++(1, -1) node{$\bullet$}
+  -- ++(3,  0) node{$\bullet$};
+\draw [dashed]
+     (s-anchor)
+  -- ++(0,1)
+  -- ++(3.5,0)
+  -- ++(0,-2.5)
+  -- ++(-3.5,0) node[below, pos=0.5]{$\underbrace{\hspace{3.5cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+%
+Instead, we must wait until we make such a comparison until we have reached
+the intersection point:
+%
+\begin{center}
+\begin{tikzpicture}
+\draw
+       (0,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$} coordinate(branch)
+  -- ++(1,0) node[above]{$\times$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$};
+\draw
+       (branch)
+  -- ++(1, -1) node{$\bullet$}
+  -- ++(3,  0) node{$\bullet$};
+\draw [dashed]
+     (branch)
+  -- ++(0,1)
+  -- ++(3.5,0)
+  -- ++(0,-2.5)
+  -- ++(-3.5,0) node[below, pos=0.5]{$\underbrace{\hspace{3.5cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+%
+Since the attacker does not have sufficient stake, if we \emph{now} compare the
+attacker's chain to the real chain, we will find that the attacker's chain is
+less dense and nodes will therefore not select it. If the attacker creates
+another fork earlier on the chain, then we will resolve that fork
+when we encounter it using a window of $s$ slots \emph{anchored at that fork},
+and then later resolve the second fork using a \emph{different} window of
+$s$ slots, anchored at the second fork:
+%
+\begin{center}
+\begin{tikzpicture}
+\draw
+       (0,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$} coordinate(s-anchor)
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$} coordinate(branch)
+  -- ++(1,0) node[above]{$\times$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$}
+  -- ++(1,0) node{$\bullet$};
+\draw
+       (branch)
+  -- ++(1, -1) node{$\bullet$}
+  -- ++(3,  0) node{$\bullet$};
+\draw
+       (s-anchor)
+  -- ++(1, -1) node{$\bullet$};
+\draw [dashed]
+     (s-anchor)
+  -- ++(0,1)
+  -- ++(3.5,0)
+  -- ++(0,-2.5)
+  -- ++(-3.5,0) node[below, pos=0.5]{$\underbrace{\hspace{3.5cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\draw [dashed]
+     (branch) ++ (0, 0.1)
+  -- ++(0,1)
+  -- ++(3.5,0)  node[above, pos=0.5]{$\overbrace{\hspace{3.5cm}}^{\text{$s$ slots}}$}
+  -- ++(0,-2.5)
+  -- ++(-3.5,0)
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+
+
+
+
+\debugsep{se}
+
+
+As phrased, this rule
+has weird quirk. Consider the following situation:
+
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  0.5) -- ++(2.5, 0) coordinate(A) node[right]{$A$};
+\draw (tip) -- ++(1.0, -0.5) -- ++(3.5, 0) coordinate(B) node[right]{$B$};
+\draw [red, very thick] (tip) -- ++(1.0,  0.5) -- ++(2.0, 0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 0.75)
+  -- ++(3, 0)
+  -- ++(0, -1.5)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+\path (tip) -- (A) node[pos=0.5, above=0.5cm]{$\overbrace{\hspace{3.5cm}}^{\text{fewer than $k$ blocks}}$};
+\path (tip) -- (B) node[pos=0.5, below=1.1cm]{$\underbrace{\hspace{4.5cm}}_{\text{more than $k$ blocks}}$};
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+\end{tikzpicture}
+\end{center}
+
+
+
+
+
+
+
+As we shall see, the
+following alternative formulation of the genesis rule [Badertscher, personal
+communication] will be more suitable to our needs:
+
+\begin{definition}[Alternative genesis rule]
+A candidate chain is preferred over our current chain if
+
+\begin{itemize}
+\item The intersection between the candidate chain and our chain is
+\textbf{at least $s$ slots} back, and the candidate chain is denser in a window
+of $s$ slots at the intersection, or
+
+\item The intersection between the candidate chain and our chain is \textbf{no
+more than $k$ blocks} back, and the candidate chain is strictly \textbf{longer}
+than our chain.
+\end{itemize}
+
+\end{definition}
+
+Whichever variant we use however, it is clear that this rule breaks a bunch of
+fundamental assumptions within the consensus layer; in particular, taken at face
+value, it implies we might have to roll back more than $k$ blocks
+(\cref{consensus:overview:k}), we might switch to a shorter chain
+(\cref{never-shrink}). Less fundamentally, but nonetheless importantly, it also
+doesn't fit vey well with our look-at-the-tip-only approach
+(\cref{consensus:overview:chainsel}). We will therefore treat the genesis
+chain selection rule as a special case.
+
+\begin{figure}
+\hrule
+
+\textbf{Parameters} \\[0.5em]
+\begin{tabular}{ll}
+$C_\mathit{loc}$ & Current chain \\
+$\mathcal{N} = \{C_1, \ldots, C_M\}$ & All possible chains (including our own) \\
+$k$ & Security parameter (\cref{consensus:overview:k}) \\
+$s$ & Genesis window size (Genesis rule specific parameter) \\
+$f$ & Active slot coefficient (\cref{praos:f}) \\[1em]
+\end{tabular}
+
+\textbf{Algorithm}
+
+\begin{lstlisting}[escapeinside={(*}{*)}, language={}, keywords={for,do,if,then,else,end,return}]
+// Compare (*$C_\mathit{max}$*) to each (*$C_i \in \mathcal{N}$*)
+Set (*$C_\mathit{max} \leftarrow C_\mathit{loc}$*)
+for (*$i = 1$*) to (*$M$*) do
+  if (*$(C_i \text{ forks from } C_\mathit{max} \text{ at most } k \text{ blocks})$*) then
+    if (*$|C_i| > |C_\mathit{max}|$*) then // Condition A
+      Set (*$C_\mathit{max} \leftarrow C_i$*).
+    end if
+  else
+    Let (*$j \leftarrow \max \Bigl\{ j' \ge 0 \mathrel{\Bigl\lvert} C_\mathit{max} \text{ and } C_i \text{ have the same block in } \mathtt{sl}_{j'} \Bigr\} $*)
+    if (*$|C_i[0 : j + s]| > |C_\mathit{max}[0 : j + s]|$*) then // Condition B
+      Set (*$C_\mathit{max} \leftarrow C_i$*).
+    end if
+  end if
+end for
+return (*$C_\mathit{max}$*)
+\end{lstlisting}
+
+\hrule
+\caption{Algorithm \texttt{maxvalid-bg}}
+\end{figure}
+
+
+\section{Towards an Alternative}
+
+
+\section{Possibly optimizations}
+
+can share validation (20x -> 1x crypto check)
+can simplify blockfetch, fewer checks required
+  easier to generate longer ranges
+  spreading load
+bypass volatile DB
+if A, B, C, D are all teh same chain, can even just skip ahead<
+  ("do you have this point on your chain?")
+even more important for genesis, because we need lots of peers
+to see all chains
