@@ -23,7 +23,6 @@ module Network.Mux.Channel
 import qualified Data.ByteString               as BS
 import qualified Data.ByteString.Lazy          as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-import           Data.Time.Clock (DiffTime)
 import qualified System.Process as IO (createPipe)
 import qualified System.IO      as IO
                    ( Handle, withFile, IOMode(..), hFlush, hIsEOF )

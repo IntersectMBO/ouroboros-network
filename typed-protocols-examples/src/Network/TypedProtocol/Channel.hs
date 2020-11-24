@@ -25,7 +25,6 @@ import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
-import           Data.Time.Clock (DiffTime)
 import           Numeric.Natural
 
 import qualified System.IO as IO
