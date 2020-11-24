@@ -38,6 +38,7 @@ module Test.Consensus.Shelley.Examples (
 import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Sequence.Strict (StrictSeq)
@@ -45,6 +46,7 @@ import qualified Data.Sequence.Strict as StrictSeq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64, Word8)
 
 import           Cardano.Binary (toCBOR)
@@ -70,6 +72,7 @@ import           Ouroboros.Consensus.Util.Time
 
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
+import qualified Cardano.Ledger.Val as Val
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
@@ -104,6 +107,8 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import qualified Cardano.Ledger.Mary.Value as MA
+import qualified Cardano.Ledger.ShelleyMA as MA
+import qualified Cardano.Ledger.ShelleyMA.Metadata as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 
@@ -201,8 +206,9 @@ examples ::
      forall era. ShelleyBasedEra era
   => Core.Value era
   -> Core.TxBody era
+  -> Core.Metadata era
   -> Golden.Examples (ShelleyBlock era)
-examples value txBody = Golden.Examples {
+examples value txBody metadata = Golden.Examples {
       exampleBlock            = unlabelled blk
     , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
     , exampleHeader           = unlabelled (getHeader blk)
@@ -219,8 +225,9 @@ examples value txBody = Golden.Examples {
     , exampleExtLedgerState   = unlabelled (exampleExtLedgerState value)
     }
   where
-    exampleGenTx = mkShelleyTx $ exampleTx txBody
-    blk = exampleBlock txBody
+    tx = exampleTx txBody metadata
+    exampleGenTx = mkShelleyTx tx
+    blk = exampleBlock tx
 
     queries = labelled [
           ("GetLedgerTip",              SomeSecond GetLedgerTip)
@@ -258,13 +265,13 @@ examples value txBody = Golden.Examples {
         (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
 
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
-examplesShelley = examples exampleCoin exampleTxBodyShelley
+examplesShelley = examples exampleCoin exampleTxBodyShelley exampleMetadataShelley
 
 examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
-examplesAllegra = examples exampleCoin exampleTxBodyAllegra
+examplesAllegra = examples exampleCoin exampleTxBodyAllegra exampleMetadataMA
 
 examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
-examplesMary = examples exampleMultiAssetValue exampleTxBodyMary
+examplesMary = examples exampleMultiAssetValue exampleTxBodyMary exampleMetadataMA
 
 {-------------------------------------------------------------------------------
   Era-specific individual examples
@@ -301,7 +308,7 @@ exampleTxBodyShelley = SL.TxBody
     metaDataHash = SL.MetaDataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
 
 exampleTxBodyMA ::
-     forall era. ShelleyBasedEra era
+     forall era. (ShelleyBasedEra era, Val.EncodeMint (Core.Value era))
   => Core.Value era -> MA.TxBody era
 exampleTxBodyMA value = MA.TxBody
     exampleTxIns
@@ -320,11 +327,42 @@ exampleTxBodyMA value = MA.TxBody
     metaDataHash :: SL.MetaDataHash era
     metaDataHash = SL.MetaDataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
 
-exampleTxBodyAllegra :: MA.TxBody StandardAllegra
+exampleTxBodyAllegra :: Core.TxBody StandardAllegra
 exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
 
-exampleTxBodyMary :: MA.TxBody StandardMary
+exampleTxBodyMary :: Core.TxBody StandardMary
 exampleTxBodyMary = exampleTxBodyMA exampleMultiAssetValue
+
+exampleScriptMA :: (Crypto c, Typeable ma) => Core.Script (MA.ShelleyMAEra ma c)
+exampleScriptMA =
+    MA.RequireMOf 2 $ StrictSeq.fromList [
+        MA.RequireAllOf $ StrictSeq.fromList [
+            MA.RequireTimeStart  (SlotNo 0)
+          , MA.RequireTimeExpire (SlotNo 9)
+          ]
+      , MA.RequireAnyOf $ StrictSeq.fromList [
+            MA.RequireSignature (mkKeyHash 0)
+          , MA.RequireSignature (mkKeyHash 1)
+          ]
+      , MA.RequireSignature (mkKeyHash 100)
+      ]
+
+exampleMetadataMap :: Map Word64 SL.MetaDatum
+exampleMetadataMap = Map.fromList [
+      (1, SL.S "string")
+    , (2, SL.B "bytes")
+    , (3, SL.List [SL.I 1, SL.I 2])
+    , (4, SL.Map [(SL.I 3, SL.B "b")])
+    ]
+
+exampleMetadataShelley :: Core.Metadata StandardShelley
+exampleMetadataShelley = SL.MetaData exampleMetadataMap
+
+exampleMetadataMA :: (Crypto c, Typeable ma) => Core.Metadata (MA.ShelleyMAEra ma c)
+exampleMetadataMA =
+    MA.Metadata
+      exampleMetadataMap
+      (StrictSeq.fromList [exampleScriptMA])
 
 {-------------------------------------------------------------------------------
   Individual examples
@@ -367,9 +405,9 @@ exampleProposedPPUpdates = SL.ProposedPPUpdates $
 -- serialisation, not validation.
 exampleBlock ::
      forall era. ShelleyBasedEra era
-  => Core.TxBody era
+  => SL.Tx era
   -> ShelleyBlock era
-exampleBlock txBody = mkShelleyBlock $ SL.Block blockHeader blockBody
+exampleBlock tx = mkShelleyBlock $ SL.Block blockHeader blockBody
   where
     keys :: SL.AllIssuerKeys (EraCrypto era) 'SL.StakePool
     keys = exampleKeys
@@ -396,7 +434,7 @@ exampleBlock txBody = mkShelleyBlock $ SL.Block blockHeader blockBody
         }
 
     blockBody :: SL.TxSeq era
-    blockBody = SL.TxSeq (StrictSeq.fromList [exampleTx txBody])
+    blockBody = SL.TxSeq (StrictSeq.fromList [tx])
 
     mkBytes :: Int -> SL.Seed
     mkBytes = SL.Seed . mkDummyHash (Proxy @Blake2b_256)
@@ -416,8 +454,12 @@ exampleHeaderHash _ = coerce $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 0
 
 -- | This is not a valid transaction. We don't care, we are only interested in
 -- serialisation, not validation.
-exampleTx :: forall era. ShelleyBasedEra era => Core.TxBody era -> SL.Tx era
-exampleTx txBody = SL.Tx txBody witnessSet (SJust metadata)
+exampleTx ::
+     forall era. ShelleyBasedEra era
+  => Core.TxBody era
+  -> Core.Metadata era
+  -> SL.Tx era
+exampleTx txBody metadata = SL.Tx txBody witnessSet (SJust metadata)
   where
     witnessSet :: SL.WitnessSet era
     witnessSet = mempty {
@@ -431,14 +473,6 @@ exampleTx txBody = SL.Tx txBody witnessSet (SJust metadata)
             , SL.asWitness exampleStakeKey
             , SL.asWitness $ SL.cold (exampleKeys @(EraCrypto era) @'SL.StakePool)
             ]
-
-    metadata :: SL.MetaData
-    metadata = SL.MetaData $ Map.fromList [
-          (1, SL.S "string")
-        , (2, SL.B "bytes")
-        , (3, SL.List [SL.I 1, SL.I 2])
-        , (4, SL.Map [(SL.I 3, SL.B "b")])
-        ]
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.

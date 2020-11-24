@@ -26,6 +26,7 @@ import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL (Mock)
+import qualified Test.Shelley.Spec.Ledger.Generator.EraGen as SL (EraGen)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
                      ShelleyEra)
@@ -56,10 +57,12 @@ type Block h = ShelleyBlock (MockShelley h)
 -- | Cryptography that can easily be mocked
 type CanMock era =
   ( ShelleyBasedEra era
+  , SL.EraGen era
   , SL.Mock (EraCrypto era)
   , SL.ValidateScript era
   , Arbitrary (Core.TxBody era)
   , Arbitrary (Core.Value era)
+  , Arbitrary (Core.Metadata era)
   , Arbitrary (Core.Script era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
   )
