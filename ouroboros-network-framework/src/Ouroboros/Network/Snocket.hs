@@ -6,7 +6,6 @@
 module Ouroboros.Network.Snocket
   ( -- * Snocket Interface
     Accept (..)
-  , fmapAccept
   , AddressFamily (..)
   , Snocket (..)
     -- ** Socket based Snocktes
@@ -17,15 +16,20 @@ module Ouroboros.Network.Snocket
     --
   , LocalSnocket
   , localSnocket
+  , LocalSocket (..)
   , LocalAddress (..)
-  , LocalFD
   , localAddressFromPath
+
+  , FileDescriptor
+  , socketFileDescriptor
+  , localSocketFileDescriptor
   ) where
 
 import           Control.Exception
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
+import           Data.Bifunctor (Bifunctor (..))
 import           Data.Hashable
 #if !defined(mingw32_HOST_OS)
 import           Network.Socket ( Family (AF_UNIX) )
@@ -36,6 +40,7 @@ import           Network.Socket ( Socket
 import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
+import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
 import qualified System.Win32            as Win32
 import qualified System.Win32.NamedPipes as Win32
 import qualified System.Win32.Async      as Win32.Async
@@ -90,16 +95,10 @@ newtype Accept addr fd = Accept
   { runAccept :: IO (fd, addr, Accept addr fd)
   }
 
-
--- | Arguments of 'Accept' are in the wrong order.
---
--- TODO: this can be fixed later.
---
-fmapAccept :: (addr -> addr') -> Accept addr fd -> Accept addr' fd
-fmapAccept f ac = Accept $ g <$> runAccept ac
-  where
-    g (fd, addr, next) = (fd, f addr, fmapAccept f next)
-
+instance Bifunctor Accept where
+    bimap f g ac = Accept $ h <$> runAccept ac
+      where
+        h (fd, addr, next) = (g fd, f addr, bimap f g next)
 
 
 -- | BSD accept loop.
@@ -274,16 +273,28 @@ socketSnocket ioManager = Snocket {
 -- NamedPipes based Snocket
 --
 
+#if defined(mingw32_HOST_OS)
+type LocalHandle = Win32.HANDLE
+#else
+type LocalHandle = Socket
+#endif
+
+-- | System dependent LocalSnocket type
+newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
+    deriving (Eq, Show)
+
+-- | System dependent LocalSnocket
+type    LocalSnocket = Snocket IO LocalSocket LocalAddress
+
+
 
 #if defined(mingw32_HOST_OS)
-type HANDLESnocket = Snocket IO Win32.HANDLE LocalAddress
-
 -- | Create a Windows Named Pipe Snocket.
 --
 namedPipeSnocket
   :: IOManager
   -> FilePath
-  -> HANDLESnocket
+  -> LocalSnocket
 namedPipeSnocket ioManager path = Snocket {
       getLocalAddr  = \_ -> return localAddress
     , getRemoteAddr = \_ -> return localAddress
@@ -306,7 +317,7 @@ namedPipeSnocket ioManager path = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        pure hpipe
+        pure (LocalSocket hpipe)
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
@@ -324,26 +335,26 @@ namedPipeSnocket ioManager path = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        return hpipe
+        return (LocalSocket hpipe)
     , connect  = \_ _ -> pure ()
 
     -- Bind and listen are no-op.
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \hpipe -> Accept $ do
+    , accept   = \sock@(LocalSocket hpipe) -> Accept $ do
           Win32.Async.connectNamedPipe hpipe
-          return (hpipe, localAddress, acceptNext)
+          return (sock, localAddress, acceptNext)
 
-    , close    = Win32.closeHandle
+    , close    = Win32.closeHandle . getLocalHandle
 
-    , toBearer = \_sduTimeout -> namedPipeAsBearer
+    , toBearer = \_sduTimeout tr -> namedPipeAsBearer tr . getLocalHandle
     }
   where
     localAddress :: LocalAddress
     localAddress = LocalAddress path
 
-    acceptNext :: Accept LocalAddress Win32.HANDLE
+    acceptNext :: Accept LocalAddress LocalSocket
     acceptNext = Accept $ do
       hpipe <- Win32.createNamedPipe
                  path
@@ -354,44 +365,33 @@ namedPipeSnocket ioManager path = Snocket {
                  16384   -- inbound pipe size
                  0       -- default timeout
                  Nothing -- default security
-              `catch` \(e :: IOException) -> do
-                 putStrLn $ "accept: " ++ show e
-                 throwIO e
       associateWithIOManager ioManager (Left hpipe)
       Win32.Async.connectNamedPipe hpipe
-      return (hpipe, localAddress, acceptNext)
+      return (LocalSocket hpipe, localAddress, acceptNext)
 #endif
 
 
---
--- Windows/POSIX type aliases
---
-
 localSnocket :: IOManager -> FilePath -> LocalSnocket
--- | System dependent LocalSnocket type
 #if defined(mingw32_HOST_OS)
-type LocalSnocket = HANDLESnocket
-type LocalFD      = Win32.HANDLE
-
 localSnocket = namedPipeSnocket
 #else
-type LocalSnocket = Snocket IO Socket LocalAddress
-type LocalFD      = Socket
-
-localSnocket ioManager _ = Snocket {
-      getLocalAddr  = fmap toLocalAddress . Socket.getSocketName
-    , getRemoteAddr = fmap toLocalAddress . Socket.getPeerName
-    , addrFamily    = const LocalFamily
-    , connect       = \s addr -> do
-        Socket.connect s (fromLocalAddress addr)
-    , bind          = \fd addr -> Socket.bind fd (fromLocalAddress addr)
-    , listen        = flip Socket.listen 1
-    , accept        = fmapAccept toLocalAddress . (berkeleyAccept ioManager)
-    , open          = openSocket
-    , openToConnect = \_addr -> openSocket LocalFamily
-    , close         = Socket.close
-    , toBearer      = Mx.socketAsMuxBearer
-    }
+localSnocket ioManager _ =
+    Snocket {
+        getLocalAddr  = fmap toLocalAddress . Socket.getSocketName . getLocalHandle
+      , getRemoteAddr = fmap toLocalAddress . Socket.getPeerName . getLocalHandle
+      , addrFamily    = const LocalFamily
+      , connect       = \(LocalSocket s) addr ->
+          Socket.connect s (fromLocalAddress addr)
+      , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
+      , listen        = flip Socket.listen 1 . getLocalHandle
+      , accept        = bimap toLocalAddress LocalSocket
+                      . berkeleyAccept ioManager
+                      . getLocalHandle
+      , open          = openSocket
+      , openToConnect = \_addr -> openSocket LocalFamily
+      , close         = Socket.close . getLocalHandle
+      , toBearer      = \df tr (LocalSocket sd) -> Mx.socketAsMuxBearer df tr sd
+      }
   where
     toLocalAddress :: SockAddr -> LocalAddress
     toLocalAddress (SockAddrUnix path) = LocalAddress path
@@ -400,7 +400,7 @@ localSnocket ioManager _ = Snocket {
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath
 
-    openSocket :: AddressFamily LocalAddress -> IO Socket
+    openSocket :: AddressFamily LocalAddress -> IO LocalSocket
     openSocket LocalFamily = do
       sd <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
@@ -413,8 +413,25 @@ localSnocket ioManager _ = Snocket {
         `catch` \(SomeAsyncException _) -> do
           Socket.close sd
           throwIO e
-      return sd
+      return (LocalSocket sd)
 #endif
 
 localAddressFromPath :: FilePath -> LocalAddress
 localAddressFromPath = LocalAddress
+
+-- | Socket file descriptor.
+--
+newtype FileDescriptor = FileDescriptor { getFileDescriptor :: Int }
+  deriving (Eq, Show)
+
+socketFileDescriptor :: Socket -> IO FileDescriptor
+socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.socketToFd
+
+localSocketFileDescriptor :: LocalSocket -> IO FileDescriptor
+#if defined(mingw32_HOST_OS)
+localSocketFileDescriptor =
+  \(LocalSocket fd) -> case ptrToIntPtr fd of
+    IntPtr i -> return (FileDescriptor i)
+#else
+localSocketFileDescriptor = socketFileDescriptor . getLocalHandle
+#endif
