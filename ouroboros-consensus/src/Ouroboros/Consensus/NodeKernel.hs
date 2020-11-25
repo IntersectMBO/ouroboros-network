@@ -98,7 +98,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Timed (Header blk)))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
@@ -124,6 +124,8 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
+      -- TODO only here so that we can use it in Ouroboros.Consensus.Network.NodeToNode.mkHandlers
+    , systemTime              :: SystemTime m
     , btime                   :: BlockchainTime m
     , chainDB                 :: ChainDB m blk
     , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
@@ -191,7 +193,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Timed (Header blk)))))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -219,7 +221,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Timed (Header blk))))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
         blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
@@ -232,7 +234,7 @@ initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
     => TopLevelConfig blk
     -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
+    -> STM m (Map peer (AnchoredFragment (Timed (Header blk))))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
     -> BlockFetchConsensusInterface peer (Header blk) blk m
@@ -245,8 +247,13 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     blockMatchesHeader :: Header blk -> blk -> Bool
     blockMatchesHeader = Block.blockMatchesHeader
 
+    -- TODO @network team: use
+    --
+    -- readCandidateChains = getCandidates
+    --
+    -- and use the timing information
     readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
-    readCandidateChains = getCandidates
+    readCandidateChains = fmap (AF.mapAnchoredFragment getTimed) <$> getCandidates
 
     readCurrentChain :: STM m (AnchoredFragment (Header blk))
     readCurrentChain = ChainDB.getCurrentChain chainDB
