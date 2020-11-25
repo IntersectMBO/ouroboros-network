@@ -174,26 +174,29 @@ jobs:
 
     - name: Win32-network [test]
       if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" run test-Win32-network
+      run: cabal --builddir="$CABAL_BUILDDIR" run Win32-network:test
 
     - name: ntp-client [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run test-ntp-client
+      run: cabal --builddir="$CABAL_BUILDDIR" run ntp-client:test
 
     - name: io-sim [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run test-sim
+      run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
+
+    - name: io-sim-classes [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
 
     - name: typed-protocols-examples [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-tests
+      run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests
 
     - name: network-mux [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run test-network-mux
+      run: cabal --builddir="$CABAL_BUILDDIR" run network-mux:test
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework-tests -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run test-network
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
 
     # TODO: we need to install the cddl tool
     # - name: ouroboros-network [cddl]

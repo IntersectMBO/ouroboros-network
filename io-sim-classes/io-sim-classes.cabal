@@ -74,7 +74,7 @@ library
   if flag(checktvarinvariant)
     cpp-options: -DCHECK_TVAR_INVARIANT
 
-test-suite test-io-sim-classes
+test-suite test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
