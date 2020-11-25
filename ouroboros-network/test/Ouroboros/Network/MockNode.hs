@@ -33,10 +33,10 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.Util.ShowProxy
 
 -- TODO Should this be impored here
@@ -403,7 +403,4 @@ coreNode nid slotDuration gchain chans = do
   return cpsVar
   where
     fixupBlock :: Chain Block -> Block -> Block
-    fixupBlock c =
-      Concrete.fixupBlock
-        (Chain.headHash c)
-        (Chain.legacyHeadBlockNo c)
+    fixupBlock c = Concrete.fixupBlock (Chain.headAnchor c)

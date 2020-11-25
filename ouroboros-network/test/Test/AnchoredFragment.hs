@@ -1,15 +1,15 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
 
 module Test.AnchoredFragment
   ( tests
   , TestBlockAnchoredFragment (..)
-  , pattern TestBlockAnchoredFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (isJust, isNothing, listToMaybe, maybeToList)
+import           Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -21,15 +21,12 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (Empty),
                      anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment)
-import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Testing.ConcreteBlock
-import           Test.ChainFragment (TestBlockChainFragment (..),
-                     TestChainFragmentAndPoint (..),
-                     TestChainFragmentFork (..))
-import qualified Test.ChainFragment as CF
-import           Test.ChainGenerators (TestBlockChain (..))
+import           Test.ChainGenerators (TestBlockChain (..),
+                     TestChainAndRange (..), addSlotGap, genChainAnchor,
+                     genNonNegative, genSlotGap)
 
 
 --
@@ -73,6 +70,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "selectPoints"                       prop_selectPoints
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
   , testProperty "splitBeforePoint"                   prop_splitBeforePoint
+  , testProperty "sliceRange"                         prop_sliceRange
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
@@ -213,18 +211,15 @@ prop_successorBlock (TestAnchoredFragmentAndPoint c p) =
 
 prop_pointOnFragment :: TestAnchoredFragmentAndPoint -> Bool
 prop_pointOnFragment (TestAnchoredFragmentAndPoint c p) =
-    AF.pointOnFragment p c == spec
-  where
-    spec = CF.pointOnChainFragmentSpec p (AF.unanchorFragment c)
+    AF.pointOnFragment p c == AF.pointOnFragmentSpec p c
 
 prop_selectPoints :: TestBlockAnchoredFragment -> Property
-prop_selectPoints taf@(TestBlockAnchoredFragment c) =
-    AF.selectPoints offsets c === CF.selectPointsSpec offsets cf .&&.
-    AF.selectPoints []      c === CF.selectPointsSpec []      cf .&&.
-    AF.selectPoints [1,1]   c === CF.selectPointsSpec [1,1]   cf
+prop_selectPoints (TestBlockAnchoredFragment c) =
+    AF.selectPoints offsets c === AF.selectPointsSpec offsets c .&&.
+    AF.selectPoints []      c === AF.selectPointsSpec []      c .&&.
+    AF.selectPoints [1,1]   c === AF.selectPointsSpec [1,1]   c
   where
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
-    cf      = toChainFragment taf
 
 prop_splitAfterPoint :: TestAnchoredFragmentAndPoint -> Property
 prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
@@ -246,6 +241,20 @@ prop_splitBeforePoint (TestAnchoredFragmentAndPoint c pt) =
       .&&. (blockPoint <$> AF.last s) === Right pt
       .&&. AF.join p s                === Just c
     Nothing -> property $ not $ AF.pointOnFragment pt c
+
+prop_sliceRange :: TestChainAndRange -> Bool
+prop_sliceRange (TestChainAndRange c p1 p2) =
+    case AF.sliceRange c' p1 p2 of
+      Just slice ->
+          AF.valid slice
+       && not (AF.null slice)
+       && AF.headPoint slice == p2
+       && AF.lastPoint slice == p1
+      Nothing ->
+          not (AF.pointOnFragment p1 c')
+       || not (AF.pointOnFragment p2 c')
+  where
+    c' = Chain.toAnchoredFragment c
 
 prop_join :: TestJoinableAnchoredFragments -> Property
 prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of
@@ -307,23 +316,9 @@ prop_anchorNewest (NonNegative n') (TestBlockAnchoredFragment c) =
 -- Generators for chains
 --
 
--- Strategy for generators: use the corresponding generator from ChainFragment
--- and use its first (oldest, leftmost) block as the anchor point.
---
--- To enable easy shrinking, we remember that first block, so we can convert
--- back to the original 'ChainFragment' that we can then shrink.
---
--- We don't want to bother the actual test cases with this extra field, so we
--- use a pattern synonym to hide it (not for encapsulation, but for
--- convenience).
-
-
 -- | A test generator for a valid anchored chain fragment of blocks/headers.
 --
-data TestBlockAnchoredFragment = TestBlockAnchoredFragment_
-    { getTestAnchorBlock      :: Block
-    , getTestAnchoredFragment :: AnchoredFragment Block
-    }
+newtype TestBlockAnchoredFragment = TestBlockAnchoredFragment (AnchoredFragment Block)
 
 instance Show TestBlockAnchoredFragment where
   show (TestBlockAnchoredFragment c) =
@@ -332,33 +327,28 @@ instance Show TestBlockAnchoredFragment where
     where
       nl = "\n"
 
-pattern TestBlockAnchoredFragment
-  :: AnchoredFragment Block -> TestBlockAnchoredFragment
-pattern TestBlockAnchoredFragment c <- TestBlockAnchoredFragment_ _ c
-{-# COMPLETE TestBlockAnchoredFragment #-}
-
-toTestBlockAnchoredFragment :: ChainFragment Block
-                            -> Maybe TestBlockAnchoredFragment
-toTestBlockAnchoredFragment c = case c of
-    CF.Empty   -> Nothing
-    b CF.:< c' -> Just $
-        TestBlockAnchoredFragment_ b (AF.mkAnchoredFragment (AF.anchorFromBlock b) c')
-
-toChainFragment :: TestBlockAnchoredFragment
-                -> ChainFragment Block
-toChainFragment (TestBlockAnchoredFragment_ a af) =
-    a CF.:< AF.unanchorFragment af
-
-
 instance Arbitrary TestBlockAnchoredFragment where
-    arbitrary = arbitrary `suchThatMap`
-        (toTestBlockAnchoredFragment . getTestBlockChainFragment)
-    shrink taf =
-      [ taf'
-      | c'   <- shrink (TestBlockChainFragment (toChainFragment taf))
-      , taf' <- maybeToList $ toTestBlockAnchoredFragment $
-                getTestBlockChainFragment c'
-      ]
+    arbitrary = do
+        anchor <- genChainAnchor
+        n <- genNonNegative
+        bodies <- vector n
+        slots  <- mkSlots (AF.anchorToSlotNo anchor) <$> vectorOf n genSlotGap
+        let chain = mkAnchoredFragment anchor (zip slots bodies)
+        return $ TestBlockAnchoredFragment chain
+      where
+        mkSlots :: WithOrigin SlotNo -> [Int] -> [SlotNo]
+        mkSlots Origin = mkSlots (At (SlotNo 0))
+        mkSlots (At (SlotNo prevslot)) =
+            map SlotNo . tail
+          . scanl (\slot gap -> slot + fromIntegral gap) prevslot
+
+    shrink (TestBlockAnchoredFragment c) =
+        [ TestBlockAnchoredFragment $
+            fixupAnchoredFragmentFrom
+              (AF.anchor c)
+              fixupBlock
+              c'
+        | c' <- shrinkList (const []) (AF.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockAnchoredFragment :: TestBlockAnchoredFragment -> Property
 prop_arbitrary_TestBlockAnchoredFragment (TestBlockAnchoredFragment c) =
@@ -378,7 +368,27 @@ prop_shrink_TestBlockAnchoredFragment c =
 -- | A test generator for an anchored chain fragment and a block that can be
 -- appended to it.
 --
-data TestAddBlock = TestAddBlock_ TestBlockAnchoredFragment Block
+data TestAddBlock = TestAddBlock (AnchoredFragment Block) Block
+
+instance Arbitrary TestAddBlock where
+  arbitrary = do
+    TestBlockAnchoredFragment chain <- arbitrary
+    block <- genAddBlock chain
+    return (TestAddBlock chain block)
+
+  shrink (TestAddBlock c b) =
+    [ TestAddBlock c' b'
+    | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+    , let b' = fixupBlock (AF.headAnchor c') b
+    ]
+
+genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
+            => AnchoredFragment block -> Gen Block
+genAddBlock chain = do
+    body    <- arbitrary
+    slotGap <- genSlotGap
+    let slot = addSlotGap slotGap (AF.headSlot chain)
+    return $ fixupBlock (AF.headAnchor chain) (mkPartialBlock slot body)
 
 instance Show TestAddBlock where
   show (TestAddBlock c b) =
@@ -387,22 +397,6 @@ instance Show TestAddBlock where
       show b
     where
       nl = "\n"
-
-pattern TestAddBlock
-  :: AnchoredFragment Block -> Block -> TestAddBlock
-pattern TestAddBlock c b <- TestAddBlock_ (TestBlockAnchoredFragment c) b
-
-{-# COMPLETE TestAddBlock #-}
-
-instance Arbitrary TestAddBlock where
-  arbitrary = arbitrary `suchThatMap` \(CF.TestAddBlock chain block) ->
-    (`TestAddBlock_` block) <$> toTestBlockAnchoredFragment chain
-  shrink (TestAddBlock_ taf b) =
-    [ TestAddBlock_ taf' b'
-    | let c = toChainFragment taf
-    , CF.TestAddBlock c' b' <- shrink (CF.TestAddBlock c b)
-    , taf' <- maybeToList $ toTestBlockAnchoredFragment c'
-    ]
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
 prop_arbitrary_TestAddBlock (TestAddBlock c b) =
@@ -424,7 +418,7 @@ prop_shrink_TestAddBlock t =
 -- the anchored fragment nor the anchor point.
 --
 data TestAnchoredFragmentAndPoint =
-    TestAnchoredFragmentAndPoint_ TestBlockAnchoredFragment (Point Block)
+    TestAnchoredFragmentAndPoint (AnchoredFragment Block) (Point Block)
 
 instance Show TestAnchoredFragmentAndPoint where
   show (TestAnchoredFragmentAndPoint c pt) =
@@ -434,18 +428,9 @@ instance Show TestAnchoredFragmentAndPoint where
     where
       nl = "\n"
 
-pattern TestAnchoredFragmentAndPoint :: AnchoredFragment Block
-                                     -> Point Block
-                                     -> TestAnchoredFragmentAndPoint
-pattern TestAnchoredFragmentAndPoint c pt <-
-        TestAnchoredFragmentAndPoint_ (TestBlockAnchoredFragment c) pt
-
-{-# COMPLETE TestAnchoredFragmentAndPoint #-}
-
 instance Arbitrary TestAnchoredFragmentAndPoint where
   arbitrary = do
-    taf <- arbitrary
-    let chain = getTestAnchoredFragment taf
+    TestBlockAnchoredFragment chain <- arbitrary
     point <- frequency
       [ (2, return (AF.anchorPoint chain))
       , (if AF.null chain then 0 else 7,
@@ -453,22 +438,22 @@ instance Arbitrary TestAnchoredFragmentAndPoint where
       -- A few points off the chain!
       , (1, arbitrary)
       ]
-    return (TestAnchoredFragmentAndPoint_ taf point)
+    return (TestAnchoredFragmentAndPoint chain point)
 
-  shrink (TestAnchoredFragmentAndPoint_ taf p)
-    | AF.withinFragmentBounds p (getTestAnchoredFragment taf)
+  shrink (TestAnchoredFragmentAndPoint c pt)
+    | AF.withinFragmentBounds pt c
       -- If the point is within the fragment bounds, shrink the fragment and
       -- return all the points within the bounds
-    = [ TestAnchoredFragmentAndPoint_ taf' p'
-      | taf' <- shrink taf
-      , let chain' = getTestAnchoredFragment taf'
-      , p' <- AF.anchorPoint chain' : map blockPoint (AF.toNewestFirst chain')
+    = [ TestAnchoredFragmentAndPoint c' pt'
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      , pt' <- AF.anchorPoint c' : map blockPoint (AF.toNewestFirst c')
       ]
     | otherwise
       -- If the point is not within the bounds, just shrink the fragment and
       -- return the same point
-    = [ TestAnchoredFragmentAndPoint_ taf' p
-      | taf' <- shrink taf ]
+    = [ TestAnchoredFragmentAndPoint c' pt
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      ]
 
 prop_arbitrary_TestAnchoredFragmentAndPoint :: TestAnchoredFragmentAndPoint -> Property
 prop_arbitrary_TestAnchoredFragmentAndPoint (TestAnchoredFragmentAndPoint c p) =
@@ -492,17 +477,19 @@ prop_shrink_TestAnchoredFragmentAndPoint t@(TestAnchoredFragmentAndPoint c _) =
 --
 
 data TestJoinableAnchoredFragments
-    = TestJoinableAnchoredFragments_ TestChainFragmentAndPoint
-      -- ^ We guarantee that the point is on the fragment and that there is at
-      -- least one block before it.
+    = TestJoinableAnchoredFragments_
+        (AnchoredFragment Block)
+        (Point Block)
+      -- ^ We guarantee that the point is on the fragment. It can correspond to
+      -- the anchor
     | TestUnjoinableAnchoredFragments_
-        TestBlockAnchoredFragment
-        TestBlockAnchoredFragment
+        (AnchoredFragment Block)
+        (AnchoredFragment Block)
       -- ^ The fragments are guaranteed to be unjoinable
 
 joinable :: TestJoinableAnchoredFragments -> Bool
-joinable (TestJoinableAnchoredFragments_   {}) = True
-joinable (TestUnjoinableAnchoredFragments_ {}) = False
+joinable TestJoinableAnchoredFragments_   {} = True
+joinable TestUnjoinableAnchoredFragments_ {} = False
 
 instance Show TestJoinableAnchoredFragments where
   show t@(TestJoinableAnchoredFragments c1 c2) =
@@ -516,19 +503,11 @@ instance Show TestJoinableAnchoredFragments where
 viewJoinableAnchoredFragments
     :: TestJoinableAnchoredFragments
     -> (AnchoredFragment Block, AnchoredFragment Block)
-viewJoinableAnchoredFragments (TestUnjoinableAnchoredFragments_ taf1 taf2) =
-    (getTestAnchoredFragment taf1, getTestAnchoredFragment taf2)
-viewJoinableAnchoredFragments (TestJoinableAnchoredFragments_ t) =
-    case (,) <$> CF.splitAfterPoint cf p <*> CF.splitBeforePoint cf p of
-      Just ((cf1, _), (_, cf2)) -> (anchor cf1, anchor cf2)
-      Nothing                   -> error msg1
-  where
-    TestChainFragmentAndPoint cf p = t
-    msg1 = "TestJoinableAnchoredFragments: not splittable"
-    msg2 = "TestJoinableAnchoredFragments: chain fragment cannot be anchored "
-    anchor :: ChainFragment Block -> AnchoredFragment Block
-    anchor cf' = maybe (error (msg2 <> show cf')) getTestAnchoredFragment $
-      toTestBlockAnchoredFragment cf'
+viewJoinableAnchoredFragments (TestUnjoinableAnchoredFragments_ c1 c2) =
+    (c1, c2)
+viewJoinableAnchoredFragments (TestJoinableAnchoredFragments_ c pt) =
+    fromMaybe (error "TestJoinableAnchoredFragments: not splittable") $
+      AF.splitAfterPoint c pt
 
 pattern TestJoinableAnchoredFragments
   :: AnchoredFragment Block
@@ -541,34 +520,34 @@ pattern TestJoinableAnchoredFragments c1 c2 <-
 
 instance Arbitrary TestJoinableAnchoredFragments where
   arbitrary = frequency
-      [ (1, TestJoinableAnchoredFragments_           <$> genJoinable)
+      [ (1, uncurry TestJoinableAnchoredFragments_   <$> genJoinable)
       , (1, uncurry TestUnjoinableAnchoredFragments_ <$> genUnjoinable)
       ]
     where
-      genJoinable :: Gen TestChainFragmentAndPoint
-      genJoinable = arbitrary `suchThat` validJoinable
+      genJoinable :: Gen (AnchoredFragment Block, Point Block)
+      genJoinable = do
+        TestAnchoredFragmentAndPoint c pt <- arbitrary `suchThat` validJoinable
+        return (c, pt)
 
-      genUnjoinable :: Gen (TestBlockAnchoredFragment, TestBlockAnchoredFragment)
+      genUnjoinable :: Gen (AnchoredFragment Block, AnchoredFragment Block)
       genUnjoinable = do
-        taf1 <- arbitrary
-        taf2 <- arbitrary `suchThat` (validUnjoinable taf1)
-        return (taf1, taf2)
+        taf1@(TestBlockAnchoredFragment c1) <- arbitrary
+        TestBlockAnchoredFragment c2 <- arbitrary `suchThat` validUnjoinable taf1
+        return (c1, c2)
 
-  shrink (TestJoinableAnchoredFragments_ t) =
-    [ TestJoinableAnchoredFragments_ t'
-    | t' <- shrink t
-    , validJoinable t' ]
-  shrink (TestUnjoinableAnchoredFragments_ t1 t2) =
-    [ TestUnjoinableAnchoredFragments_ t1' t2'
-    | t1' <- shrink t1
-    , t2' <- shrink t2
-    , validUnjoinable t1' t2' ]
+  shrink (TestJoinableAnchoredFragments_ c pt) =
+    [ TestJoinableAnchoredFragments_ c' pt'
+    | taf'@(TestAnchoredFragmentAndPoint c' pt') <- shrink (TestAnchoredFragmentAndPoint c pt)
+    , validJoinable taf' ]
+  shrink (TestUnjoinableAnchoredFragments_ c1 c2) =
+    [ TestUnjoinableAnchoredFragments_ c1' c2'
+    | taf1'@(TestBlockAnchoredFragment c1') <- shrink (TestBlockAnchoredFragment c1)
+    , taf2'@(TestBlockAnchoredFragment c2') <- shrink (TestBlockAnchoredFragment c2)
+    , validUnjoinable taf1' taf2' ]
 
-validJoinable :: TestChainFragmentAndPoint -> Bool
-validJoinable (TestChainFragmentAndPoint cf p) =
-    case (,) <$> CF.splitAfterPoint cf p <*> CF.splitBeforePoint cf p of
-      Just ((cf1, _), (_, cf2)) -> CF.length cf1 >= 1 && CF.length cf2 >= 1
-      Nothing                   -> False
+validJoinable :: TestAnchoredFragmentAndPoint -> Bool
+validJoinable (TestAnchoredFragmentAndPoint cf p) =
+    AF.pointOnFragment p cf
 
 validUnjoinable :: TestBlockAnchoredFragment
                 -> TestBlockAnchoredFragment
@@ -581,9 +560,10 @@ validTestJoinableAnchoredFragments t@(TestJoinableAnchoredFragments c1 c2) =
     AF.valid c1 .&&. AF.valid c2 .&&.
     joinable t === (AF.headPoint c1 == AF.anchorPoint c2) .&&.
     case t of
-      TestJoinableAnchoredFragments_   j     -> validJoinable j
-      TestUnjoinableAnchoredFragments_ t1 t2 -> validUnjoinable t1 t2
-
+      TestJoinableAnchoredFragments_ c p ->
+        validJoinable (TestAnchoredFragmentAndPoint c p)
+      TestUnjoinableAnchoredFragments_ c1' c2' ->
+        validUnjoinable (TestBlockAnchoredFragment c1') (TestBlockAnchoredFragment c2')
 
 prop_arbitrary_TestJoinableAnchoredFragments
     :: TestJoinableAnchoredFragments -> Property
@@ -606,10 +586,23 @@ prop_arbitrary_TestJoinableAnchoredFragments t =
 -- Generator for two forks based on TestChainFragmentFork
 --
 
-newtype TestAnchoredFragmentFork = TestAnchoredFragmentFork_ TestChainFragmentFork
-    -- We guarantee that the first two 'ChainFragment's in
-    -- TestChainFragmentFork (and consequently the last two arguments also)
-    -- can be turned into 'AnchoredFragment's.
+-- | A test generator for anchored fragments of two forks of a chain.
+--
+-- We return four fragments: two prefixes and two fragments that include the
+-- respective prefix and an additional suffix. The two prefixes will share
+-- identical blocks, but one prefix may contain fewer blocks than the other,
+-- i.e., by dropping some of its oldest blocks. We then add some random blocks
+-- to each prefix, leading to two forks.
+--
+-- Note that we might happen to add the same exact block(s) to both prefixes,
+-- leading to two identical anchored fragments.
+--
+data TestAnchoredFragmentFork =
+    TestAnchoredFragmentFork
+      (AnchoredFragment Block) -- ^ first  fragment
+      (AnchoredFragment Block) -- ^ second fragment
+      (AnchoredFragment Block) -- ^ first  fork (includes the first fragment)
+      (AnchoredFragment Block) -- ^ second fork (includes the second fragment)
 
 instance Show TestAnchoredFragmentFork where
   show (TestAnchoredFragmentFork p1 p2 c1 c2) =
@@ -621,49 +614,74 @@ instance Show TestAnchoredFragmentFork where
     where
       nl = "\n"
 
-viewAnchoredFragmentForks
-    :: TestAnchoredFragmentFork
-    -> (AnchoredFragment Block, AnchoredFragment Block,
-        AnchoredFragment Block, AnchoredFragment Block)
-viewAnchoredFragmentForks (TestAnchoredFragmentFork_ tcff) =
-    (anchor p1, anchor p2, anchor s1, anchor s2)
-  where
-    msg = "TestAnchoredFragmentFork: chain fragment cannot be anchored "
-    anchor :: ChainFragment Block -> AnchoredFragment Block
-    anchor cf = maybe (error (msg <> show cf)) getTestAnchoredFragment $
-      toTestBlockAnchoredFragment cf
-
-    TestChainFragmentFork p1 p2 s1 s2 = tcff
-
-pattern TestAnchoredFragmentFork
-    :: AnchoredFragment Block
-    -> AnchoredFragment Block
-    -> AnchoredFragment Block
-    -> AnchoredFragment Block
-    -> TestAnchoredFragmentFork
-pattern TestAnchoredFragmentFork p1 p2 c1 c2 <-
-    (viewAnchoredFragmentForks -> (p1, p2, c1, c2))
-
-{-# COMPLETE TestAnchoredFragmentFork #-}
 
 instance Arbitrary TestAnchoredFragmentFork where
   arbitrary = do
-    tcff <- arbitrary `suchThat` \(TestChainFragmentFork p1 p2 _ _) ->
-      not (CF.null p1) && not (CF.null p2)
-    return (TestAnchoredFragmentFork_ tcff)
-  shrink (TestAnchoredFragmentFork_ tcff) =
-    [ TestAnchoredFragmentFork_ tcff'
-    | tcff'@(TestChainFragmentFork p1 p2 _ _) <- shrink tcff
-    , not (CF.null p1) && not (CF.null p2)
-    ] ++
-    -- Also try just shrinking the suffixes
-    [ TestAnchoredFragmentFork_  (TestChainFragmentFork p1 p2 cf1' cf2')
-    | let TestChainFragmentFork p1 p2 cf1 cf2 = tcff
-    , n1 <- [1..CF.length cf1 - CF.length p1]
-    , n2 <- [1..CF.length cf2 - CF.length p2]
-    , let cf1' = CF.dropNewest n1 cf1
-          cf2' = CF.dropNewest n2 cf2
-    ]
+    TestBlockAnchoredFragment c <- arbitrary
+    -- at least 50% should have the same prefix
+    samePrefixes <- oneof [pure True, pure False]
+    (l1, l2) <-
+      if samePrefixes
+      then return (c, c)
+      else do
+        let len = fromIntegral $ AF.length c
+        keepNewest1 <- choose (0, len)
+        keepNewest2 <- choose (0, len)
+        return (AF.anchorNewest keepNewest1 c, AF.anchorNewest keepNewest2 c)
+    -- at least 5% of forks should be equal
+    sameForks <- frequency [(1, pure True), (19, pure False)]
+    (c1, c2) <-
+      if sameForks
+      then return (l1, l2)
+      else do
+        n1 <- genNonNegative
+        n2 <- genNonNegative
+        c1 <- genAddBlocks n1 l1 Nothing
+        let ex1 = L.drop (AF.length l1) (AF.toOldestFirst c1)
+        c2 <- genAddBlocks n2 l2 (listToMaybe ex1)
+        return (c1, c2)
+    return (TestAnchoredFragmentFork l1 l2 c1 c2)
+    where
+      genAddBlocks :: Int
+                   -> AnchoredFragment Block
+                   -> Maybe Block
+                   -> Gen (AnchoredFragment Block)
+      genAddBlocks 0 c _       = return c
+      genAddBlocks n c Nothing = do
+          b <- genAddBlock c
+          genAddBlocks (n-1) (AF.addBlock b c) Nothing
+
+      -- But we want to avoid the extensions starting off equal which would
+      -- mean the longest common prefix was not the declared common prefix.
+      -- So we optionally take the first block to avoid and use that in the
+      -- second fork we generate.
+      genAddBlocks n c (Just forbiddenBlock) = do
+          b <- genAddBlock c `suchThat` (/= forbiddenBlock)
+          genAddBlocks (n-1) (AF.addBlock b c) Nothing
+
+  shrink (TestAnchoredFragmentFork l1 l2 c1 c2) =
+   -- shrink the first prefix
+      [ TestAnchoredFragmentFork l1' l2 c1' c2
+      | toDrop <- [1..AF.length l1]
+      , let l1' = AF.anchorNewest (fromIntegral (AF.length l1 - toDrop)) l1
+            c1' = AF.anchorNewest (fromIntegral (AF.length c1 - toDrop)) c1
+      ]
+   -- shrink the second prefix
+   ++ [ TestAnchoredFragmentFork l1 l2' c1 c2'
+      | toDrop <- [1..AF.length l2]
+      , let l2' = AF.anchorNewest (fromIntegral (AF.length l2 - toDrop)) l2
+            c2' = AF.anchorNewest (fromIntegral (AF.length c2 - toDrop)) c2
+      ]
+   -- shrink the first fork
+   ++ [ TestAnchoredFragmentFork l1 l2 c1' c2
+      | toDrop <- [1..(AF.length c1 - AF.length l1)]
+      , let c1' = AF.dropNewest toDrop c1
+      ]
+   -- shrink the second fork
+   ++ [ TestAnchoredFragmentFork l1 l2 c1 c2'
+      | toDrop <- [1..(AF.length c2 - AF.length l2)]
+      , let c2' = AF.dropNewest toDrop c2
+      ]
 
 --
 -- Test filtering
@@ -701,22 +719,22 @@ prop_filterWithStop_never_stop p (TestBlockAnchoredFragment chain) =
 -- remaining arguments, 'filterWithStop' must be equivalent to 'filter', just
 -- optimised.
 prop_filterWithStop :: (Block -> Bool) -> (Block -> Bool) -> TestBlockAnchoredFragment -> Property
-prop_filterWithStop p stop (TestBlockAnchoredFragment_ anchor chain) =
+prop_filterWithStop p stop (TestBlockAnchoredFragment chain) =
     AF.filterWithStop p stop chain ===
     if AF.null chain
     then []
-    else appendStopped $ AF.filter p (AF.fromOldestFirst (AF.anchorFromBlock anchor) before)
+    else appendStopped $ AF.filter p (AF.fromOldestFirst (AF.anchor chain) before)
   where
     before, stopped :: [Block]
     (before, stopped) = break stop $ AF.toOldestFirst chain
 
-    anchor' :: Block
+    anchor' :: AF.Anchor Block
     anchor' = if null before
-                then anchor
-                else last before
+                then AF.anchor chain
+                else AF.anchorFromBlock (last before)
 
     stoppedFrag :: AnchoredFragment Block
-    stoppedFrag = AF.fromOldestFirst (AF.anchorFromBlock anchor') stopped
+    stoppedFrag = AF.fromOldestFirst anchor' stopped
 
     -- If the last fragment in @c@ can be joined with @stoppedFrag@, do so,
     -- otherwise append @stoppedFrag@ as a separate, final fragment. If it is
@@ -736,7 +754,7 @@ prop_filterWithStop_vs_spec ::
   -> (Block -> Bool)
   -> TestBlockAnchoredFragment
   -> Property
-prop_filterWithStop_vs_spec p stop (TestBlockAnchoredFragment_ _ chain) =
+prop_filterWithStop_vs_spec p stop (TestBlockAnchoredFragment chain) =
     AF.filterWithStop p stop chain === AF.filterWithStopSpec p stop chain
 
 prop_filterWithStop_filter :: TestBlockAnchoredFragment -> Property

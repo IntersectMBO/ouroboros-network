@@ -27,7 +27,6 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -204,7 +203,7 @@ computePath lookupBlockInfo from to =
 
 -- | A path through the VolatileDB from a 'StreamFrom' to a 'StreamTo'.
 --
--- Invariant: the @ChainFragment@ (oldest first) constructed using the blocks
+-- Invariant: the @AnchoredFragment@ (oldest first) constructed using the blocks
 -- corresponding to the points in the path will be valid, i.e., the blocks
 -- will fit onto each other.
 data Path blk =
@@ -375,7 +374,7 @@ computeReversePath lookupBlockInfo endHash =
 -- When the suffix of the 'ChainDiff' is non-empty, @P@ will be the last point
 -- in the suffix.
 isReachable
-  :: forall blk. (HasHeader blk, GetHeader blk, HasCallStack)
+  :: forall blk. (HasHeader blk, GetHeader blk)
   => LookupBlockInfo blk
   -> AnchoredFragment (Header blk) -- ^ Chain fragment to connect the point to
   -> RealPoint blk

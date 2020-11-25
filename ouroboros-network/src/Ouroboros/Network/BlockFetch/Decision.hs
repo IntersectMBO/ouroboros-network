@@ -25,9 +25,9 @@ module Ouroboros.Network.BlockFetch.Decision (
 
 import qualified Data.Set as Set
 
-import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Function (on)
 import           Data.Hashable
+import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
@@ -36,23 +36,18 @@ import           Control.Exception (assert)
 import           Control.Monad (guard)
 import           Control.Monad.Class.MonadTime (DiffTime)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (withOriginToMaybe)
 
-import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchRequest(..)
-                   , PeerFetchInFlight(..)
-                   , PeerFetchStatus(..)
-                   )
+import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
+                     PeerFetchInFlight (..), PeerFetchStatus (..))
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), SizeInBytes
-                   , PeerFetchInFlightLimits(..)
-                   , calculatePeerFetchInFlightLimits
-                   , comparePeerGSV
-                   , estimateResponseDeadlineProbability
-                   , estimateExpectedResponseDuration )
+                     (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
+                     calculatePeerFetchInFlightLimits, comparePeerGSV,
+                     estimateExpectedResponseDuration,
+                     estimateResponseDeadlineProbability)
 
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
@@ -140,13 +135,13 @@ Just x  ?! _ = Right x
 Nothing ?! e = Left  e
 
 -- | The combination of a 'ChainSuffix' and a list of discontiguous
--- 'ChainFragment's:
+-- 'AnchoredFragment's:
 --
 -- * When comparing two 'CandidateFragments' as candidate chains, we use the
 --   'ChainSuffix'.
 --
 -- * To track which blocks of that candidate still have to be downloaded, we
---   use a list of discontiguous 'ChainFragment's.
+--   use a list of discontiguous 'AnchoredFragment's.
 --
 type CandidateFragments header = (ChainSuffix header, [AnchoredFragment header])
 
@@ -572,7 +567,7 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
       [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
--- as 'ChainFragment.filter' if the following precondition is satisfied:
+-- as 'AnchoredFragment.filter' if the following precondition is satisfied:
 --
 -- PRECONDITION: for all @hdr@ in the chain fragment: if @blockSlot hdr >
 -- maxSlotNo@ then the predicate should not hold for any header after @hdr@ in

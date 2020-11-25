@@ -34,7 +34,7 @@ module Ouroboros.Network.MockChain.Chain (
   headHash,
   headTip,
   headBlockNo,
-  legacyHeadBlockNo,
+  headAnchor,
 
   -- ** Basic operations
   head,
@@ -65,11 +65,6 @@ module Ouroboros.Network.MockChain.Chain (
   intersectChains,
   isPrefixOf,
 
-  -- * Conversion to/from ChainFragment
-  toChainFragment,
-  fromChainFragment,
-  unvalidatedToChainFragment,
-
   -- * Conversion to/from AnchoredFragment
   fromAnchoredFragment,
   toAnchoredFragment,
@@ -84,13 +79,12 @@ import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
-import qualified Data.FingerTree.Strict as FT
 import qualified Data.List as L
 import           GHC.Stack
 
+import           Ouroboros.Network.AnchoredFragment (Anchor (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 --
@@ -133,9 +127,7 @@ validExtension c b = blockInvariant b
                   -- has the same block number as its parent. It can increase
                   -- by at most one.
                   && case headBlockNo c of
-                       -- TODO The rhs of (||) is only needed because
-                       -- 'legacyHeadBlockNo' is still being used.
-                       Origin    -> blockNo b == 0 || blockNo b == 1
+                       Origin    -> blockNo b == 0
                        At prevNo -> blockNo b == succ prevNo || blockNo b == prevNo
 
 head :: Chain b -> Maybe b
@@ -156,19 +148,13 @@ headTip :: HasHeader block => Chain block -> Tip block
 headTip Genesis  = TipGenesis
 headTip (_ :> b) = Tip (blockSlot b) (blockHash b) (blockNo b)
 
+headAnchor :: HasHeader block => Chain block -> Anchor block
+headAnchor Genesis  = AnchorGenesis
+headAnchor (_ :> b) = AF.anchorFromBlock b
+
 headBlockNo :: HasHeader block => Chain block -> WithOrigin BlockNo
 headBlockNo Genesis  = Origin
 headBlockNo (_ :> b) = At (blockNo b)
-
--- | TODO: This is /wrong/. There /is/ no block number if we are at genesis
--- ('genesisBlockNo' is the block number of the first block on the chain).
--- Usage of this function should be phased out.
-legacyHeadBlockNo :: HasHeader block => Chain block -> BlockNo
-legacyHeadBlockNo = \case
-    Genesis  -> genesisBlockNo
-    (_ :> b) -> blockNo b
-  where
-    genesisBlockNo = BlockNo 0
 
 -- | Produce the list of blocks, from most recent back to genesis
 --
@@ -226,8 +212,8 @@ pointIsAfter pt1 pt2 c =
     case pointSlot pt1 `compare` pointSlot pt2 of
       LT -> False
       GT -> True
-      EQ | Just (_, afterPt2) <- CF.splitAfterPoint (toChainFragment c) pt2
-         -> CF.pointOnChainFragment pt1 afterPt2
+      EQ | Just (_, afterPt2) <- AF.splitAfterPoint (toAnchoredFragment c) pt2
+         -> AF.pointOnFragment pt1 afterPt2
          | otherwise
          -> False
 
@@ -347,28 +333,13 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
--- * Conversions to/from 'ChainFragment'
-
--- | Convert a 'ChainFragment' to a 'Chain'.
-fromChainFragment :: HasHeader block => CF.ChainFragment block -> Chain block
-fromChainFragment = fromNewestFirst . CF.toNewestFirst
-
--- | Convert a 'Chain' to a 'ChainFragment'.
-toChainFragment :: HasHeader block => Chain block -> CF.ChainFragment block
-toChainFragment = CF.fromNewestFirst . toNewestFirst
-
--- | Variant of 'toChainFragment' that assumes a valid chain and will not validate
--- the constructed 'ChainFragment'.
-unvalidatedToChainFragment :: HasHeader block => Chain block -> CF.ChainFragment block
-unvalidatedToChainFragment = unvalidatedFromNewestFirst . toNewestFirst
-  where
-    unvalidatedFromNewestFirst = CF.ChainFragment . foldr (flip (FT.|>)) FT.empty
+-- * Conversions to/from 'AnchoredFragment'
 
 -- | Convert a 'Chain' to an 'AnchoredFragment'.
 --
 -- The anchor of the fragment will be 'Chain.genesisPoint'.
 toAnchoredFragment :: HasHeader block => Chain block -> AF.AnchoredFragment block
-toAnchoredFragment = AF.mkAnchoredFragment AF.AnchorGenesis . unvalidatedToChainFragment
+toAnchoredFragment = AF.fromOldestFirst AF.AnchorGenesis . toOldestFirst
 
 -- | Convert an 'AnchoredFragment' to a 'Chain'.
 --

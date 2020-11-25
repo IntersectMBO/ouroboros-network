@@ -40,7 +40,6 @@ import qualified Codec.Serialise as CBOR
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (LocalConnectionId)
@@ -255,7 +254,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     blockHeap  <- mkTestFetchedBlockHeap []
 
     candidateChainsVar <- newTVarIO Map.empty
-    currentChainVar    <- newTVarIO genesisChainFragment
+    currentChainVar    <- newTVarIO genesisAnchoredFragment
 
     let app :: OuroborosApplication InitiatorMode LocalAddress LBS.ByteString IO () Void
         app = demoProtocol3 chainSync blockFetch
@@ -276,7 +275,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               (chainSyncClient' syncTracer currentChainVar chainVar))
           where
             register     = atomically $ do
-                             chainvar <- newTVar genesisChainFragment
+                             chainvar <- newTVar genesisAnchoredFragment
                              modifyTVar' candidateChainsVar
                                          (Map.insert connectionId chainvar)
                              return chainvar
@@ -345,11 +344,9 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                   [ candidateChainFetched
                   | candidateChain <- Map.elems candidates
                   , let candidateChainFetched =
-                          AF.mkAnchoredFragment
-                            (AF.anchor candidateChain) $
-                          CF.takeWhileOldest
+                          AF.takeWhileOldest
                             (\b -> blockPoint b `Set.member` fetched)
-                            (AF.unanchorFragment candidateChain)
+                            candidateChain
                   ]
             writeTVar currentChainVar currentChain'
             return (fingerprint', currentChain')
@@ -467,8 +464,8 @@ chainSyncClient :: ChainSync.ChainSyncClient
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient =
     ChainSync.ChainSyncClient $ do
-      curvar   <- newTVarIO genesisChainFragment
-      chainvar <- newTVarIO genesisChainFragment
+      curvar   <- newTVarIO genesisAnchoredFragment
+      chainvar <- newTVarIO genesisAnchoredFragment
       let ChainSync.ChainSyncClient k =
             chainSyncClient' nullTracer curvar chainvar
       k
@@ -682,7 +679,7 @@ bodyDataCycle :: Int
 bodyDataCycle = length doloremIpsum
 
 doloremIpsum :: String
-doloremIpsum = concat 
+doloremIpsum = concat
   [ "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam hendrerit"
   , "nisi sed sollicitudin pellentesque. Nunc posuere purus rhoncus pulvinar"
   , "aliquam. Ut aliquet tristique nisl vitae volutpat. Nulla aliquet porttitor"
@@ -726,8 +723,8 @@ mkTestFetchedBlockHeap points = do
 -- Utils
 --
 
-genesisChainFragment :: AF.AnchoredFragment BlockHeader
-genesisChainFragment = AF.Empty AF.AnchorGenesis
+genesisAnchoredFragment :: AF.AnchoredFragment BlockHeader
+genesisAnchoredFragment = AF.Empty AF.AnchorGenesis
 
 shiftAnchoredFragment :: HasHeader block
                       => Int
@@ -735,7 +732,4 @@ shiftAnchoredFragment :: HasHeader block
                       -> AF.AnchoredFragment block
                       -> AF.AnchoredFragment block
 shiftAnchoredFragment n b af =
-  case AF.unanchorFragment af of
-    cf@(b0 CF.:< cf') | CF.length cf >= n
-      -> AF.mkAnchoredFragment (AF.anchorFromBlock b0) (CF.addBlock b cf')
-    _ -> AF.addBlock b af
+  AF.anchorNewest (fromIntegral (AF.length af - n)) af AF.:> b

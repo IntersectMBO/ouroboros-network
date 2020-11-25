@@ -36,11 +36,13 @@ module Test.ChainGenerators
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, listToMaybe)
 
+import           Ouroboros.Network.AnchoredFragment (Anchor (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..), block,
-                     blockPointHash, blockPointSlot, origin)
+                     blockPointHash, blockPointSlot, fromWithOrigin, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -153,9 +155,9 @@ instance Arbitrary Block where
     arbitrary = do
       body    <- arbitrary
       slotGap <- genSlotGap
-      (prevhash, prevblockno, prevslot) <- genChainAnchor
-      let slot    = addSlotGap slotGap prevslot
-          b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
+      anchor  <- genChainAnchor
+      let slot = addSlotGap slotGap (AF.anchorToSlotNo anchor)
+          b    = fixupBlock anchor (mkPartialBlock slot body)
       return b
 
 genSlotGap :: Gen Int
@@ -168,23 +170,22 @@ genSlotGap = frequency
     , (1,  pure 3)
     ]
 
-addSlotGap :: Int -> SlotNo -> SlotNo
-addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
+-- | Special case: adding a 0-sized gap to 'Origin' results in @'SlotNo' 0@, not
+-- 'Origin'. We do this because we use the result of this function to create a
+-- block, and blocks must have a slot number.
+addSlotGap :: Int -> WithOrigin SlotNo -> SlotNo
+addSlotGap 0 Origin          = SlotNo 0
+addSlotGap g Origin          = SlotNo (fromIntegral g - 1)
+addSlotGap g (At (SlotNo n)) = SlotNo (n + fromIntegral g)
 
--- | A starting point for a chain fragment: either the 'genesisAnchor' or
--- an arbitrary point.
+-- | A starting anchor for a chain fragment: either the 'AnchorGenesis' or
+-- an arbitrary anchor
 --
-genChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
-genChainAnchor = oneof [ pure genesisAnchor, genArbitraryChainAnchor ]
+genChainAnchor :: Gen (Anchor Block)
+genChainAnchor = oneof [ pure AnchorGenesis, genArbitraryChainAnchor ]
 
-genArbitraryChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
-genArbitraryChainAnchor =
-    (,,) <$> (BlockHash <$> arbitrary)
-         <*> arbitrary
-         <*> arbitrary
-
-genesisAnchor :: (ChainHash b, BlockNo, SlotNo)
-genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
+genArbitraryChainAnchor :: Gen (Anchor Block)
+genArbitraryChainAnchor = Anchor <$> arbitrary <*> arbitrary <*> arbitrary
 
 instance Arbitrary BlockHeader where
     arbitrary = blockHeader <$> arbitrary
@@ -286,8 +287,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = fixupBlock (Chain.headHash c')
-                          (Chain.legacyHeadBlockNo c') b
+    , let b' = fixupBlock (Chain.headAnchor c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -295,12 +295,9 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
 genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
-    let nextSlotNo = case Chain.headSlot chain of
-          Origin    -> SlotNo (fromIntegral {- Int -> Word64 -} slotGap)
-          At slotNo -> addSlotGap slotGap slotNo
+    let nextSlotNo = addSlotGap slotGap (Chain.headSlot chain)
         pb = mkPartialBlock nextSlotNo body
-        b  = fixupBlock (Chain.headHash chain)
-                        (Chain.legacyHeadBlockNo chain) pb
+        b  = fixupBlock (Chain.headAnchor chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
@@ -407,8 +404,8 @@ countChainUpdateNetProgress = go 0
     go n c  (u:us) = go n' c' us
       where
         Just c' = Chain.applyChainUpdate u c
-        n'      = n + fromEnum (Chain.legacyHeadBlockNo c')
-                    - fromEnum (Chain.legacyHeadBlockNo c)
+        n'      = n + fromEnum (fromWithOrigin 0 (Chain.headBlockNo c'))
+                    - fromEnum (fromWithOrigin 0 (Chain.headBlockNo c))
 
 
 --

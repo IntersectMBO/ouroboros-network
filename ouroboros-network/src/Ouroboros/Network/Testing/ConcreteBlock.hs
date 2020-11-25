@@ -29,8 +29,6 @@ module Ouroboros.Network.Testing.ConcreteBlock (
     -- * Creating sample chains
   , mkChain
   , mkChainSimple
-  , mkChainFragment
-  , mkChainFragmentSimple
   , mkAnchoredFragment
   , mkAnchoredFragmentSimple
 
@@ -41,16 +39,12 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupBlockHeader
   , fixupBlockAfterBlock
   , fixupChain
-  , fixupChainFragmentFrom
-  , fixupChainFragmentFromGenesis
-  , fixupChainFragmentFromSame
   , fixupAnchoredFragmentFrom
   ) where
 
 import           Data.FingerTree.Strict (Measured (measure))
 import           Data.Function (fix)
 import           Data.Hashable
-import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text as Text
 import           NoThunks.Class (NoThunks)
@@ -62,13 +56,13 @@ import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeString,
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Network.AnchoredFragment (Anchor (..),
+                     AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment)
-import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as C
+import           Ouroboros.Network.Point (withOrigin)
 import           Ouroboros.Network.Util.ShowProxy
 
 {-------------------------------------------------------------------------------
@@ -166,7 +160,6 @@ instance HasFullHeader BlockHeader where
     --
     blockInvariant b =
         hashHeader b == headerHash b
-     && blockNo    b >  BlockNo 0  -- we reserve 0 for genesis
 
 instance HasHeader Block where
   getHeaderFields = castHeaderFields . getHeaderFields . blockHeader
@@ -196,31 +189,17 @@ mkChain =
 mkChainSimple :: [BlockBody] -> Chain Block
 mkChainSimple = mkChain . zip [1..]
 
-mkChainFragment :: ChainHash Block
-                -> BlockNo
-                -> [(SlotNo, BlockBody)]
-                -> ChainFragment Block
-mkChainFragment anchorhash anchorblockno =
-    fixupChainFragmentFrom anchorhash anchorblockno fixupBlock
-  . map (uncurry mkPartialBlock)
-  . reverse
-
-mkChainFragmentSimple :: [BlockBody] -> ChainFragment Block
-mkChainFragmentSimple =
-    mkChainFragment GenesisHash (BlockNo 0) . zip [1..]
-
-mkAnchoredFragment :: Point Block
-                   -> BlockNo
+mkAnchoredFragment :: Anchor Block
                    -> [(SlotNo, BlockBody)]
                    -> AnchoredFragment Block
-mkAnchoredFragment anchorpoint anchorblockno =
-    fixupAnchoredFragmentFrom anchorpoint anchorblockno fixupBlock
+mkAnchoredFragment anchor =
+    fixupAnchoredFragmentFrom anchor fixupBlock
   . map (uncurry mkPartialBlock)
   . reverse
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
 mkAnchoredFragmentSimple =
-    mkAnchoredFragment genesisPoint (BlockNo 0) . zip [1..]
+    mkAnchoredFragment AnchorGenesis . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block
@@ -247,14 +226,15 @@ mkPartialBlockHeader sl body =
   don't make much sense for real chains.
 -------------------------------------------------------------------------------}
 
--- | Fixup block so to fit it on top of a chain.  Only block number, previous
--- hash and block hash are updated; slot number and signers are kept intact.
+-- | Fix up a block so that it fits on top of the given anchor. Only the block
+-- number, the previous hash and the block hash are updated; the slot number and
+-- the signers are kept intact.
 --
 fixupBlock :: (HeaderHash block ~ HeaderHash BlockHeader)
-           => ChainHash block -> BlockNo -> Block -> Block
-fixupBlock prevhash prevblockno b@Block{blockBody, blockHeader} =
+           => Anchor block -> Block -> Block
+fixupBlock prev b@Block{blockBody, blockHeader} =
     b {
-      blockHeader = (fixupBlockHeader prevhash prevblockno blockHeader) {
+      blockHeader = (fixupBlockHeader prev blockHeader) {
                       headerBodyHash = hashBody blockBody
                     }
     }
@@ -263,13 +243,13 @@ fixupBlock prevhash prevblockno b@Block{blockBody, blockHeader} =
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
 fixupBlockHeader :: (HeaderHash block ~ HeaderHash BlockHeader)
-                 => ChainHash block -> BlockNo -> BlockHeader -> BlockHeader
-fixupBlockHeader prevhash prevblockno b =
+                 => Anchor block -> BlockHeader -> BlockHeader
+fixupBlockHeader prev b =
     fix $ \b' ->
     b {
       headerHash     = hashHeader b',
-      headerPrevHash = castHash prevhash,
-      headerBlockNo  = succ prevblockno
+      headerPrevHash = castHash (AF.anchorToHash prev),
+      headerBlockNo  = withOrigin (BlockNo 0) succ (AF.anchorToBlockNo prev)
     }
 
 
@@ -278,88 +258,48 @@ fixupBlockHeader prevhash prevblockno b =
 -- Like 'fixupBlock' but it takes the info from a given block.
 --
 fixupBlockAfterBlock :: Block -> Block -> Block
-fixupBlockAfterBlock prev =
-    fixupBlock prevhash prevblockno
-  where
-    prevhash :: ChainHash Block
-    prevhash     = BlockHash (blockHash prev)
-    prevblockno  = blockNo prev
+fixupBlockAfterBlock prev = fixupBlock (AF.anchorFromBlock prev)
 
 fixupBlocks :: HasFullHeader b
             => (c -> b -> c)
             -> c
-            -> (Maybe (ChainHash b))  -- ^ optionally set anchor hash
-            -> (Maybe BlockNo)        -- ^ optionally set anchor block number
-            -> (ChainHash b -> BlockNo -> b -> b)
+            -> Anchor b -- ^ Override prev hash and block number based on the anchor
+            -> (Anchor b -> b -> b)
             -> [b] -> c
-fixupBlocks _f z _ _ _fixup []      = z
-fixupBlocks  f z anchorHash anchorBlockNo fixup (b0:c0) =
+fixupBlocks _f z _     _fixup []      = z
+fixupBlocks  f z anchor fixup (b0:c0) =
     fst (go b0 c0)
   where
     go b [] = (z `f` b', b')
       where
-        b' = fixup (fromMaybe (blockPrevHash b)  anchorHash)
-                   (fromMaybe (pred (blockNo b)) anchorBlockNo)
-                   b
+        b' = fixup anchor b
 
     go b (b1:c1) = (c' `f` b', b')
       where
         (c', b1') = go b1 c1
-        b'        = fixup (BlockHash (blockHash b1')) (blockNo b1') b
+        b'        = fixup (AF.anchorFromBlock b1') b
 
 -- | Fix up the block number and hashes of a 'Chain'. This also fixes up the
 -- first block to chain-on from genesis, since by construction the 'Chain' type
 -- starts from genesis.
 --
 fixupChain :: HasFullHeader b
-           => (ChainHash b -> BlockNo -> b -> b)
+           => (Anchor b -> b -> b)
            -> [b] -> Chain b
 fixupChain =
     fixupBlocks
       (C.:>) C.Genesis
-      (Just GenesisHash)
-      (Just (BlockNo 0))
-
-
-fixupChainFragmentFrom :: HasFullHeader b
-                       => ChainHash b
-                       -> BlockNo
-                       -> (ChainHash b -> BlockNo -> b -> b)
-                       -> [b] -> ChainFragment b
-fixupChainFragmentFrom anchorhash anchorblockno =
-    fixupBlocks
-      (CF.:>) CF.Empty
-      (Just anchorhash)
-      (Just anchorblockno)
-
-fixupChainFragmentFromGenesis :: HasFullHeader b
-                              => (ChainHash b -> BlockNo -> b -> b)
-                              -> [b] -> ChainFragment b
-fixupChainFragmentFromGenesis =
-    fixupBlocks
-      (CF.:>) CF.Empty
-      (Just GenesisHash)
-      (Just (BlockNo 0))
-
-fixupChainFragmentFromSame :: HasFullHeader b
-                           => (ChainHash b -> BlockNo -> b -> b)
-                           -> [b] -> ChainFragment b
-fixupChainFragmentFromSame =
-    fixupBlocks
-      (CF.:>) CF.Empty
-      Nothing
-      Nothing
+      AnchorGenesis
 
 fixupAnchoredFragmentFrom :: HasFullHeader b
-                          => Point b
-                          -> BlockNo
-                          -> (ChainHash b -> BlockNo -> b -> b)
+                          => Anchor b
+                          -> (Anchor b -> b -> b)
                           -> [b] -> AnchoredFragment b
-fixupAnchoredFragmentFrom anchorpoint anchorblockno =
+fixupAnchoredFragmentFrom anchor =
     fixupBlocks
-      (AF.:>) (AF.Empty (AF.anchorFromPoint anchorpoint anchorblockno))
-      (Just (pointHash anchorpoint))
-      (Just anchorblockno)
+      (AF.:>)
+      (AF.Empty anchor)
+      anchor
 
 {-------------------------------------------------------------------------------
   Serialisation

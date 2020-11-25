@@ -37,23 +37,21 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
                      anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment (..))
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.Mux (ControlMessageSTM)
 
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
 import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Util.ShowProxy
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.Client
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -90,7 +88,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     clientDelay serverDelay
                     registry peerno
                     (blockFetchClient NodeToNodeV_1 controlMessageSTM)
-                    (mockBlockFetchServer1 (unanchorFragment candidateChain))
+                    (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
       threadId <- myThreadId
@@ -193,7 +191,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         clientDelay serverDelay
                         registry peerno
                         (blockFetchClient NodeToNodeV_1 controlMessageSTM)
-                        (mockBlockFetchServer1 (unanchorFragment candidateChain))
+                        (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
     fetchAsync  <- async $ do
@@ -330,7 +328,7 @@ runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block point m a
-                -> m a 
+                -> m a
 runFetchServer tracer channel server =
     fst <$>
       runPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
@@ -404,12 +402,12 @@ runFetchClientAndServerAsync clientTracer serverTracer
 
 -- | A demo server for the block fetch protocol.
 --
--- It serves up ranges on a single given 'ChainFragment'. It does not simulate
--- any delays, so is not suitable for timing-accurate simulations.
+-- It serves up ranges on a single given 'AnchoredFragment'. It does not
+-- simulate any delays, so is not suitable for timing-accurate simulations.
 --
 mockBlockFetchServer1 :: forall block m.
                         (MonadSTM m, HasHeader block)
-                      => ChainFragment block
+                      => AnchoredFragment block
                       -> BlockFetchServer block (Point block) m ()
 mockBlockFetchServer1 chain =
     senderSide
@@ -422,10 +420,10 @@ mockBlockFetchServer1 chain =
     receiveReq (ChainRange lpoint upoint) =
       -- We can only assert this for tests, not for the real thing.
       assert (pointSlot lpoint <= pointSlot upoint) $
-      case ChainFragment.sliceRange chain lpoint upoint of
+      case AnchoredFragment.sliceRange chain lpoint upoint of
         Nothing     -> return $ SendMsgNoBlocks (return senderSide)
         Just chain' -> return $ SendMsgStartBatch (sendBlocks blocks)
-          where blocks = ChainFragment.toOldestFirst chain'
+          where blocks = AnchoredFragment.toOldestFirst chain'
 
 
     sendBlocks :: [block] -> m (BlockFetchSendBlocks block (Point block) m ())
