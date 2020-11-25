@@ -117,6 +117,7 @@ library
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
+                       Ouroboros.Consensus.Mempool.ImplPure
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -299,7 +300,7 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-sim-classes    >=0.2   && <0.3 
+                     , io-sim-classes    >=0.2   && <0.3
                      , typed-protocols
                      , network-mux
                      , ouroboros-network-framework
