@@ -91,21 +91,21 @@ import           Ouroboros.Network.IOManager
 -- created by 'open' and only subsequent calls will create a new file
 -- descriptor by `createNamedPipe`, see 'namedPipeSnocket'.
 --
-newtype Accept m addr fd = Accept
-  { runAccept :: m (fd, addr, Accept m addr fd)
+newtype Accept m fd addr = Accept
+  { runAccept :: m (fd, addr, Accept m fd addr)
   }
 
 instance Functor m => Bifunctor (Accept m) where
     bimap f g ac = Accept $ h <$> runAccept ac
       where
-        h (fd, addr, next) = (g fd, f addr, bimap f g next)
+        h (fd, addr, next) = (f fd, g addr, bimap f g next)
 
 
 -- | BSD accept loop.
 --
 berkeleyAccept :: IOManager
                -> Socket
-               -> Accept IO SockAddr Socket
+               -> Accept IO Socket SockAddr
 berkeleyAccept ioManager sock = go
     where
       go = Accept $ do
@@ -181,7 +181,7 @@ data Snocket m fd addr = Snocket {
   , bind          :: fd -> addr -> m ()
   , listen        :: fd -> m ()
 
-  , accept        :: fd -> Accept m addr fd
+  , accept        :: fd -> Accept m fd addr
 
   , close         :: fd -> m ()
 
@@ -347,7 +347,7 @@ localSnocket ioManager path = Snocket {
     localAddress :: LocalAddress
     localAddress = LocalAddress path
 
-    acceptNext :: Accept IO LocalAddress LocalSocket
+    acceptNext :: Accept IO LocalSocket LocalAddress
     acceptNext = Accept $ do
       hpipe <- Win32.createNamedPipe
                  path
@@ -374,7 +374,7 @@ localSnocket ioManager _ =
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
       , listen        = flip Socket.listen 1 . getLocalHandle
-      , accept        = bimap toLocalAddress LocalSocket
+      , accept        = bimap LocalSocket toLocalAddress
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
