@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -31,6 +33,8 @@ import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Hashable
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 #if !defined(mingw32_HOST_OS)
 import           Network.Socket ( Family (AF_UNIX) )
 #endif
@@ -129,7 +133,8 @@ berkeleyAccept ioManager sock = go
 -- Windows with `named-pipes`.
 --
 newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord, Generic)
+  deriving Show via Quiet LocalAddress
 
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
@@ -281,7 +286,8 @@ type LocalHandle = Socket
 
 -- | System dependent LocalSnocket type
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
-    deriving (Eq, Show)
+    deriving (Eq, Generic)
+    deriving Show via Quiet LocalSocket
 
 -- | System dependent LocalSnocket
 type    LocalSnocket = Snocket IO LocalSocket LocalAddress
@@ -412,7 +418,8 @@ localAddressFromPath = LocalAddress
 -- | Socket file descriptor.
 --
 newtype FileDescriptor = FileDescriptor { getFileDescriptor :: Int }
-  deriving (Eq, Show)
+  deriving (Eq, Generic)
+  deriving Show via Quiet FileDescriptor
 
 socketFileDescriptor :: Socket -> IO FileDescriptor
 socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.socketToFd
