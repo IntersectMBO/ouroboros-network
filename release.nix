@@ -75,17 +75,17 @@ let
   in
     [ ["shell"] ]
     ++ (optionals (!withProblematicWindowsTests) (
-         (checksPaths ["ouroboros-network" "test-network"])
-      ++ (checksPaths ["Win32-network" "test-Win32-network"])
-      ++ (checksPaths ["network-mux" "test-network-mux"])
-      ++ (checksPaths ["ouroboros-network-framework" "ouroboros-network-framework-tests"])
+         (checksPaths ["ouroboros-network" "test"])
+      ++ (checksPaths ["Win32-network" "test"])
+      ++ (checksPaths ["network-mux" "test"])
+      ++ (checksPaths ["ouroboros-network-framework" "test"])
       ++ [[ "haskellPackages" "ouroboros-network" "coverageReport" ]
           [ "haskellPackages" "Win32-network" "coverageReport" ]
           [ "haskellPackages" "network-mux" "coverageReport" ]
           [ "haskellPackages" "ouroboros-network-framework" "coverageReport" ]]
     ))
-    ++ (testsPaths ["ouroboros-network" "test-cddl"])
-    ++ (checksPaths ["ouroboros-network" "test-cddl"])
+    ++ (testsPaths ["ouroboros-network" "cddl"])
+    ++ (checksPaths ["ouroboros-network" "cddl"])
     ++ (exesPaths ["network-mux" "cardano-ping"])
     ++ onlyBuildOnDefaultSystem;
 
