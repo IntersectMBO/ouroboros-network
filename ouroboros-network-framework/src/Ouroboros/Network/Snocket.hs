@@ -91,11 +91,11 @@ import           Ouroboros.Network.IOManager
 -- created by 'open' and only subsequent calls will create a new file
 -- descriptor by `createNamedPipe`, see 'namedPipeSnocket'.
 --
-newtype Accept addr fd = Accept
-  { runAccept :: IO (fd, addr, Accept addr fd)
+newtype Accept m addr fd = Accept
+  { runAccept :: m (fd, addr, Accept m addr fd)
   }
 
-instance Bifunctor Accept where
+instance Functor m => Bifunctor (Accept m) where
     bimap f g ac = Accept $ h <$> runAccept ac
       where
         h (fd, addr, next) = (g fd, f addr, bimap f g next)
@@ -105,7 +105,7 @@ instance Bifunctor Accept where
 --
 berkeleyAccept :: IOManager
                -> Socket
-               -> Accept SockAddr Socket
+               -> Accept IO SockAddr Socket
 berkeleyAccept ioManager sock = go
     where
       go = Accept $ do
@@ -181,7 +181,7 @@ data Snocket m fd addr = Snocket {
   , bind          :: fd -> addr -> m ()
   , listen        :: fd -> m ()
 
-  , accept        :: fd -> Accept addr fd
+  , accept        :: fd -> Accept m addr fd
 
   , close         :: fd -> m ()
 
@@ -347,7 +347,7 @@ localSnocket ioManager path = Snocket {
     localAddress :: LocalAddress
     localAddress = LocalAddress path
 
-    acceptNext :: Accept LocalAddress LocalSocket
+    acceptNext :: Accept IO LocalAddress LocalSocket
     acceptNext = Accept $ do
       hpipe <- Win32.createNamedPipe
                  path
