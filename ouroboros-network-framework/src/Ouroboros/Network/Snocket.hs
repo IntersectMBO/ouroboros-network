@@ -270,7 +270,7 @@ socketSnocket ioManager = Snocket {
 
 
 --
--- NamedPipes based Snocket
+-- LocalSnockets either based on unix sockets or named pipes.
 --
 
 #if defined(mingw32_HOST_OS)
@@ -286,16 +286,9 @@ newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
 -- | System dependent LocalSnocket
 type    LocalSnocket = Snocket IO LocalSocket LocalAddress
 
-
-
+localSnocket :: IOManager -> FilePath -> LocalSnocket
 #if defined(mingw32_HOST_OS)
--- | Create a Windows Named Pipe Snocket.
---
-namedPipeSnocket
-  :: IOManager
-  -> FilePath
-  -> LocalSnocket
-namedPipeSnocket ioManager path = Snocket {
+localSnocket ioManager path = Snocket {
       getLocalAddr  = \_ -> return localAddress
     , getRemoteAddr = \_ -> return localAddress
     , addrFamily  = \_ -> LocalFamily
@@ -368,13 +361,10 @@ namedPipeSnocket ioManager path = Snocket {
       associateWithIOManager ioManager (Left hpipe)
       Win32.Async.connectNamedPipe hpipe
       return (LocalSocket hpipe, localAddress, acceptNext)
-#endif
 
-
-localSnocket :: IOManager -> FilePath -> LocalSnocket
-#if defined(mingw32_HOST_OS)
-localSnocket = namedPipeSnocket
+-- local snocket on unix
 #else
+
 localSnocket ioManager _ =
     Snocket {
         getLocalAddr  = fmap toLocalAddress . Socket.getSocketName . getLocalHandle
