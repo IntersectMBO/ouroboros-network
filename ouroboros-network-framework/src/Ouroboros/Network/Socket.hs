@@ -420,7 +420,7 @@ fromSnocket
     -> Server.Socket addr fd
 fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
-    go :: Snocket.Accept addr fd -> Server.Socket addr fd
+    go :: Snocket.Accept IO fd addr -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
       (sd', remoteAddr, next) <- accept
       -- TOOD: we don't need to that on each accept

@@ -70,6 +70,7 @@ library
                      , stm
                      , text
                      , time
+                     , quiet
 
                      , cardano-prelude
                      , contra-tracer
