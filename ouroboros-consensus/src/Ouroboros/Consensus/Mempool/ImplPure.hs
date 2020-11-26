@@ -9,12 +9,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Mempool.ImplPure (
-    MempoolEnv(..)
+    MempoolArgs(..)
   , InternalState(..)
   , initInternalState
   , MempoolCapacityBytesOverride(..)
-  , LedgerInterface(..)
-  , chainDBLedgerInterface
   , tickLedgerState
   , ValidationResult(..)
   , revalidateTxsFor
@@ -31,29 +29,21 @@ module Ouroboros.Consensus.Mempool.ImplPure (
   , implSnapshotFromIS
   , pureSyncWithLedger
   , pureRemoveTxs
-  , pureTryAddTxsAtomically
   , isMempoolSize
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
-import           Data.List (foldl')
-import           Data.Maybe (isNothing, listToMaybe)
+import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
-import           Control.Tracer
-
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
@@ -75,17 +65,6 @@ data MempoolCapacityBytesOverride
   | MempoolCapacityBytesOverride !MempoolCapacityBytes
     -- ^ Use the following 'MempoolCapacityBytes'.
   deriving (Eq, Show)
-
--- | Abstract interface needed to run a Mempool.
-data LedgerInterface m blk = LedgerInterface
-  { getCurrentLedgerState :: STM m (LedgerState blk)
-  }
-
--- | Create a 'LedgerInterface' from a 'ChainDB'.
-chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
-chainDBLedgerInterface chainDB = LedgerInterface
-    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
-    }
 
 {-------------------------------------------------------------------------------
   Internal state
@@ -164,13 +143,10 @@ deriving instance ( NoThunks (GenTx blk)
 isMempoolSize :: InternalState blk -> MempoolSize
 isMempoolSize = TxSeq.toMempoolSize . isTxs
 
-data MempoolEnv m blk = MempoolEnv {
-      mpEnvLedger           :: LedgerInterface m blk
-    , mpEnvLedgerCfg        :: LedgerConfig blk
-    , mpEnvStateVar         :: StrictTVar m (InternalState blk)
-    , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
-    , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
-    , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
+data MempoolArgs blk = MempoolArgs {
+      mpArgsLedgerCfg        :: LedgerConfig blk
+    , mpArgsTxSize           :: GenTx blk -> TxSizeInBytes
+    , mpArgsCapacityOverride :: MempoolCapacityBytesOverride
     }
 
 initInternalState
@@ -208,72 +184,13 @@ computeMempoolCapacity st = \case
   Mempool Implementation
 -------------------------------------------------------------------------------}
 
-pureTryAddTxsAtomically
-  :: (LedgerSupportsMempool blk
-  , HasTxId (GenTx blk))
-  => [GenTx blk]
-  -> MempoolEnv m blk
-  -> InternalState blk
-  -> LedgerState blk
-  -> (InternalState blk,
-       ( [(GenTx blk, MempoolAddTxResult blk)]
-           -- Transactions that were added or rejected. A prefix of the input
-           -- list.
-       , [GenTx blk]
-           -- Transactions that have not yet been added because the capacity
-           -- of the Mempool has been reached. A suffix of the input list.
-       , [TraceEventMempool blk]
-     ))
-pureTryAddTxsAtomically txs mpEnv iState _ =
-  let (txv, txu, traces, iStateC) = foldl' go ([],[],[],iState) txs
-  in  (iStateC, (reverse txv, reverse txu, reverse traces))
-  where
-    MempoolEnv
-      { mpEnvLedgerCfg
-      , mpEnvTxSize
-      } = mpEnv
-    accumulatorOutOfCapacity (_, txu, _, _) =
-      not (null txu)
-    accumulatorAddOutOfCapacity tx (txv, txu, traces, iStateC) =
-      (txv, tx:txu, traces, iStateC)
-    go acc@(txv, txu, traces, iStateC) tx
-      | accumulatorOutOfCapacity acc
-      = accumulatorAddOutOfCapacity tx acc
-      | -- No space in the Mempool.
-        let txSize = mpEnvTxSize tx
-            curSize = msNumBytes $ isMempoolSize iStateC
-      , curSize + txSize > getMempoolCapacityBytes (isCapacity iStateC)
-      = accumulatorAddOutOfCapacity tx acc
-      | otherwise
-      = let vr  = extendVRNew mpEnvLedgerCfg tx mpEnvTxSize
-                      $ validationResultFromIS iStateC
-            iStateC' = internalStateFromVR vr
-        in case listToMaybe (vrInvalid vr) of
-            Nothing ->
-              -- We only extended the ValidationResult with a single
-              -- transaction ('tx'). So if it's not in 'vrInvalid', it
-              -- must be in 'vrNewValid'.
-                let trace = TraceMempoolAddedTx
-                              tx
-                              (isMempoolSize iStateC)
-                              (isMempoolSize iStateC')
-                in  ((tx, MempoolTxAdded) : txv, txu, trace : traces, iStateC')
-            Just (_, err) ->
-                assert (isNothing (vrNewValid vr))  $
-                assert (length (vrInvalid vr) == 1) $
-                let trace = TraceMempoolRejectedTx
-                              tx
-                              err
-                              (isMempoolSize iStateC)
-                in ((tx, MempoolTxRejected err) : txv, txu, trace : traces, iStateC')
-
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
   => [GenTxId blk]
-  -> MempoolEnv m blk
+  -> MempoolArgs blk
   -> InternalState blk
   -> LedgerState blk
   -> (InternalState blk, TraceEventMempool blk)
@@ -298,9 +215,9 @@ pureRemoveTxs txIds mpEnv IS{isTxs, isLastTicketNo} ledgerState  =
           tracer = TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
       in (is', tracer)
   where
-    MempoolEnv
-      { mpEnvLedgerCfg = cfg
-      , mpEnvCapacityOverride = capacityOverride
+    MempoolArgs
+      { mpArgsLedgerCfg = cfg
+      , mpArgsCapacityOverride = capacityOverride
       } = mpEnv
 
     toRemove = Set.fromList txIds
@@ -310,7 +227,7 @@ pureSyncWithLedger
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
-  => MempoolEnv m blk
+  => MempoolArgs blk
   -> InternalState blk
   -> LedgerState blk
   -> (InternalState blk, (MempoolSnapshot blk TicketNo, TraceEventMempool blk))
@@ -344,7 +261,7 @@ implSnapshotFromIS is = MempoolSnapshot {
 
 implSnapshotGetTxs :: InternalState blk
                    -> [(GenTx blk, TicketNo)]
-implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
+implSnapshotGetTxs = flip implSnapshotGetTxsAfter zeroTicketNo
 
 implSnapshotGetTxsAfter :: InternalState blk
                         -> TicketNo
@@ -529,17 +446,17 @@ extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
-validateIS :: forall m blk.
+validateIS :: forall blk.
               ( LedgerSupportsMempool blk
               , HasTxId (GenTx blk)
               , ValidateEnvelope blk
               )
-           => MempoolEnv m blk
+           => MempoolArgs blk
            -> InternalState blk
            -> LedgerState blk
            -> ValidationResult blk
 validateIS mpEnv state ledgerState =
-    validateStateFor (mpEnvCapacityOverride mpEnv) (mpEnvLedgerCfg mpEnv)
+    validateStateFor (mpArgsCapacityOverride mpEnv) (mpArgsLedgerCfg mpEnv)
       (ForgeInUnknownSlot ledgerState)
       state
 
