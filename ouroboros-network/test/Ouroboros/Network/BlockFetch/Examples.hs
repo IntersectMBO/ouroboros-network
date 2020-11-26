@@ -33,7 +33,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, nullTracer)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.Block

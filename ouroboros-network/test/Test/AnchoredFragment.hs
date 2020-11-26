@@ -17,8 +17,8 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (Empty),
-                     anchorPoint)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq (Empty), anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.MockChain.Chain as Chain

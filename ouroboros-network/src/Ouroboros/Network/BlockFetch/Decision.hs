@@ -36,7 +36,8 @@ import           Control.Exception (assert)
 import           Control.Monad (guard)
 import           Control.Monad.Class.MonadTime (DiffTime)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (withOriginToMaybe)

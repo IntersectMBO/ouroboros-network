@@ -30,7 +30,7 @@ import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Network.BlockFetch.ClientState

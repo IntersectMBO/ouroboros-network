@@ -30,7 +30,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
