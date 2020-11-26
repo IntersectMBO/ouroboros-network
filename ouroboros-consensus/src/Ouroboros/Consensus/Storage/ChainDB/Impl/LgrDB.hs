@@ -56,7 +56,6 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Tracer
 import           Data.Foldable (foldl')
-import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -312,12 +311,8 @@ getHeaderStateHistory ::
   => LgrDB m blk -> STM m (HeaderStateHistory blk)
 getHeaderStateHistory LgrDB{..} = do
     db <- readTVar varDB
-    let anchor = headerState $ LedgerDB.ledgerDbAnchor db
-        snapshots = Seq.fromList $ map (headerState . snd) $ LedgerDB.ledgerDbSnapshots db
-    return HeaderStateHistory {
-        headerStateHistorySnapshots = snapshots
-      , headerStateHistoryAnchor    = anchor
-      }
+    return $ HeaderStateHistory $
+      LedgerDB.ledgerDbBimap headerState headerState db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current

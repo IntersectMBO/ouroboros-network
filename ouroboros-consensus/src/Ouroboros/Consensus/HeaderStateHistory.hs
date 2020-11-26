@@ -1,19 +1,17 @@
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- | HeaderState history
 --
 -- Intended for qualified import
 --
--- > import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory (..))
+-- > import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 -- > import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 module Ouroboros.Consensus.HeaderStateHistory (
-    HeaderStateHistory (..)
+    HeaderStateHistory(..)
   , current
   , trim
   , rewind
@@ -24,13 +22,13 @@ module Ouroboros.Consensus.HeaderStateHistory (
   , fromChain
   ) where
 
-import           Control.Exception (assert)
 import           Control.Monad.Except (Except)
 import           Data.Coerce (Coercible)
-import           Data.Sequence.Strict (StrictSeq ((:|>), Empty))
-import qualified Data.Sequence.Strict as Seq
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+
+import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -42,18 +40,16 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 -- | Maintain a history of 'HeaderState's.
-data HeaderStateHistory blk = HeaderStateHistory {
-      -- | The last, right-most, element in the sequence contains the current
-      -- state, see 'headerStateHistoryCurrent'.
-      headerStateHistorySnapshots :: !(StrictSeq (HeaderState blk))
-
-      -- | Header state /before/ the oldest in 'headerStateHistorySnapshots'.
-      -- This is the oldest tip we can roll back to.
-    , headerStateHistoryAnchor    :: !(HeaderState blk)
+newtype HeaderStateHistory blk = HeaderStateHistory {
+      unHeaderStateHistory ::
+           AnchoredSeq
+             (WithOrigin SlotNo)
+             (HeaderState blk)
+             (HeaderState blk)
     }
   deriving (Generic)
 
@@ -65,21 +61,11 @@ deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
                 => NoThunks (HeaderStateHistory blk)
 
 current :: HeaderStateHistory blk -> HeaderState blk
-current HeaderStateHistory {..} =
-    case headerStateHistorySnapshots of
-      _ :|> cur -> cur
-      Empty     -> headerStateHistoryAnchor
-
-currentPoint :: HasAnnTip blk => HeaderStateHistory blk -> Point blk
-currentPoint = headerStatePoint . current
+current = either id id . AS.head . unHeaderStateHistory
 
 -- | Append a 'HeaderState' to the history.
 append :: HeaderState blk -> HeaderStateHistory blk -> HeaderStateHistory blk
-append headerState HeaderStateHistory {..} =
-    HeaderStateHistory {
-        headerStateHistorySnapshots = headerStateHistorySnapshots :|> headerState
-      , headerStateHistoryAnchor    = headerStateHistoryAnchor
-      }
+append h (HeaderStateHistory history) = HeaderStateHistory (history :> h)
 
 -- | Trim the 'HeaderStateHistory' to the given size, dropping the oldest
 -- snapshots. The anchor will be shifted accordingly.
@@ -88,20 +74,8 @@ append headerState HeaderStateHistory {..} =
 -- 0 results in no snapshots but still an anchor. Trimming to 1 results in 1
 -- snapshot and an anchor.
 trim :: Int -> HeaderStateHistory blk -> HeaderStateHistory blk
-trim n history@HeaderStateHistory {..}
-    | toDrop <= 0
-    = history
-    | otherwise
-    = case Seq.splitAt toDrop headerStateHistorySnapshots of
-        (_ :|> newAnchor, trimmed) -> HeaderStateHistory {
-            headerStateHistorySnapshots = trimmed
-          , headerStateHistoryAnchor    = newAnchor
-          }
-        (Empty, _) ->
-          error $ "impossible: nothing dropped while toDrop = " <> show toDrop
-  where
-    toDrop :: Int
-    toDrop = Seq.length headerStateHistorySnapshots - n
+trim n (HeaderStateHistory history) =
+    HeaderStateHistory (AS.anchorNewest (fromIntegral n) history)
 
 cast ::
      ( Coercible (ChainDepState (BlockProtocol blk ))
@@ -109,10 +83,8 @@ cast ::
      , TipInfo blk ~ TipInfo blk'
      )
   => HeaderStateHistory blk -> HeaderStateHistory blk'
-cast HeaderStateHistory {..} = HeaderStateHistory {
-      headerStateHistorySnapshots = castHeaderState <$> headerStateHistorySnapshots
-    , headerStateHistoryAnchor    = castHeaderState  $  headerStateHistoryAnchor
-    }
+cast (HeaderStateHistory history) =
+    HeaderStateHistory $ AS.bimap castHeaderState castHeaderState history
 
 -- | \( O\(n\) \). Rewind the header state history
 --
@@ -138,26 +110,11 @@ rewind ::
      forall blk. (BlockSupportsProtocol blk, HasAnnTip blk)
   => Point blk
   -> HeaderStateHistory blk -> Maybe (HeaderStateHistory blk)
-rewind p HeaderStateHistory {..} =
-    case Seq.dropWhileR rolledBack headerStateHistorySnapshots of
-        Empty
-          | rolledBack headerStateHistoryAnchor
-            -- Asked to roll back past the anchor
-          -> assert (pointSlot p <=
-                     pointSlot (headerStatePoint headerStateHistoryAnchor))
-             Nothing
-
-        headerStateHistorySnapshots'
-          | let history' = HeaderStateHistory {
-                     headerStateHistorySnapshots = headerStateHistorySnapshots'
-                   , headerStateHistoryAnchor
-                   }
-          -> assert (currentPoint history' == p) $
-             Just history'
-  where
-    -- | Should the given 'HeaderState' be rolled back?
-    rolledBack :: HeaderState blk -> Bool
-    rolledBack headerState = headerStatePoint headerState /= p
+rewind p (HeaderStateHistory history) = HeaderStateHistory <$>
+    AS.rollback
+      (pointSlot p)
+      ((== p) . either headerStatePoint headerStatePoint)
+      history
 
 {-------------------------------------------------------------------------------
   Validation
@@ -202,12 +159,10 @@ fromChain ::
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
-fromChain cfg initState chain = HeaderStateHistory {
-      headerStateHistorySnapshots = Seq.fromList snapshots
-    , headerStateHistoryAnchor    = anchor
-    }
+fromChain cfg initState chain =
+    HeaderStateHistory (AS.fromOldestFirst anchorSnapshot snapshots)
   where
-    anchor NE.:| snapshots =
+    anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
             (flip (tickThenReapply (ExtLedgerCfg cfg)))

@@ -1,17 +1,19 @@
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
@@ -66,6 +68,8 @@ import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (enforceSize)
+
+import           Ouroboros.Network.AnchoredSeq (Anchorable (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -152,6 +156,11 @@ data HeaderState blk = HeaderState {
     , headerStateChainDep :: !(ChainDepState (BlockProtocol blk))
     }
   deriving (Generic)
+
+-- | Used by 'HeaderStateHistory' but defined here, where it is not an orphan.
+instance Anchorable (WithOrigin SlotNo) (HeaderState blk) (HeaderState blk) where
+  asAnchor = id
+  getAnchorMeasure _ = fmap annTipSlotNo . headerStateTip
 
 castHeaderState ::
      ( Coercible (ChainDepState (BlockProtocol blk ))

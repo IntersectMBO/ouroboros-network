@@ -39,7 +39,6 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
-import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -54,6 +53,7 @@ import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo, getTipPoint)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -337,10 +337,12 @@ checkKnownIntersectionInvariants cfg KnownIntersectionState
                                      , mostRecentIntersection
                                      }
     -- 'theirHeaderStateHistory' invariant
-    | let HeaderStateHistory snapshots anchor = theirHeaderStateHistory
-          historyTips  = headerStateTip        <$> Foldable.toList snapshots
+    | let HeaderStateHistory snapshots = theirHeaderStateHistory
+          historyTips  = headerStateTip        <$> AS.toOldestFirst snapshots
           fragmentTips = NotOrigin . getAnnTip <$> AF.toOldestFirst theirFrag
-          historyAnchorPoint  = withOriginRealPointToPoint $ annTipRealPoint <$> headerStateTip anchor
+          historyAnchorPoint =
+            withOriginRealPointToPoint $
+              annTipRealPoint <$> headerStateTip (AS.anchor snapshots)
           fragmentAnchorPoint = castPoint $ AF.anchorPoint theirFrag
     , historyTips /= fragmentTips || historyAnchorPoint /= fragmentAnchorPoint
     = throwError $ unwords
